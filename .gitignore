@@ -1,0 +1,9 @@
+# 実行時に自動生成されるデータベース
+hoiku_app/hoiku.db
+
+# Python
+__pycache__/
+*.pyc
+
+# Claude Code ローカル設定
+.claude/

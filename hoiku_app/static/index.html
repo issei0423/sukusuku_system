@@ -211,6 +211,25 @@ input,select,textarea{font-family:inherit;font-size:1rem}
 textarea.memo{width:100%;border:1.5px solid var(--line);border-radius:12px;padding:11px 14px;min-height:70px;resize:vertical;margin-top:14px}
 .savemark{font-size:.78rem;color:var(--leaf);font-weight:700;align-self:center}
 
+/* =================== 身体記録 =================== */
+.sh-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;align-items:end;margin:14px 0 6px}
+.sh-form .field{margin:0}
+.sh-prev{font-size:.82rem;color:var(--cocoa-soft);margin-bottom:12px}
+.warnbox{background:#FBE3DB;border-radius:10px;padding:10px 14px;font-size:.85rem;color:#B25A41;font-weight:700;margin:10px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.warnbox button{border:1.5px solid #B25A41;border-radius:9px;padding:5px 13px;font-size:.8rem;font-weight:700;color:#B25A41;background:#fff}
+.warnbox button:hover{background:#B25A41;color:#fff}
+.sh-seg{display:flex;gap:0;border:1.5px solid var(--line);border-radius:10px;overflow:hidden;width:fit-content;margin-bottom:10px}
+.sh-seg button{padding:6px 16px;font-size:.82rem;font-weight:700;color:var(--cocoa-soft);border-right:1.5px solid var(--line)}
+.sh-seg button:last-child{border-right:none}
+.sh-seg button.on{background:var(--honey);color:var(--cocoa)}
+.sh-table{width:100%;border-collapse:collapse;font-size:.86rem;margin-top:10px}
+.sh-table th,.sh-table td{padding:7px 10px;border-bottom:1.5px dashed var(--line);text-align:right;white-space:nowrap}
+.sh-table th:first-child,.sh-table td:first-child{text-align:left}
+.sh-table th{color:var(--cocoa-soft);font-size:.78rem}
+.sh-chart-wrap{margin-top:8px}
+.sh-chart-wrap svg{width:100%;height:auto;background:var(--egg);border-radius:12px}
+.sh-done{margin-left:auto;font-size:.7rem;font-weight:700;color:var(--leaf)}
+
 @media(max-width:820px){
   .login-wrap{grid-template-columns:1fr}
   .login-hero{padding:32px 28px}
@@ -241,7 +260,7 @@ textarea.memo{width:100%;border:1.5px solid var(--line);border-radius:12px;paddi
         <h1>すくすくハイブ</h1>
       </div>
       <p class="tag">保護者という点と、保育士という点を。<br>育児という線で、つなぐ。</p>
-      <p class="sub">日誌・チャット・午睡チェック・発達チェックをひとつに。<br>データはこのPCの SQLite に保存されます。</p>
+      <p class="sub">日誌・チャット・午睡チェック・発達チェック・身体記録をひとつに。<br>データはこのPCの SQLite に保存されます。</p>
       <div class="hero-roles">
         <span>👑 園長・主任</span><span>🌼 保育士</span><span>🏠 保護者</span>
       </div>
@@ -320,6 +339,7 @@ textarea.memo{width:100%;border:1.5px solid var(--line);border-radius:12px;paddi
     <button data-page="chat" onclick="go('chat')">💬 チャット</button>
     <button data-page="gosui" onclick="go('gosui')">😴 午睡チェック</button>
     <button data-page="dev" onclick="go('dev')">🌱 発達チェック</button>
+    <button data-page="shintai" data-hide="parent" onclick="go('shintai')">📏 身体記録</button>
   </nav>
 
   <!-- ============ ホーム ============ -->
@@ -354,6 +374,11 @@ textarea.memo{width:100%;border:1.5px solid var(--line);border-radius:12px;paddi
         <span class="icon">🌱</span>
         <h3>発達チェック</h3>
         <p>月齢に応じたチェックリストで、成長の経過を見守る。</p>
+      </button>
+      <button class="feature-card" onclick="go('shintai')" data-hide="parent">
+        <span class="icon">📏</span>
+        <h3>身体記録</h3>
+        <p>身長・体重を記録し、成長曲線と重ねて経過を見守る。</p>
       </button>
     </div>
   </main>
@@ -459,6 +484,59 @@ textarea.memo{width:100%;border:1.5px solid var(--line);border-radius:12px;paddi
           <span class="savemark" id="devSaved"></span>
           <button class="btn-honey" onclick="saveDevNote()">所見を保存</button>
         </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ============ 身体記録 ============ -->
+  <main class="page" data-pg="shintai" hidden>
+    <div class="page-title"><h2>📏 身体記録</h2><small>ひまわり組</small></div>
+    <p class="page-lede">測定日・身長・体重を記録し、成長曲線と重ねて経過を確認できます。記録は発達チェックと同じ園児マスタ・時系列で管理されます。</p>
+
+    <div class="dev-layout">
+      <aside class="dev-list" id="shList"></aside>
+
+      <div class="dev-panel card">
+        <div class="disclaimer">⚠️ 本グラフは発育把握の目安であり、発育の判定・診断を行うものではありません。</div>
+        <h3 id="shKidName" style="margin-bottom:4px"></h3>
+        <small style="color:var(--cocoa-soft)" id="shKidSub"></small>
+
+        <div class="sh-form">
+          <div class="field">
+            <label for="shDate">測定日</label>
+            <input id="shDate" type="date">
+          </div>
+          <div class="field">
+            <label for="shHeight">身長（cm）</label>
+            <input id="shHeight" type="number" step="0.1" inputmode="decimal" placeholder="例: 78.5">
+          </div>
+          <div class="field">
+            <label for="shWeight">体重（kg）</label>
+            <input id="shWeight" type="number" step="0.1" inputmode="decimal" placeholder="例: 10.2">
+          </div>
+          <button class="btn-honey" onclick="saveShintai()">登録する</button>
+        </div>
+        <p class="sh-prev" id="shPrev"></p>
+        <p class="err-msg" id="shErr"></p>
+        <div class="warnbox" id="shWarn" style="display:none">
+          <span id="shWarnMsg"></span>
+          <button onclick="saveShintai(true)">このまま登録する</button>
+          <button onclick="hideShWarn()">入力し直す</button>
+        </div>
+        <p class="savemark" id="shSaved"></p>
+
+        <div class="sh-chart-wrap">
+          <div class="sh-seg" role="tablist">
+            <button id="shTabH" class="on" onclick="setShType('height')">身長</button>
+            <button id="shTabW" onclick="setShType('weight')">体重</button>
+          </div>
+          <svg id="shChart" viewBox="0 0 600 280" role="img" aria-label="成長曲線と測定値のグラフ"></svg>
+        </div>
+
+        <table class="sh-table">
+          <thead><tr><th>測定日</th><th>月齢</th><th>身長</th><th>体重</th><th>記録者</th></tr></thead>
+          <tbody id="shTableBody"></tbody>
+        </table>
       </div>
     </div>
   </main>
@@ -568,6 +646,7 @@ async function enterApp(){
   renderDevList();
   currentKid = CHILDREN.length ? CHILDREN[0].id : null;
   if(currentKid) await openKid(currentKid);
+  if(ME.role!=='parent' && CHILDREN.length) await openShintaiKid(CHILDREN[0].id);
 
   go('home');
   window.scrollTo(0,0);
@@ -589,7 +668,7 @@ function applyRoleVisibility(){
    ページ遷移
 ================================================================ */
 function go(p){
-  if(p==='gosui' && ME && ME.role==='parent') return;
+  if((p==='gosui' || p==='shintai') && ME && ME.role==='parent') return;
   currentPage = p;
   document.querySelectorAll('.page').forEach(m=>m.hidden = m.dataset.pg!==p);
   document.querySelectorAll('.app-nav button').forEach(b=>b.classList.toggle('on', b.dataset.page===p));
@@ -827,6 +906,190 @@ async function saveDevNote(){
   const mark = document.getElementById('devSaved');
   mark.textContent = '✓ 保存しました';
   setTimeout(()=>mark.textContent='', 2000);
+}
+
+/* ================================================================
+   身体記録
+================================================================ */
+let SH_KID = null;        // 選択中の園児ID
+let SH_DATA = null;       // /api/physical/<id> のレスポンス
+let SH_TYPE = 'height';   // グラフ表示: 'height' / 'weight'
+const SH_STD = {};        // 成長曲線基準値キャッシュ {'M:height': [...]}
+
+function todayStr(){
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`;
+}
+
+function renderShintaiList(){
+  const box = document.getElementById('shList');
+  box.innerHTML = CHILDREN.map(k=>`
+    <button class="dev-kid ${k.id===SH_KID?'on':''}" onclick="openShintaiKid(${k.id})">
+      <span style="font-size:1.4rem">${k.emoji}</span>
+      <span><b>${esc(k.name)}</b><small>${esc(k.age_label)} ・ 前回 ${k.last_measured ? esc(k.last_measured.slice(5).replace('-','/')) : 'なし'}</small></span>
+      ${k.last_measured===todayStr() ? '<span class="sh-done">✓ 本日入力済</span>' : ''}
+    </button>`).join('');
+}
+
+async function openShintaiKid(cid){
+  SH_KID = cid;
+  hideShWarn();
+  document.getElementById('shErr').textContent = '';
+  document.getElementById('shSaved').textContent = '';
+  SH_DATA = await api('/physical/' + cid);
+  const c = SH_DATA.child;
+  document.getElementById('shKidName').textContent = `${c.name} さん ─ ${c.age_label}`;
+  document.getElementById('shKidSub').textContent = c.birth_date ? `生年月日: ${c.birth_date}` : '生年月日が未登録です';
+  document.getElementById('shDate').value = todayStr();
+  document.getElementById('shHeight').value = '';
+  document.getElementById('shWeight').value = '';
+  const last = SH_DATA.records[SH_DATA.records.length - 1];
+  document.getElementById('shPrev').textContent = last
+    ? `前回測定: ${last.measured_on} ／ 身長 ${last.height_cm} cm ／ 体重 ${last.weight_kg} kg`
+    : '前回の測定記録はありません。';
+  renderShintaiList();
+  await renderGrowthChart();
+  renderShintaiTable();
+}
+
+function renderShintaiTable(){
+  const body = document.getElementById('shTableBody');
+  const recs = [...SH_DATA.records].reverse();
+  body.innerHTML = recs.length ? recs.map(r=>`
+    <tr>
+      <td>${esc(r.measured_on)}</td>
+      <td>${r.age_m!=null ? r.age_m + 'ヶ月' : '─'}</td>
+      <td>${r.height_cm} cm</td>
+      <td>${r.weight_kg} kg</td>
+      <td>${esc(r.recorded_by)}</td>
+    </tr>`).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--cocoa-soft)">記録がまだありません</td></tr>';
+}
+
+function hideShWarn(){ document.getElementById('shWarn').style.display = 'none'; }
+
+async function saveShintai(confirmed){
+  const err = document.getElementById('shErr');
+  const saved = document.getElementById('shSaved');
+  err.textContent = ''; saved.textContent = '';
+  if(!confirmed) hideShWarn();
+  const payload = {
+    measured_on: document.getElementById('shDate').value,
+    height_cm:  document.getElementById('shHeight').value,
+    weight_kg:  document.getElementById('shWeight').value,
+  };
+  if(confirmed){ payload.confirm_range = true; payload.confirm_overwrite = true; }
+  try{
+    const d = await api('/physical/' + SH_KID, {method:'POST', body: JSON.stringify(payload)});
+    if(d.confirm){
+      // 範囲外警告・上書き確認: インラインで確認してから再送信する
+      document.getElementById('shWarnMsg').textContent = d.message;
+      document.getElementById('shWarn').style.display = 'flex';
+      return;
+    }
+    hideShWarn();
+    SH_DATA.records = d.records;
+    saved.textContent = '✓ 身体測定記録を登録しました';
+    setTimeout(()=>saved.textContent='', 2500);
+    document.getElementById('shHeight').value = '';
+    document.getElementById('shWeight').value = '';
+    const last = SH_DATA.records[SH_DATA.records.length - 1];
+    if(last) document.getElementById('shPrev').textContent =
+      `前回測定: ${last.measured_on} ／ 身長 ${last.height_cm} cm ／ 体重 ${last.weight_kg} kg`;
+    const k = CHILDREN.find(c=>c.id===SH_KID);
+    if(k && (!k.last_measured || payload.measured_on > k.last_measured)) k.last_measured = payload.measured_on;
+    renderShintaiList();
+    await renderGrowthChart();
+    renderShintaiTable();
+  }catch(e){ err.textContent = e.message; }
+}
+
+async function setShType(t){
+  SH_TYPE = t;
+  document.getElementById('shTabH').classList.toggle('on', t==='height');
+  document.getElementById('shTabW').classList.toggle('on', t==='weight');
+  await renderGrowthChart();
+}
+
+async function loadStandards(sex, type){
+  const key = sex + ':' + type;
+  if(!SH_STD[key]){
+    const d = await api(`/growth_standards?sex=${sex}&type=${type}`);
+    SH_STD[key] = d.standards;
+  }
+  return SH_STD[key];
+}
+
+async function renderGrowthChart(){
+  const svg = document.getElementById('shChart');
+  const c = SH_DATA.child;
+  if(!c.birth_date){
+    svg.innerHTML = '<text x="300" y="140" text-anchor="middle" font-size="14" fill="#8A7A64">生年月日が未登録のためグラフを表示できません</text>';
+    return;
+  }
+  const unit = SH_TYPE==='height' ? 'cm' : 'kg';
+  const val = r => SH_TYPE==='height' ? r.height_cm : r.weight_kg;
+  const std = await loadStandards(c.sex, SH_TYPE);
+  const byAge = {};   // {月齢: {3:v, 50:v, 97:v}}
+  std.forEach(s=>{ (byAge[s.age_in_months] = byAge[s.age_in_months] || {})[s.percentile] = s.value; });
+
+  const recs = SH_DATA.records.filter(r=>r.age_m!=null);
+  const ages = recs.map(r=>r.age_m);
+  let xmin = recs.length ? Math.max(0, Math.min(...ages)-2) : 0;
+  let xmax = recs.length ? Math.max(...ages)+2 : 36;
+  if(xmax - xmin < 6) xmax = xmin + 6;
+  xmax = Math.min(xmax, 36);
+
+  const stdAges = Object.keys(byAge).map(Number).filter(m=>m>=xmin && m<=xmax).sort((a,b)=>a-b);
+  const allVals = [
+    ...stdAges.map(m=>byAge[m][3]), ...stdAges.map(m=>byAge[m][97]),
+    ...recs.map(val),
+  ];
+  let ymin = Math.min(...allVals), ymax = Math.max(...allVals);
+  const pad = (ymax - ymin) * 0.12 || 1;
+  ymin -= pad; ymax += pad;
+
+  // 描画領域
+  const L=52, R=588, T=16, B=244;
+  const X = m => L + (m - xmin) / (xmax - xmin) * (R - L);
+  const Y = v => B - (v - ymin) / (ymax - ymin) * (B - T);
+
+  let out = '';
+  // Y軸グリッドとラベル
+  const ystep = (ymax - ymin) / 4;
+  for(let i=0;i<=4;i++){
+    const v = ymin + ystep*i, y = Y(v);
+    out += `<line x1="${L}" y1="${y}" x2="${R}" y2="${y}" stroke="#EBDFC2" stroke-width="1"/>`;
+    out += `<text x="${L-6}" y="${y+4}" text-anchor="end" font-size="10" fill="#8A7A64">${v.toFixed(SH_TYPE==='height'?0:1)}</text>`;
+  }
+  // X軸ラベル（3ヶ月刻み）
+  for(let m=Math.ceil(xmin/3)*3; m<=xmax; m+=3){
+    out += `<text x="${X(m)}" y="${B+18}" text-anchor="middle" font-size="10" fill="#8A7A64">${m}ヶ月</text>`;
+  }
+  out += `<text x="${L}" y="${T-2}" font-size="10" fill="#8A7A64">${unit}</text>`;
+
+  if(stdAges.length){
+    // 3〜97パーセンタイル帯
+    const band = stdAges.map(m=>`${X(m)},${Y(byAge[m][97])}`).join(' ') + ' ' +
+                 [...stdAges].reverse().map(m=>`${X(m)},${Y(byAge[m][3])}`).join(' ');
+    out += `<polygon points="${band}" fill="#F2B33D" opacity=".16"/>`;
+    // 50パーセンタイル
+    out += `<polyline points="${stdAges.map(m=>`${X(m)},${Y(byAge[m][50])}`).join(' ')}" stroke="#D99B1F" stroke-width="2" fill="none" stroke-dasharray="6 5"/>`;
+    const lm = stdAges[stdAges.length-1];
+    out += `<text x="${X(lm)-4}" y="${Y(byAge[lm][50])-8}" text-anchor="end" font-size="10" fill="#8A7A64">50パーセンタイル</text>`;
+    out += `<text x="${X(lm)-4}" y="${Y(byAge[lm][97])-6}" text-anchor="end" font-size="9" fill="#C9A85C">97</text>`;
+    out += `<text x="${X(lm)-4}" y="${Y(byAge[lm][3])+12}" text-anchor="end" font-size="9" fill="#C9A85C">3</text>`;
+  }
+  if(recs.length){
+    out += `<polyline points="${recs.map(r=>`${X(r.age_m)},${Y(val(r))}`).join(' ')}" stroke="#4A3B2A" stroke-width="2.5" fill="none" stroke-linecap="round"/>`;
+    recs.forEach(r=>{
+      out += `<circle cx="${X(r.age_m)}" cy="${Y(val(r))}" r="5.5" fill="#E58A6E"><title>${r.measured_on}: ${val(r)} ${unit}</title></circle>`;
+    });
+    const lr = recs[recs.length-1];
+    out += `<text x="${X(lr.age_m)+9}" y="${Y(val(lr))+4}" font-size="11" font-weight="bold" fill="#4A3B2A">${val(lr)} ${unit}</text>`;
+  } else {
+    out += `<text x="300" y="130" text-anchor="middle" font-size="13" fill="#8A7A64">測定記録がまだありません</text>`;
+  }
+  svg.innerHTML = out;
 }
 
 /* ================================================================
