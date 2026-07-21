@@ -16,13 +16,15 @@ from flask import Flask, request, session, jsonify, g, send_from_directory
 from werkzeug.security import generate_password_hash, check_password_hash
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE, "hoiku.db")
+DB_PATH = os.environ.get("HOIKU_DB") or os.path.join(BASE, "hoiku.db")  # テスト時に差し替え可能
 
 INVITE_CODE = "HIVE-2026"  # 保護者の新規登録用招待コード（デモ値）
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 app.secret_key = "hoiku-dev-secret-change-me"  # 本番運用時は環境変数などで管理する
 app.permanent_session_lifetime = timedelta(days=14)  # 「ログイン状態を保持」の期間
+# クロスサイトからのPOSTにCookieが乗らないようにする（CSRF緩和。本実装ではトークン方式を併用する）
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 
 # ---------------------------------------------------------------- DB接続
@@ -81,7 +83,8 @@ CREATE TABLE naps(
 );
 
 -- 要件: 誰が・いつ・どの園児の記録を変更したかの操作ログ（監査用）
-CREATE TABLE nap_logs(
+-- 午睡・身体測定など機能横断で使うため operation_logs とする（旧名 nap_logs）
+CREATE TABLE operation_logs(
   id       INTEGER PRIMARY KEY AUTOINCREMENT,
   child_id INTEGER NOT NULL,
   user_id  TEXT NOT NULL,
@@ -201,6 +204,14 @@ def months_between(birth, on):
     if o.day < b.day:
         m -= 1
     return max(m, 0)
+
+
+def age_label_from(birth_date):
+    """生年月日（SSoT）から現在の年齢表示を導出する。未登録なら None"""
+    if not birth_date:
+        return None
+    m = months_between(birth_date, datetime.now().strftime("%Y-%m-%d"))
+    return f"{m // 12}歳{m % 12}ヶ月"
 
 
 def _interp_anchors(anchors, m):
@@ -355,7 +366,7 @@ def init_db():
 
 
 def migrate_db():
-    """身体記録より前に作成された hoiku.db への後付けマイグレーション"""
+    """旧バージョンで作成された hoiku.db への後付けマイグレーション"""
     if not os.path.exists(DB_PATH):
         return
     con = sqlite3.connect(DB_PATH)
@@ -364,8 +375,16 @@ def migrate_db():
         if "birth_date" not in cols:
             con.execute("ALTER TABLE children ADD COLUMN birth_date TEXT NOT NULL DEFAULT ''")
             con.execute("ALTER TABLE children ADD COLUMN sex TEXT NOT NULL DEFAULT 'M'")
+            # デモデータ限定の名前マッチ。設定済み（birth_date あり）の行は上書きしない
             for name, (bd, sex) in KID_BIRTHS.items():
-                con.execute("UPDATE children SET birth_date=?, sex=? WHERE name=?", (bd, sex, name))
+                con.execute(
+                    "UPDATE children SET birth_date=?, sex=? WHERE name=? AND birth_date=''",
+                    (bd, sex, name),
+                )
+        # 操作ログテーブルの改名（旧 nap_logs → operation_logs）
+        tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if "nap_logs" in tables and "operation_logs" not in tables:
+            con.execute("ALTER TABLE nap_logs RENAME TO operation_logs")
         con.executescript(PHYSICAL_SCHEMA)
         seed_physical(con)
         con.commit()
@@ -458,17 +477,21 @@ def api_bootstrap():
     role = my_role()
     d = db()
 
-    children = [
-        dict(r) for r in d.execute(
-            """SELECT c.id, c.name, c.age_label, c.emoji, c.next_check, c.late,
-                      c.birth_date, c.sex,
-                      n.sleeping, n.since, n.last_check, n.memo,
-                      (SELECT MAX(p.measured_on) FROM physical_records p
-                        WHERE p.child_id = c.id) AS last_measured
-               FROM children c JOIN naps n ON n.child_id = c.id
-               ORDER BY c.id"""
-        )
-    ]
+    children = []
+    for r in d.execute(
+        """SELECT c.id, c.name, c.age_label, c.emoji, c.next_check, c.late,
+                  c.birth_date, c.sex,
+                  n.sleeping, n.since, n.last_check, n.memo,
+                  MAX(p.measured_on) AS last_measured
+           FROM children c JOIN naps n ON n.child_id = c.id
+           LEFT JOIN physical_records p ON p.child_id = c.id
+           GROUP BY c.id
+           ORDER BY c.id"""
+    ):
+        row = dict(r)
+        # 年齢表示は生年月日（SSoT）から導出。未登録の場合のみ静的な age_label を使う
+        row["age_label"] = age_label_from(row["birth_date"]) or row["age_label"]
+        children.append(row)
 
     channels = []
     for r in d.execute("SELECT * FROM channels"):
@@ -495,6 +518,7 @@ def api_bootstrap():
         channels=channels,
         nisshi=nisshi,
         dev_items=dev_items,
+        today=datetime.now().strftime("%Y-%m-%d"),  # 「本日入力済」判定はサーバ日付を正とする
     )
 
 
@@ -504,9 +528,10 @@ def _nap_json(cid):
     return dict(r)
 
 
-def _nap_log(cid, action):
+def _op_log(cid, action):
+    """操作ログ（監査用）。午睡・身体測定など機能横断で記録する"""
     db().execute(
-        "INSERT INTO nap_logs(child_id,user_id,action,at) VALUES(?,?,?,?)",
+        "INSERT INTO operation_logs(child_id,user_id,action,at) VALUES(?,?,?,?)",
         (cid, session["uid"], action, now_iso()),
     )
 
@@ -524,7 +549,7 @@ def api_nap_toggle(cid):
         "UPDATE naps SET sleeping=?, since=?, last_check=? WHERE child_id=?",
         (sleeping, now_hm() if sleeping else "", now_hm(), cid),
     )
-    _nap_log(cid, "就寝" if sleeping else "起床")
+    _op_log(cid, "就寝" if sleeping else "起床")
     db().commit()
     return jsonify(nap=_nap_json(cid))
 
@@ -538,20 +563,20 @@ def api_nap_memo(cid):
     db().execute(
         "UPDATE naps SET memo=?, last_check=? WHERE child_id=?", (memo, now_hm(), cid)
     )
-    _nap_log(cid, "メモ更新" if memo else "メモ削除")
+    _op_log(cid, "メモ更新" if memo else "メモ削除")
     db().commit()
     return jsonify(nap=_nap_json(cid))
 
 
-@app.get("/api/nap_logs")
+@app.get("/api/logs")
 @login_required
-def api_nap_logs():
+def api_logs():
     """監査用: 操作ログの確認（管理者のみ）"""
     if my_role() != "admin":
         return jsonify(error="権限がありません"), 403
     rows = db().execute(
         """SELECT l.at, u.display_name AS who, c.name AS child, l.action
-           FROM nap_logs l JOIN users u ON u.id=l.user_id
+           FROM operation_logs l JOIN users u ON u.id=l.user_id
            JOIN children c ON c.id=l.child_id
            ORDER BY l.id DESC LIMIT 100"""
     )
@@ -663,6 +688,7 @@ def _setting_float(key, default):
     try:
         return float(r["value"]) if r else default
     except ValueError:
+        print(f"[warn] settings.{key} が数値ではありません（値: {r['value']!r}）。デフォルト {default} を使用します。")
         return default
 
 
@@ -692,9 +718,11 @@ def api_physical_get(cid):
     if not c:
         return jsonify(error="園児が見つかりません"), 404
     return jsonify(
-        child={"id": c["id"], "name": c["name"], "age_label": c["age_label"],
+        child={"id": c["id"], "name": c["name"],
+               "age_label": age_label_from(c["birth_date"]) or c["age_label"],
                "emoji": c["emoji"], "birth_date": c["birth_date"], "sex": c["sex"]},
         records=_physical_records(cid, c["birth_date"]),
+        today=datetime.now().strftime("%Y-%m-%d"),
         limits={"height_min": _setting_float("height_min", 30.0),
                 "height_max": _setting_float("height_max", 150.0),
                 "weight_min": _setting_float("weight_min", 1.0),
@@ -757,7 +785,7 @@ def api_physical_post(cid):
         (cid, measured_on, round(height, 1), round(weight, 1),
          session["uid"], now_iso(), now_iso()),
     )
-    _nap_log(cid, "身体測定 上書き" if exists else "身体測定 記録")  # 監査ログ（操作ログ）に残す
+    _op_log(cid, "身体測定 上書き" if exists else "身体測定 記録")  # 監査ログ（操作ログ）に残す
     db().commit()
     return jsonify(ok=True, records=_physical_records(cid, c["birth_date"]))
 

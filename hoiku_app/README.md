@@ -46,18 +46,32 @@ KDSのときと同じ要領です。
 hoiku_app/
 ├── app.py             # Flaskサーバ + SQLite（API・認証・権限すべてここ）
 ├── static/
-│   └── index.html     # 画面（fetchでAPIを呼ぶ）
+│   ├── index.html     # 画面マークアップ
+│   ├── style.css      # スタイル
+│   └── app.js         # 画面ロジック（fetchでAPIを呼ぶ）
+├── tests/
+│   └── test_physical_api.py  # 身体記録APIのテスト（pytest）
 ├── requirements.txt
 ├── README.md
 └── hoiku.db           # 初回起動時に自動生成されるデータベース
 ```
 
+## テスト
+
+```powershell
+cd hoiku_app
+pytest
+```
+
+テストは一時ディレクトリの専用DBを使うので、開発用の `hoiku.db` には影響しません。
+
 ## データベースについて
 
 - **リセットしたいとき**: サーバを止めて `hoiku.db` を削除 → 再起動でデモデータが再投入されます
 - **中身を見たいとき**: `sqlite3 hoiku.db` や VSCode の SQLite 拡張で開けます
-- 主なテーブル: `users` / `children` / `naps` / `nap_logs`（監査用操作ログ）/ `channels` / `messages` / `nisshi` / `dev_results` / `dev_notes` / `physical_records`（身体測定）/ `growth_standards`（成長曲線基準値マスタ）/ `settings`（しきい値等の設定マスタ）
-- 身体記録追加前の古い `hoiku.db` があっても、起動時に自動でテーブル追加・デモデータ投入されます（migrate_db）
+- 主なテーブル: `users` / `children` / `naps` / `operation_logs`（監査用操作ログ、旧 nap_logs）/ `channels` / `messages` / `nisshi` / `dev_results` / `dev_notes` / `physical_records`（身体測定）/ `growth_standards`（成長曲線基準値マスタ）/ `settings`（しきい値等の設定マスタ）
+- 古い `hoiku.db` があっても、起動時に自動でテーブル追加・改名・デモデータ投入されます（migrate_db）
+- 年齢表示は園児の生年月日（`children.birth_date`）から毎回算出します（生年月日がSSoT）
 
 ## 実装済みの機能
 
@@ -76,5 +90,5 @@ hoiku_app/
 これは学習・プロトタイプ用の構成です。実運用するなら最低限:
 - `app.secret_key` を環境変数化
 - Flask開発サーバではなく waitress / gunicorn 等のWSGIサーバを使う
-- HTTPS化、CSRF対策、パスワードポリシー
+- HTTPS化、CSRFトークン導入（現状は SameSite=Lax Cookie による緩和のみ）、パスワードポリシー
 （パスワードは werkzeug でハッシュ化済みなので平文保存はしていません）
