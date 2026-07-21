@@ -67,7 +67,9 @@ CREATE TABLE children(
   age_label  TEXT NOT NULL,
   emoji      TEXT NOT NULL,
   next_check TEXT NOT NULL,      -- 発達チェック次回予定（表示用）
-  late       INTEGER NOT NULL DEFAULT 0
+  late       INTEGER NOT NULL DEFAULT 0,
+  birth_date TEXT NOT NULL DEFAULT '',  -- 生年月日=月齢算出のSSoT
+  sex        TEXT NOT NULL DEFAULT 'M'  -- 'M'/'F'（成長曲線の基準値参照用）
 );
 
 CREATE TABLE naps(
@@ -130,6 +132,127 @@ CREATE TABLE dev_notes(
 );
 """
 
+# 身体記録まわりのテーブル。既存DBへの後付け（migrate_db）でも使うため IF NOT EXISTS で分離
+PHYSICAL_SCHEMA = """
+CREATE TABLE IF NOT EXISTS physical_records(
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  child_id    INTEGER NOT NULL REFERENCES children(id),
+  measured_on TEXT NOT NULL,     -- YYYY-MM-DD（未来日不可）
+  height_cm   REAL NOT NULL,
+  weight_kg   REAL NOT NULL,
+  recorded_by TEXT NOT NULL,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL,
+  UNIQUE(child_id, measured_on)  -- 同一園児・同一測定日は上書き
+);
+
+CREATE TABLE IF NOT EXISTS growth_standards(
+  sex           TEXT NOT NULL,     -- 'M'/'F'
+  age_in_months INTEGER NOT NULL,
+  measure_type  TEXT NOT NULL,     -- 'height'/'weight'
+  percentile    INTEGER NOT NULL,  -- 3/50/97（モックでは3本に簡略化）
+  value         REAL NOT NULL,
+  PRIMARY KEY(sex, age_in_months, measure_type, percentile)
+);
+
+-- 設計原則「ハードコードを避けマスタで運用」に合わせ、しきい値は settings で保持
+CREATE TABLE IF NOT EXISTS settings(
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+"""
+
+# 入力範囲チェックの初期値（誤入力検知が目的。発育の判定基準ではない）
+PHYSICAL_SETTINGS = {
+    "height_min": "30.0", "height_max": "150.0",
+    "weight_min": "1.0",  "weight_max": "40.0",
+}
+
+# デモ園児の生年月日・性別（age_label と整合する値）
+KID_BIRTHS = {
+    "さくら": ("2025-03-10", "F"),
+    "はると": ("2025-08-15", "M"),
+    "ゆい":   ("2024-11-05", "F"),
+    "そうた": ("2025-05-12", "M"),
+    "めい":   ("2025-01-20", "F"),
+    "りく":   ("2025-07-08", "M"),
+}
+
+# 成長曲線のアンカー値 {月齢: (3パーセンタイル, 50, 97)}
+# 厚労省 乳幼児身体発育調査(2010年)の曲線を参考にしたデモ用の近似値であり、
+# 公表値そのものではない。本実装時は公表値からマスタ投入すること（要決定事項）。
+GROWTH_ANCHORS = {
+    ("M", "height"): {0: (44.0, 49.0, 52.6), 6: (63.6, 67.9, 72.1), 12: (70.3, 75.0, 79.6),
+                      18: (74.8, 80.3, 85.9), 24: (78.7, 85.1, 91.5), 36: (85.9, 93.3, 100.6)},
+    ("F", "height"): {0: (43.5, 48.5, 52.0), 6: (61.9, 66.4, 70.4), 12: (68.3, 73.4, 78.2),
+                      18: (73.0, 79.2, 84.6), 24: (77.0, 84.0, 90.3), 36: (84.7, 92.2, 99.8)},
+    ("M", "weight"): {0: (2.5, 3.0, 3.8), 6: (6.4, 8.0, 9.9), 12: (7.7, 9.3, 11.5),
+                      18: (8.7, 10.4, 12.8), 24: (9.6, 11.5, 14.2), 36: (11.0, 13.5, 17.0)},
+    ("F", "weight"): {0: (2.4, 2.9, 3.7), 6: (6.1, 7.5, 9.4), 12: (7.2, 8.7, 10.9),
+                      18: (8.1, 9.8, 12.2), 24: (9.0, 10.9, 13.6), 36: (10.5, 13.0, 16.5)},
+}
+
+
+def months_between(birth, on):
+    """生年月日(YYYY-MM-DD)から on 時点の月齢を算出する"""
+    b = datetime.strptime(birth, "%Y-%m-%d")
+    o = datetime.strptime(on, "%Y-%m-%d")
+    m = (o.year - b.year) * 12 + (o.month - b.month)
+    if o.day < b.day:
+        m -= 1
+    return max(m, 0)
+
+
+def _interp_anchors(anchors, m):
+    """アンカー月齢の間を線形補間して (p3, p50, p97) を返す"""
+    keys = sorted(anchors)
+    if m <= keys[0]:
+        return anchors[keys[0]]
+    for a, b in zip(keys, keys[1:]):
+        if m <= b:
+            t = (m - a) / (b - a)
+            return tuple(round(x + (y - x) * t, 2) for x, y in zip(anchors[a], anchors[b]))
+    return anchors[keys[-1]]
+
+
+def seed_physical(con):
+    """身体記録まわりのマスタ・デモデータ投入（何度呼んでも安全）"""
+    con.row_factory = sqlite3.Row
+
+    for k, v in PHYSICAL_SETTINGS.items():
+        con.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)", (k, v))
+
+    if not con.execute("SELECT 1 FROM growth_standards LIMIT 1").fetchone():
+        rows = []
+        for (sex, mtype), anchors in GROWTH_ANCHORS.items():
+            for m in range(0, 37):
+                p3, p50, p97 = _interp_anchors(anchors, m)
+                rows += [(sex, m, mtype, 3, p3), (sex, m, mtype, 50, p50), (sex, m, mtype, 97, p97)]
+        con.executemany("INSERT INTO growth_standards VALUES(?,?,?,?,?)", rows)
+
+    if not con.execute("SELECT 1 FROM physical_records LIMIT 1").fetchone():
+        today = datetime.now()
+        kids = con.execute("SELECT id, birth_date, sex FROM children WHERE birth_date!=''").fetchall()
+        for k in kids:
+            bias = ((k["id"] * 7) % 5 - 2) * 0.02  # 園児ごとの個体差(-4%〜+4%)を決め打ちで再現
+            for back in range(5, -1, -1):
+                y, mth = today.year, today.month - back
+                while mth < 1:
+                    mth += 12
+                    y -= 1
+                measured = f"{y:04d}-{mth:02d}-05"
+                if measured > today.strftime("%Y-%m-%d"):
+                    continue
+                am = months_between(k["birth_date"], measured)
+                h = _interp_anchors(GROWTH_ANCHORS[(k["sex"], "height")], am)[1] * (1 + bias)
+                w = _interp_anchors(GROWTH_ANCHORS[(k["sex"], "weight")], am)[1] * (1 + bias * 1.5)
+                con.execute(
+                    """INSERT OR IGNORE INTO physical_records
+                       (child_id,measured_on,height_cm,weight_kg,recorded_by,created_at,updated_at)
+                       VALUES(?,?,?,?,?,?,?)""",
+                    (k["id"], measured, round(h, 1), round(w, 1), "tanaka", now_iso(), now_iso()),
+                )
+
 
 def seed(con):
     """初回起動時のデモデータ投入"""
@@ -156,8 +279,10 @@ def seed(con):
         ("りく",   "1歳0ヶ月",  "🐻", "7/12", 0),
     ]
     for k in kids:
+        bd, sex = KID_BIRTHS.get(k[0], ("", "M"))
         con.execute(
-            "INSERT INTO children(name,age_label,emoji,next_check,late) VALUES(?,?,?,?,?)", k
+            "INSERT INTO children(name,age_label,emoji,next_check,late,birth_date,sex) VALUES(?,?,?,?,?,?,?)",
+            k + (bd, sex),
         )
 
     naps = [
@@ -220,9 +345,30 @@ def init_db():
     con = sqlite3.connect(DB_PATH)
     try:
         con.executescript(SCHEMA)
+        con.executescript(PHYSICAL_SCHEMA)
         seed(con)
+        seed_physical(con)
         con.commit()
         print("[init] hoiku.db を作成し、デモデータを投入しました。")
+    finally:
+        con.close()
+
+
+def migrate_db():
+    """身体記録より前に作成された hoiku.db への後付けマイグレーション"""
+    if not os.path.exists(DB_PATH):
+        return
+    con = sqlite3.connect(DB_PATH)
+    try:
+        cols = [r[1] for r in con.execute("PRAGMA table_info(children)")]
+        if "birth_date" not in cols:
+            con.execute("ALTER TABLE children ADD COLUMN birth_date TEXT NOT NULL DEFAULT ''")
+            con.execute("ALTER TABLE children ADD COLUMN sex TEXT NOT NULL DEFAULT 'M'")
+            for name, (bd, sex) in KID_BIRTHS.items():
+                con.execute("UPDATE children SET birth_date=?, sex=? WHERE name=?", (bd, sex, name))
+        con.executescript(PHYSICAL_SCHEMA)
+        seed_physical(con)
+        con.commit()
     finally:
         con.close()
 
@@ -315,7 +461,10 @@ def api_bootstrap():
     children = [
         dict(r) for r in d.execute(
             """SELECT c.id, c.name, c.age_label, c.emoji, c.next_check, c.late,
-                      n.sleeping, n.since, n.last_check, n.memo
+                      c.birth_date, c.sex,
+                      n.sleeping, n.since, n.last_check, n.memo,
+                      (SELECT MAX(p.measured_on) FROM physical_records p
+                        WHERE p.child_id = c.id) AS last_measured
                FROM children c JOIN naps n ON n.child_id = c.id
                ORDER BY c.id"""
         )
@@ -508,8 +657,131 @@ def api_dev_post(cid):
     return jsonify(ok=True)
 
 
+# ---------------------------------------------------------------- 身体記録
+def _setting_float(key, default):
+    r = db().execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    try:
+        return float(r["value"]) if r else default
+    except ValueError:
+        return default
+
+
+def _physical_records(cid, birth_date):
+    rows = db().execute(
+        """SELECT p.measured_on, p.height_cm, p.weight_kg,
+                  COALESCE(u.display_name, p.recorded_by) AS recorded_by
+           FROM physical_records p LEFT JOIN users u ON u.id = p.recorded_by
+           WHERE p.child_id=? ORDER BY p.measured_on""",
+        (cid,),
+    )
+    recs = []
+    for r in rows:
+        rec = dict(r)
+        rec["age_m"] = months_between(birth_date, r["measured_on"]) if birth_date else None
+        recs.append(rec)
+    return recs
+
+
+@app.get("/api/physical/<int:cid>")
+@login_required
+def api_physical_get(cid):
+    # 保護者の閲覧は保護者ポータル側の責務（本システム側画面なし）
+    if my_role() == "parent":
+        return jsonify(error="権限がありません"), 403
+    c = db().execute("SELECT * FROM children WHERE id=?", (cid,)).fetchone()
+    if not c:
+        return jsonify(error="園児が見つかりません"), 404
+    return jsonify(
+        child={"id": c["id"], "name": c["name"], "age_label": c["age_label"],
+               "emoji": c["emoji"], "birth_date": c["birth_date"], "sex": c["sex"]},
+        records=_physical_records(cid, c["birth_date"]),
+        limits={"height_min": _setting_float("height_min", 30.0),
+                "height_max": _setting_float("height_max", 150.0),
+                "weight_min": _setting_float("weight_min", 1.0),
+                "weight_max": _setting_float("weight_max", 40.0)},
+    )
+
+
+@app.post("/api/physical/<int:cid>")
+@login_required
+def api_physical_post(cid):
+    if my_role() == "parent":
+        return jsonify(error="権限がありません"), 403
+    c = db().execute("SELECT * FROM children WHERE id=?", (cid,)).fetchone()
+    if not c:
+        return jsonify(error="園児が見つかりません"), 404
+    d = request.get_json(force=True)
+
+    measured_on = (d.get("measured_on") or "").strip()
+    if not measured_on:
+        return jsonify(error="測定日は必須項目です"), 400
+    try:
+        datetime.strptime(measured_on, "%Y-%m-%d")
+    except ValueError:
+        return jsonify(error="測定日の形式が正しくありません"), 400
+    if measured_on > datetime.now().strftime("%Y-%m-%d"):
+        return jsonify(error="測定日に未来の日付は指定できません"), 400
+
+    if d.get("height_cm") in (None, "") or d.get("weight_kg") in (None, ""):
+        return jsonify(error="身長・体重は必須項目です"), 400
+    try:
+        height = float(d["height_cm"])
+        weight = float(d["weight_kg"])
+    except (TypeError, ValueError):
+        return jsonify(error="身長・体重は数値で入力してください"), 400
+
+    # 範囲チェック（しきい値は settings マスタ。誤入力検知が目的で、発育の判定ではない）
+    if not d.get("confirm_range"):
+        ok_h = _setting_float("height_min", 30.0) <= height <= _setting_float("height_max", 150.0)
+        ok_w = _setting_float("weight_min", 1.0) <= weight <= _setting_float("weight_max", 40.0)
+        if not (ok_h and ok_w):
+            return jsonify(confirm="range",
+                           message="入力値が通常の範囲外です。測定値に誤りがないか確認してください。")
+
+    # 同一園児・同一測定日は上書き確認
+    exists = db().execute(
+        "SELECT 1 FROM physical_records WHERE child_id=? AND measured_on=?",
+        (cid, measured_on),
+    ).fetchone()
+    if exists and not d.get("confirm_overwrite"):
+        return jsonify(confirm="overwrite",
+                       message="この測定日の記録は登録済みです。上書きしますか。")
+
+    db().execute(
+        """INSERT INTO physical_records
+           (child_id,measured_on,height_cm,weight_kg,recorded_by,created_at,updated_at)
+           VALUES(?,?,?,?,?,?,?)
+           ON CONFLICT(child_id,measured_on) DO UPDATE SET
+             height_cm=excluded.height_cm, weight_kg=excluded.weight_kg,
+             recorded_by=excluded.recorded_by, updated_at=excluded.updated_at""",
+        (cid, measured_on, round(height, 1), round(weight, 1),
+         session["uid"], now_iso(), now_iso()),
+    )
+    _nap_log(cid, "身体測定 上書き" if exists else "身体測定 記録")  # 監査ログ（操作ログ）に残す
+    db().commit()
+    return jsonify(ok=True, records=_physical_records(cid, c["birth_date"]))
+
+
+@app.get("/api/growth_standards")
+@login_required
+def api_growth_standards():
+    if my_role() == "parent":
+        return jsonify(error="権限がありません"), 403
+    sex = request.args.get("sex", "M")
+    mtype = request.args.get("type", "height")
+    if sex not in ("M", "F") or mtype not in ("height", "weight"):
+        return jsonify(error="不正なパラメータです"), 400
+    rows = db().execute(
+        """SELECT age_in_months, percentile, value FROM growth_standards
+           WHERE sex=? AND measure_type=? ORDER BY age_in_months""",
+        (sex, mtype),
+    )
+    return jsonify(standards=[dict(r) for r in rows])
+
+
 # ---------------------------------------------------------------- 起動
 init_db()
+migrate_db()
 
 if __name__ == "__main__":
     print("=" * 52)
