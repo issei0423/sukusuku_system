@@ -28,11 +28,37 @@
    - 旧番号が残っている文書を改訂する際は、機能名表記に置き換える
 
 ## Google Drive アクセス制限（重要）
-- Claudeがアクセスして良いのは、以下のフォルダ配下のみ：
+- 書き込み（作成・編集・上書き・移動・削除・共有設定の変更）を行って良いのは、以下のフォルダ配下のみ：
   「claude code がアクセスしていいフォルダ」
   https://drive.google.com/drive/folders/1xg6J2rYcW38WQlKkZiBQEw_I4bC_E14A
-- 上記フォルダ以外のGoogle Drive上のファイル・フォルダには、いかなる場合もアクセスしないこと
-  （検索・閲覧・編集・作成、いずれも不可）
+- 上記フォルダ以外のGoogle Drive上のファイル・フォルダは**読み取り専用**として扱う
+  - 可：検索・閲覧・内容の読み取り
+  - 不可：作成・編集・上書き・移動・削除・共有設定の変更
+- 許可フォルダ外のファイルを編集する必要が生じた場合は、勝手に書き換えず必ずユーザーに確認する
+  （必要であれば許可フォルダ配下にコピーを作ってから作業する）
+### 検索範囲の既定（重要）
+- Drive検索は、ユーザーが明示的に指示しない限り**チームフォルダ「A_Hive-Five Developers」配下のみ**を対象とする
+  - チームフォルダID：`1d6z2yj1y9up4_f8WYwCLiczjt5LcoZ1_`
+  - 直下のサブフォルダ（2026-07-27時点）
+    - 成果物：`1lhokSnald4sDUrZM7pkffIpBXSgNRQjr`
+    - claude code がアクセスしていいフォルダ：`1xg6J2rYcW38WQlKkZiBQEw_I4bC_E14A`
+    - 提出物：`1r7XdsNWmg4UTdAfvq2aYyn3DSN8rWrw7`
+    - 参考資料：`1GP6rNqc0SjDgEfp9qj_J74DXMHl9n8eO`
+    - 作業報告：`1CGcWrrH9MnubVdldXqvHo5YkrEE3ZG-k`
+    - ガントチャート：`1c-Xbm6aeoWzkcAC4Ndpu599zCwCaqAg6`
+    - 台本：`1EIZEQF3ulchp7JdxbNyC3RKr2sRo4Xb1`
+    - Google from：`1oxChJGtzMgeWlSf0c3TxuX96ZJMT0rWm`
+    - 成果物用_添付画像：`1_wkm2r0BJpmx37WE4I6zzzJQmbAYSc2o`
+    - PP素材：`14GUKhyVBAeiebiZ8MGmNLdI_r8hV2aeP`
+    - プレゼンリハ：`1CuoYXx8FrXxMR9LL-Zm3QCu2y4Dg5nvh`
+- 検索は原則 `parentId = '...'` で絞る
+- 注意：Driveの `parentId` は**直下のみ**の判定で再帰しない。`title contains` / `fullText contains` を使う場合は
+  ヒット結果を上記フォルダ配下かどうかで必ず選別し、他チームの成果物はユーザーに提示しない
+- 他チーム（Nexus six、Vita、ばらばらパレット等）の文書は、ユーザーが名指しで指示したときのみ対象とする
+
+- 読み取った内容は、成果物作成に必要な範囲でリポジトリ内の文書・`ナレッジ/`・Discordログへ転記してよい
+  （Drive上の資料は演習用であり、実在の園児・保護者の個人情報は含まない前提。
+  　万一、実在する個人情報を含む資料を読み取った場合のみ、転記せずユーザーに確認する）
 
 ## 作業ログ（進捗記録）ルール
 セッションでの作業内容は、`進捗ログ.md`（リポジトリ直下・追記式・新しい順）に必ず残すこと。
