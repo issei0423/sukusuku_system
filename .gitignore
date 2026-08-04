@@ -1,0 +1,10 @@
+# Claude Code のローカル設定・並列作業用 worktree
+.claude/
+
+# 依存パッケージ・ビルド成果物
+node_modules/
+__pycache__/
+*.pyc
+
+# 一時的な検証用ディレクトリ
+mmdcheck/
