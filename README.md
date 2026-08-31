@@ -42,14 +42,16 @@
 
 ## 技術スタック
 
-実装（`mockup` ブランチの `hoiku_app/`）から確認した実際の構成:
+本プロジェクトで採用する構成:
 
-- **バックエンド**: Python 3.10+ / [Flask](https://flask.palletsprojects.com/) 3.x（単一ファイル `app.py` にAPI・認証・権限をすべて実装）
-- **DB**: SQLite3（標準ライブラリ）。初回起動時に `hoiku.db` を自動作成しデモデータを投入
-- **認証/セキュリティ**: Flask セッション（14日保持）、Werkzeug によるパスワードハッシュ化
-- **フロントエンド**: フレームワークなしの素の HTML / CSS / JavaScript（`static/index.html` 1ファイル）。`fetch` で `/api/*` を呼び出し、チャット・午睡状態は4秒ポーリングで同期
+- **バックエンド**: [Go](https://go.dev/)
+- **DB**: SQLite3。初回起動時に `hoiku.db` を自動作成しデモデータを投入
+- **認証/セキュリティ**: サーバー側セッションによるログイン状態の保持、パスワードのハッシュ化
+- **フロントエンド**: [TypeScript](https://www.typescriptlang.org/) & [React](https://react.dev/)
 - **フォント**: Google Fonts（Zen Maru Gothic, Noto Sans JP）をCDN経由で読み込み
-- **依存パッケージ**: `requirements.txt` に `flask>=3.0` のみ
+- **依存管理**: バックエンドは `go.mod`、フロントエンドは `package.json`
+
+> **注意**: `mockup` ブランチの `hoiku_app/` にある既存のモックアップ実装は、Python / Flask と素の HTML・CSS・JavaScript で作られており、**上記の構成へはまだ移行していません**。以下の「主なAPIエンドポイント」「ディレクトリ構成」「セットアップ」は、移行前のモックアップ実装についての説明です。
 
 ### 主なAPIエンドポイント（`app.py`）
 
