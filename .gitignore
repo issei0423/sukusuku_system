@@ -11,3 +11,7 @@ __pycache__/
 # Node（web/ の React アプリ）
 node_modules/
 dist/
+
+# Go（server/ のサーバ）
+server/*.db
+server/*.exe
