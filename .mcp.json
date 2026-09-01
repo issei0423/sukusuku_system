@@ -9,6 +9,18 @@
         "@drawio/mcp"
       ],
       "env": {}
+    },
+    "discord": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "--ignore-scripts",
+        "mcp-discord",
+        "--config",
+        "${DISCORD_TOKEN}"
+      ],
+      "env": {}
     }
   }
 }
