@@ -94,12 +94,12 @@ func (s *sessionStore) accountID(r *http.Request) (int64, bool) {
 
 func (a *app) loadSessionUser(accountID int64) (*SessionUser, error) {
 	var (
-		u        SessionUser
-		staffID  sql.NullString
-		guardID  sql.NullString
-		classID  sql.NullInt64
+		u         SessionUser
+		staffID   sql.NullString
+		guardID   sql.NullString
+		classID   sql.NullInt64
 		className sql.NullString
-		termsVer sql.NullString
+		termsVer  sql.NullString
 		staffName sql.NullString
 		guardName sql.NullString
 	)

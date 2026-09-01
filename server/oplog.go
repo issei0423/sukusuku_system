@@ -39,5 +39,5 @@ func (a *app) log(accountID int64, functionType, operationType, table string,
 	}
 }
 
-func i64(v int64) *int64   { return &v }
-func s(v string) *string   { return &v }
+func i64(v int64) *int64 { return &v }
+func s(v string) *string { return &v }

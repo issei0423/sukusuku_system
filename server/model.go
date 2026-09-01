@@ -32,10 +32,20 @@ type SessionUser struct {
 	TermsAgreed bool `json:"terms_agreed"`
 }
 
-func (u *SessionUser) isAdmin() bool  { return u.Role == "1" }
-func (u *SessionUser) isStaff() bool  { return u.Role == "1" || u.Role == "2" }
-func (u *SessionUser) staff() string  { if u.StaffID == nil { return "" }; return *u.StaffID }
-func (u *SessionUser) guardian() string { if u.GuardianID == nil { return "" }; return *u.GuardianID }
+func (u *SessionUser) isAdmin() bool { return u.Role == "1" }
+func (u *SessionUser) isStaff() bool { return u.Role == "1" || u.Role == "2" }
+func (u *SessionUser) staff() string {
+	if u.StaffID == nil {
+		return ""
+	}
+	return *u.StaffID
+}
+func (u *SessionUser) guardian() string {
+	if u.GuardianID == nil {
+		return ""
+	}
+	return *u.GuardianID
+}
 
 // Paged は一覧のページング結果（基本設計書「一覧表示とページング」(3-7)）
 type Paged[T any] struct {
@@ -162,4 +172,9 @@ func nullFloat(f sql.NullFloat64) *float64 {
 	return &v
 }
 
-func strPtr(s string) *string { if s == "" { return nil }; return &s }
+func strPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
