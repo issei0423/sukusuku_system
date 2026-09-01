@@ -1,0 +1,176 @@
+/*
+ * 発達チェック入力画面
+ * 典拠：図/画面詳細図.md「発達チェック入力画面」(6-1)
+ *
+ * 免責表示を保存操作の直上に固定する。比較を見ながら入力する画面であり、
+ * 判断と取り違えられやすいため。
+ * 「未入力」と「未確認」は別の状態。未確認は結果として保持し、未入力はチェック漏れの対象となる。
+ * 区分は月齢から自動で表示するが、項目はマスタから読む。園が調整できるため。
+ */
+import { useEffect, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useAsync } from '../../hooks';
+import { useSession } from '../../session';
+import { api } from '../../api/client';
+import { Loading, ErrorBox, Empty, Field, Alert, Disclaimer } from '../../components/ui';
+import { DEVELOPMENT_RESULT } from '../../api/codes';
+import { ageInMonths, formatAge, formatYMD, today } from '../../api/util';
+import type { DevelopmentResult } from '../../api/types';
+
+const DISCLAIMER = '本機能は発達の判定・診断を行うものではありません。';
+
+export default function DevInputScreen() {
+  const { user } = useSession();
+  const { childId } = useParams();
+  const navigate = useNavigate();
+
+  const [checkedOn, setCheckedOn] = useState(today());
+  const child = useAsync(() => api.getChild(user!, childId!), [childId]);
+
+  // 基準日は実施日。現在日ではない（基本設計書「月齢の算出」(4-8)）
+  const ageM = child.data ? ageInMonths(child.data.birth_date, checkedOn) : 0;
+  const category = api.categoryFor(ageM);
+
+  const items = useAsync(() => api.itemsFor(ageM), [ageM]);
+  const draft = useAsync(() => api.draftFor(childId!, checkedOn), [childId, checkedOn]);
+  const previous = useAsync(() => api.previousCheck(childId!, checkedOn), [childId, checkedOn]);
+
+  const [results, setResults] = useState<Record<number, DevelopmentResult | null>>({});
+  const [note, setNote] = useState('');
+  const [compare, setCompare] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // 下書きがあれば読み直す
+  useEffect(() => {
+    const d = draft.data;
+    if (!d) { setResults({}); setNote(''); return; }
+    const map: Record<number, DevelopmentResult | null> = {};
+    d.results.filter((r) => r.development_item_id !== 0).forEach((r) => { map[r.development_item_id] = r.result; });
+    setResults(map);
+    setNote(d.results.find((r) => r.development_item_id === 0)?.note ?? '');
+  }, [draft.data?.check.development_check_id, checkedOn]);
+
+  const save = async (status: '1' | '2') => {
+    setBusy(true); setError(null);
+    try {
+      await api.saveCheck(
+        user!, childId!, checkedOn,
+        (items.data ?? []).map((it) => ({
+          development_item_id: it.development_item_id,
+          result: results[it.development_item_id] ?? null,
+        })),
+        note, status,
+      );
+      navigate('/staff/growth');
+    } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  };
+
+  if (child.loading) return <Loading />;
+  if (child.error) return <ErrorBox text={child.error} />;
+  const c = child.data;
+  if (!c) return null;
+
+  // 領域ごとにまとめる
+  const domains = Array.from(new Set((items.data ?? []).map((i) => i.domain)));
+  const prevResults = previous.data?.results ?? [];
+  const prevOf = (itemId: number) => prevResults.find((r) => r.development_item_id === itemId)?.result ?? null;
+
+  const unfilled = (items.data ?? []).filter((it) => !results[it.development_item_id]).length;
+
+  return (
+    <div style={{ maxWidth: 860 }}>
+      <div className="page-head">
+        <Link className="btn btn-quiet btn-sm" to="/staff/growth">&lt; 発達チェック一覧へ</Link>
+        <h1>{c.child_name}（{formatAge(c.birth_date, checkedOn)}）</h1>
+        <div className="spacer" />
+        <Field label="実施日">
+          <input type="date" value={checkedOn} max={today()} onChange={(e) => setCheckedOn(e.target.value)} />
+        </Field>
+      </div>
+
+      {error && <div style={{ marginBottom: 16 }}><Alert>{error}</Alert></div>}
+
+      <section className="card card-sub">
+        <div>
+          発達過程区分：<strong>{category?.category_name ?? '該当する区分がありません'}</strong>
+          <span className="muted">（月齢 {ageM} か月・実施日を基準に算出）</span>
+        </div>
+      </section>
+
+      {items.data?.length === 0 && <Empty text="この月齢に対応するチェック項目がマスタに登録されていません。" />}
+
+      {domains.map((domain) => (
+        <section className="card" key={domain}>
+          <h2>{domain}</h2>
+          {items.data!.filter((i) => i.domain === domain).map((it) => {
+            const before = prevOf(it.development_item_id);
+            const nowVal = results[it.development_item_id] ?? null;
+            return (
+              <div className="dev-item" key={it.development_item_id}>
+                <div>
+                  <div>{it.item_name}</div>
+                  {/* 前回との比較。変化を示すだけで、良し悪しの判定はしない */}
+                  {compare && before && (
+                    <div className="dev-diff">
+                      前回：{DEVELOPMENT_RESULT[before]}
+                      {nowVal && nowVal !== before && <> → <span className="to">{DEVELOPMENT_RESULT[nowVal]}</span></>}
+                    </div>
+                  )}
+                </div>
+                <div className="choices">
+                  {(Object.keys(DEVELOPMENT_RESULT) as DevelopmentResult[]).map((k) => (
+                    <label key={k}>
+                      <input type="radio" name={`item-${it.development_item_id}`}
+                        checked={nowVal === k}
+                        onChange={() => setResults({ ...results, [it.development_item_id]: k })} />
+                      {DEVELOPMENT_RESULT[k]}
+                    </label>
+                  ))}
+                  {nowVal && (
+                    <button className="btn-sm btn-quiet"
+                      onClick={() => setResults({ ...results, [it.development_item_id]: null })}>
+                      未入力に戻す
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </section>
+      ))}
+
+      <section className="card">
+        <Field label="所見">
+          <textarea value={note} onChange={(e) => setNote(e.target.value)}
+            placeholder="気づいたことを記録してください（判定ではありません）" />
+        </Field>
+        <label style={{ marginTop: 8 }}>
+          <input type="checkbox" checked={compare} onChange={(e) => setCompare(e.target.checked)} />
+          前回の記録と並べて表示する
+        </label>
+        {previous.data && (
+          <div className="muted" style={{ marginTop: 4 }}>
+            前回：{formatYMD(previous.data.check.checked_on)}
+            （{formatAge(c.birth_date, previous.data.check.checked_on)}）
+          </div>
+        )}
+      </section>
+
+      <section className="card card-sub">
+        <div className="muted">
+          未入力の項目：{unfilled} 件。未入力のままにするとチェック漏れの対象になります。
+          確認できなかった項目は「未確認」を選んで残してください（基本設計書 5-7）。
+        </div>
+      </section>
+
+      {/* 免責表示を保存操作の直上に固定する（画面詳細図 6-1） */}
+      <Disclaimer text={DISCLAIMER} />
+
+      <div className="row-end" style={{ marginTop: 12 }}>
+        <button onClick={() => save('1')} disabled={busy}>下書き保存</button>
+        <button className="btn-primary" onClick={() => save('2')} disabled={busy}>確定する</button>
+      </div>
+    </div>
+  );
+}

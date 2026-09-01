@@ -1,0 +1,613 @@
+/*
+ * モックのデータストア
+ *
+ * Go サーバができるまでの間、ブラウザ内のメモリで永続層の代わりをする。
+ * 構造は基本設計書.md「データベース設計」(5) のテーブル定義に合わせてあり、
+ * Go 側の実装後は本ファイルを捨てて api/client.ts の fetch 実装に差し替える。
+ *
+ * 掲載している氏名・メールアドレス・招待コード・測定値はすべて架空である
+ * （図/画面詳細図.md「本書の位置づけ」(0)）。
+ */
+import { now } from './util';
+import type {
+  Account, Staff, Guardian, InvitationCode, Terms,
+  Child, ClassRoom, ClassChild, ClassStaff, GuardianChild, Allergy, MedicalHistory,
+  Diary, DiaryLock, DiaryTemplate, DiaryAttachment,
+  ChatRoom, ChatMember, ChatMessage, ChatRead, MisdeliveryRecord,
+  NapSession, NapRecord, NapAbnormal,
+  DevelopmentCategory, DevelopmentItem, DevelopmentFrequency, ShareSetting,
+  DevelopmentSchedule, DevelopmentCheck, DevelopmentResultRecord,
+  PhysicalRecord, GrowthStandard, OperationLog, Setting,
+} from './types';
+
+/** 演習用の固定基準日。デモデータの日付はこの日を軸に組み立てている */
+export const DEMO_TODAY = '2026-09-01';
+/** 現在の年度。m_class は年度ごとに別レコードとする（基本設計書 5-3） */
+export const FISCAL_YEAR = 2026;
+
+/* ============ クラス（m_class） ============ */
+export const classes: ClassRoom[] = [
+  { class_id: 1, fiscal_year: 2026, class_name: 'さくら組' },
+  { class_id: 2, fiscal_year: 2026, class_name: 'ひまわり組' },
+  { class_id: 3, fiscal_year: 2026, class_name: 'もも組' },
+  // 過年度の割り当てを残し、過去にどのクラスの担任だったかを判定できるようにする（基本設計書 5-3）
+  { class_id: 11, fiscal_year: 2025, class_name: 'さくら組' },
+  { class_id: 12, fiscal_year: 2025, class_name: 'ひまわり組' },
+];
+
+/* ============ 職員（m_staff） ============ */
+export const staff: Staff[] = [
+  { staff_id: 'S001', account_id: 1, staff_name: '高橋 美咲', created_at: '2024-04-01T09:00:00', updated_at: '2024-04-01T09:00:00' },
+  { staff_id: 'S002', account_id: 2, staff_name: '鈴木 一郎', created_at: '2024-04-01T09:00:00', updated_at: '2024-04-01T09:00:00' },
+  { staff_id: 'S003', account_id: 3, staff_name: '山田 花子', created_at: '2024-04-01T09:00:00', updated_at: '2026-04-01T09:00:00' },
+  { staff_id: 'S004', account_id: 4, staff_name: '佐藤 明子', created_at: '2025-04-01T09:00:00', updated_at: '2026-04-01T09:00:00' },
+  { staff_id: 'S005', account_id: 5, staff_name: '田中 陽子', created_at: '2025-04-01T09:00:00', updated_at: '2026-04-01T09:00:00' },
+];
+
+/* ============ 保護者（m_guardian） ============ */
+export const guardians: Guardian[] = [
+  { guardian_id: 'G001', account_id: 6, guardian_name: '山田 健一', phone_number: '090-0000-0001', created_at: '2025-06-10T10:00:00', updated_at: '2025-06-10T10:00:00' },
+  { guardian_id: 'G002', account_id: 7, guardian_name: '鈴木 美和', phone_number: '090-0000-0002', created_at: '2025-04-05T10:00:00', updated_at: '2025-04-05T10:00:00' },
+  { guardian_id: 'G003', account_id: 8, guardian_name: '佐藤 直樹', phone_number: null, created_at: '2025-06-20T10:00:00', updated_at: '2025-06-20T10:00:00' },
+];
+
+/* ============ アカウント（m_account） ============
+ * ログインIDのメールアドレスはロールをまたいで園内で一意（基本設計書 5-2）
+ * モックのためパスワードは平文で保持する。本実装ではハッシュ化する
+ */
+const T0 = '2024-04-01T09:00:00';
+export const accounts: Account[] = [
+  { account_id: 1, email: 'takahashi@hoiku.example.jp', password_hash: 'pass1234', role: '1', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
+  { account_id: 2, email: 'suzuki@hoiku.example.jp',    password_hash: 'pass1234', role: '1', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
+  { account_id: 3, email: 'yamada@hoiku.example.jp',    password_hash: 'pass1234', role: '2', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
+  // 一時パスワードでログインした状態を再現する。真の間は他機能を使わせない（基本設計書 5-2）
+  { account_id: 4, email: 'sato@hoiku.example.jp',      password_hash: 'temp0901', role: '2', status: '1', is_temp_password: true,  temp_password_expires_at: '2026-09-03T09:00:00', failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
+  { account_id: 5, email: 'tanaka@hoiku.example.jp',    password_hash: 'pass1234', role: '2', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
+  { account_id: 6, email: 'yamada.k@example.jp',        password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: '2025-06-10T10:00:00', created_at: '2025-06-10T10:00:00', updated_at: '2025-06-10T10:00:00' },
+  // 規約の改定後、まだ再同意していない状態を再現する。次回ログインで同意画面を出す（基本設計書 3-4）
+  { account_id: 7, email: 'suzuki.m@example.jp',        password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '0.9', terms_agreed_at: '2025-04-05T10:00:00', created_at: '2025-04-05T10:00:00', updated_at: '2025-04-05T10:00:00' },
+  { account_id: 8, email: 'sato.n@example.jp',          password_hash: 'pass1234', role: '3', status: '2', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: '2025-06-20T10:00:00', created_at: '2025-06-20T10:00:00', updated_at: '2026-08-20T10:00:00' },
+];
+
+/** 最新版の利用規約。これと異なる terms_version のアカウントには再同意を求める */
+export const CURRENT_TERMS_VERSION = '1.0';
+
+/* ============ 園児（m_child） ============ */
+function child(
+  id: string, name: string, kana: string, birth: string, sex: Child['sex'], temp: number,
+): Child {
+  return {
+    child_id: id, child_name: name, child_name_kana: kana, birth_date: birth, sex,
+    normal_temperature: temp, enrollment_status: '1', photo_consent_level: '2',
+    is_deleted: false, created_at: '2025-04-01T09:00:00', updated_at: '2026-04-01T09:00:00',
+  };
+}
+
+export const children: Child[] = [
+  // さくら組（1歳児）
+  child('C001', '山田 太郎', 'やまだ たろう', '2025-06-01', '1', 36.6),
+  child('C002', '鈴木 花子', 'すずき はなこ', '2025-03-12', '2', 36.8),
+  child('C003', '佐藤 健',   'さとう けん',   '2025-05-20', '1', 36.5),
+  child('C004', '田中 美咲', 'たなか みさき', '2025-04-08', '2', 36.7),
+  child('C005', '渡辺 陸',   'わたなべ りく', '2025-07-15', '1', 36.4),
+  child('C006', '伊藤 葵',   'いとう あおい', '2025-02-28', '2', 36.6),
+  child('C007', '中村 蓮',   'なかむら れん', '2025-08-03', '1', 36.9),
+  // 月末生まれ。応当日が存在しない月の扱いを確かめるための例（要件定義書 7-1 No.6）
+  child('C008', '小林 結衣', 'こばやし ゆい', '2025-01-31', '2', 36.5),
+  child('C009', '加藤 大和', 'かとう やまと', '2025-06-22', '1', 36.6),
+  child('C010', '吉田 心春', 'よしだ こはる', '2025-03-30', '2', 36.7),
+  child('C011', '山本 陽翔', 'やまもと はると', '2025-05-05', '1', 36.8),
+  child('C012', '松本 咲良', 'まつもと さくら', '2025-09-09', '2', 36.5),
+  // ひまわり組（2歳児）
+  child('C013', '井上 空', 'いのうえ そら', '2024-05-14', '1', 36.6),
+  child('C014', '木村 楓',   'きむら かえで', '2024-03-02', '2', 36.7),
+  child('C015', '林 悠真',   'はやし ゆうま', '2024-07-21', '1', 36.5),
+  child('C016', '清水 芽依', 'しみず めい',   '2024-11-11', '2', 36.8),
+  child('C017', '山口 湊',   'やまぐち みなと', '2024-09-30', '1', 36.6),
+  child('C018', '森 陽菜',   'もり ひな',     '2024-01-25', '2', 36.7),
+  // もも組（0歳児）
+  child('C019', '池田 樹',   'いけだ いつき', '2026-01-08', '1', 36.9),
+  child('C020', '橋本 莉子', 'はしもと りこ', '2025-11-17', '2', 37.0),
+  child('C021', '石川 律',   'いしかわ りつ', '2026-02-26', '1', 36.8),
+  child('C022', '前田 詩',   'まえだ うた',   '2025-12-05', '2', 36.9),
+];
+
+/* ============ クラス在籍（t_class_child） ============ */
+export const classChildren: ClassChild[] = [
+  ...['C001','C002','C003','C004','C005','C006','C007','C008','C009','C010','C011','C012']
+    .map((child_id) => ({ class_id: 1, child_id })),
+  ...['C013','C014','C015','C016','C017','C018'].map((child_id) => ({ class_id: 2, child_id })),
+  ...['C019','C020','C021','C022'].map((child_id) => ({ class_id: 3, child_id })),
+];
+
+/* ============ 担任の割り当て（t_class_staff） ============ */
+export const classStaff: ClassStaff[] = [
+  { class_id: 1, staff_id: 'S003' },
+  { class_id: 1, staff_id: 'S004' },
+  { class_id: 2, staff_id: 'S005' },
+  { class_id: 11, staff_id: 'S003' },
+];
+
+/* ============ 園児と保護者の紐づけ（t_guardian_child） ============
+ * 紐づけ単位で終了させる。アカウントの停止は有効な紐づけがゼロになった時点（基本設計書 5-3）
+ */
+export const guardianChildren: GuardianChild[] = [
+  { guardian_id: 'G001', child_id: 'C001', relationship: '父', link_status: '1', linked_at: '2025-06-10T10:00:00', ended_at: null },
+  { guardian_id: 'G002', child_id: 'C002', relationship: '母', link_status: '1', linked_at: '2025-04-05T10:00:00', ended_at: null },
+  // 退園にともない紐づけを終了した例。参照範囲の判定に用いる
+  { guardian_id: 'G003', child_id: 'C003', relationship: '父', link_status: '2', linked_at: '2025-06-20T10:00:00', ended_at: '2026-08-20T10:00:00' },
+];
+
+/* ============ アレルギー（m_allergy） ============ */
+export const allergies: Allergy[] = [
+  { allergy_id: 1, child_id: 'C001', target_food: '卵',       symptom: '発疹',       response: '除去食。発症時は冷却し保護者へ連絡' },
+  { allergy_id: 2, child_id: 'C004', target_food: '乳',       symptom: '嘔吐',       response: '除去食。誤食時はただちに園長へ報告' },
+  { allergy_id: 3, child_id: 'C004', target_food: '小麦',     symptom: '発疹',       response: '除去食' },
+  { allergy_id: 4, child_id: 'C013', target_food: '落花生',   symptom: '呼吸困難',   response: '完全除去。エピペン預かりあり' },
+  { allergy_id: 5, child_id: 'C020', target_food: 'そば',     symptom: 'じんましん', response: '完全除去' },
+];
+
+/* ============ 既往歴（m_medical_history）。要配慮個人情報（基本設計書 5-3） ============ */
+export const medicalHistories: MedicalHistory[] = [
+  { medical_history_id: 1, child_id: 'C005', content: '熱性けいれん（2026年3月）' },
+  { medical_history_id: 2, child_id: 'C013', content: '気管支ぜんそく。吸入薬を預かり中' },
+];
+
+/* ============ 招待コード（t_invitation_code） ============
+ * 1枚＝1アカウント。園児ごとに必要枚数を発行する（要件定義書「招待コードの発行」(4-1-2)）
+ */
+export const invitationCodes: InvitationCode[] = [
+  { invitation_code_id: 1, code: 'ABCD-1234-EFGH', child_id: 'C001', expires_on: '2026-09-25', status: '1', used_account_id: null, used_at: null, issued_staff_id: 'S001', created_at: '2026-08-25T10:00:00' },
+  { invitation_code_id: 2, code: 'IJKL-5678-MNOP', child_id: 'C001', expires_on: '2026-09-25', status: '2', used_account_id: 6, used_at: '2026-08-26T20:10:00', issued_staff_id: 'S001', created_at: '2026-08-25T10:00:00' },
+  { invitation_code_id: 3, code: 'QRST-9012-UVWX', child_id: 'C002', expires_on: '2026-09-25', status: '1', used_account_id: null, used_at: null, issued_staff_id: 'S001', created_at: '2026-08-25T10:00:00' },
+  { invitation_code_id: 4, code: 'YZAB-3456-CDEF', child_id: 'C002', expires_on: '2026-09-25', status: '3', used_account_id: null, used_at: null, issued_staff_id: 'S001', created_at: '2026-08-25T10:00:00' },
+  { invitation_code_id: 5, code: 'GHIJ-7890-KLMN', child_id: 'C003', expires_on: '2026-09-25', status: '1', used_account_id: null, used_at: null, issued_staff_id: 'S002', created_at: '2026-08-25T10:00:00' },
+  { invitation_code_id: 6, code: 'OPQR-1234-STUV', child_id: 'C004', expires_on: '2026-09-25', status: '1', used_account_id: null, used_at: null, issued_staff_id: 'S002', created_at: '2026-08-25T10:00:00' },
+  { invitation_code_id: 7, code: 'WXYZ-5678-ABCD', child_id: 'C005', expires_on: '2026-09-25', status: '1', used_account_id: null, used_at: null, issued_staff_id: 'S002', created_at: '2026-08-25T10:00:00' },
+];
+
+/* ============ 利用規約（m_terms） ============
+ * 本文は 利用規約・プライバシーポリシー.md 第1.0版の草案から抜粋した要約である。
+ * 園情報の記入と法務の確認が未了（要決定事項.md B-21）
+ */
+export const termsDocs: Terms[] = [
+  {
+    terms_id: 1, terms_version: '1.0', document_type: '1', published_on: '2026-09-01',
+    body: [
+      '第1条（本規約について）',
+      '本規約は、当園が提供する保育支援システム（以下「本システム」）の利用条件を定めるものです。',
+      '',
+      '第2条（アカウント）',
+      '保護者のアカウントは、当園が発行する招待コードによって登録します。招待コードは1枚につき1アカウントの登録にのみ使用できます。',
+      'アカウントの情報は第三者に共有しないでください。',
+      '',
+      '第3条（本システムが行わないこと）',
+      '本システムは、お子さまの発達の遅速の判定、医療的な診断、療育の要否の判断を一切行いません。',
+      '記録および可視化は、保育士が気づくための支援であり、評価と判断の責任は当園にあります。',
+      '',
+      '第4条（緊急時の連絡）',
+      '緊急を要する連絡は、本システムのチャットではなく電話で行います。',
+      'チャットの通知は、端末の設定や通信の状況により届かない場合があります。',
+      '',
+      '第5条（記録の取り扱い）',
+      '保護者への記録の共有範囲は、当園が項目ごとに設定します。',
+      '',
+      '※本文は草案です。園情報の記入と法務の確認が未了です。',
+    ].join('\n'),
+  },
+  {
+    terms_id: 2, terms_version: '0.9', document_type: '1', published_on: '2025-04-01',
+    body: '（旧版）第1条（本規約について）本規約は、当園が提供する保育支援システムの利用条件を定めるものです。',
+  },
+];
+
+/* ============ 日誌の雛形（m_diary_template） ============
+ * 保護者共有の既定値を雛形側に持ち、コードに書かない（基本設計書 5-4）
+ */
+export const diaryTemplates: DiaryTemplate[] = [
+  { diary_template_id: 1, record_type: '1', template_name: '個人日誌（標準）', default_share_to_guardian: true,
+    body: '【今日の様子】\n\n【食事】\n\n【排泄】\n\n【午睡】\n\n【保護者へのお伝え】\n' },
+  { diary_template_id: 2, record_type: '2', template_name: 'クラス日誌（標準）', default_share_to_guardian: false,
+    body: '【ねらい】\n\n【活動内容】\n\n【子どもの姿】\n\n【明日への配慮】\n' },
+  { diary_template_id: 3, record_type: '3', template_name: '週案', default_share_to_guardian: false,
+    body: '【今週のねらい】\n\n【環境構成】\n\n【予想される子どもの活動】\n\n【援助と配慮】\n' },
+  { diary_template_id: 4, record_type: '4', template_name: 'ヒヤリハット', default_share_to_guardian: false,
+    body: '【発生日時】\n\n【発生場所】\n\n【状況】\n\n【とった対応】\n\n【今後の対策】\n' },
+];
+
+/** 定型文。雛形とは別に、本文へ挿し込む短文（画面詳細図 3-2） */
+export const fixedPhrases: string[] = [
+  'よく食べ、おかわりをしていました。',
+  '午睡は落ち着いて入眠できました。',
+  '園庭で友だちと関わって遊ぶ姿が見られました。',
+  '鼻水が出ていたため、こまめに拭き取りました。',
+  'ご家庭でも様子を見ていただけますと幸いです。',
+];
+
+/* ============ 日誌（t_diary） ============ */
+export const diaries: Diary[] = [
+  { diary_id: 1, record_type: '1', child_id: 'C001', class_id: 1, diary_date: '2026-09-01', status: '1',
+    body: '【今日の様子】\n積み木を高く積んで遊んでいました。崩れても笑って積み直していました。\n\n【食事】\n完食。\n\n【午睡】\n13:05に入眠。',
+    created_staff_id: 'S003', approved_staff_id: null, approved_at: null, is_shared_to_guardian: false, shared_at: null,
+    nap_abnormal_id: null, returned_reason: null, is_deleted: false, created_at: '2026-09-01T16:40:00', updated_at: '2026-09-01T16:40:00' },
+  { diary_id: 2, record_type: '2', child_id: null, class_id: 1, diary_date: '2026-08-31', status: '2',
+    body: '【ねらい】\n身近な友だちと関わる楽しさを味わう。\n\n【活動内容】\n園庭でしゃぼん玉遊び。',
+    created_staff_id: 'S003', approved_staff_id: null, approved_at: null, is_shared_to_guardian: false, shared_at: null,
+    nap_abnormal_id: null, returned_reason: null, is_deleted: false, created_at: '2026-08-31T17:20:00', updated_at: '2026-08-31T17:20:00' },
+  { diary_id: 3, record_type: '4', child_id: 'C003', class_id: 1, diary_date: '2026-08-30', status: '4',
+    body: '【発生日時】\n2026年8月30日 13時40分\n\n【状況】\n午睡中にうつ伏せの体位を確認した。\n\n【とった対応】\n仰向けに直し、呼吸と顔色を確認した。',
+    created_staff_id: 'S004', approved_staff_id: 'S001', approved_at: null, is_shared_to_guardian: false, shared_at: null,
+    nap_abnormal_id: 1, returned_reason: '発生時の呼吸・顔色の記録が本文にありません。異常時の記録と同じ内容を転記してください。',
+    is_deleted: false, created_at: '2026-08-30T18:00:00', updated_at: '2026-08-31T09:10:00' },
+  { diary_id: 4, record_type: '1', child_id: 'C002', class_id: 1, diary_date: '2026-08-29', status: '3',
+    body: '【今日の様子】\n絵本の読み聞かせに集中していました。\n\n【食事】\n野菜を残しましたが、声をかけると一口食べました。',
+    created_staff_id: 'S003', approved_staff_id: 'S001', approved_at: '2026-08-29T18:05:00', is_shared_to_guardian: true, shared_at: '2026-08-29T18:05:00',
+    nap_abnormal_id: null, returned_reason: null, is_deleted: false, created_at: '2026-08-29T17:10:00', updated_at: '2026-08-29T18:05:00' },
+  { diary_id: 5, record_type: '1', child_id: 'C001', class_id: 1, diary_date: '2026-08-29', status: '3',
+    body: '【今日の様子】\n砂場でスコップを使い、型抜きを繰り返していました。\n\n【午睡】\n12:55に入眠。',
+    created_staff_id: 'S003', approved_staff_id: 'S001', approved_at: '2026-08-29T18:06:00', is_shared_to_guardian: true, shared_at: '2026-08-29T18:06:00',
+    nap_abnormal_id: null, returned_reason: null, is_deleted: false, created_at: '2026-08-29T17:15:00', updated_at: '2026-08-29T18:06:00' },
+  { diary_id: 6, record_type: '2', child_id: null, class_id: 2, diary_date: '2026-09-01', status: '2',
+    body: '【ねらい】\n身の回りのことを自分でやってみようとする。\n\n【活動内容】\n散歩（近隣公園）。',
+    created_staff_id: 'S005', approved_staff_id: null, approved_at: null, is_shared_to_guardian: false, shared_at: null,
+    nap_abnormal_id: null, returned_reason: null, is_deleted: false, created_at: '2026-09-01T17:00:00', updated_at: '2026-09-01T17:00:00' },
+  { diary_id: 7, record_type: '1', child_id: 'C004', class_id: 1, diary_date: '2026-09-01', status: '2',
+    body: '【今日の様子】\n手洗いを自分でしようとする姿がありました。',
+    created_staff_id: 'S004', approved_staff_id: null, approved_at: null, is_shared_to_guardian: false, shared_at: null,
+    nap_abnormal_id: null, returned_reason: null, is_deleted: false, created_at: '2026-09-01T17:20:00', updated_at: '2026-09-01T17:20:00' },
+];
+
+/* ============ 編集ロック（t_diary_lock） ============
+ * 他の職員が開いている場合は、その旨をヘッダ直下に出す（画面詳細図 3-2）
+ * デモで常にロック中の状態を見せるため、取得時刻は読み込み時の現在時刻にしている
+ */
+export const diaryLocks: DiaryLock[] = [
+  { diary_id: 2, lock_token: 'lock-demo-0001', locked_staff_id: 'S004', locked_at: now(), last_active_at: now() },
+];
+
+/** 添付（t_diary_attachment）。1〜3枚（基本設計書 5-4） */
+export const diaryAttachments: DiaryAttachment[] = [
+  { diary_attachment_id: 1, diary_id: 4, file_path: 'demo/photo-1', file_type: 'image/jpeg' },
+  { diary_attachment_id: 2, diary_id: 4, file_path: 'demo/photo-2', file_type: 'image/jpeg' },
+];
+
+/* ============ チャット（基本設計書 5-5） ============ */
+export const chatRooms: ChatRoom[] = [
+  { chat_room_id: 1, room_type: '1', class_id: null, room_name: '園全体',           is_archived: false, thread_status: null },
+  { chat_room_id: 2, room_type: '5', class_id: null, room_name: '職員',             is_archived: false, thread_status: null },
+  { chat_room_id: 3, room_type: '2', class_id: 1,    room_name: 'さくら組',         is_archived: false, thread_status: null },
+  { chat_room_id: 4, room_type: '2', class_id: 2,    room_name: 'ひまわり組',       is_archived: false, thread_status: null },
+  { chat_room_id: 5, room_type: '3', class_id: null, room_name: '運動会実行委員',   is_archived: false, thread_status: null },
+  { chat_room_id: 6, room_type: '4', class_id: 1,    room_name: '山田 太郎の保護者', is_archived: false, thread_status: '未対応' },
+  { chat_room_id: 7, room_type: '4', class_id: 1,    room_name: '鈴木 花子の保護者', is_archived: false, thread_status: null },
+];
+
+/** 参加者（t_chat_member）。left_at で過去の所属期間を保持する（基本設計書 5-5） */
+export const chatMembers: ChatMember[] = [
+  ...[1, 2, 3, 4, 5, 6, 7, 8].map((account_id) => ({ chat_room_id: 1, account_id, joined_at: '2026-04-01T09:00:00', left_at: null })),
+  ...[1, 2, 3, 4, 5].map((account_id) => ({ chat_room_id: 2, account_id, joined_at: '2026-04-01T09:00:00', left_at: null })),
+  ...[1, 2, 3, 4, 6, 7].map((account_id) => ({ chat_room_id: 3, account_id, joined_at: '2026-04-01T09:00:00', left_at: null })),
+  ...[1, 2, 5].map((account_id) => ({ chat_room_id: 4, account_id, joined_at: '2026-04-01T09:00:00', left_at: null })),
+  ...[1, 3, 5].map((account_id) => ({ chat_room_id: 5, account_id, joined_at: '2026-06-01T09:00:00', left_at: null })),
+  ...[1, 3, 4, 6].map((account_id) => ({ chat_room_id: 6, account_id, joined_at: '2025-06-10T10:00:00', left_at: null })),
+  ...[1, 3, 4, 7].map((account_id) => ({ chat_room_id: 7, account_id, joined_at: '2025-04-05T10:00:00', left_at: null })),
+];
+
+export const chatMessages: ChatMessage[] = [
+  { chat_message_id: 1, chat_room_id: 1, sender_account_id: 1, body: '9月の献立表を掲示しました。ご確認ください。', source_type: '1', source_id: null, sent_at: '2026-09-01T08:30:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
+  { chat_message_id: 2, chat_room_id: 3, sender_account_id: 4, body: '明日の遠足の集合時間ですが、9時でよろしいでしょうか。', source_type: '1', source_id: null, sent_at: '2026-09-01T15:02:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
+  { chat_message_id: 3, chat_room_id: 3, sender_account_id: 3, body: '9時に園庭でお願いします。', source_type: '1', source_id: null, sent_at: '2026-09-01T15:10:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
+  { chat_message_id: 4, chat_room_id: 6, sender_account_id: 3, body: '本日の日誌を共有しました。', source_type: '2', source_id: 5, sent_at: '2026-08-29T18:06:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
+  { chat_message_id: 5, chat_room_id: 6, sender_account_id: 6, body: 'ありがとうございます。確認しました。', source_type: '1', source_id: null, sent_at: '2026-08-29T20:30:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
+  { chat_message_id: 6, chat_room_id: 6, sender_account_id: 6, body: '明日は祖母がお迎えに伺います。よろしくお願いします。', source_type: '1', source_id: null, sent_at: '2026-09-01T07:40:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
+  { chat_message_id: 7, chat_room_id: 7, sender_account_id: 3, body: '本日の日誌を共有しました。', source_type: '2', source_id: 4, sent_at: '2026-08-29T18:05:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
+  { chat_message_id: 8, chat_room_id: 2, sender_account_id: 2, body: '来週の職員会議は水曜16時からです。', source_type: '1', source_id: null, sent_at: '2026-08-31T11:00:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
+  { chat_message_id: 9, chat_room_id: 5, sender_account_id: 1, body: '種目案を今週中にまとめましょう。', source_type: '1', source_id: null, sent_at: '2026-08-28T13:00:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
+  // 取消済みのメッセージ。誤送信への対応の記録と対にする（基本設計書「誤送信への対応」(4-6)）
+  { chat_message_id: 10, chat_room_id: 7, sender_account_id: 3, body: '', source_type: '1', source_id: null, sent_at: '2026-08-27T16:12:00', edited_at: null, is_deleted: true, deleted_at: '2026-08-27T16:15:00', deleted_account_id: 3 },
+];
+
+/** 既読（t_chat_read）。保護者側には表示しない（基本設計書 5-5） */
+export const chatReads: ChatRead[] = [
+  { chat_read_id: 1, chat_message_id: 3, account_id: 1, read_at: '2026-09-01T15:20:00' },
+  { chat_read_id: 2, chat_message_id: 3, account_id: 2, read_at: '2026-09-01T15:25:00' },
+  { chat_read_id: 3, chat_message_id: 3, account_id: 4, read_at: '2026-09-01T15:11:00' },
+  { chat_read_id: 4, chat_message_id: 4, account_id: 6, read_at: '2026-08-29T20:28:00' },
+];
+
+/** 誤送信への対応の記録（t_misdelivery_record） */
+export const misdeliveryRecords: MisdeliveryRecord[] = [
+  { misdelivery_record_id: 1, chat_message_id: 10, occurred_at: '2026-08-27T16:12:00', was_read: false,
+    response: '送信から3分後に取消。既読は付いていなかったため、宛先の保護者へは連絡していない。正しい宛先へ送り直した。', staff_id: 'S003' },
+];
+
+/* ============ 午睡チェック（基本設計書 5-6） ============ */
+export const napSessions: NapSession[] = [
+  { nap_session_id: 1, class_id: 1, session_date: '2026-09-01', started_staff_id: 'S003', started_at: '2026-09-01T13:00:00', ended_staff_id: null, ended_at: null, is_auto_closed: false },
+  { nap_session_id: 2, class_id: 1, session_date: '2026-08-31', started_staff_id: 'S003', started_at: '2026-08-31T13:00:00', ended_staff_id: 'S003', ended_at: '2026-08-31T15:00:00', is_auto_closed: false },
+  { nap_session_id: 3, class_id: 1, session_date: '2026-08-30', started_staff_id: 'S004', started_at: '2026-08-30T13:00:00', ended_staff_id: 'S004', ended_at: '2026-08-30T15:05:00', is_auto_closed: false },
+  { nap_session_id: 4, class_id: 2, session_date: '2026-09-01', started_staff_id: 'S005', started_at: '2026-09-01T13:10:00', ended_staff_id: null, ended_at: null, is_auto_closed: false },
+];
+
+/**
+ * 午睡の記録（t_nap_record）
+ * 実施中のセッション1では、12名中8名が記録済みの状態を再現する（画面詳細図 5-1）
+ */
+export const napRecords: NapRecord[] = [
+  { nap_record_id: 1, nap_session_id: 1, child_id: 'C001', checked_at: '2026-09-01T13:20:00', saved_at: '2026-09-01T13:20:30', body_position: '1', breathing: '1', complexion: '1', temperature: 36.6, staff_id: 'S003' },
+  { nap_record_id: 2, nap_session_id: 1, child_id: 'C002', checked_at: '2026-09-01T13:20:00', saved_at: '2026-09-01T13:20:40', body_position: '4', breathing: '1', complexion: '1', temperature: 36.8, staff_id: 'S003' },
+  { nap_record_id: 3, nap_session_id: 1, child_id: 'C004', checked_at: '2026-09-01T13:21:00', saved_at: '2026-09-01T13:21:10', body_position: '1', breathing: '1', complexion: '1', temperature: null, staff_id: 'S003' },
+  { nap_record_id: 4, nap_session_id: 1, child_id: 'C005', checked_at: '2026-09-01T13:21:00', saved_at: '2026-09-01T13:21:20', body_position: '3', breathing: '1', complexion: '1', temperature: null, staff_id: 'S003' },
+  { nap_record_id: 5, nap_session_id: 1, child_id: 'C006', checked_at: '2026-09-01T13:22:00', saved_at: '2026-09-01T13:22:10', body_position: '1', breathing: '1', complexion: '1', temperature: null, staff_id: 'S003' },
+  { nap_record_id: 6, nap_session_id: 1, child_id: 'C007', checked_at: '2026-09-01T13:22:00', saved_at: '2026-09-01T13:22:20', body_position: '2', breathing: '1', complexion: '1', temperature: null, staff_id: 'S003' },
+  { nap_record_id: 7, nap_session_id: 1, child_id: 'C009', checked_at: '2026-09-01T13:23:00', saved_at: '2026-09-01T13:23:10', body_position: '1', breathing: '1', complexion: '1', temperature: null, staff_id: 'S004' },
+  { nap_record_id: 8, nap_session_id: 1, child_id: 'C010', checked_at: '2026-09-01T13:23:00', saved_at: '2026-09-01T13:23:20', body_position: '4', breathing: '1', complexion: '1', temperature: null, staff_id: 'S004' },
+];
+
+/** 異常時の記録（t_nap_abnormal）。diary_id が空ならヒヤリハット未起票（基本設計書 5-6） */
+export const napAbnormals: NapAbnormal[] = [
+  { nap_abnormal_id: 1, nap_session_id: 3, child_id: 'C003', found_at: '2026-08-30T13:40:00',
+    situation: 'うつ伏せの体位で寝ているのを発見。呼吸あり、顔色は通常。',
+    response: '仰向けに直し、5分後に再度確認した。保護者へは降園時に口頭で伝えた。', staff_id: 'S004', diary_id: 3 },
+  { nap_abnormal_id: 2, nap_session_id: 2, child_id: 'C005', found_at: '2026-08-31T14:10:00',
+    situation: '顔色がやや紅潮していた。体温37.4度。',
+    response: '別室で休ませ、保護者へ連絡した。', staff_id: 'S003', diary_id: null },
+];
+
+/* ============ 発達チェック（基本設計書 5-7） ============
+ * 発達過程区分はマスタ化して指針改定に追従する。区分の粒度は
+ * 0歳児~2歳児までの機能発達について.md「発達区分一覧」に合わせた
+ */
+export const developmentCategories: DevelopmentCategory[] = [
+  { development_category_id: 1,  age_month_from: 0,  age_month_to: 1,  category_name: '新生児〜56日頃',        display_order: 1 },
+  { development_category_id: 2,  age_month_from: 2,  age_month_to: 2,  category_name: '56日頃〜3か月頃',       display_order: 2 },
+  { development_category_id: 3,  age_month_from: 3,  age_month_to: 5,  category_name: '3か月頃〜6か月頃',      display_order: 3 },
+  { development_category_id: 4,  age_month_from: 6,  age_month_to: 8,  category_name: '6か月頃〜9か月頃',      display_order: 4 },
+  { development_category_id: 5,  age_month_from: 9,  age_month_to: 11, category_name: '9か月頃〜12か月頃',     display_order: 5 },
+  { development_category_id: 6,  age_month_from: 12, age_month_to: 14, category_name: '1歳頃〜1歳3か月頃',     display_order: 6 },
+  { development_category_id: 7,  age_month_from: 15, age_month_to: 17, category_name: '1歳3か月頃〜1歳6か月頃', display_order: 7 },
+  { development_category_id: 8,  age_month_from: 18, age_month_to: 20, category_name: '1歳6か月頃〜1歳9か月頃', display_order: 8 },
+  { development_category_id: 9,  age_month_from: 21, age_month_to: 23, category_name: '1歳9か月頃〜2歳頃',     display_order: 9 },
+  { development_category_id: 10, age_month_from: 24, age_month_to: 29, category_name: '2歳頃〜2歳6か月頃',     display_order: 10 },
+  { development_category_id: 11, age_month_from: 30, age_month_to: 35, category_name: '2歳6か月頃〜3歳頃',     display_order: 11 },
+];
+
+function devItem(id: number, cat: number, domain: string, name: string, order: number): DevelopmentItem {
+  return { development_item_id: id, development_category_id: cat, item_name: name, domain, display_order: order };
+}
+
+export const developmentItems: DevelopmentItem[] = [
+  // 新生児〜56日頃
+  devItem(101, 1, '運動', '仰向けで手足を動かす', 1),
+  devItem(102, 1, '人との関わり', 'あやされると泣きやむ', 2),
+  devItem(103, 1, '生活', '授乳・睡眠のリズムがある', 3),
+  // 56日頃〜3か月頃
+  devItem(111, 2, '運動', '首がすわり始める', 1),
+  devItem(112, 2, 'ことば', '声を出して笑う', 2),
+  devItem(113, 2, '人との関わり', '音のする方へ顔を向ける', 3),
+  // 3か月頃〜6か月頃
+  devItem(121, 3, '運動', '腹ばいで上体を持ち上げる', 1),
+  devItem(122, 3, '運動', '目と手を協応させて物をつかむ', 2),
+  devItem(123, 3, '生活', '準備食を口にする', 3),
+  // 6か月頃〜9か月頃
+  devItem(131, 4, '運動', '寝返りをする', 1),
+  devItem(132, 4, '運動', 'お座りの姿勢を保つ', 2),
+  devItem(133, 4, '人との関わり', '人まねをする', 3),
+  devItem(134, 4, '人との関わり', '後追いをする', 4),
+  // 9か月頃〜12か月頃
+  devItem(141, 5, '運動', 'つかまり立ちをする', 1),
+  devItem(142, 5, '運動', '伝い歩きをする', 2),
+  devItem(143, 5, 'ことば', '「パパ」「ママ」などの語を発する', 3),
+  devItem(144, 5, '生活', '自分でやりたい気持ちを見せる', 4),
+];
+
+developmentItems.push(
+  // 1歳頃〜1歳3か月頃
+  devItem(151, 6, '運動', 'ひとりで歩く', 1),
+  devItem(152, 6, 'ことば', '簡単な言葉と動作が一致する', 2),
+  devItem(153, 6, '生活', 'スプーンで食べようとする', 3),
+  // 1歳3か月頃〜1歳6か月頃
+  devItem(161, 7, '運動', '歩行が安定する', 1),
+  devItem(162, 7, '運動', '階段をはう', 2),
+  devItem(163, 7, 'ことば', '指差しで要求を伝える', 3),
+  devItem(164, 7, 'ことば', '意味のある語を話す', 4),
+  devItem(165, 7, '人との関わり', '探索活動が活発になる', 5),
+  // 1歳6か月頃〜1歳9か月頃
+  devItem(171, 8, 'ことば', '発語が増える', 1),
+  devItem(172, 8, 'ことば', '簡単な指示を理解する', 2),
+  devItem(173, 8, '生活', '片付けようとする', 3),
+  devItem(174, 8, '人との関わり', '友だちと物のやりとりが生じる', 4),
+  // 1歳9か月頃〜2歳頃
+  devItem(181, 9, 'ことば', '二語文を話す', 1),
+  devItem(182, 9, '人との関わり', '自我の芽生えが見られる', 2),
+  devItem(183, 9, '生活', '身の回りのことを自分でやろうとする', 3),
+  // 2歳頃〜2歳6か月頃
+  devItem(191, 10, '人との関わり', '見立て遊び・ごっこ遊びをする', 1),
+  devItem(192, 10, '生活', '自分でやりたがる気持ちが強まる', 2),
+  devItem(193, 10, '運動', '両足でジャンプする', 3),
+  // 2歳6か月頃〜3歳頃
+  devItem(201, 11, 'ことば', '色・大小・長短を区別する', 1),
+  devItem(202, 11, 'ことば', '二語文を超えた会話をする', 2),
+  devItem(203, 11, '人との関わり', '平行遊びの中で友だちとやりとりする', 3),
+  devItem(204, 11, '生活', '排せつの自立が進む', 4),
+);
+
+/** 推奨頻度（m_development_frequency）。値は仮置き（web/仮置き値.md 参照） */
+export const developmentFrequencies: DevelopmentFrequency[] = [
+  { development_frequency_id: 1, age_month_from: 0,  age_month_to: 11, interval_days: 90 },
+  { development_frequency_id: 2, age_month_from: 12, age_month_to: 35, interval_days: 120 },
+  { development_frequency_id: 3, age_month_from: 36, age_month_to: 72, interval_days: 180 },
+];
+
+/** 項目単位の共有可否（m_share_setting）。既定は共有可とし、園が項目単位で落とす */
+export const shareSettings: ShareSetting[] = developmentItems.map((it, i) => ({
+  share_setting_id: i + 1,
+  development_item_id: it.development_item_id,
+  // 自我の芽生え・かんしゃく等、保護者の受け取り方に配慮が要る項目を園が落とした例
+  is_shareable: ![182, 192].includes(it.development_item_id),
+  updated_staff_id: 'S001',
+  updated_at: '2026-04-01T09:00:00',
+}));
+
+/** 園児単位の予定（t_development_schedule）。is_manual_override は園児単位の手動上書き */
+export const developmentSchedules: DevelopmentSchedule[] = [
+  { development_schedule_id: 1, child_id: 'C001', scheduled_on: '2026-09-01', is_manual_override: false, created_staff_id: 'S001' },
+  { development_schedule_id: 2, child_id: 'C002', scheduled_on: '2026-08-20', is_manual_override: false, created_staff_id: 'S001' },
+  { development_schedule_id: 3, child_id: 'C003', scheduled_on: '2026-08-25', is_manual_override: false, created_staff_id: 'S001' },
+  { development_schedule_id: 4, child_id: 'C004', scheduled_on: '2026-09-10', is_manual_override: false, created_staff_id: 'S001' },
+  { development_schedule_id: 5, child_id: 'C005', scheduled_on: '2026-09-05', is_manual_override: true,  created_staff_id: 'S001' },
+  { development_schedule_id: 6, child_id: 'C006', scheduled_on: '2026-08-28', is_manual_override: false, created_staff_id: 'S001' },
+  { development_schedule_id: 7, child_id: 'C007', scheduled_on: '2026-09-20', is_manual_override: false, created_staff_id: 'S001' },
+  { development_schedule_id: 8, child_id: 'C008', scheduled_on: '2026-09-15', is_manual_override: false, created_staff_id: 'S001' },
+];
+
+/** 発達チェック（t_development_check） */
+export const developmentChecks: DevelopmentCheck[] = [
+  { development_check_id: 1, child_id: 'C001', development_schedule_id: null, checked_on: '2026-06-01', status: '2', staff_id: 'S003', share_status: '2' },
+  { development_check_id: 2, child_id: 'C002', development_schedule_id: null, checked_on: '2026-05-10', status: '2', staff_id: 'S003', share_status: '2' },
+  { development_check_id: 3, child_id: 'C004', development_schedule_id: null, checked_on: '2026-06-05', status: '2', staff_id: 'S004', share_status: '1' },
+];
+
+/**
+ * 発達チェックの結果（t_development_result）
+ * 「未入力」はレコードが存在しない状態で表す。「未確認」は result='3' として保持する（基本設計書 5-7）
+ */
+export const developmentResults: DevelopmentResultRecord[] = [
+  // C001 の前回（2026-06-01・0歳11か月）。9か月頃〜12か月頃の区分
+  { development_result_id: 1, development_check_id: 1, development_item_id: 141, result: '1', note: null },
+  { development_result_id: 2, development_check_id: 1, development_item_id: 142, result: '1', note: null },
+  { development_result_id: 3, development_check_id: 1, development_item_id: 143, result: '3', note: null },
+  { development_result_id: 4, development_check_id: 1, development_item_id: 144, result: '2', note: null },
+  // C002 の前回
+  { development_result_id: 5, development_check_id: 2, development_item_id: 151, result: '1', note: null },
+  { development_result_id: 6, development_check_id: 2, development_item_id: 152, result: '2', note: null },
+  { development_result_id: 7, development_check_id: 2, development_item_id: 153, result: '1', note: null },
+  // C004 の前回
+  { development_result_id: 8, development_check_id: 3, development_item_id: 151, result: '1', note: null },
+  { development_result_id: 9, development_check_id: 3, development_item_id: 152, result: '1', note: '絵本を指差して名前を言う場面があった' },
+  { development_result_id: 10, development_check_id: 3, development_item_id: 153, result: '3', note: null },
+];
+
+/* ============ 身体測定（基本設計書 5-7） ============ */
+export const physicalRecords: PhysicalRecord[] = [
+  { physical_record_id: 1, child_id: 'C001', measured_on: '2026-03-02', height_cm: 73.4, weight_kg: 8.9, staff_id: 'S003', share_status: '2', is_deleted: false, created_at: '2026-03-02T10:00:00', updated_at: '2026-03-02T10:00:00' },
+  { physical_record_id: 2, child_id: 'C001', measured_on: '2026-06-01', height_cm: 77.2, weight_kg: 9.5, staff_id: 'S003', share_status: '2', is_deleted: false, created_at: '2026-06-01T10:00:00', updated_at: '2026-06-01T10:00:00' },
+  { physical_record_id: 3, child_id: 'C002', measured_on: '2026-03-02', height_cm: 76.1, weight_kg: 9.2, staff_id: 'S003', share_status: '2', is_deleted: false, created_at: '2026-03-02T10:05:00', updated_at: '2026-03-02T10:05:00' },
+  { physical_record_id: 4, child_id: 'C002', measured_on: '2026-06-01', height_cm: 79.8, weight_kg: 9.9, staff_id: 'S003', share_status: '1', is_deleted: false, created_at: '2026-06-01T10:05:00', updated_at: '2026-06-01T10:05:00' },
+  { physical_record_id: 5, child_id: 'C003', measured_on: '2026-06-01', height_cm: 76.5, weight_kg: 9.1, staff_id: 'S004', share_status: '1', is_deleted: false, created_at: '2026-06-01T10:10:00', updated_at: '2026-06-01T10:10:00' },
+  { physical_record_id: 6, child_id: 'C004', measured_on: '2026-06-01', height_cm: 78.0, weight_kg: 9.6, staff_id: 'S004', share_status: '1', is_deleted: false, created_at: '2026-06-01T10:15:00', updated_at: '2026-06-01T10:15:00' },
+  { physical_record_id: 7, child_id: 'C001', measured_on: '2026-09-01', height_cm: 78.5, weight_kg: 9.8, staff_id: 'S003', share_status: '1', is_deleted: false, created_at: '2026-09-01T10:00:00', updated_at: '2026-09-01T10:00:00' },
+  { physical_record_id: 8, child_id: 'C002', measured_on: '2026-09-01', height_cm: 81.2, weight_kg: 10.3, staff_id: 'S003', share_status: '1', is_deleted: false, created_at: '2026-09-01T10:05:00', updated_at: '2026-09-01T10:05:00' },
+  { physical_record_id: 9, child_id: 'C006', measured_on: '2026-09-01', height_cm: 82.0, weight_kg: 10.6, staff_id: 'S003', share_status: '1', is_deleted: false, created_at: '2026-09-01T10:20:00', updated_at: '2026-09-01T10:20:00' },
+];
+
+/* ============ 成長曲線基準値（m_growth_standard） ============
+ *
+ * ここで生成している値は仮置きである。実装時は厚生労働省の乳幼児身体発育調査の
+ * 公表値を投入する（web/仮置き値.md 参照）。
+ * 一意制約：sex + age_in_months + measure_type + percentile（基本設計書 5-7）
+ */
+const HEIGHT_MEDIAN: Record<'1' | '2', number[]> = {
+  '1': [49.0, 74.9, 86.7, 95.1, 102.0, 108.2, 114.9],
+  '2': [48.5, 73.3, 85.4, 93.9, 100.9, 107.3, 113.7],
+};
+const WEIGHT_MEDIAN: Record<'1' | '2', number[]> = {
+  '1': [3.0, 9.3, 11.9, 14.1, 16.2, 18.4, 21.0],
+  '2': [2.9, 8.7, 11.3, 13.6, 15.7, 17.9, 20.2],
+};
+const PERCENTILES = [3, 10, 25, 50, 75, 90, 97];
+const HEIGHT_RATIO: Record<number, number> = { 3: 0.930, 10: 0.955, 25: 0.978, 50: 1.0, 75: 1.022, 90: 1.045, 97: 1.070 };
+const WEIGHT_RATIO: Record<number, number> = { 3: 0.820, 10: 0.880, 25: 0.940, 50: 1.0, 75: 1.070, 90: 1.150, 97: 1.240 };
+
+/** 0/12/24/36/48/60/72 か月の値を線形に補間する */
+function interpolate(anchors: number[], month: number): number {
+  const i = Math.min(Math.floor(month / 12), anchors.length - 2);
+  const t = (month - i * 12) / 12;
+  return anchors[i] + (anchors[i + 1] - anchors[i]) * t;
+}
+
+function buildGrowthStandards(): GrowthStandard[] {
+  const rows: GrowthStandard[] = [];
+  let id = 1;
+  for (const sex of ['1', '2'] as const) {
+    for (let m = 0; m <= 72; m++) {
+      for (const p of PERCENTILES) {
+        rows.push({
+          growth_standard_id: id++, sex, age_in_months: m, measure_type: '1', percentile: p,
+          standard_value: Math.round(interpolate(HEIGHT_MEDIAN[sex], m) * HEIGHT_RATIO[p] * 100) / 100,
+          source_version: '仮置き（未投入）',
+        });
+        rows.push({
+          growth_standard_id: id++, sex, age_in_months: m, measure_type: '2', percentile: p,
+          standard_value: Math.round(interpolate(WEIGHT_MEDIAN[sex], m) * WEIGHT_RATIO[p] * 100) / 100,
+          source_version: '仮置き（未投入）',
+        });
+      }
+    }
+  }
+  return rows;
+}
+
+export const growthStandards: GrowthStandard[] = buildGrowthStandards();
+
+/* ============ 操作ログ（t_operation_log） ============
+ * 追記のみとし、更新・削除の手段を設けない（基本設計書 5-8）
+ */
+export const operationLogs: OperationLog[] = [
+  { operation_log_id: 1, account_id: 3, operated_at: '2026-09-01T16:40:00', function_type: '1', operation_type: '1', target_table: 't_diary', target_id: 1, target_child_id: 'C001', before_value: null, after_value: '下書き作成' },
+  { operation_log_id: 2, account_id: 3, operated_at: '2026-09-01T13:20:30', function_type: '3', operation_type: '1', target_table: 't_nap_record', target_id: 1, target_child_id: 'C001', before_value: null, after_value: '体位=仰向け 呼吸=あり 顔色=通常 体温=36.6' },
+  { operation_log_id: 3, account_id: 1, operated_at: '2026-08-31T09:10:00', function_type: '1', operation_type: '3', target_table: 't_diary', target_id: 3, target_child_id: 'C003', before_value: '申請中', after_value: '差し戻し' },
+  { operation_log_id: 4, account_id: 1, operated_at: '2026-08-29T18:05:00', function_type: '1', operation_type: '3', target_table: 't_diary', target_id: 4, target_child_id: 'C002', before_value: '申請中', after_value: '承認済み・保護者へ共有' },
+  { operation_log_id: 5, account_id: 3, operated_at: '2026-09-01T10:00:00', function_type: '5', operation_type: '1', target_table: 't_physical_record', target_id: 7, target_child_id: 'C001', before_value: null, after_value: '身長=78.5 体重=9.8' },
+  { operation_log_id: 6, account_id: 1, operated_at: '2026-08-25T10:00:00', function_type: '7', operation_type: '1', target_table: 't_invitation_code', target_id: 1, target_child_id: 'C001', before_value: null, after_value: '招待コードを発行' },
+  { operation_log_id: 7, account_id: 1, operated_at: '2026-08-20T10:00:00', function_type: '7', operation_type: '2', target_table: 'm_account', target_id: 8, target_child_id: null, before_value: '有効', after_value: '停止' },
+  { operation_log_id: 8, account_id: 2, operated_at: '2026-08-18T11:30:00', function_type: '5', operation_type: '5', target_table: 't_physical_record', target_id: null, target_child_id: 'C002', before_value: null, after_value: 'PDF出力（保護者引き渡し）' },
+  { operation_log_id: 9, account_id: 3, operated_at: '2026-08-27T16:15:00', function_type: '2', operation_type: '4', target_table: 't_chat_message', target_id: 10, target_child_id: 'C002', before_value: '（本文）', after_value: '取消' },
+  { operation_log_id: 10, account_id: 4, operated_at: '2026-08-30T18:00:00', function_type: '1', operation_type: '1', target_table: 't_diary', target_id: 3, target_child_id: 'C003', before_value: null, after_value: 'ヒヤリハットを起票' },
+];
+
+/* ============ 設定マスタ（m_setting） ============
+ * 値はすべて仮置きである（web/仮置き値.md 参照）。
+ * 設定値が数値として解釈できない場合は既定値へフォールバックし、警告を出す（基本設計書 5-8）
+ */
+function setting(key: string, value: string, description: string): Setting {
+  return { setting_key: key, setting_value: value, description, updated_staff_id: 'S001', updated_at: '2026-04-01T09:00:00' };
+}
+
+export const settings: Setting[] = [
+  // 午睡チェック
+  setting('nap.interval_minutes.age0', '5',  '午睡チェックの間隔（0歳児・分）'),
+  setting('nap.interval_minutes.age1', '10', '午睡チェックの間隔（1歳児・分）'),
+  setting('nap.interval_minutes.age2', '15', '午睡チェックの間隔（2歳児以上・分）'),
+  setting('nap.temperature_required_at_start', 'true', '午睡開始時に体温を必須とするか'),
+  setting('nap.time_range', '13:00-15:00', '午睡の時間帯'),
+  // 認証
+  setting('auth.max_failed_login', '5',  'ログイン失敗回数の上限'),
+  setting('auth.lock_minutes', '30', 'ロックの待機時間（分）'),
+  setting('auth.remember_days', '30', 'ログイン情報の記憶の保存期間（日）'),
+  setting('auth.temp_password_hours', '48', '一時パスワードの有効期限（時間）'),
+  // 画面
+  setting('ui.auto_logout_minutes', '30', '自動ログアウトまでの無操作時間（分）'),
+  setting('ui.diary_lock_minutes', '15', '編集ロックの無操作時間（分）'),
+  // 参照範囲
+  setting('scope.handover_grace_days', '14', '引き継ぎ猶予期間（日）'),
+  setting('scope.fiscal_year_update_date', '04-01', '年度更新の実行日'),
+  // 身体測定
+  setting('physical.measure_months', '4,7,10,1', '測定を行う月'),
+  setting('physical.height_min', '40', '身長の下限（cm）'),
+  setting('physical.height_max', '140', '身長の上限（cm）'),
+  setting('physical.weight_min', '2', '体重の下限（kg）'),
+  setting('physical.weight_max', '40', '体重の上限（kg）'),
+  // 添付
+  setting('attachment.allowed_types', 'image/jpeg,image/png', '添付の対応形式'),
+  setting('attachment.max_size_mb', '10', '1ファイルあたりの上限サイズ（MB）'),
+  setting('attachment.max_count_diary', '3', '日誌1件あたりの写真の上限枚数'),
+  // データ保持
+  setting('retention.record_years', '5', '記録の保持年数'),
+  setting('retention.attachment_years', '3', '添付ファイルの保持期間（年）'),
+  // 一覧のページング（基本設計書「一覧表示とページング」(3-7)）
+  setting('paging.diary_per_page', '50', '日誌一覧の既定件数'),
+  setting('paging.nap_search_per_page', '50', '午睡記録検索の既定件数'),
+  setting('paging.operation_log_per_page', '100', '操作ログの既定件数'),
+  setting('paging.physical_history_count', '12', '過去測定値一覧の既定表示件数'),
+];

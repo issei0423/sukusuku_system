@@ -1,0 +1,86 @@
+/*
+ * パスワード変更画面
+ * 典拠：基本設計書.md「画面の一覧」(3-2)・「画面遷移」(3-4)
+ *
+ * 一時パスワードでのログイン後は、変更を完了するまで他の画面へ進めない。
+ * 任意の変更時はメニューから開く。
+ */
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import PublicLayout from '../../layouts/PublicLayout';
+import { Field, Alert } from '../../components/ui';
+import { useSession } from '../../session';
+import { api } from '../../api/client';
+
+export default function PasswordChangeScreen({ forced }: { forced?: boolean }) {
+  const { user, setUser } = useSession();
+  const navigate = useNavigate();
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [next2, setNext2] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  if (!user) return null;
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (next !== next2) { setError('新しいパスワードが一致しません'); return; }
+    setBusy(true);
+    try {
+      await api.changePassword(user.account_id, current, next);
+      const u = await api.reloadSession(user.account_id);
+      setUser(u);
+      setDone(true);
+      if (forced) {
+        // 規約の再同意が残っていればそちらへ、なければ各ロールのホームへ
+        if (!u.terms_agreed) navigate('/terms-agree');
+        else navigate(u.role === '3' ? '/guardian' : '/staff');
+      }
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const body = (
+    <form className="stack" onSubmit={submit}>
+      {forced && (
+        <Alert>
+          一時パスワードでログインしています。パスワードを変更するまで、ほかの機能は利用できません。
+        </Alert>
+      )}
+      {done && !forced && <Alert soft>パスワードを変更しました。</Alert>}
+      {error && <Alert>{error}</Alert>}
+
+      <Field label="現在のパスワード" required>
+        <input type="password" value={current} autoComplete="current-password" onChange={(e) => setCurrent(e.target.value)} />
+      </Field>
+      <Field label="新しいパスワード" required>
+        <input type="password" value={next} autoComplete="new-password" onChange={(e) => setNext(e.target.value)} />
+      </Field>
+      <Field label="新しいパスワード（確認）" required>
+        <input type="password" value={next2} autoComplete="new-password" onChange={(e) => setNext2(e.target.value)} />
+      </Field>
+      {/*
+        桁数・使用できる文字の制約値は【要決定】（基本設計書「画面詳細」(3-6)）。
+        モックでは8文字以上のみを課している（web/仮置き値.md 参照）
+      */}
+      <div className="muted">8文字以上で入力してください。（制約値は未確定です）</div>
+      <button className="btn-primary btn-block" type="submit" disabled={busy}>変更する</button>
+    </form>
+  );
+
+  // 強制変更のときは入口の様式で全画面に出す。他の画面へ進ませないため
+  if (forced) return <PublicLayout><h1 style={{ marginBottom: 16 }}>パスワードの変更</h1>{body}</PublicLayout>;
+
+  return (
+    <div style={{ maxWidth: 480 }}>
+      <div className="page-head"><h1>パスワードの変更</h1></div>
+      <section className="card">{body}</section>
+    </div>
+  );
+}

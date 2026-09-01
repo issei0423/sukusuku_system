@@ -1,0 +1,113 @@
+/*
+ * 招待コードと紐づけのテスト
+ * 典拠：要件定義書「招待コードの発行」(4-1-2)、基本設計書 5-2・5-3
+ */
+import { describe, it, expect } from 'vitest';
+import { api } from '../src/api/client';
+import * as db from '../src/api/mockDb';
+import type { SessionUser } from '../src/api/types';
+
+const admin: SessionUser = {
+  account_id: 1, email: 'takahashi@hoiku.example.jp', role: '1', display_name: '高橋 美咲',
+  staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
+  is_temp_password: false, terms_agreed: true,
+};
+
+describe('招待コード', () => {
+  it('使用済みのコードは確認できない', async () => {
+    await expect(api.verifyInvitationCode('IJKL-5678-MNOP')).rejects.toThrow('すでに使われています');
+  });
+
+  it('失効したコードは確認できない', async () => {
+    await expect(api.verifyInvitationCode('YZAB-3456-CDEF')).rejects.toThrow('失効');
+  });
+
+  it('未使用のコードは確認できる（園児名は返さない）', async () => {
+    const r = await api.verifyInvitationCode('ABCD-1234-EFGH');
+    expect(r).toEqual({ ok: true });
+    // 誰の保護者かを名乗る前の段階のため、園児名を含めない（画面詳細図 2-3）
+    expect(JSON.stringify(r)).not.toContain('山田');
+  });
+
+  it('大文字小文字を問わず照合する', async () => {
+    await expect(api.verifyInvitationCode('abcd-1234-efgh')).resolves.toEqual({ ok: true });
+  });
+
+  it('1枚のコードは1アカウントの登録にのみ使える', async () => {
+    const code = await api.issueOneInvitationCode(admin, 'C005', 30);
+    await api.signUpGuardian({
+      code, email: 'test.parent1@example.jp', password: 'password1',
+      guardian_name: '渡辺 一郎', relationship: '父',
+    });
+    // 使用と同時に status を使用済みにする
+    expect(db.invitationCodes.find((c) => c.code === code)?.status).toBe('2');
+
+    await expect(api.signUpGuardian({
+      code, email: 'test.parent2@example.jp', password: 'password1',
+      guardian_name: '渡辺 花子', relationship: '母',
+    })).rejects.toThrow('招待コードが確認できません');
+  });
+
+  it('一括発行は 園児数 × 枚数 を発行する', async () => {
+    const before = db.invitationCodes.length;
+    const children = await api.listChildren(admin, { classId: 2 });
+    const issued = await api.issueInvitationCodes(admin, 2, 2, 30);
+    expect(issued).toBe(children.length * 2);
+    expect(db.invitationCodes.length).toBe(before + issued);
+  });
+
+  it('登録したメールアドレスは重複させない（ロールをまたいで園内で一意）', async () => {
+    const code = await api.issueOneInvitationCode(admin, 'C006', 30);
+    await expect(api.signUpGuardian({
+      code, email: 'yamada@hoiku.example.jp', password: 'password1',
+      guardian_name: '重複 太郎', relationship: '父',
+    })).rejects.toThrow('すでに登録されています');
+  });
+});
+
+describe('保護者の紐づけ', () => {
+  it('有効な紐づけがゼロになった時点でアカウントを停止する', async () => {
+    const code = await api.issueOneInvitationCode(admin, 'C007', 30);
+    const u = await api.signUpGuardian({
+      code, email: 'test.parent3@example.jp', password: 'password1',
+      guardian_name: '中村 二郎', relationship: '父',
+    });
+    expect(u.guardian_id).toBeTruthy();
+
+    await api.endGuardianLink(admin, u.guardian_id!, 'C007');
+    const account = db.accounts.find((a) => a.account_id === u.account_id);
+    expect(account?.status).toBe('2');
+  });
+});
+
+describe('身体測定', () => {
+  const teacher: SessionUser = {
+    account_id: 3, email: 'yamada@hoiku.example.jp', role: '2', display_name: '山田 花子',
+    staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
+    is_temp_password: false, terms_agreed: true,
+  };
+
+  it('同じ園児・同じ測定日は上書きになる（部分一意インデックス）', async () => {
+    const first = await api.save(teacher, { child_id: 'C009', measured_on: '2026-09-01', height_cm: 77.0, weight_kg: 9.2 });
+    const second = await api.save(teacher, { child_id: 'C009', measured_on: '2026-09-01', height_cm: 77.5, weight_kg: 9.3 });
+    expect(second.physical_record_id).toBe(first.physical_record_id);
+    expect(second.height_cm).toBe(77.5);
+  });
+
+  it('未来日は登録できない', async () => {
+    await expect(api.save(teacher, { child_id: 'C009', measured_on: '2099-01-01', height_cm: 80, weight_kg: 10 }))
+      .rejects.toThrow('未来日');
+  });
+
+  it('範囲外の値は警告を返すが、登録自体は妨げない（判定ではないため）', async () => {
+    expect(api.rangeWarning(200, 10)).toContain('身長');
+    expect(api.rangeWarning(80, 10)).toBeNull();
+    const saved = await api.save(teacher, { child_id: 'C010', measured_on: '2026-09-01', height_cm: 200, weight_kg: 10 });
+    expect(saved.height_cm).toBe(200);
+  });
+
+  it('性別が未回答の園児には成長曲線の基準値を持たない', async () => {
+    expect(await api.growthBand('9', '1')).toBeNull();
+    expect((await api.growthBand('1', '1'))?.length).toBeGreaterThan(0);
+  });
+});

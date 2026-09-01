@@ -1,0 +1,103 @@
+/*
+ * 画面ごとのレイアウト
+ * 典拠：図/画面詳細図.md 各画面のワイヤーフレーム
+ */
+
+/* ---- チャット画面（職員）：チャンネル／メッセージ／メンバーの3ペイン（画面詳細図 4-1） ---- */
+.chat3 {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) 200px;
+  gap: var(--sp-3);
+  height: calc(100vh - var(--header-h) - var(--sp-5) * 2);
+  min-height: 420px;
+}
+.chat-pane {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  display: flex; flex-direction: column; min-height: 0;
+}
+.chat-pane > h2 { padding: var(--sp-3); border-bottom: 1px solid var(--c-border); font-size: 14px; }
+.chat-scroll { flex: 1; overflow-y: auto; padding: var(--sp-3); }
+.chat-compose { border-top: 1px solid var(--c-border); padding: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2); }
+
+.channel {
+  display: flex; align-items: center; gap: var(--sp-2);
+  width: 100%; min-height: var(--tap-min);
+  padding: 0 var(--sp-3);
+  border: 0; border-left: 4px solid transparent; background: transparent;
+  text-align: left; cursor: pointer; font-size: 14px;
+  border-radius: 0;
+  justify-content: flex-start;
+}
+.channel:hover { background: var(--c-primary-soft); }
+.channel.current { background: var(--c-primary-soft); border-left-color: var(--c-primary-deep); font-weight: 700; }
+.channel .unread { margin-left: auto; background: var(--c-alert); color: #fff; border-radius: 999px; font-size: 11px; padding: 1px 7px; }
+.channel-group { padding: var(--sp-2) var(--sp-3) 0; font-size: 12px; color: var(--c-text-weak); }
+
+.msg { margin-bottom: var(--sp-4); }
+.msg .meta { font-size: 12px; color: var(--c-text-sub); margin-bottom: 2px; }
+.msg .bubble {
+  display: inline-block; max-width: 80%;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--c-surface-sub);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  white-space: pre-wrap; word-break: break-word;
+}
+.msg.mine { text-align: right; }
+.msg.mine .bubble { background: var(--c-primary-soft); border-color: var(--c-primary-deep); text-align: left; }
+.msg .read { font-size: 11px; color: var(--c-text-weak); margin-top: 2px; }
+.msg .retracted { color: var(--c-text-weak); font-style: italic; }
+.msg .shared-card {
+  display: block; margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3);
+  border: 1px dashed var(--c-border-strong); border-radius: var(--radius-sm);
+  background: var(--c-surface); text-decoration: none; color: var(--c-text);
+}
+
+/* ---- 午睡チェック画面（画面詳細図 5-1） ---- */
+/* タイマーを画面の上部に固定する。スクロールしても視界から外さない */
+.nap-timer {
+  position: sticky; top: calc(var(--sp-5) * -1); z-index: 6;
+  margin: calc(var(--sp-5) * -1) calc(var(--sp-5) * -1) var(--sp-4);
+  padding: var(--sp-3) var(--sp-5);
+  background: var(--c-primary-soft);
+  border-bottom: 1px solid var(--c-primary-deep);
+  display: flex; align-items: center; gap: var(--sp-5); flex-wrap: wrap;
+}
+.nap-timer .big { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.nap-timer.over { background: var(--c-alert-soft); border-bottom-color: var(--c-alert); color: var(--c-alert); }
+
+.nap-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: var(--sp-3); }
+.nap-card {
+  background: var(--c-surface); border: 1px solid var(--c-border);
+  border-radius: var(--radius); padding: var(--sp-3);
+  display: flex; flex-direction: column; gap: var(--sp-1);
+}
+.nap-card.unrecorded { border-color: var(--c-alert); background: var(--c-alert-soft); }
+.nap-card .name { font-weight: 700; }
+.nap-card .last { font-size: 13px; color: var(--c-text-sub); }
+
+/* ---- 身体記録画面：園児を選ぶと右側だけが入れ替わる（画面詳細図 6-2） ---- */
+.split { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: var(--sp-4); align-items: start; }
+.picker { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius); overflow: hidden; }
+.picker button {
+  width: 100%; justify-content: flex-start; border: 0; border-radius: 0;
+  border-bottom: 1px solid var(--c-border); border-left: 4px solid transparent;
+  background: transparent; text-align: left;
+}
+.picker button.current { background: var(--c-primary-soft); border-left-color: var(--c-primary-deep); font-weight: 700; }
+.picker button .done { margin-left: auto; color: var(--c-approved); font-size: 12px; }
+
+.growth-chart { width: 100%; height: auto; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius); }
+
+/* ---- 発達チェック入力（画面詳細図 6-1） ---- */
+.dev-item { display: grid; grid-template-columns: minmax(180px, 1fr) auto; gap: var(--sp-3); align-items: center; padding: var(--sp-2) 0; border-bottom: 1px solid var(--c-border); }
+.dev-item:last-child { border-bottom: 0; }
+.dev-diff { font-size: 13px; color: var(--c-text-sub); }
+.dev-diff .to { font-weight: 700; color: var(--c-text); }
+
+@media (max-width: 900px) {
+  .chat3 { grid-template-columns: 1fr; height: auto; }
+  .split { grid-template-columns: 1fr; }
+}

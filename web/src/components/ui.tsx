@@ -1,0 +1,102 @@
+/*
+ * 全画面で使い回す部品
+ * 典拠：基本設計書.md「画面基本構成」(3-5)、図/画面詳細図.md「全画面に共通する規定」(0-2)
+ */
+import type { ReactNode } from 'react';
+
+export function Field({ label, required, children, style }: {
+  label: string; required?: boolean; children: ReactNode; style?: React.CSSProperties;
+}) {
+  return (
+    <div className={`field${required ? ' req' : ''}`} style={style}>
+      <span className="lbl">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+/** 警告・注意喚起。判定ではないことを明確にするため、文言は呼び出し側が持つ */
+export function Alert({ children, soft }: { children: ReactNode; soft?: boolean }) {
+  return <div className={`alert${soft ? ' alert-soft' : ''}`}><span>(!)</span><span>{children}</span></div>;
+}
+
+/**
+ * 免責表示
+ * 成長グラフ・発達チェックの比較表示に常時表示し、スクロールしても視界から外れない位置に固定する
+ * （基本設計書 3-5）
+ */
+export function Disclaimer({ text }: { text: string }) {
+  return <div className="disclaimer"><span>(!)</span><span>{text}</span></div>;
+}
+
+export function Tag({ label, className = 'tag-plain' }: { label: string; className?: string }) {
+  return <span className={`tag ${className}`}>{label}</span>;
+}
+
+export function Card({ title, children, sub, actions }: {
+  title?: string; children: ReactNode; sub?: boolean; actions?: ReactNode;
+}) {
+  return (
+    <section className={`card${sub ? ' card-sub' : ''}`}>
+      {(title || actions) && (
+        <div className="page-head" style={{ marginBottom: 12 }}>
+          {title && <h2>{title}</h2>}
+          <div className="spacer" />
+          {actions}
+        </div>
+      )}
+      {children}
+    </section>
+  );
+}
+
+/** ダイアログで足りるものは画面として起こさない（基本設計書「画面の洗い出しの考え方」(3-1) 基準3） */
+export function Modal({ title, children, onClose, footer }: {
+  title: string; children: ReactNode; onClose: () => void; footer?: ReactNode;
+}) {
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={title}>
+        <div className="modal-head">{title}</div>
+        <div className="modal-body">{children}</div>
+        <div className="modal-foot">{footer ?? <button onClick={onClose}>閉じる</button>}</div>
+      </div>
+    </div>
+  );
+}
+
+/** ページングの様式（基本設計書「一覧表示とページング」(3-7)） */
+export function Pager({ page, perPage, total, onChange }: {
+  page: number; perPage: number; total: number; onChange: (p: number) => void;
+}) {
+  const last = Math.max(1, Math.ceil(total / perPage));
+  if (total === 0) return null;
+  return (
+    <div className="pager">
+      <button className="btn-sm" disabled={page <= 1} onClick={() => onChange(page - 1)}>&lt; 前へ</button>
+      <span>{page} / {last}</span>
+      <button className="btn-sm" disabled={page >= last} onClick={() => onChange(page + 1)}>次へ &gt;</button>
+      <span>全 {total} 件</span>
+    </div>
+  );
+}
+
+export function Loading() { return <div className="empty">読み込んでいます…</div>; }
+export function Empty({ text }: { text: string }) { return <div className="empty">{text}</div>; }
+export function ErrorBox({ text }: { text: string }) { return <Alert>{text}</Alert>; }
+
+/** 選択肢。(*) が選択中、( ) が未選択（図/画面詳細図.md「表記ルール」(0-1)） */
+export function Radios<T extends string>({ name, value, options, onChange }: {
+  name: string; value: T | null; options: { value: T; label: string }[]; onChange: (v: T) => void;
+}) {
+  return (
+    <div className="choices">
+      {options.map((o) => (
+        <label key={o.value}>
+          <input type="radio" name={name} checked={value === o.value} onChange={() => onChange(o.value)} />
+          {o.label}
+        </label>
+      ))}
+    </div>
+  );
+}

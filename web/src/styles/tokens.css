@@ -1,0 +1,148 @@
+/*
+ * デザイントークン
+ * 典拠：基本設計書.md「画面基本構成」(3-5)／図/画面詳細図.md「全画面に共通する規定」(0-2)
+ *
+ * 色の具体値・寸法は基本設計書が定めていないため、本ファイルの値は仮置きである。
+ * 仮置きの一覧と根拠は web/仮置き値.md を参照。
+ */
+
+:root {
+  /* テーマカラー：優しい黄色（基本設計書 3-5） */
+  --c-primary:        #f6c445;
+  --c-primary-soft:   #fdf2cf;
+  --c-primary-deep:   #d9a012;
+  --c-primary-ink:    #4a3708;
+
+  /* 警告色：黄色と対比の付く色（基本設計書 3-5）。午睡チェックの異常・範囲外の入力値に使う */
+  --c-alert:          #c62828;
+  --c-alert-soft:     #fdecea;
+
+  /* 状態色。日誌の差し戻しは他と区別できる色にする（画面詳細図 3-1） */
+  --c-draft:          #6b7280;
+  --c-applied:        #1565c0;
+  --c-returned:       #ad1457;
+  --c-approved:       #2e7d32;
+
+  /* 地の色 */
+  --c-bg:             #fffdf6;
+  --c-surface:        #ffffff;
+  --c-surface-sub:    #faf7ef;
+  --c-border:         #e3ddcd;
+  --c-border-strong:  #c9c1ab;
+
+  /* 文字 */
+  --c-text:           #2c2822;
+  --c-text-sub:       #6d665a;
+  --c-text-weak:      #9a9386;
+  --c-link:           #1565c0;
+
+  /* タップ領域：44×44px 以上を確保する（基本設計書 3-5） */
+  --tap-min:          44px;
+
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+
+  --radius:    10px;
+  --radius-sm: 6px;
+
+  --shadow:    0 1px 3px rgba(60, 50, 20, .12);
+  --shadow-up: 0 -2px 8px rgba(60, 50, 20, .10);
+
+  --header-h:  56px;
+  --sidenav-w: 200px;
+
+  --font: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", system-ui, sans-serif;
+
+  /* グリッド：職員（タブレット／PC）＝12カラム（基本設計書 3-5） */
+  --grid-cols: 12;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--c-text);
+  background: var(--c-bg);
+  -webkit-text-size-adjust: 100%;
+}
+
+h1, h2, h3, h4 { margin: 0; font-weight: 700; line-height: 1.4; }
+h1 { font-size: 20px; }
+h2 { font-size: 17px; }
+h3 { font-size: 15px; }
+p  { margin: 0 0 var(--sp-3); }
+
+/* ---- 押せるもの。タップ領域 44×44px 以上（基本設計書 3-5） ---- */
+button, .btn {
+  min-height: var(--tap-min);
+  min-width: var(--tap-min);
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--c-surface);
+  color: var(--c-text);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+}
+button:hover:not(:disabled), .btn:hover { background: var(--c-surface-sub); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+button:focus-visible, a:focus-visible, input:focus-visible,
+select:focus-visible, textarea:focus-visible {
+  outline: 3px solid var(--c-primary-deep);
+  outline-offset: 1px;
+}
+
+.btn-primary {
+  background: var(--c-primary);
+  border-color: var(--c-primary-deep);
+  color: var(--c-primary-ink);
+  font-weight: 700;
+}
+.btn-primary:hover:not(:disabled) { background: var(--c-primary-deep); }
+
+.btn-danger {
+  background: var(--c-alert);
+  border-color: var(--c-alert);
+  color: #fff;
+  font-weight: 700;
+}
+.btn-danger:hover:not(:disabled) { background: #a31f1f; }
+
+.btn-quiet { border-color: transparent; background: transparent; text-decoration: underline; }
+.btn-sm    { min-height: 36px; padding: 0 var(--sp-3); font-size: 13px; }
+.btn-block { width: 100%; }
+
+/* ---- 入力欄 ---- */
+input[type="text"], input[type="password"], input[type="email"],
+input[type="date"], input[type="number"], input[type="search"],
+select, textarea {
+  min-height: var(--tap-min);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--c-surface);
+  color: var(--c-text);
+  font: inherit;
+  font-size: 15px;
+  width: 100%;
+}
+textarea { min-height: 120px; resize: vertical; line-height: 1.7; }
+input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; accent-color: var(--c-primary-deep); }
+
+label { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: var(--tap-min); cursor: pointer; }
+
+a { color: var(--c-link); }

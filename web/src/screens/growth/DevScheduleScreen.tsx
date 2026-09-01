@@ -1,0 +1,110 @@
+/*
+ * スケジュール設定画面（管理者）
+ * 典拠：基本設計書.md「画面の一覧」(3-2)「園児単位の推奨スケジュールの上書き」
+ *      要件定義書「発達チェック」(4-5)
+ *
+ * チェック頻度は年齢・月齢に応じてシステムが提案するが、マスタデータで園が調整できる。
+ * さらに園児単位の手動上書きに対応する。
+ */
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useAsync } from '../../hooks';
+import { useSession } from '../../session';
+import { api, selectableClasses } from '../../api/client';
+import { Loading, ErrorBox, Empty, Field, Alert, Tag } from '../../components/ui';
+import { formatYMD, formatAge } from '../../api/util';
+
+export default function DevScheduleScreen() {
+  const { user } = useSession();
+  const classesForUser = selectableClasses(user!);
+  const [classId, setClassId] = useState<number>(classesForUser[0]?.class_id ?? 1);
+  const [tick, setTick] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [edits, setEdits] = useState<Record<string, string>>({});
+
+  const { data, error: loadError, loading } = useAsync(() => api.schedules(user!, classId), [classId, tick]);
+
+  const apply = async (childId: string, date: string, manual: boolean) => {
+    setError(null);
+    try {
+      await api.setSchedule(user!, childId, date, manual);
+      setEdits((e) => { const n = { ...e }; delete n[childId]; return n; });
+      setTick((n) => n + 1);
+    } catch (e) { setError((e as Error).message); }
+  };
+
+  return (
+    <div style={{ maxWidth: 940 }}>
+      <div className="page-head">
+        <Link className="btn btn-quiet btn-sm" to="/staff/growth">&lt; 発達チェック一覧へ</Link>
+        <h1>スケジュール設定</h1>
+        <Field label="クラス">
+          <select value={classId} onChange={(e) => setClassId(Number(e.target.value))}>
+            {classesForUser.map((c) => <option key={c.class_id} value={c.class_id}>{c.class_name}</option>)}
+          </select>
+        </Field>
+      </div>
+
+      {error && <div style={{ marginBottom: 16 }}><Alert>{error}</Alert></div>}
+
+      <section className="card">
+        {loading && <Loading />}
+        {loadError && <ErrorBox text={loadError} />}
+        {data?.length === 0 && <Empty text="対象の園児がいません。" />}
+        {data && data.length > 0 && (
+          <table className="list">
+            <thead>
+              <tr>
+                <th>園児</th><th>月齢</th><th>推奨間隔</th>
+                <th>システムの提案</th><th>設定中の予定日</th><th>次回の予定日</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((r) => {
+                const value = edits[r.child.child_id] ?? r.scheduledOn ?? r.suggested;
+                const changed = value !== (r.scheduledOn ?? '');
+                return (
+                  <tr key={r.child.child_id}>
+                    <td className="nowrap">{r.child.child_name}</td>
+                    <td className="nowrap">{formatAge(r.child.birth_date, r.suggested)}</td>
+                    <td className="nowrap">{r.intervalDays ? `${r.intervalDays} 日` : '―'}</td>
+                    <td className="nowrap muted">{formatYMD(r.suggested)}</td>
+                    <td className="nowrap">
+                      {r.scheduledOn ? formatYMD(r.scheduledOn) : '―'}
+                      {r.isManualOverride && <> <Tag label="手動上書き" className="tag-applied" /></>}
+                    </td>
+                    <td className="nowrap">
+                      <input type="date" value={value} style={{ minWidth: 160 }}
+                        onChange={(e) => setEdits({ ...edits, [r.child.child_id]: e.target.value })} />
+                    </td>
+                    <td className="nowrap">
+                      <button className="btn-sm" disabled={!changed}
+                        onClick={() => apply(r.child.child_id, value, true)}>
+                        上書きする
+                      </button>
+                      {r.isManualOverride && (
+                        <button className="btn-sm btn-quiet"
+                          onClick={() => apply(r.child.child_id, r.suggested, false)}>
+                          提案に戻す
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      <section className="card card-sub">
+        <div className="muted">
+          推奨間隔は設定マスタ（m_development_frequency）から読んでいます。園の運用に合わせて変更できます。
+          園児ごとの事情で予定をずらす場合は、この画面で手動上書きしてください。
+          <br />
+          スケジュールの上書きは、発達の遅速の判断とは無関係です。
+        </div>
+      </section>
+    </div>
+  );
+}

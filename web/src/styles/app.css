@@ -1,0 +1,191 @@
+/*
+ * 共通レイアウトと共通部品
+ * 典拠：図/画面詳細図.md「共通レイアウト」(1)
+ */
+
+/* ============ 職員レイアウト（画面詳細図 1-1） ============ */
+.staff-shell { display: flex; flex-direction: column; height: 100%; }
+
+.app-header {
+  height: var(--header-h);
+  flex: 0 0 var(--header-h);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: 0 var(--sp-4);
+  background: var(--c-primary);
+  border-bottom: 1px solid var(--c-primary-deep);
+  color: var(--c-primary-ink);
+}
+.app-header .logo { font-weight: 700; font-size: 18px; letter-spacing: .04em; }
+.app-header .spacer { flex: 1; }
+
+/* ログイン中の利用者名を常時表示する。職員は所属クラスも（基本設計書 3-5） */
+.app-header .who { font-size: 14px; font-weight: 700; white-space: nowrap; }
+.app-header .who .cls { font-weight: 400; margin-right: var(--sp-2); }
+.app-header button { background: rgba(255,255,255,.75); border-color: var(--c-primary-deep); }
+
+/* 通知と未対応件数 */
+.notify-btn { position: relative; }
+.notify-badge {
+  position: absolute; top: 2px; right: 2px;
+  min-width: 20px; height: 20px; padding: 0 5px;
+  border-radius: 10px; background: var(--c-alert); color: #fff;
+  font-size: 11px; font-weight: 700; line-height: 20px; text-align: center;
+}
+
+.staff-body { flex: 1; display: flex; min-height: 0; }
+
+/* サイドナビ。保護者向け画面は持たない（基本設計書 3-5） */
+.sidenav {
+  flex: 0 0 var(--sidenav-w);
+  background: var(--c-surface-sub);
+  border-right: 1px solid var(--c-border);
+  padding: var(--sp-3) 0;
+  overflow-y: auto;
+}
+.sidenav a {
+  display: flex; align-items: center; gap: var(--sp-3);
+  min-height: var(--tap-min);
+  padding: 0 var(--sp-4);
+  color: var(--c-text); text-decoration: none; font-size: 14px;
+  border-left: 4px solid transparent;
+}
+.sidenav a:hover { background: var(--c-primary-soft); }
+.sidenav a.current {
+  background: var(--c-primary-soft);
+  border-left-color: var(--c-primary-deep);
+  font-weight: 700;
+}
+.sidenav hr { margin: var(--sp-3) var(--sp-4); border: 0; border-top: 1px solid var(--c-border); }
+.sidenav .group-label { padding: 0 var(--sp-4); font-size: 12px; color: var(--c-text-weak); }
+
+.main { flex: 1; min-width: 0; overflow-y: auto; padding: var(--sp-5); }
+
+/* 12カラムグリッド（基本設計書 3-5） */
+.grid12 { display: grid; grid-template-columns: repeat(var(--grid-cols), 1fr); gap: var(--sp-4); }
+.col-3  { grid-column: span 3; }
+.col-4  { grid-column: span 4; }
+.col-5  { grid-column: span 5; }
+.col-6  { grid-column: span 6; }
+.col-7  { grid-column: span 7; }
+.col-8  { grid-column: span 8; }
+.col-9  { grid-column: span 9; }
+.col-12 { grid-column: span 12; }
+
+/* ============ 保護者レイアウト（画面詳細図 1-2） ============ */
+.guardian-shell {
+  display: flex; flex-direction: column; height: 100%;
+  max-width: 480px; margin: 0 auto;
+  background: var(--c-surface);
+  border-left: 1px solid var(--c-border);
+  border-right: 1px solid var(--c-border);
+}
+.guardian-main { flex: 1; overflow-y: auto; padding: var(--sp-4); }
+
+.drawer-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 40; }
+.drawer {
+  position: fixed; top: 0; left: 0; bottom: 0; width: 260px; z-index: 41;
+  background: var(--c-surface); border-right: 1px solid var(--c-border);
+  padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-1);
+}
+.drawer .who { font-weight: 700; padding-bottom: var(--sp-3); border-bottom: 1px solid var(--c-border); margin-bottom: var(--sp-2); }
+.drawer a {
+  display: flex; align-items: center; min-height: var(--tap-min);
+  padding: 0 var(--sp-2); color: var(--c-text); text-decoration: none;
+}
+.drawer a:hover { background: var(--c-primary-soft); }
+
+/* ============ 未ログインの入口 ============ */
+.public-shell {
+  min-height: 100%; display: flex; align-items: center; justify-content: center;
+  padding: var(--sp-5); background: var(--c-primary-soft);
+}
+.public-card {
+  width: 100%; max-width: 420px; background: var(--c-surface);
+  border: 1px solid var(--c-border); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: var(--sp-5);
+}
+.public-card.wide { max-width: 560px; }
+.public-card .brand { text-align: center; margin-bottom: var(--sp-5); }
+.public-card .brand .name { font-size: 26px; font-weight: 700; color: var(--c-primary-deep); }
+.public-card .brand .sub  { font-size: 13px; color: var(--c-text-sub); }
+
+/* ============ 共通部品 ============ */
+.page-head { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; margin-bottom: var(--sp-4); }
+.page-head .spacer { flex: 1; }
+
+.card {
+  background: var(--c-surface); border: 1px solid var(--c-border);
+  border-radius: var(--radius); padding: var(--sp-4); margin-bottom: var(--sp-4);
+}
+.card > h2, .card > h3 { margin-bottom: var(--sp-3); }
+.card-sub { background: var(--c-surface-sub); }
+
+.filterbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-3); }
+.field { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.field > .lbl { font-size: 12px; color: var(--c-text-sub); font-weight: 700; }
+.field.req > .lbl::after { content: " 必須"; color: var(--c-alert); }
+
+table.list { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.list th, table.list td {
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--c-border);
+  text-align: left; vertical-align: middle;
+}
+table.list th { background: var(--c-surface-sub); font-size: 13px; color: var(--c-text-sub); white-space: nowrap; }
+table.list tr:hover td { background: var(--c-primary-soft); }
+table.list td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.pager { display: flex; align-items: center; gap: var(--sp-3); justify-content: flex-end; margin-top: var(--sp-3); font-size: 13px; color: var(--c-text-sub); }
+
+.tag { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; border: 1px solid; }
+.tag-draft    { color: var(--c-draft);    border-color: var(--c-draft);    background: #f3f4f6; }
+.tag-applied  { color: var(--c-applied);  border-color: var(--c-applied);  background: #e8f0fb; }
+.tag-returned { color: #fff; border-color: var(--c-returned); background: var(--c-returned); }
+.tag-approved { color: var(--c-approved); border-color: var(--c-approved); background: #e8f5e9; }
+.tag-plain    { color: var(--c-text-sub); border-color: var(--c-border-strong); background: var(--c-surface-sub); }
+
+/* 警告・注意喚起。判定ではない */
+.alert {
+  display: flex; gap: var(--sp-2); padding: var(--sp-3); border-radius: var(--radius-sm);
+  background: var(--c-alert-soft); border: 1px solid var(--c-alert);
+  color: var(--c-alert); font-size: 14px; font-weight: 700;
+}
+.alert-soft { background: var(--c-primary-soft); border-color: var(--c-primary-deep); color: var(--c-primary-ink); }
+
+/*
+ * 免責表示。成長グラフ・発達チェックの比較に常時表示し、スクロールしても視界から外さない
+ * （基本設計書 3-5／画面詳細図 6-1・6-2）
+ */
+.disclaimer {
+  position: sticky; bottom: 0; z-index: 5;
+  display: flex; align-items: center; gap: var(--sp-2);
+  margin-top: var(--sp-3); padding: var(--sp-3);
+  background: var(--c-alert-soft); border: 1px solid var(--c-alert);
+  border-radius: var(--radius-sm); color: var(--c-alert);
+  font-size: 13px; font-weight: 700; box-shadow: var(--shadow-up);
+}
+
+.muted { color: var(--c-text-sub); font-size: 13px; }
+.weak  { color: var(--c-text-weak); }
+.row   { display: flex; gap: var(--sp-3); align-items: center; flex-wrap: wrap; }
+.row-end { display: flex; gap: var(--sp-3); align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+.stack { display: flex; flex-direction: column; gap: var(--sp-3); }
+.nowrap { white-space: nowrap; }
+.empty { padding: var(--sp-6); text-align: center; color: var(--c-text-weak); }
+.choices { display: flex; flex-wrap: wrap; gap: var(--sp-4); }
+
+/* ダイアログ。画面として起こさないもの（基本設計書 3-1 基準3） */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 50; padding: var(--sp-4); }
+.modal { background: var(--c-surface); border-radius: var(--radius); box-shadow: 0 8px 30px rgba(0,0,0,.25); width: 100%; max-width: 560px; max-height: 90vh; overflow-y: auto; }
+.modal-head { padding: var(--sp-4); border-bottom: 1px solid var(--c-border); font-weight: 700; }
+.modal-body { padding: var(--sp-4); }
+.modal-foot { padding: var(--sp-4); border-top: 1px solid var(--c-border); display: flex; justify-content: flex-end; gap: var(--sp-3); }
+
+/* 段階を上から順に踏ませる（画面詳細図 2-3 新規登録画面） */
+.step { border: 1px solid var(--c-border); border-radius: var(--radius); padding: var(--sp-4); margin-bottom: var(--sp-4); }
+.step.locked { opacity: .5; pointer-events: none; }
+.step .step-title { font-weight: 700; margin-bottom: var(--sp-3); }
+
+.terms-box { max-height: 220px; overflow-y: auto; border: 1px solid var(--c-border); border-radius: var(--radius-sm); padding: var(--sp-3); background: var(--c-surface-sub); font-size: 13px; white-space: pre-wrap; }

@@ -1,0 +1,102 @@
+/*
+ * 園児情報確認画面（管理者）
+ * 典拠：図/画面詳細図.md「園児情報入力画面／園児情報確認画面（管理者）」(7-2)
+ *
+ * 生年月日は月齢の算出の根拠であり、後から直すと過去の記録の月齢表示が変わる。
+ * 確認画面で強調する。
+ */
+import { useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { useSession } from '../../session';
+import { api, className } from '../../api/client';
+import { Alert, Empty } from '../../components/ui';
+import { SEX, PHOTO_CONSENT } from '../../api/codes';
+import { formatYMD, formatAge, today } from '../../api/util';
+import type { ChildInput } from '../../api/client';
+import type { Child } from '../../api/types';
+
+export default function ChildConfirmScreen() {
+  const { user } = useSession();
+  const navigate = useNavigate();
+  const state = useLocation().state as { form: ChildInput; mode: 'create' | 'edit'; before: Child | null } | null;
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  if (!state) return <Empty text="確認する内容がありません。園児情報の入力画面から進んでください。" />;
+  const { form, mode, before } = state;
+
+  const birthChanged = mode === 'edit' && before && before.birth_date !== form.birth_date;
+
+  const submit = async () => {
+    setBusy(true); setError(null);
+    try {
+      await api.saveChild(user!, form, mode);
+      navigate('/staff/children');
+    } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  };
+
+  return (
+    <div style={{ maxWidth: 620 }}>
+      <div className="page-head"><h1>この内容で{mode === 'create' ? '登録' : '更新'}します</h1></div>
+
+      {error && <div style={{ marginBottom: 16 }}><Alert>{error}</Alert></div>}
+
+      {/* 生年月日の変更は過去の記録の月齢表示に波及する。確認画面で強調する */}
+      {birthChanged && (
+        <div style={{ marginBottom: 16 }}>
+          <Alert>
+            生年月日を {formatYMD(before!.birth_date)} から {formatYMD(form.birth_date)} へ変更します。
+            生年月日は月齢の算出の唯一の根拠です。変更すると、過去の記録の月齢表示もすべて変わります。
+          </Alert>
+        </div>
+      )}
+
+      <section className="card">
+        <table className="list">
+          <tbody>
+            <tr><th style={{ width: 150 }}>園児ID</th><td>{form.child_id}</td></tr>
+            <tr><th>氏名</th><td>{form.child_name}</td></tr>
+            <tr><th>よみ</th><td>{form.child_name_kana || '―'}</td></tr>
+            <tr>
+              <th>生年月日</th>
+              <td>
+                {formatYMD(form.birth_date)}
+                <span className="muted">（{formatAge(form.birth_date, today())}）</span>
+              </td>
+            </tr>
+            <tr><th>性別</th><td>{SEX[form.sex]}</td></tr>
+            <tr><th>クラス</th><td>{className(form.class_id)}</td></tr>
+            <tr><th>平熱</th><td>{form.normal_temperature != null ? `${form.normal_temperature} ℃` : '―'}</td></tr>
+            <tr><th>写真の利用同意</th><td>{PHOTO_CONSENT[form.photo_consent_level]}</td></tr>
+            <tr>
+              <th>アレルギー</th>
+              <td>
+                {form.allergies.filter((a) => a.target_food.trim()).length === 0 ? '―' : (
+                  <ul style={{ margin: 0, paddingLeft: 18 }}>
+                    {form.allergies.filter((a) => a.target_food.trim()).map((a, i) => (
+                      <li key={i}>{a.target_food}／{a.symptom || '―'}／{a.response || '―'}</li>
+                    ))}
+                  </ul>
+                )}
+              </td>
+            </tr>
+            <tr>
+              <th>既往歴</th>
+              <td>
+                {form.medical_histories.filter((m) => m.trim()).length === 0 ? '―'
+                  : form.medical_histories.filter((m) => m.trim()).join('／')}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <div className="row-end">
+        <button onClick={() => navigate(-1)} disabled={busy}>戻る</button>
+        <button className="btn-primary" onClick={submit} disabled={busy}>
+          {mode === 'create' ? '登録する' : '更新する'}
+        </button>
+      </div>
+    </div>
+  );
+}
