@@ -249,7 +249,10 @@ describe('発達チェック・身体測定（5画面）', () => {
     open('/staff/growth/physical', teacher);
     await settled();
     expect(document.body.textContent).toContain('未実施：');
-    expect(screen.getByText('本グラフは発育の判定・診断を行うものではありません。')).toBeTruthy();
+    // 園児が選ばれてから成長グラフと免責が出る
+    await waitFor(() => {
+      expect(screen.getByText('本グラフは発育の判定・診断を行うものではありません。')).toBeTruthy();
+    }, { timeout: 3000 });
   });
 
   it('身体記録画面：PDF出力は一般には出さない', async () => {

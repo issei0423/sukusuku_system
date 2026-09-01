@@ -62,7 +62,8 @@ export default function TermsAgreeScreen({ readOnly }: { readOnly?: boolean }) {
       <div className="stack" style={{ marginTop: 16 }}>
         <button className="btn-primary btn-block" disabled={!agreed || busy} onClick={submit}>同意して進む</button>
         {/* 同意しない選択も残す。同意しないままでは利用できないことを明示する */}
-        <button className="btn-block" onClick={() => { logout(); navigate('/'); }}>同意せずログアウトする</button>
+        <button className="btn-block"
+          onClick={async () => { await logout(); navigate('/'); }}>同意せずログアウトする</button>
       </div>
     </PublicLayout>
   );

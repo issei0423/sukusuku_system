@@ -106,4 +106,24 @@ run('Go サーバとの結合', () => {
   it('午睡チェックの間隔はクラスから引ける', () => {
     expect(http.api.intervalMinutesFor(1)).toBe(10);
   });
+
+  /*
+   * ログアウトはサーバ側のセッションを確実に捨てる。
+   *
+   * 以前は破棄の完了を待たずに画面を遷移していたため、全画面の読み込みで通信が打ち切られ、
+   * サーバ側のセッションが生き残っていた。その状態で再読み込みすると、
+   * 前の利用者としてログインし直ってしまう。共有端末では担当の取り違えになる
+   * （基本設計書「画面基本構成」(3-5)）。
+   */
+  it('ログアウトするとサーバ側のセッションも捨てられる', async () => {
+    await http.api.login('takahashi@hoiku.example.jp', 'pass1234', 'staff');
+    expect(await http.api.bootstrap()).not.toBeNull();
+
+    await http.api.logout();
+
+    // 再読み込みに相当する。前の利用者として復元されない
+    expect(await http.api.bootstrap()).toBeNull();
+    // 参照表も捨てられている
+    expect(http.visibleChildren(dummy)).toHaveLength(0);
+  });
 });

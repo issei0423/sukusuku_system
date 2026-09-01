@@ -38,8 +38,8 @@ export default function StaffLayout() {
   const s = summary.data;
   const pending = s ? s.returned + s.unreadChat + s.devOverdue + s.pending + s.abnormalWithoutDiary : 0;
 
-  const onLogout = () => {
-    logout();
+  const onLogout = async () => {
+    await logout();
     // ログアウトの遷移先はログインしていた系統のトップ（基本設計書「画面遷移」(3-4)）
     navigate('/staff-top');
   };

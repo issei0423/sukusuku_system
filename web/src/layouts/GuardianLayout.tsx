@@ -20,8 +20,8 @@ export default function GuardianLayout() {
   if (!user) return null;
   const unread = home.data?.[0]?.unread ?? 0;
 
-  const onLogout = () => {
-    logout();
+  const onLogout = async () => {
+    await logout();
     navigate('/');
   };
 

@@ -33,7 +33,7 @@ export default function TopScreen({ entrance }: { entrance: 'staff' | 'guardian'
         <p>すでにログインしています。</p>
         <p>別のアカウントでログインするには、先にログアウトしてください。</p>
         <div className="stack">
-          <button className="btn-primary btn-block" onClick={logout}>ログアウトする</button>
+          <button className="btn-primary btn-block" onClick={() => void logout()}>ログアウトする</button>
           <button className="btn-block" onClick={() => navigate(-1)}>前の画面へ戻る</button>
         </div>
       </PublicLayout>

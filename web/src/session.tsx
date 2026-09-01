@@ -15,7 +15,8 @@ interface SessionValue {
   entrance: 'staff' | 'guardian';
   setUser: (u: SessionUser | null) => void;
   setEntrance: (e: 'staff' | 'guardian') => void;
-  logout: () => void;
+  /** サーバ側のセッションの破棄を待って解決する。画面遷移の前に必ず待つこと */
+  logout: () => Promise<void>;
 }
 
 const Ctx = createContext<SessionValue | null>(null);
@@ -24,10 +25,22 @@ export function SessionProvider({ children, initialUser = null }: { children: Re
   const [user, setUser] = useState<SessionUser | null>(initialUser);
   const [entrance, setEntrance] = useState<'staff' | 'guardian'>('staff');
 
-  // サーバ側のセッションと参照表も捨てる。共有端末で前の利用者の情報を残さないため
-  const logout = () => {
-    setUser(null);
-    void api.logout();
+  /*
+   * ログアウト
+   *
+   * サーバ側のセッションと参照表も捨てる。共有端末で前の利用者の情報を残さないため
+   * （基本設計書「画面基本構成」(3-5)）。
+   *
+   * 破棄の完了を待ってから解決する。待たずに画面を遷移すると、
+   * 全画面の読み込みで通信が打ち切られ、サーバ側のセッションが生き残る。
+   * その状態で再読み込みすると前の利用者としてログインし直ってしまう。
+   */
+  const logout = async () => {
+    try {
+      await api.logout();
+    } finally {
+      setUser(null);
+    }
   };
 
   return <Ctx.Provider value={{ user, entrance, setUser, setEntrance, logout }}>{children}</Ctx.Provider>;
