@@ -6,8 +6,10 @@
  * URL は画面名に対応させ、学校テンプレートが求める n-n-n-n 形式の画面IDは
  * 提出時に対応表で満たす（対応表は未作成）。
  */
+import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useSession } from './session';
+import { api, backend } from './api/client';
 import StaffLayout from './layouts/StaffLayout';
 import GuardianLayout from './layouts/GuardianLayout';
 
@@ -90,6 +92,26 @@ function RequireGuardian() {
 }
 
 export default function App() {
+  const { setUser } = useSession();
+  // モックはメモリ上にしか状態を持たないため、復元するものが無い
+  const [ready, setReady] = useState(backend === 'mock');
+
+  /*
+   * ページを開き直したときにセッションを復元する。
+   * サーバ側にセッションを持つため、再読み込みでログアウトさせない。
+   * 復元が終わるまで経路の判定を保留する。未ログイン扱いで入口へ飛ばさないため。
+   */
+  useEffect(() => {
+    if (backend === 'mock') return;
+    let alive = true;
+    api.bootstrap()
+      .then((u) => { if (alive && u) setUser(u); })
+      .finally(() => { if (alive) setReady(true); });
+    return () => { alive = false; };
+  }, []);
+
+  if (!ready) return <div className="empty">読み込んでいます…</div>;
+
   return (
     <Routes>
       {/* ---- 共通・認証（未ログイン） ---- */}

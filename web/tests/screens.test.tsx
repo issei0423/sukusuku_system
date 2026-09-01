@@ -177,8 +177,10 @@ describe('チャットツール（3画面）', () => {
 describe('午睡チェック（3画面）', () => {
   it('午睡チェック画面：実施中はタイマーと園児カードを出す', async () => {
     open('/staff/nap', teacher);
-    await settled();
-    expect(screen.getByText('次のチェックまで')).toBeTruthy();
+    // 実施中のセッションの取得が終わるまでタイマーは出ない
+    await waitFor(() => {
+      expect(screen.getByText('次のチェックまで')).toBeTruthy();
+    }, { timeout: 3000 });
     expect(screen.getByText('午睡チェックを終了')).toBeTruthy();
     // 記録済み 8 / 12 名（デモデータ）。園児の状態はセッション取得後に読み直すため待つ
     await waitFor(() => {

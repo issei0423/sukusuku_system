@@ -25,6 +25,7 @@ func (a *app) routeAuth(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/login", a.handleLogin)
 	mux.HandleFunc("POST /api/logout", a.handleLogout)
 	mux.HandleFunc("GET /api/me", a.handleMe)
+	mux.HandleFunc("GET /api/reference", a.handleReference)
 	mux.HandleFunc("POST /api/password", a.handleChangePassword)
 	mux.HandleFunc("GET /api/terms", a.handleCurrentTerms)
 	mux.HandleFunc("POST /api/terms/agree", a.handleAgreeTerms)

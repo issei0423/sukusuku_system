@@ -29,19 +29,24 @@ export default function ChildCsvScreen() {
   const readFile = async (file: File) => {
     const content = await file.text();
     setText(content);
-    setParsed(api.parseChildCsv(content));
+    setParsed(await api.parseChildCsv(content));
   };
 
-  const check = () => {
+  // 取込内容の検証はサーバ側でも行う。画面の判定だけに頼らない
+  const check = async () => {
     setError(null);
-    setParsed(api.parseChildCsv(text));
+    try {
+      setParsed(await api.parseChildCsv(text));
+    } catch (e) {
+      setError((e as Error).message);
+    }
   };
 
   const doImport = async () => {
     if (!parsed) return;
     setBusy(true); setError(null);
     try {
-      const n = await api.importChildCsv(user!, parsed.rows);
+      const n = await api.importChildCsv(user!, parsed.rows, text);
       alert(`${n} 件を登録しました`);
       navigate('/staff/children');
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }

@@ -9,7 +9,9 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "dev:mock": "vite --mode mock",
+    "test:integration": "vitest run tests/integration.test.ts"
   },
   "dependencies": {
     "react": "^19.2.7",

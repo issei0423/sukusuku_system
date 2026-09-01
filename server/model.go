@@ -178,3 +178,5 @@ func strPtr(s string) *string {
 	}
 	return &s
 }
+
+func itoa64(n int64) string { return strconv.FormatInt(n, 10) }

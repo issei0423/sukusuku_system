@@ -1,31 +1,48 @@
-# server — Go サーバ（未着手）
+# server — Go サーバ
 
-Go がこの環境にインストールされていないため、**Go のコードはまだ書いていない。**
-先に、Go 側が実装することになる契約（スキーマとエンドポイント）だけを確定させている。
+Go 1.27 + SQLite。API と、React のビルド成果物の配信を行う。
 
-## 置いてあるもの
+```
+go run .                      # http://localhost:8080
+go run . -addr :9000          # 待ち受けアドレスを変える
+go run . -db /path/to.db      # データベースの位置を変える
+go run . -web ../web/dist     # 配信する静的ファイルの場所
+```
+
+初回起動時に `sukusuku.db` を作り、スキーマとデモデータを投入する。
+デモ用の編集ロックは起動のたびに現在時刻へ寄せる（「他の職員が編集中」の状態をいつでも見せるため）。
+
+## 構成
 
 | ファイル | 内容 |
 | :-- | :-- |
-| `schema.sql` | 基本設計書「データベース設計」(5) の全37テーブルの DDL。SQLite で作成できることを確認済み |
+| `schema.sql` | 基本設計書「データベース設計」(5) の全37テーブルの DDL |
+| `seed.sql` | デモデータ。氏名・メールアドレス・招待コード・測定値はすべて架空 |
+| `db.go` | データベースの初期化と、成長曲線基準値の生成 |
+| `session.go` | ログイン状態の保持。**方式は仮置き**（`web/仮置き値.md`） |
+| `scope.go` | 参照範囲と権限の判定。**権限の担保はここ** |
+| `oplog.go` | 操作ログ。追記のみ |
+| `api_*.go` | 機能ごとのハンドラ |
+| `routes.go` | エンドポイントの配線 |
 
-`schema.sql` は `python -c "import sqlite3; sqlite3.connect(':memory:').executescript(open('schema.sql',encoding='utf-8').read())"` で検証している。
-`t_physical_record` の部分一意インデックス（`is_deleted = 0` の行のみ対象）が、
-削除した測定日への再登録を許しつつ生存行の重複を拒むことも確認した（基本設計書 5-7）。
+## 選定の理由
 
-## 着手の手順
+- **SQLite** … `t_physical_record` の部分一意インデックス（`is_deleted = 0` の行のみ対象）に
+  対応する必要がある。MySQL は非対応（基本設計書 5-7）
+- **`modernc.org/sqlite`（純 Go）** … この環境には gcc が無く、cgo を必要とする
+  `mattn/go-sqlite3` はビルドできない
+- **`net/http` の `ServeMux`** … Go 1.22 以降はメソッドとパス変数を扱える。フレームワークは入れない
 
-1. Go をインストールする（`winget install GoLang.Go`）。インストール後は Claude Code の再起動が必要
-2. `go mod init github.com/issei0423/sukusuku/server`
-3. SQLite ドライバは **`modernc.org/sqlite`** を使う。この環境には gcc がなく、
-   cgo を必要とする `mattn/go-sqlite3` はビルドできないため
-4. ルーティングは Go 1.22 以降の `net/http` の `ServeMux` で足りる。フレームワークは入れない
+## 実装上の注意
+
+**データベースの接続を1本に絞っている**（`db.SetMaxOpenConns(1)`）。SQLite は書き込みを
+直列化するため、競合を避ける狙い。その代わり、**行を読みながら別の問い合わせを投げると
+接続の取り合いで停止する。** 名前の解決などは必ずカーソルを閉じたあとに行うこと
+（`api_diary.go` の `enrich`、`api_chat.go` の未読件数の数え上げが例）。
 
 ## 実装するエンドポイント
 
-`web/src/api/client.ts` に並ぶ関数が、そのままエンドポイントの一覧にあたる。
-同ファイルは現在ブラウザ内の `mockDb.ts` を読み書きしているが、
-Go 側ができたら**中身だけを fetch に差し替える**。画面側のコードは変更しない。
+配線は `routes.go` にある。画面側は `web/src/api/http.ts` から呼ぶ。
 
 | 区分 | 関数（＝エンドポイント） |
 | :-- | :-- |
@@ -55,10 +72,10 @@ Go 側ができたら**中身だけを fetch に差し替える**。画面側の
 
 ## 未確定のまま残っているもの
 
-Go の実装に入る前に決める必要がある（`要決定事項.md` 優先度A）。
+動かすために仮に決めたものがある（`要決定事項.md` 優先度A）。**設計の決定ではない。**
 
-- 認証情報の保持方式（Cookie / localStorage / セッションストア）
-- CSRF 対策の方式
-- パスワードのハッシュ方式（bcrypt / argon2 など）
+- 認証情報の保持方式 → サーバ側セッション＋HttpOnly・SameSite=Strict の Cookie
+- CSRF 対策の方式 → 独立した対策は未実装。SameSite=Strict は緩和策であって対策ではない
+- パスワードのハッシュ方式 → bcrypt
 
-`web/仮置き値.md`「モックで実装していないもの」も参照。
+詳細と、その他の仮置きは `web/仮置き値.md` を参照。

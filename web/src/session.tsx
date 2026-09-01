@@ -7,6 +7,7 @@
  */
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import type { SessionUser } from './api/types';
+import { api } from './api/client';
 
 interface SessionValue {
   user: SessionUser | null;
@@ -23,7 +24,11 @@ export function SessionProvider({ children, initialUser = null }: { children: Re
   const [user, setUser] = useState<SessionUser | null>(initialUser);
   const [entrance, setEntrance] = useState<'staff' | 'guardian'>('staff');
 
-  const logout = () => setUser(null);
+  // サーバ側のセッションと参照表も捨てる。共有端末で前の利用者の情報を残さないため
+  const logout = () => {
+    setUser(null);
+    void api.logout();
+  };
 
   return <Ctx.Provider value={{ user, entrance, setUser, setEntrance, logout }}>{children}</Ctx.Provider>;
 }
