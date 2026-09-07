@@ -34,6 +34,11 @@ export default function DevListScreen() {
         <div className="spacer" />
         <Link className="btn btn-sm" to="/staff/growth/physical">身体記録へ</Link>
         {user!.role === '1' && <Link className="btn btn-sm" to="/staff/growth/schedule">スケジュール設定</Link>}
+        {/*
+          共有範囲の設定も管理者だけの操作であり、スケジュール設定と並べて置く
+          （図/画面遷移図.md「発達チェック・身体測定」(6)）
+        */}
+        {user!.role === '1' && <Link className="btn btn-sm" to="/staff/growth/share">共有範囲の設定</Link>}
       </div>
 
       {/* チェック漏れを強調する */}

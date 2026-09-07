@@ -150,7 +150,7 @@ function MessageRow({ message, mine, onRetract }: {
   if (message.is_deleted) {
     return (
       <div className="msg">
-        <div className="meta">{accountName(message.sender_account_id)} {formatHM(message.sent_at)}</div>
+        <div className="meta">{(message.sender_name ?? accountName(message.sender_account_id))} {formatHM(message.sent_at)}</div>
         <div className="bubble retracted">このメッセージは取り消されました</div>
       </div>
     );
@@ -159,7 +159,7 @@ function MessageRow({ message, mine, onRetract }: {
   return (
     <div className={`msg${mine ? ' mine' : ''}`}>
       <div className="meta">
-        {accountName(message.sender_account_id)} {formatMD(message.sent_at.slice(0, 10))} {formatHM(message.sent_at)}
+        {(message.sender_name ?? accountName(message.sender_account_id))} {formatMD(message.sent_at.slice(0, 10))} {formatHM(message.sent_at)}
         {message.edited_at && <span className="weak">（編集済み）</span>}
       </div>
       <div className="bubble">

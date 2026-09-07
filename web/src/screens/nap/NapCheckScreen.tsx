@@ -61,6 +61,11 @@ export default function NapCheckScreen() {
           </select>
         </Field>
         <div className="spacer" />
+        {/*
+          過去の記録を見返す導線はこの画面が持つ。サイドナビには置かない。
+          実施中の画面から離れる操作を誘わないため（図/画面遷移図.md「午睡チェック」(5)）
+        */}
+        <Link className="btn btn-sm" to="/staff/nap/search">記録を検索</Link>
         <span className="muted">記録者：{user!.display_name}</span>
       </div>
 

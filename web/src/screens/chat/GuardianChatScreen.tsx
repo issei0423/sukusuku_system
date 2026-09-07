@@ -93,7 +93,11 @@ export default function GuardianChatScreen() {
           return (
             <div key={m.chat_message_id} className={`msg${mine ? ' mine' : ''}`}>
               <div className="meta">
-                {mine ? '私' : accountName(m.sender_account_id)} {formatMD(m.sent_at.slice(0, 10))} {formatHM(m.sent_at)}
+                {/*
+                  送信者名はメッセージが持つものを使う。保護者にはアカウントの名簿を
+                  返さないため、account_id からは引けない（api/types.ts の sender_name）
+                */}
+                {mine ? '私' : m.sender_name ?? accountName(m.sender_account_id)} {formatMD(m.sent_at.slice(0, 10))} {formatHM(m.sent_at)}
               </div>
               <div className="bubble">
                 {m.body}

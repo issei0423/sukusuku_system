@@ -255,6 +255,12 @@ export interface ChatMessage {
   is_deleted: boolean;
   deleted_at: string | null;
   deleted_account_id: number | null;
+  /*
+   * 送信者の表示名。テーブルの列ではなく、返すときに添える。
+   * 保護者にはアカウントの名簿を返さないため（server/api_reference.go）、
+   * 画面側で sender_account_id から引くことができない。
+   */
+  sender_name?: string;
 }
 
 /** 既読（t_chat_read）。保護者側には表示しない（5-5） */

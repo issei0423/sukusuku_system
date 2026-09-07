@@ -576,8 +576,11 @@ export const chatApi = {
     if (!member) return fail('このチャンネルを参照する権限がありません');
     // 保護者は left_at が入った時点で参照できなくなる（基本設計書 5-5）
     if (user.role === '3' && member.left_at) return fail('このチャンネルは参照できません');
+    // 送信者名を添える。保護者はアカウントの名簿を参照できないため、画面側では引けない
+    // （サーバ側の api_chat.go も同じ扱い。片方だけ直すと食い違う）
     return ok(db.chatMessages.filter((m) => m.chat_room_id === roomId)
-      .sort((a, b) => a.sent_at.localeCompare(b.sent_at)));
+      .sort((a, b) => a.sent_at.localeCompare(b.sent_at))
+      .map((m) => ({ ...m, sender_name: accountName(m.sender_account_id) })));
   },
 
   /** 既読は人数で示す。保護者側には表示しない（基本設計書 5-5） */
