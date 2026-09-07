@@ -43,9 +43,27 @@ export function formatAge(birthDate: string, baseDate: string): string {
   return `${Math.floor(m / 12)}歳${m % 12}か月`;
 }
 
-/** 今日を 'YYYY-MM-DD' で返す */
+/*
+ * 日付と時刻は日本標準時（JST）で扱う
+ *
+ * 記録は日付そのものが意味を持つ（その日の日誌か、その日の午睡か）。
+ * 端末の時計の設定で日付が変わると、同じ記録が別の日のものに見えてしまう。
+ * 国内の園で使うシステムであり、JST に固定してよい。
+ * サーバ側（server/model.go）も同じ扱いにしてある。
+ */
+const JST_OFFSET_MINUTES = 9 * 60;
+
+/** JST での現在時刻。UTC からの差を足した Date を返すため、読むときは getUTC* を使う */
+export function jstNow(): Date {
+  const d = new Date();
+  return new Date(d.getTime() + JST_OFFSET_MINUTES * 60 * 1000);
+}
+
+/** 今日を 'YYYY-MM-DD' で返す（JST） */
 export function today(): string {
-  return toISODate(new Date());
+  const d = jstNow();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`;
 }
 
 export function toISODate(d: Date): string {
@@ -85,11 +103,11 @@ export function addDays(iso: string, days: number): string {
   return toISODate(new Date(y, m - 1, d + days));
 }
 
-/** サーバ時刻の代わり。モックでは端末の時刻を用いる */
+/** サーバ時刻の代わり。モックでは端末の時計を JST に直して用いる */
 export function now(): string {
-  const d = new Date();
+  const d = jstNow();
   const p = (n: number) => String(n).padStart(2, '0');
-  return `${toISODate(d)}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  return `${today()}T${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`;
 }
 
 /**

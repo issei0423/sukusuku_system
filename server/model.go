@@ -73,11 +73,24 @@ func page[T any](rows []T, p, perPage int) Paged[T] {
 
 // ---- 時刻。サーバの時刻を入れる（基本設計書 5-1） ----
 
-func now() string   { return time.Now().Format("2006-01-02T15:04:05") }
-func today() string { return time.Now().Format("2006-01-02") }
+/*
+ * 日付と時刻は日本標準時（JST）で扱う。
+ *
+ * 記録は日付そのものが意味を持つ（その日の日誌か、その日の午睡か）。
+ * サーバの置き場所や端末の設定で日付が変わると、同じ記録が別の日のものに
+ * 見えてしまう。国内の園で使うシステムであり、JST に固定してよい。
+ * time.Local を使わないのは、動かす環境によって結果が変わるため。
+ */
+var jst = time.FixedZone("JST", 9*60*60)
+
+// nowTime は JST での現在時刻。日付・時刻はすべてこれを起点にする
+func nowTime() time.Time { return time.Now().In(jst) }
+
+func now() string   { return nowTime().Format("2006-01-02T15:04:05") }
+func today() string { return nowTime().Format("2006-01-02") }
 
 func plusMinutes(iso string, minutes int) string {
-	t, err := time.ParseInLocation("2006-01-02T15:04:05", iso, time.Local)
+	t, err := time.ParseInLocation("2006-01-02T15:04:05", iso, jst)
 	if err != nil {
 		return iso
 	}
@@ -85,11 +98,11 @@ func plusMinutes(iso string, minutes int) string {
 }
 
 func fromNowMinutes(minutes int) string {
-	return time.Now().Add(time.Duration(minutes) * time.Minute).Format("2006-01-02T15:04:05")
+	return nowTime().Add(time.Duration(minutes) * time.Minute).Format("2006-01-02T15:04:05")
 }
 
 func addDays(iso string, days int) string {
-	t, err := time.ParseInLocation("2006-01-02", iso, time.Local)
+	t, err := time.ParseInLocation("2006-01-02", iso, jst)
 	if err != nil {
 		return iso
 	}

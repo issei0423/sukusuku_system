@@ -46,6 +46,10 @@ func openDB(path string) (*sql.DB, error) {
 		if err := seedGrowthStandards(db); err != nil {
 			return nil, fmt.Errorf("成長曲線基準値の投入に失敗しました: %w", err)
 		}
+		// デモデータは「今日＝2026-09-01」で作ってある。起動日に合わせてずらす（seed_shift.go）
+		if err := shiftSeedDates(db); err != nil {
+			return nil, err
+		}
 		log.Printf("デモデータを投入しました")
 	}
 	return db, nil

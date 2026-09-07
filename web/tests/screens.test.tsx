@@ -177,10 +177,17 @@ describe('チャットツール（3画面）', () => {
 describe('午睡チェック（3画面）', () => {
   it('午睡チェック画面：実施中はタイマーと園児カードを出す', async () => {
     open('/staff/nap', teacher);
-    // 実施中のセッションの取得が終わるまでタイマーは出ない
+    /*
+     * 実施中のセッションの取得が終わるまでタイマーは出ない。
+     * 見出しは「次のチェックまで」と「チェックの時刻を過ぎています」の2通りあり、
+     * どちらになるかは実行した時刻で決まる（デモの午睡は 13:00 開始）。
+     * どちらも正しい状態なので、文言ではなくタイマーが出ていることを確かめる。
+     */
     await waitFor(() => {
-      expect(screen.getByText('次のチェックまで')).toBeTruthy();
+      expect(screen.getByText('チェック間隔')).toBeTruthy();
     }, { timeout: 3000 });
+    const timerLabel = screen.queryByText('次のチェックまで') ?? screen.queryByText('チェックの時刻を過ぎています');
+    expect(timerLabel).toBeTruthy();
     expect(screen.getByText('午睡チェックを終了')).toBeTruthy();
     // 記録済み 8 / 12 名（デモデータ）。園児の状態はセッション取得後に読み直すため待つ
     await waitFor(() => {

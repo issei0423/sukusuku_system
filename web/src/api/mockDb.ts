@@ -8,7 +8,7 @@
  * 掲載している氏名・メールアドレス・招待コード・測定値はすべて架空である
  * （図/画面詳細図.md「本書の位置づけ」(0)）。
  */
-import { now } from './util';
+import { now, today } from './util';
 import type {
   Account, Staff, Guardian, InvitationCode, Terms,
   Child, ClassRoom, ClassChild, ClassStaff, GuardianChild, Allergy, MedicalHistory,
@@ -611,3 +611,78 @@ export const settings: Setting[] = [
   setting('paging.operation_log_per_page', '100', '操作ログの既定件数'),
   setting('paging.physical_history_count', '12', '過去測定値一覧の既定表示件数'),
 ];
+
+/* ============ デモデータの日付を起動日に合わせる ============
+ *
+ * 上のデモデータは DEMO_TODAY（2026-09-01）を「今日」として組み立ててある。
+ * そのまま日が経つと、実施中の午睡や今日の日誌が今日のものでなくなり、
+ * 画面が正しく描画されない（GitHub Issue #66）。
+ *
+ * 日付をひとつずつ相対で書き直すのではなく、基準日と起動日の差だけまとめて
+ * ずらす。記録どうしの前後関係（昨日・3日前）がそのまま保たれるため。
+ * サーバ側（server/seed_shift.go）も同じ扱いにしてある。片方だけ直すと食い違う。
+ *
+ * ずらすのは記録だけである。園児の生年月日や年度の開始日は絶対の日付であり、
+ * 動かしてはならない。マスタの配列は下の対象に含めず、記録の中に混ざる
+ * birth_date は名前で除外する。
+ */
+
+/** ずらしの対象から外す項目名。生年月日は照合に使う値であり動かせない */
+const SHIFT_EXCLUDED_KEYS = new Set(['birth_date']);
+
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+const DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/;
+
+function daysBetween(fromISO: string, toISO: string): number {
+  const [fy, fm, fd] = fromISO.split('-').map(Number);
+  const [ty, tm, td] = toISO.split('-').map(Number);
+  const from = Date.UTC(fy, fm - 1, fd);
+  const to = Date.UTC(ty, tm - 1, td);
+  return Math.round((to - from) / 86_400_000);
+}
+
+function shiftValue(value: string, days: number): string {
+  const datePart = value.slice(0, 10);
+  const [y, m, d] = datePart.split('-').map(Number);
+  const shifted = new Date(Date.UTC(y, m - 1, d + days));
+  const p = (n: number) => String(n).padStart(2, '0');
+  const iso = `${shifted.getUTCFullYear()}-${p(shifted.getUTCMonth() + 1)}-${p(shifted.getUTCDate())}`;
+  return value.length === 10 ? iso : iso + value.slice(10);
+}
+
+function shiftRows(rows: Record<string, unknown>[], days: number): void {
+  for (const row of rows) {
+    for (const key of Object.keys(row)) {
+      if (SHIFT_EXCLUDED_KEYS.has(key)) continue;
+      const v = row[key];
+      if (typeof v !== 'string') continue;
+      if (!DATE_ONLY.test(v) && !DATE_TIME.test(v)) continue;
+      row[key] = shiftValue(v, days);
+    }
+  }
+}
+
+{
+  const offset = daysBetween(DEMO_TODAY, today());
+  if (offset !== 0) {
+    // 記録の配列だけを対象にする。マスタ（children・classes など）は含めない
+    const recordSets: Record<string, unknown>[][] = [
+      invitationCodes as unknown as Record<string, unknown>[],
+      diaries as unknown as Record<string, unknown>[],
+      diaryLocks as unknown as Record<string, unknown>[],
+      chatMembers as unknown as Record<string, unknown>[],
+      chatMessages as unknown as Record<string, unknown>[],
+      chatReads as unknown as Record<string, unknown>[],
+      misdeliveryRecords as unknown as Record<string, unknown>[],
+      napSessions as unknown as Record<string, unknown>[],
+      napRecords as unknown as Record<string, unknown>[],
+      napAbnormals as unknown as Record<string, unknown>[],
+      developmentSchedules as unknown as Record<string, unknown>[],
+      developmentChecks as unknown as Record<string, unknown>[],
+      developmentResults as unknown as Record<string, unknown>[],
+      physicalRecords as unknown as Record<string, unknown>[],
+      operationLogs as unknown as Record<string, unknown>[],
+    ];
+    for (const rows of recordSets) shiftRows(rows, offset);
+  }
+}
