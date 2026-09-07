@@ -1,6 +1,6 @@
 # すくすくシステム モックアップ（Go + React）
 
-`基本設計書.md` 第1.3版の**全33画面**を、要件定義書の技術スタック（Go + TypeScript/React）で実装したもの。
+`基本設計書.md` 第1.9版の**全36画面**を、要件定義書の技術スタック（Go + TypeScript/React）で実装したもの。
 
 既存の Flask 版（`hoiku_app/`）は消していない。チームのデモに使えるよう残してある。
 
@@ -8,7 +8,7 @@
 
 | 部分 | 中身 |
 | :-- | :-- |
-| `web/` | React 19 + TypeScript + Vite。33画面 |
+| `web/` | React 19 + TypeScript + Vite。36画面 |
 | `server/` | Go 1.27 + SQLite。API とスキーマ。静的ファイルの配信も行う |
 | `hoiku_app/` | 旧 Flask 版（参考として保持） |
 
@@ -43,7 +43,7 @@ npm install
 npm run dev         # http://localhost:5173。/api は 8080 へ中継される
 ```
 
-初回起動時に `server/sukusuku.db` が作られ、スキーマ（37テーブル）とデモデータが入る。
+初回起動時に `server/sukusuku.db` が作られ、スキーマ（37テーブル）とデモデータが入る。設計上は38テーブルで、利用規約の同意履歴（`t_terms_agreement`）のみ未実装（GitHub Issue #67）。
 
 本番相当の形（Go サーバが静的ファイルも配る）で見るには、
 
@@ -78,7 +78,7 @@ cd web && npm run dev:mock
 | `yamada@hoiku.example.jp` | 一般（さくら組担任） | 自クラスに絞られた参照範囲 |
 | `tanaka@hoiku.example.jp` | 一般（ひまわり組担任） | 担当が違うと見えるものが変わること |
 | `sato@hoiku.example.jp` | 一般（一時パスワード中） | 変更するまで他の画面へ進めないこと（パスワードは `temp0901`） |
-| `yamada.k@example.jp` | 保護者（山田 太郎の保護者） | 保護者の6画面と、共有された記録だけが見えること |
+| `yamada.k@example.jp` | 保護者（山田 太郎の保護者） | 保護者の7画面と、共有された記録だけが見えること |
 | `suzuki.m@example.jp` | 保護者（規約の再同意が必要） | 同意するまで他の画面へ進めないこと |
 | `sato.n@example.jp` | 保護者（停止中） | 停止されたアカウントがログインできないこと |
 
@@ -113,7 +113,7 @@ cd web && npm run dev:mock
 cd web && npm test
 ```
 
-87件。すべてブラウザ内のモックに対して回すため、サーバを立てなくても走る。
+89件。すべてブラウザ内のモックに対して回すため、サーバを立てなくても走る。
 
 | ファイル | 見ているもの |
 | :-- | :-- |
@@ -121,11 +121,11 @@ cd web && npm test
 | `tests/permission.test.ts` | 参照範囲と管理者に限る操作 |
 | `tests/flow.test.ts` | ログインの系統判定、承認と共有の指定が別であること、差し戻しの理由必須 |
 | `tests/invitation.test.ts` | 招待コードが1枚＝1アカウントであること、紐づけゼロでの停止、身体測定の一意制約 |
-| `tests/screens.test.tsx` | 33画面が実際に描画されること、ロールによる出し分け |
+| `tests/screens.test.tsx` | 全画面が実際に描画されること、ロールによる出し分け |
 
 ### Go サーバとの結合テスト
 
-11件。サーバを起動したうえで実行する（`npm test` では自動的に飛ばされる）。
+12件。サーバを起動したうえで実行する（`npm test` では自動的に飛ばされる）。
 
 ```
 # サーバ側
@@ -143,7 +143,7 @@ cd web && SUKUSUKU_API=http://localhost:8080 npm run test:integration
 `server/README.md` に着手の経緯とエンドポイントの一覧がある。要点は次のとおり。
 
 - SQLite ドライバは **`modernc.org/sqlite`**（純 Go）。gcc が無い環境でもビルドできる
-- スキーマは `server/schema.sql`（37テーブル）。`t_physical_record` の部分一意インデックスが
+- スキーマは `server/schema.sql`（37テーブル。設計上は38で、同意履歴のみ未実装）。`t_physical_record` の部分一意インデックスが
   「削除した測定日に登録し直せる」ことを満たす（基本設計書 5-7）
 - デモデータは `server/seed.sql`。氏名・メールアドレス・招待コード・測定値はすべて架空
 - **権限の担保はサーバ側が行う。** 画面側の出し分けは操作性のため
@@ -152,7 +152,7 @@ cd web && SUKUSUKU_API=http://localhost:8080 npm run test:integration
 ## 設計との対応
 
 画面IDは採番せず**画面名で呼ぶ**（基本設計書「画面詳細」(3-6)）。
-学校テンプレートが求める `n-n-n-n` 形式の画面IDは、提出時に対応表で満たす（**対応表は未作成**）。
+学校テンプレートが求める `n-n-n-n` 形式の画面IDは、`図/画面ID対応表.md` が持つ（2026/09/07 作成）。
 
 コードのコメントには、その実装の典拠となる文書の項目名を書いてある。
 なぜそう作ったかは、コメントから設計書へ辿れる。
