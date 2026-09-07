@@ -17,6 +17,9 @@ const run = BASE ? describe : describe.skip;
 /*
  * node の fetch は Cookie を保持しない。
  * セッションの Cookie を手で持ち回し、相対パスへ基点を足す。
+ *
+ * あわせて Origin を添える。サーバは状態を変える要求の送信元を確かめており
+ * （server/csrf.go）、ブラウザが自動で付けるものをここでは手で付ける。
  */
 let cookie = '';
 function useCookieJar() {
@@ -24,6 +27,7 @@ function useCookieJar() {
   globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' && input.startsWith('/') ? BASE + input : input;
     const headers = new Headers(init?.headers);
+    headers.set('Origin', BASE);
     if (cookie) headers.set('Cookie', cookie);
     const res = await real(url as RequestInfo, { ...init, headers });
     const set = res.headers.getSetCookie?.() ?? [];

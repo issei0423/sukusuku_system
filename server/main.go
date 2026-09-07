@@ -41,7 +41,8 @@ func main() {
 
 	log.Printf("すくすくシステム サーバを起動します http://localhost%s", *addr)
 	log.Printf("データベース: %s", *dbPath)
-	if err := http.ListenAndServe(*addr, mux); err != nil {
+	// 状態を変える要求は送信元を確かめてから通す（csrf.go）
+	if err := http.ListenAndServe(*addr, checkOrigin(mux)); err != nil {
 		log.Fatal(err)
 	}
 }
