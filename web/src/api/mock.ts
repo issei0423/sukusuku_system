@@ -634,9 +634,14 @@ export const chatApi = {
   },
 
   async edit(user: SessionUser, messageId: number, body: string): Promise<void> {
+    // 空の本文は受け付けない。上限は新規送信と同じ（基本設計書「入力項目の制約値」(4-9)）
+    if (!body.trim()) return fail('本文を入力してください');
+    if ([...body].length > 1000) return fail('本文は1,000文字以内で入力してください');
     const m = db.chatMessages.find((x) => x.chat_message_id === messageId);
     if (!m) return fail('メッセージが見つかりません');
     if (m.sender_account_id !== user.account_id) return fail('自分が送信したメッセージのみ編集できます');
+    // 取り消し済みのものは編集できない（基本設計書「メッセージの編集」(4-6)）
+    if (m.is_deleted) return fail('取り消したメッセージは編集できません');
     const before = m.body;
     m.body = body;
     m.edited_at = now();

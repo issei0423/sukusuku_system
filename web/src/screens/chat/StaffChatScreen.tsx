@@ -105,7 +105,8 @@ export default function StaffChatScreen() {
             {messages.data?.length === 0 && <Empty text="まだメッセージはありません。" />}
             {messages.data?.map((m) => (
               <MessageRow key={m.chat_message_id} message={m} mine={m.sender_account_id === user!.account_id}
-                onRetract={async () => { await api.retract(user!, m.chat_message_id); setTick((n) => n + 1); }} />
+                onRetract={async () => { await api.retract(user!, m.chat_message_id); setTick((n) => n + 1); }}
+                onEdit={async (body) => { await api.edit(user!, m.chat_message_id, body); setTick((n) => n + 1); }} />
             ))}
           </div>
           <div className="chat-compose">
@@ -142,10 +143,27 @@ export default function StaffChatScreen() {
 }
 
 /** 1件のメッセージ。既読は人数で示す（画面詳細図 4-1） */
-function MessageRow({ message, mine, onRetract }: {
-  message: ChatMessage; mine: boolean; onRetract: () => void;
+function MessageRow({ message, mine, onRetract, onEdit }: {
+  message: ChatMessage; mine: boolean; onRetract: () => void; onEdit: (body: string) => Promise<void>;
 }) {
   const read = useAsync(() => api.readCount(message.chat_message_id), [message.chat_message_id]);
+  /*
+   * 編集は送信者本人のみ（基本設計書「メッセージの編集」(4-6)）。
+   * 回数と期限の制限は設けない。編集前の本文はサーバ側で操作ログへ記録する。
+   */
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(message.body);
+  const [editError, setEditError] = useState('');
+
+  const save = async () => {
+    setEditError('');
+    try {
+      await onEdit(draft);
+      setEditing(false);
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : '編集できませんでした');
+    }
+  };
 
   if (message.is_deleted) {
     return (
@@ -163,17 +181,36 @@ function MessageRow({ message, mine, onRetract }: {
         {message.edited_at && <span className="weak">（編集済み）</span>}
       </div>
       <div className="bubble">
-        {message.body}
-        {/* 日誌の共有（source_type=2）は、本文ではなく記録へのリンクとして出す */}
-        {message.source_type === '2' && message.source_id && (
-          <Link className="shared-card" to={`/staff/diary/${message.source_id}`}>
-            日誌を開く
-          </Link>
+        {editing ? (
+          <>
+            <textarea value={draft} onChange={(e) => setDraft(e.target.value)}
+              maxLength={1000} rows={4} style={{ width: '100%', boxSizing: 'border-box' }} />
+            {editError && <div className="weak">{editError}</div>}
+            <div className="row-end" style={{ marginTop: 4 }}>
+              <button className="btn-sm" onClick={() => { setDraft(message.body); setEditing(false); }}>やめる</button>
+              <button className="btn-sm btn-primary" onClick={save} disabled={!draft.trim()}>保存</button>
+            </div>
+          </>
+        ) : (
+          <>
+            {message.body}
+            {/* 日誌の共有（source_type=2）は、本文ではなく記録へのリンクとして出す */}
+            {message.source_type === '2' && message.source_id && (
+              <Link className="shared-card" to={`/staff/diary/${message.source_id}`}>
+                日誌を開く
+              </Link>
+            )}
+          </>
         )}
       </div>
-      {mine && (
+      {mine && !editing && (
         <div className="read">
           既読 {read.data ?? 0}
+          {' '}
+          {/* 添付は編集の対象外。差し替えは取消して送り直す（基本設計書 4-6） */}
+          {message.source_type === '1' && (
+            <button className="btn-sm btn-quiet" onClick={() => { setDraft(message.body); setEditing(true); }}>編集</button>
+          )}
           {' '}
           <button className="btn-sm btn-quiet" onClick={onRetract}>取消</button>
         </div>

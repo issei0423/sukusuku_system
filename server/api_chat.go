@@ -294,15 +294,31 @@ func (a *app) handleEditMessage(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
+	// 空の本文は受け付けない。上限は新規送信と同じ（基本設計書「入力項目の制約値」(4-9)）
+	if strings.TrimSpace(req.Body) == "" {
+		writeErr(w, http.StatusBadRequest, "本文を入力してください")
+		return
+	}
+	if len([]rune(req.Body)) > 1000 {
+		writeErr(w, http.StatusBadRequest, "本文は1,000文字以内で入力してください")
+		return
+	}
+
 	var sender int64
 	var before string
-	if err := a.db.QueryRow(`SELECT sender_account_id, body FROM t_chat_message WHERE chat_message_id = ?`,
-		id).Scan(&sender, &before); err != nil {
+	var isDeleted bool
+	if err := a.db.QueryRow(`SELECT sender_account_id, body, is_deleted FROM t_chat_message
+		WHERE chat_message_id = ?`, id).Scan(&sender, &before, &isDeleted); err != nil {
 		writeErr(w, http.StatusNotFound, "メッセージが見つかりません")
 		return
 	}
 	if sender != u.AccountID {
 		writeForbidden(w, "自分が送信したメッセージのみ編集できます")
+		return
+	}
+	// 取り消し済みのものは編集できない（基本設計書「メッセージの編集」(4-6)）
+	if isDeleted {
+		writeErr(w, http.StatusConflict, "取り消したメッセージは編集できません")
 		return
 	}
 	if _, err := a.db.Exec(`UPDATE t_chat_message SET body = ?, edited_at = ? WHERE chat_message_id = ?`,

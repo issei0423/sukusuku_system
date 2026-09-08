@@ -5,10 +5,9 @@
  * 保護者は個人チャットのみ送受信する。園全体・グループには投稿欄を表示しない。
  * 既読は保護者側には表示しない（基本設計書 5-5）。
  *
- * 【要確認】シングルカラムのため、一覧と各チャンネルが実際の画面遷移になる可能性がある。
- * 「画面の一覧」(3-2) は保護者・職員を通じてチャット画面の1画面として定義しているため、
- * 分けるなら同書の改訂が必要（図/画面遷移図.md「要確認事項」(8) No.2）。
- * モックでは1画面の中で一覧とスレッドを切り替える実装とし、遷移は起こしていない。
+ * シングルカラムだが、一覧と各チャンネルは1画面の中で入れ替える（画面遷移ではない）。
+ * 2026/09/07 に「分けない」と決着した（基本設計書「画面の一覧」(3-2)）。
+ * 分けても表示項目は増えず、画面数と図の分量だけが増えるため。
  */
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -25,6 +24,9 @@ export default function GuardianChatScreen() {
   const [text, setText] = useState('');
   const [tick, setTick] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  /* 編集は送信者本人のみ。回数と期限の制限は設けない（基本設計書「メッセージの編集」(4-6)） */
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [draft, setDraft] = useState('');
 
   const messages = useAsync(async () => (roomId ? api.messages(user!, roomId) : []), [roomId, tick]);
 
@@ -43,6 +45,15 @@ export default function GuardianChatScreen() {
     try {
       await api.send(user!, roomId, text);
       setText('');
+      setTick((n) => n + 1);
+    } catch (e) { setError((e as Error).message); }
+  };
+
+  const saveEdit = async (messageId: number) => {
+    setError(null);
+    try {
+      await api.edit(user!, messageId, draft);
+      setEditingId(null);
       setTick((n) => n + 1);
     } catch (e) { setError((e as Error).message); }
   };
@@ -98,16 +109,39 @@ export default function GuardianChatScreen() {
                   返さないため、account_id からは引けない（api/types.ts の sender_name）
                 */}
                 {mine ? '私' : m.sender_name ?? accountName(m.sender_account_id)} {formatMD(m.sent_at.slice(0, 10))} {formatHM(m.sent_at)}
+                {/* 編集済みの印は送信者・受信者の双方に出す（基本設計書「メッセージの編集」(4-6)） */}
+                {m.edited_at && <span className="weak">（編集済み）</span>}
               </div>
               <div className="bubble">
-                {m.body}
-                {m.source_type === '2' && m.source_id && (
-                  <Link className="shared-card" to={`/guardian/diary/${m.source_id}`}>
-                    {formatMD(m.sent_at.slice(0, 10))} の記録を開く
-                  </Link>
+                {editingId === m.chat_message_id ? (
+                  <>
+                    <textarea value={draft} onChange={(e) => setDraft(e.target.value)}
+                      maxLength={1000} rows={4} style={{ width: '100%', boxSizing: 'border-box' }} />
+                    <div className="row-end" style={{ marginTop: 4 }}>
+                      <button className="btn-sm" onClick={() => setEditingId(null)}>やめる</button>
+                      <button className="btn-sm btn-primary" onClick={() => saveEdit(m.chat_message_id)}
+                        disabled={!draft.trim()}>保存</button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {m.body}
+                    {m.source_type === '2' && m.source_id && (
+                      <Link className="shared-card" to={`/guardian/diary/${m.source_id}`}>
+                        {formatMD(m.sent_at.slice(0, 10))} の記録を開く
+                      </Link>
+                    )}
+                  </>
                 )}
               </div>
               {/* 既読は保護者側には表示しない（基本設計書 5-5） */}
+              {/* 編集は送信者本人のみ。手入力のメッセージに限る（同 4-6） */}
+              {mine && m.source_type === '1' && editingId !== m.chat_message_id && (
+                <div className="row-end">
+                  <button className="btn-sm btn-quiet"
+                    onClick={() => { setDraft(m.body); setEditingId(m.chat_message_id); }}>編集</button>
+                </div>
+              )}
             </div>
           );
         })}

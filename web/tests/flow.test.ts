@@ -97,3 +97,73 @@ describe('日誌の作成から保護者への共有', () => {
     await expect(api.approveDiary(admin, d.diary_id, false)).rejects.toThrow('申請中');
   });
 });
+
+/*
+ * メッセージの編集
+ * 典拠：基本設計書.md「メッセージの編集」(4-6)
+ * 送信者本人のみ・回数と期限の制限なし・編集前の本文は操作ログへ・編集済みの印を残す
+ */
+describe('メッセージの編集', () => {
+  /** 職員チャット（room_type=5）へ1件送り、その行を返す */
+  const sendOwn = async (user: SessionUser, body: string) => {
+    const room = db.chatRooms.find((r) => r.room_type === '5')!;
+    await api.send(user, room.chat_room_id, body);
+    const list = await api.messages(user, room.chat_room_id);
+    return list[list.length - 1];
+  };
+
+  it('送信者本人は自分のメッセージを編集でき、編集済みの印が残る', async () => {
+    const sent = await sendOwn(teacher, '明日の準備をお願いします');
+    expect(sent.edited_at).toBeNull();
+
+    await api.edit(teacher, sent.chat_message_id, '明後日の準備をお願いします');
+
+    const after = db.chatMessages.find((m) => m.chat_message_id === sent.chat_message_id)!;
+    expect(after.body).toBe('明後日の準備をお願いします');
+    expect(after.edited_at).not.toBeNull();
+  });
+
+  it('他人のメッセージは編集できない', async () => {
+    const sent = await sendOwn(teacher, '他人には触らせない本文');
+    await expect(api.edit(admin, sent.chat_message_id, '書き換え')).rejects.toThrow();
+
+    const after = db.chatMessages.find((m) => m.chat_message_id === sent.chat_message_id)!;
+    expect(after.body).toBe('他人には触らせない本文');
+  });
+
+  it('編集前の本文を操作ログへ残す', async () => {
+    const sent = await sendOwn(teacher, '編集前の本文');
+    await api.edit(teacher, sent.chat_message_id, '編集後の本文');
+
+    const log = db.operationLogs.find(
+      (l) => l.target_table === 't_chat_message' && l.target_id === sent.chat_message_id
+        && l.operation_type === '2',
+    );
+    expect(log).toBeDefined();
+    expect(log!.before_value).toBe('編集前の本文');
+    expect(log!.after_value).toBe('編集後の本文');
+  });
+
+  it('取り消したメッセージは編集できない', async () => {
+    const sent = await sendOwn(teacher, '取り消す本文');
+    await api.retract(teacher, sent.chat_message_id);
+    await expect(api.edit(teacher, sent.chat_message_id, '書き換え')).rejects.toThrow('取り消した');
+  });
+
+  it('空の本文では編集できない', async () => {
+    const sent = await sendOwn(teacher, '残る本文');
+    await expect(api.edit(teacher, sent.chat_message_id, '   ')).rejects.toThrow();
+
+    const after = db.chatMessages.find((m) => m.chat_message_id === sent.chat_message_id)!;
+    expect(after.body).toBe('残る本文');
+  });
+
+  it('回数の制限を設けない（続けて編集できる）', async () => {
+    const sent = await sendOwn(teacher, '1回目');
+    await api.edit(teacher, sent.chat_message_id, '2回目');
+    await api.edit(teacher, sent.chat_message_id, '3回目');
+
+    const after = db.chatMessages.find((m) => m.chat_message_id === sent.chat_message_id)!;
+    expect(after.body).toBe('3回目');
+  });
+});
