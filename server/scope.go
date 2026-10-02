@@ -124,7 +124,7 @@ type ClassRoom struct {
 func (a *app) selectableClasses(u *SessionUser) ([]ClassRoom, error) {
 	q := `SELECT class_id, fiscal_year, class_name FROM m_class WHERE fiscal_year = ?`
 	args := []any{fiscalYear}
-	if u.Role == "2" {
+	if u.isGeneralStaff() {
 		if u.ClassID == nil {
 			return []ClassRoom{}, nil
 		}

@@ -91,7 +91,7 @@ func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 誤った系統でのログインは成立させず、正しい入口を案内する（画面詳細図 2-1）
-	isStaffAccount := role == "1" || role == "2"
+	isStaffAccount := role == roleAdmin || role == roleGeneralStaff
 	if req.Entrance == "staff" && !isStaffAccount {
 		writeJSON(w, http.StatusUnauthorized, apiError{
 			Kind: "wrong_entrance", Correct: "guardian",

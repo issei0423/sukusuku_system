@@ -32,8 +32,29 @@ type SessionUser struct {
 	TermsAgreed bool `json:"terms_agreed"`
 }
 
-func (u *SessionUser) isAdmin() bool { return u.Role == "1" }
-func (u *SessionUser) isStaff() bool { return u.Role == "1" || u.Role == "2" }
+// SessionUser.Role に入る値（m_account.role）。DB には "1" 〜 "3" の文字列で
+// 保存されている（基本設計書「データベース設計」(5-2)）。
+//
+// u.Role == "1" のように直接比較すると、コードを読んだだけでは「1」が何を指すか
+// 分からない。そのため、以下の isAdmin() などのメソッドを通して使うこと。
+const (
+	roleAdmin        = "1" // 管理者
+	roleGeneralStaff = "2" // 一般（保育士）
+	roleGuardian     = "3" // 保護者
+)
+
+// isAdmin : ログイン中の利用者が管理者か
+func (u *SessionUser) isAdmin() bool { return u.Role == roleAdmin }
+
+// isGeneralStaff : ログイン中の利用者が一般（保育士）か
+func (u *SessionUser) isGeneralStaff() bool { return u.Role == roleGeneralStaff }
+
+// isStaff : ログイン中の利用者が職員（管理者 or 一般）か
+func (u *SessionUser) isStaff() bool { return u.Role == roleAdmin || u.Role == roleGeneralStaff }
+
+// isGuardian : ログイン中の利用者が保護者か
+func (u *SessionUser) isGuardian() bool { return u.Role == roleGuardian }
+
 func (u *SessionUser) staff() string {
 	if u.StaffID == nil {
 		return ""

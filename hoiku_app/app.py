@@ -410,6 +410,21 @@ def my_role():
     return me_row()["role"]
 
 
+def staff_required(f):
+    """保護者を 403 で弾く。職員（保育士・管理者）専用の機能に付ける。
+
+    午睡チェック・発達チェック・身体記録など、保護者には使わせない API が
+    それぞれ `if my_role() == "parent": ...` を書いていたため、ここに1つまとめた。
+    @login_required の内側（下）に付けること（先にログイン確認が必要）。
+    """
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if my_role() == "parent":
+            return jsonify(error="権限がありません"), 403
+        return f(*args, **kwargs)
+    return wrapper
+
+
 def channel_perm(ch_row, role):
     return ch_row["perm_" + role]
 
@@ -538,9 +553,8 @@ def _op_log(cid, action):
 
 @app.post("/api/nap/<int:cid>/toggle")
 @login_required
+@staff_required
 def api_nap_toggle(cid):
-    if my_role() == "parent":
-        return jsonify(error="権限がありません"), 403
     r = db().execute("SELECT sleeping FROM naps WHERE child_id=?", (cid,)).fetchone()
     if not r:
         return jsonify(error="園児が見つかりません"), 404
@@ -556,9 +570,8 @@ def api_nap_toggle(cid):
 
 @app.post("/api/nap/<int:cid>/memo")
 @login_required
+@staff_required
 def api_nap_memo(cid):
-    if my_role() == "parent":
-        return jsonify(error="権限がありません"), 403
     memo = (request.get_json(force=True).get("memo") or "").strip()
     db().execute(
         "UPDATE naps SET memo=?, last_check=? WHERE child_id=?", (memo, now_hm(), cid)
@@ -660,9 +673,8 @@ def api_dev_get(cid):
 
 @app.post("/api/dev/<int:cid>")
 @login_required
+@staff_required
 def api_dev_post(cid):
-    if my_role() == "parent":
-        return jsonify(error="権限がありません"), 403
     d = request.get_json(force=True)
     if "item_id" in d:
         if d.get("result") not in ("確認できた", "一部", "未確認"):
@@ -710,10 +722,8 @@ def _physical_records(cid, birth_date):
 
 @app.get("/api/physical/<int:cid>")
 @login_required
+@staff_required  # 保護者の閲覧は保護者ポータル側の責務（本システム側画面なし）
 def api_physical_get(cid):
-    # 保護者の閲覧は保護者ポータル側の責務（本システム側画面なし）
-    if my_role() == "parent":
-        return jsonify(error="権限がありません"), 403
     c = db().execute("SELECT * FROM children WHERE id=?", (cid,)).fetchone()
     if not c:
         return jsonify(error="園児が見つかりません"), 404
@@ -732,9 +742,8 @@ def api_physical_get(cid):
 
 @app.post("/api/physical/<int:cid>")
 @login_required
+@staff_required
 def api_physical_post(cid):
-    if my_role() == "parent":
-        return jsonify(error="権限がありません"), 403
     c = db().execute("SELECT * FROM children WHERE id=?", (cid,)).fetchone()
     if not c:
         return jsonify(error="園児が見つかりません"), 404
@@ -792,9 +801,8 @@ def api_physical_post(cid):
 
 @app.get("/api/growth_standards")
 @login_required
+@staff_required
 def api_growth_standards():
-    if my_role() == "parent":
-        return jsonify(error="権限がありません"), 403
     sex = request.args.get("sex", "M")
     mtype = request.args.get("type", "height")
     if sex not in ("M", "F") or mtype not in ("height", "weight"):
