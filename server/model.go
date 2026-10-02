@@ -54,6 +54,7 @@ func (u *SessionUser) isStaff() bool { return u.Role == roleAdmin || u.Role == r
 
 // isGuardian : ログイン中の利用者が保護者か
 func (u *SessionUser) isGuardian() bool { return u.Role == roleGuardian }
+
 func (u *SessionUser) staff() string {
 	if u.StaffID == nil {
 		return ""
