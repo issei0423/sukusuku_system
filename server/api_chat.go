@@ -72,7 +72,7 @@ func (a *app) handleChatRooms(w http.ResponseWriter, r *http.Request) {
 		if room.RoomType == "1" {
 			canPost = u.isAdmin()
 		}
-		if u.Role == "3" {
+		if u.isGuardian() {
 			canPost = room.RoomType == "4"
 		}
 		views = append(views, ChatRoomView{Room: room, CanPost: canPost})
@@ -105,7 +105,7 @@ func (a *app) isMember(u *SessionUser, roomID int64) bool {
 		return false
 	}
 	// 保護者は left_at が入った時点で参照できなくなる（基本設計書 5-5）
-	if u.Role == "3" && leftAt.Valid {
+	if u.isGuardian() && leftAt.Valid {
 		return false
 	}
 	return true
@@ -228,7 +228,7 @@ func (a *app) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		writeForbidden(w, "園全体への投稿は管理者が行います")
 		return
 	}
-	if u.Role == "3" && roomType != "4" {
+	if u.isGuardian() && roomType != "4" {
 		writeForbidden(w, "このチャンネルへは投稿できません")
 		return
 	}

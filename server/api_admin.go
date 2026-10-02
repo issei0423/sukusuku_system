@@ -216,7 +216,7 @@ func (a *app) handleCreateStaffAccount(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	if req.Role == "3" {
+	if req.Role == roleGuardian {
 		writeErr(w, http.StatusBadRequest, "保護者アカウントは招待コードによる自己登録で作成します")
 		return
 	}
