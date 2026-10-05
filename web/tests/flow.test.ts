@@ -298,3 +298,41 @@ describe('午睡チェック（基本設計書「午睡チェックの実施」(
     expect(after.ended_staff_id).toBeNull();
   });
 });
+
+describe('発達チェックの確定（基本設計書「発達チェックの実施」(4-8)）', () => {
+  const childId = 'C003';
+  const checkedOn = today();
+
+  it('所見は、確定したあとに開き直しても残っている', async () => {
+    await api.saveCheck(teacher, childId, checkedOn, [], '歩き始めが安定してきた', '2');
+    const again = await api.draftFor(childId, checkedOn);
+    expect(again?.check.note).toBe('歩き始めが安定してきた');
+  });
+
+  it('確定すると、次回の予定日が実施日より先の日付になる', async () => {
+    await api.saveCheck(teacher, childId, checkedOn, [], '', '2');
+    const row = (await api.list(teacher, 1)).find((r) => r.child.child_id === childId)!;
+    expect(row.lastCheckedOn).toBe(checkedOn);
+    expect(row.scheduledOn! > checkedOn).toBe(true);
+    expect(row.overdue).toBe(false);
+  });
+
+  it('未入力の項目を残して確定すると、一覧に未入力の件数が出る', async () => {
+    const row = (await api.list(teacher, 1)).find((r) => r.child.child_id === childId)!;
+    expect(row.unfilled).toBeGreaterThan(0);
+  });
+
+  it('実施日より先に手動で置いた予定は、確定しても動かさない', async () => {
+    const other = 'C005';
+    const before = db.developmentSchedules
+      .filter((s) => s.child_id === other)
+      .sort((a, b) => b.scheduled_on.localeCompare(a.scheduled_on))[0];
+    const past = '2020-01-06';
+    await api.saveCheck(teacher, other, past, [], '', '2');
+    const after = db.developmentSchedules
+      .filter((s) => s.child_id === other)
+      .sort((a, b) => b.scheduled_on.localeCompare(a.scheduled_on))[0];
+    expect(after.scheduled_on).toBe(before.scheduled_on);
+    expect(after.is_manual_override).toBe(before.is_manual_override);
+  });
+});

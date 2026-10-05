@@ -384,6 +384,8 @@ export interface DevelopmentCheck {
   status: DevelopmentCheckStatus;
   staff_id: string;
   share_status: ShareStatus;
+  /** 所見（チェック単位の自由記述）。列は基本設計書 5-7 の定義に無い（GitHub Issue #58） */
+  note?: string | null;
 }
 
 /**

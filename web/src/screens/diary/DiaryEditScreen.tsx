@@ -195,12 +195,17 @@ export default function DiaryEditScreen() {
               {photos.length >= maxPhotos && <div className="muted">上限の{maxPhotos}枚に達しました。</div>}
             </Field>
 
+            {/* 個人日誌・ヒヤリハットは園児を対象にした記録。選ぶまで先へ進めない */}
+            {needsChild && !childId && !readOnly && (
+              <div className="muted">対象の園児を選ぶと、確認へ進めます。</div>
+            )}
+
             <div className="row-end">
               <button onClick={() => save('1')} disabled={busy || readOnly || !!heldBy}>下書き保存</button>
               <button className="btn-primary" onClick={() => navigate('/staff/diary/confirm', {
                 state: { recordType, childId: needsChild ? childId : null, classId: classId === '' ? null : classId,
                          date, body, diaryId, lockToken, photos },
-              })} disabled={busy || readOnly || !!heldBy || !body.trim()}>
+              })} disabled={busy || readOnly || !!heldBy || !body.trim() || (needsChild && !childId)}>
                 確認へ進む
               </button>
             </div>

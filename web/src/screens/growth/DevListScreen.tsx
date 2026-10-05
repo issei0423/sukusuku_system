@@ -75,6 +75,8 @@ export default function DevListScreen() {
                     {r.overdue
                       ? <Tag label="未実施" className="tag-returned" />
                       : <Tag label="予定どおり" className="tag-plain" />}
+                    {/* 未入力はチェック漏れの対象。未確認は含めない（基本設計書 5-7） */}
+                    {r.unfilled > 0 && <> <Tag label={`未入力 ${r.unfilled} 件`} className="tag-returned" /></>}
                   </td>
                   <td className="nowrap">
                     <Link className="btn btn-sm btn-primary" to={`/staff/growth/dev/${r.child.child_id}`}>入力</Link>
@@ -90,6 +92,7 @@ export default function DevListScreen() {
         <div className="muted">
           「未実施」は、予定日を過ぎても記録が1件も入っていない状態を指します。
           記録の中の「未確認」は入力済みの結果であり、未実施には含みません（基本設計書 5-7）。
+          「未入力」は、前回の確定した記録に結果を入れていない項目が残っている状態を指します。
           <br />
           本機能は発達の判定・診断を行うものではありません。
         </div>

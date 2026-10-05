@@ -923,6 +923,36 @@ const napApi2 = {
 
 /* ============ 発達チェック（基本設計書「発達チェック・身体測定」(4-8)） ============ */
 
+/**
+ * 確定した実施が予定を満たしたときに、次回の予定日を作る
+ *
+ * 次回の予定日は、実施日にマスタの推奨頻度（m_development_frequency）の日数を足した日とする。
+ * すでに実施日より先の予定があるとき（園児単位で手動上書きした予定を含む）は、それを残す。
+ *
+ * 【仮置き】次回の予定日をいつ・何から計算し直すかは基本設計書が定めていない（web/仮置き値.md）。
+ * Go サーバ（server/api_dev_write.go の advanceDevelopmentSchedule）と同じ規則にしてある。
+ */
+function advanceDevelopmentSchedule(user: SessionUser, check: DevelopmentCheck, childId: string, checkedOn: string): void {
+  const cur = db.developmentSchedules
+    .filter((s) => s.child_id === childId)
+    .sort((a, b) => b.scheduled_on.localeCompare(a.scheduled_on))[0];
+  if (cur && cur.scheduled_on > checkedOn) return;
+  if (cur) check.development_schedule_id = cur.development_schedule_id;
+
+  const child = findChild(childId);
+  if (!child) return;
+  const ageM = ageInMonths(child.birth_date, checkedOn);
+  const freq = db.developmentFrequencies.find((f) => ageM >= f.age_month_from && ageM <= f.age_month_to);
+  // 推奨頻度がマスタに無い月齢では、予定日を提案しない
+  if (!freq) return;
+  const next = addDays(checkedOn, freq.interval_days);
+  db.developmentSchedules.push({
+    development_schedule_id: nextId(), child_id: childId,
+    scheduled_on: next, is_manual_override: false, created_staff_id: user.staff_id!,
+  });
+  log(user.account_id, '4', '1', 't_development_schedule', null, childId, null, `次回予定日=${next}（実施日から算出）`);
+}
+
 export const devApi = {
   /** 月齢から発達過程区分を引く。区分はマスタから読む（画面詳細図 6-1） */
   categoryFor(ageMonths: number) {
@@ -953,12 +983,24 @@ export const devApi = {
         const scheduledOn = sch?.scheduled_on ?? null;
         const overdue = !!scheduledOn && scheduledOn <= today()
           && (!last || last.checked_on < scheduledOn);
+        // 未入力は、その実施日の月齢に対応する項目のうち、結果のレコードが無いものを数える
+        let unfilled = 0;
+        if (last) {
+          const cat = devApi.categoryFor(ageInMonths(child.birth_date, last.checked_on));
+          const itemIds = db.developmentItems
+            .filter((i) => i.development_category_id === cat?.development_category_id)
+            .map((i) => i.development_item_id);
+          const filled = db.developmentResults.filter((r) =>
+            r.development_check_id === last.development_check_id && itemIds.includes(r.development_item_id)).length;
+          unfilled = Math.max(0, itemIds.length - filled);
+        }
         return {
           child,
           ageMonths: ageInMonths(child.birth_date, scheduledOn ?? today()),
           scheduledOn,
           lastCheckedOn: last?.checked_on ?? null,
           overdue,
+          unfilled,
         };
       });
     return ok(rows);
@@ -1006,6 +1048,11 @@ export const devApi = {
       check.status = status;
       check.staff_id = user.staff_id!;
     }
+    /*
+     * 【設計の穴】所見（チェック単位の自由記述）を保持する列が t_development_check にない（GitHub Issue #58）。
+     * Go サーバと同じく、チェックの側に note として持つ。設計の決定ではない。
+     */
+    check.note = note.trim() ? note : null;
 
     // 既存の結果を入れ替える
     for (let i = db.developmentResults.length - 1; i >= 0; i--) {
@@ -1024,22 +1071,10 @@ export const devApi = {
         note: null,
       });
     });
-    /*
-     * 【設計の穴】所見（チェック単位の自由記述）を保持する列が t_development_check にない。
-     * 画面詳細図 6-1 は所見の入力欄を持つが、基本設計書 5-7 の列定義に対応する列がなく、
-     * t_development_result.note は項目単位である。
-     * モックでは development_item_id=0 の行に退避しているが、これは仮の措置であり、
-     * 本実装までに t_development_check へ note 列を足すか、所見の置き場を決める必要がある。
-     */
-    if (note.trim()) {
-      db.developmentResults.push({
-        development_result_id: nextId(), development_check_id: check.development_check_id,
-        development_item_id: 0, result: '3', note,
-      });
-    }
-
     log(user.account_id, '4', check ? '2' : '1', 't_development_check', check.development_check_id, childId,
       null, status === '2' ? '確定' : '下書き保存');
+
+    if (status === '2') advanceDevelopmentSchedule(user, check, childId, checkedOn);
     return ok(check);
   },
 };

@@ -117,6 +117,8 @@ export interface DevListRow {
   scheduledOn: string | null;
   lastCheckedOn: string | null;
   overdue: boolean;
+  /** 前回の確定した記録に残っている未入力の項目数。未入力はチェック漏れの対象（基本設計書 5-7） */
+  unfilled: number;
 }
 
 export interface DevScheduleRow {

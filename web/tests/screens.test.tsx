@@ -175,6 +175,23 @@ describe('チャットツール（3画面）', () => {
   });
 });
 
+describe('日誌作成画面の入力の検査', () => {
+  it('個人日誌は、対象の園児を選ぶまで確認へ進めない', async () => {
+    open('/staff/diary/new', teacher);
+    await settled();
+    const textarea = document.querySelector('textarea')!;
+    fireEvent.change(textarea, { target: { value: '午前は園庭で遊んだ。' } });
+    const next = screen.getByText('確認へ進む') as HTMLButtonElement;
+    expect(next.disabled).toBe(true);
+    expect(screen.getByText('対象の園児を選ぶと、確認へ進めます。')).toBeTruthy();
+
+    const childSelect = Array.from(document.querySelectorAll('select'))
+      .find((s) => Array.from(s.options).some((o) => o.textContent === '選んでください'))!;
+    fireEvent.change(childSelect, { target: { value: childSelect.options[1].value } });
+    expect((screen.getByText('確認へ進む') as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
 describe('午睡チェック（3画面）', () => {
   /*
    * 午睡の時間帯（13:00-15:00）を過ぎると、デモの実施は自動で解除される。

@@ -118,7 +118,52 @@ func (a *app) handleSaveDevelopmentCheck(w http.ResponseWriter, r *http.Request)
 	}
 	a.log(u.AccountID, fnDev, op, "t_development_check", i64(checkID), s(req.ChildID), nil, s(after))
 
+	if req.Status == "2" {
+		a.advanceDevelopmentSchedule(u, checkID, req.ChildID, req.CheckedOn)
+	}
+
 	row := a.db.QueryRow(`SELECT `+checkColumns+` FROM t_development_check WHERE development_check_id = ?`, checkID)
 	c, _ := a.scanCheck(row)
 	writeJSON(w, http.StatusOK, c)
+}
+
+/*
+advanceDevelopmentSchedule は、確定した実施が予定を満たしたときに次回の予定日を作る。
+
+次回の予定日は、実施日にマスタの推奨頻度（m_development_frequency）の日数を足した日とする。
+すでに実施日より先の予定があるとき（園児単位で手動上書きした予定を含む）は、それを残す。
+
+【仮置き】次回の予定日をいつ・何から計算し直すかは基本設計書が定めていない（web/仮置き値.md）。
+画面側のモック（web/src/api/mock.ts の saveCheck）と同じ規則にしてある。
+*/
+func (a *app) advanceDevelopmentSchedule(u *SessionUser, checkID int64, childID, checkedOn string) {
+	var (
+		scheduleID  sql.NullInt64
+		scheduledOn sql.NullString
+	)
+	a.db.QueryRow(`SELECT development_schedule_id, scheduled_on FROM t_development_schedule
+		WHERE child_id = ? ORDER BY scheduled_on DESC LIMIT 1`, childID).Scan(&scheduleID, &scheduledOn)
+	if scheduledOn.Valid && scheduledOn.String > checkedOn {
+		return
+	}
+	if scheduleID.Valid {
+		a.db.Exec(`UPDATE t_development_check SET development_schedule_id = ?
+			WHERE development_check_id = ?`, scheduleID.Int64, checkID)
+	}
+
+	var birth string
+	if a.db.QueryRow(`SELECT birth_date FROM m_child WHERE child_id = ?`, childID).Scan(&birth) != nil {
+		return
+	}
+	var interval int
+	if a.db.QueryRow(`SELECT interval_days FROM m_development_frequency
+		WHERE ? BETWEEN age_month_from AND age_month_to LIMIT 1`, ageInMonths(birth, checkedOn)).Scan(&interval) != nil {
+		// 推奨頻度がマスタに無い月齢では、予定日を提案しない
+		return
+	}
+	next := addDays(checkedOn, interval)
+	a.db.Exec(`INSERT INTO t_development_schedule (child_id, scheduled_on, is_manual_override, created_staff_id)
+		VALUES (?, ?, 0, ?)`, childID, next, u.staff())
+	a.log(u.AccountID, fnDev, opCreate, "t_development_schedule", nil, s(childID), nil,
+		s("次回予定日="+next+"（実施日から算出）"))
 }
