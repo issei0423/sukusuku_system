@@ -1,6 +1,9 @@
 # Claude Code のローカル設定・並列作業用 worktree
 .claude/
 
+# Codex の並列作業用 worktree
+.Codex/
+
 # 依存パッケージ・ビルド成果物
 node_modules/
 __pycache__/
