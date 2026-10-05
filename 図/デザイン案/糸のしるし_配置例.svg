@@ -1,20 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="900" height="520" viewBox="0 0 900 520" role="img" aria-labelledby="title desc">
-  <title id="title">糸のしるしの配置例</title>
-  <desc id="desc">一本の糸が中央で笑顔の口となるワンポイントの原寸例、サービス名の横に置く例、保護者の記録見出しの下に置く例。</desc>
+  <title id="title">糸でつながるニコマルの配置例</title>
+  <desc id="desc">中央に丸い笑顔を持つ糸の印を、サービス名の横と保護者の記録見出しに置いた例。</desc>
   <style>
     text { font-family: "Yu Gothic", "Meiryo", sans-serif; fill: #263238; }
     .note { font-size: 15px; fill: #637078; }
   </style>
   <defs>
     <g id="mark">
-      <path d="M28 31 C20 23 13 27 16 35 C20 42 30 40 28 31 C45 29 65 31 75 28 C81 27 79 44 95 44 C109 44 108 27 114 28 C130 31 141 34 153 31 C151 25 159 23 164 29 C168 36 160 40 155 36 C152 34 152 32 153 31" fill="none" stroke="#B58C2A" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
-      <circle cx="87" cy="25" r="1.7" fill="#B58C2A"/>
-      <circle cx="104" cy="25" r="1.7" fill="#B58C2A"/>
+      <path d="M28 32 C25 25 17 25 16 32 C15 39 24 41 28 32 C45 27 63 36 79 32 C79 23 86 17 96 17 C106 17 113 23 113 32 C113 41 105 47 96 47 C86 47 79 41 79 32 C79 23 86 17 96 17 C106 17 113 23 113 32 C129 28 141 36 153 32 C157 25 165 27 165 33 C165 40 156 40 153 32" fill="none" stroke="#B58C2A" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="90" cy="29" r="1.7" fill="#B58C2A"/>
+      <circle cx="102" cy="29" r="1.7" fill="#B58C2A"/>
+      <path d="M89 37 C93 42 99 42 103 37" fill="none" stroke="#B58C2A" stroke-width="2.8" stroke-linecap="round"/>
     </g>
   </defs>
   <rect width="900" height="520" fill="#f8f7f3"/>
-  <text x="48" y="68" font-size="26" font-weight="700">ワンポイント「糸のしるし」</text>
-  <text x="48" y="103" class="note">一本の糸が両端で輪になり、中央では笑顔の口になる。</text>
+  <text x="48" y="68" font-size="26" font-weight="700">ワンポイント「糸でつながるニコマル」</text>
+  <text x="48" y="103" class="note">両端の点を一本の糸でつなぎ、中央には丸い笑顔を残す。</text>
   <path d="M48 129H852" stroke="#d9d9d1"/>
   <text x="48" y="174" font-size="16" font-weight="700">図案</text>
   <use href="#mark" transform="translate(250 159)"/>
