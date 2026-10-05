@@ -313,6 +313,13 @@ func (a *app) handleSignUpGuardian(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	/*
+	 * 個人チャットのルーム名は、取引を始める前に引いておく。
+	 * 接続は1本に絞っている（db.go）ため、取引の途中で a.db へ問い合わせると、
+	 * 取引が握っている接続を待ち続けて、サーバ全体が応答しなくなる
+	 */
+	personalRoomName := a.childName(code.ChildID) + "の保護者"
+
 	tx, err := a.db.Begin()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "登録に失敗しました")
@@ -357,7 +364,7 @@ func (a *app) handleSignUpGuardian(w http.ResponseWriter, r *http.Request) {
 	joinRooms := []string{}
 	var personal int64
 	if err := tx.QueryRow(`SELECT chat_room_id FROM m_chat_room
-		WHERE room_type = '4' AND room_name = ?`, a.childName(code.ChildID)+"の保護者").Scan(&personal); err == nil {
+		WHERE room_type = '4' AND room_name = ?`, personalRoomName).Scan(&personal); err == nil {
 		joinRooms = append(joinRooms, "")
 		tx.Exec(`INSERT OR IGNORE INTO t_chat_member (chat_room_id, account_id, joined_at) VALUES (?, ?, ?)`,
 			personal, accountID, now())
