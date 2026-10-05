@@ -1,68 +1,67 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1180" height="820" viewBox="0 0 1180 820" role="img" aria-labelledby="title desc">
-  <title id="title">職員ダッシュボードのデザイン案</title>
-  <desc id="desc">優しい黄色のヘッダ、左のナビゲーション、未対応の件数とよく使う操作を示す職員向け画面の見本。</desc>
+  <title id="title">職員ダッシュボードの改訂デザイン案</title>
+  <desc id="desc">未対応の仕事を行として一覧にし、右側によく使う操作を置いた職員向け画面。装飾を減らし、黄色を案内と現在地に限定している。</desc>
   <style>
-    text { font-family: "Yu Gothic", "Meiryo", sans-serif; fill: #2c2822; }
-    .small { font-size: 15px; fill: #6d665a; }
-    .nav { font-size: 17px; }
-    .label { font-size: 17px; font-weight: 700; }
-    .count { font-size: 34px; font-weight: 700; }
-    .action { font-size: 18px; font-weight: 700; }
+    text { font-family: "Yu Gothic", "Meiryo", sans-serif; fill: #263238; }
+    .minor { font-size: 14px; fill: #637078; }
+    .nav { font-size: 16px; }
+    .row { font-size: 18px; }
   </style>
-  <rect width="1180" height="820" fill="#fffdf6"/>
-  <rect width="1180" height="60" fill="#f6c445"/>
-  <path d="M0 60H1180" stroke="#d9a012"/>
-  <circle cx="33" cy="30" r="9" fill="#4a3708"/>
-  <circle cx="72" cy="30" r="9" fill="#4a3708"/>
-  <path d="M42 30C50 16 55 44 63 30" fill="none" stroke="#4a3708" stroke-width="3" stroke-linecap="round"/>
-  <text x="95" y="38" font-size="24" font-weight="700">すくすく</text>
-  <rect x="743" y="11" width="112" height="38" rx="19" fill="#fff9e8"/>
-  <text x="759" y="36" font-size="15">通知 3件</text>
-  <text x="870" y="36" font-size="15" font-weight="700">○○先生／ひよこ組</text>
-  <rect x="1055" y="11" width="108" height="38" rx="8" fill="#fff9e8" stroke="#d9a012"/>
-  <text x="1071" y="36" font-size="14">ログアウト</text>
-  <rect x="0" y="60" width="204" height="760" fill="#faf7ef"/>
-  <path d="M204 60V820" stroke="#e3ddcd"/>
-  <text x="23" y="105" class="small">メニュー</text>
-  <rect x="0" y="121" width="204" height="52" fill="#fdf2cf"/>
-  <rect x="0" y="121" width="5" height="52" fill="#d9a012"/>
-  <text x="24" y="154" class="nav" font-weight="700">ダッシュボード</text>
-  <text x="24" y="207" class="nav">日誌</text>
-  <text x="24" y="257" class="nav">チャット</text>
-  <text x="24" y="307" class="nav">午睡チェック</text>
-  <text x="24" y="357" class="nav">発達・身体</text>
-  <text x="24" y="407" class="nav">園児</text>
-  <text x="24" y="457" class="nav">管理</text>
-  <text x="240" y="111" font-size="18" font-weight="700">10月5日（月）</text>
-  <text x="240" y="156" font-size="30" font-weight="700">今日の作業</text>
-  <path d="M1023 110C1055 77 1078 145 1110 112" fill="none" stroke="#f0df9c" stroke-width="5" stroke-linecap="round"/>
-  <circle cx="1018" cy="112" r="7" fill="#f0df9c"/>
-  <circle cx="1114" cy="111" r="7" fill="#f0df9c"/>
-  <rect x="240" y="182" width="904" height="312" rx="14" fill="#fff" stroke="#e3ddcd"/>
-  <text x="265" y="220" font-size="20" font-weight="700">未対応</text>
-  <text x="1037" y="220" class="small">合計 3件</text>
-  <rect x="264" y="243" width="421" height="104" rx="10" fill="#fffdf6" stroke="#e3ddcd"/>
-  <text x="284" y="276" class="label">差し戻された日誌</text>
-  <text x="285" y="323" class="count">2件</text>
-  <text x="566" y="322" class="small">日誌一覧へ →</text>
-  <rect x="699" y="243" width="421" height="104" rx="10" fill="#fffdf6" stroke="#e3ddcd"/>
-  <text x="719" y="276" class="label">未読のチャット</text>
-  <text x="720" y="323" class="count">1件</text>
-  <text x="987" y="322" class="small">チャットへ →</text>
-  <rect x="264" y="361" width="421" height="104" rx="10" fill="#fffdf6" stroke="#e3ddcd"/>
-  <text x="284" y="394" class="label">発達チェック未入力</text>
-  <text x="285" y="441" class="count">0人</text>
-  <text x="552" y="440" class="small">一覧を見る →</text>
-  <rect x="699" y="361" width="421" height="104" rx="10" fill="#fffdf6" stroke="#e3ddcd"/>
-  <text x="719" y="394" class="label">承認待ち</text>
-  <text x="720" y="441" class="count">0件</text>
-  <text x="988" y="440" class="small">一覧を見る →</text>
-  <text x="240" y="550" font-size="23" font-weight="700">よく使う</text>
-  <text x="240" y="578" class="small">今日の記録と確認をここから始められます</text>
-  <rect x="240" y="605" width="287" height="70" rx="10" fill="#f6c445" stroke="#d9a012"/>
-  <text x="263" y="649" class="action">午睡チェックを開始 →</text>
-  <rect x="544" y="605" width="287" height="70" rx="10" fill="#fff" stroke="#c9c1ab"/>
-  <text x="569" y="649" class="action">日誌を書く →</text>
-  <rect x="848" y="605" width="296" height="70" rx="10" fill="#fff" stroke="#c9c1ab"/>
-  <text x="871" y="649" class="action">身体測定を入力 →</text>
+  <rect width="1180" height="820" fill="#f8f7f3"/>
+  <rect width="1180" height="6" fill="#f3d16b"/>
+  <rect x="0" y="6" width="1180" height="62" fill="#fff"/>
+  <path d="M0 68H1180" stroke="#dddcd5"/>
+  <circle cx="31" cy="37" r="5" fill="#d0a82c"/>
+  <circle cx="60" cy="37" r="5" fill="#d0a82c"/>
+  <path d="M36 37H55" stroke="#d0a82c" stroke-width="2"/>
+  <text x="81" y="45" font-size="21" font-weight="700" letter-spacing="1">すくすく</text>
+  <text x="784" y="43" font-size="14">通知 <tspan font-weight="700">3件</tspan></text>
+  <path d="M877 23V51" stroke="#dddcd5"/>
+  <text x="897" y="43" font-size="14" font-weight="700">高橋先生</text>
+  <text x="968" y="43" class="minor">ひよこ組</text>
+  <text x="1083" y="43" font-size="14" text-decoration="underline">ログアウト</text>
+  <rect x="0" y="69" width="188" height="751" fill="#fff"/>
+  <path d="M188 69V820" stroke="#dddcd5"/>
+  <text x="24" y="113" class="minor">メニュー</text>
+  <rect x="0" y="135" width="4" height="48" fill="#d0a82c"/>
+  <text x="25" y="166" class="nav" font-weight="700">ダッシュボード</text>
+  <text x="25" y="222" class="nav">日誌</text>
+  <text x="25" y="270" class="nav">チャット</text>
+  <text x="25" y="318" class="nav">午睡チェック</text>
+  <text x="25" y="366" class="nav">発達・身体</text>
+  <text x="25" y="414" class="nav">園児</text>
+  <path d="M24 448H164" stroke="#e4e2da"/>
+  <text x="25" y="484" class="minor">管理者</text>
+  <text x="25" y="525" class="nav">管理</text>
+  <text x="222" y="116" class="minor">2026年10月5日（月）</text>
+  <text x="222" y="160" font-size="29" font-weight="700">今日の確認</text>
+  <path d="M222 183H1145" stroke="#d3d2ca"/>
+  <text x="222" y="232" font-size="20" font-weight="700">未対応</text>
+  <text x="223" y="261" class="minor">確認が必要なものを、ここから開けます。</text>
+  <rect x="222" y="286" width="608" height="292" fill="#fff" stroke="#d9d9d1"/>
+  <rect x="222" y="286" width="4" height="292" fill="#f3d16b"/>
+  <path d="M246 358H805M246 431H805M246 504H805" stroke="#e7e5dd"/>
+  <text x="248" y="333" class="row">差し戻された日誌</text>
+  <text x="651" y="333" class="row" font-weight="700">2件</text>
+  <text x="738" y="333" font-size="15" text-decoration="underline">開く →</text>
+  <text x="248" y="407" class="row">未読のチャット</text>
+  <text x="651" y="407" class="row" font-weight="700">1件</text>
+  <text x="738" y="407" font-size="15" text-decoration="underline">開く →</text>
+  <text x="248" y="479" class="row">発達チェック未入力</text>
+  <text x="651" y="479" class="row">0人</text>
+  <text x="738" y="479" font-size="15" text-decoration="underline">開く →</text>
+  <text x="248" y="551" class="row">承認待ち</text>
+  <text x="651" y="551" class="row">0件</text>
+  <text x="738" y="551" font-size="15" text-decoration="underline">開く →</text>
+  <text x="868" y="232" font-size="20" font-weight="700">よく使う</text>
+  <text x="868" y="261" class="minor">記録と確認</text>
+  <rect x="868" y="286" width="277" height="67" fill="#f3d16b"/>
+  <text x="889" y="327" font-size="16" font-weight="700">午睡チェックを開始 →</text>
+  <path d="M868 376H1145M868 445H1145M868 514H1145" stroke="#d9d9d1"/>
+  <text x="881" y="419" font-size="16">日誌を書く</text>
+  <text x="1104" y="419" font-size="16">→</text>
+  <text x="881" y="488" font-size="16">身体測定を入力</text>
+  <text x="1104" y="488" font-size="16">→</text>
+  <text x="881" y="557" font-size="16">発達チェックを入力</text>
+  <text x="1104" y="557" font-size="16">→</text>
 </svg>
