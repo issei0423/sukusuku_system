@@ -7,6 +7,7 @@ import { describe, it, expect } from 'vitest';
 import { api } from '../src/api/client';
 import * as db from '../src/api/mockDb';
 import type { SessionUser } from '../src/api/types';
+import { napAutoCloseAt, napTimerBase, today } from '../src/api/util';
 
 const admin: SessionUser = {
   account_id: 1, email: 'takahashi@hoiku.example.jp', role: '1', display_name: '高橋 美咲',
@@ -252,5 +253,48 @@ describe('メッセージの編集', () => {
     expect(after.body).toBe('本日の日誌を共有しました。お目通しください。');
     expect(after.source_type).toBe('2');
     expect(after.source_id).toBe(sourceID);
+  });
+});
+
+describe('午睡チェック（基本設計書「午睡チェックの実施」(4-7)）', () => {
+  it('体位・呼吸・顔色のどれかが選ばれていない記録は受け付けない', async () => {
+    const s = await api.startSession(teacher, 1, today());
+    const child = db.classChildren.find((cc) => cc.class_id === 1)!.child_id;
+    const base = { child_id: child, body_position: '1', breathing: '1', complexion: '1', temperature: null } as const;
+    await expect(api.record(teacher, s.nap_session_id, { ...base, breathing: '' as never })).rejects.toThrow(/呼吸/);
+    await expect(api.record(teacher, s.nap_session_id, { ...base, complexion: '' as never })).rejects.toThrow(/顔色/);
+    await expect(api.record(teacher, s.nap_session_id, { ...base, body_position: '' as never })).rejects.toThrow(/体位/);
+    await expect(api.record(teacher, s.nap_session_id, base)).resolves.toBeTruthy();
+  });
+
+  it('タイマーの起点は、いちばん長く確認していない園児にする', () => {
+    const start = '2026-09-01T13:00:00';
+    // 未記録の園児がいるあいだは、開始時刻が起点のまま
+    expect(napTimerBase(start, ['2026-09-01T13:10:00', null])).toBe(start);
+    // 1人を記録し直しても、ほかの園児が古いままなら進まない
+    expect(napTimerBase(start, ['2026-09-01T13:21:00', '2026-09-01T13:10:00'])).toBe('2026-09-01T13:10:00');
+    // 全員を確認し終えると進む
+    expect(napTimerBase(start, ['2026-09-01T13:21:00', '2026-09-01T13:20:00'])).toBe('2026-09-01T13:20:00');
+    expect(napTimerBase(start, [])).toBe(start);
+  });
+
+  it('終了操作を忘れた実施は、午睡の時間帯の終了時刻で解除する', () => {
+    expect(napAutoCloseAt('2026-09-01', '2026-09-01T13:00:00', '13:00-15:00')).toBe('2026-09-01T15:00:00');
+    // 時間帯の終了より後に開始した実施は、その日の終わりに解除する（仮置き）
+    expect(napAutoCloseAt('2026-09-01', '2026-09-01T16:10:00', '13:00-15:00')).toBe('2026-09-01T23:59:59');
+  });
+
+  it('解除の時刻を過ぎた実施は実施中でなくなり、自動で解除した印が付く', async () => {
+    const stale = {
+      nap_session_id: 990001, class_id: 3, session_date: '2020-01-06',
+      started_staff_id: 'S003', started_at: '2020-01-06T13:00:00',
+      ended_staff_id: null, ended_at: null, is_auto_closed: false,
+    };
+    db.napSessions.push(stale as never);
+    expect(await api.activeSession(3, '2020-01-06')).toBeNull();
+    const after = db.napSessions.find((x) => x.nap_session_id === 990001)!;
+    expect(after.ended_at).toBe('2020-01-06T15:00:00');
+    expect(after.is_auto_closed).toBe(true);
+    expect(after.ended_staff_id).toBeNull();
   });
 });

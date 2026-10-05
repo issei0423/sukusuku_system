@@ -129,3 +129,34 @@ function formatLocal(d: Date): string {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${toISODate(d)}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
+
+/**
+ * 終了操作を忘れた午睡チェックを、自動で解除する時刻
+ *
+ * 午睡の時間帯（マスタ値 nap.time_range）の終了時刻で解除する
+ * （基本設計書「午睡チェックの実施」(4-7)）。
+ *
+ * 【仮置き】時間帯の終了時刻より後に開始した実施は、開始した時点で解除の時刻を過ぎている。
+ * 開始した直後に解除しないよう、その日の終わりに解除する（web/仮置き値.md）。
+ * サーバ側（server/api_nap.go の napAutoCloseAt）と同じ規則にしてある。
+ */
+export function napAutoCloseAt(sessionDate: string, startedAt: string, timeRange: string): string {
+  const end = /-\s*(\d{2}:\d{2})\s*$/.exec(timeRange)?.[1] ?? '15:00';
+  const rangeEnd = `${sessionDate}T${end}:00`;
+  return startedAt < rangeEnd ? rangeEnd : `${sessionDate}T23:59:59`;
+}
+
+/**
+ * 午睡チェックの次の時刻を数える起点
+ *
+ * いちばん長く確認していない園児を起点にする。未記録の園児がいるあいだは開始時刻が起点になる。
+ * 1人を記録しただけでは次の間隔へ進まず、全員を確認し終えてはじめて進む。
+ */
+export function napTimerBase(startedAt: string, latestCheckedAts: (string | null)[]): string {
+  let base: string | null = null;
+  for (const at of latestCheckedAts) {
+    if (!at) return startedAt;
+    if (base === null || at < base) base = at;
+  }
+  return base ?? startedAt;
+}

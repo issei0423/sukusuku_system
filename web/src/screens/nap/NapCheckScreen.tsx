@@ -8,14 +8,14 @@
  * 記録は園児カードから1件ずつ行い、確認画面を挟まない。
  * この画面は開いたまま運用し、実施中は自動ログアウトの対象外とする。
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api, selectableClasses, childName } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Alert, Modal, Radios } from '../../components/ui';
 import { BODY_POSITION, BREATHING, COMPLEXION } from '../../api/codes';
-import { formatHM, today, now } from '../../api/util';
+import { formatHM, today, now, napTimerBase, plusMinutes } from '../../api/util';
 import type { BodyPosition, Breathing, Complexion } from '../../api/types';
 
 export default function NapCheckScreen() {
@@ -41,17 +41,45 @@ export default function NapCheckScreen() {
   const end = async () => {
     if (!session.data) return;
     setError(null);
-    try { await api.endSession(user!, session.data.nap_session_id); setTick((n) => n + 1); }
+    try { endedByUser.current = true; await api.endSession(user!, session.data.nap_session_id); setTick((n) => n + 1); }
     catch (e) { setError((e as Error).message); }
   };
 
   const s = session.data;
   const rows = state.data ?? [];
   const recorded = rows.filter((r) => r.latest).length;
+  const intervalMinutes = api.intervalMinutesFor(classId);
+
+  /*
+   * 実施中は1分ごとに読み直す。午睡の時間帯を過ぎて自動で解除されたことを、
+   * 開いたままの画面でも拾うため（基本設計書「午睡チェックの実施」(4-7)）。
+   * あわせて、確認の時刻を過ぎた園児のカードの表示を進める。
+   */
+  const activeId = s?.nap_session_id ?? null;
+  useEffect(() => {
+    if (activeId === null) return;
+    const t = setInterval(() => setTick((n) => n + 1), 60_000);
+    return () => clearInterval(t);
+  }, [activeId]);
+
+  // 終了の操作をしていないのに実施中でなくなったら、自動で解除されたと知らせる
+  const wasActive = useRef(false);
+  const endedByUser = useRef(false);
+  const [autoClosed, setAutoClosed] = useState(false);
+  useEffect(() => {
+    if (session.loading) return;
+    if (s) { wasActive.current = true; endedByUser.current = false; setAutoClosed(false); return; }
+    if (wasActive.current && !endedByUser.current) setAutoClosed(true);
+    wasActive.current = false;
+  }, [s, session.loading]);
+
+  // 確認の時刻を過ぎたか。未記録の園児は開始時刻から数える
+  const isDue = (latestAt: string | null) =>
+    !!s && plusMinutes(latestAt ?? s.started_at, intervalMinutes) <= now();
 
   return (
     <div>
-      {s && <NapTimer startedAt={s.started_at} intervalMinutes={api.intervalMinutesFor(classId)} rows={rows} />}
+      {s && <NapTimer startedAt={s.started_at} intervalMinutes={intervalMinutes} rows={rows} />}
 
       <div className="page-head">
         <h1>午睡チェック</h1>
@@ -75,7 +103,9 @@ export default function NapCheckScreen() {
 
       {!session.loading && !s && (
         <section className="card">
-          <Empty text="午睡チェックはまだ開始していません。" />
+          {autoClosed
+            ? <Alert>午睡の時間帯を過ぎたため、午睡チェックを自動で終了しました。続けるときは、もう一度開始してください。</Alert>
+            : <Empty text="午睡チェックはまだ開始していません。" />}
           <div className="row-end">
             <button className="btn-primary" onClick={start}>午睡チェックを開始する</button>
           </div>
@@ -100,13 +130,14 @@ export default function NapCheckScreen() {
 
           <div className="nap-grid">
             {rows.map((r) => (
-              <div key={r.child.child_id} className={`nap-card${r.latest ? '' : ' unrecorded'}`}>
+              <div key={r.child.child_id}
+                className={`nap-card${!r.latest || isDue(r.latest.checked_at) ? ' unrecorded' : ''}`}>
                 <div className="name">{r.child.child_name}</div>
                 {/* 平熱は比較の材料として並べて表示するのみ。発熱の判定は行わない */}
                 <div className="last">平熱 {r.child.normal_temperature ?? '―'}</div>
                 <div className="last">
                   {r.latest
-                    ? `${formatHM(r.latest.checked_at)} ${BODY_POSITION[r.latest.body_position]}`
+                    ? `${isDue(r.latest.checked_at) ? '(!) ' : ''}${formatHM(r.latest.checked_at)} ${BODY_POSITION[r.latest.body_position]}`
                     : '(!) 未記録'}
                 </div>
                 <button className="btn-primary btn-sm" onClick={() => setTarget(r.child.child_id)}>記録</button>
@@ -145,15 +176,17 @@ function NapTimer({ startedAt, intervalMinutes, rows }: {
   const startMs = new Date(startedAt).getTime();
   const elapsed = Math.max(0, Math.floor((nowMs - startMs) / 1000));
 
-  // クラス全体で最後に記録した時刻を起点に、次のチェックまでを数える
-  const lastChecked = rows
-    .map((r) => r.latest?.checked_at)
-    .filter((v): v is string => !!v)
-    .sort()
-    .pop();
-  const baseMs = lastChecked ? new Date(lastChecked).getTime() : startMs;
-  const remain = Math.floor((baseMs + intervalMinutes * 60_000 - nowMs) / 1000);
+  /*
+   * いちばん長く確認していない園児を起点に、次のチェックまでを数える。
+   * 1人を記録しただけでは次の間隔へ進まない。全員を確認し終えてはじめて進む。
+   */
+  const baseMs = new Date(napTimerBase(startedAt, rows.map((r) => r.latest?.checked_at ?? null))).getTime();
+  const dueMs = baseMs + intervalMinutes * 60_000;
+  const remain = Math.floor((dueMs - nowMs) / 1000);
   const over = remain < 0;
+  // 確認の時刻を過ぎている園児の数。未記録の園児は開始時刻から数える
+  const dueCount = rows.filter((r) =>
+    new Date(r.latest?.checked_at ?? startedAt).getTime() + intervalMinutes * 60_000 <= nowMs).length;
 
   // 1時間を超えるときは時も出す。分だけで表すと「66:57」のように読み取りにくくなるため
   const mmss = (sec: number) => {
@@ -169,7 +202,9 @@ function NapTimer({ startedAt, intervalMinutes, rows }: {
   return (
     <div className={`nap-timer${over ? ' over' : ''}`}>
       <div>
-        <div className="muted">{over ? 'チェックの時刻を過ぎています' : '次のチェックまで'}</div>
+        <div className="muted">
+          {over ? `チェックの時刻を過ぎています（未確認 ${dueCount} 名）` : '次のチェックまで'}
+        </div>
         <div className="big">{over ? `+${mmss(remain)}` : mmss(remain)}</div>
       </div>
       <div>
@@ -195,14 +230,18 @@ function RecordDialog({ childId, sessionId, normalTemperature, onClose, onSaved 
 }) {
   const { user } = useSession();
   const [position, setPosition] = useState<BodyPosition | null>(null);
-  const [breathing, setBreathing] = useState<Breathing>('1');
-  const [complexion, setComplexion] = useState<Complexion>('1');
+  /*
+   * 体位・呼吸・顔色は、どれも選ばれていない状態から始める。
+   * 午睡チェックは保育士が見て確かめた事実の記録であり、見ていない値を先に入れない。
+   */
+  const [breathing, setBreathing] = useState<Breathing | null>(null);
+  const [complexion, setComplexion] = useState<Complexion | null>(null);
   const [temperature, setTemperature] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const save = async () => {
-    if (!position) return;
+    if (!position || !breathing || !complexion) return;
     setBusy(true); setError(null);
     try {
       await api.record(user!, sessionId, {
@@ -217,7 +256,7 @@ function RecordDialog({ childId, sessionId, normalTemperature, onClose, onSaved 
     <Modal title={`${childName(childId)}　${formatHM(now())}`} onClose={onClose}
       footer={<>
         <button onClick={onClose} disabled={busy}>やめる</button>
-        <button className="btn-primary" onClick={save} disabled={busy || !position}>記録する</button>
+        <button className="btn-primary" onClick={save} disabled={busy || !position || !breathing || !complexion}>記録する</button>
       </>}>
       <div className="stack">
         {error && <Alert>{error}</Alert>}

@@ -19,7 +19,8 @@ import type {
   DevelopmentCheck, DevelopmentResultRecord, DevelopmentItem, ChatRoom, ChatMessage,
   OperationLog, Allergy, FunctionType, OperationType, Paged,
 } from './types';
-import { ageInMonths, now, today, addDays, plusMinutes, fromNowMinutes } from './util';
+import { ageInMonths, now, today, addDays, plusMinutes, fromNowMinutes, napAutoCloseAt } from './util';
+import { BODY_POSITION, BREATHING, COMPLEXION } from './codes';
 import type {
   LoginError, ChildInput, DiaryFilter, DiaryInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
 } from './shapes';
@@ -743,14 +744,31 @@ const chatApi2 = {
 
 /* ============ 午睡チェック（基本設計書「午睡チェック」(4-7)） ============ */
 
+/**
+ * 解除の時刻を過ぎた実施中の午睡チェックを終了にする（基本設計書「午睡チェックの実施」(4-7)）
+ * 終了した職員はいないため ended_staff_id は空のままにし、自動で解除した印を立てる
+ */
+function autoCloseNapSessions(): void {
+  const range = settingText('nap.time_range', '13:00-15:00');
+  for (const s of db.napSessions) {
+    if (s.ended_at !== null) continue;
+    const closeAt = napAutoCloseAt(s.session_date, s.started_at, range);
+    if (now() <= closeAt) continue;
+    s.ended_at = closeAt;
+    s.is_auto_closed = true;
+  }
+}
+
 export const napApi = {
   /** 実施中のセッション。開いたまま運用するため、開始済みかを常に確認する */
   async activeSession(classId: number, date: string): Promise<NapSession | null> {
+    autoCloseNapSessions();
     return ok(db.napSessions.find((s) => s.class_id === classId && s.session_date === date && s.ended_at === null) ?? null);
   },
 
   async startSession(user: SessionUser, classId: number, date: string): Promise<NapSession> {
     if (user.role === '3') return fail('午睡チェックは職員のみが行えます');
+    autoCloseNapSessions();
     const existing = db.napSessions.find((s) => s.class_id === classId && s.session_date === date && s.ended_at === null);
     if (existing) return ok(existing);
     const s: NapSession = {
@@ -800,6 +818,10 @@ export const napApi = {
              complexion: NapRecord['complexion']; temperature: number | null },
   ): Promise<NapRecord> {
     if (user.role === '3') return fail('午睡チェックは職員のみが行えます');
+    // 体位・呼吸・顔色は、保育士が見て選んだ値だけを受け取る。空のまま既定値で埋めない
+    if (!(input.body_position in BODY_POSITION)) return fail('体位を選んでください');
+    if (!(input.breathing in BREATHING)) return fail('呼吸を選んでください');
+    if (!(input.complexion in COMPLEXION)) return fail('顔色を選んでください');
     if (!canSeeChild(user, input.child_id)) return fail('この園児を記録する権限がありません');
     const r: NapRecord = {
       nap_record_id: nextId(), nap_session_id: sessionId, child_id: input.child_id,
@@ -1581,6 +1603,7 @@ const dashboardApi = {
     const abnormalWithoutDiary = db.napAbnormals.filter((a) => !a.diary_id && visible.has(a.child_id)).length;
 
     // 実施中の午睡チェック
+    autoCloseNapSessions();
     const activeNap = db.napSessions.find((s) => s.ended_at === null && myClasses.has(s.class_id)) ?? null;
 
     return ok({ returned, unreadChat, devOverdue, pending, abnormalWithoutDiary, activeNap });
