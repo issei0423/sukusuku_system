@@ -7,14 +7,16 @@
   </style>
   <defs>
     <g id="mark">
-      <path d="M34 30 C55 29 68 35 80 29 C89 24 93 19 100 22 C109 26 106 36 99 38 C92 40 88 35 91 31 C95 26 102 29 108 31 C123 36 136 30 151 29" fill="none" stroke="#B58C2A" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M34 30 C52 29 65 35 81 32 M111 32 C126 29 138 34 151 30" fill="none" stroke="#B58C2A" stroke-width="3.5" stroke-linecap="round"/>
+      <path d="M96 18 C105 17 111 24 111 33 C111 42 104 47 96 46 C87 46 81 40 81 32 C81 23 87 18 96 18 Z" fill="none" stroke="#B58C2A" stroke-width="3" stroke-linecap="round"/>
+      <path d="M90 29 V31 M101 29 V31 M90 36 Q96 41 102 36" fill="none" stroke="#B58C2A" stroke-width="2.4" stroke-linecap="round"/>
       <path d="M21 33 C17 29 18 22 24 20 C31 19 36 25 34 31 C33 37 25 39 21 33 Z" fill="#D0A82C"/>
       <path d="M152 31 C148 25 151 19 157 18 C164 18 168 24 166 30 C164 37 156 38 152 31 Z" fill="#D0A82C"/>
     </g>
   </defs>
   <rect width="900" height="520" fill="#f8f7f3"/>
   <text x="48" y="68" font-size="26" font-weight="700">ワンポイント「糸のしるし」</text>
-  <text x="48" y="103" class="note">二つの点は同じ大きさ。線は中央で小さく結ばれ、一本のまま続く。</text>
+  <text x="48" y="103" class="note">二つの点は同じ大きさ。中央に小さな笑顔を置き、一本の線でつなぐ。</text>
   <path d="M48 129H852" stroke="#d9d9d1"/>
   <text x="48" y="174" font-size="16" font-weight="700">図案</text>
   <use href="#mark" transform="translate(250 159)"/>
@@ -23,13 +25,13 @@
   <text x="48" y="274" font-size="16" font-weight="700">サービス名の横</text>
   <rect x="282" y="244" width="570" height="76" fill="#fff"/>
   <path d="M282 244H852" stroke="#f3d16b" stroke-width="5"/>
-  <use href="#mark" transform="translate(296 266) scale(.5)"/>
-  <text x="397" y="293" font-size="22" font-weight="700">すくすく保育園</text>
+  <use href="#mark" transform="translate(296 263) scale(.6)"/>
+  <text x="418" y="293" font-size="22" font-weight="700">すくすく保育園</text>
   <path d="M48 357H852" stroke="#d9d9d1"/>
   <text x="48" y="402" font-size="16" font-weight="700">記録の見出し</text>
   <rect x="282" y="373" width="570" height="112" fill="#fffefa"/>
   <text x="307" y="414" font-size="20" font-weight="700">最近の記録</text>
   <path d="M307 429H826" stroke="#d9d9d1"/>
-  <use href="#mark" transform="translate(296 427) scale(.5)"/>
-  <text x="398" y="449" class="note">日付と本文を邪魔しない余白に置く</text>
+  <use href="#mark" transform="translate(296 424) scale(.6)"/>
+  <text x="418" y="449" class="note">日付と本文を邪魔しない余白に置く</text>
 </svg>
