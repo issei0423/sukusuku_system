@@ -1,16 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="900" height="520" viewBox="0 0 900 520" role="img" aria-labelledby="title desc">
   <title id="title">糸でつながるニコマルの配置例</title>
-  <desc id="desc">中央に丸い笑顔を持つ糸の印を、サービス名の横と保護者の記録見出しに置いた例。</desc>
+  <desc id="desc">丸い輪郭・目・口まで一本の糸で描いたニコマルを、サービス名の横と保護者の記録見出しに置いた例。</desc>
   <style>
     text { font-family: "Yu Gothic", "Meiryo", sans-serif; fill: #263238; }
     .note { font-size: 15px; fill: #637078; }
   </style>
   <defs>
     <g id="mark">
-      <path d="M28 32 C25 25 17 25 16 32 C15 39 24 41 28 32 C45 27 63 36 79 32 C79 23 86 17 96 17 C106 17 113 23 113 32 C113 41 105 47 96 47 C86 47 79 41 79 32 C79 23 86 17 96 17 C106 17 113 23 113 32 C129 28 141 36 153 32 C157 25 165 27 165 33 C165 40 156 40 153 32" fill="none" stroke="#B58C2A" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
-      <circle cx="90" cy="29" r="1.7" fill="#B58C2A"/>
-      <circle cx="102" cy="29" r="1.7" fill="#B58C2A"/>
-      <path d="M89 37 C93 42 99 42 103 37" fill="none" stroke="#B58C2A" stroke-width="2.8" stroke-linecap="round"/>
+      <path d="M28 32 C25 25 17 25 16 32 C15 39 24 41 28 32 C45 27 63 36 79 32 C79 23 86 17 96 17 C106 17 113 23 113 32 C113 41 105 47 96 47 C86 47 79 41 79 32 C82 30 85 31 88 33 C87 31 87 29 88 28 C87 26 88 25 90 26 C92 27 91 30 89 30 C87 30 87 28 88 28 C88 30 88 33 89 34 C93 40 99 40 103 34 C104 32 104 30 103 28 C102 26 103 25 105 26 C107 27 106 30 104 30 C102 30 102 28 103 28 C107 31 109 30 113 32 C129 28 141 36 153 32 C157 25 165 27 165 33 C165 40 156 40 153 32" fill="none" stroke="#B58C2A" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
     </g>
   </defs>
   <rect width="900" height="520" fill="#f8f7f3"/>
@@ -24,13 +21,13 @@
   <text x="48" y="274" font-size="16" font-weight="700">サービス名の横</text>
   <rect x="282" y="244" width="570" height="76" fill="#fff"/>
   <path d="M282 244H852" stroke="#f3d16b" stroke-width="5"/>
-  <use href="#mark" transform="translate(296 261) scale(.7)"/>
-  <text x="439" y="293" font-size="22" font-weight="700">すくすく保育園</text>
+  <use href="#mark" transform="translate(296 261) scale(.9)"/>
+  <text x="475" y="293" font-size="22" font-weight="700">すくすく保育園</text>
   <path d="M48 357H852" stroke="#d9d9d1"/>
   <text x="48" y="402" font-size="16" font-weight="700">記録の見出し</text>
   <rect x="282" y="373" width="570" height="112" fill="#fffefa"/>
   <text x="307" y="414" font-size="20" font-weight="700">最近の記録</text>
   <path d="M307 429H826" stroke="#d9d9d1"/>
-  <use href="#mark" transform="translate(296 421) scale(.7)"/>
-  <text x="439" y="449" class="note">日付と本文を邪魔しない余白に置く</text>
+  <use href="#mark" transform="translate(296 421) scale(.9)"/>
+  <text x="475" y="449" class="note">日付と本文を邪魔しない余白に置く</text>
 </svg>
