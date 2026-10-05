@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="820" viewBox="0 0 1180 820" role="img" aria-label="A｜和紙の余白の職員用サイドバー配置例">
+<defs>
+    <symbol id="dashboard" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+    <symbol id="diary" viewBox="0 0 24 24"><path d="M12 5c-2.7-1.6-5.6-1.7-9-1v14c3.4-.7 6.3-.6 9 1 2.7-1.6 5.6-1.7 9-1V4c-3.4-.7-6.3-.6-9 1Z"/><path d="M12 5v14M5.5 8.5c1.5-.1 2.7.1 4 .6m5-.6c1.2-.5 2.5-.7 4-.6"/></symbol>
+    <symbol id="chat" viewBox="0 0 24 24"><path d="M20 11.5c0 4.4-3.6 7.5-8 7.5-1.2 0-2.5-.2-3.5-.7L4 20l1.1-4C4.4 14.8 4 13.2 4 11.5 4 7.1 7.6 4 12 4s8 3.1 8 7.5Z"/><path d="M8.5 11.5h7"/></symbol>
+    <symbol id="nap" viewBox="0 0 24 24"><path d="M17.7 17.5A8.5 8.5 0 0 1 6.5 6.3a8.5 8.5 0 1 0 11.2 11.2Z"/><path d="M17.5 5.5v5m-2.5-2.5h5"/></symbol>
+    <symbol id="growth" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M5 7h5M5 11h3m-3 4h5m-5 4h3"/></symbol>
+    <symbol id="children" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3.5 20v-2.2c0-3 2.4-5.3 5.5-5.3s5.5 2.3 5.5 5.3V20Zm12 0H21v-1.6c0-2.4-1.6-4.3-4-4.6"/></symbol>
+    <symbol id="approval" viewBox="0 0 24 24"><path d="M6 3h9l3 3v15H6Z"/><path d="M15 3v4h3M9 13l2 2 4-4"/></symbol>
+    <symbol id="staff" viewBox="0 0 24 24"><circle cx="10" cy="8" r="3"/><path d="M4 20v-2a6 6 0 0 1 12 0v2Zm14-13h4m-2-2v4"/></symbol>
+    <symbol id="invitation" viewBox="0 0 24 24"><path d="M3 6h18v4a2 2 0 0 0 0 4v4H3v-4a2 2 0 0 0 0-4Z"/><path d="M12 6v2m0 3v2m0 3v2"/></symbol>
+    <symbol id="guardians" viewBox="0 0 24 24"><circle cx="8" cy="8" r="2.5"/><circle cx="16" cy="8" r="2.5"/><path d="M2.5 20v-2c0-2.7 2.1-4.7 5.5-4.7s5.5 2 5.5 4.7v2Zm9 0h10v-2c0-2.7-2.1-4.7-5.5-4.7-1.4 0-2.7.4-3.6 1.2"/></symbol>
+    <symbol id="fiscal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4m8-4v4m-8 7h3m3 0h3m-9 3h3"/></symbol>
+    <symbol id="logs" viewBox="0 0 24 24"><path d="M4 4h16v16H4Z"/><path d="M8 9h8m-8 4h8m-8 4h5"/></symbol>
+    <symbol id="misdelivery" viewBox="0 0 24 24"><path d="M4 5h11l4 4v11H4Z"/><path d="M15 5v5h4M13 13c-2.6 0-4.5 1.5-4.5 4M8.5 17l-2-2m2 2 2-2"/></symbol>
+  </defs>
+<rect width="1180" height="820" fill="#FFFCF6"/>
+<rect width="1180" height="56" fill="#F3C84E"/>
+<text x="24" y="37" font-family="Yu Gothic, Meiryo, sans-serif" font-size="24" font-weight="700" fill="#4A3708">すくすく</text>
+<line x1="0" y1="56" x2="1180" y2="56" stroke="#D9A012"/>
+<rect x="0" y="56" width="200" height="764" fill="#FBF7EA"/>
+<line x1="199" y1="56" x2="199" y2="820" stroke="#DED5BF"/>
+<rect x="0" y="56" width="200" height="4" fill="#F2D474"/>
+<rect x="0" y="76" width="199" height="44" fill="#F7E9BF"/>
+<rect x="0" y="76" width="4" height="44" fill="#BC8C22"/>
+<use href="#dashboard" x="16" y="88" width="20" height="20" fill="none" stroke="#8C6B2C" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="45" y="105" font-family="Yu Gothic, Meiryo, sans-serif" font-size="13" font-weight="700" fill="#312C24">ダッシュボード</text>
+<use href="#diary" x="16" y="132" width="20" height="20" fill="none" stroke="#8C6B2C" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="45" y="149" font-family="Yu Gothic, Meiryo, sans-serif" font-size="13" font-weight="400" fill="#312C24">日誌</text>
+<use href="#chat" x="16" y="176" width="20" height="20" fill="none" stroke="#8C6B2C" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="45" y="193" font-family="Yu Gothic, Meiryo, sans-serif" font-size="13" font-weight="400" fill="#312C24">チャット</text>
+<use href="#nap" x="16" y="220" width="20" height="20" fill="none" stroke="#8C6B2C" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="45" y="237" font-family="Yu Gothic, Meiryo, sans-serif" font-size="13" font-weight="400" fill="#312C24">午睡チェック</text>
+<use href="#growth" x="16" y="264" width="20" height="20" fill="none" stroke="#8C6B2C" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="45" y="281" font-family="Yu Gothic, Meiryo, sans-serif" font-size="13" font-weight="400" fill="#312C24">発達・身体</text>
+<use href="#children" x="16" y="308" width="20" height="20" fill="none" stroke="#8C6B2C" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="45" y="325" font-family="Yu Gothic, Meiryo, sans-serif" font-size="13" font-weight="400" fill="#312C24">園児</text>
+<line x1="16" y1="358" x2="184" y2="358" stroke="#DED5BF"/>
+<text x="16" y="385" font-family="Yu Gothic, Meiryo, sans-serif" font-size="11" font-weight="700" fill="#726957">管理（管理者）</text>
+<use href="#approval" x="16" y="408" width="20" height="20" fill="none" stroke="#8C6B2C" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="45" y="425" font-family="Yu Gothic, Meiryo, sans-serif" font-size="13" font-weight="400" fill="#312C24">承認待ち</text>
+<use href="#staff" x="16" y="452" width="20" height="20" fill="none" stroke="#8C6B2C" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="45" y="469" font-family="Yu Gothic, Meiryo, sans-serif" font-size="13" font-weight="400" fill="#312C24">職員アカウント</text>
+<use href="#invitation" x="16" y="496" width="20" height="20" fill="none" stroke="#8C6B2C" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="45" y="513" font-family="Yu Gothic, Meiryo, sans-serif" font-size="13" font-weight="400" fill="#312C24">招待コード</text>
+<use href="#guardians" x="16" y="540" width="20" height="20" fill="none" stroke="#8C6B2C" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="45" y="557" font-family="Yu Gothic, Meiryo, sans-serif" font-size="13" font-weight="400" fill="#312C24">保護者アカウント</text>
+<use href="#fiscal" x="16" y="584" width="20" height="20" fill="none" stroke="#8C6B2C" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="45" y="601" font-family="Yu Gothic, Meiryo, sans-serif" font-size="13" font-weight="400" fill="#312C24">年度更新</text>
+<use href="#logs" x="16" y="628" width="20" height="20" fill="none" stroke="#8C6B2C" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="45" y="645" font-family="Yu Gothic, Meiryo, sans-serif" font-size="13" font-weight="400" fill="#312C24">操作ログ</text>
+<use href="#misdelivery" x="16" y="672" width="20" height="20" fill="none" stroke="#8C6B2C" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="45" y="689" font-family="Yu Gothic, Meiryo, sans-serif" font-size="13" font-weight="400" fill="#312C24">誤送信対応</text>
+<text x="235" y="101" font-family="Yu Gothic, Meiryo, sans-serif" font-size="22" font-weight="700" fill="#302B24">ダッシュボード</text>
+<text x="1068" y="100" font-family="Yu Gothic, Meiryo, sans-serif" font-size="12" font-weight="400" fill="#827866">今日</text>
+<rect x="235" y="130" width="570" height="310" fill="#FFFFFF" stroke="#E2D9C7" rx="7"/>
+<text x="258" y="168" font-family="Yu Gothic, Meiryo, sans-serif" font-size="18" font-weight="700" fill="#302B24">未対応</text>
+<text x="262" y="222" font-family="Yu Gothic, Meiryo, sans-serif" font-size="14" font-weight="400" fill="#4B4338">未読のチャット</text>
+<text x="720" y="222" font-family="Yu Gothic, Meiryo, sans-serif" font-size="13" font-weight="400" fill="#655C4F">6 件</text>
+<line x1="258" y1="237" x2="780" y2="237" stroke="#E8E1D3"/>
+<text x="262" y="286" font-family="Yu Gothic, Meiryo, sans-serif" font-size="14" font-weight="400" fill="#4B4338">発達チェックの未実施</text>
+<text x="720" y="286" font-family="Yu Gothic, Meiryo, sans-serif" font-size="13" font-weight="400" fill="#655C4F">5 名</text>
+<line x1="258" y1="301" x2="780" y2="301" stroke="#E8E1D3"/>
+<text x="262" y="350" font-family="Yu Gothic, Meiryo, sans-serif" font-size="14" font-weight="400" fill="#4B4338">異常時の記録</text>
+<text x="720" y="350" font-family="Yu Gothic, Meiryo, sans-serif" font-size="13" font-weight="400" fill="#655C4F">1 件</text>
+<line x1="258" y1="365" x2="780" y2="365" stroke="#E8E1D3"/>
+<rect x="827" y="130" width="320" height="310" fill="#FFFFFF" stroke="#E2D9C7" rx="7"/>
+<text x="850" y="168" font-family="Yu Gothic, Meiryo, sans-serif" font-size="18" font-weight="700" fill="#302B24">よく使う</text>
+<rect x="849" y="200" width="275" height="42" fill="#FFFDF8" stroke="#D6CBB4" rx="4"/>
+<text x="871" y="227" font-family="Yu Gothic, Meiryo, sans-serif" font-size="13" font-weight="400" fill="#51483A">午睡チェックを開始</text>
+<rect x="849" y="255" width="275" height="42" fill="#FFFDF8" stroke="#D6CBB4" rx="4"/>
+<text x="871" y="282" font-family="Yu Gothic, Meiryo, sans-serif" font-size="13" font-weight="400" fill="#51483A">日誌を書く</text>
+<rect x="849" y="310" width="275" height="42" fill="#FFFDF8" stroke="#D6CBB4" rx="4"/>
+<text x="871" y="337" font-family="Yu Gothic, Meiryo, sans-serif" font-size="13" font-weight="400" fill="#51483A">身体測定を入力</text>
+<rect x="235" y="464" width="912" height="84" fill="#FFFFFF" stroke="#E2D9C7" rx="7"/>
+<text x="258" y="501" font-family="Yu Gothic, Meiryo, sans-serif" font-size="16" font-weight="700" fill="#302B24">承認待ち</text>
+<text x="358" y="501" font-family="Yu Gothic, Meiryo, sans-serif" font-size="13" font-weight="400" fill="#655C4F">3 件</text>
+<rect x="235" y="580" width="912" height="1" fill="#EDE7DC"/>
+<text x="236" y="614" font-family="Yu Gothic, Meiryo, sans-serif" font-size="13" font-weight="400" fill="#726957">A｜和紙の余白</text>
+</svg>
