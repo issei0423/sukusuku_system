@@ -120,7 +120,11 @@ describe('メッセージの編集', () => {
     const room = db.chatRooms.find((r) => r.room_type === '5')!;
     await api.send(user, room.chat_room_id, body);
     const list = await api.messages(user, room.chat_room_id);
-    return list[list.length - 1];
+    /*
+     * 末尾の1件ではなく本文で探す。デモデータの「今日」の投稿は時刻を持つため、
+     * それより早い時刻に実行すると、いま送った行が末尾に来ない
+     */
+    return list.filter((m) => m.body === body).at(-1)!;
   };
 
   it('送信者本人は自分のメッセージを編集でき、編集済みの印が残る', async () => {
@@ -183,7 +187,11 @@ describe('メッセージの編集', () => {
     const room = db.chatRooms.find((r) => r.room_type === roomType)!;
     await api.send(user, room.chat_room_id, body);
     const list = await api.messages(user, room.chat_room_id);
-    return list[list.length - 1];
+    /*
+     * 末尾の1件ではなく本文で探す。デモデータの「今日」の投稿は時刻を持つため、
+     * それより早い時刻に実行すると、いま送った行が末尾に来ない
+     */
+    return list.filter((m) => m.body === body).at(-1)!;
   };
 
   it('園全体・クラスグループ・個人チャットのいずれでも本人は編集できる', async () => {
