@@ -122,7 +122,8 @@
 /* ============ 未ログインの入口 ============ */
 .public-shell {
   min-height: 100%; display: flex; align-items: center; justify-content: center;
-  padding: var(--sp-5); background: var(--c-primary-soft);
+  padding: var(--sp-5);
+  background: var(--c-primary-soft) url('/login-paper.png') center / cover no-repeat;
 }
 .public-card {
   width: 100%; max-width: 420px; background: var(--c-surface);
