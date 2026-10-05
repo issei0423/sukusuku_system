@@ -639,7 +639,17 @@ export const chatApi = {
     if ([...body].length > 1000) return fail('本文は1,000文字以内で入力してください');
     const m = db.chatMessages.find((x) => x.chat_message_id === messageId);
     if (!m) return fail('メッセージが見つかりません');
-    if (m.sender_account_id !== user.account_id) return fail('自分が送信したメッセージのみ編集できます');
+    /*
+     * 編集できるのは送信者本人。園チャット（room_type=1）だけは例外で、管理者同士なら互いに編集できる
+     * （基本設計書「メッセージの編集」(4-6)）。園全体への発信は園としての意思表示であり、
+     * 発信者個人のものではないため。園チャットへ投稿できるのは管理者だけなので、
+     * 送信者の権限を改めて調べる必要はない
+     */
+    const room = db.chatRooms.find((r) => r.chat_room_id === m.chat_room_id);
+    const schoolWide = room?.room_type === '1' && user.role === '1';
+    if (m.sender_account_id !== user.account_id && !schoolWide) {
+      return fail('自分が送信したメッセージのみ編集できます');
+    }
     // 取り消し済みのものは編集できない（基本設計書「メッセージの編集」(4-6)）
     if (m.is_deleted) return fail('取り消したメッセージは編集できません');
     const before = m.body;

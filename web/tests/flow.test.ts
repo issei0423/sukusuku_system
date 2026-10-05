@@ -13,9 +13,20 @@ const admin: SessionUser = {
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
+// 園チャットの相互編集を確かめるため、管理者をもう1人置く（基本設計書「メッセージの編集」(4-6)）
+const admin2: SessionUser = {
+  account_id: 2, email: 'suzuki@hoiku.example.jp', role: '1', display_name: '鈴木 一郎',
+  staff_id: 'S002', guardian_id: null, class_id: null, class_name: null,
+  is_temp_password: false, terms_agreed: true,
+};
 const teacher: SessionUser = {
   account_id: 3, email: 'yamada@hoiku.example.jp', role: '2', display_name: '山田 花子',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
+  is_temp_password: false, terms_agreed: true,
+};
+const guardian: SessionUser = {
+  account_id: 6, email: 'yamada.k@example.jp', role: '3', display_name: '山田 健一',
+  staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 
@@ -165,5 +176,73 @@ describe('メッセージの編集', () => {
 
     const after = db.chatMessages.find((m) => m.chat_message_id === sent.chat_message_id)!;
     expect(after.body).toBe('3回目');
+  });
+
+  /** 指定した種別のチャンネルへ1件送り、その行を返す */
+  const sendTo = async (user: SessionUser, roomType: string, body: string) => {
+    const room = db.chatRooms.find((r) => r.room_type === roomType)!;
+    await api.send(user, room.chat_room_id, body);
+    const list = await api.messages(user, room.chat_room_id);
+    return list[list.length - 1];
+  };
+
+  it('園全体・クラスグループ・個人チャットのいずれでも本人は編集できる', async () => {
+    // 園全体は管理者だけが投稿できる。クラスグループと個人チャットは担任も投稿できる
+    for (const [user, roomType] of [[admin, '1'], [teacher, '2'], [teacher, '4']] as const) {
+      const sent = await sendTo(user, roomType, `${roomType} の本文`);
+      await api.edit(user, sent.chat_message_id, `${roomType} の編集後`);
+
+      const after = db.chatMessages.find((m) => m.chat_message_id === sent.chat_message_id)!;
+      expect(after.body).toBe(`${roomType} の編集後`);
+      expect(after.edited_at).not.toBeNull();
+    }
+  });
+
+  it('園チャットは管理者同士なら互いに編集できる', async () => {
+    const sent = await sendTo(admin, '1', '9月の行事のお知らせ');
+    await api.edit(admin2, sent.chat_message_id, '9月の行事のお知らせ（日程を訂正）');
+
+    const after = db.chatMessages.find((m) => m.chat_message_id === sent.chat_message_id)!;
+    expect(after.body).toBe('9月の行事のお知らせ（日程を訂正）');
+  });
+
+  it('園チャットでも一般は他者のメッセージを編集できない', async () => {
+    const sent = await sendTo(admin, '1', '管理者だけが直せるお知らせ');
+    await expect(api.edit(teacher, sent.chat_message_id, '書き換え')).rejects.toThrow();
+
+    const after = db.chatMessages.find((m) => m.chat_message_id === sent.chat_message_id)!;
+    expect(after.body).toBe('管理者だけが直せるお知らせ');
+  });
+
+  it('園チャット以外では、管理者でも他者のメッセージを編集できない', async () => {
+    const sent = await sendTo(teacher, '4', '個人チャットの本文');
+    await expect(api.edit(admin, sent.chat_message_id, '書き換え')).rejects.toThrow();
+
+    const after = db.chatMessages.find((m) => m.chat_message_id === sent.chat_message_id)!;
+    expect(after.body).toBe('個人チャットの本文');
+  });
+
+  it('既読が付いたあとも編集できる（期限を設けない）', async () => {
+    const sent = await sendTo(teacher, '4', '既読が付く前の本文');
+    await api.markRead(guardian, sent.chat_room_id);
+    expect(await api.readCount(sent.chat_message_id)).toBeGreaterThan(0);
+
+    await api.edit(teacher, sent.chat_message_id, '既読が付いたあとの本文');
+
+    const after = db.chatMessages.find((m) => m.chat_message_id === sent.chat_message_id)!;
+    expect(after.body).toBe('既読が付いたあとの本文');
+  });
+
+  it('日誌の共有は、本文だけ編集でき、リンク先の記録は変わらない', async () => {
+    // 日誌の共有（source_type=2）は個人チャットへ送られる（基本設計書「日誌の作成から保護者への共有」(4-5)）
+    const shared = db.chatMessages.find((m) => m.source_type === '2')!;
+    const sourceID = shared.source_id;
+
+    await api.edit(teacher, shared.chat_message_id, '本日の日誌を共有しました。お目通しください。');
+
+    const after = db.chatMessages.find((m) => m.chat_message_id === shared.chat_message_id)!;
+    expect(after.body).toBe('本日の日誌を共有しました。お目通しください。');
+    expect(after.source_type).toBe('2');
+    expect(after.source_id).toBe(sourceID);
   });
 });

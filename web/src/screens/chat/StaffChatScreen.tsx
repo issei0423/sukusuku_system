@@ -41,6 +41,13 @@ export default function StaffChatScreen() {
 
   const current = rooms.data?.find((r) => r.room.chat_room_id === roomId);
 
+  /*
+   * 園チャット（room_type=1）だけは、管理者同士なら互いのメッセージを編集できる
+   * （基本設計書「メッセージの編集」(4-6)）。園全体への発信は園としての意思表示であり、
+   * 発信者個人のものではないため。他のチャンネルは送信者本人だけが編集できる
+   */
+  const schoolWideAdmin = current?.room.room_type === '1' && user!.role === '1';
+
   const send = async () => {
     if (!roomId || !text.trim()) return;
     setError(null);
@@ -105,6 +112,7 @@ export default function StaffChatScreen() {
             {messages.data?.length === 0 && <Empty text="まだメッセージはありません。" />}
             {messages.data?.map((m) => (
               <MessageRow key={m.chat_message_id} message={m} mine={m.sender_account_id === user!.account_id}
+                canEdit={m.sender_account_id === user!.account_id || schoolWideAdmin}
                 onRetract={async () => { await api.retract(user!, m.chat_message_id); setTick((n) => n + 1); }}
                 onEdit={async (body) => { await api.edit(user!, m.chat_message_id, body); setTick((n) => n + 1); }} />
             ))}
@@ -143,13 +151,16 @@ export default function StaffChatScreen() {
 }
 
 /** 1件のメッセージ。既読は人数で示す（画面詳細図 4-1） */
-function MessageRow({ message, mine, onRetract, onEdit }: {
-  message: ChatMessage; mine: boolean; onRetract: () => void; onEdit: (body: string) => Promise<void>;
+function MessageRow({ message, mine, canEdit, onRetract, onEdit }: {
+  message: ChatMessage; mine: boolean; canEdit: boolean;
+  onRetract: () => void; onEdit: (body: string) => Promise<void>;
 }) {
   const read = useAsync(() => api.readCount(message.chat_message_id), [message.chat_message_id]);
   /*
-   * 編集は送信者本人のみ（基本設計書「メッセージの編集」(4-6)）。
-   * 回数と期限の制限は設けない。編集前の本文はサーバ側で操作ログへ記録する。
+   * 編集は送信者本人のみ。園チャットに限り管理者同士でも編集できる
+   * （基本設計書「メッセージの編集」(4-6)）。可否の判定は canEdit で受け取る。
+   * 回数と期限の制限は設けず、既読が付いたあとも編集できる。
+   * 編集前の本文はサーバ側で操作ログへ記録する。
    */
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.body);
@@ -192,27 +203,28 @@ function MessageRow({ message, mine, onRetract, onEdit }: {
             </div>
           </>
         ) : (
-          <>
-            {message.body}
-            {/* 日誌の共有（source_type=2）は、本文ではなく記録へのリンクとして出す */}
-            {message.source_type === '2' && message.source_id && (
-              <Link className="shared-card" to={`/staff/diary/${message.source_id}`}>
-                日誌を開く
-              </Link>
-            )}
-          </>
+          message.body
+        )}
+        {/*
+          * 日誌の共有（source_type=2）は、本文ではなく記録へのリンクとして出す。
+          * 編集できるのは添え書きの本文だけで、リンク先の記録は変わらない（基本設計書 4-6）。
+          * そのため編集中もリンクは出したままにする
+          */}
+        {message.source_type === '2' && message.source_id && (
+          <Link className="shared-card" to={`/staff/diary/${message.source_id}`}>
+            日誌を開く
+          </Link>
         )}
       </div>
-      {mine && !editing && (
+      {(mine || canEdit) && !editing && (
         <div className="read">
-          既読 {read.data ?? 0}
-          {' '}
-          {/* 添付は編集の対象外。差し替えは取消して送り直す（基本設計書 4-6） */}
-          {message.source_type === '1' && (
+          {/* 既読と取消は自分の発言にだけ出す。園チャットの相互編集で直せるのは本文だけ */}
+          {mine && <>既読 {read.data ?? 0}{' '}</>}
+          {canEdit && (
             <button className="btn-sm btn-quiet" onClick={() => { setDraft(message.body); setEditing(true); }}>編集</button>
           )}
           {' '}
-          <button className="btn-sm btn-quiet" onClick={onRetract}>取消</button>
+          {mine && <button className="btn-sm btn-quiet" onClick={onRetract}>取消</button>}
         </div>
       )}
     </div>
