@@ -160,3 +160,27 @@ export function napTimerBase(startedAt: string, latestCheckedAts: (string | null
   }
   return base ?? startedAt;
 }
+
+/**
+ * 入力された招待コードを照合用の形に直す
+ *
+ * 大文字・小文字を区別せず、ハイフンは入力しても省略してもよい
+ * （基本設計書「招待コード（t_invitation_code）」(5-2)）。打ち方の違いで失敗させない。
+ * 空白は、配布物から書き写すときに紛れ込みやすいため、あわせて取り除く。
+ * サーバ側（server/api_auth.go の normalizeInvitationCode）と同じ規則にしてある。
+ */
+export function normalizeInvitationCode(code: string): string {
+  return code.toUpperCase().replace(/[-ー－‐\s]/g, '');
+}
+
+/**
+ * ログインID（メールアドレス）の必須・桁数・形式を検査する（基本設計書「入力項目の制約値」(4-9)）
+ * 問題が無ければ null を返す。届くかどうかまでは確かめない
+ */
+export function validateEmail(email: string): string | null {
+  const v = email.trim();
+  if (!v) return 'メールアドレスを入力してください';
+  if ([...v].length > 254) return 'メールアドレスは254文字以内で入力してください';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return 'メールアドレスの形式が正しくありません';
+  return null;
+}

@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
+	"unicode"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -230,14 +232,49 @@ type usableCode struct {
 	ChildID string
 }
 
+/*
+normalizeInvitationCode は、入力された招待コードを照合用の形に直す。
+
+大文字・小文字を区別せず、ハイフンは入力しても省略してもよい
+（基本設計書「招待コード（t_invitation_code）」(5-2)）。打ち方の違いで失敗させない。
+空白は、配布物から書き写すときに紛れ込みやすいため、あわせて取り除く。
+画面側（web/src/api/util.ts の normalizeInvitationCode）と同じ規則にしてある。
+*/
+func normalizeInvitationCode(code string) string {
+	var b strings.Builder
+	for _, r := range strings.ToUpper(code) {
+		if r == '-' || r == 'ー' || r == '－' || r == '‐' || unicode.IsSpace(r) {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// emailPattern はメールアドレス形式のおおまかな検査。届くかどうかまでは確かめない
+var emailPattern = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
+
+// validateEmail はログインID（メールアドレス）の必須・桁数・形式を検査する（基本設計書「入力項目の制約値」(4-9)）
+func validateEmail(email string) string {
+	switch {
+	case strings.TrimSpace(email) == "":
+		return "メールアドレスを入力してください"
+	case len([]rune(email)) > 254:
+		return "メールアドレスは254文字以内で入力してください"
+	case !emailPattern.MatchString(email):
+		return "メールアドレスの形式が正しくありません"
+	}
+	return ""
+}
+
 // lookupUsableCode は使える招待コードを引く。使えない理由はそのまま画面へ出す。
 func (a *app) lookupUsableCode(code string) (usableCode, error) {
 	var out usableCode
-	normalized := strings.ToUpper(strings.TrimSpace(code))
+	normalized := normalizeInvitationCode(code)
 
 	var status, expiresOn string
 	err := a.db.QueryRow(`SELECT invitation_code_id, child_id, status, expires_on
-	                        FROM t_invitation_code WHERE UPPER(code) = ?`, normalized).
+	                        FROM t_invitation_code WHERE REPLACE(UPPER(code), '-', '') = ?`, normalized).
 		Scan(&out.ID, &out.ChildID, &status, &expiresOn)
 	if errors.Is(err, sql.ErrNoRows) {
 		return out, errors.New("招待コードが確認できません。園から配布されたコードをお確かめください")
@@ -289,6 +326,12 @@ func (a *app) handleSignUpGuardian(w http.ResponseWriter, r *http.Request) {
 	code, err := a.lookupUsableCode(req.Code)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "招待コードが確認できません")
+		return
+	}
+	// ログインIDはメールアドレス。空や形式の誤りを受け付けない（要件定義書「ログインIDの定義」(4-1-1)）
+	req.Email = strings.TrimSpace(req.Email)
+	if msg := validateEmail(req.Email); msg != "" {
+		writeErr(w, http.StatusBadRequest, msg)
 		return
 	}
 	// ログインIDはロールをまたいで園内で一意（基本設計書 5-2）

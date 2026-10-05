@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest';
 import { api } from '../src/api/client';
 import * as db from '../src/api/mockDb';
 import type { SessionUser } from '../src/api/types';
+import { today } from '../src/api/util';
 
 const admin: SessionUser = {
   account_id: 1, email: 'takahashi@hoiku.example.jp', role: '1', display_name: '高橋 美咲',
@@ -109,5 +110,32 @@ describe('身体測定', () => {
   it('性別が未回答の園児には成長曲線の基準値を持たない', async () => {
     expect(await api.growthBand('9', '1')).toBeNull();
     expect((await api.growthBand('1', '1'))?.length).toBeGreaterThan(0);
+  });
+});
+
+describe('招待コードの入力形式とメールアドレスの検査', () => {
+  const unused = () => db.invitationCodes.find((c) => c.status === '1' && c.expires_on >= today())!;
+
+  it('ハイフンを省いても、小文字でも、正しいコードは確認できる', async () => {
+    const code = unused().code;
+    await expect(api.verifyInvitationCode(code.replace(/-/g, '').toLowerCase())).resolves.toBeTruthy();
+    await expect(api.verifyInvitationCode(` ${code.toLowerCase()} `)).resolves.toBeTruthy();
+    await expect(api.verifyInvitationCode(code)).resolves.toBeTruthy();
+  });
+
+  it('メールアドレスが空・形式の誤りのままでは登録できない', async () => {
+    const base = { code: unused().code, password: 'pass12345', guardian_name: '検査 太郎', relationship: '父' };
+    await expect(api.signUpGuardian({ ...base, email: '' })).rejects.toThrow(/メールアドレスを入力/);
+    await expect(api.signUpGuardian({ ...base, email: '   ' })).rejects.toThrow(/メールアドレスを入力/);
+    await expect(api.signUpGuardian({ ...base, email: 'taro.example.jp' })).rejects.toThrow(/形式/);
+    // 検査で止まったコードは使われていない
+    expect(unused().code).toBe(base.code);
+  });
+
+  it('園児1人に1枚だけ発行できる。ほかの園児のコードは増えない', async () => {
+    const before = db.invitationCodes.length;
+    const code = await api.issueOneInvitationCode(admin, 'C001', 30);
+    expect(db.invitationCodes.length).toBe(before + 1);
+    expect(db.invitationCodes.find((c) => c.code === code)!.child_id).toBe('C001');
   });
 });

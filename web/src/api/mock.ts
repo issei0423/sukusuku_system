@@ -19,7 +19,7 @@ import type {
   DevelopmentCheck, DevelopmentResultRecord, DevelopmentItem, ChatRoom, ChatMessage,
   OperationLog, Allergy, FunctionType, OperationType, Paged,
 } from './types';
-import { ageInMonths, now, today, addDays, plusMinutes, fromNowMinutes, napAutoCloseAt } from './util';
+import { ageInMonths, now, today, addDays, plusMinutes, fromNowMinutes, napAutoCloseAt, normalizeInvitationCode, validateEmail } from './util';
 import { BODY_POSITION, BREATHING, COMPLEXION } from './codes';
 import type {
   LoginError, ChildInput, DiaryFilter, DiaryInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
@@ -1461,8 +1461,8 @@ const adminApi3 = {
   /** 保護者アカウントの自己登録（基本設計書「保護者アカウントの自己登録」(4-3)） */
   async verifyInvitationCode(code: string): Promise<{ ok: true } | never> {
     // 園児名を返さない。誰の保護者かを名乗る前の段階であるため（画面詳細図 2-3）
-    const normalized = code.trim().toUpperCase();
-    const c = db.invitationCodes.find((x) => x.code.toUpperCase() === normalized);
+    const normalized = normalizeInvitationCode(code);
+    const c = db.invitationCodes.find((x) => normalizeInvitationCode(x.code) === normalized);
     if (!c) return fail('招待コードが確認できません。園から配布されたコードをお確かめください');
     if (c.status === '2') return fail('この招待コードはすでに使われています');
     if (c.status === '3') return fail('この招待コードは失効しています');
@@ -1473,9 +1473,13 @@ const adminApi3 = {
   async signUpGuardian(
     input: { code: string; email: string; password: string; guardian_name: string; relationship: string },
   ): Promise<SessionUser> {
-    const normalized = input.code.trim().toUpperCase();
-    const c = db.invitationCodes.find((x) => x.code.toUpperCase() === normalized);
+    const normalized = normalizeInvitationCode(input.code);
+    const c = db.invitationCodes.find((x) => normalizeInvitationCode(x.code) === normalized);
     if (!c || c.status !== '1' || c.expires_on < today()) return fail('招待コードが確認できません');
+    // ログインIDはメールアドレス。空や形式の誤りを受け付けない（要件定義書「ログインIDの定義」(4-1-1)）
+    input = { ...input, email: input.email.trim() };
+    const emailError = validateEmail(input.email);
+    if (emailError) return fail(emailError);
     if (db.accounts.some((a) => a.email === input.email)) return fail('このメールアドレスはすでに登録されています');
     if (input.password.length < 8) return fail('パスワードは8文字以上で入力してください');
     if (!input.guardian_name.trim()) return fail('保護者の氏名を入力してください');
