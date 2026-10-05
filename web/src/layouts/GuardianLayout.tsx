@@ -10,6 +10,7 @@ import { Link, Outlet, useNavigate } from 'react-router-dom';
 import { useSession } from '../session';
 import { useAsync } from '../hooks';
 import { api } from '../api/client';
+import { BellIcon } from '../components/ui';
 
 export default function GuardianLayout() {
   const { user, logout } = useSession();
@@ -31,8 +32,8 @@ export default function GuardianLayout() {
         <button onClick={() => setOpen(true)} aria-label="メニュー">≡</button>
         <span className="logo">すくすく保育園</span>
         <div className="spacer" />
-        <button className="notify-btn" onClick={() => navigate('/guardian/chat')} aria-label="通知">
-          通知
+        <button className="notify-btn" onClick={() => navigate('/guardian/chat')} title="通知" aria-label="通知">
+          <BellIcon />
           {unread > 0 && <span className="notify-badge">{unread}</span>}
         </button>
       </header>
