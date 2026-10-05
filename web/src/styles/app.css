@@ -60,7 +60,30 @@
 .sidenav hr { margin: var(--sp-3) var(--sp-4); border: 0; border-top: 1px solid var(--c-border); }
 .sidenav .group-label { padding: 0 var(--sp-4); font-size: 12px; color: var(--c-text-weak); }
 
-.main { flex: 1; min-width: 0; overflow-y: auto; padding: var(--sp-5); }
+.main { flex: 1; min-width: 0; overflow-y: auto; padding: var(--main-pad); }
+
+/*
+ * 想定する端末と向き（基本設計書 3-5）。職員画面はタブレット横向きを基準に組む
+ * - 縦向き：構成は変えず、サイドナビと余白を詰めてメインコンテンツの幅を確保する
+ * - PC：タブレット横向きの縦横比のまま中央に置く。PC 専用のレイアウトは持たない
+ */
+@media (max-width: 900px) {
+  :root { --sidenav-w: var(--sidenav-w-portrait); --main-pad: var(--sp-4); }
+  .sidenav a { padding: 0 var(--sp-3); }
+  .sidenav .group-label { padding: 0 var(--sp-3); }
+  .sidenav hr { margin: var(--sp-3); }
+}
+@media (min-width: 1400px) {
+  .staff-shell {
+    max-width: max(var(--staff-base-w), calc(100vh * var(--staff-ratio)));
+    margin: 0 auto;
+    border-left: 1px solid var(--c-border);
+    border-right: 1px solid var(--c-border);
+  }
+}
+
+/* 列の多い一覧は、画面全体ではなくカードの中だけを横に送る */
+.card:has(> table.list) { overflow-x: auto; }
 
 /* 12カラムグリッド（基本設計書 3-5） */
 .grid12 { display: grid; grid-template-columns: repeat(var(--grid-cols), 1fr); gap: var(--sp-4); }
