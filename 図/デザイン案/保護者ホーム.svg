@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844" role="img" aria-labelledby="title desc">
+  <title id="title">保護者ホームのデザイン案</title>
+  <desc id="desc">優しい黄色のヘッダ、園児ごとの区画、新しいお知らせと最近の記録を縦に並べた保護者向け画面の見本。</desc>
+  <style>
+    text { font-family: "Yu Gothic", "Meiryo", sans-serif; fill: #2c2822; }
+    .small { font-size: 12px; fill: #6d665a; }
+    .label { font-size: 15px; font-weight: 700; }
+  </style>
+  <rect width="390" height="844" fill="#fffdf6"/>
+  <rect width="390" height="57" fill="#f6c445"/>
+  <path d="M0 57H390" stroke="#d9a012"/>
+  <path d="M18 20H42M18 28H42M18 36H42" stroke="#4a3708" stroke-width="2.5" stroke-linecap="round"/>
+  <text x="67" y="36" font-size="19" font-weight="700">すくすく保育園</text>
+  <circle cx="348" cy="28" r="17" fill="#fff9e8"/>
+  <text x="343" y="33" font-size="13" font-weight="700">2</text>
+  <rect x="16" y="76" width="358" height="71" rx="12" fill="#fdf2cf"/>
+  <circle cx="43" cy="111" r="10" fill="#e0b83c"/>
+  <circle cx="70" cy="111" r="10" fill="#e0b83c"/>
+  <path d="M53 111C57 102 59 120 61 111" fill="none" stroke="#b58b22" stroke-width="2.5" stroke-linecap="round"/>
+  <text x="94" y="106" font-size="18" font-weight="700">○○ちゃん</text>
+  <text x="94" y="129" class="small">2歳3か月／ひよこ組</text>
+  <rect x="16" y="161" width="358" height="172" rx="12" fill="#fff" stroke="#e3ddcd"/>
+  <text x="34" y="191" class="label">新しいお知らせ</text>
+  <text x="34" y="219" font-size="14">園チャット 1件</text>
+  <text x="34" y="242" font-size="14">個人チャット 1件</text>
+  <rect x="34" y="262" width="322" height="51" rx="9" fill="#f6c445" stroke="#d9a012"/>
+  <text x="135" y="294" font-size="16" font-weight="700">チャットを開く →</text>
+  <text x="16" y="373" font-size="20" font-weight="700">最近の記録</text>
+  <rect x="16" y="390" width="358" height="128" rx="12" fill="#fff" stroke="#e3ddcd"/>
+  <rect x="16" y="390" width="358" height="35" rx="12" fill="#fdf2cf"/>
+  <rect x="16" y="412" width="358" height="13" fill="#fdf2cf"/>
+  <text x="34" y="414" font-size="14" font-weight="700">10月4日（日）  個人日誌</text>
+  <text x="34" y="453" font-size="14">園での活動の様子を記録しました。</text>
+  <text x="34" y="491" font-size="14" font-weight="700">記録を開く →</text>
+  <rect x="16" y="543" width="358" height="71" rx="12" fill="#fdf2cf"/>
+  <circle cx="43" cy="578" r="10" fill="#e0b83c"/>
+  <circle cx="70" cy="578" r="10" fill="#e0b83c"/>
+  <path d="M53 578C57 569 59 587 61 578" fill="none" stroke="#b58b22" stroke-width="2.5" stroke-linecap="round"/>
+  <text x="94" y="573" font-size="18" font-weight="700">△△ちゃん</text>
+  <text x="94" y="596" class="small">4歳1か月／うさぎ組</text>
+  <rect x="16" y="628" width="358" height="77" rx="12" fill="#fff" stroke="#e3ddcd"/>
+  <text x="34" y="657" class="label">新しいお知らせはありません</text>
+  <text x="34" y="682" class="small">共有された記録はここに表示されます</text>
+  <path d="M16 744H374" stroke="#e3ddcd"/>
+  <text x="21" y="772" font-size="13" font-weight="700">緊急のご連絡はお電話でお願いします</text>
+  <text x="21" y="796" class="small">園への通常の連絡はチャットから</text>
+</svg>
