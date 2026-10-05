@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="180" height="64" viewBox="0 0 180 64" role="img" aria-labelledby="title desc">
+  <title id="title">糸のしるし</title>
+  <desc id="desc">同じ大きさの二つの点を、ゆるやかに折れ曲がる一本の線がつなぐワンポイントの図案。</desc>
+  <path d="M34 30 C55 29 68 35 80 29 C89 24 93 19 100 22 C109 26 106 36 99 38 C92 40 88 35 91 31 C95 26 102 29 108 31 C123 36 136 30 151 29" fill="none" stroke="#B58C2A" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M21 33 C17 29 18 22 24 20 C31 19 36 25 34 31 C33 37 25 39 21 33 Z" fill="#D0A82C"/>
+  <path d="M152 31 C148 25 151 19 157 18 C164 18 168 24 166 30 C164 37 156 38 152 31 Z" fill="#D0A82C"/>
+</svg>
