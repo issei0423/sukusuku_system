@@ -8,7 +8,7 @@
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr) 200px;
   gap: var(--sp-3);
-  height: calc(100vh - var(--header-h) - var(--sp-5) * 2);
+  height: calc(100vh - var(--header-h) - var(--main-pad) * 2);
   min-height: 420px;
 }
 .chat-pane {
@@ -58,9 +58,9 @@
 /* ---- 午睡チェック画面（画面詳細図 5-1） ---- */
 /* タイマーを画面の上部に固定する。スクロールしても視界から外さない */
 .nap-timer {
-  position: sticky; top: calc(var(--sp-5) * -1); z-index: 6;
-  margin: calc(var(--sp-5) * -1) calc(var(--sp-5) * -1) var(--sp-4);
-  padding: var(--sp-3) var(--sp-5);
+  position: sticky; top: calc(var(--main-pad) * -1); z-index: 6;
+  margin: calc(var(--main-pad) * -1) calc(var(--main-pad) * -1) var(--sp-4);
+  padding: var(--sp-3) var(--main-pad);
   background: var(--c-primary-soft);
   border-bottom: 1px solid var(--c-primary-deep);
   display: flex; align-items: center; gap: var(--sp-5); flex-wrap: wrap;
@@ -97,7 +97,13 @@
 .dev-diff { font-size: 13px; color: var(--c-text-sub); }
 .dev-diff .to { font-weight: 700; color: var(--c-text); }
 
+/*
+ * タブレット縦向き。横向きと同じ構成のまま、各領域の幅だけを詰める
+ * （基本設計書「画面基本構成」(3-5) 想定する端末と向き）。1列へ積み直すことはしない
+ */
 @media (max-width: 900px) {
-  .chat3 { grid-template-columns: 1fr; height: auto; }
-  .split { grid-template-columns: 1fr; }
+  .chat3 { grid-template-columns: 172px minmax(0, 1fr) 128px; gap: var(--sp-2); }
+  .split { grid-template-columns: 176px minmax(0, 1fr); gap: var(--sp-3); }
+  .channel { padding: 0 var(--sp-2); }
+  .msg .bubble { max-width: 92%; }
 }

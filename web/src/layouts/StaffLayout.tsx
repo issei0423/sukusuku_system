@@ -6,6 +6,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useSession } from '../session';
 import { useAsync } from '../hooks';
 import { api } from '../api/client';
+import { BellIcon } from '../components/ui';
 
 const NAV = [
   { to: '/staff', label: 'ダッシュボード', end: true, adminOnly: false },
@@ -49,8 +50,8 @@ export default function StaffLayout() {
       <header className="app-header">
         <span className="logo">すくすく</span>
         <div className="spacer" />
-        <button className="notify-btn" title="通知" onClick={() => navigate('/staff')}>
-          通知
+        <button className="notify-btn" title="通知" aria-label="通知" onClick={() => navigate('/staff')}>
+          <BellIcon />
           {pending > 0 && <span className="notify-badge">{pending}</span>}
         </button>
         {/*

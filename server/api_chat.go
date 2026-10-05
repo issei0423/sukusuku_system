@@ -307,12 +307,20 @@ func (a *app) handleEditMessage(w http.ResponseWriter, r *http.Request) {
 	var sender int64
 	var before string
 	var isDeleted bool
-	if err := a.db.QueryRow(`SELECT sender_account_id, body, is_deleted FROM t_chat_message
-		WHERE chat_message_id = ?`, id).Scan(&sender, &before, &isDeleted); err != nil {
+	var roomType string
+	if err := a.db.QueryRow(`SELECT m.sender_account_id, m.body, m.is_deleted, r.room_type
+		FROM t_chat_message m JOIN m_chat_room r ON r.chat_room_id = m.chat_room_id
+		WHERE m.chat_message_id = ?`, id).Scan(&sender, &before, &isDeleted, &roomType); err != nil {
 		writeErr(w, http.StatusNotFound, "メッセージが見つかりません")
 		return
 	}
-	if sender != u.AccountID {
+	/*
+	 * 編集できるのは送信者本人。園チャット（room_type=1）だけは例外で、管理者同士なら互いに編集できる
+	 * （基本設計書「メッセージの編集」(4-6)）。園全体への発信は園としての意思表示であり、
+	 * 発信者個人のものではないため。園チャットへ投稿できるのは管理者だけなので、
+	 * 送信者の権限を改めて調べる必要はない
+	 */
+	if sender != u.AccountID && !(roomType == "1" && u.isAdmin()) {
 		writeForbidden(w, "自分が送信したメッセージのみ編集できます")
 		return
 	}

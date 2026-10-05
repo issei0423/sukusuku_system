@@ -24,7 +24,10 @@ export default function GuardianChatScreen() {
   const [text, setText] = useState('');
   const [tick, setTick] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  /* 編集は送信者本人のみ。回数と期限の制限は設けない（基本設計書「メッセージの編集」(4-6)） */
+  /*
+   * 編集は送信者本人のみ。回数と期限の制限は設けず、既読が付いたあとも編集できる
+   * （基本設計書「メッセージの編集」(4-6)）
+   */
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draft, setDraft] = useState('');
 
@@ -124,19 +127,21 @@ export default function GuardianChatScreen() {
                     </div>
                   </>
                 ) : (
-                  <>
-                    {m.body}
-                    {m.source_type === '2' && m.source_id && (
-                      <Link className="shared-card" to={`/guardian/diary/${m.source_id}`}>
-                        {formatMD(m.sent_at.slice(0, 10))} の記録を開く
-                      </Link>
-                    )}
-                  </>
+                  m.body
+                )}
+                {/*
+                  記録の共有は本文ではなくリンクとして出す。編集できるのは添え書きの本文だけで、
+                  リンク先の記録は変わらないため、編集中もリンクは出したままにする（基本設計書 4-6）
+                */}
+                {m.source_type === '2' && m.source_id && (
+                  <Link className="shared-card" to={`/guardian/diary/${m.source_id}`}>
+                    {formatMD(m.sent_at.slice(0, 10))} の記録を開く
+                  </Link>
                 )}
               </div>
               {/* 既読は保護者側には表示しない（基本設計書 5-5） */}
-              {/* 編集は送信者本人のみ。手入力のメッセージに限る（同 4-6） */}
-              {mine && m.source_type === '1' && editingId !== m.chat_message_id && (
+              {/* 編集は送信者本人のみ（同 4-6）。既読が付いたあとも編集できる */}
+              {mine && editingId !== m.chat_message_id && (
                 <div className="row-end">
                   <button className="btn-sm btn-quiet"
                     onClick={() => { setDraft(m.body); setEditingId(m.chat_message_id); }}>編集</button>
