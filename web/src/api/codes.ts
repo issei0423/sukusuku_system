@@ -65,3 +65,8 @@ export const REACTION: Record<string, { emoji: string; label: string }> = {
 
 /** 個人チャットのスレッドの状態（m_chat_room.thread_status） */
 export const THREAD_STATUS: Record<string, string> = { '1': '未対応', '2': '対応済み' };
+
+/** 配布物の種類（t_handout.handout_type） */
+export const HANDOUT_TYPE: Record<string, string> = {
+  '1': '園だより', '2': '献立表', '3': '行事のお知らせ', '4': 'クラスだより', '5': 'その他',
+};

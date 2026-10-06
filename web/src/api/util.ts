@@ -184,3 +184,20 @@ export function validateEmail(email: string): string | null {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return 'メールアドレスの形式が正しくありません';
   return null;
 }
+
+/** 'YYYY-MM' を '2026年10月' の形に整える */
+export function formatMonth(yyyymm: string): string {
+  const [y, m] = yyyymm.split('-').map(Number);
+  return `${y}年${m}月`;
+}
+
+/** 今月を 'YYYY-MM' で返す（JST）。days を足した日の月も引ける */
+export function monthOf(isoDate: string): string {
+  return isoDate.slice(0, 7);
+}
+
+/** ファイルの大きさを読みやすい形に整える */
+export function formatFileSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}

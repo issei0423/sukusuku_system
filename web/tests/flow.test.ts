@@ -486,3 +486,68 @@ describe('設計の決定を反映したもの（基本設計書 第2.3版）', 
     expect(db.settings.find((s) => s.setting_key === 'facility.phone_number')!.setting_value).toBeTruthy();
   });
 });
+
+describe('園からの配布物（基本設計書「配布物の掲載と閲覧」(4-6)。GitHub Issue #94）', () => {
+  const thisMonth = today().slice(0, 7);
+  const input = {
+    handout_type: '2', title: '来月の献立表', target_month: thisMonth, class_id: null as number | null,
+    file_name: 'kondate.pdf', file_type: 'application/pdf', file_size: 200_000,
+  };
+  const admin3: SessionUser = { ...admin };
+
+  it('保護者は、園全体向けと自児のクラス向けの配布物を、新しい月から順に見られる', async () => {
+    const rows = await api.handouts(guardian);
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.some((h) => h.handout_type === '1')).toBe(true);
+    expect(rows.some((h) => h.handout_type === '2')).toBe(true);
+    // 自児（さくら組）のクラスだよりは見える
+    expect(rows.some((h) => h.class_id === 1)).toBe(true);
+    const months = rows.map((h) => h.target_month);
+    expect([...months].sort().reverse()).toEqual(months);
+  });
+
+  it('ほかのクラス向けの配布物は、そのクラスの保護者以外には見えない', async () => {
+    const posted = await api.postHandout(admin3, { ...input, title: 'ひまわり組のお知らせ', handout_type: '4', class_id: 2 });
+    expect((await api.handouts(guardian)).some((h) => h.handout_id === posted.handout_id)).toBe(false);
+    // さくら組の担任にも見えない。管理者には見える
+    expect((await api.handouts(teacher)).some((h) => h.handout_id === posted.handout_id)).toBe(false);
+    expect((await api.handouts(admin3)).some((h) => h.handout_id === posted.handout_id)).toBe(true);
+  });
+
+  it('掲載できるのは管理者だけ', async () => {
+    await expect(api.postHandout(teacher, input)).rejects.toThrow(/管理者のみ/);
+    await expect(api.postHandout(guardian, input)).rejects.toThrow(/管理者のみ/);
+  });
+
+  it('PDF・JPEG・PNG 以外と、上限を超える大きさは掲載できない', async () => {
+    await expect(api.postHandout(admin3, { ...input, file_name: 'a.docx', file_type: 'application/msword' }))
+      .rejects.toThrow(/PDF・JPEG・PNG/);
+    await expect(api.postHandout(admin3, { ...input, file_size: 11 * 1024 * 1024 })).rejects.toThrow(/10MB/);
+    await expect(api.postHandout(admin3, { ...input, title: '  ' })).rejects.toThrow(/題名/);
+    await expect(api.postHandout(admin3, { ...input, target_month: '2026-13' })).rejects.toThrow(/対象の月/);
+  });
+
+  it('掲載すると園チャットに知らせが流れ、保護者の一覧に出る', async () => {
+    const posted = await api.postHandout(admin3, input);
+    expect((await api.handouts(guardian)).some((h) => h.handout_id === posted.handout_id)).toBe(true);
+    const notice = (await api.messages(guardian, 1)).find((m) => m.source_type === '4' && m.source_id === posted.handout_id);
+    expect(notice?.body).toContain('来月の献立表');
+  });
+
+  it('取り下げると一覧から消える。取り下げられるのは管理者だけ', async () => {
+    const posted = await api.postHandout(admin3, { ...input, title: '取り下げる配布物' });
+    await expect(api.withdrawHandout(teacher, posted.handout_id)).rejects.toThrow(/管理者のみ/);
+    await api.withdrawHandout(admin3, posted.handout_id);
+    // 掲載の知らせも取り消される
+    const notice = (await api.messages(guardian, 1)).find((m) => m.source_type === '4' && m.source_id === posted.handout_id)!;
+    expect(notice.is_deleted).toBe(true);
+    expect((await api.handouts(guardian)).some((h) => h.handout_id === posted.handout_id)).toBe(false);
+    expect((await api.handouts(admin3)).some((h) => h.handout_id === posted.handout_id)).toBe(false);
+  });
+
+  it('種類で絞り込める', async () => {
+    const rows = await api.handouts(guardian, { type: '2' });
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((h) => h.handout_type === '2')).toBe(true);
+  });
+});

@@ -17,10 +17,10 @@ import type {
   Account, Child, ClassRoom, Diary, SessionUser, Role,
   InvitationCode, NapRecord, NapSession, NapAbnormal, PhysicalRecord, GrowthStandard,
   DevelopmentCheck, DevelopmentResultRecord, DevelopmentItem, ChatRoom, ChatMessage,
-  OperationLog, Allergy, FunctionType, OperationType, Paged,
+  OperationLog, Allergy, FunctionType, OperationType, Paged, Handout,
 } from './types';
 import { ageInMonths, now, today, addDays, plusMinutes, fromNowMinutes, napAutoCloseAt, normalizeInvitationCode, validateEmail } from './util';
-import { BODY_POSITION, BREATHING, COMPLEXION, REACTION } from './codes';
+import { BODY_POSITION, BREATHING, COMPLEXION, REACTION, HANDOUT_TYPE } from './codes';
 import type {
   LoginError, ChildInput, DiaryFilter, DiaryInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
 } from './shapes';
@@ -1796,10 +1796,108 @@ const dashboardApi = {
   },
 };
 
+/* ============ 園からの配布物（基本設計書「配布物の掲載と閲覧」(4-6)） ============
+ *
+ * 園だより・献立表など、保護者があとから見返すものを、種類と月で並べて置く。
+ * Go サーバ（server/api_handout.go）と同じ規則にしてある。片方だけ直すと食い違う。
+ */
+
+/**
+ * その利用者が見られる配布物か
+ *
+ * 園全体向けは全員が見られる。クラス向けは、管理者はすべて、一般は自クラス、
+ * 保護者は自児がいま在籍するクラスのものだけを見られる。
+ */
+function canSeeHandout(user: SessionUser, h: Handout): boolean {
+  if (h.class_id === null || user.role === '1') return true;
+  if (user.role === '2') return user.class_id === h.class_id;
+  const mine = user.guardian_id ? childrenOfGuardian(user.guardian_id).map((c) => c.child_id) : [];
+  return db.classChildren.some((cc) => cc.class_id === h.class_id && mine.includes(cc.child_id)
+    && db.classes.find((c) => c.class_id === cc.class_id)?.fiscal_year === db.FISCAL_YEAR);
+}
+
+const handoutApi = {
+  /** 見られる配布物を、対象の月の新しい順に返す */
+  async handouts(user: SessionUser, f: { type?: string; month?: string } = {}): Promise<Handout[]> {
+    return ok(db.handouts
+      .filter((h) => !h.is_deleted && canSeeHandout(user, h))
+      .filter((h) => !f.type || h.handout_type === f.type)
+      .filter((h) => !f.month || h.target_month === f.month)
+      .sort((a, b) => b.target_month.localeCompare(a.target_month)
+        || b.posted_at.localeCompare(a.posted_at) || b.handout_id - a.handout_id)
+      .map((h) => ({
+        ...h,
+        class_name: h.class_id === null ? '園全体' : className(h.class_id),
+        posted_staff_name: staffName(h.posted_staff_id),
+      })));
+  },
+
+  /**
+   * 配布物を掲載する。管理者のみ
+   * 掲載したことは、園全体向けなら園チャット、クラス向けならそのクラスグループへ知らせる
+   */
+  async postHandout(
+    user: SessionUser,
+    input: { handout_type: string; title: string; target_month: string; class_id: number | null;
+             file_name: string; file_type: string; file_size: number },
+  ): Promise<Handout> {
+    if (user.role !== '1') return fail('この操作は管理者のみが行えます');
+    const title = input.title.trim();
+    if (!(input.handout_type in HANDOUT_TYPE)) return fail('種類を選んでください');
+    if (!title) return fail('題名を入力してください');
+    if ([...title].length > 50) return fail('題名は50文字以内で入力してください');
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(input.target_month)) return fail('対象の月を選んでください');
+    if (!input.file_name.trim()) return fail('ファイルを選んでください');
+    const allowed = settingText('handout.allowed_types', 'application/pdf,image/jpeg,image/png').split(',');
+    if (!allowed.includes(input.file_type)) return fail('掲載できるのは PDF・JPEG・PNG のファイルです');
+    const maxMB = settingNumber('attachment.max_size_mb', 10);
+    if (!(input.file_size > 0) || input.file_size > maxMB * 1024 * 1024) return fail(`ファイルは${maxMB}MB までです`);
+    if (input.class_id !== null
+      && !db.classes.some((c) => c.class_id === input.class_id && c.fiscal_year === db.FISCAL_YEAR)) {
+      return fail('対象のクラスが見つかりません');
+    }
+
+    const h: Handout = {
+      handout_id: nextId(), handout_type: input.handout_type as Handout['handout_type'], title,
+      target_month: input.target_month, class_id: input.class_id,
+      file_name: input.file_name, file_type: input.file_type, file_size: input.file_size,
+      posted_staff_id: user.staff_id!, posted_at: now(), is_deleted: false,
+    };
+    db.handouts.push(h);
+    log(user.account_id, '2', '1', 't_handout', h.handout_id, null, null, `配布物を掲載（${title}）`);
+
+    const room = input.class_id === null
+      ? db.chatRooms.find((r) => r.room_type === '1')
+      : db.chatRooms.find((r) => r.room_type === '2' && r.class_id === input.class_id);
+    if (room) {
+      db.chatMessages.push({
+        chat_message_id: nextId(), chat_room_id: room.chat_room_id, sender_account_id: user.account_id,
+        body: `「${title}」を掲載しました。`, source_type: '4', source_id: h.handout_id, sent_at: now(),
+        edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null,
+      });
+    }
+    return ok(h);
+  },
+
+  /** 配布物を取り下げる。論理削除とし、一覧から消す。掲載の知らせも取り消す。管理者のみ */
+  async withdrawHandout(user: SessionUser, handoutId: number): Promise<void> {
+    if (user.role !== '1') return fail('この操作は管理者のみが行えます');
+    const h = db.handouts.find((x) => x.handout_id === handoutId && !x.is_deleted);
+    if (!h) return fail('配布物が見つかりません');
+    h.is_deleted = true;
+    // 掲載の知らせも取り消す。知らせだけが残ると、開いても見つからない配布物へ案内し続けることになる
+    db.chatMessages
+      .filter((m) => m.source_type === '4' && m.source_id === handoutId && !m.is_deleted)
+      .forEach((m) => { m.is_deleted = true; m.body = ''; m.deleted_at = now(); m.deleted_account_id = user.account_id; });
+    log(user.account_id, '2', '4', 't_handout', handoutId, null, h.title, '取り下げ');
+    return ok(undefined);
+  },
+};
+
 /* ============ 画面が使う入口 ============ */
 export const api = {
   ...authApi, ...childApi, ...diaryApi, ...diaryApi2,
   ...chatApi, ...chatApi2, ...napApi, ...napApi2,
   ...devApi, ...devApi2, ...physicalApi, ...adminApi, ...adminApi2, ...adminApi3,
-  ...bulkApi, ...dashboardApi,
+  ...bulkApi, ...dashboardApi, ...handoutApi,
 };

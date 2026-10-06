@@ -31,7 +31,7 @@ export type LinkStatus = '1' | '2';
 /** チャットルーム種別 1:園 2:クラスグループ 3:目的別グループ 4:個人 5:職員（m_chat_room.room_type） */
 export type ChatRoomType = '1' | '2' | '3' | '4' | '5';
 /** メッセージの出所 1:手入力 2:日誌の共有 3:発達身体測定の共有（t_chat_message.source_type） */
-export type MessageSourceType = '1' | '2' | '3';
+export type MessageSourceType = '1' | '2' | '3' | '4';
 /** 体位 1:仰向け 2:うつ伏せ 3:左向き 4:右向き（t_nap_record.body_position） */
 export type BodyPosition = '1' | '2' | '3' | '4';
 /** 呼吸 1:あり 2:確認できず（t_nap_record.breathing） */
@@ -290,6 +290,31 @@ export interface ReactionSummary {
   reaction_type: string;
   count: number;
   mine: boolean;
+}
+
+/** 配布物の種類（t_handout.handout_type） */
+export type HandoutType = '1' | '2' | '3' | '4' | '5';
+
+/**
+ * 配布物（t_handout）。園だより・献立表など、保護者があとから見返すもの
+ * class_id が空なら園全体向け。取り下げは論理削除とする（5-5）
+ */
+export interface Handout {
+  handout_id: number;
+  handout_type: HandoutType;
+  title: string;
+  /** 対象の月 'YYYY-MM' */
+  target_month: string;
+  class_id: number | null;
+  file_name: string;
+  file_type: string;
+  file_size: number;
+  posted_staff_id: string;
+  posted_at: string;
+  is_deleted: boolean;
+  /** 画面が使う導出値 */
+  class_name?: string;
+  posted_staff_name?: string;
 }
 
 /** 既読（t_chat_read）。保護者側には表示しない（5-5） */

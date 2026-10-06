@@ -236,7 +236,7 @@ CREATE TABLE t_chat_message (
   chat_room_id       INTEGER NOT NULL REFERENCES m_chat_room(chat_room_id),
   sender_account_id  INTEGER NOT NULL REFERENCES m_account(account_id),
   body               TEXT    NOT NULL,
-  source_type        TEXT    NOT NULL CHECK (source_type IN ('1','2','3')),  -- 1:手入力 2:日誌の共有 3:発達身体測定の共有
+  source_type        TEXT    NOT NULL CHECK (source_type IN ('1','2','3','4')),  -- 1:手入力 2:日誌の共有 3:発達身体測定の共有 4:配布物の掲載
   source_id          INTEGER,
   sent_at            TEXT    NOT NULL,
   edited_at          TEXT,
@@ -279,6 +279,26 @@ CREATE TABLE t_misdelivery_record (
   response              TEXT    NOT NULL,
   staff_id              TEXT    NOT NULL REFERENCES m_staff(staff_id)
 );
+
+-- 配布物（t_handout）。園だより・献立表など、保護者があとから見返すもの。
+-- 取り下げは論理削除とする。既存のデータベースには db.go の ensureHandouts が同じ定義で作る
+CREATE TABLE t_handout (
+  handout_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  handout_type     TEXT    NOT NULL CHECK (handout_type IN ('1','2','3','4','5')),  -- 1:園だより 2:献立表 3:行事のお知らせ 4:クラスだより 5:その他
+  title            TEXT    NOT NULL,
+  target_month     TEXT    NOT NULL,                                               -- 対象の月 'YYYY-MM'
+  class_id         INTEGER REFERENCES m_class(class_id),                           -- 空なら園全体
+  file_name        TEXT    NOT NULL,
+  file_path        TEXT    NOT NULL,
+  file_type        TEXT    NOT NULL,
+  file_size        INTEGER NOT NULL,
+  posted_staff_id  TEXT    NOT NULL REFERENCES m_staff(staff_id),
+  posted_at        TEXT    NOT NULL,
+  is_deleted       INTEGER NOT NULL DEFAULT 0,
+  deleted_at       TEXT,
+  deleted_staff_id TEXT    REFERENCES m_staff(staff_id)
+);
+CREATE INDEX ix_handout_month ON t_handout (target_month, posted_at);
 
 -- ============ 5-6 午睡チェック ============
 

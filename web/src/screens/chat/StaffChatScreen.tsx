@@ -96,6 +96,8 @@ export default function StaffChatScreen() {
         <h1>チャット</h1>
         {unhandled > 0 && <Tag label={`未対応 ${unhandled} 件`} className="tag-returned" />}
         <div className="spacer" />
+        {/* 園だより・献立表など、保護者があとから見返すものはこちらに掲載する */}
+        <Link className="btn btn-sm" to="/staff/handouts">園からの配布物</Link>
         <Link className="btn btn-sm" to="/staff/chat/groups">グループ編成</Link>
       </div>
 
@@ -276,6 +278,10 @@ function MessageRow({ message, mine, canEdit, onRetract, onEdit, onReact }: {
           <Link className="shared-card" to={`/staff/diary/${message.source_id}`}>
             日誌を開く
           </Link>
+        )}
+        {/* 配布物の掲載の知らせ（source_type=4）。現物は配布物の一覧から開く */}
+        {message.source_type === '4' && (
+          <Link className="shared-card" to="/staff/handouts">園からの配布物を開く</Link>
         )}
       </div>
       {/* リアクションは編集の影響を受けない（基本設計書「メッセージの編集」(4-6)） */}

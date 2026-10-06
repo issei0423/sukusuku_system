@@ -386,6 +386,7 @@ INSERT INTO m_setting (setting_key, setting_value, description, updated_staff_id
  ('physical.weight_max','40','体重の上限（kg）','S001','2026-04-01T09:00:00'),
  ('attachment.allowed_types','image/jpeg,image/png','添付の対応形式','S001','2026-04-01T09:00:00'),
  ('attachment.max_size_mb','10','1ファイルあたりの上限サイズ（MB）','S001','2026-04-01T09:00:00'),
+ ('handout.allowed_types','application/pdf,image/jpeg,image/png','配布物の対応形式','S001','2026-04-01T09:00:00'),
  ('attachment.max_count_diary','3','日誌1件あたりの写真の上限枚数','S001','2026-04-01T09:00:00'),
  ('retention.record_years','5','記録の保持年数','S001','2026-04-01T09:00:00'),
  ('retention.attachment_years','3','添付ファイルの保持期間（年）','S001','2026-04-01T09:00:00'),

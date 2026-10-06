@@ -68,6 +68,7 @@ export default function GuardianLayout() {
             </div>
             <Link to="/guardian" onClick={() => setOpen(false)}>ホーム</Link>
             <Link to="/guardian/chat" onClick={() => setOpen(false)}>チャット</Link>
+            <Link to="/guardian/handouts" onClick={() => setOpen(false)}>園からの配布物</Link>
             <Link to="/guardian/password" onClick={() => setOpen(false)}>パスワードの変更</Link>
             <Link to="/guardian/terms" onClick={() => setOpen(false)}>利用規約</Link>
             <div className="spacer" />

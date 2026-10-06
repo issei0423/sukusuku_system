@@ -13,7 +13,7 @@ import type {
   Account, Staff, Guardian, InvitationCode, Terms,
   Child, ClassRoom, ClassChild, ClassStaff, GuardianChild, Allergy, MedicalHistory,
   Diary, DiaryLock, DiaryTemplate, DiaryAttachment,
-  ChatRoom, ChatMember, ChatMessage, ChatRead, ChatReaction, TermsAgreement, MisdeliveryRecord,
+  ChatRoom, ChatMember, ChatMessage, ChatRead, ChatReaction, TermsAgreement, MisdeliveryRecord, Handout,
   NapSession, NapRecord, NapAbnormal,
   DevelopmentCategory, DevelopmentItem, DevelopmentFrequency, ShareSetting,
   DevelopmentSchedule, DevelopmentCheck, DevelopmentResultRecord,
@@ -607,6 +607,7 @@ export const settings: Setting[] = [
   // 添付
   setting('attachment.allowed_types', 'image/jpeg,image/png', '添付の対応形式'),
   setting('attachment.max_size_mb', '10', '1ファイルあたりの上限サイズ（MB）'),
+  setting('handout.allowed_types', 'application/pdf,image/jpeg,image/png', '配布物の対応形式'),
   setting('attachment.max_count_diary', '3', '日誌1件あたりの写真の上限枚数'),
   // データ保持
   setting('retention.record_years', '5', '記録の保持年数'),
@@ -708,3 +709,35 @@ function shiftRows(rows: Record<string, unknown>[], days: number): void {
     for (const rows of recordSets) shiftRows(rows, offset);
   }
 }
+
+/* ============ 配布物（t_handout） ============
+ *
+ * 園だより・献立表など、保護者があとから見返すもの（基本設計書「配布物（t_handout）」(5-5)）。
+ * 対象の月は起動した日から決める（今月と先月）。固定の月で持つと、日が経ったときに
+ * 「今月の献立表」が今月のものでなくなるため。上の日付ずらしの対象には含めない。
+ * サーバ側（server/db.go の seedHandouts）も同じ内容にしてある。
+ */
+function buildHandouts(): Handout[] {
+  const [y, m] = today().split('-').map(Number);
+  const thisMonth = `${y}-${String(m).padStart(2, '0')}`;
+  const prev = new Date(Date.UTC(y, m - 2, 1));
+  const prevMonth = `${prev.getUTCFullYear()}-${String(prev.getUTCMonth() + 1).padStart(2, '0')}`;
+  const label = (ym: string) => `${Number(ym.slice(5))}月`;
+  const row = (
+    id: number, type: Handout['handout_type'], title: string, month: string, classId: number | null,
+    name: string, mime: string, size: number, day: number,
+  ): Handout => ({
+    handout_id: id, handout_type: type, title, target_month: month, class_id: classId,
+    file_name: name, file_type: mime, file_size: size,
+    posted_staff_id: 'S001', posted_at: `${month}-${String(day).padStart(2, '0')}T16:30:00`, is_deleted: false,
+  });
+  return [
+    row(1, '1', `${label(prevMonth)}の園だより`, prevMonth, null, `endayori-${prevMonth}.pdf`, 'application/pdf', 512340, 1),
+    row(2, '2', `${label(prevMonth)}の献立表`, prevMonth, null, `kondate-${prevMonth}.pdf`, 'application/pdf', 238100, 1),
+    row(3, '1', `${label(thisMonth)}の園だより`, thisMonth, null, `endayori-${thisMonth}.pdf`, 'application/pdf', 498200, 1),
+    row(4, '2', `${label(thisMonth)}の献立表`, thisMonth, null, `kondate-${thisMonth}.pdf`, 'application/pdf', 241870, 1),
+    row(5, '3', '運動会のご案内', thisMonth, null, 'undokai.pdf', 'application/pdf', 301455, 2),
+    row(6, '4', `さくら組 ${label(thisMonth)}のクラスだより`, thisMonth, 1, `sakura-${thisMonth}.png`, 'image/png', 1204880, 3),
+  ];
+}
+export const handouts: Handout[] = buildHandouts();

@@ -191,6 +191,39 @@ describe('保護者向けの緊急連絡の案内', () => {
   });
 });
 
+describe('園からの配布物（2画面）', () => {
+  it('保護者ホーム：配布物の区画と、一覧への導線を出す', async () => {
+    open('/guardian', guardian);
+    await settled();
+    await waitFor(() => { expect(screen.getByText('園だより・献立表をすべて見る')).toBeTruthy(); }, { timeout: 3000 });
+  });
+
+  it('配布物一覧画面（保護者）：月ごとにまとめて出し、開くと題名と形式が分かる', async () => {
+    open('/guardian/handouts', guardian);
+    await settled();
+    await waitFor(() => { expect(screen.getAllByText('開く').length).toBeGreaterThan(0); }, { timeout: 3000 });
+    expect(document.body.textContent).toMatch(/\d{4}年\d{1,2}月/);
+    const kondate = Array.from(document.querySelectorAll('button.handout-row'))
+      .find((b) => b.textContent?.includes('献立表'))!;
+    fireEvent.click(kondate);
+    await waitFor(() => { expect(document.body.textContent).toContain('PDF'); });
+  });
+
+  it('配布物管理画面：管理者には掲載の操作を出し、一般には出さない', async () => {
+    open('/staff/handouts', admin);
+    await settled();
+    await waitFor(() => { expect(screen.getAllByText('取り下げ').length).toBeGreaterThan(0); }, { timeout: 3000 });
+    expect(screen.getByText('配布物を掲載する')).toBeTruthy();
+    cleanup();
+
+    open('/staff/handouts', teacher);
+    await settled();
+    await waitFor(() => { expect(screen.getAllByText('開く').length).toBeGreaterThan(0); }, { timeout: 3000 });
+    expect(screen.queryByText('配布物を掲載する')).toBeNull();
+    expect(screen.queryByText('取り下げ')).toBeNull();
+  });
+});
+
 describe('保護者のメニュー', () => {
   it('メニューを開くと閉じるボタンがあり、押すと閉じる', async () => {
     open('/guardian', guardian);

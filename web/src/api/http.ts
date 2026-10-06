@@ -11,7 +11,7 @@
 import type {
   Child, ClassRoom, Diary, SessionUser, Role, NapRecord, NapSession,
   PhysicalRecord, GrowthStandard, DevelopmentCheck, DevelopmentResultRecord,
-  DevelopmentItem, DevelopmentCategory, ChatRoom, ChatMessage, Allergy, Paged, Sex,
+  DevelopmentItem, DevelopmentCategory, ChatRoom, ChatMessage, Allergy, Paged, Sex, Handout,
 } from './types';
 import type {
   LoginError, ChildInput, DiaryFilter, DiaryInput, DiaryTemplate, ChatRoomView,
@@ -514,5 +514,17 @@ const apiAdmin = {
   guardianHome: (_u: SessionUser) => get<GuardianHomeRow[]>('/api/dashboard/guardian'),
 };
 
+/* ---- 園からの配布物 ---- */
+const apiHandout = {
+  handouts: (_u: SessionUser, f: { type?: string; month?: string } = {}) =>
+    get<Handout[]>('/api/handouts' + qs({ type: f.type ?? '', month: f.month ?? '' })),
+  postHandout: async (
+    _u: SessionUser,
+    input: { handout_type: string; title: string; target_month: string; class_id: number | null;
+             file_name: string; file_type: string; file_size: number },
+  ) => post<{ handout_id: number }>('/api/handouts', input),
+  withdrawHandout: (_u: SessionUser, handoutId: number) => post<void>(`/api/handouts/${handoutId}/withdraw`),
+};
+
 /* ============ 画面が使う入口 ============ */
-export const api = { ...apiAuth, ...apiChatNap, ...apiGrowth, ...apiAdmin };
+export const api = { ...apiAuth, ...apiChatNap, ...apiGrowth, ...apiAdmin, ...apiHandout };
