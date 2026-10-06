@@ -50,7 +50,7 @@ export default function StaffLayout() {
       <header className="app-header">
         <div className="header-brand">
           <img className="header-mark" src="/crayon-smiles.png" alt="" aria-hidden="true" />
-          <span className="logo">すくすく</span>
+          <img className="header-wordmark" src="/login-wordmark-crayon.png" alt="すくすく" />
         </div>
         <div className="spacer" />
         <button className="notify-btn" title="通知" aria-label="通知" onClick={() => navigate('/staff')}>
