@@ -64,19 +64,25 @@ export default function GuardianChatScreen() {
   // 一覧
   if (!current) {
     return (
-      <div>
-        <h1 style={{ marginBottom: 12 }}>チャット</h1>
-        <div className="stack">
+      <div className="guardian-chat-list">
+        <div className="guardian-page-intro">
+          <span className="guardian-eyebrow">園とのやりとり</span>
+          <h1>チャット・お知らせ</h1>
+          <p>連絡先を選んで、メッセージを確認できます。</p>
+        </div>
+        <div className="guardian-room-list">
           {rooms.data?.map((r) => (
-            <button key={r.room.chat_room_id} className="btn-block"
-              style={{ justifyContent: 'space-between' }}
+            <button key={r.room.chat_room_id} className="guardian-room-link"
               onClick={() => setRoomId(r.room.chat_room_id)}>
               <span>{labelFor(r.room.room_type, r.room.room_name)}</span>
-              {r.unread > 0 && <span className="tag tag-applied">{r.unread}</span>}
+              <span className="guardian-room-trailing">
+                {r.unread > 0 && <span className="guardian-unread">{r.unread}</span>}
+                <span aria-hidden="true">→</span>
+              </span>
             </button>
           ))}
         </div>
-        <div className="muted" style={{ marginTop: 16 }}>
+        <div className="guardian-contact-note">
           急なご連絡はお電話でお願いします。通知が届かない場合があります。
         </div>
       </div>
@@ -85,13 +91,13 @@ export default function GuardianChatScreen() {
 
   // スレッド
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
-      <div className="page-head">
+    <div className="guardian-chat-thread">
+      <div className="page-head guardian-thread-heading">
         <button className="btn-quiet btn-sm" onClick={() => setRoomId(null)}>&lt; もどる</button>
         <h1>{labelFor(current.room.room_type, current.room.room_name)}</h1>
       </div>
 
-      <div style={{ flex: 1 }}>
+      <div className="guardian-message-list">
         {messages.loading && <Loading />}
         {messages.error && <ErrorBox text={messages.error} />}
         {messages.data?.length === 0 && <Empty text="まだメッセージはありません。" />}
@@ -152,7 +158,7 @@ export default function GuardianChatScreen() {
         })}
       </div>
 
-      <div style={{ position: 'sticky', bottom: 0, background: 'var(--c-surface)', paddingTop: 8 }}>
+      <div className="guardian-message-compose">
         {error && <ErrorBox text={error} />}
         {current.canPost ? (
           <div className="row">
