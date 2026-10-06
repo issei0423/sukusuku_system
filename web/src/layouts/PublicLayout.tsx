@@ -12,7 +12,7 @@ export default function PublicLayout({ children, wide }: { children: ReactNode; 
     <div className="public-shell">
       <div className={`public-card${wide ? ' wide' : ''}`}>
         <div className="brand">
-          <div className="name">すくすく</div>
+          <div className="name"><img src="/login-wordmark-crayon.png" alt="すくすく" /></div>
           <div className="sub">すくすく保育園</div>
         </div>
         {children}
