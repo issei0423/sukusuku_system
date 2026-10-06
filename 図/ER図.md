@@ -3,7 +3,7 @@
 | 項目 | 内容 |
 | :-- | :-- |
 | 対象システム | 保育支援システム（すくすくシステム） |
-| 版数 | 第 1.1 版 |
+| 版数 | 第 1.2 版 |
 | 作成日 | 2026 年 8 月 4 日 |
 | 典拠 | `要件定義書.md` 第2.0版 |
 | 作成区分 | チーム開発演習 基本設計 |
@@ -12,6 +12,7 @@
 
 | 版 | 日付 | 変更内容 |
 | :-: | :-: | :-- |
+| 1.2 | 2026/10/06 | **`基本設計書.md` 第2.3版に合わせて3つの列を足した。** クラス（`m_class`）の年齢児 `age_class`、日誌（`t_diary`）の差し戻す理由 `returned_reason`、発達チェック（`t_development_check`）の所見 `note`（GitHub Issue #57・#58・#59） |
 | 1.1 | 2026/09/07 | **「要確認・要決定事項」(6) の8件をすべて決着させ、「決着した事項」(6) へ書き改めた。** 緊急連絡先は保護者が持つ形に確定し（`phone_number1` / `phone_number2`）、連絡順は `t_guardian_child.contact_order` が持つこととした。同意履歴テーブル（`t_terms_agreement`）の新設、添付の保存先、個人チャットのルーム単位、操作ログの保持形式、年度更新の実行日時の保持先、部分一意インデックスの適用範囲を反映した |
 | 1.0 | 2026/08/04 | 新規作成。要件定義書 第1.7版の全機能からエンティティを抽出し、6つのサブジェクトエリアに分けて図示 |
 
@@ -190,6 +191,7 @@ erDiagram
         bigint class_id PK "自動採番"
         int fiscal_year "年度。4月1日から翌3月31日"
         varchar class_name "クラス名"
+        int age_class "年齢児 0から5。午睡チェックの間隔を引く"
         datetime created_at "登録日時"
     }
     t_class_child {
@@ -262,6 +264,7 @@ erDiagram
         boolean is_shared_to_guardian "保護者へ共有するか"
         datetime shared_at "個人チャットへ送った日時"
         bigint nap_abnormal_id FK "起票元の異常時記録。ヒヤリハットのみ"
+        varchar returned_reason "最後に差し戻したときの理由"
         boolean is_deleted "論理削除"
         datetime created_at "登録日時"
         datetime updated_at "更新日時"
@@ -488,6 +491,7 @@ erDiagram
         char status "1:下書き 2:確定"
         varchar staff_id FK "実施した職員"
         char share_status "0:対象外 1:未連携 2:連携済"
+        text note "所見。園内限定で保護者へ共有しない"
         datetime created_at "登録日時"
         datetime updated_at "更新日時"
     }
