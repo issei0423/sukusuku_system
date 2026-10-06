@@ -3,7 +3,7 @@
 | 項目 | 内容 |
 | :-- | :-- |
 | 対象システム | 保育支援システム（すくすくシステム） |
-| 版数 | 第 1.2 版 |
+| 版数 | 第 1.3 版 |
 | 作成日 | 2026 年 8 月 4 日 |
 | 典拠 | `要件定義書.md` 第2.0版 |
 | 作成区分 | チーム開発演習 基本設計 |
@@ -12,6 +12,7 @@
 
 | 版 | 日付 | 変更内容 |
 | :-: | :-: | :-- |
+| 1.3 | 2026/10/06 | **配布物（`t_handout`）を加えた。** メッセージの種別に「4:配布物の掲載」を足し、掲載の知らせとの関連を示した（`基本設計書.md` 第2.4版、GitHub Issue #94） |
 | 1.2 | 2026/10/06 | **`基本設計書.md` 第2.3版に合わせて3つの列を足した。** クラス（`m_class`）の年齢児 `age_class`、日誌（`t_diary`）の差し戻す理由 `returned_reason`、発達チェック（`t_development_check`）の所見 `note`（GitHub Issue #57・#58・#59） |
 | 1.1 | 2026/09/07 | **「要確認・要決定事項」(6) の8件をすべて決着させ、「決着した事項」(6) へ書き改めた。** 緊急連絡先は保護者が持つ形に確定し（`phone_number1` / `phone_number2`）、連絡順は `t_guardian_child.contact_order` が持つこととした。同意履歴テーブル（`t_terms_agreement`）の新設、添付の保存先、個人チャットのルーム単位、操作ログの保持形式、年度更新の実行日時の保持先、部分一意インデックスの適用範囲を反映した |
 | 1.0 | 2026/08/04 | 新規作成。要件定義書 第1.7版の全機能からエンティティを抽出し、6つのサブジェクトエリアに分けて図示 |
@@ -311,6 +312,8 @@ erDiagram
     t_chat_message ||--o{ t_chat_read : "既読"
     t_chat_message ||--o{ t_chat_reaction : "リアクション"
     t_chat_message ||--o| t_misdelivery_record : "誤送信への対応"
+    m_class ||--o{ t_handout : "クラス向けの配布物"
+    t_handout ||--o{ t_chat_message : "掲載の知らせ"
     m_class ||--o{ m_chat_room : "クラスグループの連動元"
 
     m_chat_room {
@@ -334,13 +337,29 @@ erDiagram
         bigint chat_room_id FK "m_chat_room を参照"
         bigint sender_account_id FK "送信者"
         text body "本文"
-        char source_type "1:手入力 2:日誌の共有 3:発達身体測定の共有"
+        char source_type "1:手入力 2:日誌の共有 3:発達身体測定の共有 4:配布物の掲載"
         bigint source_id "共有元のレコードID"
         datetime sent_at "送信日時"
         datetime edited_at "編集日時"
         boolean is_deleted "送信取消と管理者削除。論理削除"
         datetime deleted_at "削除日時"
         bigint deleted_account_id FK "削除した者"
+    }
+    t_handout {
+        bigint handout_id PK "自動採番"
+        char handout_type "1:園だより 2:献立表 3:行事のお知らせ 4:クラスだより 5:その他"
+        varchar title "題名"
+        char target_month "対象の月。年と月"
+        bigint class_id FK "空なら園全体向け"
+        varchar file_name "元のファイル名"
+        varchar file_path "保存先"
+        varchar file_type "形式"
+        int file_size "大きさ"
+        varchar posted_staff_id FK "掲載した管理者"
+        datetime posted_at "掲載日時"
+        boolean is_deleted "取り下げ。論理削除"
+        datetime deleted_at "取り下げ日時"
+        varchar deleted_staff_id FK "取り下げた管理者"
     }
     t_chat_attachment {
         bigint chat_attachment_id PK "自動採番"
