@@ -48,7 +48,10 @@ export default function StaffLayout() {
   return (
     <div className="staff-shell">
       <header className="app-header">
-        <span className="logo">すくすく</span>
+        <div className="header-brand">
+          <img className="header-mark" src="/crayon-smiles.png" alt="" aria-hidden="true" />
+          <span className="logo">すくすく</span>
+        </div>
         <div className="spacer" />
         <button className="notify-btn" title="通知" aria-label="通知" onClick={() => navigate('/staff')}>
           <BellIcon />
