@@ -120,6 +120,11 @@
 }
 .guardian-main { flex: 1; overflow-y: auto; padding: var(--sp-4); }
 
+/* ログイン後の本文だけに布目を敷く。カード・ヘッダー・サイドナビは読みやすい無地のままにする。 */
+.main, .guardian-main {
+  background: var(--c-bg) url('/body-linen.png') center top / cover no-repeat;
+}
+
 .drawer-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 40; }
 .drawer {
   position: fixed; top: 0; left: 0; bottom: 0; width: 260px; z-index: 41;
