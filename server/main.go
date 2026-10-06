@@ -16,6 +16,8 @@ type app struct {
 	db                  *sql.DB
 	sessions            *sessionStore
 	currentTermsVersion string
+	// 最新版の規約のID。同意履歴（t_terms_agreement）へ記録するときに使う
+	currentTermsID int64
 }
 
 func main() {
@@ -49,8 +51,9 @@ func main() {
 
 func (a *app) init() error {
 	// 最新版の規約。これと異なる terms_version のアカウントには再同意を求める（基本設計書 5-2）
-	if err := a.db.QueryRow(`SELECT terms_version FROM m_terms
-		WHERE document_type = '1' ORDER BY published_on DESC LIMIT 1`).Scan(&a.currentTermsVersion); err != nil {
+	if err := a.db.QueryRow(`SELECT terms_version, terms_id FROM m_terms
+		WHERE document_type = '1' ORDER BY published_on DESC LIMIT 1`).
+		Scan(&a.currentTermsVersion, &a.currentTermsID); err != nil {
 		return err
 	}
 	if err := a.seedPasswords(); err != nil {

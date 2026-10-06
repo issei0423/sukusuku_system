@@ -72,6 +72,19 @@ export function settingText(key: string, fallback: string): string {
   return db.settings.find((s) => s.setting_key === key)?.setting_value ?? fallback;
 }
 
+/**
+ * 同意を履歴へ追記する。前の版に同意した行は消さない
+ * （基本設計書「同意履歴（t_terms_agreement）」(5-2)）。
+ * 同意は要配慮個人情報を取り扱う根拠であり、いつ・どの版に同意したかを後から示せる必要がある
+ */
+function recordTermsAgreement(accountId: number, agreedAt: string): void {
+  const terms = db.termsDocs.find((t) => t.terms_version === CURRENT_TERMS_VERSION && t.document_type === '1');
+  if (!terms) return;
+  db.termsAgreements.push({
+    terms_agreement_id: nextId(), account_id: accountId, terms_id: terms.terms_id, agreed_at: agreedAt,
+  });
+}
+
 /* ============ 操作ログ ============
  * 記録する操作はサーバ側で決める。画面側から呼ばせない（基本設計書「監査への対応」(6-4)）
  */
@@ -212,6 +225,7 @@ export const authApi = {
     if (!a) return fail('アカウントが見つかりません');
     a.terms_version = CURRENT_TERMS_VERSION;
     a.terms_agreed_at = now();
+    recordTermsAgreement(accountId, a.terms_agreed_at);
     log(accountId, '7', '2', 'm_account', accountId, null, null, `規約 ${CURRENT_TERMS_VERSION} に同意`);
     return ok(undefined);
   },
@@ -1563,6 +1577,8 @@ const adminApi3 = {
       is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null,
       terms_version: CURRENT_TERMS_VERSION, terms_agreed_at: now(), created_at: now(), updated_at: now(),
     });
+    // 登録のときの同意も履歴へ残す（基本設計書「同意履歴（t_terms_agreement）」(5-2)）
+    recordTermsAgreement(accountId, now());
     const guardianId = `G${String(db.guardians.length + 1).padStart(3, '0')}`;
     db.guardians.push({
       guardian_id: guardianId, account_id: accountId, guardian_name: input.guardian_name,

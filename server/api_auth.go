@@ -218,6 +218,16 @@ func (a *app) handleAgreeTerms(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "同意の記録に失敗しました")
 		return
 	}
+	/*
+	 * 同意は履歴として残す。追記のみとし、前の版に同意した行は消さない
+	 * （基本設計書「同意履歴（t_terms_agreement）」(5-2)）。
+	 * 同意は要配慮個人情報を取り扱う根拠であり、いつ・どの版に同意したかを後から示せる必要がある
+	 */
+	if _, err := a.db.Exec(`INSERT INTO t_terms_agreement (account_id, terms_id, agreed_at)
+		VALUES (?, ?, ?)`, u.AccountID, a.currentTermsID, now()); err != nil {
+		writeErr(w, http.StatusInternalServerError, "同意の記録に失敗しました")
+		return
+	}
 	a.log(u.AccountID, fnAccount, opUpdate, "m_account", i64(u.AccountID), nil, nil,
 		s("規約 "+a.currentTermsVersion+" に同意"))
 
@@ -380,6 +390,13 @@ func (a *app) handleSignUpGuardian(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	accountID, _ := res.LastInsertId()
+
+	// 登録のときの同意も履歴へ残す（基本設計書「同意履歴（t_terms_agreement）」(5-2)）
+	if _, err := tx.Exec(`INSERT INTO t_terms_agreement (account_id, terms_id, agreed_at)
+		VALUES (?, ?, ?)`, accountID, a.currentTermsID, now()); err != nil {
+		writeErr(w, http.StatusInternalServerError, "登録に失敗しました")
+		return
+	}
 
 	var count int
 	tx.QueryRow(`SELECT COUNT(*) FROM m_guardian`).Scan(&count)

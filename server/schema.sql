@@ -78,6 +78,16 @@ CREATE TABLE m_terms (
   published_on  TEXT    NOT NULL
 );
 
+-- 同意履歴（t_terms_agreement）。追記のみとし、更新・削除の手段を設けない。
+-- アカウントの terms_version は「再同意が必要か」を判定する現在値であり、履歴とは役割が違う。
+-- 既存のデータベースには db.go の ensureTermsAgreement が同じ定義で作る。片方だけ直さないこと
+CREATE TABLE t_terms_agreement (
+  terms_agreement_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_id         INTEGER NOT NULL REFERENCES m_account(account_id),
+  terms_id           INTEGER NOT NULL REFERENCES m_terms(terms_id),
+  agreed_at          TEXT    NOT NULL
+);
+
 -- ============ 5-3 園児・クラス ============
 
 -- 園児（m_child）

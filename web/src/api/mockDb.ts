@@ -13,7 +13,7 @@ import type {
   Account, Staff, Guardian, InvitationCode, Terms,
   Child, ClassRoom, ClassChild, ClassStaff, GuardianChild, Allergy, MedicalHistory,
   Diary, DiaryLock, DiaryTemplate, DiaryAttachment,
-  ChatRoom, ChatMember, ChatMessage, ChatRead, ChatReaction, MisdeliveryRecord,
+  ChatRoom, ChatMember, ChatMessage, ChatRead, ChatReaction, TermsAgreement, MisdeliveryRecord,
   NapSession, NapRecord, NapAbnormal,
   DevelopmentCategory, DevelopmentItem, DevelopmentFrequency, ShareSetting,
   DevelopmentSchedule, DevelopmentCheck, DevelopmentResultRecord,
@@ -614,6 +614,22 @@ export const settings: Setting[] = [
   setting('paging.operation_log_per_page', '100', '操作ログの既定件数'),
   setting('paging.physical_history_count', '12', '過去測定値一覧の既定表示件数'),
 ];
+
+/**
+ * 同意履歴（t_terms_agreement）。追記のみとし、更新・削除の手段を設けない
+ *
+ * デモデータは、アカウントが持つ「同意した版と日時」から起こす
+ * （サーバ側は server/db.go の ensureTermsAgreement が同じことをする）。
+ */
+export const termsAgreements: TermsAgreement[] = accounts
+  .filter((a) => a.terms_version !== null && a.terms_agreed_at !== null)
+  .map((a, i) => ({
+    terms_agreement_id: i + 1,
+    account_id: a.account_id,
+    terms_id: termsDocs.find((t) => t.terms_version === a.terms_version && t.document_type === '1')?.terms_id ?? 0,
+    agreed_at: a.terms_agreed_at!,
+  }))
+  .filter((x) => x.terms_id !== 0);
 
 /* ============ デモデータの日付を起動日に合わせる ============
  *

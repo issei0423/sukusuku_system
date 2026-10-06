@@ -52,7 +52,49 @@ func openDB(path string) (*sql.DB, error) {
 		}
 		log.Printf("デモデータを投入しました")
 	}
+	if err := ensureTermsAgreement(db); err != nil {
+		return nil, err
+	}
 	return db, nil
+}
+
+/*
+ensureTermsAgreement は同意履歴（t_terms_agreement）を用意する。
+
+テーブルが無ければ作り、1行も無ければ、アカウントが持つ「同意した版と日時」から起こす
+（基本設計書「同意履歴（t_terms_agreement）」(5-2)）。この表を足す前に作られた
+データベースでも、ファイルを消さずに使い続けられるようにするため、起動のたびに確かめる。
+定義は schema.sql と同じにしてある。
+*/
+func ensureTermsAgreement(db *sql.DB) error {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS t_terms_agreement (
+		terms_agreement_id INTEGER PRIMARY KEY AUTOINCREMENT,
+		account_id         INTEGER NOT NULL REFERENCES m_account(account_id),
+		terms_id           INTEGER NOT NULL REFERENCES m_terms(terms_id),
+		agreed_at          TEXT    NOT NULL
+	)`); err != nil {
+		return fmt.Errorf("同意履歴の表を作れません: %w", err)
+	}
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM t_terms_agreement`).Scan(&n); err != nil {
+		return fmt.Errorf("同意履歴を確かめられません: %w", err)
+	}
+	if n > 0 {
+		return nil
+	}
+	res, err := db.Exec(`INSERT INTO t_terms_agreement (account_id, terms_id, agreed_at)
+		SELECT a.account_id, t.terms_id, a.terms_agreed_at
+		  FROM m_account a
+		  JOIN m_terms t ON t.terms_version = a.terms_version AND t.document_type = '1'
+		 WHERE a.terms_agreed_at IS NOT NULL
+		 ORDER BY a.account_id`)
+	if err != nil {
+		return fmt.Errorf("同意履歴を起こせません: %w", err)
+	}
+	if rows, _ := res.RowsAffected(); rows > 0 {
+		log.Printf("同意履歴を %d 件起こしました（アカウントの同意した版から）", rows)
+	}
+	return nil
 }
 
 // 成長曲線基準値（m_growth_standard）

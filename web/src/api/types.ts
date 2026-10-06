@@ -105,6 +105,17 @@ export interface InvitationCode {
 }
 
 /** 利用規約（m_terms） */
+/**
+ * 同意履歴（t_terms_agreement）。追記のみ
+ * アカウントの terms_version は「再同意が必要か」を判定する現在値であり、履歴とは役割が違う（5-2）
+ */
+export interface TermsAgreement {
+  terms_agreement_id: number;
+  account_id: number;
+  terms_id: number;
+  agreed_at: string;
+}
+
 export interface Terms {
   terms_id: number;
   terms_version: string;

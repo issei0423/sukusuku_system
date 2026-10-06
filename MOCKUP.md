@@ -43,7 +43,7 @@ npm install
 npm run dev         # http://localhost:5173。/api は 8080 へ中継される
 ```
 
-初回起動時に `server/sukusuku.db` が作られ、スキーマ（37テーブル）とデモデータが入る。設計上は38テーブルで、利用規約の同意履歴（`t_terms_agreement`）のみ未実装（GitHub Issue #67）。
+初回起動時に `server/sukusuku.db` が作られ、スキーマ（38テーブル）とデモデータが入る。基本設計書「データベース設計」(5) の38テーブルと一致する。
 
 本番相当の形（Go サーバが静的ファイルも配る）で見るには、
 
@@ -143,7 +143,7 @@ cd web && SUKUSUKU_API=http://localhost:8080 npm run test:integration
 `server/README.md` に着手の経緯とエンドポイントの一覧がある。要点は次のとおり。
 
 - SQLite ドライバは **`modernc.org/sqlite`**（純 Go）。gcc が無い環境でもビルドできる
-- スキーマは `server/schema.sql`（37テーブル。設計上は38で、同意履歴のみ未実装）。`t_physical_record` の部分一意インデックスが
+- スキーマは `server/schema.sql`（38テーブル。設計と一致する）。`t_physical_record` の部分一意インデックスが
   「削除した測定日に登録し直せる」ことを満たす（基本設計書 5-7）
 - デモデータは `server/seed.sql`。氏名・メールアドレス・招待コード・測定値はすべて架空
 - **権限の担保はサーバ側が行う。** 画面側の出し分けは操作性のため

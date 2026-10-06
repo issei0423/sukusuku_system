@@ -401,3 +401,29 @@ describe('チャットツール（要件定義書「チャットツール」(4-3
     await expect(api.retract(guardian, fromStaff.chat_message_id)).rejects.toThrow(/自分が送信した/);
   });
 });
+
+describe('利用規約の同意履歴（基本設計書「同意履歴（t_terms_agreement）」(5-2)）', () => {
+  it('すでに同意しているアカウントには、履歴が1行ある', () => {
+    const rows = db.termsAgreements.filter((x) => x.account_id === guardian.account_id);
+    expect(rows.length).toBe(1);
+  });
+
+  it('同意すると履歴が1行増え、前の行は残る', async () => {
+    // 最新版に同意していないアカウント（鈴木 美和）
+    const u = await api.login('suzuki.m@example.jp', 'pass1234', 'guardian');
+    const before = db.termsAgreements.filter((x) => x.account_id === u.account_id);
+    await api.agreeTerms(u.account_id);
+    const after = db.termsAgreements.filter((x) => x.account_id === u.account_id);
+    expect(after.length).toBe(before.length + 1);
+    for (const row of before) expect(after).toContainEqual(row);
+    expect(db.accounts.find((a) => a.account_id === u.account_id)!.terms_version).toBe(db.CURRENT_TERMS_VERSION);
+  });
+
+  it('新規登録でも同意の履歴が残る', async () => {
+    const code = await api.issueOneInvitationCode(admin, 'C002', 30);
+    const u = await api.signUpGuardian({
+      code, email: 'rireki@example.jp', password: 'pass12345', guardian_name: '履歴 確認', relationship: '母',
+    });
+    expect(db.termsAgreements.filter((x) => x.account_id === u.account_id).length).toBe(1);
+  });
+});
