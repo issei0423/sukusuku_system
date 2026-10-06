@@ -7,7 +7,9 @@ Flask + SQLite （1ファイルバックエンド）
 DB:    初回起動時に hoiku.db を自動作成してデモデータを投入します。
 リセット: hoiku.db を削除して再起動すればOK。
 """
+import calendar
 import os
+import secrets
 import sqlite3
 from datetime import datetime, timedelta
 from functools import wraps
@@ -18,7 +20,15 @@ from werkzeug.security import generate_password_hash, check_password_hash
 BASE = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.environ.get("HOIKU_DB") or os.path.join(BASE, "hoiku.db")  # テスト時に差し替え可能
 
-INVITE_CODE = "HIVE-2026"  # 保護者の新規登録用招待コード（デモ値）
+# デモ用の招待コード。園児ごとに1枚ずつ用意し、1枚は1アカウントの登録にのみ使える。
+# 以前は全保護者で共用の固定値（HIVE-2026）だった（GitHub Issue #55）
+DEMO_INVITATION_CODES = [
+    ("SAKU-2026-AAAA", "さくら"),
+    ("SAKU-2026-BBBB", "さくら"),
+    ("HARU-2026-AAAA", "はると"),
+    ("YUI0-2026-AAAA", "ゆい"),
+]
+INVITATION_VALID_DAYS = 30  # 招待コードの有効期限（日）
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 app.secret_key = "hoiku-dev-secret-change-me"  # 本番運用時は環境変数などで管理する
@@ -115,6 +125,28 @@ CREATE TABLE nisshi(
   author TEXT
 );
 
+-- 招待コード。1枚＝1アカウント。園児と有効期限が紐づき、使用と同時に使用済みにする
+-- （要件定義書「招待コードの発行」(4-1-2)）
+CREATE TABLE invitation_codes(
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  code         TEXT NOT NULL UNIQUE,
+  child_id     INTEGER NOT NULL REFERENCES children(id),
+  expires_on   TEXT NOT NULL,
+  status       TEXT NOT NULL CHECK(status IN ('未使用','使用済み','失効')),
+  used_user_id TEXT REFERENCES users(id),
+  used_at      TEXT,
+  issued_by    TEXT NOT NULL,
+  created_at   TEXT NOT NULL
+);
+
+-- 園児と保護者の紐づけ。「自児」の判定の根拠になる
+CREATE TABLE guardian_children(
+  user_id   TEXT NOT NULL REFERENCES users(id),
+  child_id  INTEGER NOT NULL REFERENCES children(id),
+  linked_at TEXT NOT NULL,
+  PRIMARY KEY(user_id, child_id)
+);
+
 CREATE TABLE dev_items(
   id       INTEGER PRIMARY KEY AUTOINCREMENT,
   label    TEXT NOT NULL,
@@ -197,11 +229,18 @@ GROWTH_ANCHORS = {
 
 
 def months_between(birth, on):
-    """生年月日(YYYY-MM-DD)から on 時点の月齢を算出する"""
+    """生年月日(YYYY-MM-DD)から on 時点の月齢を算出する（応当日基準）
+
+    基準日の時点で、生年月日の応当日を何回迎えたかを月齢とする。
+    応当日が存在しない月（1月31日生まれの2月など）は、その月の末日を応当日とみなす
+    （要件定義書「記録の一貫性」(7-1 No.6)）。
+    月齢を使う処理は、機能ごとに計算せず必ずこの関数を呼ぶ。
+    """
     b = datetime.strptime(birth, "%Y-%m-%d")
     o = datetime.strptime(on, "%Y-%m-%d")
     m = (o.year - b.year) * 12 + (o.month - b.month)
-    if o.day < b.day:
+    anniversary_day = min(b.day, calendar.monthrange(o.year, o.month)[1])
+    if o.day < anniversary_day:
         m -= 1
     return max(m, 0)
 
@@ -350,6 +389,62 @@ def seed(con):
     con.execute("INSERT INTO dev_notes VALUES(1, '階段の昇りに興味を示すようになった。')")
 
 
+INVITATION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS invitation_codes(
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  code         TEXT NOT NULL UNIQUE,
+  child_id     INTEGER NOT NULL REFERENCES children(id),
+  expires_on   TEXT NOT NULL,
+  status       TEXT NOT NULL CHECK(status IN ('未使用','使用済み','失効')),
+  used_user_id TEXT REFERENCES users(id),
+  used_at      TEXT,
+  issued_by    TEXT NOT NULL,
+  created_at   TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS guardian_children(
+  user_id   TEXT NOT NULL REFERENCES users(id),
+  child_id  INTEGER NOT NULL REFERENCES children(id),
+  linked_at TEXT NOT NULL,
+  PRIMARY KEY(user_id, child_id)
+);
+"""
+
+
+def seed_invitations(con):
+    """デモ用の招待コードと、既存のデモ保護者の紐づけを投入する。入っていれば何もしない"""
+    if con.execute("SELECT 1 FROM invitation_codes LIMIT 1").fetchone():
+        return
+    now = datetime.now()
+    expires = (now + timedelta(days=INVITATION_VALID_DAYS)).strftime("%Y-%m-%d")
+    for code, child_name in DEMO_INVITATION_CODES:
+        row = con.execute("SELECT id FROM children WHERE name=?", (child_name,)).fetchone()
+        if row:
+            con.execute(
+                "INSERT INTO invitation_codes(code,child_id,expires_on,status,issued_by,created_at)"
+                " VALUES(?,?,?,'未使用','encho',?)",
+                (code, row[0], expires, now.strftime("%Y-%m-%d %H:%M:%S")),
+            )
+    # デモの保護者（さとう）は、さくらの保護者として登録済みの扱いにする
+    sakura = con.execute("SELECT id FROM children WHERE name='さくら'").fetchone()
+    if sakura and con.execute("SELECT 1 FROM users WHERE id='sato'").fetchone():
+        con.execute(
+            "INSERT OR IGNORE INTO guardian_children VALUES('sato',?,?)",
+            (sakura[0], now.strftime("%Y-%m-%d %H:%M:%S")),
+        )
+
+
+def normalize_invitation_code(code):
+    """入力された招待コードを照合用の形に直す。大文字・小文字を区別せず、ハイフンと空白は無視する"""
+    return "".join(ch for ch in (code or "").upper() if ch not in "-ー－‐" and not ch.isspace())
+
+
+def new_invitation_code():
+    """推測しにくい値を作る（要件定義書「セキュリティ要求」(8)）。紛らわしい文字（0/O、1/I）は使わない"""
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    block = lambda: "".join(secrets.choice(alphabet) for _ in range(4))  # noqa: E731
+    return f"{block()}-{block()}-{block()}"
+
+
 def init_db():
     if os.path.exists(DB_PATH):
         return
@@ -359,6 +454,7 @@ def init_db():
         con.executescript(PHYSICAL_SCHEMA)
         seed(con)
         seed_physical(con)
+        seed_invitations(con)
         con.commit()
         print("[init] hoiku.db を作成し、デモデータを投入しました。")
     finally:
@@ -387,6 +483,9 @@ def migrate_db():
             con.execute("ALTER TABLE nap_logs RENAME TO operation_logs")
         con.executescript(PHYSICAL_SCHEMA)
         seed_physical(con)
+        # 招待コードと紐づけの表を、この表を足す前に作られた hoiku.db にも用意する
+        con.executescript(INVITATION_SCHEMA)
+        seed_invitations(con)
         con.commit()
     finally:
         con.close()
@@ -441,8 +540,9 @@ def api_signup():
     """保護者の新規登録（招待コード方式）。職員アカウントは管理者発行の想定。"""
     d = request.get_json(force=True)
     code, uid, pw = d.get("code", ""), d.get("id", "").strip(), d.get("password", "")
-    if code != INVITE_CODE:
-        return jsonify(error="招待コードが正しくありません"), 400
+    inv, error = _usable_invitation(code)
+    if error:
+        return jsonify(error=error), 400
     if not uid or len(pw) < 4:
         return jsonify(error="IDと4文字以上のパスワードを入力してください"), 400
     if db().execute("SELECT 1 FROM users WHERE id=?", (uid,)).fetchone():
@@ -451,11 +551,114 @@ def api_signup():
         "INSERT INTO users VALUES(?,?,?,?,?,?,?)",
         (uid, generate_password_hash(pw), "parent", f"{uid}（保護者）", "保", "#7CA65B", "#FFFFFF"),
     )
+    # 使用と同時に使用済みにする。未使用のものだけを更新し、同時に2人が同じコードで登録できないようにする
+    used = db().execute(
+        "UPDATE invitation_codes SET status='使用済み', used_user_id=?, used_at=? WHERE id=? AND status='未使用'",
+        (uid, now_iso(), inv["id"]),
+    )
+    if used.rowcount != 1:
+        db().rollback()
+        return jsonify(error="この招待コードは既に使用されています"), 400
+    # コードに紐づく園児と、登録した保護者を紐づける。「自児」の判定の根拠になる
+    db().execute(
+        "INSERT INTO guardian_children VALUES(?,?,?)", (uid, inv["child_id"], now_iso())
+    )
     db().commit()
     session.permanent = True
     session["uid"] = uid
     row = db().execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
     return jsonify(user=user_json(row))
+
+
+def _usable_invitation(code):
+    """使える招待コードを引く。使えないときは (None, 理由) を返す"""
+    normalized = normalize_invitation_code(code)
+    row = None
+    if normalized:
+        for r in db().execute("SELECT * FROM invitation_codes"):
+            if normalize_invitation_code(r["code"]) == normalized:
+                row = r
+                break
+    if row is None:
+        return None, "招待コードが正しくありません"
+    if row["status"] == "使用済み":
+        return None, "この招待コードは既に使用されています"
+    if row["status"] == "失効":
+        return None, "この招待コードは失効しています"
+    if row["expires_on"] < datetime.now().strftime("%Y-%m-%d"):
+        return None, "この招待コードは有効期限が切れています"
+    return row, None
+
+
+# ---------------------------------------------------------------- 招待コードの管理（管理者のみ）
+def _invitation_json(r):
+    return {
+        "id": r["id"], "code": r["code"], "child_id": r["child_id"], "child_name": r["child_name"],
+        "expires_on": r["expires_on"], "status": r["status"],
+        "used_user_id": r["used_user_id"], "used_at": r["used_at"],
+    }
+
+
+@app.get("/api/invitations")
+@login_required
+def api_invitations():
+    if my_role() != "admin":
+        return jsonify(error="招待コードの管理は管理者のみが行えます"), 403
+    rows = db().execute(
+        "SELECT i.*, c.name AS child_name FROM invitation_codes i"
+        " JOIN children c ON c.id = i.child_id ORDER BY c.id, i.id"
+    ).fetchall()
+    return jsonify(invitations=[_invitation_json(r) for r in rows])
+
+
+@app.post("/api/invitations")
+@login_required
+def api_invitations_issue():
+    """園児ごとに必要な枚数を発行する。両親それぞれに配るなら2枚"""
+    if my_role() != "admin":
+        return jsonify(error="招待コードの発行は管理者のみが行えます"), 403
+    d = request.get_json(force=True)
+    try:
+        child_id = int(d.get("child_id"))
+        count = int(d.get("count", 1))
+        valid_days = int(d.get("valid_days", INVITATION_VALID_DAYS))
+    except (TypeError, ValueError):
+        return jsonify(error="園児・枚数・有効期限を正しく指定してください"), 400
+    if not db().execute("SELECT 1 FROM children WHERE id=?", (child_id,)).fetchone():
+        return jsonify(error="園児が見つかりません"), 400
+    if not 1 <= count <= 5:
+        return jsonify(error="枚数は1〜5枚で指定してください"), 400
+    if not 1 <= valid_days <= 365:
+        return jsonify(error="有効期限は1〜365日で指定してください"), 400
+    expires = (datetime.now() + timedelta(days=valid_days)).strftime("%Y-%m-%d")
+    codes = []
+    for _ in range(count):
+        code = new_invitation_code()
+        db().execute(
+            "INSERT INTO invitation_codes(code,child_id,expires_on,status,issued_by,created_at)"
+            " VALUES(?,?,?,'未使用',?,?)",
+            (code, child_id, expires, session["uid"], now_iso()),
+        )
+        codes.append(code)
+    _op_log(child_id, f"招待コードを {count} 枚発行")
+    db().commit()
+    return jsonify(codes=codes, expires_on=expires)
+
+
+@app.post("/api/invitations/<int:inv_id>/revoke")
+@login_required
+def api_invitations_revoke(inv_id):
+    if my_role() != "admin":
+        return jsonify(error="招待コードの失効は管理者のみが行えます"), 403
+    row = db().execute("SELECT * FROM invitation_codes WHERE id=?", (inv_id,)).fetchone()
+    if not row:
+        return jsonify(error="招待コードが見つかりません"), 404
+    if row["status"] == "使用済み":
+        return jsonify(error="使用済みの招待コードは失効できません"), 400
+    db().execute("UPDATE invitation_codes SET status='失効' WHERE id=?", (inv_id,))
+    _op_log(row["child_id"], "招待コードを失効")
+    db().commit()
+    return jsonify(ok=True)
 
 
 @app.post("/api/logout")
