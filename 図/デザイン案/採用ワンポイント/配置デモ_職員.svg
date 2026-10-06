@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="860" viewBox="0 0 1280 860" role="img" aria-labelledby="title desc">
+  <title id="title">手描きワンポイントの職員画面配置デモ</title>
+  <desc id="desc">職員ダッシュボードのサイドバー下部に、右へ90度回した二つの笑顔を小さく配置した比較用画像。</desc>
+  <image href="../../画面画像/06_職員ダッシュボード.png" width="1280" height="860" preserveAspectRatio="none"/>
+  <image href="右90度_表示用.png" x="31" y="722" width="138" height="111" style="mix-blend-mode:multiply"/>
+</svg>
