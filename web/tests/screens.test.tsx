@@ -191,6 +191,27 @@ describe('保護者向けの緊急連絡の案内', () => {
   });
 });
 
+describe('保護者のメニュー', () => {
+  it('メニューを開くと閉じるボタンがあり、押すと閉じる', async () => {
+    open('/guardian', guardian);
+    await settled();
+    expect(document.querySelector('.drawer')).toBeNull();
+    fireEvent.click(screen.getByLabelText('メニュー'));
+    expect(document.querySelector('.drawer')).not.toBeNull();
+    fireEvent.click(screen.getByLabelText('メニューを閉じる'));
+    expect(document.querySelector('.drawer')).toBeNull();
+  });
+
+  it('Esc キーでも閉じる', async () => {
+    open('/guardian', guardian);
+    await settled();
+    fireEvent.click(screen.getByLabelText('メニュー'));
+    expect(document.querySelector('.drawer')).not.toBeNull();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => { expect(document.querySelector('.drawer')).toBeNull(); });
+  });
+});
+
 describe('チャット画面の表示', () => {
   it('職員：保護者も読むチャンネルでは、入力欄の近くに届く人数を出す', async () => {
     open('/staff/chat', teacher);

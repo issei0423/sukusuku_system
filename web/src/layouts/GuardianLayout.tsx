@@ -5,7 +5,7 @@
  * サイドナビを持たず、ホームからの導線に絞る。片手操作を前提とするため。
  * ログアウトはメニュー内に置く（基本設計書「画面基本構成」(3-5)）。
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, Outlet, useNavigate } from 'react-router-dom';
 import { useSession } from '../session';
 import { useAsync } from '../hooks';
@@ -17,6 +17,14 @@ export default function GuardianLayout() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const home = useAsync(() => api.guardianHome(user!), [user?.account_id]);
+
+  // メニューは Esc キーでも閉じられるようにする
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
 
   if (!user) return null;
   const unread = home.data?.[0]?.unread ?? 0;
@@ -43,11 +51,20 @@ export default function GuardianLayout() {
       {open && (
         <>
           <div className="drawer-backdrop" onClick={() => setOpen(false)} />
-          <nav className="drawer">
-            {/* 誰の保護者かを示す。ホームからの導線に絞る */}
-            <div className="who">
-              {home.data?.map((h) => h.child.child_name).join('・') || user.display_name}
-              ちゃんの保護者
+          <nav className="drawer" aria-label="メニュー">
+            {/*
+              閉じるボタンをメニューの中に置く。外側の暗い部分を押しても閉じるが、
+              それは見て分かる操作ではないため、閉じ方を文字で示す
+            */}
+            <div className="drawer-head">
+              {/* 誰の保護者かを示す。ホームからの導線に絞る */}
+              <div className="who">
+                {home.data?.map((h) => h.child.child_name).join('・') || user.display_name}
+                ちゃんの保護者
+              </div>
+              <button className="drawer-close" onClick={() => setOpen(false)} aria-label="メニューを閉じる">
+                <span aria-hidden="true">×</span> 閉じる
+              </button>
             </div>
             <Link to="/guardian" onClick={() => setOpen(false)}>ホーム</Link>
             <Link to="/guardian/chat" onClick={() => setOpen(false)}>チャット</Link>

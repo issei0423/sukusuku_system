@@ -126,7 +126,13 @@
   background: var(--c-surface); border-right: 1px solid var(--c-border);
   padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-1);
 }
-.drawer .who { font-weight: 700; padding-bottom: var(--sp-3); border-bottom: 1px solid var(--c-border); margin-bottom: var(--sp-2); }
+/* 利用者名と閉じるボタンを1行に並べる。名前が長いときは名前の側が折り返す */
+.drawer-head {
+  display: flex; align-items: flex-start; gap: var(--sp-2);
+  padding-bottom: var(--sp-3); border-bottom: 1px solid var(--c-border); margin-bottom: var(--sp-2);
+}
+.drawer .who { flex: 1; min-width: 0; font-weight: 700; padding-top: 10px; }
+.drawer-close { flex: none; min-height: var(--tap-min); padding: 0 var(--sp-3); white-space: nowrap; }
 .drawer a {
   display: flex; align-items: center; min-height: var(--tap-min);
   padding: 0 var(--sp-2); color: var(--c-text); text-decoration: none;
