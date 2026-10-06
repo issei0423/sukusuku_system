@@ -28,13 +28,15 @@ export default function GuardianHandoutsScreen() {
   const months = Array.from(new Set((data ?? []).map((h) => h.target_month)));
 
   return (
-    <div>
-      <div className="page-head">
+    <div className="guardian-home">
+      <div className="guardian-page-intro">
         <Link className="btn btn-quiet btn-sm" to="/guardian">&lt; ホームへ</Link>
+        <span className="guardian-eyebrow" style={{ marginTop: 8 }}>園からのおたより</span>
         <h1>園からの配布物</h1>
+        <p>園だより・献立表などを、月ごとに見返せます。</p>
       </div>
 
-      <section className="card">
+      <section className="guardian-home-panel">
         <Field label="種類">
           <select value={type} onChange={(e) => setType(e.target.value)}>
             <option value="">すべて</option>
@@ -48,16 +50,17 @@ export default function GuardianHandoutsScreen() {
       {data?.length === 0 && <Empty text="配布物はまだありません。" />}
 
       {months.map((month) => (
-        <section className="card" key={month}>
-          <h2>{formatMonth(month)}</h2>
-          <div className="stack">
+        <section className="guardian-home-panel" key={month}>
+          <div className="guardian-panel-heading"><h2>{formatMonth(month)}</h2></div>
+          <div className="guardian-record-list">
             {data!.filter((h) => h.target_month === month).map((h) => (
-              <button key={h.handout_id} className="btn-block handout-row" onClick={() => setOpened(h)}>
+              <button key={h.handout_id} className="guardian-record-link handout-row"
+                aria-label={`${h.title}を開く`} onClick={() => setOpened(h)}>
                 <span className="handout-title">
                   <Tag label={HANDOUT_TYPE[h.handout_type] ?? 'その他'} className="tag-applied" />
                   <span>{h.title}</span>
                 </span>
-                <span className="muted">開く</span>
+                <span aria-hidden="true">→</span>
               </button>
             ))}
           </div>

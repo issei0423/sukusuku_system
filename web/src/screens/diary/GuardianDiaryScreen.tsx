@@ -35,12 +35,12 @@ export default function GuardianDiaryScreen() {
   }
 
   return (
-    <div>
+    <div className="guardian-diary">
       <div className="page-head">
         <Link className="btn btn-quiet btn-sm" to="/guardian">&lt; ホームへ</Link>
       </div>
 
-      <section className="card">
+      <section className="card guardian-diary-card">
         <h2>{formatYMD(d.diary_date)}</h2>
         <div className="muted" style={{ marginBottom: 12 }}>
           {DIARY_RECORD_TYPE[d.record_type]}
@@ -65,7 +65,7 @@ export default function GuardianDiaryScreen() {
         </div>
       </section>
 
-      <section className="card card-sub">
+      <section className="card card-sub guardian-diary-note">
         <div className="muted">
           この記録についてのご質問は、チャットからお送りください。
           お急ぎの場合はお電話でお願いします。

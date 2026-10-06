@@ -28,39 +28,52 @@ export default function GuardianHome() {
   }
 
   return (
-    <div className="stack">
+    <div className="guardian-home">
+      <div className="guardian-home-intro">
+        <span className="guardian-eyebrow">保護者ページ</span>
+        <h1>こんにちは</h1>
+        <p>園からの連絡と、お子さまの記録を確認できます。</p>
+      </div>
       {data.map((h) => (
-        <div key={h.child.child_id}>
-          <section className="card">
-            <h2>{h.child.child_name}</h2>
-            <div className="muted">
-              {h.className} ／ {formatAge(h.child.birth_date, today())}
+        <div className="guardian-child-section" key={h.child.child_id}>
+          <section className="guardian-child-card" aria-label={`${h.child.child_name}さんの情報`}>
+            <div className="guardian-child-card-text">
+              <span className="guardian-eyebrow">お子さま</span>
+              <h2>{h.child.child_name}</h2>
+              <p>{h.className} <span aria-hidden="true">・</span> {formatAge(h.child.birth_date, today())}</p>
             </div>
+            <img src="/crayon-smiles.png" alt="" />
           </section>
 
-          <section className="card">
-            <div className="row">
-              <h2>チャット</h2>
-              <div className="spacer" />
-              {h.unread > 0 && <span className="tag tag-applied">未読 {h.unread}</span>}
+          <section className="guardian-home-panel guardian-chat-panel">
+            <div className="guardian-panel-heading">
+              <div>
+                <span className="guardian-eyebrow">園とのやりとり</span>
+                <h2>チャット・お知らせ</h2>
+              </div>
+              {h.unread > 0 && <span className="guardian-unread">未読 {h.unread}</span>}
             </div>
-            <Link className="btn btn-primary btn-block" to="/guardian/chat">チャットを開く</Link>
-            <div className="muted" style={{ marginTop: 8 }}>
-              園からのお知らせ、クラスの連絡、担任の先生とのやりとりはチャットで行います。
-            </div>
+            <p>園からのお知らせや、担任の先生とのやりとりはこちらから。</p>
+            <Link className="guardian-panel-link" to="/guardian/chat">
+              <span>チャットを開く</span><span aria-hidden="true">→</span>
+            </Link>
           </section>
 
-          <section className="card">
-            <h2>共有された記録</h2>
+          <section className="guardian-home-panel guardian-record-panel">
+            <div className="guardian-panel-heading">
+              <div>
+                <span className="guardian-eyebrow">園でのようす</span>
+                <h2>共有された記録</h2>
+              </div>
+            </div>
             {h.sharedDiaries.length === 0
               ? <Empty text="共有された記録はまだありません。" />
               : (
-                <div className="stack">
+                <div className="guardian-record-list">
                   {h.sharedDiaries.slice(0, 5).map((d) => (
-                    <Link key={d.diary_id} className="btn btn-block" to={`/guardian/diary/${d.diary_id}`}
-                      style={{ justifyContent: 'space-between' }}>
+                    <Link key={d.diary_id} className="guardian-record-link" to={`/guardian/diary/${d.diary_id}`}>
                       <span>{formatMD(d.diary_date)} {DIARY_RECORD_TYPE[d.record_type]}</span>
-                      <span>開く</span>
+                      <span aria-hidden="true">→</span>
                     </Link>
                   ))}
                 </div>
@@ -74,29 +87,39 @@ export default function GuardianHome() {
         園からの配布物は、園児ごとではなく1つにまとめて置く。園全体向けのものが中心であり、
         きょうだいがいても同じものを二度並べないため。新しいものを3件だけ出し、残りは一覧で見せる
       */}
-      <section className="card">
-        <h2>園からの配布物</h2>
+      <section className="guardian-home-panel guardian-handout-panel">
+        <div className="guardian-panel-heading">
+          <div>
+            <span className="guardian-eyebrow">園からのおたより</span>
+            <h2>園からの配布物</h2>
+          </div>
+        </div>
         {handouts.loading && <Loading />}
         {handouts.error && <ErrorBox text={handouts.error} />}
         {handouts.data?.length === 0 && <Empty text="配布物はまだありません。" />}
         {handouts.data && handouts.data.length > 0 && (
-          <div className="stack">
-            {handouts.data.slice(0, 3).map((h) => (
-              <Link key={h.handout_id} className="btn btn-block handout-row" to="/guardian/handouts">
-                <span className="handout-title">
-                  <Tag label={HANDOUT_TYPE[h.handout_type] ?? 'その他'} className="tag-applied" />
-                  <span>{h.title}</span>
-                </span>
-              </Link>
-            ))}
-            <Link className="btn btn-block" to="/guardian/handouts">園だより・献立表をすべて見る</Link>
-          </div>
+          <>
+            <div className="guardian-record-list">
+              {handouts.data.slice(0, 3).map((h) => (
+                <Link key={h.handout_id} className="guardian-record-link" to="/guardian/handouts">
+                  <span className="handout-title">
+                    <Tag label={HANDOUT_TYPE[h.handout_type] ?? 'その他'} className="tag-applied" />
+                    <span>{h.title}</span>
+                  </span>
+                  <span aria-hidden="true">→</span>
+                </Link>
+              ))}
+            </div>
+            <Link className="guardian-panel-link guardian-handout-all" to="/guardian/handouts">
+              <span>園だより・献立表をすべて見る</span><span aria-hidden="true">→</span>
+            </Link>
+          </>
         )}
       </section>
 
       {/* 緊急の連絡は電話で行う。通知の到達性には限界がある（利用規約 第4条） */}
-      <section className="card card-sub">
-        <div className="muted">
+      <section className="guardian-contact-note">
+        <div>
           急なご連絡は、チャットではなくお電話でお願いします。
           チャットの通知は、端末の設定や通信の状況により届かない場合があります。
         </div>

@@ -125,6 +125,15 @@
 
 /* 園からの配布物 */
 .handout-row { justify-content: space-between; text-align: left; gap: var(--sp-2); }
+/* 保護者の画面では、共有された記録と同じ行の見た目にそろえる。ボタンでもリンクでも同じに見せる */
+button.guardian-record-link {
+  width: 100%; padding: 6px 0; background: none; border: 0; border-bottom: 1px solid #ece3d2;
+  border-radius: 0; font: inherit; font-size: 14px; cursor: pointer;
+}
+.guardian-record-link .handout-title { padding: 6px 0; }
+/* 行の右端の矢印だけを大きく色付きにする規則が、題名にも当たるのを打ち消す */
+.guardian-record-link .handout-title span:last-child { color: var(--c-text); font-size: 14px; }
+.guardian-handout-all { margin-top: 15px; }
 .handout-title { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; flex: 1; flex-wrap: wrap; }
 /* 題名が長くて折り返しても、「開く」は1行のまま右に置く */
 .handout-row > .muted { flex: none; white-space: nowrap; }

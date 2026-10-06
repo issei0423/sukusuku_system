@@ -28,7 +28,6 @@ export default function GuardianLayout() {
 
   if (!user) return null;
   const unread = home.data?.[0]?.unread ?? 0;
-
   const phone = settingText('facility.phone_number', '');
 
   const onLogout = async () => {
@@ -38,9 +37,14 @@ export default function GuardianLayout() {
 
   return (
     <div className="guardian-shell">
-      <header className="app-header">
-        <button onClick={() => setOpen(true)} aria-label="メニュー">≡</button>
-        <span className="logo">すくすく保育園</span>
+      <header className="guardian-header">
+        <button className="guardian-menu-button" onClick={() => setOpen(true)} aria-label="メニューを開く">
+          <span aria-hidden="true">☰</span><span>メニュー</span>
+        </button>
+        <Link className="guardian-brand" to="/guardian" aria-label="すくすく 保護者ホーム">
+          <img className="guardian-brand-mark" src="/crayon-smiles.png" alt="" />
+          <img className="guardian-brand-wordmark" src="/login-wordmark-crayon.png" alt="すくすく" />
+        </Link>
         <div className="spacer" />
         <button className="notify-btn" onClick={() => navigate('/guardian/chat')} title="通知" aria-label="通知">
           <BellIcon />
@@ -51,7 +55,7 @@ export default function GuardianLayout() {
       {open && (
         <>
           <div className="drawer-backdrop" onClick={() => setOpen(false)} />
-          <nav className="drawer" aria-label="メニュー">
+          <nav className="drawer guardian-drawer" aria-label="メニュー">
             {/*
               閉じるボタンをメニューの中に置く。外側の暗い部分を押しても閉じるが、
               それは見て分かる操作ではないため、閉じ方を文字で示す
@@ -67,7 +71,7 @@ export default function GuardianLayout() {
               </button>
             </div>
             <Link to="/guardian" onClick={() => setOpen(false)}>ホーム</Link>
-            <Link to="/guardian/chat" onClick={() => setOpen(false)}>チャット</Link>
+            <Link to="/guardian/chat" onClick={() => setOpen(false)}>チャット・お知らせ</Link>
             <Link to="/guardian/handouts" onClick={() => setOpen(false)}>園からの配布物</Link>
             <Link to="/guardian/password" onClick={() => setOpen(false)}>パスワードの変更</Link>
             <Link to="/guardian/terms" onClick={() => setOpen(false)}>利用規約</Link>

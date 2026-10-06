@@ -201,7 +201,7 @@ describe('園からの配布物（2画面）', () => {
   it('配布物一覧画面（保護者）：月ごとにまとめて出し、開くと題名と形式が分かる', async () => {
     open('/guardian/handouts', guardian);
     await settled();
-    await waitFor(() => { expect(screen.getAllByText('開く').length).toBeGreaterThan(0); }, { timeout: 3000 });
+    await waitFor(() => { expect(document.querySelectorAll('button.handout-row').length).toBeGreaterThan(0); }, { timeout: 3000 });
     expect(document.body.textContent).toMatch(/\d{4}年\d{1,2}月/);
     const kondate = Array.from(document.querySelectorAll('button.handout-row'))
       .find((b) => b.textContent?.includes('献立表'))!;
@@ -229,7 +229,7 @@ describe('保護者のメニュー', () => {
     open('/guardian', guardian);
     await settled();
     expect(document.querySelector('.drawer')).toBeNull();
-    fireEvent.click(screen.getByLabelText('メニュー'));
+    fireEvent.click(screen.getByLabelText('メニューを開く'));
     expect(document.querySelector('.drawer')).not.toBeNull();
     fireEvent.click(screen.getByLabelText('メニューを閉じる'));
     expect(document.querySelector('.drawer')).toBeNull();
@@ -238,7 +238,7 @@ describe('保護者のメニュー', () => {
   it('利用者名は「園児の氏名 保護者」と出す', async () => {
     open('/guardian', guardian);
     await settled();
-    fireEvent.click(screen.getByLabelText('メニュー'));
+    fireEvent.click(screen.getByLabelText('メニューを開く'));
     await waitFor(() => {
       expect(document.querySelector('.drawer .who')!.textContent!.replace(/\s+/g, ' ').trim()).toBe('山田 太郎 保護者');
     });
@@ -247,7 +247,7 @@ describe('保護者のメニュー', () => {
   it('Esc キーでも閉じる', async () => {
     open('/guardian', guardian);
     await settled();
-    fireEvent.click(screen.getByLabelText('メニュー'));
+    fireEvent.click(screen.getByLabelText('メニューを開く'));
     expect(document.querySelector('.drawer')).not.toBeNull();
     fireEvent.keyDown(window, { key: 'Escape' });
     await waitFor(() => { expect(document.querySelector('.drawer')).toBeNull(); });
