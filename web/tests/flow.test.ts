@@ -336,3 +336,68 @@ describe('発達チェックの確定（基本設計書「発達チェックの�
     expect(after.is_manual_override).toBe(before.is_manual_override);
   });
 });
+
+describe('記録した職員の表示', () => {
+  it('保護者が開く共有日誌には、記入者・確認者の氏名が載る（職員IDではない）', async () => {
+    const shared = db.diaries.find((d) => !d.is_deleted && d.status === '3' && d.is_shared_to_guardian
+      && d.child_id && db.guardianChildren.some((gc) =>
+        gc.guardian_id === 'G001' && gc.child_id === d.child_id && gc.link_status === '1'))!;
+    const d = await api.getDiary(guardian, shared.diary_id);
+    expect(d.staff_name).toBeTruthy();
+    expect(d.staff_name).not.toMatch(/^S\d+$/);
+    expect(d.approved_staff_name).toBeTruthy();
+    expect(d.approved_staff_name).not.toMatch(/^S\d+$/);
+  });
+});
+
+describe('チャットツール（要件定義書「チャットツール」(4-3)）', () => {
+  const personalRoom = 6; // 山田 太郎の保護者（個人チャット）
+  const classRoom = 3;    // さくら組（クラスグループ。保護者も参加する）
+
+  it('保護者も参加するチャンネルは、保護者の人数が分かる', async () => {
+    const rooms = await api.rooms(teacher);
+    expect(rooms.find((r) => r.room.chat_room_id === classRoom)!.guardianCount).toBeGreaterThan(0);
+    // 職員チャットには保護者がいない
+    expect(rooms.find((r) => r.room.room_type === '5')!.guardianCount).toBe(0);
+    const members = await api.members(classRoom);
+    expect(members.some((m) => m.role === '3')).toBe(true);
+  });
+
+  it('職員は個人チャットを対応済みにでき、保護者から受信すると未対応へ戻る', async () => {
+    await api.setThreadStatus(teacher, personalRoom, '2');
+    const status = async () =>
+      (await api.rooms(teacher)).find((r) => r.room.chat_room_id === personalRoom)!.room.thread_status;
+    expect(await status()).toBe('2');
+    await api.send(guardian, personalRoom, '明日はお迎えが17時になります。');
+    expect(await status()).toBe('1');
+  });
+
+  it('未対応／対応済みを切り替えられるのは職員だけで、個人チャットに限る', async () => {
+    await expect(api.setThreadStatus(guardian, personalRoom, '2')).rejects.toThrow(/職員のみ/);
+    await expect(api.setThreadStatus(teacher, classRoom, '2')).rejects.toThrow(/個人チャット/);
+  });
+
+  it('リアクションは職員も保護者も付けられ、同じ種別をもう一度選ぶと外れる', async () => {
+    const target = (await api.messages(guardian, personalRoom)).find((m) => !m.is_deleted)!;
+    await api.toggleReaction(guardian, target.chat_message_id, '1');
+    await api.toggleReaction(teacher, target.chat_message_id, '1');
+    let seen = (await api.messages(guardian, personalRoom)).find((m) => m.chat_message_id === target.chat_message_id)!;
+    expect(seen.reactions).toEqual([{ reaction_type: '1', count: 2, mine: true }]);
+
+    await api.toggleReaction(guardian, target.chat_message_id, '1');
+    seen = (await api.messages(guardian, personalRoom)).find((m) => m.chat_message_id === target.chat_message_id)!;
+    expect(seen.reactions).toEqual([{ reaction_type: '1', count: 1, mine: false }]);
+  });
+
+  it('保護者は自分の送ったメッセージを取り消せる。他人のものは取り消せない', async () => {
+    const sent = await api.send(guardian, personalRoom, '送り間違えました');
+    await api.retract(guardian, sent.chat_message_id);
+    const after = (await api.messages(guardian, personalRoom)).find((m) => m.chat_message_id === sent.chat_message_id)!;
+    expect(after.is_deleted).toBe(true);
+    expect(after.body).toBe('');
+
+    const fromStaff = (await api.messages(guardian, personalRoom))
+      .find((m) => !m.is_deleted && m.sender_account_id !== guardian.account_id)!;
+    await expect(api.retract(guardian, fromStaff.chat_message_id)).rejects.toThrow(/自分が送信した/);
+  });
+});

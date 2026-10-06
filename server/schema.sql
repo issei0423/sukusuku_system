@@ -205,7 +205,7 @@ CREATE TABLE m_chat_room (
   class_id      INTEGER REFERENCES m_class(class_id),
   room_name     TEXT    NOT NULL,
   is_archived   INTEGER NOT NULL DEFAULT 0,
-  thread_status TEXT
+  thread_status TEXT                                                        -- 個人チャットのみ 1:未対応 2:対応済み
 );
 
 -- 参加者（t_chat_member）。left_at で過去の所属期間を保持する。

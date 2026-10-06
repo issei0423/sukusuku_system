@@ -34,6 +34,8 @@ type Diary struct {
 	ChildName string `json:"child_name"`
 	ClassName string `json:"class_name"`
 	StaffName string `json:"staff_name"`
+	// 確認（承認）した職員の氏名。保護者には職員の名簿を渡さないため、日誌の側に載せる
+	ApprovedStaffName *string `json:"approved_staff_name"`
 }
 
 const diaryColumns = `diary_id, record_type, child_id, class_id, diary_date, body, status,
@@ -83,6 +85,9 @@ func (a *app) enrich(d *Diary) {
 		d.ClassName = a.className(*d.ClassID)
 	}
 	d.StaffName = a.staffName(d.CreatedStaffID)
+	if d.ApprovedStaffID != nil {
+		d.ApprovedStaffName = s(a.staffName(*d.ApprovedStaffID))
+	}
 }
 
 // visibleDiaryCondition は参照範囲の条件を組み立てる。

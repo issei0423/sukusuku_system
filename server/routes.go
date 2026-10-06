@@ -78,6 +78,8 @@ func (a *app) routeChat(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/chat/rooms/{id}/members", a.handleChatMembers)
 	mux.HandleFunc("POST /api/chat/messages/{id}/retract", a.handleRetractMessage)
 	mux.HandleFunc("POST /api/chat/messages/{id}/edit", a.handleEditMessage)
+	mux.HandleFunc("POST /api/chat/messages/{id}/reactions", a.handleToggleReaction)
+	mux.HandleFunc("POST /api/chat/rooms/{id}/thread-status", a.handleSetThreadStatus)
 	mux.HandleFunc("GET /api/chat/groups", a.handleChatGroups)
 	mux.HandleFunc("POST /api/chat/groups", a.handleCreateGroup)
 	mux.HandleFunc("POST /api/chat/groups/{id}/members", a.handleUpdateGroupMembers)

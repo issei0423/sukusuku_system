@@ -28,6 +28,8 @@ type ChatRoomView struct {
 	Unread int      `json:"unread"`
 	// 園全体は一般には投稿欄を表示しない。保護者は個人チャットのみ送受信できる（画面詳細図 4-1・4-2）
 	CanPost bool `json:"canPost"`
+	// 参加している保護者の人数。投稿が保護者にも届くことを入力欄の近くで示すために使う
+	GuardianCount int `json:"guardianCount"`
 }
 
 // handleChatRooms は参加しているチャンネルを返す。
@@ -66,6 +68,10 @@ func (a *app) handleChatRooms(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		room.ClassID = nullInt(classID)
+		// 旧いデモデータは状態を文言で持っていた。コード値（1:未対応 2:対応済み）へそろえる
+		if thread.Valid && thread.String == "未対応" {
+			thread.String = "1"
+		}
 		room.ThreadStatus = nullStr(thread)
 
 		canPost := true
@@ -82,6 +88,10 @@ func (a *app) handleChatRooms(w http.ResponseWriter, r *http.Request) {
 	// 未読の数え上げはカーソルを閉じたあとに行う（接続を1本に絞っているため。db.go）
 	for i := range views {
 		views[i].Unread = a.unreadCount(u.AccountID, views[i].Room.ChatRoomID)
+		a.db.QueryRow(`SELECT COUNT(*) FROM t_chat_member m
+			JOIN m_account ac ON ac.account_id = m.account_id
+			WHERE m.chat_room_id = ? AND m.left_at IS NULL AND ac.role = '3'`,
+			views[i].Room.ChatRoomID).Scan(&views[i].GuardianCount)
 	}
 	writeJSON(w, http.StatusOK, views)
 }
@@ -128,6 +138,45 @@ type ChatMessage struct {
 	SenderName string `json:"sender_name"`
 	// 既読は人数で示す。保護者側には表示しない（基本設計書 5-5）
 	ReadCount int `json:"read_count"`
+	// リアクションの集計。種別ごとの人数と、自分が付けているか
+	Reactions []reactionSummary `json:"reactions"`
+}
+
+// reactionSummary はメッセージに付いたリアクションの集計（t_chat_reaction から導く）
+type reactionSummary struct {
+	ReactionType string `json:"reaction_type"`
+	Count        int    `json:"count"`
+	Mine         bool   `json:"mine"`
+}
+
+/*
+reactionTypes はリアクションの種別。
+
+【仮置き】要件定義書「チャットツール」(4-3) は「メッセージに絵文字で反応する」とだけ定め、
+使える絵文字を定めていない。画面側（web/src/api/codes.ts の REACTION）と同じ並びにしてある。
+*/
+var reactionTypes = []string{"1", "2", "3", "4"}
+
+func (a *app) reactionsOf(messageID, accountID int64) []reactionSummary {
+	out := []reactionSummary{}
+	rows, err := a.db.Query(`SELECT reaction_type, COUNT(*), SUM(CASE WHEN account_id = ? THEN 1 ELSE 0 END)
+		FROM t_chat_reaction WHERE chat_message_id = ? GROUP BY reaction_type ORDER BY reaction_type`,
+		accountID, messageID)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			x    reactionSummary
+			mine int
+		)
+		if rows.Scan(&x.ReactionType, &x.Count, &mine) == nil {
+			x.Mine = mine > 0
+			out = append(out, x)
+		}
+	}
+	return out
 }
 
 func (a *app) handleChatMessages(w http.ResponseWriter, r *http.Request) {
@@ -179,8 +228,114 @@ func (a *app) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 				out[i].ChatMessageID).Scan(&n)
 			out[i].ReadCount = n
 		}
+		out[i].Reactions = a.reactionsOf(out[i].ChatMessageID, u.AccountID)
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+/*
+handleToggleReaction はリアクションを付ける・外す。同じ種別をもう一度選ぶと外れる。
+
+全ロールが使える（要件定義書「チャットツール」(4-3)）。
+既読を保護者側に表示しないため、「読みました」を一言で返す手段にもなる。
+*/
+func (a *app) handleToggleReaction(w http.ResponseWriter, r *http.Request) {
+	u, ok := a.requireUser(w, r)
+	if !ok {
+		return
+	}
+	id, valid := pathInt64(r, "id")
+	if !valid {
+		writeErr(w, http.StatusBadRequest, "メッセージの指定が正しくありません")
+		return
+	}
+	var req struct {
+		ReactionType string `json:"reaction_type"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if !oneOf(req.ReactionType, reactionTypes...) {
+		writeErr(w, http.StatusBadRequest, "リアクションの指定が正しくありません")
+		return
+	}
+	var (
+		roomID    int64
+		isDeleted bool
+	)
+	if err := a.db.QueryRow(`SELECT chat_room_id, is_deleted FROM t_chat_message WHERE chat_message_id = ?`,
+		id).Scan(&roomID, &isDeleted); err != nil {
+		writeErr(w, http.StatusNotFound, "メッセージが見つかりません")
+		return
+	}
+	if !a.isMember(u, roomID) {
+		writeForbidden(w, "このチャンネルを参照する権限がありません")
+		return
+	}
+	if isDeleted {
+		writeErr(w, http.StatusConflict, "取り消したメッセージには反応できません")
+		return
+	}
+	res, err := a.db.Exec(`DELETE FROM t_chat_reaction
+		WHERE chat_message_id = ? AND account_id = ? AND reaction_type = ?`, id, u.AccountID, req.ReactionType)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "リアクションを保存できませんでした")
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		if _, err := a.db.Exec(`INSERT INTO t_chat_reaction (chat_message_id, account_id, reaction_type)
+			VALUES (?, ?, ?)`, id, u.AccountID, req.ReactionType); err != nil {
+			writeErr(w, http.StatusInternalServerError, "リアクションを保存できませんでした")
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+/*
+handleSetThreadStatus は個人チャットのスレッドを「未対応／対応済み」に切り替える。
+
+職員だけが切り替えられる。保護者から新しく受信したときは自動で未対応へ戻る
+（要件定義書「チャットツール」(4-3)）。欠席・遅刻・お迎え時間の変更をチャットで受ける想定のため、
+園の側で見落とさない仕組みはこの状態に頼っている。
+*/
+func (a *app) handleSetThreadStatus(w http.ResponseWriter, r *http.Request) {
+	u, ok := a.requireStaff(w, r)
+	if !ok {
+		return
+	}
+	roomID, valid := pathInt64(r, "id")
+	if !valid || !a.isMember(u, roomID) {
+		writeForbidden(w, "このチャンネルを参照する権限がありません")
+		return
+	}
+	var req struct {
+		Status string `json:"status"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if !oneOf(req.Status, "1", "2") {
+		writeErr(w, http.StatusBadRequest, "状態の指定が正しくありません")
+		return
+	}
+	var roomType string
+	a.db.QueryRow(`SELECT room_type FROM m_chat_room WHERE chat_room_id = ?`, roomID).Scan(&roomType)
+	if roomType != "4" {
+		writeErr(w, http.StatusBadRequest, "未対応／対応済みを持つのは個人チャットだけです")
+		return
+	}
+	if _, err := a.db.Exec(`UPDATE m_chat_room SET thread_status = ? WHERE chat_room_id = ?`,
+		req.Status, roomID); err != nil {
+		writeErr(w, http.StatusInternalServerError, "状態を切り替えられませんでした")
+		return
+	}
+	after := "対応済み"
+	if req.Status == "1" {
+		after = "未対応"
+	}
+	a.log(u.AccountID, fnChat, opUpdate, "m_chat_room", i64(roomID), nil, nil, s(after))
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (a *app) handleMarkRead(w http.ResponseWriter, r *http.Request) {
@@ -241,6 +396,10 @@ func (a *app) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, _ := res.LastInsertId()
+	// 保護者から新しく受信した個人チャットは、自動で未対応へ戻す（要件定義書「チャットツール」(4-3)）
+	if u.isGuardian() && roomType == "4" {
+		a.db.Exec(`UPDATE m_chat_room SET thread_status = '1' WHERE chat_room_id = ?`, roomID)
+	}
 	a.log(u.AccountID, fnChat, opCreate, "t_chat_message", i64(id), nil, nil, s("送信"))
 	writeJSON(w, http.StatusOK, map[string]int64{"chat_message_id": id})
 }
@@ -341,6 +500,8 @@ func (a *app) handleEditMessage(w http.ResponseWriter, r *http.Request) {
 type memberView struct {
 	AccountID int64  `json:"account_id"`
 	Name      string `json:"name"`
+	// 保護者が入っているチャンネルかを画面で示すために返す
+	Role string `json:"role"`
 }
 
 func (a *app) handleChatMembers(w http.ResponseWriter, r *http.Request) {
@@ -365,7 +526,9 @@ func (a *app) handleChatMembers(w http.ResponseWriter, r *http.Request) {
 
 	out := []memberView{}
 	for _, id := range ids {
-		out = append(out, memberView{AccountID: id, Name: a.accountName(id)})
+		var role string
+		a.db.QueryRow(`SELECT role FROM m_account WHERE account_id = ?`, id).Scan(&role)
+		out = append(out, memberView{AccountID: id, Name: a.accountName(id), Role: role})
 	}
 	writeJSON(w, http.StatusOK, out)
 }

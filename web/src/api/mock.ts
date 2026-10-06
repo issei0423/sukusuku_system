@@ -20,7 +20,7 @@ import type {
   OperationLog, Allergy, FunctionType, OperationType, Paged,
 } from './types';
 import { ageInMonths, now, today, addDays, plusMinutes, fromNowMinutes, napAutoCloseAt, normalizeInvitationCode, validateEmail } from './util';
-import { BODY_POSITION, BREATHING, COMPLEXION } from './codes';
+import { BODY_POSITION, BREATHING, COMPLEXION, REACTION } from './codes';
 import type {
   LoginError, ChildInput, DiaryFilter, DiaryInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
 } from './shapes';
@@ -377,7 +377,12 @@ export const diaryApi = {
     const d = db.diaries.find((x) => x.diary_id === diaryId && !x.is_deleted);
     if (!d) return fail('日誌が見つかりません');
     if (d.child_id && !canSeeChild(user, d.child_id)) return fail('この日誌を参照する権限がありません');
-    return ok(d);
+    // 記入した職員・確認した職員の氏名を載せる。Go サーバ（server/api_diary.go の enrich）と同じ
+    return ok({
+      ...d,
+      staff_name: staffName(d.created_staff_id),
+      approved_staff_name: d.approved_staff_id ? staffName(d.approved_staff_id) : null,
+    });
   },
 
   async templates(): Promise<typeof db.diaryTemplates> { return ok(db.diaryTemplates); },
@@ -563,7 +568,12 @@ export const chatApi = {
       if (room.room_type === '1') canPost = user.role === '1';
       if (user.role === '3') canPost = room.room_type === '4';
 
-      return { room, unread, canPost };
+      // 参加している保護者の人数。投稿が保護者にも届くことを入力欄の近くで示すために使う
+      const guardianCount = db.chatMembers.filter((x) =>
+        x.chat_room_id === room.chat_room_id && x.left_at === null
+        && findAccount(x.account_id)?.role === '3').length;
+
+      return { room, unread, canPost, guardianCount };
     });
 
     const order: Record<string, number> = { '1': 0, '5': 1, '2': 2, '3': 3, '4': 4 };
@@ -581,7 +591,53 @@ export const chatApi = {
     // （サーバ側の api_chat.go も同じ扱い。片方だけ直すと食い違う）
     return ok(db.chatMessages.filter((m) => m.chat_room_id === roomId)
       .sort((a, b) => a.sent_at.localeCompare(b.sent_at))
-      .map((m) => ({ ...m, sender_name: accountName(m.sender_account_id) })));
+      .map((m) => ({
+        ...m,
+        sender_name: accountName(m.sender_account_id),
+        reactions: reactionSummary(m.chat_message_id, user.account_id),
+      })));
+  },
+
+  /**
+   * リアクションを付ける・外す。同じ種別をもう一度選ぶと外れる
+   * （要件定義書「チャットツール」(4-3)。全ロールが使える）
+   */
+  async toggleReaction(user: SessionUser, messageId: number, reactionType: string): Promise<void> {
+    if (!(reactionType in REACTION)) return fail('リアクションの指定が正しくありません');
+    const m = db.chatMessages.find((x) => x.chat_message_id === messageId);
+    if (!m) return fail('メッセージが見つかりません');
+    if (m.is_deleted) return fail('取り消したメッセージには反応できません');
+    const member = db.chatMembers.find((x) => x.chat_room_id === m.chat_room_id && x.account_id === user.account_id);
+    if (!member || (user.role === '3' && member.left_at)) return fail('このチャンネルを参照する権限がありません');
+
+    const i = db.chatReactions.findIndex((r) =>
+      r.chat_message_id === messageId && r.account_id === user.account_id && r.reaction_type === reactionType);
+    if (i >= 0) db.chatReactions.splice(i, 1);
+    else {
+      db.chatReactions.push({
+        chat_reaction_id: nextId(), chat_message_id: messageId,
+        account_id: user.account_id, reaction_type: reactionType,
+      });
+    }
+    return ok(undefined);
+  },
+
+  /**
+   * 個人チャットのスレッドを「未対応／対応済み」に切り替える（要件定義書「チャットツール」(4-3)）
+   * 職員だけが切り替えられる。保護者から新しく受信したときは、自動で未対応へ戻る
+   */
+  async setThreadStatus(user: SessionUser, roomId: number, status: '1' | '2'): Promise<void> {
+    if (user.role === '3') return fail('未対応スレッドの管理は職員のみが行えます');
+    if (status !== '1' && status !== '2') return fail('状態の指定が正しくありません');
+    const room = db.chatRooms.find((r) => r.chat_room_id === roomId);
+    const member = db.chatMembers.find((x) => x.chat_room_id === roomId && x.account_id === user.account_id);
+    if (!room || !member) return fail('このチャンネルを参照する権限がありません');
+    if (room.room_type !== '4') return fail('未対応／対応済みを持つのは個人チャットだけです');
+    const before = room.thread_status;
+    room.thread_status = status;
+    log(user.account_id, '2', '2', 'm_chat_room', roomId, null,
+      before === '1' ? '未対応' : before === '2' ? '対応済み' : null, status === '1' ? '未対応' : '対応済み');
+    return ok(undefined);
   },
 
   /** 既読は人数で示す。保護者側には表示しない（基本設計書 5-5） */
@@ -614,6 +670,8 @@ export const chatApi = {
       edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null,
     };
     db.chatMessages.push(msg);
+    // 保護者から新しく受信した個人チャットは、自動で未対応へ戻す（要件定義書「チャットツール」(4-3)）
+    if (user.role === '3' && view.room.room_type === '4') view.room.thread_status = '1';
     log(user.account_id, '2', '1', 't_chat_message', msg.chat_message_id, null, null, '送信');
     return ok(msg);
   },
@@ -662,9 +720,24 @@ export const chatApi = {
 
   async members(roomId: number) {
     return ok(db.chatMembers.filter((m) => m.chat_room_id === roomId && m.left_at === null)
-      .map((m) => ({ account_id: m.account_id, name: accountName(m.account_id) })));
+      .map((m) => ({
+        account_id: m.account_id, name: accountName(m.account_id),
+        role: findAccount(m.account_id)?.role ?? '2',
+      })));
   },
 };
+
+/** メッセージに付いたリアクションを種別ごとに数える */
+function reactionSummary(messageId: number, accountId: number) {
+  const rows = db.chatReactions.filter((r) => r.chat_message_id === messageId);
+  return Object.keys(REACTION)
+    .map((type) => ({
+      reaction_type: type,
+      count: rows.filter((r) => r.reaction_type === type).length,
+      mine: rows.some((r) => r.reaction_type === type && r.account_id === accountId),
+    }))
+    .filter((x) => x.count > 0);
+}
 
 const chatApi2 = {
   /** 目的別グループの作成とメンバーの編成（グループ編成画面） */

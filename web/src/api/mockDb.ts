@@ -13,7 +13,7 @@ import type {
   Account, Staff, Guardian, InvitationCode, Terms,
   Child, ClassRoom, ClassChild, ClassStaff, GuardianChild, Allergy, MedicalHistory,
   Diary, DiaryLock, DiaryTemplate, DiaryAttachment,
-  ChatRoom, ChatMember, ChatMessage, ChatRead, MisdeliveryRecord,
+  ChatRoom, ChatMember, ChatMessage, ChatRead, ChatReaction, MisdeliveryRecord,
   NapSession, NapRecord, NapAbnormal,
   DevelopmentCategory, DevelopmentItem, DevelopmentFrequency, ShareSetting,
   DevelopmentSchedule, DevelopmentCheck, DevelopmentResultRecord,
@@ -278,7 +278,7 @@ export const chatRooms: ChatRoom[] = [
   { chat_room_id: 3, room_type: '2', class_id: 1,    room_name: 'さくら組',         is_archived: false, thread_status: null },
   { chat_room_id: 4, room_type: '2', class_id: 2,    room_name: 'ひまわり組',       is_archived: false, thread_status: null },
   { chat_room_id: 5, room_type: '3', class_id: null, room_name: '運動会実行委員',   is_archived: false, thread_status: null },
-  { chat_room_id: 6, room_type: '4', class_id: 1,    room_name: '山田 太郎の保護者', is_archived: false, thread_status: '未対応' },
+  { chat_room_id: 6, room_type: '4', class_id: 1,    room_name: '山田 太郎の保護者', is_archived: false, thread_status: '1' },
   { chat_room_id: 7, room_type: '4', class_id: 1,    room_name: '鈴木 花子の保護者', is_archived: false, thread_status: null },
 ];
 
@@ -306,6 +306,9 @@ export const chatMessages: ChatMessage[] = [
   // 取消済みのメッセージ。誤送信への対応の記録と対にする（基本設計書「誤送信への対応」(4-6)）
   { chat_message_id: 10, chat_room_id: 7, sender_account_id: 3, body: '', source_type: '1', source_id: null, sent_at: '2026-08-27T16:12:00', edited_at: null, is_deleted: true, deleted_at: '2026-08-27T16:15:00', deleted_account_id: 3 },
 ];
+
+/** リアクション（t_chat_reaction）。デモデータは持たない */
+export const chatReactions: ChatReaction[] = [];
 
 /** 既読（t_chat_read）。保護者側には表示しない（基本設計書 5-5） */
 export const chatReads: ChatRead[] = [

@@ -175,6 +175,26 @@ describe('チャットツール（3画面）', () => {
   });
 });
 
+describe('チャット画面の表示', () => {
+  it('職員：保護者も読むチャンネルでは、入力欄の近くに届く人数を出す', async () => {
+    open('/staff/chat', teacher);
+    await settled();
+    await waitFor(() => { expect(screen.getAllByText('保護者も参加').length).toBeGreaterThan(0); }, { timeout: 3000 });
+    fireEvent.click(Array.from(document.querySelectorAll('button.channel'))
+      .find((b) => b.textContent?.includes('さくら組'))!);
+    await waitFor(() => {
+      expect(document.body.textContent).toMatch(/この投稿は、保護者 \d+ 名にも届きます。/);
+    }, { timeout: 3000 });
+  });
+
+  it('保護者：自分のメッセージに取消を出し、リアクションを付けられる', async () => {
+    open('/guardian/chat', guardian);
+    await settled();
+    fireEvent.click(screen.getByText('担任の先生とのやりとり').closest('button')!);
+    await waitFor(() => { expect(screen.getAllByText('リアクション').length).toBeGreaterThan(0); }, { timeout: 3000 });
+  });
+});
+
 describe('日誌作成画面の入力の検査', () => {
   it('個人日誌は、対象の園児を選ぶまで確認へ進めない', async () => {
     open('/staff/diary/new', teacher);

@@ -63,6 +63,8 @@ export interface ChatRoomView {
   room: ChatRoom;
   unread: number;
   canPost: boolean;
+  /** 参加している保護者の人数。投稿が保護者にも届くことを入力欄の近くで示すために使う */
+  guardianCount: number;
 }
 
 export interface MisdeliveryRow {

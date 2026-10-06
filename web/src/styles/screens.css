@@ -107,3 +107,18 @@
   .channel { padding: 0 var(--sp-2); }
   .msg .bubble { max-width: 92%; }
 }
+
+/* リアクション。押せる大きさ（44px）を保つ */
+.reactions { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin-top: var(--sp-1); }
+.msg.mine .reactions { justify-content: flex-end; }
+.reaction {
+  min-height: 44px; min-width: 44px; padding: 0 var(--sp-2);
+  border: 1px solid var(--c-border); border-radius: 999px; background: var(--c-surface);
+  font-size: 14px;
+}
+.reaction.mine { border-color: var(--c-primary-deep); background: var(--c-primary-soft); font-weight: 700; }
+.reaction.add { color: var(--c-text-sub); font-size: 13px; }
+
+/* チャンネル一覧の印 */
+.channel .mark { font-size: 11px; color: var(--c-text-sub); margin-left: var(--sp-1); }
+.member-group { font-size: 12px; color: var(--c-text-sub); margin: var(--sp-2) 0 var(--sp-1); }

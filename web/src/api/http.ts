@@ -278,7 +278,12 @@ const apiChatNap = {
   rooms: (_u: SessionUser) => get<ChatRoomView[]>('/api/chat/rooms'),
   messages: (_u: SessionUser, roomId: number) => get<ChatMessage[]>(`/api/chat/rooms/${roomId}/messages`),
   markRead: (_u: SessionUser, roomId: number) => post<void>(`/api/chat/rooms/${roomId}/read`),
-  members: (roomId: number) => get<{ account_id: number; name: string }[]>(`/api/chat/rooms/${roomId}/members`),
+  members: (roomId: number) =>
+    get<{ account_id: number; name: string; role: string }[]>(`/api/chat/rooms/${roomId}/members`),
+  toggleReaction: (_u: SessionUser, messageId: number, reactionType: string) =>
+    post<void>(`/api/chat/messages/${messageId}/reactions`, { reaction_type: reactionType }),
+  setThreadStatus: (_u: SessionUser, roomId: number, status: '1' | '2') =>
+    post<void>(`/api/chat/rooms/${roomId}/thread-status`, { status }),
   send: (_u: SessionUser, roomId: number, body: string) =>
     post<{ chat_message_id: number }>(`/api/chat/rooms/${roomId}/messages`, { body }),
   retract: (_u: SessionUser, messageId: number) => post<void>(`/api/chat/messages/${messageId}/retract`),

@@ -194,6 +194,12 @@ export interface Diary {
   is_deleted: boolean;
   created_at: string;
   updated_at: string;
+  /*
+   * 記入した職員・確認（承認）した職員の氏名。画面が使う導出値。
+   * 保護者には職員の名簿を渡さないため、IDから引かずにこの値を出す。
+   */
+  staff_name?: string;
+  approved_staff_name?: string | null;
 }
 
 /** 編集ロック（t_diary_lock）。1件の日誌に1つ（5-4） */
@@ -231,6 +237,7 @@ export interface ChatRoom {
   class_id: number | null;
   room_name: string;
   is_archived: boolean;
+  /** 個人チャットのみ。'1' 未対応 / '2' 対応済み（要件定義書「チャットツール」(4-3)） */
   thread_status: string | null;
 }
 
@@ -261,6 +268,15 @@ export interface ChatMessage {
    * 画面側で sender_account_id から引くことができない。
    */
   sender_name?: string;
+  /** リアクションの集計。種別ごとの人数と、自分が付けているか */
+  reactions?: ReactionSummary[];
+}
+
+/** メッセージに付いたリアクションの集計（t_chat_reaction から導く） */
+export interface ReactionSummary {
+  reaction_type: string;
+  count: number;
+  mine: boolean;
 }
 
 /** 既読（t_chat_read）。保護者側には表示しない（5-5） */

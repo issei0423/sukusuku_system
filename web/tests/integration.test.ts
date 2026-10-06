@@ -112,6 +112,86 @@ run('Go サーバとの結合', () => {
   });
 
   /*
+   * ここから下は、ペルソナのデモで見つけた問題点の直しを、実サーバで確かめる
+   * （GitHub Issue #74・#77・#79・#81・#82・#84・#85）。
+   * デモデータを汚さないよう、変えた状態は各テストの中で元へ戻す。
+   */
+  it('午睡チェックの記録は、呼吸・顔色が選ばれていないと受け付けない', async () => {
+    const day = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
+    const existing = await http.api.activeSession(1, day);
+    const s = existing ?? await http.api.startSession(dummy, 1, day);
+    try {
+      const base = { child_id: 'C001', body_position: '1', breathing: '1', complexion: '1', temperature: null };
+      await expect(http.api.record(dummy, s.nap_session_id, { ...base, breathing: '' })).rejects.toThrow(/呼吸/);
+      await expect(http.api.record(dummy, s.nap_session_id, { ...base, complexion: '' })).rejects.toThrow(/顔色/);
+    } finally {
+      if (!existing) await http.api.endSession(dummy, s.nap_session_id);
+    }
+  });
+
+  it('発達チェック一覧は、未入力の項目数を返す', async () => {
+    const rows = await http.api.list(dummy, 1);
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((r) => typeof r.unfilled === 'number')).toBe(true);
+  });
+
+  it('リアクションは付けて外せる', async () => {
+    const rooms = await http.api.rooms(dummy);
+    const room = rooms.find((r) => r.room.room_type === '2')!;
+    expect(room.guardianCount).toBeGreaterThan(0);
+    const target = (await http.api.messages(dummy, room.room.chat_room_id)).find((m) => !m.is_deleted)!;
+    const find = async () => (await http.api.messages(dummy, room.room.chat_room_id))
+      .find((m) => m.chat_message_id === target.chat_message_id)!.reactions!.find((r) => r.reaction_type === '4');
+
+    const before = await find();
+    await http.api.toggleReaction(dummy, target.chat_message_id, '4');
+    const toggled = await find();
+    expect(!!toggled?.mine).toBe(!before?.mine);
+    await http.api.toggleReaction(dummy, target.chat_message_id, '4');
+    expect(!!(await find())?.mine).toBe(!!before?.mine);
+  });
+
+  it('個人チャットを対応済みにして、未対応へ戻せる', async () => {
+    const personal = (await http.api.rooms(dummy)).find((r) => r.room.room_type === '4')!;
+    const id = personal.room.chat_room_id;
+    const status = async () => (await http.api.rooms(dummy)).find((r) => r.room.chat_room_id === id)!.room.thread_status;
+    const original = (await status()) === '1' ? '1' : '2';
+
+    await http.api.setThreadStatus(dummy, id, '2');
+    expect(await status()).toBe('2');
+    await http.api.setThreadStatus(dummy, id, '1');
+    expect(await status()).toBe('1');
+    await http.api.setThreadStatus(dummy, id, original);
+  });
+
+  it('招待コードはハイフンを省いても引ける。メールアドレスが空の登録は受け付けない', async () => {
+    // 使用済みのコードをハイフンなし・小文字で入れる。「確認できません」ではなく「使われています」と返る
+    await expect(http.api.verifyInvitationCode('ijkl5678mnop')).rejects.toThrow(/すでに使われています/);
+
+    await http.api.login('takahashi@hoiku.example.jp', 'pass1234', 'staff');
+    const code = await http.api.issueOneInvitationCode(dummy, 'C001', 30);
+    try {
+      await expect(http.api.verifyInvitationCode(code.replace(/-/g, '').toLowerCase())).resolves.toBeTruthy();
+      const base = { code, password: 'pass12345', guardian_name: '検査 太郎', relationship: '父' };
+      await expect(http.api.signUpGuardian({ ...base, email: '' })).rejects.toThrow(/メールアドレスを入力/);
+      await expect(http.api.signUpGuardian({ ...base, email: 'taro.example.jp' })).rejects.toThrow(/形式/);
+    } finally {
+      const row = (await http.api.invitationCodes(dummy)).find((c) => c.code === code)!;
+      await http.api.revokeInvitationCode(dummy, row.invitation_code_id);
+    }
+  });
+
+  it('保護者が開く共有日誌には、記入者の氏名が載る（職員IDではない）', async () => {
+    await http.api.login('yamada.k@example.jp', 'pass1234', 'guardian');
+    const home = await http.api.guardianHome(dummy);
+    const shared = home.flatMap((h) => h.sharedDiaries)[0];
+    expect(shared).toBeTruthy();
+    const d = await http.api.getDiary(dummy, shared.diary_id);
+    expect(d.staff_name).toBeTruthy();
+    expect(d.staff_name).not.toMatch(/^S\d+$/);
+  });
+
+  /*
    * ログアウトはサーバ側のセッションを確実に捨てる。
    *
    * 以前は破棄の完了を待たずに画面を遷移していたため、全画面の読み込みで通信が打ち切られ、
