@@ -132,7 +132,13 @@
 }
 .public-card.wide { max-width: 560px; }
 .public-card .brand { text-align: center; margin-bottom: var(--sp-5); }
-.public-card .brand .name { font-size: 26px; font-weight: 700; color: var(--c-primary-deep); }
+.public-card .brand .name img {
+  display: block;
+  width: 230px;
+  max-width: 100%;
+  height: auto;
+  margin: -11px auto -14px;
+}
 .public-card .brand .sub  { font-size: 13px; color: var(--c-text-sub); }
 
 /* ============ 共通部品 ============ */
