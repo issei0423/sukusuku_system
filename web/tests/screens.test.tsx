@@ -202,6 +202,15 @@ describe('保護者のメニュー', () => {
     expect(document.querySelector('.drawer')).toBeNull();
   });
 
+  it('利用者名は「園児の氏名 保護者」と出す', async () => {
+    open('/guardian', guardian);
+    await settled();
+    fireEvent.click(screen.getByLabelText('メニュー'));
+    await waitFor(() => {
+      expect(document.querySelector('.drawer .who')!.textContent!.replace(/\s+/g, ' ').trim()).toBe('山田 太郎 保護者');
+    });
+  });
+
   it('Esc キーでも閉じる', async () => {
     open('/guardian', guardian);
     await settled();

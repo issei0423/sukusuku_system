@@ -57,10 +57,10 @@ export default function GuardianLayout() {
               それは見て分かる操作ではないため、閉じ方を文字で示す
             */}
             <div className="drawer-head">
-              {/* 誰の保護者かを示す。ホームからの導線に絞る */}
+              {/* 誰の保護者かを示す。「園児の氏名 保護者」と表す（図/画面詳細図.md の保護者の表し方） */}
               <div className="who">
                 {home.data?.map((h) => h.child.child_name).join('・') || user.display_name}
-                ちゃんの保護者
+                {' '}保護者
               </div>
               <button className="drawer-close" onClick={() => setOpen(false)} aria-label="メニューを閉じる">
                 <span aria-hidden="true">×</span> 閉じる
