@@ -111,6 +111,9 @@ CREATE TABLE m_class (
   class_id    INTEGER PRIMARY KEY AUTOINCREMENT,
   fiscal_year INTEGER NOT NULL,
   class_name  TEXT    NOT NULL,
+  -- 年齢児（0:0歳児 … 5:5歳児）。午睡チェックの間隔を引く（基本設計書「クラスと紐づけ」(5-3)）。
+  -- 既存のデータベースには db.go の ensureDesignColumns が同じ定義で足す
+  age_class   INTEGER NOT NULL DEFAULT 2 CHECK (age_class BETWEEN 0 AND 5),
   UNIQUE (fiscal_year, class_name)
 );
 
@@ -369,9 +372,8 @@ CREATE TABLE t_development_check (
   status                  TEXT    NOT NULL CHECK (status IN ('1','2')),          -- 1:下書き 2:確定
   staff_id                TEXT    NOT NULL REFERENCES m_staff(staff_id),
   share_status            TEXT    NOT NULL CHECK (share_status IN ('0','1','2')),
-  -- 【設計の穴】所見（チェック単位の自由記述）を保持する列が基本設計書 5-7 の定義にない。
-  -- 画面詳細図 6-1 は所見の入力欄を持つため、置き場を決める必要がある。
-  -- ここでは note 列を足す案を示している（要判断）。
+  -- 所見（チェック1件に対する自由記述）。園内限定であり、保護者へは共有しない
+  -- （基本設計書「発達チェック・身体測定」(5-7)）
   note                    TEXT,
   UNIQUE (child_id, checked_on)
 );

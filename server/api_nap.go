@@ -324,19 +324,21 @@ func oneOf(v string, choices ...string) bool {
 
 // handleNapInterval は年齢に応じたチェック間隔を返す。マスタ値を用いる（基本設計書 5-8）
 //
-// 【仮置き】クラスと年齢の対応が m_class に無いため、クラス名から引いている（GitHub Issue #59）。
+// 年齢はクラスの年齢児（m_class.age_class）から引く。0歳児は age0、1歳児は age1、
+// 2歳児以上は age2 のマスタ値を使う（基本設計書「クラスと紐づけ」(5-3)）。
 func (a *app) handleNapInterval(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.requireStaff(w, r); !ok {
 		return
 	}
 	classID, _ := queryInt64(r, "class_id")
-	name := a.className(classID)
+	ageClass := 2
+	a.db.QueryRow(`SELECT age_class FROM m_class WHERE class_id = ?`, classID).Scan(&ageClass)
 	key := "nap.interval_minutes.age2"
 	fallback := 15
-	switch name {
-	case "もも組":
+	switch ageClass {
+	case 0:
 		key, fallback = "nap.interval_minutes.age0", 5
-	case "さくら組":
+	case 1:
 		key, fallback = "nap.interval_minutes.age1", 10
 	}
 	writeJSON(w, http.StatusOK, map[string]int{"interval_minutes": a.settingInt(key, fallback)})

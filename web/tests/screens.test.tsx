@@ -175,6 +175,22 @@ describe('チャットツール（3画面）', () => {
   });
 });
 
+describe('保護者向けの緊急連絡の案内', () => {
+  it('保護者の画面には、案内と園の電話番号を常時出す', async () => {
+    open('/guardian', guardian);
+    await settled();
+    const footer = document.querySelector('.guardian-footer')!;
+    expect(footer.textContent).toContain('緊急のご連絡はお電話でお願いします');
+    expect(footer.querySelector('a')!.getAttribute('href')).toBe('tel:0300000000');
+  });
+
+  it('職員の画面には出さない', async () => {
+    open('/staff', teacher);
+    await settled();
+    expect(document.querySelector('.guardian-footer')).toBeNull();
+  });
+});
+
 describe('チャット画面の表示', () => {
   it('職員：保護者も読むチャンネルでは、入力欄の近くに届く人数を出す', async () => {
     open('/staff/chat', teacher);

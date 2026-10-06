@@ -427,3 +427,62 @@ describe('利用規約の同意履歴（基本設計書「同意履歴（t_terms
     expect(db.termsAgreements.filter((x) => x.account_id === u.account_id).length).toBe(1);
   });
 });
+
+describe('設計の決定を反映したもの（基本設計書 第2.3版）', () => {
+  it('午睡チェックの間隔は、クラス名ではなくクラスの年齢児から引く', () => {
+    const sakura = db.classes.find((c) => c.class_id === 1)!;
+    const original = { name: sakura.class_name, age: sakura.age_class };
+    try {
+      sakura.class_name = 'たんぽぽ組';
+      expect(api.intervalMinutesFor(1)).toBe(10); // 1歳児のまま
+      sakura.age_class = 0;
+      expect(api.intervalMinutesFor(1)).toBe(5);
+      sakura.age_class = 4;
+      expect(api.intervalMinutesFor(1)).toBe(15); // 2歳児以上は同じ値
+    } finally {
+      sakura.class_name = original.name;
+      sakura.age_class = original.age;
+    }
+  });
+
+  it('現在と同じパスワードへは変更できない', async () => {
+    const u = await api.login('sato@hoiku.example.jp', 'temp0901', 'staff');
+    await expect(api.changePassword(u.account_id, 'temp0901', 'temp0901')).rejects.toThrow(/現在と同じパスワード/);
+    expect(db.accounts.find((a) => a.account_id === u.account_id)!.is_temp_password).toBe(true);
+  });
+
+  it('後から登録した保護者には、登録より前の個人チャットのやりとりを見せない', async () => {
+    const before = (await api.messages(guardian, 6)).filter((m) => !m.is_deleted).length;
+    expect(before).toBeGreaterThan(0);
+
+    const code = await api.issueOneInvitationCode(admin, 'C001', 30);
+    const grandma = await api.signUpGuardian({
+      code, email: 'sobo@example.jp', password: 'pass12345', guardian_name: '山田 和子', relationship: '祖母',
+    });
+    // 登録した直後は、以前のやりとりが見えず、未読にも数えない
+    expect(await api.messages(grandma, 6)).toHaveLength(0);
+    expect((await api.rooms(grandma)).find((r) => r.room.chat_room_id === 6)!.unread).toBe(0);
+
+    // 登録したあとのメッセージは見える
+    await new Promise((r) => setTimeout(r, 1100));
+    await api.send(teacher, 6, '明日の持ち物は水筒です。');
+    const seen = await api.messages(grandma, 6);
+    expect(seen.map((m) => m.body)).toEqual(['明日の持ち物は水筒です。']);
+
+    // 先に登録していた保護者と職員は、これまでどおり全部読める
+    expect((await api.messages(guardian, 6)).length).toBeGreaterThan(before);
+    expect((await api.messages(teacher, 6)).length).toBeGreaterThan(before);
+  });
+
+  it('続柄は職員側のメンバー一覧にだけ出る', async () => {
+    const forStaff = await api.members(6, teacher);
+    expect(forStaff.find((m) => m.name === '山田 健一')!.relationship).toBe('父');
+    expect(forStaff.find((m) => m.name === '山田 和子')!.relationship).toBe('祖母');
+    const forGuardian = await api.members(6, guardian);
+    expect(forGuardian.every((m) => m.relationship === null)).toBe(true);
+  });
+
+  it('園の電話番号は設定マスタから引ける', () => {
+    expect(db.settings.find((s) => s.setting_key === 'facility.phone_number')!.setting_value).toBeTruthy();
+  });
+});

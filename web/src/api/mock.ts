@@ -211,6 +211,8 @@ export const authApi = {
     if (!a) return fail('アカウントが見つかりません');
     if (a.password_hash !== current) return fail('現在のパスワードが違います');
     if (next.length < 8) return fail('パスワードは8文字以上で入力してください');
+    // 現在と同じパスワードへの変更は認めない（基本設計書「パスワードの要件」(6-3)）
+    if (next === current) return fail('現在と同じパスワードは使えません。別のパスワードを入力してください。');
     a.password_hash = next;
     a.is_temp_password = false;
     a.temp_password_expires_at = null;
@@ -573,6 +575,7 @@ export const chatApi = {
       const unread = db.chatMessages.filter((msg) =>
         msg.chat_room_id === room.chat_room_id
         && !msg.is_deleted
+        && !hiddenBeforeJoined(user, msg)
         && msg.sender_account_id !== user.account_id
         && !db.chatReads.some((r) => r.chat_message_id === msg.chat_message_id && r.account_id === user.account_id),
       ).length;
@@ -603,7 +606,7 @@ export const chatApi = {
     if (user.role === '3' && member.left_at) return fail('このチャンネルは参照できません');
     // 送信者名を添える。保護者はアカウントの名簿を参照できないため、画面側では引けない
     // （サーバ側の api_chat.go も同じ扱い。片方だけ直すと食い違う）
-    return ok(db.chatMessages.filter((m) => m.chat_room_id === roomId)
+    return ok(db.chatMessages.filter((m) => m.chat_room_id === roomId && !hiddenBeforeJoined(user, m))
       .sort((a, b) => a.sent_at.localeCompare(b.sent_at))
       .map((m) => ({
         ...m,
@@ -732,14 +735,48 @@ export const chatApi = {
     return ok(undefined);
   },
 
-  async members(roomId: number) {
+  /**
+   * メンバー。続柄は職員にだけ返す。お迎えに来る人が誰なのかを職員が確かめられるようにするため
+   * （基本設計書「チャット」(5-5)）
+   */
+  async members(roomId: number, viewer?: SessionUser) {
+    const forStaff = !!viewer && viewer.role !== '3';
     return ok(db.chatMembers.filter((m) => m.chat_room_id === roomId && m.left_at === null)
-      .map((m) => ({
-        account_id: m.account_id, name: accountName(m.account_id),
-        role: findAccount(m.account_id)?.role ?? '2',
-      })));
+      .map((m) => {
+        const role = findAccount(m.account_id)?.role ?? '2';
+        return {
+          account_id: m.account_id, name: accountName(m.account_id), role,
+          relationship: role === '3' && forStaff ? relationshipOf(m.account_id) : null,
+        };
+      }));
   },
 };
+
+/**
+ * 保護者に見せないメッセージか
+ *
+ * 後から登録した保護者には、登録より前の個人チャットのやりとりを見せない
+ * （基本設計書「チャット」(5-5)）。先に登録していた保護者は、自分の書いたものが
+ * 後から加わる人に読まれることを知らないため。職員には適用しない。
+ * Go サーバ（server/api_chat.go の beforeJoinedClause）と同じ規則にしてある。
+ */
+function hiddenBeforeJoined(user: SessionUser, m: ChatMessage): boolean {
+  if (user.role !== '3') return false;
+  const room = db.chatRooms.find((r) => r.chat_room_id === m.chat_room_id);
+  if (room?.room_type !== '4') return false;
+  const member = db.chatMembers.find((x) => x.chat_room_id === m.chat_room_id && x.account_id === user.account_id);
+  return !!member && m.sent_at < member.joined_at;
+}
+
+/** 保護者アカウントの続柄。有効な紐づけのものを、重複を除いて並べる */
+function relationshipOf(accountId: number): string | null {
+  const g = db.guardians.find((x) => x.account_id === accountId);
+  if (!g) return null;
+  const list = Array.from(new Set(db.guardianChildren
+    .filter((gc) => gc.guardian_id === g.guardian_id && gc.link_status === '1' && gc.relationship)
+    .map((gc) => gc.relationship))).sort();
+  return list.length > 0 ? list.join('・') : null;
+}
 
 /** メッセージに付いたリアクションを種別ごとに数える */
 function reactionSummary(messageId: number, accountId: number) {
@@ -1000,10 +1037,10 @@ const napApi2 = {
 
   /** 年齢に応じたチェック間隔。マスタ値を用いる（基本設計書 5-8） */
   intervalMinutesFor(classId: number): number {
-    const name = className(classId);
-    // クラスと年齢の対応は演習用の仮置き（web/仮置き値.md 参照）
-    if (name === 'もも組') return settingNumber('nap.interval_minutes.age0', 5);
-    if (name === 'さくら組') return settingNumber('nap.interval_minutes.age1', 10);
+    // 年齢はクラスの年齢児から引く。2歳児以上は age2 を使う（基本設計書「クラスと紐づけ」(5-3)）
+    const ageClass = db.classes.find((c) => c.class_id === classId)?.age_class ?? 2;
+    if (ageClass === 0) return settingNumber('nap.interval_minutes.age0', 5);
+    if (ageClass === 1) return settingNumber('nap.interval_minutes.age1', 10);
     return settingNumber('nap.interval_minutes.age2', 15);
   },
 };
@@ -1743,6 +1780,7 @@ const dashboardApi = {
     const rooms = db.chatMembers.filter((m) => m.account_id === user.account_id && m.left_at === null).map((m) => m.chat_room_id);
     const unread = db.chatMessages.filter((m) =>
       rooms.includes(m.chat_room_id) && !m.is_deleted && m.sender_account_id !== user.account_id
+      && !hiddenBeforeJoined(user, m)
       && !db.chatReads.some((r) => r.chat_message_id === m.chat_message_id && r.account_id === user.account_id)).length;
 
     return ok(mine.map((child) => ({

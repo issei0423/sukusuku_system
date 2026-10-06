@@ -118,11 +118,13 @@ type ClassRoom struct {
 	ClassID    int64  `json:"class_id"`
 	FiscalYear int    `json:"fiscal_year"`
 	ClassName  string `json:"class_name"`
+	// 年齢児（0:0歳児 … 5:5歳児）。午睡チェックの間隔を引く（基本設計書「クラスと紐づけ」(5-3)）
+	AgeClass int `json:"age_class"`
 }
 
 // selectableClasses は職員が選べるクラス。一般は自クラスのみ（画面詳細図 3-1）。
 func (a *app) selectableClasses(u *SessionUser) ([]ClassRoom, error) {
-	q := `SELECT class_id, fiscal_year, class_name FROM m_class WHERE fiscal_year = ?`
+	q := `SELECT class_id, fiscal_year, class_name, age_class FROM m_class WHERE fiscal_year = ?`
 	args := []any{fiscalYear}
 	if u.isGeneralStaff() {
 		if u.ClassID == nil {
@@ -142,7 +144,7 @@ func (a *app) selectableClasses(u *SessionUser) ([]ClassRoom, error) {
 	out := []ClassRoom{}
 	for rows.Next() {
 		var c ClassRoom
-		if err := rows.Scan(&c.ClassID, &c.FiscalYear, &c.ClassName); err != nil {
+		if err := rows.Scan(&c.ClassID, &c.FiscalYear, &c.ClassName, &c.AgeClass); err != nil {
 			return nil, err
 		}
 		out = append(out, c)

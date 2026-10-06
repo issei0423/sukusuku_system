@@ -87,7 +87,7 @@ func (a *app) handleChatRooms(w http.ResponseWriter, r *http.Request) {
 
 	// 未読の数え上げはカーソルを閉じたあとに行う（接続を1本に絞っているため。db.go）
 	for i := range views {
-		views[i].Unread = a.unreadCount(u.AccountID, views[i].Room.ChatRoomID)
+		views[i].Unread = a.unreadCount(u, views[i].Room.ChatRoomID)
 		a.db.QueryRow(`SELECT COUNT(*) FROM t_chat_member m
 			JOIN m_account ac ON ac.account_id = m.account_id
 			WHERE m.chat_room_id = ? AND m.left_at IS NULL AND ac.role = '3'`,
@@ -96,13 +96,32 @@ func (a *app) handleChatRooms(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, views)
 }
 
-func (a *app) unreadCount(accountID, roomID int64) int {
-	var n int
-	a.db.QueryRow(`SELECT COUNT(*) FROM t_chat_message m
+/*
+beforeJoinedClause は、保護者に見せないメッセージを除く条件。
+
+後から登録した保護者には、登録より前の個人チャットのやりとりを見せない
+（基本設計書「チャット」(5-5)）。先に登録していた保護者は、自分の書いたものが
+後から加わる人に読まれることを知らないため。職員には適用しない。
+メッセージの表を m として引く問い合わせに足し、引数にアカウントIDを1つ加える。
+*/
+const beforeJoinedClause = ` AND NOT EXISTS (
+	SELECT 1 FROM t_chat_member gm
+	  JOIN m_chat_room gr ON gr.chat_room_id = gm.chat_room_id
+	 WHERE gm.chat_room_id = m.chat_room_id AND gm.account_id = ?
+	   AND gr.room_type = '4' AND m.sent_at < gm.joined_at)`
+
+func (a *app) unreadCount(u *SessionUser, roomID int64) int {
+	q := `SELECT COUNT(*) FROM t_chat_message m
 		WHERE m.chat_room_id = ? AND m.is_deleted = 0 AND m.sender_account_id <> ?
 		  AND NOT EXISTS (SELECT 1 FROM t_chat_read x
-		                   WHERE x.chat_message_id = m.chat_message_id AND x.account_id = ?)`,
-		roomID, accountID, accountID).Scan(&n)
+		                   WHERE x.chat_message_id = m.chat_message_id AND x.account_id = ?)`
+	args := []any{roomID, u.AccountID, u.AccountID}
+	if u.isGuardian() {
+		q += beforeJoinedClause
+		args = append(args, u.AccountID)
+	}
+	var n int
+	a.db.QueryRow(q, args...).Scan(&n)
 	return n
 }
 
@@ -190,9 +209,16 @@ func (a *app) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := a.db.Query(`SELECT chat_message_id, chat_room_id, sender_account_id, body,
-		source_type, source_id, sent_at, edited_at, is_deleted, deleted_at, deleted_account_id
-		FROM t_chat_message WHERE chat_room_id = ? ORDER BY sent_at, chat_message_id`, roomID)
+	q := `SELECT m.chat_message_id, m.chat_room_id, m.sender_account_id, m.body,
+		m.source_type, m.source_id, m.sent_at, m.edited_at, m.is_deleted, m.deleted_at, m.deleted_account_id
+		FROM t_chat_message m WHERE m.chat_room_id = ?`
+	args := []any{roomID}
+	// 保護者には、自分が参加するより前の個人チャットのやりとりを返さない
+	if u.isGuardian() {
+		q += beforeJoinedClause
+		args = append(args, u.AccountID)
+	}
+	rows, err := a.db.Query(q+` ORDER BY m.sent_at, m.chat_message_id`, args...)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "メッセージを取得できませんでした")
 		return
@@ -502,10 +528,14 @@ type memberView struct {
 	Name      string `json:"name"`
 	// 保護者が入っているチャンネルかを画面で示すために返す
 	Role string `json:"role"`
+	// 続柄。職員にだけ返す。お迎えに来る人が誰なのかを職員が確かめられるようにするため
+	// （基本設計書「チャット」(5-5)）
+	Relationship *string `json:"relationship"`
 }
 
 func (a *app) handleChatMembers(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.requireUser(w, r); !ok {
+	u, ok := a.requireUser(w, r)
+	if !ok {
 		return
 	}
 	roomID, _ := pathInt64(r, "id")
@@ -528,9 +558,35 @@ func (a *app) handleChatMembers(w http.ResponseWriter, r *http.Request) {
 	for _, id := range ids {
 		var role string
 		a.db.QueryRow(`SELECT role FROM m_account WHERE account_id = ?`, id).Scan(&role)
-		out = append(out, memberView{AccountID: id, Name: a.accountName(id), Role: role})
+		m := memberView{AccountID: id, Name: a.accountName(id), Role: role}
+		if role == roleGuardian && u.isStaff() {
+			m.Relationship = a.relationshipOf(id)
+		}
+		out = append(out, m)
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// relationshipOf は保護者アカウントの続柄を返す。有効な紐づけのものを、重複を除いて並べる
+func (a *app) relationshipOf(accountID int64) *string {
+	rows, err := a.db.Query(`SELECT DISTINCT gc.relationship FROM t_guardian_child gc
+		JOIN m_guardian g ON g.guardian_id = gc.guardian_id
+		WHERE g.account_id = ? AND gc.link_status = '1' ORDER BY gc.relationship`, accountID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	list := []string{}
+	for rows.Next() {
+		var rel string
+		if rows.Scan(&rel) == nil && rel != "" {
+			list = append(list, rel)
+		}
+	}
+	if len(list) == 0 {
+		return nil
+	}
+	return s(strings.Join(list, "・"))
 }
 
 // ---- グループ編成（基本設計書「画面の一覧」(3-2)） ----

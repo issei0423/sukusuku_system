@@ -27,12 +27,12 @@ export const FISCAL_YEAR = 2026;
 
 /* ============ クラス（m_class） ============ */
 export const classes: ClassRoom[] = [
-  { class_id: 1, fiscal_year: 2026, class_name: 'さくら組' },
-  { class_id: 2, fiscal_year: 2026, class_name: 'ひまわり組' },
-  { class_id: 3, fiscal_year: 2026, class_name: 'もも組' },
+  { class_id: 1, fiscal_year: 2026, class_name: 'さくら組', age_class: 1 },
+  { class_id: 2, fiscal_year: 2026, class_name: 'ひまわり組', age_class: 2 },
+  { class_id: 3, fiscal_year: 2026, class_name: 'もも組', age_class: 0 },
   // 過年度の割り当てを残し、過去にどのクラスの担任だったかを判定できるようにする（基本設計書 5-3）
-  { class_id: 11, fiscal_year: 2025, class_name: 'さくら組' },
-  { class_id: 12, fiscal_year: 2025, class_name: 'ひまわり組' },
+  { class_id: 11, fiscal_year: 2025, class_name: 'さくら組', age_class: 1 },
+  { class_id: 12, fiscal_year: 2025, class_name: 'ひまわり組', age_class: 2 },
 ];
 
 /* ============ 職員（m_staff） ============ */
@@ -578,6 +578,9 @@ function setting(key: string, value: string, description: string): Setting {
 }
 
 export const settings: Setting[] = [
+  // 園の基本情報。電話番号は保護者向けの緊急連絡の案内に出す（基本設計書「設定マスタ」(5-8)）
+  setting('facility.name', 'すくすく保育園', '園の名称'),
+  setting('facility.phone_number', '03-0000-0000', '園の電話番号（保護者向けの緊急連絡の案内に出す）'),
   // 午睡チェック
   setting('nap.interval_minutes.age0', '5',  '午睡チェックの間隔（0歳児・分）'),
   setting('nap.interval_minutes.age1', '10', '午睡チェックの間隔（1歳児・分）'),

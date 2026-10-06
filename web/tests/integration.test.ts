@@ -107,8 +107,25 @@ run('Go サーバとの結合', () => {
     expect(http.api.rangeWarning(80, 10)).toBeNull();
   });
 
-  it('午睡チェックの間隔はクラスから引ける', () => {
+  it('午睡チェックの間隔はクラスの年齢児から引ける', () => {
+    expect(http.selectableClasses(dummy)[0].age_class).toBe(1);
     expect(http.api.intervalMinutesFor(1)).toBe(10);
+  });
+
+  it('園の電話番号が設定マスタにある', () => {
+    expect(http.settingText('facility.phone_number', '')).not.toBe('');
+  });
+
+  it('メンバー一覧は、職員には保護者の続柄を返す', async () => {
+    const personal = (await http.api.rooms(dummy)).find((r) => r.room.room_type === '4')!;
+    const members = await http.api.members(personal.room.chat_room_id);
+    const guardians = members.filter((m) => m.role === '3');
+    expect(guardians.length).toBeGreaterThan(0);
+    expect(guardians.every((m) => !!m.relationship)).toBe(true);
+  });
+
+  it('現在と同じパスワードへは変更できない', async () => {
+    await expect(http.api.changePassword(0, 'pass1234', 'pass1234')).rejects.toThrow(/現在と同じパスワード/);
   });
 
   /*

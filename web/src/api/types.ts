@@ -147,6 +147,8 @@ export interface ClassRoom {
   class_id: number;
   fiscal_year: number;
   class_name: string;
+  /** 年齢児（0:0歳児 … 5:5歳児）。午睡チェックの間隔を引く（基本設計書「クラスと紐づけ」(5-3)） */
+  age_class: number;
 }
 
 /** 園児のクラス在籍（t_class_child） */

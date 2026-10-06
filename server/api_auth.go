@@ -164,9 +164,14 @@ func (a *app) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "現在のパスワードが違います")
 		return
 	}
-	// 【仮置き】桁数の制約値は未確定（基本設計書「画面詳細」(3-6)）。web/仮置き値.md を参照
 	if len(req.Next) < 8 {
 		writeErr(w, http.StatusBadRequest, "パスワードは8文字以上で入力してください")
+		return
+	}
+	// 現在と同じパスワードへの変更は認めない。一時パスワードを同じ値のまま使い続けられると、
+	// 変更を強制する意味がなくなるため（基本設計書「パスワードの要件」(6-3)）
+	if req.Next == req.Current {
+		writeErr(w, http.StatusBadRequest, "現在と同じパスワードは使えません。別のパスワードを入力してください。")
 		return
 	}
 

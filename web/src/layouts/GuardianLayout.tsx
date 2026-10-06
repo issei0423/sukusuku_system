@@ -9,7 +9,7 @@ import { useState } from 'react';
 import { Link, Outlet, useNavigate } from 'react-router-dom';
 import { useSession } from '../session';
 import { useAsync } from '../hooks';
-import { api } from '../api/client';
+import { api, settingText } from '../api/client';
 import { BellIcon } from '../components/ui';
 
 export default function GuardianLayout() {
@@ -20,6 +20,8 @@ export default function GuardianLayout() {
 
   if (!user) return null;
   const unread = home.data?.[0]?.unread ?? 0;
+
+  const phone = settingText('facility.phone_number', '');
 
   const onLogout = async () => {
     await logout();
@@ -61,6 +63,16 @@ export default function GuardianLayout() {
       <main className="guardian-main">
         <Outlet />
       </main>
+
+      {/*
+        緊急連絡の案内は、保護者向けの全画面に常時置く（基本設計書「画面基本構成」(3-5)）。
+        その場で電話へ切り替えられるよう、園の電話番号を添える。番号は設定マスタから引く。
+        番号が未設定のあいだは文言だけを出す
+      */}
+      <footer className="guardian-footer">
+        <span>緊急のご連絡はお電話でお願いします</span>
+        {phone && <a href={`tel:${phone.replace(/[^0-9+]/g, '')}`}>{phone}</a>}
+      </footer>
     </div>
   );
 }

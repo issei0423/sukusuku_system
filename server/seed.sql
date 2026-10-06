@@ -36,9 +36,9 @@ INSERT INTO m_guardian (guardian_id, account_id, guardian_name, phone_number, cr
 
 -- ============ クラス ============
 -- 年度ごとに別レコード。過年度の割り当てを残し「過去にどのクラスの担任だったか」を判定できる
-INSERT INTO m_class (class_id, fiscal_year, class_name) VALUES
- (1,2026,'さくら組'), (2,2026,'ひまわり組'), (3,2026,'もも組'),
- (11,2025,'さくら組'), (12,2025,'ひまわり組');
+INSERT INTO m_class (class_id, fiscal_year, class_name, age_class) VALUES
+ (1,2026,'さくら組',1), (2,2026,'ひまわり組',2), (3,2026,'もも組',0),
+ (11,2025,'さくら組',1), (12,2025,'ひまわり組',2);
 
 -- ============ 園児 ============
 INSERT INTO m_child (child_id, child_name, child_name_kana, birth_date, sex, normal_temperature, enrollment_status, photo_consent_level, is_deleted, created_at, updated_at) VALUES
@@ -364,6 +364,8 @@ INSERT INTO t_operation_log (operation_log_id, account_id, operated_at, function
 -- 値はすべて仮置き（web/仮置き値.md）。
 -- 数値として解釈できない場合は既定値へフォールバックし、警告を出す（基本設計書 5-8）
 INSERT INTO m_setting (setting_key, setting_value, description, updated_staff_id, updated_at) VALUES
+ ('facility.name','すくすく保育園','園の名称','S001','2026-04-01T09:00:00'),
+ ('facility.phone_number','03-0000-0000','園の電話番号（保護者向けの緊急連絡の案内に出す）','S001','2026-04-01T09:00:00'),
  ('nap.interval_minutes.age0','5','午睡チェックの間隔（0歳児・分）','S001','2026-04-01T09:00:00'),
  ('nap.interval_minutes.age1','10','午睡チェックの間隔（1歳児・分）','S001','2026-04-01T09:00:00'),
  ('nap.interval_minutes.age2','15','午睡チェックの間隔（2歳児以上・分）','S001','2026-04-01T09:00:00'),

@@ -91,7 +91,7 @@ export default function GuardianChatScreen() {
           ))}
         </div>
         <div className="muted" style={{ marginTop: 16 }}>
-          急なご連絡はお電話でお願いします。通知が届かない場合があります。
+          チャットの通知は届かない場合があります。急なご連絡は、画面の下のお電話からお願いします。
         </div>
       </div>
     );

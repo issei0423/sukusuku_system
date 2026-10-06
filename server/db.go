@@ -55,7 +55,59 @@ func openDB(path string) (*sql.DB, error) {
 	if err := ensureTermsAgreement(db); err != nil {
 		return nil, err
 	}
+	if err := ensureDesignColumns(db); err != nil {
+		return nil, err
+	}
 	return db, nil
+}
+
+/*
+ensureDesignColumns は、基本設計書 第2.3版で足した列と設定を、以前に作られたデータベースへ足す。
+
+- クラスの年齢児（m_class.age_class）。デモデータのクラスには名前から年齢児を入れる
+- 園の名称と電話番号（m_setting の facility.name / facility.phone_number）
+
+新規作成のときは schema.sql と seed.sql がすでに持っているため、何も変わらない。
+*/
+func ensureDesignColumns(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(m_class)`)
+	if err != nil {
+		return fmt.Errorf("クラスの列を確かめられません: %w", err)
+	}
+	hasAgeClass := false
+	for rows.Next() {
+		var (
+			cid        int
+			name, typ  string
+			notNull    int
+			defaultVal sql.NullString
+			pk         int
+		)
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultVal, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == "age_class" {
+			hasAgeClass = true
+		}
+	}
+	rows.Close()
+	if !hasAgeClass {
+		if _, err := db.Exec(`ALTER TABLE m_class
+			ADD COLUMN age_class INTEGER NOT NULL DEFAULT 2 CHECK (age_class BETWEEN 0 AND 5)`); err != nil {
+			return fmt.Errorf("クラスに年齢児の列を足せません: %w", err)
+		}
+		db.Exec(`UPDATE m_class SET age_class = 0 WHERE class_name = 'もも組'`)
+		db.Exec(`UPDATE m_class SET age_class = 1 WHERE class_name = 'さくら組'`)
+		log.Printf("クラスに年齢児の列（age_class）を足しました")
+	}
+	if _, err := db.Exec(`INSERT OR IGNORE INTO m_setting
+		(setting_key, setting_value, description, updated_staff_id, updated_at) VALUES
+		('facility.name', 'すくすく保育園', '園の名称', 'S001', '2026-04-01T09:00:00'),
+		('facility.phone_number', '03-0000-0000', '園の電話番号（保護者向けの緊急連絡の案内に出す）', 'S001', '2026-04-01T09:00:00')`); err != nil {
+		return fmt.Errorf("園の基本情報を用意できません: %w", err)
+	}
+	return nil
 }
 
 /*

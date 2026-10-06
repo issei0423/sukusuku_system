@@ -33,7 +33,7 @@ export default function StaffChatScreen() {
     async () => (roomId ? api.messages(user!, roomId) : []),
     [roomId, tick],
   );
-  const members = useAsync(async () => (roomId ? api.members(roomId) : []), [roomId]);
+  const members = useAsync(async () => (roomId ? api.members(roomId, user!) : []), [roomId]);
 
   // 開いたチャンネルは既読にする
   useEffect(() => {
@@ -199,7 +199,10 @@ export default function StaffChatScreen() {
             {guardianMembers.length > 0 && (
               <>
                 <div className="member-group">保護者 {guardianMembers.length} 名</div>
-                {guardianMembers.map((m) => <div key={m.account_id}>{m.name}</div>)}
+                {/* 続柄を添える。お迎えに来る人が誰なのかを職員が確かめられるようにするため */}
+                {guardianMembers.map((m) => (
+                  <div key={m.account_id}>{m.name}{m.relationship ? `（${m.relationship}）` : ''}</div>
+                ))}
               </>
             )}
           </div>

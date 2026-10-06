@@ -278,8 +278,9 @@ const apiChatNap = {
   rooms: (_u: SessionUser) => get<ChatRoomView[]>('/api/chat/rooms'),
   messages: (_u: SessionUser, roomId: number) => get<ChatMessage[]>(`/api/chat/rooms/${roomId}/messages`),
   markRead: (_u: SessionUser, roomId: number) => post<void>(`/api/chat/rooms/${roomId}/read`),
-  members: (roomId: number) =>
-    get<{ account_id: number; name: string; role: string }[]>(`/api/chat/rooms/${roomId}/members`),
+  members: (roomId: number, _viewer?: SessionUser) =>
+    get<{ account_id: number; name: string; role: string; relationship: string | null }[]>(
+      `/api/chat/rooms/${roomId}/members`),
   toggleReaction: (_u: SessionUser, messageId: number, reactionType: string) =>
     post<void>(`/api/chat/messages/${messageId}/reactions`, { reaction_type: reactionType }),
   setThreadStatus: (_u: SessionUser, roomId: number, status: '1' | '2') =>
@@ -337,12 +338,13 @@ const apiChatNap = {
   /**
    * 年齢に応じたチェック間隔。マスタ値を用いる（基本設計書 5-8）
    *
-   * 【仮置き】クラスと年齢の対応が m_class に無いため、クラス名から引いている（GitHub Issue #59）
+   * 年齢はクラスの年齢児（m_class.age_class）から引く。2歳児以上は age2 を使う
+   * （基本設計書「クラスと紐づけ」(5-3)）
    */
   intervalMinutesFor(classId: number): number {
-    const name = className(classId);
-    if (name === 'もも組') return settingNumber('nap.interval_minutes.age0', 5);
-    if (name === 'さくら組') return settingNumber('nap.interval_minutes.age1', 10);
+    const ageClass = ref.classes.find((c) => c.class_id === classId)?.age_class ?? 2;
+    if (ageClass === 0) return settingNumber('nap.interval_minutes.age0', 5);
+    if (ageClass === 1) return settingNumber('nap.interval_minutes.age1', 10);
     return settingNumber('nap.interval_minutes.age2', 15);
   },
 };
