@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="860" viewBox="0 0 1280 860" role="img" aria-labelledby="title desc">
+  <title id="title">手描きワンポイントをヘッダーに置いた職員画面のデモ</title>
+  <desc id="desc">ヘッダー左端をサイドバーと同じ淡い色に分け、右へ90度回した二つの笑顔と「すくすく」を配置。</desc>
+  <image href="../../画面画像/06_職員ダッシュボード.png" width="1280" height="860" preserveAspectRatio="none"/>
+  <rect x="0" y="0" width="200" height="56" fill="#faf7ef"/>
+  <path d="M199.5 0V56" stroke="#e3ddcd"/>
+  <image href="右90度_表示用.png" x="13" y="9" width="50" height="40" style="mix-blend-mode:multiply"/>
+  <text x="75" y="34" fill="#473c2b" font-family="'Noto Sans JP', 'Yu Gothic', sans-serif" font-size="16" font-weight="600" letter-spacing="2">すくすく</text>
+</svg>
