@@ -1,6 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="860" viewBox="0 0 1280 860" role="img" aria-labelledby="title desc">
   <title id="title">手描きワンポイントの職員画面配置デモ</title>
-  <desc id="desc">職員ダッシュボードのサイドバー下部に、右へ90度回した二つの笑顔を小さく配置した比較用画像。</desc>
+  <desc id="desc">職員ダッシュボードのサイドバー先頭に二つの笑顔を配置し、ダッシュボード以下のメニューを下げた確認用画像。</desc>
+  <defs>
+    <clipPath id="sidebar-menu"><rect x="0" y="176" width="200" height="684"/></clipPath>
+  </defs>
   <image href="../../画面画像/06_職員ダッシュボード.png" width="1280" height="860" preserveAspectRatio="none"/>
-  <image href="右90度_表示用.png" x="31" y="722" width="138" height="111" style="mix-blend-mode:multiply"/>
+  <rect x="0" y="56" width="200" height="804" fill="#faf7ef"/>
+  <path d="M199.5 56V860" stroke="#e3ddcd"/>
+  <image href="../../画面画像/06_職員ダッシュボード.png" x="0" y="120" width="1280" height="860" preserveAspectRatio="none" clip-path="url(#sidebar-menu)"/>
+  <image href="右90度_表示用.png" x="42" y="73" width="116" height="93" style="mix-blend-mode:multiply"/>
 </svg>
