@@ -103,7 +103,7 @@ export default function DiaryApproveScreen() {
               options={[{ value: 'yes', label: '共有する' }, { value: 'no', label: '共有しない' }]}
               onChange={setShare} />
             <div className="muted" style={{ marginTop: 8 }}>
-              共有先：{childName(d.child_id)}ちゃんの保護者（個人チャット）
+              共有先：{childName(d.child_id)} 保護者（個人チャット）
             </div>
           </>
         ) : (

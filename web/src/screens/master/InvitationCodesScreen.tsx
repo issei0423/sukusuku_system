@@ -36,6 +36,27 @@ export default function InvitationCodesScreen() {
   const [validDays, setValidDays] = useState(30);
   const [printOpen, setPrintOpen] = useState(false);
 
+  // 1枚だけの発行。祖父母の分を足す、紛失や期限切れで出し直す、といった場面で使う
+  const [oneOpen, setOneOpen] = useState(false);
+  const [oneClass, setOneClass] = useState<number>(classesForUser[0]?.class_id ?? 1);
+  const [oneChild, setOneChild] = useState('');
+  const [oneDays, setOneDays] = useState(30);
+  const [issuedCode, setIssuedCode] = useState<{ code: string; childName: string } | null>(null);
+  const oneChildren = useAsync(() => api.listChildren(user!, { classId: oneClass }), [oneClass]);
+
+  const issueOne = async () => {
+    if (!oneChild) return;
+    setError(null);
+    try {
+      const code = await api.issueOneInvitationCode(user!, oneChild, oneDays);
+      const childName = oneChildren.data?.find((c) => c.child_id === oneChild)?.child_name ?? '';
+      setOneOpen(false);
+      setOneChild('');
+      setIssuedCode({ code, childName });
+      setTick((t) => t + 1);
+    } catch (e) { setError((e as Error).message); }
+  };
+
   const childCount = useAsync(
     () => api.listChildren(user!, { classId: bulkClass }),
     [bulkClass],
@@ -70,11 +91,21 @@ export default function InvitationCodesScreen() {
       <div className="page-head">
         <h1>招待コード</h1>
         <div className="spacer" />
+        <button onClick={() => setOneOpen(true)}>1枚発行</button>
         <button onClick={() => setBulkOpen(true)}>一括発行</button>
         <button onClick={() => setPrintOpen(true)}>配布用に出力</button>
       </div>
 
       {error && <div style={{ marginBottom: 16 }}><Alert>{error}</Alert></div>}
+
+      {issuedCode && (
+        <div style={{ marginBottom: 16 }}>
+          <Alert soft>
+            {issuedCode.childName} の招待コードを1枚発行しました：
+            <strong style={{ fontFamily: 'monospace', letterSpacing: '.08em' }}> {issuedCode.code}</strong>
+          </Alert>
+        </div>
+      )}
 
       <section className="card">
         <div className="filterbar">
@@ -138,6 +169,38 @@ export default function InvitationCodesScreen() {
           コードは推測しにくい値にしています。配布物の取り違えにご注意ください。
         </div>
       </section>
+
+      {oneOpen && (
+        <Modal title="招待コードの発行（1枚）" onClose={() => setOneOpen(false)}
+          footer={<>
+            <button onClick={() => setOneOpen(false)}>やめる</button>
+            <button className="btn-primary" onClick={issueOne} disabled={!oneChild}>発行する</button>
+          </>}>
+          <div className="stack">
+            <Field label="クラス" required>
+              <select value={oneClass} onChange={(e) => { setOneClass(Number(e.target.value)); setOneChild(''); }}>
+                {classesForUser.map((c) => <option key={c.class_id} value={c.class_id}>{c.class_name}</option>)}
+              </select>
+            </Field>
+            <Field label="園児" required>
+              <select value={oneChild} onChange={(e) => setOneChild(e.target.value)}>
+                <option value="">選んでください</option>
+                {oneChildren.data?.map((c) => <option key={c.child_id} value={c.child_id}>{c.child_name}</option>)}
+              </select>
+            </Field>
+            <Field label="有効期限" required>
+              <div className="row">
+                <input type="number" min={1} max={365} value={oneDays} style={{ maxWidth: 100 }}
+                  onChange={(e) => setOneDays(Number(e.target.value))} />
+                <span>日</span>
+              </div>
+            </Field>
+            <div className="muted">
+              選んだ園児に1枚だけ発行します。ほかの園児のコードは変わりません。
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {bulkOpen && (
         <Modal title="招待コードの一括発行" onClose={() => setBulkOpen(false)}

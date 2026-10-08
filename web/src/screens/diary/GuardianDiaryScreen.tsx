@@ -59,8 +59,9 @@ export default function GuardianDiaryScreen() {
         )}
 
         <div className="muted" style={{ marginTop: 16 }}>
-          記入：{staffName(d.created_staff_id)}
-          {d.approved_at && <>　／　確認：{staffName(d.approved_staff_id)}</>}
+          {/* 保護者には職員の名簿を渡していない。日誌に載っている氏名を出す */}
+          記入：{d.staff_name ?? staffName(d.created_staff_id)}
+          {d.approved_at && <>　／　確認：{d.approved_staff_name ?? staffName(d.approved_staff_id)}</>}
         </div>
       </section>
 

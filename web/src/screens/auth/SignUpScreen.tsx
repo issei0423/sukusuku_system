@@ -12,6 +12,7 @@ import { Field, Alert } from '../../components/ui';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api } from '../../api/client';
+import { validateEmail } from '../../api/util';
 
 export default function SignUpScreen() {
   const navigate = useNavigate();
@@ -43,6 +44,11 @@ export default function SignUpScreen() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    // 送る前に画面でも確かめる。検査の担保はサーバ側が行う（基本設計書「入力項目の制約値」(4-9)）
+    if (!name.trim()) { setError('保護者の氏名を入力してください'); return; }
+    const emailError = validateEmail(email);
+    if (emailError) { setError(emailError); return; }
+    if (password.length < 8) { setError('パスワードは8文字以上で入力してください'); return; }
     if (password !== password2) { setError('パスワードが一致しません'); return; }
     setBusy(true);
     try {
@@ -77,11 +83,10 @@ export default function SignUpScreen() {
           <button onClick={verify} disabled={!code.trim()}>コードを確認する</button>
         </div>
         {codeOk && <div className="muted" style={{ marginTop: 8 }}>招待コードを確認しました。次へ進んでください。</div>}
-        {/*
-          【要確認】招待コードの入力形式（区切りの有無・大文字小文字の扱い）は
-          基本設計書「メッセージ一覧」(4-9) と合わせて決める（画面詳細図 2-3）。
-          モックでは大文字に正規化して照合している。
-        */}
+        <div className="muted" style={{ marginTop: 8 }}>
+          大文字・小文字はどちらでも構いません。ハイフン（-）は入れても省いても確認できます。
+        </div>
+        {/* 入力形式は基本設計書「招待コード（t_invitation_code）」(5-2) による。打ち方の違いで失敗させない */}
       </div>
 
       {/* (2) 利用規約への同意 */}

@@ -31,7 +31,7 @@ export type LinkStatus = '1' | '2';
 /** チャットルーム種別 1:園 2:クラスグループ 3:目的別グループ 4:個人 5:職員（m_chat_room.room_type） */
 export type ChatRoomType = '1' | '2' | '3' | '4' | '5';
 /** メッセージの出所 1:手入力 2:日誌の共有 3:発達身体測定の共有（t_chat_message.source_type） */
-export type MessageSourceType = '1' | '2' | '3';
+export type MessageSourceType = '1' | '2' | '3' | '4';
 /** 体位 1:仰向け 2:うつ伏せ 3:左向き 4:右向き（t_nap_record.body_position） */
 export type BodyPosition = '1' | '2' | '3' | '4';
 /** 呼吸 1:あり 2:確認できず（t_nap_record.breathing） */
@@ -105,6 +105,17 @@ export interface InvitationCode {
 }
 
 /** 利用規約（m_terms） */
+/**
+ * 同意履歴（t_terms_agreement）。追記のみ
+ * アカウントの terms_version は「再同意が必要か」を判定する現在値であり、履歴とは役割が違う（5-2）
+ */
+export interface TermsAgreement {
+  terms_agreement_id: number;
+  account_id: number;
+  terms_id: number;
+  agreed_at: string;
+}
+
 export interface Terms {
   terms_id: number;
   terms_version: string;
@@ -136,6 +147,8 @@ export interface ClassRoom {
   class_id: number;
   fiscal_year: number;
   class_name: string;
+  /** 年齢児（0:0歳児 … 5:5歳児）。午睡チェックの間隔を引く（基本設計書「クラスと紐づけ」(5-3)） */
+  age_class: number;
 }
 
 /** 園児のクラス在籍（t_class_child） */
@@ -194,6 +207,12 @@ export interface Diary {
   is_deleted: boolean;
   created_at: string;
   updated_at: string;
+  /*
+   * 記入した職員・確認（承認）した職員の氏名。画面が使う導出値。
+   * 保護者には職員の名簿を渡さないため、IDから引かずにこの値を出す。
+   */
+  staff_name?: string;
+  approved_staff_name?: string | null;
 }
 
 /** 編集ロック（t_diary_lock）。1件の日誌に1つ（5-4） */
@@ -231,6 +250,7 @@ export interface ChatRoom {
   class_id: number | null;
   room_name: string;
   is_archived: boolean;
+  /** 個人チャットのみ。'1' 未対応 / '2' 対応済み（要件定義書「チャットツール」(4-3)） */
   thread_status: string | null;
 }
 
@@ -261,6 +281,40 @@ export interface ChatMessage {
    * 画面側で sender_account_id から引くことができない。
    */
   sender_name?: string;
+  /** リアクションの集計。種別ごとの人数と、自分が付けているか */
+  reactions?: ReactionSummary[];
+}
+
+/** メッセージに付いたリアクションの集計（t_chat_reaction から導く） */
+export interface ReactionSummary {
+  reaction_type: string;
+  count: number;
+  mine: boolean;
+}
+
+/** 配布物の種類（t_handout.handout_type） */
+export type HandoutType = '1' | '2' | '3' | '4' | '5';
+
+/**
+ * 配布物（t_handout）。園だより・献立表など、保護者があとから見返すもの
+ * class_id が空なら園全体向け。取り下げは論理削除とする（5-5）
+ */
+export interface Handout {
+  handout_id: number;
+  handout_type: HandoutType;
+  title: string;
+  /** 対象の月 'YYYY-MM' */
+  target_month: string;
+  class_id: number | null;
+  file_name: string;
+  file_type: string;
+  file_size: number;
+  posted_staff_id: string;
+  posted_at: string;
+  is_deleted: boolean;
+  /** 画面が使う導出値 */
+  class_name?: string;
+  posted_staff_name?: string;
 }
 
 /** 既読（t_chat_read）。保護者側には表示しない（5-5） */
@@ -384,6 +438,8 @@ export interface DevelopmentCheck {
   status: DevelopmentCheckStatus;
   staff_id: string;
   share_status: ShareStatus;
+  /** 所見（チェック単位の自由記述）。列は基本設計書 5-7 の定義に無い（GitHub Issue #58） */
+  note?: string | null;
 }
 
 /**

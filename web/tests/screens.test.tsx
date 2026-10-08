@@ -6,12 +6,13 @@
  * 33画面すべてが、想定するロールで実際に描画されることを確かめる。
  * データの読み込みは非同期のため、読み込み完了まで待ってから内容を検査する。
  */
-import { describe, it, expect, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
+import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import App from '../src/App';
 import { SessionProvider } from '../src/session';
 import type { SessionUser } from '../src/api/types';
+import { today } from '../src/api/util';
 
 const admin: SessionUser = {
   account_id: 1, email: 'takahashi@hoiku.example.jp', role: '1', display_name: '高橋 美咲',
@@ -174,7 +175,135 @@ describe('チャットツール（3画面）', () => {
   });
 });
 
+describe('保護者向けの緊急連絡の案内', () => {
+  it('保護者の画面には、案内と園の電話番号を常時出す', async () => {
+    open('/guardian', guardian);
+    await settled();
+    const footer = document.querySelector('.guardian-footer')!;
+    expect(footer.textContent).toContain('緊急のご連絡はお電話でお願いします');
+    expect(footer.querySelector('a')!.getAttribute('href')).toBe('tel:0300000000');
+  });
+
+  it('職員の画面には出さない', async () => {
+    open('/staff', teacher);
+    await settled();
+    expect(document.querySelector('.guardian-footer')).toBeNull();
+  });
+});
+
+describe('園からの配布物（2画面）', () => {
+  it('保護者ホーム：配布物の区画と、一覧への導線を出す', async () => {
+    open('/guardian', guardian);
+    await settled();
+    await waitFor(() => { expect(screen.getByText('園だより・献立表をすべて見る')).toBeTruthy(); }, { timeout: 3000 });
+  });
+
+  it('配布物一覧画面（保護者）：月ごとにまとめて出し、開くと題名と形式が分かる', async () => {
+    open('/guardian/handouts', guardian);
+    await settled();
+    await waitFor(() => { expect(document.querySelectorAll('button.handout-row').length).toBeGreaterThan(0); }, { timeout: 3000 });
+    expect(document.body.textContent).toMatch(/\d{4}年\d{1,2}月/);
+    const kondate = Array.from(document.querySelectorAll('button.handout-row'))
+      .find((b) => b.textContent?.includes('献立表'))!;
+    fireEvent.click(kondate);
+    await waitFor(() => { expect(document.body.textContent).toContain('PDF'); });
+  });
+
+  it('配布物管理画面：管理者には掲載の操作を出し、一般には出さない', async () => {
+    open('/staff/handouts', admin);
+    await settled();
+    await waitFor(() => { expect(screen.getAllByText('取り下げ').length).toBeGreaterThan(0); }, { timeout: 3000 });
+    expect(screen.getByText('配布物を掲載する')).toBeTruthy();
+    cleanup();
+
+    open('/staff/handouts', teacher);
+    await settled();
+    await waitFor(() => { expect(screen.getAllByText('開く').length).toBeGreaterThan(0); }, { timeout: 3000 });
+    expect(screen.queryByText('配布物を掲載する')).toBeNull();
+    expect(screen.queryByText('取り下げ')).toBeNull();
+  });
+});
+
+describe('保護者のメニュー', () => {
+  it('メニューを開くと閉じるボタンがあり、押すと閉じる', async () => {
+    open('/guardian', guardian);
+    await settled();
+    expect(document.querySelector('.drawer')).toBeNull();
+    fireEvent.click(screen.getByLabelText('メニューを開く'));
+    expect(document.querySelector('.drawer')).not.toBeNull();
+    fireEvent.click(screen.getByLabelText('メニューを閉じる'));
+    expect(document.querySelector('.drawer')).toBeNull();
+  });
+
+  it('利用者名は「園児の氏名 保護者」と出す', async () => {
+    open('/guardian', guardian);
+    await settled();
+    fireEvent.click(screen.getByLabelText('メニューを開く'));
+    await waitFor(() => {
+      expect(document.querySelector('.drawer .who')!.textContent!.replace(/\s+/g, ' ').trim()).toBe('山田 太郎 保護者');
+    });
+  });
+
+  it('Esc キーでも閉じる', async () => {
+    open('/guardian', guardian);
+    await settled();
+    fireEvent.click(screen.getByLabelText('メニューを開く'));
+    expect(document.querySelector('.drawer')).not.toBeNull();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => { expect(document.querySelector('.drawer')).toBeNull(); });
+  });
+});
+
+describe('チャット画面の表示', () => {
+  it('職員：保護者も読むチャンネルでは、入力欄の近くに届く人数を出す', async () => {
+    open('/staff/chat', teacher);
+    await settled();
+    await waitFor(() => { expect(screen.getAllByText('保護者も参加').length).toBeGreaterThan(0); }, { timeout: 3000 });
+    fireEvent.click(Array.from(document.querySelectorAll('button.channel'))
+      .find((b) => b.textContent?.includes('さくら組'))!);
+    await waitFor(() => {
+      expect(document.body.textContent).toMatch(/この投稿は、保護者 \d+ 名にも届きます。/);
+    }, { timeout: 3000 });
+  });
+
+  it('保護者：自分のメッセージに取消を出し、リアクションを付けられる', async () => {
+    open('/guardian/chat', guardian);
+    await settled();
+    fireEvent.click(screen.getByText('担任の先生とのやりとり').closest('button')!);
+    await waitFor(() => { expect(screen.getAllByText('リアクション').length).toBeGreaterThan(0); }, { timeout: 3000 });
+  });
+});
+
+describe('日誌作成画面の入力の検査', () => {
+  it('個人日誌は、対象の園児を選ぶまで確認へ進めない', async () => {
+    open('/staff/diary/new', teacher);
+    await settled();
+    const textarea = document.querySelector('textarea')!;
+    fireEvent.change(textarea, { target: { value: '午前は園庭で遊んだ。' } });
+    const next = screen.getByText('確認へ進む') as HTMLButtonElement;
+    expect(next.disabled).toBe(true);
+    expect(screen.getByText('対象の園児を選ぶと、確認へ進めます。')).toBeTruthy();
+
+    const childSelect = Array.from(document.querySelectorAll('select'))
+      .find((s) => Array.from(s.options).some((o) => o.textContent === '選んでください'))!;
+    fireEvent.change(childSelect, { target: { value: childSelect.options[1].value } });
+    expect((screen.getByText('確認へ進む') as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
 describe('午睡チェック（3画面）', () => {
+  /*
+   * 午睡の時間帯（13:00-15:00）を過ぎると、デモの実施は自動で解除される。
+   * 実行した時刻で結果が変わらないよう、時計を時間帯の中（13:30）に固定する。
+   * 固定するのは Date だけで、タイマー（setTimeout）は本物のまま動かす。
+   */
+  beforeEach(() => {
+    const day = today();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(`${day}T13:30:00+09:00`));
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
   it('午睡チェック画面：実施中はタイマーと園児カードを出す', async () => {
     open('/staff/nap', teacher);
     /*
@@ -186,13 +315,26 @@ describe('午睡チェック（3画面）', () => {
     await waitFor(() => {
       expect(screen.getByText('チェック間隔')).toBeTruthy();
     }, { timeout: 3000 });
-    const timerLabel = screen.queryByText('次のチェックまで') ?? screen.queryByText('チェックの時刻を過ぎています');
+    const timerLabel = screen.queryByText('次のチェックまで') ?? screen.queryByText(/チェックの時刻を過ぎています/);
     expect(timerLabel).toBeTruthy();
     expect(screen.getByText('午睡チェックを終了')).toBeTruthy();
     // 記録済み 8 / 12 名（デモデータ）。園児の状態はセッション取得後に読み直すため待つ
     await waitFor(() => {
       expect(document.body.textContent).toContain('記録済み 8 / 12 名');
     }, { timeout: 3000 });
+  });
+
+  it('午睡チェック画面：記録の窓は、体位・呼吸・顔色のどれも選ばれていない状態で開く', async () => {
+    open('/staff/nap', teacher);
+    await waitFor(() => {
+      expect(screen.getAllByText('記録').length).toBeGreaterThan(0);
+    }, { timeout: 3000 });
+    fireEvent.click(screen.getAllByText('記録')[0]);
+    const radios = Array.from(document.querySelectorAll<HTMLInputElement>('.modal input[type="radio"], [role="dialog"] input[type="radio"]'));
+    const all = radios.length > 0 ? radios : Array.from(document.querySelectorAll<HTMLInputElement>('input[type="radio"]'));
+    expect(all.length).toBeGreaterThan(0);
+    expect(all.some((r) => r.checked)).toBe(false);
+    expect((screen.getByText('記録する') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('午睡チェック画面：平熱を並べて表示する（判定はしない）', async () => {

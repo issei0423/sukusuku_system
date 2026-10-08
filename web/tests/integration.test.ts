@@ -107,8 +107,133 @@ run('Go サーバとの結合', () => {
     expect(http.api.rangeWarning(80, 10)).toBeNull();
   });
 
-  it('午睡チェックの間隔はクラスから引ける', () => {
+  it('午睡チェックの間隔はクラスの年齢児から引ける', () => {
+    expect(http.selectableClasses(dummy)[0].age_class).toBe(1);
     expect(http.api.intervalMinutesFor(1)).toBe(10);
+  });
+
+  it('園の電話番号が設定マスタにある', () => {
+    expect(http.settingText('facility.phone_number', '')).not.toBe('');
+  });
+
+  it('メンバー一覧は、職員には保護者の続柄を返す', async () => {
+    const personal = (await http.api.rooms(dummy)).find((r) => r.room.room_type === '4')!;
+    const members = await http.api.members(personal.room.chat_room_id);
+    const guardians = members.filter((m) => m.role === '3');
+    expect(guardians.length).toBeGreaterThan(0);
+    expect(guardians.every((m) => !!m.relationship)).toBe(true);
+  });
+
+  it('現在と同じパスワードへは変更できない', async () => {
+    await expect(http.api.changePassword(0, 'pass1234', 'pass1234')).rejects.toThrow(/現在と同じパスワード/);
+  });
+
+  /*
+   * ここから下は、ペルソナのデモで見つけた問題点の直しを、実サーバで確かめる
+   * （GitHub Issue #74・#77・#79・#81・#82・#84・#85）。
+   * デモデータを汚さないよう、変えた状態は各テストの中で元へ戻す。
+   */
+  it('午睡チェックの記録は、呼吸・顔色が選ばれていないと受け付けない', async () => {
+    const day = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
+    const existing = await http.api.activeSession(1, day);
+    const s = existing ?? await http.api.startSession(dummy, 1, day);
+    try {
+      const base = { child_id: 'C001', body_position: '1', breathing: '1', complexion: '1', temperature: null };
+      await expect(http.api.record(dummy, s.nap_session_id, { ...base, breathing: '' })).rejects.toThrow(/呼吸/);
+      await expect(http.api.record(dummy, s.nap_session_id, { ...base, complexion: '' })).rejects.toThrow(/顔色/);
+    } finally {
+      if (!existing) await http.api.endSession(dummy, s.nap_session_id);
+    }
+  });
+
+  it('発達チェック一覧は、未入力の項目数を返す', async () => {
+    const rows = await http.api.list(dummy, 1);
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((r) => typeof r.unfilled === 'number')).toBe(true);
+  });
+
+  it('リアクションは付けて外せる', async () => {
+    const rooms = await http.api.rooms(dummy);
+    const room = rooms.find((r) => r.room.room_type === '2')!;
+    expect(room.guardianCount).toBeGreaterThan(0);
+    const target = (await http.api.messages(dummy, room.room.chat_room_id)).find((m) => !m.is_deleted)!;
+    const find = async () => (await http.api.messages(dummy, room.room.chat_room_id))
+      .find((m) => m.chat_message_id === target.chat_message_id)!.reactions!.find((r) => r.reaction_type === '4');
+
+    const before = await find();
+    await http.api.toggleReaction(dummy, target.chat_message_id, '4');
+    const toggled = await find();
+    expect(!!toggled?.mine).toBe(!before?.mine);
+    await http.api.toggleReaction(dummy, target.chat_message_id, '4');
+    expect(!!(await find())?.mine).toBe(!!before?.mine);
+  });
+
+  it('個人チャットを対応済みにして、未対応へ戻せる', async () => {
+    const personal = (await http.api.rooms(dummy)).find((r) => r.room.room_type === '4')!;
+    const id = personal.room.chat_room_id;
+    const status = async () => (await http.api.rooms(dummy)).find((r) => r.room.chat_room_id === id)!.room.thread_status;
+    const original = (await status()) === '1' ? '1' : '2';
+
+    await http.api.setThreadStatus(dummy, id, '2');
+    expect(await status()).toBe('2');
+    await http.api.setThreadStatus(dummy, id, '1');
+    expect(await status()).toBe('1');
+    await http.api.setThreadStatus(dummy, id, original);
+  });
+
+  it('招待コードはハイフンを省いても引ける。メールアドレスが空の登録は受け付けない', async () => {
+    // 使用済みのコードをハイフンなし・小文字で入れる。「確認できません」ではなく「使われています」と返る
+    await expect(http.api.verifyInvitationCode('ijkl5678mnop')).rejects.toThrow(/すでに使われています/);
+
+    await http.api.login('takahashi@hoiku.example.jp', 'pass1234', 'staff');
+    const code = await http.api.issueOneInvitationCode(dummy, 'C001', 30);
+    try {
+      await expect(http.api.verifyInvitationCode(code.replace(/-/g, '').toLowerCase())).resolves.toBeTruthy();
+      const base = { code, password: 'pass12345', guardian_name: '検査 太郎', relationship: '父' };
+      await expect(http.api.signUpGuardian({ ...base, email: '' })).rejects.toThrow(/メールアドレスを入力/);
+      await expect(http.api.signUpGuardian({ ...base, email: 'taro.example.jp' })).rejects.toThrow(/形式/);
+    } finally {
+      const row = (await http.api.invitationCodes(dummy)).find((c) => c.code === code)!;
+      await http.api.revokeInvitationCode(dummy, row.invitation_code_id);
+    }
+  });
+
+  it('配布物を掲載すると保護者の一覧に出て、取り下げると消える', async () => {
+    await http.api.login('takahashi@hoiku.example.jp', 'pass1234', 'staff');
+    const month = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 7);
+    const before = await http.api.handouts(dummy);
+    expect(before.length).toBeGreaterThan(0);
+    const { handout_id } = await http.api.postHandout(dummy, {
+      handout_type: '3', title: '結合テストのお知らせ', target_month: month, class_id: null,
+      file_name: 'test.pdf', file_type: 'application/pdf', file_size: 12_345,
+    });
+    try {
+      await expect(http.api.postHandout(dummy, {
+        handout_type: '3', title: '形式の誤り', target_month: month, class_id: null,
+        file_name: 'a.docx', file_type: 'application/msword', file_size: 100,
+      })).rejects.toThrow(/PDF・JPEG・PNG/);
+
+      await http.api.login('yamada.k@example.jp', 'pass1234', 'guardian');
+      expect((await http.api.handouts(dummy)).some((h) => h.handout_id === handout_id)).toBe(true);
+      await expect(http.api.postHandout(dummy, {
+        handout_type: '3', title: '保護者からは掲載できない', target_month: month, class_id: null,
+        file_name: 'x.pdf', file_type: 'application/pdf', file_size: 100,
+      })).rejects.toThrow(/管理者のみ/);
+    } finally {
+      await http.api.login('takahashi@hoiku.example.jp', 'pass1234', 'staff');
+      await http.api.withdrawHandout(dummy, handout_id);
+    }
+    expect((await http.api.handouts(dummy)).some((h) => h.handout_id === handout_id)).toBe(false);
+  });
+
+  it('保護者が開く共有日誌には、記入者の氏名が載る（職員IDではない）', async () => {
+    await http.api.login('yamada.k@example.jp', 'pass1234', 'guardian');
+    const home = await http.api.guardianHome(dummy);
+    const shared = home.flatMap((h) => h.sharedDiaries)[0];
+    expect(shared).toBeTruthy();
+    const d = await http.api.getDiary(dummy, shared.diary_id);
+    expect(d.staff_name).toBeTruthy();
+    expect(d.staff_name).not.toMatch(/^S\d+$/);
   });
 
   /*

@@ -219,6 +219,8 @@ func (a *app) handleDevelopmentList(w http.ResponseWriter, r *http.Request) {
 		ScheduledOn   *string `json:"scheduledOn"`
 		LastCheckedOn *string `json:"lastCheckedOn"`
 		Overdue       bool    `json:"overdue"`
+		// 前回の確定した記録に残っている未入力の項目数。未入力はチェック漏れの対象（基本設計書 5-7）
+		Unfilled int `json:"unfilled"`
 	}
 	out := []listRow{}
 	for _, c := range children {
@@ -236,10 +238,29 @@ func (a *app) handleDevelopmentList(w http.ResponseWriter, r *http.Request) {
 			WHERE child_id = ? ORDER BY scheduled_on DESC LIMIT 1`, childID).Scan(&scheduled)
 		out[i].ScheduledOn = nullStr(scheduled)
 
-		var last sql.NullString
-		a.db.QueryRow(`SELECT checked_on FROM t_development_check
-			WHERE child_id = ? AND status = '2' ORDER BY checked_on DESC LIMIT 1`, childID).Scan(&last)
+		var (
+			last        sql.NullString
+			lastCheckID sql.NullInt64
+		)
+		a.db.QueryRow(`SELECT checked_on, development_check_id FROM t_development_check
+			WHERE child_id = ? AND status = '2' ORDER BY checked_on DESC LIMIT 1`, childID).Scan(&last, &lastCheckID)
 		out[i].LastCheckedOn = nullStr(last)
+
+		// 未入力は、その実施日の月齢に対応する項目のうち、結果のレコードが無いものを数える
+		if last.Valid {
+			if cat := a.categoryFor(ageInMonths(out[i].Child.BirthDate, last.String)); cat != nil {
+				var total, filled int
+				a.db.QueryRow(`SELECT COUNT(*) FROM m_development_item
+					WHERE development_category_id = ?`, cat.DevelopmentCategoryID).Scan(&total)
+				a.db.QueryRow(`SELECT COUNT(*) FROM t_development_result r
+					JOIN m_development_item i ON i.development_item_id = r.development_item_id
+					WHERE r.development_check_id = ? AND i.development_category_id = ?`,
+					lastCheckID.Int64, cat.DevelopmentCategoryID).Scan(&filled)
+				if total > filled {
+					out[i].Unfilled = total - filled
+				}
+			}
+		}
 
 		// 月齢の基準日は予定日。現在日ではない（基本設計書「月齢の算出」(4-8)）
 		base := today()

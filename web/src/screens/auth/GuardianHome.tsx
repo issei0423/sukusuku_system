@@ -9,13 +9,15 @@ import { Link } from 'react-router-dom';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api } from '../../api/client';
-import { Loading, ErrorBox, Empty } from '../../components/ui';
+import { Loading, ErrorBox, Empty, Tag } from '../../components/ui';
 import { formatAge, formatMD, today } from '../../api/util';
-import { DIARY_RECORD_TYPE } from '../../api/codes';
+import { DIARY_RECORD_TYPE, HANDOUT_TYPE } from '../../api/codes';
 
 export default function GuardianHome() {
   const { user } = useSession();
   const { data, error, loading } = useAsync(() => api.guardianHome(user!), [user?.account_id]);
+  // 園からの配布物。園だより・献立表など、あとから見返すもの
+  const handouts = useAsync(() => api.handouts(user!), [user?.account_id]);
 
   if (loading) return <Loading />;
   if (error) return <ErrorBox text={error} />;
@@ -78,15 +80,50 @@ export default function GuardianHome() {
               )}
           </section>
 
-          {/* 緊急の連絡は電話で行う。通知の到達性には限界がある（利用規約 第4条） */}
-          <section className="guardian-contact-note">
-            <div>
-              急なご連絡は、チャットではなくお電話でお願いします。
-              チャットの通知は、端末の設定や通信の状況により届かない場合があります。
-            </div>
-          </section>
         </div>
       ))}
+
+      {/*
+        園からの配布物は、園児ごとではなく1つにまとめて置く。園全体向けのものが中心であり、
+        きょうだいがいても同じものを二度並べないため。新しいものを3件だけ出し、残りは一覧で見せる
+      */}
+      <section className="guardian-home-panel guardian-handout-panel">
+        <div className="guardian-panel-heading">
+          <div>
+            <span className="guardian-eyebrow">園からのおたより</span>
+            <h2>園からの配布物</h2>
+          </div>
+        </div>
+        {handouts.loading && <Loading />}
+        {handouts.error && <ErrorBox text={handouts.error} />}
+        {handouts.data?.length === 0 && <Empty text="配布物はまだありません。" />}
+        {handouts.data && handouts.data.length > 0 && (
+          <>
+            <div className="guardian-record-list">
+              {handouts.data.slice(0, 3).map((h) => (
+                <Link key={h.handout_id} className="guardian-record-link" to="/guardian/handouts">
+                  <span className="handout-title">
+                    <Tag label={HANDOUT_TYPE[h.handout_type] ?? 'その他'} className="tag-applied" />
+                    <span>{h.title}</span>
+                  </span>
+                  <span aria-hidden="true">→</span>
+                </Link>
+              ))}
+            </div>
+            <Link className="guardian-panel-link guardian-handout-all" to="/guardian/handouts">
+              <span>園だより・献立表をすべて見る</span><span aria-hidden="true">→</span>
+            </Link>
+          </>
+        )}
+      </section>
+
+      {/* 緊急の連絡は電話で行う。通知の到達性には限界がある（利用規約 第4条） */}
+      <section className="guardian-contact-note">
+        <div>
+          急なご連絡は、チャットではなくお電話でお願いします。
+          チャットの通知は、端末の設定や通信の状況により届かない場合があります。
+        </div>
+      </section>
     </div>
   );
 }

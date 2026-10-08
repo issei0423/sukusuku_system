@@ -10,7 +10,7 @@
 import { useEffect, useState } from 'react';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
-import { api, selectableClasses, settingNumber } from '../../api/client';
+import { api, selectableClasses, settingNumber, staffName } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Alert, Disclaimer, Modal, Radios } from '../../components/ui';
 import GrowthChart from '../../components/GrowthChart';
 import { formatAge, formatYMD, today } from '../../api/util';
@@ -224,7 +224,7 @@ export default function PhysicalRecordScreen() {
                           <td className="nowrap">{formatAge(child.birth_date, r.measured_on)}</td>
                           <td className="num">{r.height_cm}</td>
                           <td className="num">{r.weight_kg}</td>
-                          <td className="nowrap">{r.staff_id}</td>
+                          <td className="nowrap">{staffName(r.staff_id)}</td>
                         </tr>
                       ))}
                     </tbody>

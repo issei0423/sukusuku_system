@@ -11,7 +11,7 @@
 import type {
   Child, ClassRoom, Diary, SessionUser, Role, NapRecord, NapSession,
   PhysicalRecord, GrowthStandard, DevelopmentCheck, DevelopmentResultRecord,
-  DevelopmentItem, DevelopmentCategory, ChatRoom, ChatMessage, Allergy, Paged, Sex,
+  DevelopmentItem, DevelopmentCategory, ChatRoom, ChatMessage, Allergy, Paged, Sex, Handout,
 } from './types';
 import type {
   LoginError, ChildInput, DiaryFilter, DiaryInput, DiaryTemplate, ChatRoomView,
@@ -278,7 +278,13 @@ const apiChatNap = {
   rooms: (_u: SessionUser) => get<ChatRoomView[]>('/api/chat/rooms'),
   messages: (_u: SessionUser, roomId: number) => get<ChatMessage[]>(`/api/chat/rooms/${roomId}/messages`),
   markRead: (_u: SessionUser, roomId: number) => post<void>(`/api/chat/rooms/${roomId}/read`),
-  members: (roomId: number) => get<{ account_id: number; name: string }[]>(`/api/chat/rooms/${roomId}/members`),
+  members: (roomId: number, _viewer?: SessionUser) =>
+    get<{ account_id: number; name: string; role: string; relationship: string | null }[]>(
+      `/api/chat/rooms/${roomId}/members`),
+  toggleReaction: (_u: SessionUser, messageId: number, reactionType: string) =>
+    post<void>(`/api/chat/messages/${messageId}/reactions`, { reaction_type: reactionType }),
+  setThreadStatus: (_u: SessionUser, roomId: number, status: '1' | '2') =>
+    post<void>(`/api/chat/rooms/${roomId}/thread-status`, { status }),
   send: (_u: SessionUser, roomId: number, body: string) =>
     post<{ chat_message_id: number }>(`/api/chat/rooms/${roomId}/messages`, { body }),
   retract: (_u: SessionUser, messageId: number) => post<void>(`/api/chat/messages/${messageId}/retract`),
@@ -332,12 +338,13 @@ const apiChatNap = {
   /**
    * 年齢に応じたチェック間隔。マスタ値を用いる（基本設計書 5-8）
    *
-   * 【仮置き】クラスと年齢の対応が m_class に無いため、クラス名から引いている（GitHub Issue #59）
+   * 年齢はクラスの年齢児（m_class.age_class）から引く。2歳児以上は age2 を使う
+   * （基本設計書「クラスと紐づけ」(5-3)）
    */
   intervalMinutesFor(classId: number): number {
-    const name = className(classId);
-    if (name === 'もも組') return settingNumber('nap.interval_minutes.age0', 5);
-    if (name === 'さくら組') return settingNumber('nap.interval_minutes.age1', 10);
+    const ageClass = ref.classes.find((c) => c.class_id === classId)?.age_class ?? 2;
+    if (ageClass === 0) return settingNumber('nap.interval_minutes.age0', 5);
+    if (ageClass === 1) return settingNumber('nap.interval_minutes.age1', 10);
     return settingNumber('nap.interval_minutes.age2', 15);
   },
 };
@@ -507,5 +514,17 @@ const apiAdmin = {
   guardianHome: (_u: SessionUser) => get<GuardianHomeRow[]>('/api/dashboard/guardian'),
 };
 
+/* ---- 園からの配布物 ---- */
+const apiHandout = {
+  handouts: (_u: SessionUser, f: { type?: string; month?: string } = {}) =>
+    get<Handout[]>('/api/handouts' + qs({ type: f.type ?? '', month: f.month ?? '' })),
+  postHandout: async (
+    _u: SessionUser,
+    input: { handout_type: string; title: string; target_month: string; class_id: number | null;
+             file_name: string; file_type: string; file_size: number },
+  ) => post<{ handout_id: number }>('/api/handouts', input),
+  withdrawHandout: (_u: SessionUser, handoutId: number) => post<void>(`/api/handouts/${handoutId}/withdraw`),
+};
+
 /* ============ 画面が使う入口 ============ */
-export const api = { ...apiAuth, ...apiChatNap, ...apiGrowth, ...apiAdmin };
+export const api = { ...apiAuth, ...apiChatNap, ...apiGrowth, ...apiAdmin, ...apiHandout };

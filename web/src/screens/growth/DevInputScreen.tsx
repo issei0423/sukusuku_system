@@ -12,7 +12,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api } from '../../api/client';
-import { Loading, ErrorBox, Empty, Field, Alert, Disclaimer } from '../../components/ui';
+import { Loading, ErrorBox, Empty, Field, Alert, Disclaimer, Modal } from '../../components/ui';
 import { DEVELOPMENT_RESULT } from '../../api/codes';
 import { ageInMonths, formatAge, formatYMD, today } from '../../api/util';
 import type { DevelopmentResult } from '../../api/types';
@@ -40,6 +40,7 @@ export default function DevInputScreen() {
   const [compare, setCompare] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   // 下書きがあれば読み直す
   useEffect(() => {
@@ -48,7 +49,8 @@ export default function DevInputScreen() {
     const map: Record<number, DevelopmentResult | null> = {};
     d.results.filter((r) => r.development_item_id !== 0).forEach((r) => { map[r.development_item_id] = r.result; });
     setResults(map);
-    setNote(d.results.find((r) => r.development_item_id === 0)?.note ?? '');
+    // 所見はチェックの側が持つ。結果（項目単位）の側には無い
+    setNote(d.check.note ?? '');
   }, [draft.data?.check.development_check_id, checkedOn]);
 
   const save = async (status: '1' | '2') => {
@@ -169,8 +171,27 @@ export default function DevInputScreen() {
 
       <div className="row-end" style={{ marginTop: 12 }}>
         <button onClick={() => save('1')} disabled={busy}>下書き保存</button>
-        <button className="btn-primary" onClick={() => save('2')} disabled={busy}>確定する</button>
+        {/* 未入力が残っているときは、確定の前に確かめる。確定そのものは妨げない */}
+        <button className="btn-primary" disabled={busy}
+          onClick={() => (unfilled > 0 ? setConfirming(true) : save('2'))}>確定する</button>
       </div>
+
+      {confirming && (
+        <Modal title="未入力の項目があります" onClose={() => setConfirming(false)}
+          footer={<>
+            <button onClick={() => setConfirming(false)} disabled={busy}>戻って入力する</button>
+            <button className="btn-primary" disabled={busy}
+              onClick={() => { setConfirming(false); save('2'); }}>このまま確定する</button>
+          </>}>
+          <div className="stack">
+            <div>未入力の項目が {unfilled} 件あります。</div>
+            <div className="muted">
+              未入力のまま確定すると、チェック漏れとして一覧に表示されます。
+              確認できなかった項目は「未確認」を選んで残してください。
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

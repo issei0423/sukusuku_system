@@ -13,7 +13,7 @@ import type {
   Account, Staff, Guardian, InvitationCode, Terms,
   Child, ClassRoom, ClassChild, ClassStaff, GuardianChild, Allergy, MedicalHistory,
   Diary, DiaryLock, DiaryTemplate, DiaryAttachment,
-  ChatRoom, ChatMember, ChatMessage, ChatRead, MisdeliveryRecord,
+  ChatRoom, ChatMember, ChatMessage, ChatRead, ChatReaction, TermsAgreement, MisdeliveryRecord, Handout,
   NapSession, NapRecord, NapAbnormal,
   DevelopmentCategory, DevelopmentItem, DevelopmentFrequency, ShareSetting,
   DevelopmentSchedule, DevelopmentCheck, DevelopmentResultRecord,
@@ -27,12 +27,12 @@ export const FISCAL_YEAR = 2026;
 
 /* ============ クラス（m_class） ============ */
 export const classes: ClassRoom[] = [
-  { class_id: 1, fiscal_year: 2026, class_name: 'さくら組' },
-  { class_id: 2, fiscal_year: 2026, class_name: 'ひまわり組' },
-  { class_id: 3, fiscal_year: 2026, class_name: 'もも組' },
+  { class_id: 1, fiscal_year: 2026, class_name: 'さくら組', age_class: 1 },
+  { class_id: 2, fiscal_year: 2026, class_name: 'ひまわり組', age_class: 2 },
+  { class_id: 3, fiscal_year: 2026, class_name: 'もも組', age_class: 0 },
   // 過年度の割り当てを残し、過去にどのクラスの担任だったかを判定できるようにする（基本設計書 5-3）
-  { class_id: 11, fiscal_year: 2025, class_name: 'さくら組' },
-  { class_id: 12, fiscal_year: 2025, class_name: 'ひまわり組' },
+  { class_id: 11, fiscal_year: 2025, class_name: 'さくら組', age_class: 1 },
+  { class_id: 12, fiscal_year: 2025, class_name: 'ひまわり組', age_class: 2 },
 ];
 
 /* ============ 職員（m_staff） ============ */
@@ -278,7 +278,7 @@ export const chatRooms: ChatRoom[] = [
   { chat_room_id: 3, room_type: '2', class_id: 1,    room_name: 'さくら組',         is_archived: false, thread_status: null },
   { chat_room_id: 4, room_type: '2', class_id: 2,    room_name: 'ひまわり組',       is_archived: false, thread_status: null },
   { chat_room_id: 5, room_type: '3', class_id: null, room_name: '運動会実行委員',   is_archived: false, thread_status: null },
-  { chat_room_id: 6, room_type: '4', class_id: 1,    room_name: '山田 太郎の保護者', is_archived: false, thread_status: '未対応' },
+  { chat_room_id: 6, room_type: '4', class_id: 1,    room_name: '山田 太郎の保護者', is_archived: false, thread_status: '1' },
   { chat_room_id: 7, room_type: '4', class_id: 1,    room_name: '鈴木 花子の保護者', is_archived: false, thread_status: null },
 ];
 
@@ -306,6 +306,9 @@ export const chatMessages: ChatMessage[] = [
   // 取消済みのメッセージ。誤送信への対応の記録と対にする（基本設計書「誤送信への対応」(4-6)）
   { chat_message_id: 10, chat_room_id: 7, sender_account_id: 3, body: '', source_type: '1', source_id: null, sent_at: '2026-08-27T16:12:00', edited_at: null, is_deleted: true, deleted_at: '2026-08-27T16:15:00', deleted_account_id: 3 },
 ];
+
+/** リアクション（t_chat_reaction）。デモデータは持たない */
+export const chatReactions: ChatReaction[] = [];
 
 /** 既読（t_chat_read）。保護者側には表示しない（基本設計書 5-5） */
 export const chatReads: ChatRead[] = [
@@ -575,6 +578,9 @@ function setting(key: string, value: string, description: string): Setting {
 }
 
 export const settings: Setting[] = [
+  // 園の基本情報。電話番号は保護者向けの緊急連絡の案内に出す（基本設計書「設定マスタ」(5-8)）
+  setting('facility.name', 'すくすく保育園', '園の名称'),
+  setting('facility.phone_number', '03-0000-0000', '園の電話番号（保護者向けの緊急連絡の案内に出す）'),
   // 午睡チェック
   setting('nap.interval_minutes.age0', '5',  '午睡チェックの間隔（0歳児・分）'),
   setting('nap.interval_minutes.age1', '10', '午睡チェックの間隔（1歳児・分）'),
@@ -601,6 +607,7 @@ export const settings: Setting[] = [
   // 添付
   setting('attachment.allowed_types', 'image/jpeg,image/png', '添付の対応形式'),
   setting('attachment.max_size_mb', '10', '1ファイルあたりの上限サイズ（MB）'),
+  setting('handout.allowed_types', 'application/pdf,image/jpeg,image/png', '配布物の対応形式'),
   setting('attachment.max_count_diary', '3', '日誌1件あたりの写真の上限枚数'),
   // データ保持
   setting('retention.record_years', '5', '記録の保持年数'),
@@ -611,6 +618,22 @@ export const settings: Setting[] = [
   setting('paging.operation_log_per_page', '100', '操作ログの既定件数'),
   setting('paging.physical_history_count', '12', '過去測定値一覧の既定表示件数'),
 ];
+
+/**
+ * 同意履歴（t_terms_agreement）。追記のみとし、更新・削除の手段を設けない
+ *
+ * デモデータは、アカウントが持つ「同意した版と日時」から起こす
+ * （サーバ側は server/db.go の ensureTermsAgreement が同じことをする）。
+ */
+export const termsAgreements: TermsAgreement[] = accounts
+  .filter((a) => a.terms_version !== null && a.terms_agreed_at !== null)
+  .map((a, i) => ({
+    terms_agreement_id: i + 1,
+    account_id: a.account_id,
+    terms_id: termsDocs.find((t) => t.terms_version === a.terms_version && t.document_type === '1')?.terms_id ?? 0,
+    agreed_at: a.terms_agreed_at!,
+  }))
+  .filter((x) => x.terms_id !== 0);
 
 /* ============ デモデータの日付を起動日に合わせる ============
  *
@@ -686,3 +709,35 @@ function shiftRows(rows: Record<string, unknown>[], days: number): void {
     for (const rows of recordSets) shiftRows(rows, offset);
   }
 }
+
+/* ============ 配布物（t_handout） ============
+ *
+ * 園だより・献立表など、保護者があとから見返すもの（基本設計書「配布物（t_handout）」(5-5)）。
+ * 対象の月は起動した日から決める（今月と先月）。固定の月で持つと、日が経ったときに
+ * 「今月の献立表」が今月のものでなくなるため。上の日付ずらしの対象には含めない。
+ * サーバ側（server/db.go の seedHandouts）も同じ内容にしてある。
+ */
+function buildHandouts(): Handout[] {
+  const [y, m] = today().split('-').map(Number);
+  const thisMonth = `${y}-${String(m).padStart(2, '0')}`;
+  const prev = new Date(Date.UTC(y, m - 2, 1));
+  const prevMonth = `${prev.getUTCFullYear()}-${String(prev.getUTCMonth() + 1).padStart(2, '0')}`;
+  const label = (ym: string) => `${Number(ym.slice(5))}月`;
+  const row = (
+    id: number, type: Handout['handout_type'], title: string, month: string, classId: number | null,
+    name: string, mime: string, size: number, day: number,
+  ): Handout => ({
+    handout_id: id, handout_type: type, title, target_month: month, class_id: classId,
+    file_name: name, file_type: mime, file_size: size,
+    posted_staff_id: 'S001', posted_at: `${month}-${String(day).padStart(2, '0')}T16:30:00`, is_deleted: false,
+  });
+  return [
+    row(1, '1', `${label(prevMonth)}の園だより`, prevMonth, null, `endayori-${prevMonth}.pdf`, 'application/pdf', 512340, 1),
+    row(2, '2', `${label(prevMonth)}の献立表`, prevMonth, null, `kondate-${prevMonth}.pdf`, 'application/pdf', 238100, 1),
+    row(3, '1', `${label(thisMonth)}の園だより`, thisMonth, null, `endayori-${thisMonth}.pdf`, 'application/pdf', 498200, 1),
+    row(4, '2', `${label(thisMonth)}の献立表`, thisMonth, null, `kondate-${thisMonth}.pdf`, 'application/pdf', 241870, 1),
+    row(5, '3', '運動会のご案内', thisMonth, null, 'undokai.pdf', 'application/pdf', 301455, 2),
+    row(6, '4', `さくら組 ${label(thisMonth)}のクラスだより`, thisMonth, 1, `sakura-${thisMonth}.png`, 'image/png', 1204880, 3),
+  ];
+}
+export const handouts: Handout[] = buildHandouts();

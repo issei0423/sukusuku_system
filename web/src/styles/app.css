@@ -324,3 +324,15 @@ table.list td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .step .step-title { font-weight: 700; margin-bottom: var(--sp-3); }
 
 .terms-box { max-height: 220px; overflow-y: auto; border: 1px solid var(--c-border); border-radius: var(--radius-sm); padding: var(--sp-3); background: var(--c-surface-sub); font-size: 13px; white-space: pre-wrap; }
+
+/* 保護者向けの緊急連絡の案内。全画面の下端に常時置く */
+.guardian-footer {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
+  border-top: 1px solid var(--c-border); background: var(--c-surface-sub);
+  font-size: 13px; color: var(--c-text-sub);
+}
+.guardian-footer a {
+  display: inline-flex; align-items: center; min-height: 44px; padding: 0 var(--sp-2);
+  font-size: 16px; font-weight: 700; color: var(--c-link);
+}

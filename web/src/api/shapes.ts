@@ -63,6 +63,8 @@ export interface ChatRoomView {
   room: ChatRoom;
   unread: number;
   canPost: boolean;
+  /** 参加している保護者の人数。投稿が保護者にも届くことを入力欄の近くで示すために使う */
+  guardianCount: number;
 }
 
 export interface MisdeliveryRow {
@@ -117,6 +119,8 @@ export interface DevListRow {
   scheduledOn: string | null;
   lastCheckedOn: string | null;
   overdue: boolean;
+  /** 前回の確定した記録に残っている未入力の項目数。未入力はチェック漏れの対象（基本設計書 5-7） */
+  unfilled: number;
 }
 
 export interface DevScheduleRow {

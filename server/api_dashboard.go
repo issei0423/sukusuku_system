@@ -127,8 +127,10 @@ func (a *app) handleGuardianHome(w http.ResponseWriter, r *http.Request) {
 		  AND m.chat_room_id IN (SELECT chat_room_id FROM t_chat_member
 		                          WHERE account_id = ? AND left_at IS NULL)
 		  AND NOT EXISTS (SELECT 1 FROM t_chat_read x
-		                   WHERE x.chat_message_id = m.chat_message_id AND x.account_id = ?)`,
-		u.AccountID, u.AccountID, u.AccountID).Scan(&unread)
+		                   WHERE x.chat_message_id = m.chat_message_id AND x.account_id = ?)`+
+		// 参加するより前の個人チャットのやりとりは、未読にも数えない（api_chat.go）
+		beforeJoinedClause,
+		u.AccountID, u.AccountID, u.AccountID, u.AccountID).Scan(&unread)
 
 	type homeRow struct {
 		Child         Child   `json:"child"`

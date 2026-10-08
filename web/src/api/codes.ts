@@ -48,3 +48,25 @@ export const FUNCTION_TYPE: Record<FunctionType, string> = {
 export const OPERATION_TYPE: Record<OperationType, string> = {
   '1': '作成', '2': '変更', '3': '承認', '4': '削除', '5': '出力',
 };
+
+/*
+ * リアクションの種別（t_chat_reaction.reaction_type）
+ *
+ * 【仮置き】要件定義書「チャットツール」(4-3) は「メッセージに絵文字で反応する」とだけ定め、
+ * 使える絵文字を定めていない。動かすために4つを置いた（web/仮置き値.md）。
+ * Go サーバ（server/api_chat.go の reactionTypes）と同じ並びにしてある。
+ */
+export const REACTION: Record<string, { emoji: string; label: string }> = {
+  '1': { emoji: '👍', label: '了解' },
+  '2': { emoji: '🙏', label: 'ありがとう' },
+  '3': { emoji: '😊', label: 'うれしい' },
+  '4': { emoji: '✅', label: '確認しました' },
+};
+
+/** 個人チャットのスレッドの状態（m_chat_room.thread_status） */
+export const THREAD_STATUS: Record<string, string> = { '1': '未対応', '2': '対応済み' };
+
+/** 配布物の種類（t_handout.handout_type） */
+export const HANDOUT_TYPE: Record<string, string> = {
+  '1': '園だより', '2': '献立表', '3': '行事のお知らせ', '4': 'クラスだより', '5': 'その他',
+};

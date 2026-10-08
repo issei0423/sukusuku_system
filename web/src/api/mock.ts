@@ -17,9 +17,10 @@ import type {
   Account, Child, ClassRoom, Diary, SessionUser, Role,
   InvitationCode, NapRecord, NapSession, NapAbnormal, PhysicalRecord, GrowthStandard,
   DevelopmentCheck, DevelopmentResultRecord, DevelopmentItem, ChatRoom, ChatMessage,
-  OperationLog, Allergy, FunctionType, OperationType, Paged,
+  OperationLog, Allergy, FunctionType, OperationType, Paged, Handout,
 } from './types';
-import { ageInMonths, now, today, addDays, plusMinutes, fromNowMinutes } from './util';
+import { ageInMonths, now, today, addDays, plusMinutes, fromNowMinutes, napAutoCloseAt, normalizeInvitationCode, validateEmail } from './util';
+import { BODY_POSITION, BREATHING, COMPLEXION, REACTION, HANDOUT_TYPE } from './codes';
 import type {
   LoginError, ChildInput, DiaryFilter, DiaryInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
 } from './shapes';
@@ -69,6 +70,19 @@ export function settingNumber(key: string, fallback: number): number {
 }
 export function settingText(key: string, fallback: string): string {
   return db.settings.find((s) => s.setting_key === key)?.setting_value ?? fallback;
+}
+
+/**
+ * 同意を履歴へ追記する。前の版に同意した行は消さない
+ * （基本設計書「同意履歴（t_terms_agreement）」(5-2)）。
+ * 同意は要配慮個人情報を取り扱う根拠であり、いつ・どの版に同意したかを後から示せる必要がある
+ */
+function recordTermsAgreement(accountId: number, agreedAt: string): void {
+  const terms = db.termsDocs.find((t) => t.terms_version === CURRENT_TERMS_VERSION && t.document_type === '1');
+  if (!terms) return;
+  db.termsAgreements.push({
+    terms_agreement_id: nextId(), account_id: accountId, terms_id: terms.terms_id, agreed_at: agreedAt,
+  });
 }
 
 /* ============ 操作ログ ============
@@ -197,6 +211,8 @@ export const authApi = {
     if (!a) return fail('アカウントが見つかりません');
     if (a.password_hash !== current) return fail('現在のパスワードが違います');
     if (next.length < 8) return fail('パスワードは8文字以上で入力してください');
+    // 現在と同じパスワードへの変更は認めない（基本設計書「パスワードの要件」(6-3)）
+    if (next === current) return fail('現在と同じパスワードは使えません。別のパスワードを入力してください。');
     a.password_hash = next;
     a.is_temp_password = false;
     a.temp_password_expires_at = null;
@@ -211,6 +227,7 @@ export const authApi = {
     if (!a) return fail('アカウントが見つかりません');
     a.terms_version = CURRENT_TERMS_VERSION;
     a.terms_agreed_at = now();
+    recordTermsAgreement(accountId, a.terms_agreed_at);
     log(accountId, '7', '2', 'm_account', accountId, null, null, `規約 ${CURRENT_TERMS_VERSION} に同意`);
     return ok(undefined);
   },
@@ -376,7 +393,12 @@ export const diaryApi = {
     const d = db.diaries.find((x) => x.diary_id === diaryId && !x.is_deleted);
     if (!d) return fail('日誌が見つかりません');
     if (d.child_id && !canSeeChild(user, d.child_id)) return fail('この日誌を参照する権限がありません');
-    return ok(d);
+    // 記入した職員・確認した職員の氏名を載せる。Go サーバ（server/api_diary.go の enrich）と同じ
+    return ok({
+      ...d,
+      staff_name: staffName(d.created_staff_id),
+      approved_staff_name: d.approved_staff_id ? staffName(d.approved_staff_id) : null,
+    });
   },
 
   async templates(): Promise<typeof db.diaryTemplates> { return ok(db.diaryTemplates); },
@@ -553,6 +575,7 @@ export const chatApi = {
       const unread = db.chatMessages.filter((msg) =>
         msg.chat_room_id === room.chat_room_id
         && !msg.is_deleted
+        && !hiddenBeforeJoined(user, msg)
         && msg.sender_account_id !== user.account_id
         && !db.chatReads.some((r) => r.chat_message_id === msg.chat_message_id && r.account_id === user.account_id),
       ).length;
@@ -562,7 +585,12 @@ export const chatApi = {
       if (room.room_type === '1') canPost = user.role === '1';
       if (user.role === '3') canPost = room.room_type === '4';
 
-      return { room, unread, canPost };
+      // 参加している保護者の人数。投稿が保護者にも届くことを入力欄の近くで示すために使う
+      const guardianCount = db.chatMembers.filter((x) =>
+        x.chat_room_id === room.chat_room_id && x.left_at === null
+        && findAccount(x.account_id)?.role === '3').length;
+
+      return { room, unread, canPost, guardianCount };
     });
 
     const order: Record<string, number> = { '1': 0, '5': 1, '2': 2, '3': 3, '4': 4 };
@@ -578,9 +606,55 @@ export const chatApi = {
     if (user.role === '3' && member.left_at) return fail('このチャンネルは参照できません');
     // 送信者名を添える。保護者はアカウントの名簿を参照できないため、画面側では引けない
     // （サーバ側の api_chat.go も同じ扱い。片方だけ直すと食い違う）
-    return ok(db.chatMessages.filter((m) => m.chat_room_id === roomId)
+    return ok(db.chatMessages.filter((m) => m.chat_room_id === roomId && !hiddenBeforeJoined(user, m))
       .sort((a, b) => a.sent_at.localeCompare(b.sent_at))
-      .map((m) => ({ ...m, sender_name: accountName(m.sender_account_id) })));
+      .map((m) => ({
+        ...m,
+        sender_name: accountName(m.sender_account_id),
+        reactions: reactionSummary(m.chat_message_id, user.account_id),
+      })));
+  },
+
+  /**
+   * リアクションを付ける・外す。同じ種別をもう一度選ぶと外れる
+   * （要件定義書「チャットツール」(4-3)。全ロールが使える）
+   */
+  async toggleReaction(user: SessionUser, messageId: number, reactionType: string): Promise<void> {
+    if (!(reactionType in REACTION)) return fail('リアクションの指定が正しくありません');
+    const m = db.chatMessages.find((x) => x.chat_message_id === messageId);
+    if (!m) return fail('メッセージが見つかりません');
+    if (m.is_deleted) return fail('取り消したメッセージには反応できません');
+    const member = db.chatMembers.find((x) => x.chat_room_id === m.chat_room_id && x.account_id === user.account_id);
+    if (!member || (user.role === '3' && member.left_at)) return fail('このチャンネルを参照する権限がありません');
+
+    const i = db.chatReactions.findIndex((r) =>
+      r.chat_message_id === messageId && r.account_id === user.account_id && r.reaction_type === reactionType);
+    if (i >= 0) db.chatReactions.splice(i, 1);
+    else {
+      db.chatReactions.push({
+        chat_reaction_id: nextId(), chat_message_id: messageId,
+        account_id: user.account_id, reaction_type: reactionType,
+      });
+    }
+    return ok(undefined);
+  },
+
+  /**
+   * 個人チャットのスレッドを「未対応／対応済み」に切り替える（要件定義書「チャットツール」(4-3)）
+   * 職員だけが切り替えられる。保護者から新しく受信したときは、自動で未対応へ戻る
+   */
+  async setThreadStatus(user: SessionUser, roomId: number, status: '1' | '2'): Promise<void> {
+    if (user.role === '3') return fail('未対応スレッドの管理は職員のみが行えます');
+    if (status !== '1' && status !== '2') return fail('状態の指定が正しくありません');
+    const room = db.chatRooms.find((r) => r.chat_room_id === roomId);
+    const member = db.chatMembers.find((x) => x.chat_room_id === roomId && x.account_id === user.account_id);
+    if (!room || !member) return fail('このチャンネルを参照する権限がありません');
+    if (room.room_type !== '4') return fail('未対応／対応済みを持つのは個人チャットだけです');
+    const before = room.thread_status;
+    room.thread_status = status;
+    log(user.account_id, '2', '2', 'm_chat_room', roomId, null,
+      before === '1' ? '未対応' : before === '2' ? '対応済み' : null, status === '1' ? '未対応' : '対応済み');
+    return ok(undefined);
   },
 
   /** 既読は人数で示す。保護者側には表示しない（基本設計書 5-5） */
@@ -613,6 +687,8 @@ export const chatApi = {
       edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null,
     };
     db.chatMessages.push(msg);
+    // 保護者から新しく受信した個人チャットは、自動で未対応へ戻す（要件定義書「チャットツール」(4-3)）
+    if (user.role === '3' && view.room.room_type === '4') view.room.thread_status = '1';
     log(user.account_id, '2', '1', 't_chat_message', msg.chat_message_id, null, null, '送信');
     return ok(msg);
   },
@@ -659,11 +735,60 @@ export const chatApi = {
     return ok(undefined);
   },
 
-  async members(roomId: number) {
+  /**
+   * メンバー。続柄は職員にだけ返す。お迎えに来る人が誰なのかを職員が確かめられるようにするため
+   * （基本設計書「チャット」(5-5)）
+   */
+  async members(roomId: number, viewer?: SessionUser) {
+    const forStaff = !!viewer && viewer.role !== '3';
     return ok(db.chatMembers.filter((m) => m.chat_room_id === roomId && m.left_at === null)
-      .map((m) => ({ account_id: m.account_id, name: accountName(m.account_id) })));
+      .map((m) => {
+        const role = findAccount(m.account_id)?.role ?? '2';
+        return {
+          account_id: m.account_id, name: accountName(m.account_id), role,
+          relationship: role === '3' && forStaff ? relationshipOf(m.account_id) : null,
+        };
+      }));
   },
 };
+
+/**
+ * 保護者に見せないメッセージか
+ *
+ * 後から登録した保護者には、登録より前の個人チャットのやりとりを見せない
+ * （基本設計書「チャット」(5-5)）。先に登録していた保護者は、自分の書いたものが
+ * 後から加わる人に読まれることを知らないため。職員には適用しない。
+ * Go サーバ（server/api_chat.go の beforeJoinedClause）と同じ規則にしてある。
+ */
+function hiddenBeforeJoined(user: SessionUser, m: ChatMessage): boolean {
+  if (user.role !== '3') return false;
+  const room = db.chatRooms.find((r) => r.chat_room_id === m.chat_room_id);
+  if (room?.room_type !== '4') return false;
+  const member = db.chatMembers.find((x) => x.chat_room_id === m.chat_room_id && x.account_id === user.account_id);
+  return !!member && m.sent_at < member.joined_at;
+}
+
+/** 保護者アカウントの続柄。有効な紐づけのものを、重複を除いて並べる */
+function relationshipOf(accountId: number): string | null {
+  const g = db.guardians.find((x) => x.account_id === accountId);
+  if (!g) return null;
+  const list = Array.from(new Set(db.guardianChildren
+    .filter((gc) => gc.guardian_id === g.guardian_id && gc.link_status === '1' && gc.relationship)
+    .map((gc) => gc.relationship))).sort();
+  return list.length > 0 ? list.join('・') : null;
+}
+
+/** メッセージに付いたリアクションを種別ごとに数える */
+function reactionSummary(messageId: number, accountId: number) {
+  const rows = db.chatReactions.filter((r) => r.chat_message_id === messageId);
+  return Object.keys(REACTION)
+    .map((type) => ({
+      reaction_type: type,
+      count: rows.filter((r) => r.reaction_type === type).length,
+      mine: rows.some((r) => r.reaction_type === type && r.account_id === accountId),
+    }))
+    .filter((x) => x.count > 0);
+}
 
 const chatApi2 = {
   /** 目的別グループの作成とメンバーの編成（グループ編成画面） */
@@ -743,14 +868,31 @@ const chatApi2 = {
 
 /* ============ 午睡チェック（基本設計書「午睡チェック」(4-7)） ============ */
 
+/**
+ * 解除の時刻を過ぎた実施中の午睡チェックを終了にする（基本設計書「午睡チェックの実施」(4-7)）
+ * 終了した職員はいないため ended_staff_id は空のままにし、自動で解除した印を立てる
+ */
+function autoCloseNapSessions(): void {
+  const range = settingText('nap.time_range', '13:00-15:00');
+  for (const s of db.napSessions) {
+    if (s.ended_at !== null) continue;
+    const closeAt = napAutoCloseAt(s.session_date, s.started_at, range);
+    if (now() <= closeAt) continue;
+    s.ended_at = closeAt;
+    s.is_auto_closed = true;
+  }
+}
+
 export const napApi = {
   /** 実施中のセッション。開いたまま運用するため、開始済みかを常に確認する */
   async activeSession(classId: number, date: string): Promise<NapSession | null> {
+    autoCloseNapSessions();
     return ok(db.napSessions.find((s) => s.class_id === classId && s.session_date === date && s.ended_at === null) ?? null);
   },
 
   async startSession(user: SessionUser, classId: number, date: string): Promise<NapSession> {
     if (user.role === '3') return fail('午睡チェックは職員のみが行えます');
+    autoCloseNapSessions();
     const existing = db.napSessions.find((s) => s.class_id === classId && s.session_date === date && s.ended_at === null);
     if (existing) return ok(existing);
     const s: NapSession = {
@@ -800,6 +942,10 @@ export const napApi = {
              complexion: NapRecord['complexion']; temperature: number | null },
   ): Promise<NapRecord> {
     if (user.role === '3') return fail('午睡チェックは職員のみが行えます');
+    // 体位・呼吸・顔色は、保育士が見て選んだ値だけを受け取る。空のまま既定値で埋めない
+    if (!(input.body_position in BODY_POSITION)) return fail('体位を選んでください');
+    if (!(input.breathing in BREATHING)) return fail('呼吸を選んでください');
+    if (!(input.complexion in COMPLEXION)) return fail('顔色を選んでください');
     if (!canSeeChild(user, input.child_id)) return fail('この園児を記録する権限がありません');
     const r: NapRecord = {
       nap_record_id: nextId(), nap_session_id: sessionId, child_id: input.child_id,
@@ -891,15 +1037,45 @@ const napApi2 = {
 
   /** 年齢に応じたチェック間隔。マスタ値を用いる（基本設計書 5-8） */
   intervalMinutesFor(classId: number): number {
-    const name = className(classId);
-    // クラスと年齢の対応は演習用の仮置き（web/仮置き値.md 参照）
-    if (name === 'もも組') return settingNumber('nap.interval_minutes.age0', 5);
-    if (name === 'さくら組') return settingNumber('nap.interval_minutes.age1', 10);
+    // 年齢はクラスの年齢児から引く。2歳児以上は age2 を使う（基本設計書「クラスと紐づけ」(5-3)）
+    const ageClass = db.classes.find((c) => c.class_id === classId)?.age_class ?? 2;
+    if (ageClass === 0) return settingNumber('nap.interval_minutes.age0', 5);
+    if (ageClass === 1) return settingNumber('nap.interval_minutes.age1', 10);
     return settingNumber('nap.interval_minutes.age2', 15);
   },
 };
 
 /* ============ 発達チェック（基本設計書「発達チェック・身体測定」(4-8)） ============ */
+
+/**
+ * 確定した実施が予定を満たしたときに、次回の予定日を作る
+ *
+ * 次回の予定日は、実施日にマスタの推奨頻度（m_development_frequency）の日数を足した日とする。
+ * すでに実施日より先の予定があるとき（園児単位で手動上書きした予定を含む）は、それを残す。
+ *
+ * 【仮置き】次回の予定日をいつ・何から計算し直すかは基本設計書が定めていない（web/仮置き値.md）。
+ * Go サーバ（server/api_dev_write.go の advanceDevelopmentSchedule）と同じ規則にしてある。
+ */
+function advanceDevelopmentSchedule(user: SessionUser, check: DevelopmentCheck, childId: string, checkedOn: string): void {
+  const cur = db.developmentSchedules
+    .filter((s) => s.child_id === childId)
+    .sort((a, b) => b.scheduled_on.localeCompare(a.scheduled_on))[0];
+  if (cur && cur.scheduled_on > checkedOn) return;
+  if (cur) check.development_schedule_id = cur.development_schedule_id;
+
+  const child = findChild(childId);
+  if (!child) return;
+  const ageM = ageInMonths(child.birth_date, checkedOn);
+  const freq = db.developmentFrequencies.find((f) => ageM >= f.age_month_from && ageM <= f.age_month_to);
+  // 推奨頻度がマスタに無い月齢では、予定日を提案しない
+  if (!freq) return;
+  const next = addDays(checkedOn, freq.interval_days);
+  db.developmentSchedules.push({
+    development_schedule_id: nextId(), child_id: childId,
+    scheduled_on: next, is_manual_override: false, created_staff_id: user.staff_id!,
+  });
+  log(user.account_id, '4', '1', 't_development_schedule', null, childId, null, `次回予定日=${next}（実施日から算出）`);
+}
 
 export const devApi = {
   /** 月齢から発達過程区分を引く。区分はマスタから読む（画面詳細図 6-1） */
@@ -931,12 +1107,24 @@ export const devApi = {
         const scheduledOn = sch?.scheduled_on ?? null;
         const overdue = !!scheduledOn && scheduledOn <= today()
           && (!last || last.checked_on < scheduledOn);
+        // 未入力は、その実施日の月齢に対応する項目のうち、結果のレコードが無いものを数える
+        let unfilled = 0;
+        if (last) {
+          const cat = devApi.categoryFor(ageInMonths(child.birth_date, last.checked_on));
+          const itemIds = db.developmentItems
+            .filter((i) => i.development_category_id === cat?.development_category_id)
+            .map((i) => i.development_item_id);
+          const filled = db.developmentResults.filter((r) =>
+            r.development_check_id === last.development_check_id && itemIds.includes(r.development_item_id)).length;
+          unfilled = Math.max(0, itemIds.length - filled);
+        }
         return {
           child,
           ageMonths: ageInMonths(child.birth_date, scheduledOn ?? today()),
           scheduledOn,
           lastCheckedOn: last?.checked_on ?? null,
           overdue,
+          unfilled,
         };
       });
     return ok(rows);
@@ -984,6 +1172,11 @@ export const devApi = {
       check.status = status;
       check.staff_id = user.staff_id!;
     }
+    /*
+     * 【設計の穴】所見（チェック単位の自由記述）を保持する列が t_development_check にない（GitHub Issue #58）。
+     * Go サーバと同じく、チェックの側に note として持つ。設計の決定ではない。
+     */
+    check.note = note.trim() ? note : null;
 
     // 既存の結果を入れ替える
     for (let i = db.developmentResults.length - 1; i >= 0; i--) {
@@ -1002,22 +1195,10 @@ export const devApi = {
         note: null,
       });
     });
-    /*
-     * 【設計の穴】所見（チェック単位の自由記述）を保持する列が t_development_check にない。
-     * 画面詳細図 6-1 は所見の入力欄を持つが、基本設計書 5-7 の列定義に対応する列がなく、
-     * t_development_result.note は項目単位である。
-     * モックでは development_item_id=0 の行に退避しているが、これは仮の措置であり、
-     * 本実装までに t_development_check へ note 列を足すか、所見の置き場を決める必要がある。
-     */
-    if (note.trim()) {
-      db.developmentResults.push({
-        development_result_id: nextId(), development_check_id: check.development_check_id,
-        development_item_id: 0, result: '3', note,
-      });
-    }
-
     log(user.account_id, '4', check ? '2' : '1', 't_development_check', check.development_check_id, childId,
       null, status === '2' ? '確定' : '下書き保存');
+
+    if (status === '2') advanceDevelopmentSchedule(user, check, childId, checkedOn);
     return ok(check);
   },
 };
@@ -1404,8 +1585,8 @@ const adminApi3 = {
   /** 保護者アカウントの自己登録（基本設計書「保護者アカウントの自己登録」(4-3)） */
   async verifyInvitationCode(code: string): Promise<{ ok: true } | never> {
     // 園児名を返さない。誰の保護者かを名乗る前の段階であるため（画面詳細図 2-3）
-    const normalized = code.trim().toUpperCase();
-    const c = db.invitationCodes.find((x) => x.code.toUpperCase() === normalized);
+    const normalized = normalizeInvitationCode(code);
+    const c = db.invitationCodes.find((x) => normalizeInvitationCode(x.code) === normalized);
     if (!c) return fail('招待コードが確認できません。園から配布されたコードをお確かめください');
     if (c.status === '2') return fail('この招待コードはすでに使われています');
     if (c.status === '3') return fail('この招待コードは失効しています');
@@ -1416,9 +1597,13 @@ const adminApi3 = {
   async signUpGuardian(
     input: { code: string; email: string; password: string; guardian_name: string; relationship: string },
   ): Promise<SessionUser> {
-    const normalized = input.code.trim().toUpperCase();
-    const c = db.invitationCodes.find((x) => x.code.toUpperCase() === normalized);
+    const normalized = normalizeInvitationCode(input.code);
+    const c = db.invitationCodes.find((x) => normalizeInvitationCode(x.code) === normalized);
     if (!c || c.status !== '1' || c.expires_on < today()) return fail('招待コードが確認できません');
+    // ログインIDはメールアドレス。空や形式の誤りを受け付けない（要件定義書「ログインIDの定義」(4-1-1)）
+    input = { ...input, email: input.email.trim() };
+    const emailError = validateEmail(input.email);
+    if (emailError) return fail(emailError);
     if (db.accounts.some((a) => a.email === input.email)) return fail('このメールアドレスはすでに登録されています');
     if (input.password.length < 8) return fail('パスワードは8文字以上で入力してください');
     if (!input.guardian_name.trim()) return fail('保護者の氏名を入力してください');
@@ -1429,6 +1614,8 @@ const adminApi3 = {
       is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null,
       terms_version: CURRENT_TERMS_VERSION, terms_agreed_at: now(), created_at: now(), updated_at: now(),
     });
+    // 登録のときの同意も履歴へ残す（基本設計書「同意履歴（t_terms_agreement）」(5-2)）
+    recordTermsAgreement(accountId, now());
     const guardianId = `G${String(db.guardians.length + 1).padStart(3, '0')}`;
     db.guardians.push({
       guardian_id: guardianId, account_id: accountId, guardian_name: input.guardian_name,
@@ -1581,6 +1768,7 @@ const dashboardApi = {
     const abnormalWithoutDiary = db.napAbnormals.filter((a) => !a.diary_id && visible.has(a.child_id)).length;
 
     // 実施中の午睡チェック
+    autoCloseNapSessions();
     const activeNap = db.napSessions.find((s) => s.ended_at === null && myClasses.has(s.class_id)) ?? null;
 
     return ok({ returned, unreadChat, devOverdue, pending, abnormalWithoutDiary, activeNap });
@@ -1592,6 +1780,7 @@ const dashboardApi = {
     const rooms = db.chatMembers.filter((m) => m.account_id === user.account_id && m.left_at === null).map((m) => m.chat_room_id);
     const unread = db.chatMessages.filter((m) =>
       rooms.includes(m.chat_room_id) && !m.is_deleted && m.sender_account_id !== user.account_id
+      && !hiddenBeforeJoined(user, m)
       && !db.chatReads.some((r) => r.chat_message_id === m.chat_message_id && r.account_id === user.account_id)).length;
 
     return ok(mine.map((child) => ({
@@ -1607,10 +1796,108 @@ const dashboardApi = {
   },
 };
 
+/* ============ 園からの配布物（基本設計書「配布物の掲載と閲覧」(4-6)） ============
+ *
+ * 園だより・献立表など、保護者があとから見返すものを、種類と月で並べて置く。
+ * Go サーバ（server/api_handout.go）と同じ規則にしてある。片方だけ直すと食い違う。
+ */
+
+/**
+ * その利用者が見られる配布物か
+ *
+ * 園全体向けは全員が見られる。クラス向けは、管理者はすべて、一般は自クラス、
+ * 保護者は自児がいま在籍するクラスのものだけを見られる。
+ */
+function canSeeHandout(user: SessionUser, h: Handout): boolean {
+  if (h.class_id === null || user.role === '1') return true;
+  if (user.role === '2') return user.class_id === h.class_id;
+  const mine = user.guardian_id ? childrenOfGuardian(user.guardian_id).map((c) => c.child_id) : [];
+  return db.classChildren.some((cc) => cc.class_id === h.class_id && mine.includes(cc.child_id)
+    && db.classes.find((c) => c.class_id === cc.class_id)?.fiscal_year === db.FISCAL_YEAR);
+}
+
+const handoutApi = {
+  /** 見られる配布物を、対象の月の新しい順に返す */
+  async handouts(user: SessionUser, f: { type?: string; month?: string } = {}): Promise<Handout[]> {
+    return ok(db.handouts
+      .filter((h) => !h.is_deleted && canSeeHandout(user, h))
+      .filter((h) => !f.type || h.handout_type === f.type)
+      .filter((h) => !f.month || h.target_month === f.month)
+      .sort((a, b) => b.target_month.localeCompare(a.target_month)
+        || b.posted_at.localeCompare(a.posted_at) || b.handout_id - a.handout_id)
+      .map((h) => ({
+        ...h,
+        class_name: h.class_id === null ? '園全体' : className(h.class_id),
+        posted_staff_name: staffName(h.posted_staff_id),
+      })));
+  },
+
+  /**
+   * 配布物を掲載する。管理者のみ
+   * 掲載したことは、園全体向けなら園チャット、クラス向けならそのクラスグループへ知らせる
+   */
+  async postHandout(
+    user: SessionUser,
+    input: { handout_type: string; title: string; target_month: string; class_id: number | null;
+             file_name: string; file_type: string; file_size: number },
+  ): Promise<Handout> {
+    if (user.role !== '1') return fail('この操作は管理者のみが行えます');
+    const title = input.title.trim();
+    if (!(input.handout_type in HANDOUT_TYPE)) return fail('種類を選んでください');
+    if (!title) return fail('題名を入力してください');
+    if ([...title].length > 50) return fail('題名は50文字以内で入力してください');
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(input.target_month)) return fail('対象の月を選んでください');
+    if (!input.file_name.trim()) return fail('ファイルを選んでください');
+    const allowed = settingText('handout.allowed_types', 'application/pdf,image/jpeg,image/png').split(',');
+    if (!allowed.includes(input.file_type)) return fail('掲載できるのは PDF・JPEG・PNG のファイルです');
+    const maxMB = settingNumber('attachment.max_size_mb', 10);
+    if (!(input.file_size > 0) || input.file_size > maxMB * 1024 * 1024) return fail(`ファイルは${maxMB}MB までです`);
+    if (input.class_id !== null
+      && !db.classes.some((c) => c.class_id === input.class_id && c.fiscal_year === db.FISCAL_YEAR)) {
+      return fail('対象のクラスが見つかりません');
+    }
+
+    const h: Handout = {
+      handout_id: nextId(), handout_type: input.handout_type as Handout['handout_type'], title,
+      target_month: input.target_month, class_id: input.class_id,
+      file_name: input.file_name, file_type: input.file_type, file_size: input.file_size,
+      posted_staff_id: user.staff_id!, posted_at: now(), is_deleted: false,
+    };
+    db.handouts.push(h);
+    log(user.account_id, '2', '1', 't_handout', h.handout_id, null, null, `配布物を掲載（${title}）`);
+
+    const room = input.class_id === null
+      ? db.chatRooms.find((r) => r.room_type === '1')
+      : db.chatRooms.find((r) => r.room_type === '2' && r.class_id === input.class_id);
+    if (room) {
+      db.chatMessages.push({
+        chat_message_id: nextId(), chat_room_id: room.chat_room_id, sender_account_id: user.account_id,
+        body: `「${title}」を掲載しました。`, source_type: '4', source_id: h.handout_id, sent_at: now(),
+        edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null,
+      });
+    }
+    return ok(h);
+  },
+
+  /** 配布物を取り下げる。論理削除とし、一覧から消す。掲載の知らせも取り消す。管理者のみ */
+  async withdrawHandout(user: SessionUser, handoutId: number): Promise<void> {
+    if (user.role !== '1') return fail('この操作は管理者のみが行えます');
+    const h = db.handouts.find((x) => x.handout_id === handoutId && !x.is_deleted);
+    if (!h) return fail('配布物が見つかりません');
+    h.is_deleted = true;
+    // 掲載の知らせも取り消す。知らせだけが残ると、開いても見つからない配布物へ案内し続けることになる
+    db.chatMessages
+      .filter((m) => m.source_type === '4' && m.source_id === handoutId && !m.is_deleted)
+      .forEach((m) => { m.is_deleted = true; m.body = ''; m.deleted_at = now(); m.deleted_account_id = user.account_id; });
+    log(user.account_id, '2', '4', 't_handout', handoutId, null, h.title, '取り下げ');
+    return ok(undefined);
+  },
+};
+
 /* ============ 画面が使う入口 ============ */
 export const api = {
   ...authApi, ...childApi, ...diaryApi, ...diaryApi2,
   ...chatApi, ...chatApi2, ...napApi, ...napApi2,
   ...devApi, ...devApi2, ...physicalApi, ...adminApi, ...adminApi2, ...adminApi3,
-  ...bulkApi, ...dashboardApi,
+  ...bulkApi, ...dashboardApi, ...handoutApi,
 };

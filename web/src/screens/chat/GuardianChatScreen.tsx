@@ -15,6 +15,7 @@ import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api, accountName } from '../../api/client';
 import { Loading, ErrorBox, Empty } from '../../components/ui';
+import Reactions from '../../components/Reactions';
 import { formatHM, formatMD } from '../../api/util';
 
 export default function GuardianChatScreen() {
@@ -59,6 +60,19 @@ export default function GuardianChatScreen() {
       setEditingId(null);
       setTick((n) => n + 1);
     } catch (e) { setError((e as Error).message); }
+  };
+
+  // 取消は送信者本人ができる。保護者にも認めている（基本設計書の権限一覧「メッセージの編集・送信取消」）
+  const retract = async (messageId: number) => {
+    setError(null);
+    try { await api.retract(user!, messageId); setTick((n) => n + 1); }
+    catch (e) { setError((e as Error).message); }
+  };
+
+  const react = async (messageId: number, type: string) => {
+    setError(null);
+    try { await api.toggleReaction(user!, messageId, type); setTick((n) => n + 1); }
+    catch (e) { setError((e as Error).message); }
   };
 
   // 一覧
@@ -144,13 +158,19 @@ export default function GuardianChatScreen() {
                     {formatMD(m.sent_at.slice(0, 10))} の記録を開く
                   </Link>
                 )}
+                {/* 配布物の掲載の知らせ（source_type=4）。現物は配布物の一覧から開く */}
+                {m.source_type === '4' && (
+                  <Link className="shared-card" to="/guardian/handouts">園からの配布物を開く</Link>
+                )}
               </div>
               {/* 既読は保護者側には表示しない（基本設計書 5-5） */}
               {/* 編集は送信者本人のみ（同 4-6）。既読が付いたあとも編集できる */}
+              <Reactions reactions={m.reactions ?? []} onToggle={(type) => react(m.chat_message_id, type)} />
               {mine && editingId !== m.chat_message_id && (
                 <div className="row-end">
                   <button className="btn-sm btn-quiet"
                     onClick={() => { setDraft(m.body); setEditingId(m.chat_message_id); }}>編集</button>
+                  <button className="btn-sm btn-quiet" onClick={() => retract(m.chat_message_id)}>取消</button>
                 </div>
               )}
             </div>

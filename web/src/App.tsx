@@ -35,6 +35,8 @@ import StaffChatScreen from './screens/chat/StaffChatScreen';
 import GuardianChatScreen from './screens/chat/GuardianChatScreen';
 import GroupEditScreen from './screens/chat/GroupEditScreen';
 import MisdeliveryScreen from './screens/chat/MisdeliveryScreen';
+import StaffHandoutsScreen from './screens/chat/StaffHandoutsScreen';
+import GuardianHandoutsScreen from './screens/chat/GuardianHandoutsScreen';
 
 // 午睡チェック
 import NapCheckScreen from './screens/nap/NapCheckScreen';
@@ -135,6 +137,7 @@ export default function App() {
 
         <Route path="chat" element={<StaffChatScreen />} />
         <Route path="chat/groups" element={<GroupEditScreen />} />
+        <Route path="handouts" element={<StaffHandoutsScreen />} />
 
         <Route path="nap" element={<NapCheckScreen />} />
         <Route path="nap/abnormal" element={<NapAbnormalScreen />} />
@@ -170,6 +173,7 @@ export default function App() {
       <Route path="/guardian" element={<RequireGuardian />}>
         <Route index element={<GuardianHome />} />
         <Route path="chat" element={<GuardianChatScreen />} />
+        <Route path="handouts" element={<GuardianHandoutsScreen />} />
         <Route path="diary/:id" element={<GuardianDiaryScreen />} />
         <Route path="password" element={<PasswordChangeScreen />} />
         <Route path="terms" element={<TermsAgreeScreen readOnly />} />

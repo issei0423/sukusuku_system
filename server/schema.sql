@@ -78,6 +78,16 @@ CREATE TABLE m_terms (
   published_on  TEXT    NOT NULL
 );
 
+-- 同意履歴（t_terms_agreement）。追記のみとし、更新・削除の手段を設けない。
+-- アカウントの terms_version は「再同意が必要か」を判定する現在値であり、履歴とは役割が違う。
+-- 既存のデータベースには db.go の ensureTermsAgreement が同じ定義で作る。片方だけ直さないこと
+CREATE TABLE t_terms_agreement (
+  terms_agreement_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_id         INTEGER NOT NULL REFERENCES m_account(account_id),
+  terms_id           INTEGER NOT NULL REFERENCES m_terms(terms_id),
+  agreed_at          TEXT    NOT NULL
+);
+
 -- ============ 5-3 園児・クラス ============
 
 -- 園児（m_child）
@@ -101,6 +111,9 @@ CREATE TABLE m_class (
   class_id    INTEGER PRIMARY KEY AUTOINCREMENT,
   fiscal_year INTEGER NOT NULL,
   class_name  TEXT    NOT NULL,
+  -- 年齢児（0:0歳児 … 5:5歳児）。午睡チェックの間隔を引く（基本設計書「クラスと紐づけ」(5-3)）。
+  -- 既存のデータベースには db.go の ensureDesignColumns が同じ定義で足す
+  age_class   INTEGER NOT NULL DEFAULT 2 CHECK (age_class BETWEEN 0 AND 5),
   UNIQUE (fiscal_year, class_name)
 );
 
@@ -205,7 +218,7 @@ CREATE TABLE m_chat_room (
   class_id      INTEGER REFERENCES m_class(class_id),
   room_name     TEXT    NOT NULL,
   is_archived   INTEGER NOT NULL DEFAULT 0,
-  thread_status TEXT
+  thread_status TEXT                                                        -- 個人チャットのみ 1:未対応 2:対応済み
 );
 
 -- 参加者（t_chat_member）。left_at で過去の所属期間を保持する。
@@ -223,7 +236,7 @@ CREATE TABLE t_chat_message (
   chat_room_id       INTEGER NOT NULL REFERENCES m_chat_room(chat_room_id),
   sender_account_id  INTEGER NOT NULL REFERENCES m_account(account_id),
   body               TEXT    NOT NULL,
-  source_type        TEXT    NOT NULL CHECK (source_type IN ('1','2','3')),  -- 1:手入力 2:日誌の共有 3:発達身体測定の共有
+  source_type        TEXT    NOT NULL CHECK (source_type IN ('1','2','3','4')),  -- 1:手入力 2:日誌の共有 3:発達身体測定の共有 4:配布物の掲載
   source_id          INTEGER,
   sent_at            TEXT    NOT NULL,
   edited_at          TEXT,
@@ -266,6 +279,26 @@ CREATE TABLE t_misdelivery_record (
   response              TEXT    NOT NULL,
   staff_id              TEXT    NOT NULL REFERENCES m_staff(staff_id)
 );
+
+-- 配布物（t_handout）。園だより・献立表など、保護者があとから見返すもの。
+-- 取り下げは論理削除とする。既存のデータベースには db.go の ensureHandouts が同じ定義で作る
+CREATE TABLE t_handout (
+  handout_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  handout_type     TEXT    NOT NULL CHECK (handout_type IN ('1','2','3','4','5')),  -- 1:園だより 2:献立表 3:行事のお知らせ 4:クラスだより 5:その他
+  title            TEXT    NOT NULL,
+  target_month     TEXT    NOT NULL,                                               -- 対象の月 'YYYY-MM'
+  class_id         INTEGER REFERENCES m_class(class_id),                           -- 空なら園全体
+  file_name        TEXT    NOT NULL,
+  file_path        TEXT    NOT NULL,
+  file_type        TEXT    NOT NULL,
+  file_size        INTEGER NOT NULL,
+  posted_staff_id  TEXT    NOT NULL REFERENCES m_staff(staff_id),
+  posted_at        TEXT    NOT NULL,
+  is_deleted       INTEGER NOT NULL DEFAULT 0,
+  deleted_at       TEXT,
+  deleted_staff_id TEXT    REFERENCES m_staff(staff_id)
+);
+CREATE INDEX ix_handout_month ON t_handout (target_month, posted_at);
 
 -- ============ 5-6 午睡チェック ============
 
@@ -359,9 +392,8 @@ CREATE TABLE t_development_check (
   status                  TEXT    NOT NULL CHECK (status IN ('1','2')),          -- 1:下書き 2:確定
   staff_id                TEXT    NOT NULL REFERENCES m_staff(staff_id),
   share_status            TEXT    NOT NULL CHECK (share_status IN ('0','1','2')),
-  -- 【設計の穴】所見（チェック単位の自由記述）を保持する列が基本設計書 5-7 の定義にない。
-  -- 画面詳細図 6-1 は所見の入力欄を持つため、置き場を決める必要がある。
-  -- ここでは note 列を足す案を示している（要判断）。
+  -- 所見（チェック1件に対する自由記述）。園内限定であり、保護者へは共有しない
+  -- （基本設計書「発達チェック・身体測定」(5-7)）
   note                    TEXT,
   UNIQUE (child_id, checked_on)
 );

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -52,7 +54,248 @@ func openDB(path string) (*sql.DB, error) {
 		}
 		log.Printf("デモデータを投入しました")
 	}
+	if err := ensureTermsAgreement(db); err != nil {
+		return nil, err
+	}
+	if err := ensureDesignColumns(db); err != nil {
+		return nil, err
+	}
+	if err := ensureHandouts(db); err != nil {
+		return nil, err
+	}
 	return db, nil
+}
+
+/*
+ensureHandouts は配布物（t_handout）まわりを用意する。
+
+- 表が無ければ作る
+- チャットのメッセージの種別に「4:配布物の掲載」を足す。SQLite は CHECK 制約をあとから
+  変えられないため、古い定義のときは表を作り直して中身を移す
+- 1件も無ければデモデータを入れる。対象の月は起動した日から決める（今月と先月）。
+  固定の月で持つと、日が経ったときに「今月の献立表」が今月のものでなくなるため
+
+以前に作られたデータベースでも、ファイルを消さずに使い続けられるようにするため、起動のたびに確かめる。
+*/
+func ensureHandouts(db *sql.DB) error {
+	if _, err := db.Exec(handoutDDL); err != nil {
+		return fmt.Errorf("配布物の表を作れません: %w", err)
+	}
+	db.Exec(`CREATE INDEX IF NOT EXISTS ix_handout_month ON t_handout (target_month, posted_at)`)
+	db.Exec(`INSERT OR IGNORE INTO m_setting (setting_key, setting_value, description, updated_staff_id, updated_at)
+		VALUES ('handout.allowed_types', 'application/pdf,image/jpeg,image/png', '配布物の対応形式', 'S001', '2026-04-01T09:00:00')`)
+
+	var ddl string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 't_chat_message'`).Scan(&ddl); err != nil {
+		return fmt.Errorf("メッセージの表を確かめられません: %w", err)
+	}
+	if !strings.Contains(ddl, "'4'") {
+		if err := rebuildChatMessage(db); err != nil {
+			return err
+		}
+		log.Printf("メッセージの種別に「配布物の掲載」を足しました（表を作り直して中身を移した）")
+	}
+
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM t_handout`).Scan(&n); err != nil {
+		return fmt.Errorf("配布物を確かめられません: %w", err)
+	}
+	if n > 0 {
+		return nil
+	}
+	return seedHandouts(db)
+}
+
+const handoutDDL = `CREATE TABLE IF NOT EXISTS t_handout (
+  handout_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  handout_type     TEXT    NOT NULL CHECK (handout_type IN ('1','2','3','4','5')),  -- 1:園だより 2:献立表 3:行事のお知らせ 4:クラスだより 5:その他
+  title            TEXT    NOT NULL,
+  target_month     TEXT    NOT NULL,                                               -- 対象の月 'YYYY-MM'
+  class_id         INTEGER REFERENCES m_class(class_id),                           -- 空なら園全体
+  file_name        TEXT    NOT NULL,
+  file_path        TEXT    NOT NULL,
+  file_type        TEXT    NOT NULL,
+  file_size        INTEGER NOT NULL,
+  posted_staff_id  TEXT    NOT NULL REFERENCES m_staff(staff_id),
+  posted_at        TEXT    NOT NULL,
+  is_deleted       INTEGER NOT NULL DEFAULT 0,
+  deleted_at       TEXT,
+  deleted_staff_id TEXT    REFERENCES m_staff(staff_id)
+)`
+
+// rebuildChatMessage は t_chat_message を新しい CHECK 制約で作り直す。
+// 外部キーの検査を止めた状態で、同じ名前の表へ中身を移す。
+func rebuildChatMessage(db *sql.DB) error {
+	if _, err := db.Exec(`PRAGMA foreign_keys = OFF`); err != nil {
+		return err
+	}
+	defer db.Exec(`PRAGMA foreign_keys = ON`)
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	steps := []string{
+		`CREATE TABLE t_chat_message_new (
+		  chat_message_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+		  chat_room_id       INTEGER NOT NULL REFERENCES m_chat_room(chat_room_id),
+		  sender_account_id  INTEGER NOT NULL REFERENCES m_account(account_id),
+		  body               TEXT    NOT NULL,
+		  source_type        TEXT    NOT NULL CHECK (source_type IN ('1','2','3','4')),
+		  source_id          INTEGER,
+		  sent_at            TEXT    NOT NULL,
+		  edited_at          TEXT,
+		  is_deleted         INTEGER NOT NULL DEFAULT 0,
+		  deleted_at         TEXT,
+		  deleted_account_id INTEGER REFERENCES m_account(account_id)
+		)`,
+		`INSERT INTO t_chat_message_new
+		   (chat_message_id, chat_room_id, sender_account_id, body, source_type, source_id,
+		    sent_at, edited_at, is_deleted, deleted_at, deleted_account_id)
+		 SELECT chat_message_id, chat_room_id, sender_account_id, body, source_type, source_id,
+		        sent_at, edited_at, is_deleted, deleted_at, deleted_account_id
+		   FROM t_chat_message`,
+		`DROP TABLE t_chat_message`,
+		`ALTER TABLE t_chat_message_new RENAME TO t_chat_message`,
+		`CREATE INDEX IF NOT EXISTS ix_chat_message_room ON t_chat_message (chat_room_id, sent_at)`,
+	}
+	for _, q := range steps {
+		if _, err := tx.Exec(q); err != nil {
+			return fmt.Errorf("メッセージの表を作り直せません: %w", err)
+		}
+	}
+	return tx.Commit()
+}
+
+// seedHandouts は配布物のデモデータを入れる。対象の月は今月と先月にする
+func seedHandouts(db *sql.DB) error {
+	t := nowTime()
+	this := time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, jst)
+	prev := this.AddDate(0, -1, 0)
+	month := func(d time.Time) string { return d.Format("2006-01") }
+	label := func(d time.Time) string { return fmt.Sprintf("%d月", int(d.Month())) }
+	at := func(d time.Time, day int) string { return d.AddDate(0, 0, day-1).Format("2006-01-02") + "T16:30:00" }
+
+	var sakura sql.NullInt64
+	db.QueryRow(`SELECT class_id FROM m_class WHERE fiscal_year = ? AND class_name = 'さくら組'`, fiscalYear).Scan(&sakura)
+
+	type row struct {
+		typ, title, month string
+		classID           any
+		name, mime        string
+		size              int
+		at                string
+	}
+	rows := []row{
+		{"1", label(prev) + "の園だより", month(prev), nil, "endayori-" + month(prev) + ".pdf", "application/pdf", 512340, at(prev, 1)},
+		{"2", label(prev) + "の献立表", month(prev), nil, "kondate-" + month(prev) + ".pdf", "application/pdf", 238100, at(prev, 1)},
+		{"1", label(this) + "の園だより", month(this), nil, "endayori-" + month(this) + ".pdf", "application/pdf", 498200, at(this, 1)},
+		{"2", label(this) + "の献立表", month(this), nil, "kondate-" + month(this) + ".pdf", "application/pdf", 241870, at(this, 1)},
+		{"3", "運動会のご案内", month(this), nil, "undokai.pdf", "application/pdf", 301455, at(this, 2)},
+	}
+	if sakura.Valid {
+		rows = append(rows, row{"4", "さくら組 " + label(this) + "のクラスだより", month(this), sakura.Int64,
+			"sakura-" + month(this) + ".png", "image/png", 1204880, at(this, 3)})
+	}
+	for _, x := range rows {
+		if _, err := db.Exec(`INSERT INTO t_handout
+			(handout_type, title, target_month, class_id, file_name, file_path, file_type, file_size,
+			 posted_staff_id, posted_at, is_deleted)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'S001', ?, 0)`,
+			x.typ, x.title, x.month, x.classID, x.name, "handouts/"+x.name, x.mime, x.size, x.at); err != nil {
+			return fmt.Errorf("配布物のデモデータを入れられません: %w", err)
+		}
+	}
+	return nil
+}
+
+/*
+ensureDesignColumns は、基本設計書 第2.3版で足した列と設定を、以前に作られたデータベースへ足す。
+
+- クラスの年齢児（m_class.age_class）。デモデータのクラスには名前から年齢児を入れる
+- 園の名称と電話番号（m_setting の facility.name / facility.phone_number）
+
+新規作成のときは schema.sql と seed.sql がすでに持っているため、何も変わらない。
+*/
+func ensureDesignColumns(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(m_class)`)
+	if err != nil {
+		return fmt.Errorf("クラスの列を確かめられません: %w", err)
+	}
+	hasAgeClass := false
+	for rows.Next() {
+		var (
+			cid        int
+			name, typ  string
+			notNull    int
+			defaultVal sql.NullString
+			pk         int
+		)
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultVal, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == "age_class" {
+			hasAgeClass = true
+		}
+	}
+	rows.Close()
+	if !hasAgeClass {
+		if _, err := db.Exec(`ALTER TABLE m_class
+			ADD COLUMN age_class INTEGER NOT NULL DEFAULT 2 CHECK (age_class BETWEEN 0 AND 5)`); err != nil {
+			return fmt.Errorf("クラスに年齢児の列を足せません: %w", err)
+		}
+		db.Exec(`UPDATE m_class SET age_class = 0 WHERE class_name = 'もも組'`)
+		db.Exec(`UPDATE m_class SET age_class = 1 WHERE class_name = 'さくら組'`)
+		log.Printf("クラスに年齢児の列（age_class）を足しました")
+	}
+	if _, err := db.Exec(`INSERT OR IGNORE INTO m_setting
+		(setting_key, setting_value, description, updated_staff_id, updated_at) VALUES
+		('facility.name', 'すくすく保育園', '園の名称', 'S001', '2026-04-01T09:00:00'),
+		('facility.phone_number', '03-0000-0000', '園の電話番号（保護者向けの緊急連絡の案内に出す）', 'S001', '2026-04-01T09:00:00')`); err != nil {
+		return fmt.Errorf("園の基本情報を用意できません: %w", err)
+	}
+	return nil
+}
+
+/*
+ensureTermsAgreement は同意履歴（t_terms_agreement）を用意する。
+
+テーブルが無ければ作り、1行も無ければ、アカウントが持つ「同意した版と日時」から起こす
+（基本設計書「同意履歴（t_terms_agreement）」(5-2)）。この表を足す前に作られた
+データベースでも、ファイルを消さずに使い続けられるようにするため、起動のたびに確かめる。
+定義は schema.sql と同じにしてある。
+*/
+func ensureTermsAgreement(db *sql.DB) error {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS t_terms_agreement (
+		terms_agreement_id INTEGER PRIMARY KEY AUTOINCREMENT,
+		account_id         INTEGER NOT NULL REFERENCES m_account(account_id),
+		terms_id           INTEGER NOT NULL REFERENCES m_terms(terms_id),
+		agreed_at          TEXT    NOT NULL
+	)`); err != nil {
+		return fmt.Errorf("同意履歴の表を作れません: %w", err)
+	}
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM t_terms_agreement`).Scan(&n); err != nil {
+		return fmt.Errorf("同意履歴を確かめられません: %w", err)
+	}
+	if n > 0 {
+		return nil
+	}
+	res, err := db.Exec(`INSERT INTO t_terms_agreement (account_id, terms_id, agreed_at)
+		SELECT a.account_id, t.terms_id, a.terms_agreed_at
+		  FROM m_account a
+		  JOIN m_terms t ON t.terms_version = a.terms_version AND t.document_type = '1'
+		 WHERE a.terms_agreed_at IS NOT NULL
+		 ORDER BY a.account_id`)
+	if err != nil {
+		return fmt.Errorf("同意履歴を起こせません: %w", err)
+	}
+	if rows, _ := res.RowsAffected(); rows > 0 {
+		log.Printf("同意履歴を %d 件起こしました（アカウントの同意した版から）", rows)
+	}
+	return nil
 }
 
 // 成長曲線基準値（m_growth_standard）

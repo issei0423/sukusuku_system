@@ -129,3 +129,75 @@ function formatLocal(d: Date): string {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${toISODate(d)}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
+
+/**
+ * 終了操作を忘れた午睡チェックを、自動で解除する時刻
+ *
+ * 午睡の時間帯（マスタ値 nap.time_range）の終了時刻で解除する
+ * （基本設計書「午睡チェックの実施」(4-7)）。
+ *
+ * 【仮置き】時間帯の終了時刻より後に開始した実施は、開始した時点で解除の時刻を過ぎている。
+ * 開始した直後に解除しないよう、その日の終わりに解除する（web/仮置き値.md）。
+ * サーバ側（server/api_nap.go の napAutoCloseAt）と同じ規則にしてある。
+ */
+export function napAutoCloseAt(sessionDate: string, startedAt: string, timeRange: string): string {
+  const end = /-\s*(\d{2}:\d{2})\s*$/.exec(timeRange)?.[1] ?? '15:00';
+  const rangeEnd = `${sessionDate}T${end}:00`;
+  return startedAt < rangeEnd ? rangeEnd : `${sessionDate}T23:59:59`;
+}
+
+/**
+ * 午睡チェックの次の時刻を数える起点
+ *
+ * いちばん長く確認していない園児を起点にする。未記録の園児がいるあいだは開始時刻が起点になる。
+ * 1人を記録しただけでは次の間隔へ進まず、全員を確認し終えてはじめて進む。
+ */
+export function napTimerBase(startedAt: string, latestCheckedAts: (string | null)[]): string {
+  let base: string | null = null;
+  for (const at of latestCheckedAts) {
+    if (!at) return startedAt;
+    if (base === null || at < base) base = at;
+  }
+  return base ?? startedAt;
+}
+
+/**
+ * 入力された招待コードを照合用の形に直す
+ *
+ * 大文字・小文字を区別せず、ハイフンは入力しても省略してもよい
+ * （基本設計書「招待コード（t_invitation_code）」(5-2)）。打ち方の違いで失敗させない。
+ * 空白は、配布物から書き写すときに紛れ込みやすいため、あわせて取り除く。
+ * サーバ側（server/api_auth.go の normalizeInvitationCode）と同じ規則にしてある。
+ */
+export function normalizeInvitationCode(code: string): string {
+  return code.toUpperCase().replace(/[-ー－‐\s]/g, '');
+}
+
+/**
+ * ログインID（メールアドレス）の必須・桁数・形式を検査する（基本設計書「入力項目の制約値」(4-9)）
+ * 問題が無ければ null を返す。届くかどうかまでは確かめない
+ */
+export function validateEmail(email: string): string | null {
+  const v = email.trim();
+  if (!v) return 'メールアドレスを入力してください';
+  if ([...v].length > 254) return 'メールアドレスは254文字以内で入力してください';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return 'メールアドレスの形式が正しくありません';
+  return null;
+}
+
+/** 'YYYY-MM' を '2026年10月' の形に整える */
+export function formatMonth(yyyymm: string): string {
+  const [y, m] = yyyymm.split('-').map(Number);
+  return `${y}年${m}月`;
+}
+
+/** 今月を 'YYYY-MM' で返す（JST）。days を足した日の月も引ける */
+export function monthOf(isoDate: string): string {
+  return isoDate.slice(0, 7);
+}
+
+/** ファイルの大きさを読みやすい形に整える */
+export function formatFileSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}

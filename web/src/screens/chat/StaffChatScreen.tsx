@@ -11,8 +11,9 @@ import { Link } from 'react-router-dom';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api, accountName } from '../../api/client';
-import { Loading, ErrorBox, Empty } from '../../components/ui';
-import { CHAT_ROOM_TYPE } from '../../api/codes';
+import { Loading, ErrorBox, Empty, Alert, Tag } from '../../components/ui';
+import Reactions from '../../components/Reactions';
+import { CHAT_ROOM_TYPE, THREAD_STATUS } from '../../api/codes';
 import { formatHM, formatMD } from '../../api/util';
 import type { ChatMessage } from '../../api/types';
 
@@ -32,7 +33,7 @@ export default function StaffChatScreen() {
     async () => (roomId ? api.messages(user!, roomId) : []),
     [roomId, tick],
   );
-  const members = useAsync(async () => (roomId ? api.members(roomId) : []), [roomId]);
+  const members = useAsync(async () => (roomId ? api.members(roomId, user!) : []), [roomId]);
 
   // 開いたチャンネルは既読にする
   useEffect(() => {
@@ -58,8 +59,30 @@ export default function StaffChatScreen() {
     } catch (e) { setError((e as Error).message); }
   };
 
-  if (rooms.loading) return <Loading />;
+  /*
+   * 個人チャットのスレッドを「未対応／対応済み」に切り替える（要件定義書「チャットツール」(4-3)）。
+   * 保護者から新しく受信すると、サーバ側で自動的に未対応へ戻る
+   */
+  const setThread = async (status: '1' | '2') => {
+    if (!roomId) return;
+    setError(null);
+    try { await api.setThreadStatus(user!, roomId, status); rooms.reload(); }
+    catch (e) { setError((e as Error).message); }
+  };
+
+  const react = async (messageId: number, type: string) => {
+    setError(null);
+    try { await api.toggleReaction(user!, messageId, type); setTick((n) => n + 1); }
+    catch (e) { setError((e as Error).message); }
+  };
+
+  // チャンネルを開いたままでも一覧は最初の取得のものを使い続けるため、読み込み中の判定は初回だけにする
+  if (rooms.loading && !rooms.data) return <Loading />;
   if (rooms.error) return <ErrorBox text={rooms.error} />;
+
+  const unhandled = rooms.data?.filter((r) => r.room.room_type === '4' && r.room.thread_status === '1').length ?? 0;
+  const staffMembers = members.data?.filter((m) => m.role !== '3') ?? [];
+  const guardianMembers = members.data?.filter((m) => m.role === '3') ?? [];
 
   const grouped = [
     { label: '園・職員', types: ['1', '5'] },
@@ -71,7 +94,10 @@ export default function StaffChatScreen() {
     <div>
       <div className="page-head">
         <h1>チャット</h1>
+        {unhandled > 0 && <Tag label={`未対応 ${unhandled} 件`} className="tag-returned" />}
         <div className="spacer" />
+        {/* 園だより・献立表など、保護者があとから見返すものはこちらに掲載する */}
+        <Link className="btn btn-sm" to="/staff/handouts">園からの配布物</Link>
         <Link className="btn btn-sm" to="/staff/chat/groups">グループ編成</Link>
       </div>
 
@@ -90,7 +116,12 @@ export default function StaffChatScreen() {
                     <button key={r.room.chat_room_id}
                       className={`channel${r.room.chat_room_id === roomId ? ' current' : ''}`}
                       onClick={() => setRoomId(r.room.chat_room_id)}>
-                      <span>{r.room.room_name}</span>
+                      <span>
+                        {r.room.room_name}
+                        {/* 保護者も読むチャンネルは、職員だけのチャンネルと見分けられるようにする */}
+                        {r.room.room_type !== '4' && r.guardianCount > 0 && <span className="mark">保護者も参加</span>}
+                        {r.room.room_type === '4' && r.room.thread_status === '1' && <span className="mark">未対応</span>}
+                      </span>
                       {r.unread > 0 && <span className="unread">{r.unread}</span>}
                     </button>
                   ))}
@@ -105,6 +136,17 @@ export default function StaffChatScreen() {
           <h2>
             {current ? current.room.room_name : 'チャンネルを選んでください'}
             {current && <span className="muted">（{CHAT_ROOM_TYPE[current.room.room_type]}）</span>}
+            {/* 未対応スレッドの切り替えは個人チャットだけが持つ */}
+            {current?.room.room_type === '4' && (
+              <span style={{ float: 'right' }}>
+                <Tag label={THREAD_STATUS[current.room.thread_status ?? '2'] ?? '対応済み'}
+                  className={current.room.thread_status === '1' ? 'tag-returned' : 'tag-approved'} />
+                {' '}
+                {current.room.thread_status === '1'
+                  ? <button className="btn-sm" onClick={() => setThread('2')}>対応済みにする</button>
+                  : <button className="btn-sm" onClick={() => setThread('1')}>未対応に戻す</button>}
+              </span>
+            )}
           </h2>
           <div className="chat-scroll">
             {messages.loading && <Loading />}
@@ -113,12 +155,23 @@ export default function StaffChatScreen() {
             {messages.data?.map((m) => (
               <MessageRow key={m.chat_message_id} message={m} mine={m.sender_account_id === user!.account_id}
                 canEdit={m.sender_account_id === user!.account_id || schoolWideAdmin}
+                onReact={(type) => react(m.chat_message_id, type)}
                 onRetract={async () => { await api.retract(user!, m.chat_message_id); setTick((n) => n + 1); }}
                 onEdit={async (body) => { await api.edit(user!, m.chat_message_id, body); setTick((n) => n + 1); }} />
             ))}
           </div>
           <div className="chat-compose">
             {error && <ErrorBox text={error} />}
+            {/*
+              誰に届くかを入力欄のすぐ上に出す。メンバー一覧を見なくても、
+              保護者が読むチャンネルだと送る前に気づけるようにする
+            */}
+            {current?.canPost && current.guardianCount > 0 && (
+              <Alert soft>この投稿は、保護者 {current.guardianCount} 名にも届きます。</Alert>
+            )}
+            {current?.canPost && current.guardianCount === 0 && (
+              <div className="muted">このチャンネルは職員だけが読みます。</div>
+            )}
             {current?.canPost ? (
               <>
                 <textarea value={text} onChange={(e) => setText(e.target.value)}
@@ -142,7 +195,18 @@ export default function StaffChatScreen() {
         <div className="chat-pane">
           <h2>メンバー</h2>
           <div className="chat-scroll">
-            {members.data?.map((m) => <div key={m.account_id}>{m.name}</div>)}
+            {/* 職員と保護者を分けて並べる。保護者が入っているかをひと目で分かるようにするため */}
+            <div className="member-group">職員 {staffMembers.length} 名</div>
+            {staffMembers.map((m) => <div key={m.account_id}>{m.name}</div>)}
+            {guardianMembers.length > 0 && (
+              <>
+                <div className="member-group">保護者 {guardianMembers.length} 名</div>
+                {/* 続柄を添える。お迎えに来る人が誰なのかを職員が確かめられるようにするため */}
+                {guardianMembers.map((m) => (
+                  <div key={m.account_id}>{m.name}{m.relationship ? `（${m.relationship}）` : ''}</div>
+                ))}
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -151,9 +215,9 @@ export default function StaffChatScreen() {
 }
 
 /** 1件のメッセージ。既読は人数で示す（画面詳細図 4-1） */
-function MessageRow({ message, mine, canEdit, onRetract, onEdit }: {
+function MessageRow({ message, mine, canEdit, onRetract, onEdit, onReact }: {
   message: ChatMessage; mine: boolean; canEdit: boolean;
-  onRetract: () => void; onEdit: (body: string) => Promise<void>;
+  onRetract: () => void; onEdit: (body: string) => Promise<void>; onReact: (reactionType: string) => void;
 }) {
   const read = useAsync(() => api.readCount(message.chat_message_id), [message.chat_message_id]);
   /*
@@ -215,7 +279,13 @@ function MessageRow({ message, mine, canEdit, onRetract, onEdit }: {
             日誌を開く
           </Link>
         )}
+        {/* 配布物の掲載の知らせ（source_type=4）。現物は配布物の一覧から開く */}
+        {message.source_type === '4' && (
+          <Link className="shared-card" to="/staff/handouts">園からの配布物を開く</Link>
+        )}
       </div>
+      {/* リアクションは編集の影響を受けない（基本設計書「メッセージの編集」(4-6)） */}
+      <Reactions reactions={message.reactions ?? []} onToggle={onReact} />
       {(mine || canEdit) && !editing && (
         <div className="read">
           {/* 既読と取消は自分の発言にだけ出す。園チャットの相互編集で直せるのは本文だけ */}

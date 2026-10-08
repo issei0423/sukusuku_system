@@ -56,6 +56,7 @@ func (a *app) handleActiveNapSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *app) napSession(classID int64, date string) (*NapSession, error) {
+	a.autoCloseNapSessions()
 	var (
 		s        NapSession
 		endStaff sql.NullString
@@ -72,6 +73,62 @@ func (a *app) napSession(classID int64, date string) (*NapSession, error) {
 	s.EndedStaffID = nullStr(endStaff)
 	s.EndedAt = nullStr(endAt)
 	return &s, nil
+}
+
+/*
+napAutoCloseAt は、終了操作を忘れた実施を自動で解除する時刻と、そのとき記録する終了時刻を返す。
+
+終了操作を忘れた場合は、午睡の時間帯（マスタ値 nap.time_range）の終了時刻で解除する
+（基本設計書「午睡チェックの実施」(4-7)）。解除しないと実施中の扱いが残り、
+共用のタブレットが自動ログアウトの対象外のままになる。
+
+【仮置き】時間帯の終了時刻より後に開始した実施は、開始した時点で解除の時刻を過ぎている。
+開始した直後に解除しないよう、その日の終わりに解除する（web/仮置き値.md）。
+画面側（web/src/api/util.ts の napAutoCloseAt）と同じ規則にしてある。
+*/
+func napAutoCloseAt(sessionDate, startedAt, timeRange string) (closeAt, endedAt string) {
+	end := "15:00"
+	if i := strings.Index(timeRange, "-"); i >= 0 && len(strings.TrimSpace(timeRange[i+1:])) == 5 {
+		end = strings.TrimSpace(timeRange[i+1:])
+	}
+	rangeEnd := sessionDate + "T" + end + ":00"
+	if startedAt < rangeEnd {
+		return rangeEnd, rangeEnd
+	}
+	dayEnd := sessionDate + "T23:59:59"
+	return dayEnd, dayEnd
+}
+
+// autoCloseNapSessions は、解除の時刻を過ぎた実施中の午睡チェックを終了にする
+func (a *app) autoCloseNapSessions() {
+	rows, err := a.db.Query(`SELECT nap_session_id, session_date, started_at
+		FROM t_nap_session WHERE ended_at IS NULL`)
+	if err != nil {
+		return
+	}
+	type open struct {
+		id          int64
+		date, start string
+	}
+	list := []open{}
+	for rows.Next() {
+		var x open
+		if rows.Scan(&x.id, &x.date, &x.start) == nil {
+			list = append(list, x)
+		}
+	}
+	rows.Close()
+
+	timeRange := a.settingText("nap.time_range", "13:00-15:00")
+	for _, x := range list {
+		closeAt, endedAt := napAutoCloseAt(x.date, x.start, timeRange)
+		if now() <= closeAt {
+			continue
+		}
+		// 終了した職員はいないため ended_staff_id は空のままにし、自動で解除した印を立てる
+		a.db.Exec(`UPDATE t_nap_session SET ended_at = ?, is_auto_closed = 1
+			WHERE nap_session_id = ? AND ended_at IS NULL`, endedAt, x.id)
+	}
 }
 
 func (a *app) handleStartNapSession(w http.ResponseWriter, r *http.Request) {
@@ -222,6 +279,19 @@ func (a *app) handleNapRecord(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
+	// 体位・呼吸・顔色は、保育士が見て選んだ値だけを受け取る。空のまま既定値で埋めない
+	if !oneOf(req.BodyPosition, "1", "2", "3", "4") {
+		writeErr(w, http.StatusBadRequest, "体位を選んでください")
+		return
+	}
+	if !oneOf(req.Breathing, "1", "2") {
+		writeErr(w, http.StatusBadRequest, "呼吸を選んでください")
+		return
+	}
+	if !oneOf(req.Complexion, "1", "2", "3", "4") {
+		writeErr(w, http.StatusBadRequest, "顔色を選んでください")
+		return
+	}
 	if !a.canSeeChild(u, req.ChildID) {
 		writeForbidden(w, "この園児を記録する権限がありません")
 		return
@@ -242,21 +312,33 @@ func (a *app) handleNapRecord(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, a.latestNapRecord(sessionID, req.ChildID))
 }
 
+// oneOf は値が選択肢のいずれかであるかを返す
+func oneOf(v string, choices ...string) bool {
+	for _, c := range choices {
+		if v == c {
+			return true
+		}
+	}
+	return false
+}
+
 // handleNapInterval は年齢に応じたチェック間隔を返す。マスタ値を用いる（基本設計書 5-8）
 //
-// 【仮置き】クラスと年齢の対応が m_class に無いため、クラス名から引いている（GitHub Issue #59）。
+// 年齢はクラスの年齢児（m_class.age_class）から引く。0歳児は age0、1歳児は age1、
+// 2歳児以上は age2 のマスタ値を使う（基本設計書「クラスと紐づけ」(5-3)）。
 func (a *app) handleNapInterval(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.requireStaff(w, r); !ok {
 		return
 	}
 	classID, _ := queryInt64(r, "class_id")
-	name := a.className(classID)
+	ageClass := 2
+	a.db.QueryRow(`SELECT age_class FROM m_class WHERE class_id = ?`, classID).Scan(&ageClass)
 	key := "nap.interval_minutes.age2"
 	fallback := 15
-	switch name {
-	case "もも組":
+	switch ageClass {
+	case 0:
 		key, fallback = "nap.interval_minutes.age0", 5
-	case "さくら組":
+	case 1:
 		key, fallback = "nap.interval_minutes.age1", 10
 	}
 	writeJSON(w, http.StatusOK, map[string]int{"interval_minutes": a.settingInt(key, fallback)})
