@@ -119,6 +119,33 @@
 .reaction.mine { border-color: var(--c-primary-deep); background: var(--c-primary-soft); font-weight: 700; }
 .reaction.add { color: var(--c-text-sub); font-size: 13px; }
 
+/*
+ * 保護者のチャット：メッセージを長押しして開く操作の一覧（リアクション・編集・取消）。
+ * 長押しの間に端末が文字の選択や既定のメニューを出さないよう、吹き出しの選択を止める
+ */
+.guardian-message-hint { margin: 0 0 var(--sp-3); font-size: 12px; color: var(--c-text-sub); }
+.msg .bubble.pressable {
+  cursor: pointer;
+  -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: filter .15s;
+}
+.msg .bubble.pressable:active { filter: brightness(.94); }
+.msg .bubble.pressable:focus-visible { outline: 2px solid var(--c-primary-deep); outline-offset: 2px; }
+/* 一覧はメッセージの並びを押し広げず、重ねて出す。上下の位置は画面側で決める（GuardianChatScreen.tsx） */
+.guardian-message-list .msg { position: relative; }
+.msg-menu-wrap { position: absolute; left: 0; z-index: 5; max-width: 100%; }
+.msg.mine .msg-menu-wrap { left: auto; right: 0; }
+.msg-menu {
+  display: inline-flex; flex-direction: column; gap: var(--sp-2);
+  max-width: 100%; padding: var(--sp-2);
+  background: var(--c-surface); border: 1px solid var(--c-border-strong); border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .14);
+  text-align: left;
+}
+.msg-menu-row { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.msg-menu-row .btn-sm { min-height: 44px; flex: 1; white-space: nowrap; }
+
 /* チャンネル一覧の印 */
 .channel .mark { font-size: 11px; color: var(--c-text-sub); margin-left: var(--sp-1); }
 .member-group { font-size: 12px; color: var(--c-text-sub); margin: var(--sp-2) 0 var(--sp-1); }
