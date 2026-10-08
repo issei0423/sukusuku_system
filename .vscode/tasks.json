@@ -1,0 +1,63 @@
+{
+  // F5（.vscode/launch.json）から呼ばれる起動タスク。
+  // Go サーバ（8080）→ 画面（5173）の順に立ち上げ、両方が応答できる状態になってからブラウザを開く。
+  "version": "2.0.0",
+  // Windows の PowerShell は実行ポリシーで npm.ps1 を止めることがあるので、cmd で実行する
+  "windows": {
+    "options": {
+      "shell": { "executable": "cmd.exe", "args": ["/d", "/c"] }
+    }
+  },
+  "tasks": [
+    {
+      "label": "すくすく：サーバと画面を起動",
+      "dependsOn": ["サーバ：起動（Go）", "画面：起動（Vite）"],
+      "dependsOrder": "sequence",
+      "problemMatcher": []
+    },
+    {
+      "label": "サーバ：起動（Go）",
+      "type": "shell",
+      "command": "go run .",
+      "options": { "cwd": "${workspaceFolder}/server" },
+      "isBackground": true,
+      "presentation": { "group": "sukusuku", "reveal": "always", "panel": "dedicated" },
+      // 起動の1行が出たら「準備できた」と見なす。初回は依存の取得とビルドで数分かかる
+      "problemMatcher": {
+        "owner": "sukusuku-server",
+        "pattern": { "regexp": "^__該当なし__(.*)$", "file": 1, "message": 1 },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^__該当なし__$",
+          "endsPattern": "サーバを起動します"
+        }
+      }
+    },
+    {
+      "label": "画面：依存を入れる（npm install）",
+      "type": "shell",
+      "command": "npm install",
+      "options": { "cwd": "${workspaceFolder}/web" },
+      "presentation": { "group": "sukusuku", "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": []
+    },
+    {
+      "label": "画面：起動（Vite）",
+      "type": "shell",
+      "command": "npm run dev -- --strictPort",
+      "options": { "cwd": "${workspaceFolder}/web" },
+      "dependsOn": ["画面：依存を入れる（npm install）"],
+      "isBackground": true,
+      "presentation": { "group": "sukusuku", "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": {
+        "owner": "sukusuku-web",
+        "pattern": { "regexp": "^__該当なし__(.*)$", "file": 1, "message": 1 },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^__該当なし__$",
+          "endsPattern": "ready in|Local"
+        }
+      }
+    }
+  ]
+}

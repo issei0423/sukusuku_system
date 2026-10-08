@@ -1,0 +1,23 @@
+{
+  // F5 で Go サーバと画面を立ち上げ、ブラウザで保護者用トップを開く。
+  // 拡張機能は要らない（ブラウザのデバッグは VS Code に同梱されている）。
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "すくすく：起動して開く（Edge）",
+      "type": "msedge",
+      "request": "launch",
+      "url": "http://localhost:5173/",
+      "webRoot": "${workspaceFolder}/web",
+      "preLaunchTask": "すくすく：サーバと画面を起動"
+    },
+    {
+      "name": "すくすく：起動して開く（Chrome）",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:5173/",
+      "webRoot": "${workspaceFolder}/web",
+      "preLaunchTask": "すくすく：サーバと画面を起動"
+    }
+  ]
+}
