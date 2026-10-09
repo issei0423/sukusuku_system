@@ -13,7 +13,6 @@ import App from '../src/App';
 import { SessionProvider } from '../src/session';
 import type { SessionUser } from '../src/api/types';
 import { today } from '../src/api/util';
-import * as db from '../src/api/mockDb';
 
 const admin: SessionUser = {
   account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
@@ -49,6 +48,23 @@ async function settled() {
 }
 
 afterEach(cleanup);
+
+/*
+ * 午睡の時間帯（13:00-15:00）を過ぎると、デモの実施は自動で解除される。
+ * 実行した時刻で結果が変わらないよう、時計を時間帯の中（13:30）に固定する。
+ * 固定するのは Date だけで、タイマー（setTimeout）は本物のまま動かす。
+ *
+ * 午睡のテストだけでなく、このファイルの全部のテストに掛ける。職員の画面はどれも
+ * ヘッダーの件数を出すときに自動の解除を走らせ、デモデータはファイルの中で使い回している。
+ * 15時以降に実時間のまま先のテストが走ると、そこで実施が終了済みになり、
+ * あとから時計を戻しても午睡のテストが落ちる。
+ */
+beforeEach(() => {
+  const day = today();
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(`${day}T13:30:00+09:00`));
+});
+afterEach(() => { vi.useRealTimers(); });
 
 describe('共通・認証（7画面）', () => {
   it('保護者用トップ：新規登録の導線を置く', async () => {
@@ -358,26 +374,6 @@ describe('日誌作成画面の入力の検査', () => {
 });
 
 describe('午睡チェック（3画面）', () => {
-  /*
-   * 午睡の時間帯（13:00-15:00）を過ぎると、デモの実施は自動で解除される。
-   * 実行した時刻で結果が変わらないよう、時計を時間帯の中（13:30）に固定する。
-   * 固定するのは Date だけで、タイマー（setTimeout）は本物のまま動かす。
-   */
-  beforeEach(() => {
-    const day = today();
-    vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(new Date(`${day}T13:30:00+09:00`));
-    /*
-     * 時計を固定する前に走ったテスト（ダッシュボードなど）が、実際の時刻で自動解除を掛けている。
-     * 15時を過ぎて実行すると、ここへ来る前にデモの実施が終了済みになり、以降のテストが落ちる。
-     * 自動で解除された今日の実施を、実施中へ戻してから確かめる
-     */
-    db.napSessions.forEach((s) => {
-      if (s.session_date === day && s.is_auto_closed) { s.ended_at = null; s.is_auto_closed = false; }
-    });
-  });
-  afterEach(() => { vi.useRealTimers(); });
-
   it('午睡チェック画面：実施中はタイマーと園児カードを出す', async () => {
     open('/staff/nap', teacher);
     /*
