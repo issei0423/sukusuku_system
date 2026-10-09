@@ -85,7 +85,7 @@ export default function DiaryListScreen() {
             <table className="list">
               <thead>
                 <tr>
-                  <th>記録日</th><th>種別</th><th>対象</th><th>作成者</th><th>状態</th><th></th>
+                  <th scope="col">記録日</th><th scope="col">種別</th><th scope="col">対象</th><th scope="col">作成者</th><th scope="col">状態</th><th scope="col">操作</th>
                 </tr>
               </thead>
               <tbody>

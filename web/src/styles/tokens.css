@@ -11,6 +11,7 @@
   --c-primary:        #f6c445;
   --c-primary-soft:   #fdf2cf;
   --c-primary-deep:   #d9a012;
+  --c-focus:          #8a6000;
   --c-primary-ink:    #4a3708;
 
   /* 警告色：黄色と対比の付く色（基本設計書 3-5）。午睡チェックの異常・範囲外の入力値に使う */
@@ -18,7 +19,7 @@
   --c-alert-soft:     #fdecea;
 
   /* 状態色。日誌の差し戻しは他と区別できる色にする（画面詳細図 3-1） */
-  --c-draft:          #6b7280;
+  --c-draft:          #5e6572;
   --c-applied:        #1565c0;
   --c-returned:       #ad1457;
   --c-approved:       #2e7d32;
@@ -33,7 +34,7 @@
   /* 文字 */
   --c-text:           #2c2822;
   --c-text-sub:       #6d665a;
-  --c-text-weak:      #9a9386;
+  --c-text-weak:      #696256;
   --c-link:           #1565c0;
 
   /* タップ領域：44×44px 以上を確保する（基本設計書 3-5） */
@@ -109,7 +110,7 @@ button:hover:not(:disabled), .btn:hover { background: var(--c-surface-sub); }
 button:disabled { opacity: .45; cursor: not-allowed; }
 button:focus-visible, a:focus-visible, input:focus-visible,
 select:focus-visible, textarea:focus-visible {
-  outline: 3px solid var(--c-primary-deep);
+  outline: 3px solid var(--c-focus);
   outline-offset: 1px;
 }
 
@@ -130,12 +131,12 @@ select:focus-visible, textarea:focus-visible {
 .btn-danger:hover:not(:disabled) { background: #a31f1f; }
 
 .btn-quiet { border-color: transparent; background: transparent; text-decoration: underline; }
-.btn-sm    { min-height: 36px; padding: 0 var(--sp-3); font-size: 13px; }
+.btn-sm    { min-height: var(--tap-min); padding: 0 var(--sp-3); font-size: 13px; }
 .btn-block { width: 100%; }
 
 /* ---- 入力欄 ---- */
 input[type="text"], input[type="password"], input[type="email"],
-input[type="date"], input[type="number"], input[type="search"],
+input[type="date"], input[type="datetime-local"], input[type="number"], input[type="search"], input[type="file"],
 select, textarea {
   min-height: var(--tap-min);
   padding: var(--sp-2) var(--sp-3);

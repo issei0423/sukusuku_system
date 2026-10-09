@@ -217,7 +217,7 @@ function NapTimer({ startedAt, intervalMinutes, rows }: {
   return (
     <div className={`nap-timer${over ? ' over' : ''}`}>
       <div>
-        <div className="muted">
+        <div className="muted" role="status" aria-live="polite">
           {over ? `チェックの時刻を過ぎています（未確認 ${dueCount} 名）` : '次のチェックまで'}
         </div>
         <div className="big">{over ? `+${mmss(remain)}` : mmss(remain)}</div>

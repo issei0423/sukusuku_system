@@ -30,6 +30,7 @@ export default function TopScreen({ entrance }: { entrance: 'staff' | 'guardian'
   if (user) {
     return (
       <PublicLayout>
+        <h1>ログイン中</h1>
         <p>すでにログインしています。</p>
         <p>別のアカウントでログインするには、先にログアウトしてください。</p>
         <div className="stack">
@@ -62,9 +63,9 @@ export default function TopScreen({ entrance }: { entrance: 'staff' | 'guardian'
 
   return (
     <PublicLayout>
-      <div className="muted" style={{ textAlign: 'center', marginTop: -16, marginBottom: 16 }}>
+      <h1 className="muted" style={{ textAlign: 'center', marginTop: -16, marginBottom: 16, fontSize: 20 }}>
         {entrance === 'staff' ? '職員用の入口' : '保護者用の入口'}
-      </div>
+      </h1>
 
       <form className="stack" onSubmit={submit}>
         <Field label="ログインID" required>
@@ -135,15 +136,17 @@ function LoginErrorView({ error, entrance }: { error: LoginError; entrance: 'sta
  */
 function DemoAccounts({ entrance, onPick }: { entrance: 'staff' | 'guardian'; onPick: (email: string) => void }) {
   const staffList = [
-    { email: 'takahashi@hoiku.example.jp', label: '高橋 美咲（管理者・園長）' },
-    { email: 'yamada@hoiku.example.jp', label: '山田 花子（一般・さくら組）' },
-    { email: 'tanaka@hoiku.example.jp', label: '田中 陽子（一般・ひまわり組）' },
-    { email: 'sato@hoiku.example.jp', label: '佐藤 明子（一時パスワード中）' },
+    { email: 'nohara@hoiku.example.jp', label: '野原 一誠（管理者・園長）' },
+    { email: 'takanashi@hoiku.example.jp', label: '高梨 倫太朗（一般・さくら組）' },
+    { email: 'kinjo@hoiku.example.jp', label: '金城 宗一郎（一般・ひまわり組）' },
+    { email: 'miyagi@hoiku.example.jp', label: '宮城 蓮（一時パスワード中）' },
   ];
   const guardianList = [
-    { email: 'yamada.k@example.jp', label: '山田 健一（山田 太郎の保護者）' },
-    { email: 'suzuki.m@example.jp', label: '鈴木 美和（規約の再同意が必要）' },
-    { email: 'sato.n@example.jp', label: '佐藤 直樹（停止中のアカウント）' },
+    { email: 'nohara.i@example.jp', label: '野原 一誠（野原 太郎の保護者）' },
+    { email: 'uezono.k@example.jp', label: '上園 謙心（規約の再同意が必要）' },
+    { email: 'takanashi.r@example.jp', label: '高梨 倫太朗（停止中のアカウント）' },
+    { email: 'miyagi.r@example.jp', label: '宮城 蓮（宮城 美咲の保護者）' },
+    { email: 'kinjo.s@example.jp', label: '金城 宗一郎（金城 陸の保護者）' },
   ];
   const list = entrance === 'staff' ? staffList : guardianList;
 
@@ -155,7 +158,7 @@ function DemoAccounts({ entrance, onPick }: { entrance: 'staff' | 'guardian'; on
           <button key={a.email} className="btn-sm" onClick={() => onPick(a.email)}>{a.label}</button>
         ))}
         <div className="muted">
-          パスワードはいずれも pass1234。佐藤 明子のみ一時パスワード temp0901。
+          パスワードはいずれも pass1234。宮城 蓮のみ一時パスワード temp0901。
         </div>
       </div>
     </details>

@@ -61,7 +61,7 @@ export default function ChildListScreen() {
         {data && data.length > 0 && (
           <table className="list">
             <thead>
-              <tr><th>氏名</th><th>よみ</th><th>生年月日</th><th>月齢</th><th>クラス</th><th>アレルギー</th><th></th></tr>
+              <tr><th scope="col">氏名</th><th scope="col">よみ</th><th scope="col">生年月日</th><th scope="col">月齢</th><th scope="col">クラス</th><th scope="col">アレルギー</th><th scope="col">操作</th></tr>
             </thead>
             <tbody>
               {data.map((c) => (

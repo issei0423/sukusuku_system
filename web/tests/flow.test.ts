@@ -10,55 +10,55 @@ import type { SessionUser } from '../src/api/types';
 import { napAutoCloseAt, napTimerBase, today } from '../src/api/util';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'takahashi@hoiku.example.jp', role: '1', display_name: '高橋 美咲',
+  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 // 園チャットの相互編集を確かめるため、管理者をもう1人置く（基本設計書「メッセージの編集」(4-6)）
 const admin2: SessionUser = {
-  account_id: 2, email: 'suzuki@hoiku.example.jp', role: '1', display_name: '鈴木 一郎',
+  account_id: 2, email: 'uezono@hoiku.example.jp', role: '1', display_name: '上園 謙心',
   staff_id: 'S002', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const teacher: SessionUser = {
-  account_id: 3, email: 'yamada@hoiku.example.jp', role: '2', display_name: '山田 花子',
+  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
 const guardian: SessionUser = {
-  account_id: 6, email: 'yamada.k@example.jp', role: '3', display_name: '山田 健一',
+  account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
   staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 
 describe('ログイン', () => {
   it('職員用の入口から保護者はログインできず、正しい入口を案内する', async () => {
-    await expect(api.login('yamada.k@example.jp', 'pass1234', 'staff'))
+    await expect(api.login('nohara.i@example.jp', 'pass1234', 'staff'))
       .rejects.toThrow(/wrong_entrance/);
   });
 
   it('保護者用の入口から職員はログインできない', async () => {
-    await expect(api.login('yamada@hoiku.example.jp', 'pass1234', 'guardian'))
+    await expect(api.login('takanashi@hoiku.example.jp', 'pass1234', 'guardian'))
       .rejects.toThrow(/wrong_entrance/);
   });
 
   it('停止中のアカウントはログインできない', async () => {
-    await expect(api.login('sato.n@example.jp', 'pass1234', 'guardian'))
+    await expect(api.login('takanashi.r@example.jp', 'pass1234', 'guardian'))
       .rejects.toThrow(/suspended/);
   });
 
   it('一時パスワード中のアカウントは is_temp_password が真で返る', async () => {
-    const u = await api.login('sato@hoiku.example.jp', 'temp0901', 'staff');
+    const u = await api.login('miyagi@hoiku.example.jp', 'temp0901', 'staff');
     expect(u.is_temp_password).toBe(true);
   });
 
   it('最新版の規約に同意していないアカウントは terms_agreed が偽で返る', async () => {
-    const u = await api.login('suzuki.m@example.jp', 'pass1234', 'guardian');
+    const u = await api.login('uezono.k@example.jp', 'pass1234', 'guardian');
     expect(u.terms_agreed).toBe(false);
   });
 
   it('職員のログインでは所属クラスが付く（共有端末での取り違えを防ぐため）', async () => {
-    const u = await api.login('yamada@hoiku.example.jp', 'pass1234', 'staff');
+    const u = await api.login('takanashi@hoiku.example.jp', 'pass1234', 'staff');
     expect(u.class_name).toBe('さくら組');
   });
 });
@@ -351,7 +351,7 @@ describe('記録した職員の表示', () => {
 });
 
 describe('チャットツール（要件定義書「チャットツール」(4-3)）', () => {
-  const personalRoom = 6; // 山田 太郎の保護者（個人チャット）
+  const personalRoom = 6; // 野原 太郎の保護者（個人チャット）
   const classRoom = 3;    // さくら組（クラスグループ。保護者も参加する）
 
   it('保護者も参加するチャンネルは、保護者の人数が分かる', async () => {
@@ -409,8 +409,8 @@ describe('利用規約の同意履歴（基本設計書「同意履歴（t_terms
   });
 
   it('同意すると履歴が1行増え、前の行は残る', async () => {
-    // 最新版に同意していないアカウント（鈴木 美和）
-    const u = await api.login('suzuki.m@example.jp', 'pass1234', 'guardian');
+    // 最新版に同意していないアカウント（上園 謙心）
+    const u = await api.login('uezono.k@example.jp', 'pass1234', 'guardian');
     const before = db.termsAgreements.filter((x) => x.account_id === u.account_id);
     await api.agreeTerms(u.account_id);
     const after = db.termsAgreements.filter((x) => x.account_id === u.account_id);
@@ -446,7 +446,7 @@ describe('設計の決定を反映したもの（基本設計書 第2.3版）', 
   });
 
   it('現在と同じパスワードへは変更できない', async () => {
-    const u = await api.login('sato@hoiku.example.jp', 'temp0901', 'staff');
+    const u = await api.login('miyagi@hoiku.example.jp', 'temp0901', 'staff');
     await expect(api.changePassword(u.account_id, 'temp0901', 'temp0901')).rejects.toThrow(/現在と同じパスワード/);
     expect(db.accounts.find((a) => a.account_id === u.account_id)!.is_temp_password).toBe(true);
   });
@@ -457,7 +457,7 @@ describe('設計の決定を反映したもの（基本設計書 第2.3版）', 
 
     const code = await api.issueOneInvitationCode(admin, 'C001', 30);
     const grandma = await api.signUpGuardian({
-      code, email: 'sobo@example.jp', password: 'pass12345', guardian_name: '山田 和子', relationship: '祖母',
+      code, email: 'sobo@example.jp', password: 'pass12345', guardian_name: '野原 和子', relationship: '祖母',
     });
     // 登録した直後は、以前のやりとりが見えず、未読にも数えない
     expect(await api.messages(grandma, 6)).toHaveLength(0);
@@ -476,8 +476,9 @@ describe('設計の決定を反映したもの（基本設計書 第2.3版）', 
 
   it('続柄は職員側のメンバー一覧にだけ出る', async () => {
     const forStaff = await api.members(6, teacher);
-    expect(forStaff.find((m) => m.name === '山田 健一')!.relationship).toBe('父');
-    expect(forStaff.find((m) => m.name === '山田 和子')!.relationship).toBe('祖母');
+    // 保護者の野原 一誠は、職員（園長）の野原 一誠と同じ氏名なので、ロールで見分ける
+    expect(forStaff.find((m) => m.role === '3' && m.name === '野原 一誠')!.relationship).toBe('父');
+    expect(forStaff.find((m) => m.name === '野原 和子')!.relationship).toBe('祖母');
     const forGuardian = await api.members(6, guardian);
     expect(forGuardian.every((m) => m.relationship === null)).toBe(true);
   });

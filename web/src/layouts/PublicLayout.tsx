@@ -10,13 +10,13 @@ import type { ReactNode } from 'react';
 export default function PublicLayout({ children, wide }: { children: ReactNode; wide?: boolean }) {
   return (
     <div className="public-shell">
-      <div className={`public-card${wide ? ' wide' : ''}`}>
+      <main className={`public-card${wide ? ' wide' : ''}`} tabIndex={-1}>
         <div className="brand">
           <div className="name"><img src="/login-wordmark-crayon.png" alt="すくすく" /></div>
           <div className="sub">すくすく保育園</div>
         </div>
         {children}
-      </div>
+      </main>
     </div>
   );
 }

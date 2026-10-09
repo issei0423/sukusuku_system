@@ -72,7 +72,7 @@ export default function ChildTimelineScreen() {
         {entries.length === 0 && <Empty text="記録はまだありません。" />}
         {entries.length > 0 && (
           <table className="list">
-            <thead><tr><th style={{ width: 160 }}>日付</th><th style={{ width: 120 }}>種別</th><th>内容</th><th></th></tr></thead>
+            <thead><tr><th scope="col" style={{ width: 160 }}>日付</th><th scope="col" style={{ width: 120 }}>種別</th><th scope="col">内容</th><th scope="col">操作</th></tr></thead>
             <tbody>
               {entries.map((e, i) => (
                 <tr key={`${e.date}-${i}`}>

@@ -55,7 +55,7 @@ export default function GuardianHandoutsScreen() {
           <div className="guardian-record-list">
             {data!.filter((h) => h.target_month === month).map((h) => (
               <button key={h.handout_id} className="guardian-record-link handout-row"
-                aria-label={`${h.title}を開く`} onClick={() => setOpened(h)}>
+                onClick={() => setOpened(h)}>
                 <span className="handout-title">
                   <Tag label={HANDOUT_TYPE[h.handout_type] ?? 'その他'} className="tag-applied" />
                   <span>{h.title}</span>

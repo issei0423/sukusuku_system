@@ -16,17 +16,17 @@ import { today } from '../src/api/util';
 import * as db from '../src/api/mockDb';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'takahashi@hoiku.example.jp', role: '1', display_name: '高橋 美咲',
+  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const teacher: SessionUser = {
-  account_id: 3, email: 'yamada@hoiku.example.jp', role: '2', display_name: '山田 花子',
+  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
 const guardian: SessionUser = {
-  account_id: 6, email: 'yamada.k@example.jp', role: '3', display_name: '山田 健一',
+  account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
   staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
@@ -68,6 +68,9 @@ describe('共通・認証（7画面）', () => {
     await settled();
     const locked = container.querySelectorAll('.step.locked');
     expect(locked.length).toBe(2);
+    expect(screen.getByRole('checkbox', { name: '利用規約に同意します' }).matches(':disabled')).toBe(true);
+    expect(screen.getByRole('textbox', { name: '保護者の氏名' }).matches(':disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: '登録する' }).matches(':disabled')).toBe(true);
   });
 
   it('パスワード変更画面', async () => {
@@ -90,7 +93,7 @@ describe('共通・認証（7画面）', () => {
   it('保護者ホーム', async () => {
     open('/guardian', guardian);
     await settled();
-    expect(screen.getByText('山田 太郎')).toBeTruthy();
+    expect(screen.getByText('野原 太郎')).toBeTruthy();
   });
 });
 
@@ -110,10 +113,10 @@ describe('日誌システム（6画面）', () => {
   });
 
   it('日誌作成・編集画面：他の職員が編集中ならその旨を出す', async () => {
-    // 日誌2は佐藤 明子（S004）がロックを保持している
+    // 日誌2は宮城 蓮（S004）がロックを保持している
     open('/staff/diary/2', teacher);
     await waitFor(() => {
-      expect(document.body.textContent).toContain('佐藤 明子さんが編集中です');
+      expect(document.body.textContent).toContain('宮城 蓮さんが編集中です');
     }, { timeout: 3000 });
   });
 
@@ -145,7 +148,7 @@ describe('日誌システム（6画面）', () => {
   it('園児タイムライン画面', async () => {
     open('/staff/diary/timeline/C001', teacher);
     await settled();
-    expect(screen.getByText('山田 太郎 の記録')).toBeTruthy();
+    expect(screen.getByText('野原 太郎 の記録')).toBeTruthy();
   });
 });
 
@@ -241,7 +244,7 @@ describe('保護者のメニュー', () => {
     await settled();
     fireEvent.click(screen.getByLabelText('メニューを開く'));
     await waitFor(() => {
-      expect(document.querySelector('.drawer .who')!.textContent!.replace(/\s+/g, ' ').trim()).toBe('山田 太郎 保護者');
+      expect(document.querySelector('.drawer .who')!.textContent!.replace(/\s+/g, ' ').trim()).toBe('野原 太郎 保護者');
     });
   });
 
@@ -250,7 +253,7 @@ describe('保護者のメニュー', () => {
     await settled();
     fireEvent.click(screen.getByLabelText('メニューを開く'));
     expect(document.querySelector('.drawer')).not.toBeNull();
-    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => { expect(document.querySelector('.drawer')).toBeNull(); });
   });
 });
@@ -282,7 +285,7 @@ describe('チャット画面の表示', () => {
     await settled();
     fireEvent.click(screen.getByText('担任の先生とのやりとり').closest('button')!);
     await threadReady('.msg.mine .bubble.pressable');
-    expect(screen.queryByRole('menu')).toBeNull();
+    expect(screen.queryByRole('group', { name: 'メッセージの操作' })).toBeNull();
     expect(screen.queryByText('編集')).toBeNull();
     expect(screen.queryByText('取消')).toBeNull();
     expect(screen.queryByText('リアクション')).toBeNull();
@@ -292,25 +295,25 @@ describe('チャット画面の表示', () => {
     fireEvent.pointerDown(mine, { button: 0, clientX: 10, clientY: 10 });
     fireEvent.pointerUp(mine);
     await new Promise((r) => setTimeout(r, 900));
-    expect(screen.queryByRole('menu')).toBeNull();
+    expect(screen.queryByRole('group', { name: 'メッセージの操作' })).toBeNull();
 
     // 0.8秒押し続けると、リアクション・編集・取消の3つが出る
     fireEvent.pointerDown(mine, { button: 0, clientX: 10, clientY: 10 });
-    await waitFor(() => { expect(screen.getByRole('menu')).toBeTruthy(); }, { timeout: 2000 });
-    expect(screen.getByRole('menuitem', { name: '了解' })).toBeTruthy();
-    expect(screen.getByRole('menuitem', { name: '編集' })).toBeTruthy();
-    expect(screen.getByRole('menuitem', { name: '取消' })).toBeTruthy();
+    await waitFor(() => { expect(screen.getByRole('group', { name: 'メッセージの操作' })).toBeTruthy(); }, { timeout: 2000 });
+    expect(screen.getByRole('button', { name: '了解' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '編集' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '取消' })).toBeTruthy();
 
     // 長押しで開いた直後に指を離したときのクリックは、一覧のボタンに当たっても無視する
     // （一覧を見える位置へ送ると画面が動き、指の下にボタンが来るため）
     fireEvent.pointerUp(mine);
-    fireEvent.click(screen.getByRole('menuitem', { name: '取消' }));
-    expect(screen.getByRole('menu')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    expect(screen.getByRole('group', { name: 'メッセージの操作' })).toBeTruthy();
     expect(document.querySelectorAll('.msg.mine .bubble.pressable').length).toBeGreaterThan(0);
 
     // 一覧の外を押すと閉じる
     fireEvent.pointerDown(document.body);
-    await waitFor(() => { expect(screen.queryByRole('menu')).toBeNull(); });
+    await waitFor(() => { expect(screen.queryByRole('group', { name: 'メッセージの操作' })).toBeNull(); });
   });
 
   it('保護者：相手のメッセージの長押しでは、リアクションだけを出す', async () => {
@@ -320,10 +323,20 @@ describe('チャット画面の表示', () => {
     await threadReady('.msg:not(.mine) .bubble.pressable');
     // 右クリック（長押しができない操作）からも同じ一覧を開ける
     fireEvent.contextMenu(document.querySelector('.msg:not(.mine) .bubble.pressable')!);
-    await waitFor(() => { expect(screen.getByRole('menu')).toBeTruthy(); });
-    expect(screen.getByRole('menuitem', { name: '了解' })).toBeTruthy();
-    expect(screen.queryByRole('menuitem', { name: '編集' })).toBeNull();
-    expect(screen.queryByRole('menuitem', { name: '取消' })).toBeNull();
+    await waitFor(() => { expect(screen.getByRole('group', { name: 'メッセージの操作' })).toBeTruthy(); });
+    expect(screen.getByRole('button', { name: '了解' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '編集' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '取消' })).toBeNull();
+  });
+
+  it('保護者：長押しをせず、操作ボタンから一覧を開ける', async () => {
+    open('/guardian/chat', guardian);
+    await settled();
+    fireEvent.click(screen.getByText('担任の先生とのやりとり').closest('button')!);
+    await threadReady('.msg.mine .message-actions-trigger');
+    fireEvent.click(document.querySelector('.msg.mine .message-actions-trigger')!);
+    expect(screen.getByRole('group', { name: 'メッセージの操作' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '編集' })).toBeTruthy();
   });
 });
 
@@ -569,7 +582,7 @@ describe('保護者から見える範囲', () => {
   it('共有された日誌は開ける', async () => {
     open('/guardian/diary/4', guardian);
     await settled();
-    // 日誌4は C002（鈴木 花子）のもの。山田 健一は参照できない
+    // 日誌4は C002（上園 花子）のもの。野原 一誠は参照できない
     expect(document.body.textContent).toContain('権限がありません');
   });
 

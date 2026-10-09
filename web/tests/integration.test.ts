@@ -47,13 +47,13 @@ run('Go サーバとの結合', () => {
   const dummy = { account_id: 0 } as never;
 
   it('誤った系統の入口ではログインできない', async () => {
-    await expect(http.api.login('yamada.k@example.jp', 'pass1234', 'staff'))
+    await expect(http.api.login('nohara.i@example.jp', 'pass1234', 'staff'))
       .rejects.toThrow(/wrong_entrance/);
   });
 
   it('職員でログインすると所属クラスが付く', async () => {
-    const u = await http.api.login('yamada@hoiku.example.jp', 'pass1234', 'staff');
-    expect(u.display_name).toBe('山田 花子');
+    const u = await http.api.login('takanashi@hoiku.example.jp', 'pass1234', 'staff');
+    expect(u.display_name).toBe('高梨 倫太朗');
     expect(u.class_name).toBe('さくら組');
     expect(u.role).toBe('2');
   });
@@ -62,9 +62,9 @@ run('Go サーバとの結合', () => {
     // 一般（さくら組担任）に見えるのは自クラスの12名
     expect(http.visibleChildren(dummy)).toHaveLength(12);
     expect(http.selectableClasses(dummy).map((c) => c.class_name)).toEqual(['さくら組']);
-    expect(http.childName('C001')).toBe('山田 太郎');
+    expect(http.childName('C001')).toBe('野原 太郎');
     expect(http.className(1)).toBe('さくら組');
-    expect(http.staffName('S003')).toBe('山田 花子');
+    expect(http.staffName('S003')).toBe('高梨 倫太朗');
     expect(http.settingNumber('ui.diary_lock_minutes', 0)).toBe(15);
   });
 
@@ -90,7 +90,7 @@ run('Go サーバとの結合', () => {
 
   it('編集ロックを保持している日誌は、保持者の氏名が返る', async () => {
     const r = await http.api.acquireLock(dummy, 2);
-    expect(r).toHaveProperty('heldBy', '佐藤 明子');
+    expect(r).toHaveProperty('heldBy', '宮城 蓮');
   });
 
   it('一般は園児を登録できない', async () => {
@@ -208,7 +208,7 @@ run('Go サーバとの結合', () => {
     // 使用済みのコードをハイフンなし・小文字で入れる。「確認できません」ではなく「使われています」と返る
     await expect(http.api.verifyInvitationCode('ijkl5678mnop')).rejects.toThrow(/すでに使われています/);
 
-    await http.api.login('takahashi@hoiku.example.jp', 'pass1234', 'staff');
+    await http.api.login('nohara@hoiku.example.jp', 'pass1234', 'staff');
     const code = await http.api.issueOneInvitationCode(dummy, 'C001', 30);
     try {
       await expect(http.api.verifyInvitationCode(code.replace(/-/g, '').toLowerCase())).resolves.toBeTruthy();
@@ -222,7 +222,7 @@ run('Go サーバとの結合', () => {
   });
 
   it('配布物を掲載すると保護者の一覧に出て、取り下げると消える', async () => {
-    await http.api.login('takahashi@hoiku.example.jp', 'pass1234', 'staff');
+    await http.api.login('nohara@hoiku.example.jp', 'pass1234', 'staff');
     const month = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 7);
     const before = await http.api.handouts(dummy);
     expect(before.length).toBeGreaterThan(0);
@@ -236,21 +236,21 @@ run('Go サーバとの結合', () => {
         file_name: 'a.docx', file_type: 'application/msword', file_size: 100,
       })).rejects.toThrow(/PDF・JPEG・PNG/);
 
-      await http.api.login('yamada.k@example.jp', 'pass1234', 'guardian');
+      await http.api.login('nohara.i@example.jp', 'pass1234', 'guardian');
       expect((await http.api.handouts(dummy)).some((h) => h.handout_id === handout_id)).toBe(true);
       await expect(http.api.postHandout(dummy, {
         handout_type: '3', title: '保護者からは掲載できない', target_month: month, class_id: null,
         file_name: 'x.pdf', file_type: 'application/pdf', file_size: 100,
       })).rejects.toThrow(/管理者のみ/);
     } finally {
-      await http.api.login('takahashi@hoiku.example.jp', 'pass1234', 'staff');
+      await http.api.login('nohara@hoiku.example.jp', 'pass1234', 'staff');
       await http.api.withdrawHandout(dummy, handout_id);
     }
     expect((await http.api.handouts(dummy)).some((h) => h.handout_id === handout_id)).toBe(false);
   });
 
   it('保護者が開く共有日誌には、記入者の氏名が載る（職員IDではない）', async () => {
-    await http.api.login('yamada.k@example.jp', 'pass1234', 'guardian');
+    await http.api.login('nohara.i@example.jp', 'pass1234', 'guardian');
     const home = await http.api.guardianHome(dummy);
     const shared = home.flatMap((h) => h.sharedDiaries)[0];
     expect(shared).toBeTruthy();
@@ -268,7 +268,7 @@ run('Go サーバとの結合', () => {
    * （基本設計書「画面基本構成」(3-5)）。
    */
   it('ログアウトするとサーバ側のセッションも捨てられる', async () => {
-    await http.api.login('takahashi@hoiku.example.jp', 'pass1234', 'staff');
+    await http.api.login('nohara@hoiku.example.jp', 'pass1234', 'staff');
     expect(await http.api.bootstrap()).not.toBeNull();
 
     await http.api.logout();

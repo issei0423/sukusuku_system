@@ -217,7 +217,7 @@ export default function PhysicalRecordScreen() {
                 {records.data?.length === 0 && <Empty text="記録はありません。" />}
                 {records.data && records.data.length > 0 && (
                   <table className="list">
-                    <thead><tr><th>測定日</th><th>月齢</th><th>身長</th><th>体重</th><th>記録者</th></tr></thead>
+                    <thead><tr><th scope="col">測定日</th><th scope="col">月齢</th><th scope="col">身長</th><th scope="col">体重</th><th scope="col">記録者</th></tr></thead>
                     <tbody>
                       {records.data.slice(0, historyLimit).map((r) => (
                         <tr key={r.physical_record_id}>

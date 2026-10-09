@@ -5,7 +5,7 @@
  * サイドナビを持たず、ホームからの導線に絞る。片手操作を前提とするため。
  * ログアウトはメニュー内に置く（基本設計書「画面基本構成」(3-5)）。
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, Outlet, useNavigate } from 'react-router-dom';
 import { useSession } from '../session';
 import { useAsync } from '../hooks';
@@ -16,14 +16,25 @@ export default function GuardianLayout() {
   const { user, logout } = useSession();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const drawer = useRef<HTMLElement>(null);
+  const menuButton = useRef<HTMLButtonElement>(null);
   const home = useAsync(() => api.guardianHome(user!), [user?.account_id]);
 
-  // メニューは Esc キーでも閉じられるようにする
+  // 開いたらメニューに入り、閉じたら開いたボタンへ戻る
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    drawer.current?.querySelector<HTMLElement>('button')?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); setOpen(false); return; }
+      if (e.key !== 'Tab') return;
+      const items = Array.from(drawer.current?.querySelectorAll<HTMLElement>('button, a[href]') ?? []);
+      if (!items.length) return;
+      if (e.shiftKey && document.activeElement === items[0]) { e.preventDefault(); items[items.length - 1].focus(); }
+      else if (!e.shiftKey && document.activeElement === items[items.length - 1]) { e.preventDefault(); items[0].focus(); }
+    };
+    document.addEventListener('keydown', onKey);
+    const trigger = menuButton.current;
+    return () => { document.removeEventListener('keydown', onKey); trigger?.focus(); };
   }, [open]);
 
   if (!user) return null;
@@ -38,7 +49,7 @@ export default function GuardianLayout() {
   return (
     <div className="guardian-shell">
       <header className="guardian-header">
-        <button className="guardian-menu-button" onClick={() => setOpen(true)} aria-label="メニューを開く">
+        <button ref={menuButton} className="guardian-menu-button" onClick={() => setOpen(true)} aria-label="メニューを開く" aria-expanded={open} aria-haspopup="dialog">
           <span aria-hidden="true">☰</span><span>メニュー</span>
         </button>
         <Link className="guardian-brand" to="/guardian" aria-label="すくすく 保護者ホーム">
@@ -46,7 +57,7 @@ export default function GuardianLayout() {
           <img className="guardian-brand-wordmark" src="/login-wordmark-crayon.png" alt="すくすく" />
         </Link>
         <div className="spacer" />
-        <button className="notify-btn" onClick={() => navigate('/guardian/chat')} title="通知" aria-label="通知">
+        <button className="notify-btn" onClick={() => navigate('/guardian/chat')} title="通知" aria-label={`通知${unread > 0 ? ` ${unread}件` : ' 0件'}`}>
           <BellIcon />
           {unread > 0 && <span className="notify-badge">{unread}</span>}
         </button>
@@ -55,7 +66,7 @@ export default function GuardianLayout() {
       {open && (
         <>
           <div className="drawer-backdrop" onClick={() => setOpen(false)} />
-          <nav className="drawer guardian-drawer" aria-label="メニュー">
+          <nav ref={drawer} className="drawer guardian-drawer" role="dialog" aria-modal="true" aria-label="メニュー">
             {/*
               閉じるボタンをメニューの中に置く。外側の暗い部分を押しても閉じるが、
               それは見て分かる操作ではないため、閉じ方を文字で示す
@@ -82,7 +93,7 @@ export default function GuardianLayout() {
         </>
       )}
 
-      <main className="guardian-main">
+      <main className="guardian-main" tabIndex={-1}>
         <Outlet />
       </main>
 

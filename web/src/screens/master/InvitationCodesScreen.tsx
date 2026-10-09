@@ -158,7 +158,7 @@ export default function InvitationCodesScreen() {
         {data && data.length > 0 && (
           <table className="list">
             <thead>
-              <tr><th>園児</th><th>コード</th><th>発行日</th><th>有効期限</th><th>状態</th><th></th></tr>
+              <tr><th scope="col">園児</th><th scope="col">コード</th><th scope="col">発行日</th><th scope="col">有効期限</th><th scope="col">状態</th><th scope="col">操作</th></tr>
             </thead>
             <tbody>
               {Array.from(grouped.entries()).map(([childName, rows]) =>

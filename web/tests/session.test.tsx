@@ -15,7 +15,7 @@ import * as client from '../src/api/client';
 import type { SessionUser } from '../src/api/types';
 
 const teacher: SessionUser = {
-  account_id: 3, email: 'yamada@hoiku.example.jp', role: '2', display_name: '山田 花子',
+  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
@@ -37,7 +37,7 @@ describe('ログアウト', () => {
     const { container } = render(
       <SessionProvider initialUser={teacher}><Probe /></SessionProvider>,
     );
-    expect(container.textContent).toBe('山田 花子');
+    expect(container.textContent).toBe('高梨 倫太朗');
 
     let done = false;
     await act(async () => {

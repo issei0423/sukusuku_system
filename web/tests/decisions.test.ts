@@ -11,7 +11,7 @@ import * as db from '../src/api/mockDb';
 import type { SessionUser } from '../src/api/types';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'takahashi@hoiku.example.jp', role: '1', display_name: '高橋 美咲',
+  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
@@ -102,11 +102,11 @@ describe('ログインの記録（GitHub Issue #115）', () => {
 
   it('ログインの失敗は操作ログに残る。成功は残らない', async () => {
     const before = db.operationLogs.length;
-    await expect(api.login('tanaka@hoiku.example.jp', 'wrong-password', 'staff')).rejects.toThrow(/credential/);
+    await expect(api.login('kinjo@hoiku.example.jp', 'wrong-password', 'staff')).rejects.toThrow(/credential/);
     expect(failures()).toHaveLength(1);
     expect(failures()[0].after_value).toBe('ログインに失敗（続けて 1 回目）');
 
-    await api.login('tanaka@hoiku.example.jp', 'pass1234', 'staff');
+    await api.login('kinjo@hoiku.example.jp', 'pass1234', 'staff');
     await api.logout();
     // 成功とログアウトでは行が増えない
     expect(db.operationLogs.length).toBe(before + 1);
@@ -115,13 +115,13 @@ describe('ログインの記録（GitHub Issue #115）', () => {
   it('失敗が続いてロックされたことも残る。操作ログの「対象」から誰のアカウントかが分かる', async () => {
     const max = Number(db.settings.find((s) => s.setting_key === 'auth.max_failed_login')!.setting_value);
     for (let i = 0; i < max; i++) {
-      await expect(api.login('tanaka@hoiku.example.jp', 'wrong-password', 'staff')).rejects.toThrow();
+      await expect(api.login('kinjo@hoiku.example.jp', 'wrong-password', 'staff')).rejects.toThrow();
     }
     const last = failures()[0];
     expect(last.after_value).toBe(`ログインに失敗（続けて ${max} 回目）。失敗が続いたためロック`);
 
     const logs = await api.operationLogs(admin, {});
-    expect(logs.rows.find((l) => l.operation_log_id === last.operation_log_id)?.target_label).toBe('田中 陽子');
+    expect(logs.rows.find((l) => l.operation_log_id === last.operation_log_id)?.target_label).toBe('金城 宗一郎');
 
     // 後始末：ロックを解除する
     await api.unlock(admin, 5);

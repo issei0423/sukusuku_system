@@ -6,8 +6,8 @@
  * URL は画面名に対応させ、学校テンプレートが求める n-n-n-n 形式の画面IDは
  * 提出時に対応表で満たす（対応表は未作成）。
  */
-import { useEffect, useState } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useSession } from './session';
 import { api, backend } from './api/client';
 import StaffLayout from './layouts/StaffLayout';
@@ -61,6 +61,43 @@ import StaffAccountsScreen from './screens/master/StaffAccountsScreen';
 import InvitationCodesScreen from './screens/master/InvitationCodesScreen';
 import GuardianAccountsScreen from './screens/master/GuardianAccountsScreen';
 import OperationLogScreen from './screens/master/OperationLogScreen';
+
+const pageNames: Record<string, string> = {
+  '/': '保護者用トップ', '/staff-top': '職員用トップ', '/signup': '新規登録',
+  '/password-change': 'パスワードの変更', '/terms-agree': '利用規約への同意',
+  '/staff': 'ダッシュボード', '/staff/password': 'パスワードの変更', '/staff/terms': '利用規約',
+  '/staff/diary': '日誌', '/staff/diary/new': '日誌の作成', '/staff/diary/confirm': '日誌の確認',
+  '/staff/chat': 'チャット', '/staff/chat/groups': 'グループ編成', '/staff/handouts': '配布物',
+  '/staff/nap': '午睡チェック', '/staff/nap/abnormal': '異常時の記録', '/staff/nap/search': '午睡記録の検索',
+  '/staff/growth': '発達チェック', '/staff/growth/physical': '身体記録',
+  '/staff/growth/schedule': 'スケジュール設定', '/staff/growth/share': '共有範囲の設定',
+  '/staff/children': '園児', '/staff/children/allergies': 'アレルギー一覧',
+  '/staff/children/new': '園児情報の登録', '/staff/children/confirm': '園児情報の確認',
+  '/staff/children/csv': 'CSV一括登録',
+  '/staff/admin/approval': '承認待ち', '/staff/admin/misdelivery': '誤送信対応',
+  '/staff/admin/staff-accounts': '職員アカウント', '/staff/admin/invitations': '招待コード',
+  '/staff/admin/guardian-accounts': '保護者アカウント', '/staff/admin/fiscal-year': '年度更新',
+  '/staff/admin/logs': '操作ログ', '/guardian': '保護者ホーム', '/guardian/chat': 'チャット・お知らせ',
+  '/guardian/handouts': '園からの配布物', '/guardian/password': 'パスワードの変更', '/guardian/terms': '利用規約',
+};
+
+function PageNavigation() {
+  const { pathname } = useLocation();
+  const initial = useRef(true);
+  const name = pageNames[pathname] ?? (pathname.startsWith('/staff/admin/approval/') ? '日誌の承認'
+    : pathname.startsWith('/staff/diary/timeline/') ? '園児の記録'
+    : pathname.startsWith('/staff/diary/') ? '日誌の編集'
+    : pathname.startsWith('/staff/growth/dev/') ? '発達チェックの入力'
+    : pathname.startsWith('/staff/children/') ? '園児情報の編集'
+    : pathname.startsWith('/guardian/diary/') ? '共有された日誌' : 'すくすく');
+  useEffect(() => {
+    document.title = `${name} — すくすく`;
+    if (initial.current) { initial.current = false; return; }
+    const id = window.setTimeout(() => document.querySelector<HTMLElement>('main')?.focus(), 0);
+    return () => window.clearTimeout(id);
+  }, [pathname, name]);
+  return null;
+}
 
 /**
  * ログイン中の職員だけを通す。
@@ -116,6 +153,8 @@ export default function App() {
   if (!ready) return <div className="empty">読み込んでいます…</div>;
 
   return (
+    <>
+    <PageNavigation />
     <Routes>
       {/* ---- 共通・認証（未ログイン） ---- */}
       <Route path="/" element={<TopScreen entrance="guardian" />} />
@@ -182,5 +221,6 @@ export default function App() {
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </>
   );
 }

@@ -44,6 +44,7 @@ export default function SignUpScreen() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    if (!codeOk || !agreed) { setError('招待コードの確認と利用規約への同意を済ませてください'); return; }
     // 送る前に画面でも確かめる。検査の担保はサーバ側が行う（基本設計書「入力項目の制約値」(4-9)）
     if (!name.trim()) { setError('保護者の氏名を入力してください'); return; }
     const emailError = validateEmail(email);
@@ -82,7 +83,7 @@ export default function SignUpScreen() {
           </Field>
           <button onClick={verify} disabled={!code.trim()}>コードを確認する</button>
         </div>
-        {codeOk && <div className="muted" style={{ marginTop: 8 }}>招待コードを確認しました。次へ進んでください。</div>}
+        {codeOk && <div className="muted" role="status" style={{ marginTop: 8 }}>招待コードを確認しました。次へ進んでください。</div>}
         <div className="muted" style={{ marginTop: 8 }}>
           大文字・小文字はどちらでも構いません。ハイフン（-）は入れても省いても確認できます。
         </div>
@@ -90,19 +91,21 @@ export default function SignUpScreen() {
       </div>
 
       {/* (2) 利用規約への同意 */}
-      <div className={`step${codeOk ? '' : ' locked'}`}>
+      <div className={`step${codeOk ? '' : ' locked'}`} aria-disabled={!codeOk}>
         <div className="step-title">(2) 利用規約への同意</div>
-        <div className="terms-box">{terms.data?.body ?? '読み込んでいます…'}</div>
-        <label style={{ marginTop: 8 }}>
-          <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
-          利用規約に同意します
-        </label>
+        <div className="terms-box" tabIndex={0} aria-label="利用規約の本文">{terms.data?.body ?? '読み込んでいます…'}</div>
+        <fieldset disabled={!codeOk}>
+          <label style={{ marginTop: 8 }}>
+            <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
+            利用規約に同意します
+          </label>
+        </fieldset>
       </div>
 
       {/* (3) アカウント情報 */}
-      <form className={`step${codeOk && agreed ? '' : ' locked'}`} onSubmit={submit}>
+      <form className={`step${codeOk && agreed ? '' : ' locked'}`} aria-disabled={!codeOk || !agreed} onSubmit={submit}>
         <div className="step-title">(3) アカウント情報</div>
-        <div className="stack">
+        <fieldset className="stack" disabled={!codeOk || !agreed}>
           <Field label="保護者の氏名" required>
             <input type="text" value={name} onChange={(e) => setName(e.target.value)} />
           </Field>
@@ -123,7 +126,7 @@ export default function SignUpScreen() {
           <button className="btn-primary btn-block" type="submit" disabled={busy}>
             {busy ? '登録しています…' : '登録する'}
           </button>
-        </div>
+        </fieldset>
       </form>
     </PublicLayout>
   );

@@ -10,7 +10,7 @@
  * 分けても表示項目は増えず、画面数と図の分量だけが増えるため。
  */
 import { useEffect, useRef, useState } from 'react';
-import type { KeyboardEvent, MouseEvent, PointerEvent } from 'react';
+import type { MouseEvent, PointerEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
@@ -34,6 +34,7 @@ export default function GuardianChatScreen() {
   const [text, setText] = useState('');
   const [tick, setTick] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState('');
   /*
    * 編集は送信者本人のみ。回数と期限の制限は設けず、既読が付いたあとも編集できる
    * （基本設計書「メッセージの編集」(4-6)）
@@ -75,7 +76,12 @@ export default function GuardianChatScreen() {
     const onDown = (e: Event) => {
       if (!menuRef.current?.contains(e.target as Node)) setMenuId(null);
     };
-    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') setMenuId(null); };
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setMenuId(null);
+        document.querySelector<HTMLButtonElement>(`[data-message-menu="${menuId}"]`)?.focus();
+      }
+    };
     document.addEventListener('pointerdown', onDown);
     document.addEventListener('keydown', onKey);
     return () => {
@@ -115,6 +121,7 @@ export default function GuardianChatScreen() {
       await api.send(user!, roomId, text);
       setText('');
       setTick((n) => n + 1);
+      setStatus('メッセージを送信しました');
     } catch (e) { setError((e as Error).message); }
   };
 
@@ -124,19 +131,20 @@ export default function GuardianChatScreen() {
       await api.edit(user!, messageId, draft);
       setEditingId(null);
       setTick((n) => n + 1);
+      setStatus('メッセージを更新しました');
     } catch (e) { setError((e as Error).message); }
   };
 
   // 取消は送信者本人ができる。保護者にも認めている（基本設計書の権限一覧「メッセージの編集・送信取消」）
   const retract = async (messageId: number) => {
     setError(null);
-    try { await api.retract(user!, messageId); setTick((n) => n + 1); }
+    try { await api.retract(user!, messageId); setTick((n) => n + 1); setStatus('メッセージを取り消しました'); }
     catch (e) { setError((e as Error).message); }
   };
 
   const react = async (messageId: number, type: string) => {
     setError(null);
-    try { await api.toggleReaction(user!, messageId, type); setTick((n) => n + 1); }
+    try { await api.toggleReaction(user!, messageId, type); setTick((n) => n + 1); setStatus('リアクションを更新しました'); }
     catch (e) { setError((e as Error).message); }
   };
 
@@ -188,11 +196,6 @@ export default function GuardianChatScreen() {
       cancelPress();
       openMenu(messageId, e.currentTarget as HTMLElement);
     },
-    onKeyDown: (e: KeyboardEvent) => {
-      if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
-      e.preventDefault();
-      openMenu(messageId, e.currentTarget as HTMLElement);
-    },
   });
 
   // 一覧
@@ -234,7 +237,7 @@ export default function GuardianChatScreen() {
       <div className="guardian-message-list">
         {(messages.data?.length ?? 0) > 0 && (
           <p id="guardian-message-hint" className="guardian-message-hint">
-            メッセージを長押しすると、リアクションを付けられます。自分のメッセージは編集・取消もできます。
+            メッセージの「操作」ボタンか長押しで、リアクションを付けられます。自分のメッセージは編集・取消もできます。
           </p>
         )}
         {messages.loading && <Loading />}
@@ -264,16 +267,10 @@ export default function GuardianChatScreen() {
               </div>
               {/* 編集中は本文の入力欄を普通に触れるよう、長押しを受け付けない */}
               <div className={`bubble${editing ? '' : ' pressable'}`}
-                {...(editing ? {} : {
-                  ...pressHandlers(m.chat_message_id),
-                  tabIndex: 0,
-                  'aria-haspopup': 'menu' as const,
-                  'aria-expanded': menuOpen,
-                  'aria-describedby': 'guardian-message-hint',
-                })}>
+                {...(editing ? {} : pressHandlers(m.chat_message_id))}>
                 {editing ? (
                   <>
-                    <textarea value={draft} onChange={(e) => setDraft(e.target.value)}
+                    <textarea aria-label="メッセージの編集" value={draft} onChange={(e) => setDraft(e.target.value)}
                       maxLength={1000} rows={4} style={{ width: '100%', boxSizing: 'border-box' }} />
                     <div className="row-end" style={{ marginTop: 4 }}>
                       <button className="btn-sm" onClick={() => setEditingId(null)}>やめる</button>
@@ -298,6 +295,16 @@ export default function GuardianChatScreen() {
                   <Link className="shared-card" to="/guardian/handouts">園からの配布物を開く</Link>
                 )}
               </div>
+              {!editing && (
+                <button type="button" className="message-actions-trigger" data-message-menu={m.chat_message_id}
+                  aria-label={`${mine ? '自分' : m.sender_name ?? '相手'}のメッセージの操作`} aria-expanded={menuOpen}
+                  aria-controls={menuOpen ? `message-actions-${m.chat_message_id}` : undefined}
+                  onClick={(e) => {
+                    if (menuOpen) { setMenuId(null); return; }
+                    const bubble = e.currentTarget.closest('.msg')?.querySelector<HTMLElement>('.bubble');
+                    if (bubble) openMenu(m.chat_message_id, bubble);
+                  }}>操作</button>
+              )}
               {/* 既読は保護者側には表示しない（基本設計書 5-5） */}
               {/* 編集は送信者本人のみ（同 4-6）。既読が付いたあとも編集できる */}
               {/* 付いているリアクションは常に出す。付ける・編集・取消は長押しの一覧から */}
@@ -306,10 +313,11 @@ export default function GuardianChatScreen() {
               {menuOpen && !editing && (
                 <div className={`msg-menu-wrap${menuPlace.above ? ' above' : ''}`}
                   style={menuPlace.above ? { bottom: menuPlace.offset } : { top: menuPlace.offset }}>
-                  <div ref={menuRef} className="msg-menu" role="menu" aria-label="メッセージの操作">
+                  <div ref={menuRef} id={`message-actions-${m.chat_message_id}`} className="msg-menu" role="group" aria-label="メッセージの操作"
+                    onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setMenuId(null); }}>
                     <div className="msg-menu-row">
                       {Object.entries(REACTION).map(([type, def]) => (
-                        <button key={type} type="button" role="menuitem" className="reaction pick"
+                        <button key={type} type="button" className="reaction pick"
                           aria-label={def.label} title={def.label}
                           onClick={() => { setMenuId(null); react(m.chat_message_id, type); }}>
                           <span aria-hidden="true">{def.emoji}</span>
@@ -319,13 +327,13 @@ export default function GuardianChatScreen() {
                     <div className="msg-menu-row">
                       {mine && (
                         <>
-                          <button type="button" role="menuitem" className="btn-sm"
+                          <button type="button" className="btn-sm"
                             onClick={() => { setMenuId(null); setDraft(m.body); setEditingId(m.chat_message_id); }}>編集</button>
-                          <button type="button" role="menuitem" className="btn-sm"
+                          <button type="button" className="btn-sm"
                             onClick={() => { setMenuId(null); retract(m.chat_message_id); }}>取消</button>
                         </>
                       )}
-                      <button type="button" role="menuitem" className="btn-sm btn-quiet"
+                      <button type="button" className="btn-sm btn-quiet"
                         onClick={() => setMenuId(null)}>閉じる</button>
                     </div>
                   </div>
@@ -337,10 +345,11 @@ export default function GuardianChatScreen() {
       </div>
 
       <div className="guardian-message-compose">
+        <div className="sr-only" role="status">{status}</div>
         {error && <ErrorBox text={error} />}
         {current.canPost ? (
           <div className="row">
-            <input type="text" value={text} onChange={(e) => setText(e.target.value)}
+            <input type="text" aria-label="メッセージを入力" value={text} onChange={(e) => setText(e.target.value)}
               placeholder="メッセージを入力" style={{ flex: 1 }} />
             <button className="btn-primary" onClick={send} disabled={!text.trim()}>送信</button>
           </div>
