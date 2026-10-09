@@ -76,6 +76,7 @@ export default function DevScheduleScreen() {
                     </td>
                     <td className="nowrap">
                       <input type="date" value={value} style={{ minWidth: 160 }}
+                        aria-label={`${r.child.child_name}の次回の予定日`}
                         onChange={(e) => setEdits({ ...edits, [r.child.child_id]: e.target.value })} />
                     </td>
                     <td className="nowrap">

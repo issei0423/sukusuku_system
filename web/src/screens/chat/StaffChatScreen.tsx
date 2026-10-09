@@ -160,7 +160,7 @@ export default function StaffChatScreen() {
             {/* 右クリックと長押しは、見ただけでは気づけない。先頭で知らせる（GitHub Issue #103） */}
             {(messages.data?.length ?? 0) > 0 && (
               <p className="message-hint">
-                メッセージを右クリック（タブレットでは長押し）すると、リアクション・編集・取消ができます。
+                メッセージの「操作」ボタンか、右クリック（タブレットでは長押し）で、リアクション・編集・取消ができます。
               </p>
             )}
             {messages.data?.map((m) => (
@@ -237,10 +237,11 @@ function MessageRow({ message, mine, canEdit, onRetract, onEdit, onReact, menuOp
   /*
    * リアクション・編集・取消は、メッセージを右クリック（タブレットでは長押し）して開く一覧に置く。
    * 各メッセージの下へ常に並べると、やりとりが続いたときに本文が読みにくくなる（GitHub Issue #103）。
-   * キーボードでは、メッセージを選んで Enter／スペースで同じ一覧を開ける。
+   * キーボードと読み上げからは、メッセージの「操作」ボタンで同じ一覧を開ける。
    */
   const bubbleRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const pressTimer = useRef<number | null>(null);
   // 長押しで開いた直後に指を離したとき、指の下に来たボタンが押されないようにする
   const openedByPressAt = useRef(0);
@@ -265,11 +266,15 @@ function MessageRow({ message, mine, canEdit, onRetract, onEdit, onReact, menuOp
   useEffect(() => {
     if (!menuOpen) return;
     menuRef.current?.querySelector('button')?.focus({ preventScroll: true });
-    const onDown = (e: Event) => { if (!menuRef.current?.contains(e.target as Node)) onMenu(false); };
+    const onDown = (e: Event) => {
+      // 「操作」ボタンは自分で開閉する。ここで閉じると、押した直後にもう一度開いてしまう
+      if (triggerRef.current?.contains(e.target as Node)) return;
+      if (!menuRef.current?.contains(e.target as Node)) onMenu(false);
+    };
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       onMenu(false);
-      bubbleRef.current?.focus({ preventScroll: true });
+      triggerRef.current?.focus({ preventScroll: true });
     };
     document.addEventListener('pointerdown', onDown);
     document.addEventListener('keydown', onKey);
@@ -315,8 +320,6 @@ function MessageRow({ message, mine, canEdit, onRetract, onEdit, onReact, menuOp
         {message.edited_at && <span className="weak">（編集済み）</span>}
       </div>
       <div ref={bubbleRef} className={`bubble${editing ? '' : ' has-menu'}`}
-        tabIndex={editing ? undefined : 0}
-        aria-haspopup={editing ? undefined : 'menu'} aria-expanded={editing ? undefined : menuOpen}
         onContextMenu={(e) => {
           if (editing || onControl(e.target)) return;
           e.preventDefault();
@@ -333,12 +336,7 @@ function MessageRow({ message, mine, canEdit, onRetract, onEdit, onReact, menuOp
             openMenu();
           }, LONG_PRESS_MS);
         }}
-        onPointerUp={cancelPress} onPointerCancel={cancelPress} onPointerLeave={cancelPress}
-        onKeyDown={(e) => {
-          if (editing || e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
-          e.preventDefault();
-          openMenu();
-        }}>
+        onPointerUp={cancelPress} onPointerCancel={cancelPress} onPointerLeave={cancelPress}>
         {editing ? (
           <>
             <textarea value={draft} onChange={(e) => setDraft(e.target.value)}
@@ -371,16 +369,28 @@ function MessageRow({ message, mine, canEdit, onRetract, onEdit, onReact, menuOp
         リアクションは編集の影響を受けない（基本設計書「メッセージの編集」(4-6)）。
         付いているものだけを並べる。付けるためのボタンは、操作の一覧の中に置く
       */}
+      {/*
+        操作の一覧を開くボタン。キーボードと読み上げからは、ここから開く。
+        吹き出しそのものには役割を持たせない（GitHub Issue #105）
+      */}
+      {!editing && (
+        <button ref={triggerRef} type="button" className="message-actions-trigger"
+          aria-label={`${mine ? '自分' : message.sender_name ?? accountName(message.sender_account_id)}のメッセージの操作`}
+          aria-expanded={menuOpen}
+          aria-controls={menuOpen ? `message-actions-${message.chat_message_id}` : undefined}
+          onClick={() => (menuOpen ? onMenu(false) : openMenu())}>操作</button>
+      )}
       <Reactions reactions={message.reactions ?? []} onToggle={onReact} showAdd={false} />
       {/* 既読は自分の発言にだけ出す */}
       {mine && !editing && <div className="read">既読 {read.data ?? 0}</div>}
 
       {menuOpen && !editing && (
         <div className="msg-menu-wrap" style={above ? { bottom: '100%' } : { top: '100%' }}>
-          <div ref={menuRef} className="msg-menu" role="menu" aria-label="メッセージの操作">
+          <div ref={menuRef} id={`message-actions-${message.chat_message_id}`} className="msg-menu"
+            role="group" aria-label="メッセージの操作">
             <div className="msg-menu-row">
               {Object.entries(REACTION).map(([type, def]) => (
-                <button key={type} type="button" role="menuitem" className="reaction pick"
+                <button key={type} type="button" className="reaction pick"
                   aria-label={def.label} title={def.label}
                   onClick={guarded(() => { onReact(type); onMenu(false); })}>
                   <span aria-hidden="true">{def.emoji}</span>
@@ -390,14 +400,14 @@ function MessageRow({ message, mine, canEdit, onRetract, onEdit, onReact, menuOp
             <div className="msg-menu-row">
               {/* 編集は送信者本人。園チャットに限り管理者同士でもできる。取消は自分の発言だけ */}
               {canEdit && (
-                <button type="button" role="menuitem" className="btn-sm"
+                <button type="button" className="btn-sm"
                   onClick={guarded(() => { setDraft(message.body); setEditing(true); onMenu(false); })}>編集</button>
               )}
               {mine && (
-                <button type="button" role="menuitem" className="btn-sm"
+                <button type="button" className="btn-sm"
                   onClick={guarded(() => { onRetract(); onMenu(false); })}>取消</button>
               )}
-              <button type="button" role="menuitem" className="btn-sm btn-quiet" onClick={() => onMenu(false)}>
+              <button type="button" className="btn-sm btn-quiet" onClick={() => onMenu(false)}>
                 閉じる
               </button>
             </div>
