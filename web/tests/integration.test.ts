@@ -149,6 +149,26 @@ run('Go サーバとの結合', () => {
     }
   });
 
+  it('成長曲線の基準値は、厚生労働省の公表値を返す（ブラウザ内のモックと同じ値）', async () => {
+    const mock = await import('../src/api/mockDb');
+    for (const sex of ['1', '2'] as const) {
+      for (const measure of ['1', '2'] as const) {
+        const rows = (await http.api.growthBand(sex, measure))!;
+        expect(rows).toHaveLength(73 * 7);
+        const expected = mock.growthStandards.filter((g) => g.sex === sex && g.measure_type === measure);
+        const key = (g: { age_in_months: number; percentile: number }) => `${g.age_in_months}/${g.percentile}`;
+        const want = new Map(expected.map((g) => [key(g), g]));
+        for (const g of rows) {
+          expect(g.standard_value).toBe(want.get(key(g))!.standard_value);
+          expect(g.source_version).toBe(want.get(key(g))!.source_version);
+        }
+      }
+    }
+    // 表1 体重 男子 1年0～1月未満 の中央値
+    const boysWeight = (await http.api.growthBand('1', '2'))!;
+    expect(boysWeight.find((g) => g.age_in_months === 12 && g.percentile === 50)!.standard_value).toBe(9.24);
+  });
+
   it('発達チェック一覧は、未入力の項目数を返す', async () => {
     const rows = await http.api.list(dummy, 1);
     expect(rows.length).toBeGreaterThan(0);

@@ -13,6 +13,7 @@ import App from '../src/App';
 import { SessionProvider } from '../src/session';
 import type { SessionUser } from '../src/api/types';
 import { today } from '../src/api/util';
+import * as db from '../src/api/mockDb';
 
 const admin: SessionUser = {
   account_id: 1, email: 'takahashi@hoiku.example.jp', role: '1', display_name: '高橋 美咲',
@@ -353,6 +354,14 @@ describe('午睡チェック（3画面）', () => {
     const day = today();
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date(`${day}T13:30:00+09:00`));
+    /*
+     * 時計を固定する前に走ったテスト（ダッシュボードなど）が、実際の時刻で自動解除を掛けている。
+     * 15時を過ぎて実行すると、ここへ来る前にデモの実施が終了済みになり、以降のテストが落ちる。
+     * 自動で解除された今日の実施を、実施中へ戻してから確かめる
+     */
+    db.napSessions.forEach((s) => {
+      if (s.session_date === day && s.is_auto_closed) { s.ended_at = null; s.is_auto_closed = false; }
+    });
   });
   afterEach(() => { vi.useRealTimers(); });
 
