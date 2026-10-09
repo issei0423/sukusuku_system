@@ -10,10 +10,11 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
-import { api, selectableClasses, visibleChildren, settingNumber } from '../../api/client';
+import { api, selectableClasses, visibleChildren, settingNumber, staffName } from '../../api/client';
 import { Field, Alert, Loading, ErrorBox, Radios, Tag } from '../../components/ui';
+import { ConfirmDialog, notify } from '../../components/feedback';
 import { DIARY_RECORD_TYPE, DIARY_STATUS, DIARY_STATUS_CLASS } from '../../api/codes';
-import { formatMD, today } from '../../api/util';
+import { formatMD, formatMDHM, today, now, plusMinutes } from '../../api/util';
 import type { DiaryRecordType } from '../../api/types';
 
 export default function DiaryEditScreen() {
@@ -37,6 +38,7 @@ export default function DiaryEditScreen() {
   const [heldBy, setHeldBy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [unlocking, setUnlocking] = useState(false);
 
   const children = visibleChildren(user!);
   const classesForUser = selectableClasses(user!);
@@ -51,12 +53,44 @@ export default function DiaryEditScreen() {
     setDate(d.diary_date);
     setBody(d.body);
     api.attachmentsOf(d.diary_id).then((a) => setPhotos(a.map((x) => x.file_path)));
+    // 申請中・承認済みは編集できない。読むだけの人にロックを取らせない（GitHub Issue #110）
+    // ロックは取らないが、ほかの職員が開いていればその旨は出す（画面詳細図 3-2）
+    if (d.status === '2' || d.status === '3') {
+      api.lockOf(d.diary_id).then((l) => {
+        const idle = settingNumber('ui.diary_lock_minutes', 15);
+        if (l && l.locked_staff_id !== user!.staff_id && plusMinutes(l.last_active_at, idle) > now()) {
+          setHeldBy(l.staff_name);
+        }
+      });
+      return;
+    }
     api.acquireLock(user!, d.diary_id).then((r) => {
       if ('token' in r) { setLockToken(r.token); setHeldBy(null); }
       else setHeldBy(r.heldBy);
     });
-    return () => { api.releaseLock(user!, d.diary_id); };
+    // 画面を移るときだけでなく、タブを閉じる・読み込み直すときにもロックを外す
+    const release = () => { void api.releaseLock(user!, d.diary_id); };
+    window.addEventListener('pagehide', release);
+    return () => { window.removeEventListener('pagehide', release); release(); };
   }, [existing.data?.diary_id]);
+
+  // 管理者による強制解除（基本設計書「編集ロックの解除」(4-5)）。解除したあと、自分がロックを取り直す
+  const forceUnlock = async () => {
+    if (!diaryId) return;
+    setBusy(true); setError(null);
+    try {
+      await api.releaseLock(user!, diaryId, true);
+      // 編集できない状態（申請中・承認済み）の日誌では、解除だけを行い、ロックは取り直さない
+      if (existing.data && (existing.data.status === '2' || existing.data.status === '3')) {
+        setHeldBy(null);
+        notify('編集ロックを解除しました');
+        return;
+      }
+      const r = await api.acquireLock(user!, diaryId);
+      if ('token' in r) { setLockToken(r.token); setHeldBy(null); notify('編集ロックを解除しました'); }
+      else setHeldBy(r.heldBy);
+    } catch (e) { setError((e as Error).message); } finally { setBusy(false); setUnlocking(false); }
+  };
 
   const past = useAsync(
     async () => (childId ? api.pastDiariesOf(childId, diaryId ?? undefined) : []),
@@ -80,6 +114,7 @@ export default function DiaryEditScreen() {
         class_id: classId === '' ? null : classId,
         diary_date: date, body, lock_token: lockToken,
       }, status);
+      notify(status === '2' ? '日誌を申請しました' : '下書きを保存しました');
       navigate(status === '2' ? '/staff/diary' : `/staff/diary/${saved.diary_id}`);
     } catch (e) {
       setError((e as Error).message);
@@ -108,7 +143,15 @@ export default function DiaryEditScreen() {
       {heldBy && (
         <div style={{ marginBottom: 16 }}>
           <Alert>
-            {heldBy}さんが編集中です。保存できません。ロックの解除は管理者が行えます。
+            {heldBy}さんが編集中です。{!readOnly && '保存できません。'}
+            {user!.role === '1' ? (
+              <>
+                {' '}{heldBy}さんが編集を終えていることを確かめたうえで、ロックを強制解除できます。
+                <button className="btn-sm" style={{ marginLeft: 8 }} onClick={() => setUnlocking(true)} disabled={busy}>
+                  ロックを強制解除する
+                </button>
+              </>
+            ) : ' ロックの解除は管理者へ依頼してください。'}
           </Alert>
         </div>
       )}
@@ -121,6 +164,19 @@ export default function DiaryEditScreen() {
         <div style={{ marginBottom: 16 }}>
           <Alert soft>
             {d!.status === '2' ? '申請中のため編集できません。' : '承認済みのため編集できません。'}
+            {/* 承認と共有の経緯を、操作ログを探さなくても答えられるようにする（GitHub Issue #109） */}
+            {d!.status === '3' && (
+              <>
+                <br />
+                承認：{staffName(d!.approved_staff_id)}
+                {d!.approved_at && `（${formatMDHM(d!.approved_at)}）`}
+                <br />
+                保護者への共有：
+                {d!.is_shared_to_guardian
+                  ? `共有した${d!.shared_at ? `（${formatMDHM(d!.shared_at)}）` : ''}`
+                  : '共有していない'}
+              </>
+            )}
           </Alert>
         </div>
       )}
@@ -173,7 +229,7 @@ export default function DiaryEditScreen() {
             </div>
 
             <Field label="本文" required>
-              <textarea value={body} onChange={(e) => setBody(e.target.value)} disabled={readOnly}
+              <textarea value={body} onChange={(e) => setBody(e.target.value)} disabled={readOnly || !!heldBy}
                 style={{ minHeight: 280 }} />
             </Field>
 
@@ -211,6 +267,17 @@ export default function DiaryEditScreen() {
             </div>
           </div>
         </section>
+
+        {unlocking && (
+          <ConfirmDialog title="編集ロックの強制解除" confirmLabel="強制解除する" danger busy={busy}
+            onConfirm={forceUnlock} onCancel={() => setUnlocking(false)}>
+            <p>{heldBy}さんの編集ロックを解除します。</p>
+            <p className="muted">
+              {heldBy}さんが保存していない内容は保存できなくなります。編集を終えていることを確かめてから実行してください。
+              解除したことは操作ログに残ります。
+            </p>
+          </ConfirmDialog>
+        )}
 
         {/* この園児の過去の記録。前回の記述を見ながら書けるようにする（画面詳細図 3-2） */}
         <section className="card col-4">

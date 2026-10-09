@@ -5,16 +5,18 @@
  * 未対応の件数を最上部に置く。出勤直後に「何が残っているか」を1画面で把握させるため。
  * 承認待ちの区画は管理者にのみ表示する。
  */
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api } from '../../api/client';
-import { Loading, ErrorBox } from '../../components/ui';
+import { Loading, ErrorBox, Alert } from '../../components/ui';
 import { formatYMD, today } from '../../api/util';
 
 export default function StaffDashboard() {
   const { user } = useSession();
   const { data, error, loading } = useAsync(() => api.staffSummary(user!), [user?.account_id]);
+  // 管理者に限る画面を開こうとして戻されたとき（App.tsx の RequireAdmin）
+  const denied = (useLocation().state as { denied?: string } | null)?.denied === 'admin';
 
   if (loading) return <Loading />;
   if (error) return <ErrorBox text={error} />;
@@ -23,7 +25,9 @@ export default function StaffDashboard() {
   const rows = [
     { label: '差し戻された日誌', count: data.returned, unit: '件', to: '/staff/diary?status=4' },
     { label: '未読のチャット', count: data.unreadChat, unit: '件', to: '/staff/chat' },
-    { label: '発達チェックの未実施', count: data.devOverdue, unit: '名', to: '/staff/growth' },
+    // 数える範囲は、参照できる園児の全体。管理者は全クラス、一般は担当クラス（GitHub Issue #125）
+    { label: `発達チェックの未実施（${user.role === '1' ? '全クラス' : '担当クラス'}）`,
+      count: data.devOverdue, unit: '名', to: '/staff/growth' },
     { label: 'ヒヤリハット未起票の異常時の記録', count: data.abnormalWithoutDiary, unit: '件', to: '/staff/nap/abnormal' },
   ].filter((r) => r.count > 0);
 
@@ -34,6 +38,12 @@ export default function StaffDashboard() {
         <div className="spacer" />
         <span className="muted">今日 {formatYMD(today())}</span>
       </div>
+
+      {denied && (
+        <div style={{ marginBottom: 16 }}>
+          <Alert soft>開こうとした画面は、管理者のみが利用できます。必要な場合は管理者へ依頼してください。</Alert>
+        </div>
+      )}
 
       <div className="grid12">
         {/* 未対応 */}

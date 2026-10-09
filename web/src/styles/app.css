@@ -318,6 +318,19 @@ table.list td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .modal-head { padding: var(--sp-4); border-bottom: 1px solid var(--c-border); font-weight: 700; }
 .modal-body { padding: var(--sp-4); }
 .modal-foot { padding: var(--sp-4); border-top: 1px solid var(--c-border); display: flex; justify-content: flex-end; gap: var(--sp-3); }
+/* ダイアログの中で起きた誤りは、ダイアログの中に出す。後ろに出すと隠れて読めない */
+.modal-body .alert { margin-bottom: var(--sp-3); }
+
+/* 操作が完了したことの表示。画面の下端に重ねて出し、並びを押し広げない */
+.toast {
+  position: fixed; left: 50%; bottom: var(--sp-4); transform: translateX(-50%); z-index: 60;
+  display: flex; align-items: center; gap: var(--sp-3);
+  max-width: min(640px, calc(100vw - 2 * var(--sp-4)));
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--c-text); color: var(--c-surface);
+  border-radius: var(--radius); box-shadow: 0 8px 30px rgba(0,0,0,.25);
+}
+.toast .btn-sm { color: inherit; border-color: currentColor; background: transparent; }
 
 /* 段階を上から順に踏ませる（画面詳細図 2-3 新規登録画面） */
 .step { border: 1px solid var(--c-border); border-radius: var(--radius); padding: var(--sp-4); margin-bottom: var(--sp-4); }

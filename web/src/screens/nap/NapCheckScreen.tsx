@@ -24,9 +24,12 @@ export default function NapCheckScreen() {
   const [classId, setClassId] = useState<number>(user!.class_id ?? classesForUser[0]?.class_id ?? 1);
   const [tick, setTick] = useState(0);
 
-  const session = useAsync(() => api.activeSession(classId, today()), [classId, tick]);
+  // 選べるクラスが無い（担当クラスの無い一般の職員）ときは、問い合わせない。
+  // ほかのクラスを指定することになり、権限の誤りが返る（GitHub Issue #96・#127）
+  const hasClass = classesForUser.length > 0;
+  const session = useAsync(async () => (hasClass ? api.activeSession(classId, today(), user!) : null), [classId, tick]);
   const state = useAsync(
-    () => api.classState(user!, classId, session.data?.nap_session_id ?? null),
+    async () => (hasClass ? api.classState(user!, classId, session.data?.nap_session_id ?? null) : []),
     [classId, session.data?.nap_session_id, tick],
   );
 
@@ -76,6 +79,18 @@ export default function NapCheckScreen() {
   // 確認の時刻を過ぎたか。未記録の園児は開始時刻から数える
   const isDue = (latestAt: string | null) =>
     !!s && plusMinutes(latestAt ?? s.started_at, intervalMinutes) <= now();
+
+  // 選べるクラスが無い（担当クラスの無い一般の職員）。ほかのクラスの実施を表示しない（GitHub Issue #127）
+  if (classesForUser.length === 0) {
+    return (
+      <div>
+        <div className="page-head"><h1>午睡チェック</h1></div>
+        <section className="card">
+          <div className="empty">担当クラスが割り当てられていないため、午睡チェックを行えません。</div>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div>

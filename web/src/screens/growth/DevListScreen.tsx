@@ -17,9 +17,18 @@ import { formatYMD, formatAge, today } from '../../api/util';
 export default function DevListScreen() {
   const { user } = useSession();
   const classesForUser = selectableClasses(user!);
-  const [classId, setClassId] = useState<number>(user!.class_id ?? classesForUser[0]?.class_id ?? 1);
+  // 管理者は園全体の抜けを見る。最初から全クラスを出す（GitHub Issue #125）
+  const isAdmin = user!.role === '1';
+  const [classId, setClassId] = useState<number | 'all'>(
+    isAdmin ? 'all' : (user!.class_id ?? classesForUser[0]?.class_id ?? 1));
 
-  const { data, error, loading } = useAsync(() => api.list(user!, classId), [classId]);
+  const { data, error, loading } = useAsync(async () => {
+    if (classId !== 'all') return (await api.list(user!, classId)).map((r) => ({ ...r, className: '' }));
+    const perClass = await Promise.all(classesForUser.map(async (c) =>
+      (await api.list(user!, c.class_id)).map((r) => ({ ...r, className: c.class_name }))));
+    return perClass.flat();
+  }, [classId]);
+  const showClass = classId === 'all';
   const overdue = data?.filter((r) => r.overdue) ?? [];
 
   return (
@@ -27,7 +36,9 @@ export default function DevListScreen() {
       <div className="page-head">
         <h1>発達チェック</h1>
         <Field label="クラス">
-          <select value={classId} onChange={(e) => setClassId(Number(e.target.value))}>
+          <select value={classId}
+            onChange={(e) => setClassId(e.target.value === 'all' ? 'all' : Number(e.target.value))}>
+            {isAdmin && <option value="all">すべて</option>}
             {classesForUser.map((c) => <option key={c.class_id} value={c.class_id}>{c.class_name}</option>)}
           </select>
         </Field>
@@ -61,12 +72,18 @@ export default function DevListScreen() {
         {data && data.length > 0 && (
           <table className="list">
             <thead>
-              <tr><th scope="col">園児</th><th scope="col">月齢</th><th scope="col">前回の実施日</th><th scope="col">次回の予定日</th><th scope="col">状態</th><th scope="col">操作</th></tr>
+              <tr>
+                <th scope="col">園児</th>{showClass && <th scope="col">クラス</th>}
+                {/* 何の時点の月齢かを書く。画面によって基準が違い、食い違って見えるため（GitHub Issue #124） */}
+                <th scope="col">月齢<span className="weak">（予定日の時点）</span></th>
+                <th scope="col">前回の実施日</th><th scope="col">次回の予定日</th><th scope="col">状態</th><th scope="col">操作</th>
+              </tr>
             </thead>
             <tbody>
               {data.map((r) => (
                 <tr key={r.child.child_id}>
                   <td className="nowrap">{r.child.child_name}</td>
+                  {showClass && <td className="nowrap">{r.className}</td>}
                   {/* 月齢は基準日を予定日として算出する。現在日ではない（基本設計書 4-8） */}
                   <td className="nowrap">{formatAge(r.child.birth_date, r.scheduledOn ?? today())}</td>
                   <td className="nowrap">{r.lastCheckedOn ? formatYMD(r.lastCheckedOn) : '―'}</td>
@@ -93,6 +110,9 @@ export default function DevListScreen() {
           「未実施」は、予定日を過ぎても記録が1件も入っていない状態を指します。
           記録の中の「未確認」は入力済みの結果であり、未実施には含みません（基本設計書 5-7）。
           「未入力」は、前回の確定した記録に結果を入れていない項目が残っている状態を指します。
+          <br />
+          月齢は、次回の予定日の時点で表示しています（予定日が無いときは今日の時点）。
+          その時点の月齢でチェック項目が決まるためです。園児一覧の月齢は今日の時点です。
           <br />
           本機能は発達の判定・診断を行うものではありません。
         </div>

@@ -10,6 +10,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useSession } from '../../session';
 import { api, childName, className } from '../../api/client';
 import { Alert, Empty } from '../../components/ui';
+import { notify } from '../../components/feedback';
 import { DIARY_RECORD_TYPE } from '../../api/codes';
 import { formatYMD } from '../../api/util';
 import type { DiaryRecordType } from '../../api/types';
@@ -49,6 +50,7 @@ export default function DiaryConfirmScreen() {
         body: state.body,
         lock_token: state.lockToken,
       }, '2');
+      notify('日誌を申請しました。管理者の承認待ちになります');
       navigate('/staff/diary');
     } catch (e) {
       setError((e as Error).message);

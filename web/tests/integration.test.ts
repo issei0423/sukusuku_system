@@ -78,7 +78,10 @@ run('Go サーバとの結合', () => {
   });
 
   it('日誌の一覧がページングつきで返る', async () => {
-    const p = await http.api.listDiaries(dummy, { from: '2026-08-01', to: '2026-09-30' });
+    // デモデータは起動日に合わせて日付がずれる。固定の期間で探すと、作りたてのデータベースで
+    // 0件になる（GitHub Issue #101）。今日から遡った期間で探す
+    const day = (offset: number) => new Date(Date.now() + 9 * 3600_000 + offset * 86_400_000).toISOString().slice(0, 10);
+    const p = await http.api.listDiaries(dummy, { from: day(-60), to: day(0) });
     expect(p.per_page).toBe(50);
     expect(p.rows.length).toBeGreaterThan(0);
     // 表示用の名前がサーバ側で解決されている

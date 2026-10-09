@@ -23,7 +23,11 @@ export default function NapAbnormalScreen() {
   const children = visibleChildren(user!);
 
   const [classId] = useState<number>(user!.class_id ?? classesForUser[0]?.class_id ?? 1);
-  const session = useAsync(() => api.activeSession(classId, today()), [classId, tick]);
+  // 選べるクラスが無いときは問い合わせない（GitHub Issue #96）
+  const session = useAsync(
+    async () => (classesForUser.length > 0 ? api.activeSession(classId, today(), user!) : null),
+    [classId, tick],
+  );
 
   const [childId, setChildId] = useState('');
   const [foundAt, setFoundAt] = useState(now().slice(0, 16));

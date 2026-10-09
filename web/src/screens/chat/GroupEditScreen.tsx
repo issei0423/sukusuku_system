@@ -24,7 +24,7 @@ export default function GroupEditScreen() {
   const [editing, setEditing] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const members = useAsync(async () => (editing ? api.members(editing) : []), [editing]);
+  const members = useAsync(async () => (editing ? api.members(editing, user!) : []), [editing]);
 
   const create = async () => {
     setError(null);
@@ -46,7 +46,7 @@ export default function GroupEditScreen() {
   };
 
   const openEdit = async (roomId: number) => {
-    const m = await api.members(roomId);
+    const m = await api.members(roomId, user!);
     setPicked(m.map((x) => x.account_id));
     setEditing(roomId);
   };

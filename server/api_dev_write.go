@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"log"
 	"net/http"
 	"strings"
 )
@@ -147,8 +148,10 @@ func (a *app) advanceDevelopmentSchedule(u *SessionUser, checkID int64, childID,
 		return
 	}
 	if scheduleID.Valid {
-		a.db.Exec(`UPDATE t_development_check SET development_schedule_id = ?
-			WHERE development_check_id = ?`, scheduleID.Int64, checkID)
+		if _, err := a.db.Exec(`UPDATE t_development_check SET development_schedule_id = ?
+			WHERE development_check_id = ?`, scheduleID.Int64, checkID); err != nil {
+			log.Printf("発達チェックと予定の紐づけに失敗しました（check=%d）: %v", checkID, err)
+		}
 	}
 
 	var birth string
@@ -162,8 +165,13 @@ func (a *app) advanceDevelopmentSchedule(u *SessionUser, checkID int64, childID,
 		return
 	}
 	next := addDays(checkedOn, interval)
-	a.db.Exec(`INSERT INTO t_development_schedule (child_id, scheduled_on, is_manual_override, created_staff_id)
-		VALUES (?, ?, 0, ?)`, childID, next, u.staff())
+	// 作れなかったときは、操作ログに「次回予定日＝…」と残さない。記録と実際を食い違わせない
+	// （GitHub Issue #99）。チェックの保存そのものは済んでいるため、業務処理は止めない
+	if _, err := a.db.Exec(`INSERT INTO t_development_schedule (child_id, scheduled_on, is_manual_override, created_staff_id)
+		VALUES (?, ?, 0, ?)`, childID, next, u.staff()); err != nil {
+		log.Printf("次回の予定日を作れませんでした（child=%s）: %v", childID, err)
+		return
+	}
 	a.log(u.AccountID, fnDev, opCreate, "t_development_schedule", nil, s(childID), nil,
 		s("次回予定日="+next+"（実施日から算出）"))
 }

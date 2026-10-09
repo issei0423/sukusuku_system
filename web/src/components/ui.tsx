@@ -91,7 +91,9 @@ export function Modal({ title, children, onClose, footer }: {
     const focusable = () => Array.from(root?.querySelectorAll<HTMLElement>(
       'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
     ) ?? []).filter((element) => element.getAttribute('aria-hidden') !== 'true' &&
-      !(element instanceof HTMLInputElement && element.type === 'hidden'));
+      !(element instanceof HTMLInputElement && element.type === 'hidden'))
+      // 複数のセレクタをまとめた検索は、環境によって画面上の順で返らない。Tab の折り返し先を誤らないよう並べ直す
+      .sort((x, y) => (x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
     (root?.querySelector<HTMLElement>('input:not(:disabled), select:not(:disabled), textarea:not(:disabled)')
       ?? focusable()[0] ?? root)?.focus();
     const onKey = (event: KeyboardEvent) => {

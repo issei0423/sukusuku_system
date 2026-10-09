@@ -7,7 +7,7 @@
  * アレルギー・既往歴は要配慮個人情報として扱う。
  */
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api, selectableClasses } from '../../api/client';
@@ -16,6 +16,10 @@ import { SEX, PHOTO_CONSENT } from '../../api/codes';
 import { today } from '../../api/util';
 import type { Sex, PhotoConsentLevel } from '../../api/types';
 import type { ChildInput } from '../../api/client';
+
+// 体温として入力しうる範囲（基本設計書「入力項目の制約値」(4-9)）
+const TEMPERATURE_MIN = 30.0;
+const TEMPERATURE_MAX = 43.0;
 
 export default function ChildInputScreen() {
   const { user } = useSession();
@@ -29,17 +33,35 @@ export default function ChildInputScreen() {
   const existingHistories = useAsync(async () => (childId ? api.medicalHistoriesOf(childId) : []), [childId]);
   const existingClass = useAsync(async () => (childId ? api.classOf(childId) : null), [childId]);
 
-  const [form, setForm] = useState<ChildInput>({
+  // 確認画面から戻ってきたときは、入力していた内容を引き継ぐ。戻るたびに打ち直させない（GitHub Issue #120）
+  const restored = (useLocation().state as { form?: ChildInput } | null)?.form;
+  const [form, setForm] = useState<ChildInput>(restored ?? {
     child_id: '', child_name: '', child_name_kana: '', birth_date: '',
     sex: '1', normal_temperature: null, photo_consent_level: '2',
     class_id: classesForUser[0]?.class_id ?? 1,
     allergies: [], medical_histories: [],
   });
-  const [error, setError] = useState<string | null>(null);
+  // 誤りはまとめて示す。1つ直すたびに次の誤りが出る作りにしない（GitHub Issue #121）
+  const [errors, setErrors] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  // 想定の範囲の外の平熱を、確かめたうえで進めるための控え。範囲の外でも入力は妨げない
+  // （基本設計書「入力項目の制約値」(4-9)）
+  const [temperatureAcknowledged, setTemperatureAcknowledged] = useState<number | null>(null);
+
+  // 新規登録では、使われている番号の次を園児IDに入れておく。採番を人に探させない
+  const allChildren = useAsync(async () => (mode === 'create' ? api.listChildren(user!) : []), [mode]);
+  useEffect(() => {
+    if (mode !== 'create' || restored || !allChildren.data) return;
+    const max = allChildren.data.reduce((m, c) => {
+      const hit = /^C(\d+)$/.exec(c.child_id);
+      return hit ? Math.max(m, Number(hit[1])) : m;
+    }, 0);
+    setForm((f) => (f.child_id ? f : { ...f, child_id: `C${String(max + 1).padStart(3, '0')}` }));
+  }, [allChildren.data]);
 
   useEffect(() => {
     const c = existing.data;
-    if (!c) return;
+    if (!c || restored) return;
     setForm({
       child_id: c.child_id, child_name: c.child_name, child_name_kana: c.child_name_kana,
       birth_date: c.birth_date, sex: c.sex, normal_temperature: c.normal_temperature,
@@ -54,14 +76,44 @@ export default function ChildInputScreen() {
 
   const set = <K extends keyof ChildInput>(k: K, v: ChildInput[K]) => setForm((f) => ({ ...f, [k]: v }));
 
-  const next = () => {
-    setError(null);
-    if (!form.child_id.trim()) { setError('園児IDを入力してください'); return; }
-    if (!form.child_name.trim()) { setError('氏名を入力してください'); return; }
-    if (!form.birth_date) { setError('生年月日を入力してください'); return; }
-    if (form.birth_date > today()) { setError('生年月日に未来日は指定できません'); return; }
+  const temperatureOutOfRange = form.normal_temperature != null
+    && (form.normal_temperature < TEMPERATURE_MIN || form.normal_temperature > TEMPERATURE_MAX);
+
+  const next = async () => {
+    const found: string[] = [];
+    if (!form.child_id.trim()) found.push('園児IDを入力してください');
+    if (!form.child_name.trim()) found.push('氏名を入力してください');
+    if (!form.child_name_kana.trim()) found.push('よみを入力してください');
+    if (!form.birth_date) found.push('生年月日を入力してください');
+    else if (form.birth_date > today()) found.push('生年月日に未来日は指定できません');
+    form.allergies.forEach((a) => {
+      if (a.target_food.trim() && (!a.symptom.trim() || !a.response.trim())) {
+        found.push(`アレルギー「${a.target_food.trim()}」の症状と対応を入力してください`);
+      }
+    });
+
+    // 園児IDの重複は、確認画面へ進む前に知らせる（GitHub Issue #121）
+    if (mode === 'create' && form.child_id.trim()) {
+      setBusy(true);
+      try {
+        if (await api.childIdExists(user!, form.child_id)) found.push('その園児IDはすでに使われています');
+      } catch (e) {
+        found.push((e as Error).message);
+      } finally { setBusy(false); }
+    }
+
+    setErrors(found);
+    if (found.length > 0) return;
+
+    // 範囲の外の平熱は、いちど確かめてもらってから進める。同じ値でもう一度押すと進む
+    if (temperatureOutOfRange && temperatureAcknowledged !== form.normal_temperature) {
+      setTemperatureAcknowledged(form.normal_temperature);
+      return;
+    }
     navigate('/staff/children/confirm', { state: { form, mode, before: existing.data } });
   };
+
+  const askingTemperature = temperatureOutOfRange && temperatureAcknowledged === form.normal_temperature;
 
   if (existing.loading) return <Loading />;
   if (existing.error) return <ErrorBox text={existing.error} />;
@@ -73,18 +125,39 @@ export default function ChildInputScreen() {
         <h1>園児情報の{mode === 'create' ? '登録' : '編集'}</h1>
       </div>
 
-      {error && <div style={{ marginBottom: 16 }}><Alert>{error}</Alert></div>}
+      {errors.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <Alert>
+            {errors.length === 1 ? errors[0] : (
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {errors.map((e) => <li key={e}>{e}</li>)}
+              </ul>
+            )}
+          </Alert>
+        </div>
+      )}
+      {askingTemperature && (
+        <div style={{ marginBottom: 16 }}>
+          <Alert>
+            平熱 {form.normal_temperature} ℃ は、想定の範囲（{TEMPERATURE_MIN.toFixed(1)}〜{TEMPERATURE_MAX.toFixed(1)}℃）の外です。
+            値を確かめてください。正しければ、もう一度「確認へ進む」を押してください。
+          </Alert>
+        </div>
+      )}
 
       <section className="card">
         <div className="stack">
           <Field label="園児ID" required>
             <input type="text" value={form.child_id} disabled={mode === 'edit'}
-              onChange={(e) => set('child_id', e.target.value)} placeholder="C001" />
+              onChange={(e) => set('child_id', e.target.value)} />
           </Field>
+          {mode === 'create' && (
+            <div className="muted">使われている番号の次を入れてあります。園で決めた番号があれば書き換えてください。</div>
+          )}
           <Field label="氏名" required>
             <input type="text" value={form.child_name} onChange={(e) => set('child_name', e.target.value)} />
           </Field>
-          <Field label="よみ">
+          <Field label="よみ" required>
             <input type="text" value={form.child_name_kana} onChange={(e) => set('child_name_kana', e.target.value)} />
           </Field>
           <Field label="生年月日" required>
@@ -126,7 +199,10 @@ export default function ChildInputScreen() {
       {/* アレルギー・既往歴は要配慮個人情報として扱う（画面詳細図 7-2） */}
       <section className="card">
         <h2>アレルギー</h2>
-        <div className="muted" style={{ marginBottom: 8 }}>要配慮個人情報です。参照できる範囲は権限で絞られます。</div>
+        <div className="muted" style={{ marginBottom: 8 }}>
+          要配慮個人情報です。参照できる範囲は権限で絞られます。
+          対象・症状・対応の3つを揃えて入力してください。配膳の場で使う一覧にそのまま載ります。
+        </div>
         <div className="stack">
           {form.allergies.map((a, i) => (
             <div className="row" key={i}>
@@ -167,7 +243,7 @@ export default function ChildInputScreen() {
 
       <div className="row-end">
         <button onClick={() => navigate('/staff/children')}>やめる</button>
-        <button className="btn-primary" onClick={next}>確認へ進む</button>
+        <button className="btn-primary" onClick={next} disabled={busy}>確認へ進む</button>
       </div>
     </div>
   );

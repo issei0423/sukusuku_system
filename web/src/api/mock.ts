@@ -101,6 +101,47 @@ function log(
   });
 }
 
+/**
+ * 操作の相手を、人が読める名前にする。園児に紐づかない操作（アカウントの停止、クラス日誌の承認など）は、
+ * 対象園児の列だけでは誰・何に対する操作かが分からない（GitHub Issue #114）。
+ * サーバ側（server/api_audit.go の targetLabel）と同じ規則を持つ。
+ */
+function targetLabel(table: string, targetId: number | null): string {
+  if (targetId === null) return '';
+  if (table === 'm_account' || table === 't_guardian_child') return accountName(targetId);
+  if (table === 't_diary' || table === 't_diary_lock') {
+    const d = db.diaries.find((x) => x.diary_id === targetId);
+    if (!d) return '';
+    const kind = { '1': '個人日誌', '2': 'クラス日誌', '3': '週案・月案', '4': 'ヒヤリハット' }[d.record_type];
+    const who = d.child_id ? childName(d.child_id) : d.class_id ? className(d.class_id) : '';
+    return [kind, who, d.diary_date].filter(Boolean).join(' ');
+  }
+  return '';
+}
+
+/**
+ * その職員がそのクラスを扱えるか。一般（保育士）は自クラスに限る
+ * （要件定義書「対象権限列の読み方」(4-2 冒頭)。サーバ側は server/scope.go の canUseClass）
+ */
+function canUseClass(user: SessionUser, classId: number): boolean {
+  if (user.role === '1') return true;
+  return user.role === '2' && user.class_id === classId;
+}
+
+/**
+ * 【仮置き】招待コードの有効日数は 1〜365 日とする。0 や負の値を通すと、発行した時点で
+ * 期限切れ・当日期限のコードができる（GitHub Issue #100）
+ */
+const INVITATION_DAYS_MESSAGE = '有効期限は 1〜365 日で指定してください';
+const validInvitationDays = (days: number) => Number.isInteger(days) && days >= 1 && days <= 365;
+
+/** ログイン中の職員。ログアウトのときに、保持している編集ロックを外すために持つ */
+let loggedInStaffId: string | null = null;
+
+/** 体温として入力しうる範囲（基本設計書「入力項目の制約値」(4-9)） */
+const TEMPERATURE_MIN = 30.0;
+const TEMPERATURE_MAX = 43.0;
+
 /* ============ 権限（基本設計書「権限と利用可能機能」(6-1)） ============ */
 
 /** 職員が参照できる園児か。一般（保育士）は自クラスに限る（要件定義書「対象権限列の読み方」(4-2 冒頭)） */
@@ -202,7 +243,9 @@ export const authApi = {
 
     a.failed_login_count = 0;
     a.locked_until = null;
-    return ok(buildSessionUser(a));
+    const sessionUser = buildSessionUser(a);
+    loggedInStaffId = sessionUser.staff_id;
+    return ok(sessionUser);
   },
 
   /** パスワードの変更。一時パスワードの状態を解除する */
@@ -244,7 +287,18 @@ export const authApi = {
     return ok(null);
   },
 
+  /**
+   * ログアウト。保持している編集ロックをすべて外す。
+   * ロックを持ったままログアウトすると、ほかの職員が無操作の経過まで保存できなくなる
+   * （基本設計書「編集ロックの解除」(4-5)、GitHub Issue #110）
+   */
   async logout(): Promise<void> {
+    if (loggedInStaffId) {
+      for (let i = db.diaryLocks.length - 1; i >= 0; i--) {
+        if (db.diaryLocks[i].locked_staff_id === loggedInStaffId) db.diaryLocks.splice(i, 1);
+      }
+    }
+    loggedInStaffId = null;
     return ok(undefined);
   },
 
@@ -305,7 +359,14 @@ export const childApi = {
   /** 登録・編集は管理者のみ（画面詳細図 7-1） */
   async saveChild(user: SessionUser, input: ChildInput, mode: 'create' | 'edit'): Promise<Child> {
     if (user.role !== '1') return fail('園児情報の登録・編集は管理者のみが行えます');
-    if (input.birth_date > today()) return fail('生年月日に未来日は指定できません');
+    if (!input.child_id.trim()) return fail('園児IDを入力してください');
+    if (!input.child_name.trim()) return fail('氏名を入力してください');
+    // 【仮置き】よみを必須とする。一覧の並びと検索がよみに頼っているため（GitHub Issue #119）
+    if (!input.child_name_kana.trim()) return fail('よみを入力してください');
+    if (!input.birth_date || input.birth_date > today()) return fail('生年月日に未来日は指定できません');
+    // アレルギーは対象だけでは配膳の場で使えない。症状と対応まで揃えて登録する（GitHub Issue #119）
+    const incomplete = input.allergies.find((a) => a.target_food.trim() && (!a.symptom.trim() || !a.response.trim()));
+    if (incomplete) return fail(`アレルギー「${incomplete.target_food.trim()}」の症状と対応を入力してください`);
 
     const existing = findChild(input.child_id);
     if (mode === 'create' && existing) return fail('その園児IDはすでに使われています');
@@ -350,6 +411,12 @@ export const childApi = {
     log(user.account_id, '6', mode === 'create' ? '1' : '2', 'm_child', null, input.child_id,
       before, `${row.child_name} / ${row.birth_date}`);
     return ok(row);
+  },
+
+  /** 園児IDがすでに使われているか。入力の時点で重複を知らせるために使う（GitHub Issue #121） */
+  async childIdExists(user: SessionUser, childId: string): Promise<boolean> {
+    if (user.role !== '1') return fail('園児情報の登録・編集は管理者のみが行えます');
+    return ok(db.children.some((c) => c.child_id === childId.trim()));
   },
 
   /** 誤登録の取消。論理削除とする（基本設計書 5-1） */
@@ -512,6 +579,11 @@ const diaryApi2 = {
     const d = db.diaries.find((x) => x.diary_id === diaryId);
     if (!d) return fail('日誌が見つかりません');
     if (d.status !== '2') return fail('申請中の日誌のみ承認できます');
+    // 【仮置き】承認は、作成者とは別の管理者による確認として扱う（GitHub Issue #106）。
+    // 申請者と承認者が同じでよいかは設計に定めが無い（web/仮置き値.md）
+    if (d.created_staff_id === user.staff_id) {
+      return fail('自分が申請した日誌は承認できません。ほかの管理者に承認を依頼してください');
+    }
 
     d.status = '3';
     d.approved_staff_id = user.staff_id;
@@ -623,9 +695,12 @@ export const chatApi = {
     if (!(reactionType in REACTION)) return fail('リアクションの指定が正しくありません');
     const m = db.chatMessages.find((x) => x.chat_message_id === messageId);
     if (!m) return fail('メッセージが見つかりません');
-    if (m.is_deleted) return fail('取り消したメッセージには反応できません');
     const member = db.chatMembers.find((x) => x.chat_room_id === m.chat_room_id && x.account_id === user.account_id);
     if (!member || (user.role === '3' && member.left_at)) return fail('このチャンネルを参照する権限がありません');
+    // 後から登録した保護者には、登録より前のメッセージを見せない。見えないものには反応もできない
+    // （GitHub Issue #100）。存在を知らせないよう、見つからないときと同じ応答にする
+    if (hiddenBeforeJoined(user, m)) return fail('メッセージが見つかりません');
+    if (m.is_deleted) return fail('取り消したメッセージには反応できません');
 
     const i = db.chatReactions.findIndex((r) =>
       r.chat_message_id === messageId && r.account_id === user.account_id && r.reaction_type === reactionType);
@@ -700,6 +775,8 @@ export const chatApi = {
     if (m.sender_account_id !== user.account_id && user.role !== '1') {
       return fail('自分が送信したメッセージのみ取り消せます');
     }
+    // 取り消した日時と操作ログを上書き・重複させない（GitHub Issue #100）
+    if (m.is_deleted) return fail('このメッセージはすでに取り消されています');
     const before = m.body;
     m.is_deleted = true;
     m.body = '';
@@ -740,6 +817,13 @@ export const chatApi = {
    * （基本設計書「チャット」(5-5)）
    */
   async members(roomId: number, viewer?: SessionUser) {
+    // 参加していないチャンネルのメンバーは返さない。ほかの家庭の保護者の氏名や続柄が読めてしまう
+    // （GitHub Issue #95）。管理者は、グループ編成のために全チャンネルを参照できる。
+    // 画面からは必ず viewer を渡す。渡さない呼び出しはテストのためだけに残している
+    if (viewer && viewer.role !== '1') {
+      const me = db.chatMembers.find((x) => x.chat_room_id === roomId && x.account_id === viewer.account_id);
+      if (!me || (viewer.role === '3' && me.left_at)) return fail('このチャンネルを参照する権限がありません');
+    }
     const forStaff = !!viewer && viewer.role !== '3';
     return ok(db.chatMembers.filter((m) => m.chat_room_id === roomId && m.left_at === null)
       .map((m) => {
@@ -765,7 +849,9 @@ function hiddenBeforeJoined(user: SessionUser, m: ChatMessage): boolean {
   const room = db.chatRooms.find((r) => r.chat_room_id === m.chat_room_id);
   if (room?.room_type !== '4') return false;
   const member = db.chatMembers.find((x) => x.chat_room_id === m.chat_room_id && x.account_id === user.account_id);
-  return !!member && m.sent_at < member.joined_at;
+  // 【仮置き】時刻は秒の単位で持つため、登録と同じ秒のメッセージは前か後かを区別できない。
+  // 見せない側へ倒す（GitHub Issue #102）。見せる側へ倒すと、登録の直前に送られたものが読めてしまう
+  return !!member && m.sent_at <= member.joined_at;
 }
 
 /** 保護者アカウントの続柄。有効な紐づけのものを、重複を除いて並べる */
@@ -855,7 +941,9 @@ const chatApi2 = {
   async retractedWithoutRecord() {
     const recorded = new Set(db.misdeliveryRecords.map((r) => r.chat_message_id));
     return ok(db.chatMessages
-      .filter((m) => m.is_deleted && !recorded.has(m.chat_message_id))
+      // 【仮置き】配布物の掲載の知らせ（source_type = 4）は対象にしない。取り下げとして操作ログに残る
+      // （GitHub Issue #98）
+      .filter((m) => m.is_deleted && m.source_type !== '4' && !recorded.has(m.chat_message_id))
       .map((m) => ({
         chat_message_id: m.chat_message_id,
         room_name: db.chatRooms.find((r) => r.chat_room_id === m.chat_room_id)?.room_name ?? '―',
@@ -885,13 +973,19 @@ function autoCloseNapSessions(): void {
 
 export const napApi = {
   /** 実施中のセッション。開いたまま運用するため、開始済みかを常に確認する */
-  async activeSession(classId: number, date: string): Promise<NapSession | null> {
+  // 画面からは必ず user を渡す。渡さない呼び出しはテストのためだけに残している
+  async activeSession(classId: number, date: string, user?: SessionUser): Promise<NapSession | null> {
+    // 一般（保育士）は自クラスに限る（GitHub Issue #96）
+    if (user && !canUseClass(user, classId)) return fail('このクラスの午睡チェックを参照する権限がありません');
     autoCloseNapSessions();
     return ok(db.napSessions.find((s) => s.class_id === classId && s.session_date === date && s.ended_at === null) ?? null);
   },
 
   async startSession(user: SessionUser, classId: number, date: string): Promise<NapSession> {
     if (user.role === '3') return fail('午睡チェックは職員のみが行えます');
+    if (!canUseClass(user, classId)) return fail('このクラスの午睡チェックを開始する権限がありません');
+    // 【仮置き】開始できるのは当日だけとする（GitHub Issue #97）。記録は起きたときに付けるものである
+    if (date !== today()) return fail('午睡チェックは当日のぶんだけ開始できます');
     autoCloseNapSessions();
     const existing = db.napSessions.find((s) => s.class_id === classId && s.session_date === date && s.ended_at === null);
     if (existing) return ok(existing);
@@ -916,6 +1010,7 @@ export const napApi = {
 
   /** クラス全体の状況。平熱は比較の材料として並べて表示するのみ（画面詳細図 5-1） */
   async classState(user: SessionUser, classId: number, sessionId: number | null): Promise<NapChildState[]> {
+    if (!canUseClass(user, classId)) return fail('このクラスの午睡チェックを参照する権限がありません');
     const ids = db.classChildren.filter((cc) => cc.class_id === classId).map((cc) => cc.child_id);
     const rows = ids
       .map((id) => findChild(id))
@@ -947,6 +1042,13 @@ export const napApi = {
     if (!(input.breathing in BREATHING)) return fail('呼吸を選んでください');
     if (!(input.complexion in COMPLEXION)) return fail('顔色を選んでください');
     if (!canSeeChild(user, input.child_id)) return fail('この園児を記録する権限がありません');
+    // 終了した実施へは記録しない。自動で解除された直後に、開いたままの画面から記録が付くのを防ぐ
+    // （GitHub Issue #97）
+    autoCloseNapSessions();
+    const session = db.napSessions.find((x) => x.nap_session_id === sessionId);
+    if (!session) return fail('午睡チェックが見つかりません');
+    if (!canUseClass(user, session.class_id)) return fail('このクラスの午睡チェックを記録する権限がありません');
+    if (session.ended_at !== null) return fail('この午睡チェックは終了しています。画面を読み込み直してください');
     const r: NapRecord = {
       nap_record_id: nextId(), nap_session_id: sessionId, child_id: input.child_id,
       checked_at: now(), saved_at: now(),
@@ -1432,6 +1534,14 @@ export const adminApi = {
     const a = findAccount(accountId);
     if (!a) return fail('アカウントが見つかりません');
     if (a.account_id === user.account_id) return fail('自分のアカウントは停止できません');
+    if (status !== '1' && status !== '2') return fail('状態の指定が正しくありません');
+    // 保護者のアカウントは、有効な紐づけがゼロになった時点で停止する（基本設計書 5-3）。
+    // 紐づけが無いまま再開すると、その規則と合わない状態になる（GitHub Issue #118）
+    if (status === '1' && a.role === '3') {
+      const g = db.guardians.find((x) => x.account_id === a.account_id);
+      const active = db.guardianChildren.filter((x) => x.guardian_id === g?.guardian_id && x.link_status === '1').length;
+      if (active === 0) return fail('有効な紐づけが無いため再開できません。先に紐づけを戻してください');
+    }
     const before = a.status;
     a.status = status;
     a.updated_at = now();
@@ -1465,6 +1575,51 @@ export const adminApi = {
     log(user.account_id, '7', '1', 'm_account', accountId, null, null, `職員アカウントを発行（${input.staff_name}）`);
     return ok(temp);
   },
+
+  /**
+   * 発行済みの職員の氏名・ロール・担当クラスを変える。
+   * 年度の途中の担任の交代と、発行の誤りの訂正を受ける（GitHub Issue #112）。
+   * ログインIDと職員IDは変えない。記録の作成者として各所から参照されているため
+   */
+  async updateStaffAccount(
+    user: SessionUser, staffId: string,
+    input: { staff_name: string; role: Role; class_id: number | null },
+  ): Promise<void> {
+    if (user.role !== '1') return fail('職員アカウントの変更は管理者のみが行えます');
+    const name = input.staff_name.trim();
+    if (!name) return fail('氏名を入力してください');
+    if (input.role !== '1' && input.role !== '2') return fail('ロールの指定が正しくありません');
+    const s = findStaff(staffId);
+    const a = s ? findAccount(s.account_id) : undefined;
+    if (!s || !a) return fail('職員が見つかりません');
+    // 自分のロールは変えられない。管理者が自分を一般へ下げると、戻せる人がいなくなることがある
+    if (a.account_id === user.account_id && input.role !== a.role) return fail('自分のロールは変更できません');
+
+    const roleLabel = (r: Role) => (r === '1' ? '管理者' : '一般');
+    const currentClass = () => {
+      const cs = db.classStaff.find((x) => x.staff_id === staffId
+        && db.classes.some((c) => c.class_id === x.class_id && c.fiscal_year === db.FISCAL_YEAR));
+      return cs ? className(cs.class_id) : '担当クラスなし';
+    };
+    const before = `${s.staff_name} / ${roleLabel(a.role)} / ${currentClass()}`;
+
+    s.staff_name = name;
+    s.updated_at = now();
+    a.role = input.role;
+    a.updated_at = now();
+    // 担当クラスの付け替え。当年度ぶんだけを外し、過年度の割り当ては残す（基本設計書 5-3）
+    for (let i = db.classStaff.length - 1; i >= 0; i--) {
+      const x = db.classStaff[i];
+      if (x.staff_id === staffId && db.classes.some((c) => c.class_id === x.class_id && c.fiscal_year === db.FISCAL_YEAR)) {
+        db.classStaff.splice(i, 1);
+      }
+    }
+    if (input.class_id) db.classStaff.push({ class_id: input.class_id, staff_id: staffId });
+
+    log(user.account_id, '7', '2', 'm_account', a.account_id, null, before,
+      `${name} / ${roleLabel(input.role)} / ${currentClass()}`);
+    return ok(undefined);
+  },
 };
 
 const adminApi2 = {
@@ -1485,16 +1640,24 @@ const adminApi2 = {
   },
 
   /** 1枚＝1アカウント。園児ごとに必要枚数を発行する（要件定義書「招待コードの発行」(4-1-2)） */
+  /**
+   * @param includeExisting 使えるコード（未使用・期限内）をすでに持つ園児にも発行するか。
+   *   既定では飛ばす。配り直しのつもりが無いのに枚数が増えるのを防ぐ（GitHub Issue #122）
+   */
   async issueInvitationCodes(
-    user: SessionUser, classId: number, perChild: number, validDays: number,
-  ): Promise<number> {
+    user: SessionUser, classId: number, perChild: number, validDays: number, includeExisting = false,
+  ): Promise<{ issued: number; skipped: number }> {
     if (user.role !== '1') return fail('招待コードの発行は管理者のみが行えます');
     if (perChild < 1) return fail('1名あたりの枚数は1以上で指定してください');
+    if (!validInvitationDays(validDays)) return fail(INVITATION_DAYS_MESSAGE);
     const ids = db.classChildren.filter((cc) => cc.class_id === classId).map((cc) => cc.child_id)
       .filter((id) => { const c = findChild(id); return c && !c.is_deleted && c.enrollment_status === '1'; });
 
     let issued = 0;
+    let skipped = 0;
     ids.forEach((child_id) => {
+      const usable = db.invitationCodes.some((c) => c.child_id === child_id && c.status === '1' && c.expires_on >= today());
+      if (!includeExisting && usable) { skipped++; return; }
       for (let i = 0; i < perChild; i++) {
         db.invitationCodes.push({
           invitation_code_id: nextId(),
@@ -1509,11 +1672,12 @@ const adminApi2 = {
     });
     log(user.account_id, '7', '1', 't_invitation_code', null, null, null,
       `${className(classId)} へ ${issued} 枚を一括発行`);
-    return ok(issued);
+    return ok({ issued, skipped });
   },
 
   async issueOneInvitationCode(user: SessionUser, childId: string, validDays: number): Promise<string> {
     if (user.role !== '1') return fail('招待コードの発行は管理者のみが行えます');
+    if (!validInvitationDays(validDays)) return fail(INVITATION_DAYS_MESSAGE);
     const code = randomCode();
     db.invitationCodes.push({
       invitation_code_id: nextId(), code, child_id: childId,
@@ -1568,8 +1732,32 @@ const adminApi2 = {
       const a = findAccount(g.account_id);
       if (a) { a.status = '2'; a.updated_at = now(); }
     }
-    log(user.account_id, '7', '2', 't_guardian_child', null, childId, '有効',
+    // 紐づけの表は数値の主キーを持たない。相手が分かるよう、保護者のアカウントを対象として残す
+    log(user.account_id, '7', '2', 't_guardian_child', g?.account_id ?? null, childId, '有効',
       remaining === 0 ? '終了（有効な紐づけがゼロのためアカウントを停止）' : '終了');
+    return ok(undefined);
+  },
+
+  /**
+   * 解除した紐づけを戻す。誤って解除したときの戻し先。
+   * 解除によってアカウントが停止していた場合は、あわせて再開する（GitHub Issue #118）
+   */
+  async restoreGuardianLink(user: SessionUser, guardianId: string, childId: string): Promise<void> {
+    if (user.role !== '1') return fail('紐づけの変更は管理者のみが行えます');
+    const gc = db.guardianChildren.find((x) => x.guardian_id === guardianId && x.child_id === childId && x.link_status === '2');
+    if (!gc) return fail('終了した紐づけが見つかりません');
+    gc.link_status = '1';
+    gc.ended_at = null;
+
+    const g = db.guardians.find((x) => x.guardian_id === guardianId);
+    const a = g ? findAccount(g.account_id) : undefined;
+    let after = '有効';
+    if (a && a.status === '2') {
+      a.status = '1';
+      a.updated_at = now();
+      after = '有効（アカウントを再開）';
+    }
+    log(user.account_id, '7', '2', 't_guardian_child', g?.account_id ?? null, childId, '終了', after);
     return ok(undefined);
   },
 };
@@ -1648,11 +1836,12 @@ const adminApi3 = {
   async operationLogs(
     user: SessionUser,
     f: { from?: string; to?: string; accountId?: number | ''; functionType?: FunctionType | ''; childId?: string; page?: number } = {},
-  ): Promise<Paged<OperationLog & { account_name: string; child_name: string }>> {
+  ): Promise<Paged<OperationLog & { account_name: string; child_name: string; target_label: string }>> {
     if (user.role !== '1') return fail('操作ログの参照は管理者のみが行えます');
     const perPage = settingNumber('paging.operation_log_per_page', 100);
     let rows = db.operationLogs.map((l) => ({
       ...l, account_name: accountName(l.account_id), child_name: l.target_child_id ? childName(l.target_child_id) : '―',
+      target_label: targetLabel(l.target_table, l.target_id),
     }));
     if (f.from) rows = rows.filter((l) => l.operated_at.slice(0, 10) >= f.from!);
     if (f.to) rows = rows.filter((l) => l.operated_at.slice(0, 10) <= f.to!);
@@ -1662,6 +1851,25 @@ const adminApi3 = {
     rows.sort((a, b) => b.operated_at.localeCompare(a.operated_at));
     const page = f.page ?? 1;
     return ok({ rows: rows.slice((page - 1) * perPage, page * perPage), total: rows.length, page, per_page: perPage });
+  },
+
+  /**
+   * 画面側で組み立てた出力（CSV）を操作ログへ記録する。
+   * 出力は目的を問わず操作ログへ記録する（基本設計書「発達チェック・身体測定」(4-8) と同じ扱い。
+   * GitHub Issue #115・#117）
+   */
+  async recordExport(
+    user: SessionUser, kind: 'operation_log' | 'nap_record', from: string, to: string, count: number,
+  ): Promise<void> {
+    if (user.role === '3') return fail('出力は職員のみが行えます');
+    const period = `期間 ${from}〜${to}・${count} 件`;
+    if (kind === 'operation_log') {
+      if (user.role !== '1') return fail('操作ログの出力は管理者のみが行えます');
+      log(user.account_id, '7', '5', 't_operation_log', null, null, null, `操作ログをCSV出力（${period}）`);
+    } else {
+      log(user.account_id, '3', '5', 't_nap_record', null, null, null, `午睡記録をCSV出力（${period}）`);
+    }
+    return ok(undefined);
   },
 
   async allAccounts(user: SessionUser) {
@@ -1679,20 +1887,35 @@ const bulkApi = {
     const lines = text.split(/\r?\n/).filter((l) => l.trim() !== '');
     const body = lines[0]?.includes('園児ID') ? lines.slice(1) : lines;
 
+    // 同じ取込の中での重複も弾く。ファイル内で同じ園児IDが2度出ることがある
+    const seen = new Set<string>();
     const rows: CsvRow[] = body.map((line, i) => {
       const values = line.split(',').map((v) => v.trim());
-      let error: string | null = null;
+      // 誤りは1行の中でまとめて示す。1つ直すたびに次の誤りが出る作りにしない（GitHub Issue #121）
+      const errors: string[] = [];
+      let warning: string | null = null;
 
-      if (values.length < 6) error = '列が足りません（園児ID,氏名,氏名かな,生年月日,性別,クラス名,平熱）';
-      else if (!values[0]) error = '園児IDが空です';
-      else if (db.children.some((c) => c.child_id === values[0])) error = 'その園児IDはすでに登録されています';
-      else if (!values[1]) error = '氏名が空です';
-      else if (!/^\d{4}-\d{2}-\d{2}$/.test(values[3])) error = '生年月日は YYYY-MM-DD で入力してください';
-      else if (values[3] > today()) error = '生年月日に未来日は指定できません';
-      else if (!['1', '2', '9'].includes(values[4])) error = '性別は 1:男 2:女 9:未回答 で入力してください';
-      else if (!db.classes.some((c) => c.fiscal_year === db.FISCAL_YEAR && c.class_name === values[5])) error = 'クラス名が見つかりません';
+      if (values.length < 6) {
+        errors.push('列が足りません（園児ID,氏名,氏名かな,生年月日,性別,クラス名,平熱）');
+      } else {
+        if (!values[0]) errors.push('園児IDが空です');
+        else if (seen.has(values[0])) errors.push('同じ園児IDがこのファイル内で重複しています');
+        else if (db.children.some((c) => c.child_id === values[0])) errors.push('その園児IDはすでに登録されています');
+        if (!values[1]) errors.push('氏名が空です');
+        if (!values[2]) errors.push('氏名かなが空です');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(values[3])) errors.push('生年月日は YYYY-MM-DD で入力してください');
+        else if (values[3] > today()) errors.push('生年月日に未来日は指定できません');
+        if (!['1', '2', '9'].includes(values[4])) errors.push('性別は 1:男 2:女 9:未回答 で入力してください');
+        if (!db.classes.some((c) => c.fiscal_year === db.FISCAL_YEAR && c.class_name === values[5])) errors.push('クラス名が見つかりません');
+        if (values[6]) {
+          const t = Number(values[6]);
+          if (Number.isNaN(t)) errors.push('平熱は数値で入力してください');
+          else if (t < TEMPERATURE_MIN || t > TEMPERATURE_MAX) warning = '平熱が想定の範囲（30.0〜43.0℃）の外です。値を確かめてください';
+        }
+      }
+      if (errors.length === 0) seen.add(values[0]);
 
-      return { line: i + 1, values, error };
+      return { line: i + 1, values, error: errors.length > 0 ? errors.join('／') : null, warning };
     });
     return { header, rows };
   },
@@ -1730,8 +1953,8 @@ const bulkApi = {
         childCount: db.classChildren.filter((cc) => cc.class_id === c.class_id).length,
         staffNames: db.classStaff.filter((cs) => cs.class_id === c.class_id).map((cs) => staffName(cs.staff_id)),
       })),
-      // 年度更新では在籍の判定と進級先の割り当てが要る。割り当ての規則は未確定
-      note: '進級先クラスの割り当て規則と、卒園の判定条件が未確定のため、本モックでは実行できません',
+      // 年度更新の実行（進級先の割り当て・卒園の処理）は、モックアップでは実装していない
+      note: 'このモックアップでは、年度更新の実行を実装していません。現在の年度の内訳だけを表示しています',
     });
   },
 };

@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"log"
 	"net/http"
 	"strings"
 )
@@ -39,10 +40,16 @@ type NapRecord struct {
 }
 
 func (a *app) handleActiveNapSession(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.requireStaff(w, r); !ok {
+	u, ok := a.requireStaff(w, r)
+	if !ok {
 		return
 	}
 	classID, _ := queryInt64(r, "class_id")
+	// 一般（保育士）は自クラスに限る（GitHub Issue #96）
+	if !a.canUseClass(u, classID) {
+		writeForbidden(w, "このクラスの午睡チェックを参照する権限がありません")
+		return
+	}
 	date := r.URL.Query().Get("date")
 	if date == "" {
 		date = today()
@@ -126,8 +133,11 @@ func (a *app) autoCloseNapSessions() {
 			continue
 		}
 		// 終了した職員はいないため ended_staff_id は空のままにし、自動で解除した印を立てる
-		a.db.Exec(`UPDATE t_nap_session SET ended_at = ?, is_auto_closed = 1
-			WHERE nap_session_id = ? AND ended_at IS NULL`, endedAt, x.id)
+		if _, err := a.db.Exec(`UPDATE t_nap_session SET ended_at = ?, is_auto_closed = 1
+			WHERE nap_session_id = ? AND ended_at IS NULL`, endedAt, x.id); err != nil {
+			// 解除できなかった実施は実施中のまま残る。黙って捨てない（GitHub Issue #99）
+			log.Printf("午睡チェックの自動解除に失敗しました（session=%d）: %v", x.id, err)
+		}
 	}
 }
 
@@ -145,6 +155,16 @@ func (a *app) handleStartNapSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Date == "" {
 		req.Date = today()
+	}
+	if !a.canUseClass(u, req.ClassID) {
+		writeForbidden(w, "このクラスの午睡チェックを開始する権限がありません")
+		return
+	}
+	// 【仮置き】開始できるのは当日だけとする。過去の日付で開始すると、足した直後に自動で解除され、
+	// 呼ぶたびに行が増える（GitHub Issue #97）。記録は起きたときに付けるものである
+	if req.Date != today() {
+		writeErr(w, http.StatusBadRequest, "午睡チェックは当日のぶんだけ開始できます")
+		return
 	}
 	// すでに実施中なら、それをそのまま返す
 	if s, err := a.napSession(req.ClassID, req.Date); err == nil {
@@ -198,6 +218,10 @@ func (a *app) handleNapClassState(w http.ResponseWriter, r *http.Request) {
 	}
 	classID, _ := queryInt64(r, "class_id")
 	sessionID, hasSession := queryInt64(r, "session_id")
+	if !a.canUseClass(u, classID) {
+		writeForbidden(w, "このクラスの午睡チェックを参照する権限がありません")
+		return
+	}
 
 	children, err := a.visibleChildren(u)
 	if err != nil {
@@ -294,6 +318,26 @@ func (a *app) handleNapRecord(w http.ResponseWriter, r *http.Request) {
 	}
 	if !a.canSeeChild(u, req.ChildID) {
 		writeForbidden(w, "この園児を記録する権限がありません")
+		return
+	}
+	// 終了した実施へは記録しない。自動で解除された直後に、開いたままの画面から記録が付くのを防ぐ
+	// （GitHub Issue #97）
+	a.autoCloseNapSessions()
+	var (
+		sessionClass int64
+		endedAt      sql.NullString
+	)
+	if err := a.db.QueryRow(`SELECT class_id, ended_at FROM t_nap_session WHERE nap_session_id = ?`,
+		sessionID).Scan(&sessionClass, &endedAt); err != nil {
+		writeErr(w, http.StatusNotFound, "午睡チェックが見つかりません")
+		return
+	}
+	if !a.canUseClass(u, sessionClass) {
+		writeForbidden(w, "このクラスの午睡チェックを記録する権限がありません")
+		return
+	}
+	if endedAt.Valid {
+		writeErr(w, http.StatusConflict, "この午睡チェックは終了しています。画面を読み込み直してください")
 		return
 	}
 	res, err := a.db.Exec(`INSERT INTO t_nap_record

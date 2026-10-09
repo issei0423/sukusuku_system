@@ -20,7 +20,16 @@ type CsvRow struct {
 	Line   int      `json:"line"`
 	Values []string `json:"values"`
 	Error  *string  `json:"error"`
+	// 取り込みは妨げないが、確かめてほしいこと。範囲の外の平熱など
+	// （基本設計書「入力項目の制約値」(4-9)：範囲のしきい値は判定ではない）
+	Warning *string `json:"warning"`
 }
+
+// 体温として入力しうる範囲（基本設計書「入力項目の制約値」(4-9)）
+const (
+	temperatureMin = 30.0
+	temperatureMax = 43.0
+)
 
 // parseChildCsv は取込内容を検証する。取り込む前に全行を検証して返す。
 func (a *app) parseChildCsv(text string) ([]string, []CsvRow) {
@@ -45,25 +54,49 @@ func (a *app) parseChildCsv(text string) ([]string, []CsvRow) {
 		}
 		row := CsvRow{Line: i + 1, Values: values}
 
-		switch {
-		case len(values) < 6:
-			row.Error = s("列が足りません（園児ID,氏名,氏名かな,生年月日,性別,クラス名,平熱）")
-		case values[0] == "":
-			row.Error = s("園児IDが空です")
-		case seen[values[0]]:
-			row.Error = s("同じ園児IDがこのファイル内で重複しています")
-		case a.childExists(values[0]):
-			row.Error = s("その園児IDはすでに登録されています")
-		case values[1] == "":
-			row.Error = s("氏名が空です")
-		case !dateRe.MatchString(values[3]):
-			row.Error = s("生年月日は YYYY-MM-DD で入力してください")
-		case values[3] > today():
-			row.Error = s("生年月日に未来日は指定できません")
-		case values[4] != "1" && values[4] != "2" && values[4] != "9":
-			row.Error = s("性別は 1:男 2:女 9:未回答 で入力してください")
-		case !a.classExists(values[5]):
-			row.Error = s("クラス名が見つかりません")
+		// 誤りは1行の中でまとめて示す。1つ直すたびに次の誤りが出る作りにしない（GitHub Issue #121）
+		errs := []string{}
+		if len(values) < 6 {
+			errs = append(errs, "列が足りません（園児ID,氏名,氏名かな,生年月日,性別,クラス名,平熱）")
+		} else {
+			switch {
+			case values[0] == "":
+				errs = append(errs, "園児IDが空です")
+			case seen[values[0]]:
+				errs = append(errs, "同じ園児IDがこのファイル内で重複しています")
+			case a.childExists(values[0]):
+				errs = append(errs, "その園児IDはすでに登録されています")
+			}
+			if values[1] == "" {
+				errs = append(errs, "氏名が空です")
+			}
+			if values[2] == "" {
+				errs = append(errs, "氏名かなが空です")
+			}
+			switch {
+			case !dateRe.MatchString(values[3]):
+				errs = append(errs, "生年月日は YYYY-MM-DD で入力してください")
+			case values[3] > today():
+				errs = append(errs, "生年月日に未来日は指定できません")
+			}
+			if values[4] != "1" && values[4] != "2" && values[4] != "9" {
+				errs = append(errs, "性別は 1:男 2:女 9:未回答 で入力してください")
+			}
+			if !a.classExists(values[5]) {
+				errs = append(errs, "クラス名が見つかりません")
+			}
+			if len(values) > 6 && values[6] != "" {
+				f, e := strconv.ParseFloat(values[6], 64)
+				switch {
+				case e != nil:
+					errs = append(errs, "平熱は数値で入力してください")
+				case f < temperatureMin || f > temperatureMax:
+					row.Warning = s("平熱が想定の範囲（30.0〜43.0℃）の外です。値を確かめてください")
+				}
+			}
+		}
+		if len(errs) > 0 {
+			row.Error = s(strings.Join(errs, "／"))
 		}
 		if row.Error == nil {
 			seen[values[0]] = true
@@ -168,9 +201,8 @@ func (a *app) handleImportChildCsv(w http.ResponseWriter, r *http.Request) {
 /*
 handlePreviewFiscalYearUpdate は年度更新の内容を一覧で返す。
 
-実行は用意していない。進級先クラスの割り当て規則と卒園の判定条件が未確定であり、
-未確定のまま実行できるようにすると誤った割り当てが全機能へ波及するため
-（基本設計書「年度更新」(4-4)）。
+実行は用意していない。モックアップでは、進級先の割り当てと卒園の処理を実装していないため。
+処理の内容は基本設計書「年度更新」(4-4) が定めている。
 */
 func (a *app) handlePreviewFiscalYearUpdate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.requireAdmin(w, r); !ok {
@@ -222,6 +254,6 @@ func (a *app) handlePreviewFiscalYearUpdate(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, map[string]any{
 		"nextFiscalYear": fiscalYear + 1,
 		"classes":        list,
-		"note":           "進級先クラスの割り当て規則と、卒園の判定条件が未確定のため、本モックでは実行できません",
+		"note":           "このモックアップでは、年度更新の実行を実装していません。現在の年度の内訳だけを表示しています",
 	})
 }

@@ -51,7 +51,11 @@ export default function TermsAgreeScreen({ readOnly }: { readOnly?: boolean }) {
   return (
     <PublicLayout wide>
       <h1 style={{ marginBottom: 12 }}>利用規約への同意</h1>
-      <Alert>利用規約を改定しました。内容をご確認のうえ、同意をお願いします。</Alert>
+      {/* 初めてログインした人にも出る画面である。「改定しました」とだけ書かない（GitHub Issue #126） */}
+      <Alert>
+        ご利用の前に、利用規約の内容をご確認のうえ、同意をお願いします。
+        規約を改定したときも、この画面で改めて同意をお願いしています。
+      </Alert>
       <div className="terms-box" tabIndex={0} aria-label="利用規約の本文" style={{ marginTop: 16, maxHeight: 300 }}>
         {terms.data?.body ?? '読み込んでいます…'}
       </div>

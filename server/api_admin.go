@@ -179,10 +179,26 @@ func (a *app) handleSetAccountStatus(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "自分のアカウントは停止できません")
 		return
 	}
-	var before string
-	if err := a.db.QueryRow(`SELECT status FROM m_account WHERE account_id = ?`, id).Scan(&before); err != nil {
+	if req.Status != "1" && req.Status != "2" {
+		writeErr(w, http.StatusBadRequest, "状態の指定が正しくありません")
+		return
+	}
+	var before, role string
+	if err := a.db.QueryRow(`SELECT status, role FROM m_account WHERE account_id = ?`, id).Scan(&before, &role); err != nil {
 		writeErr(w, http.StatusNotFound, "アカウントが見つかりません")
 		return
+	}
+	// 保護者のアカウントは、有効な紐づけがゼロになった時点で停止する（基本設計書 5-3）。
+	// 紐づけが無いまま再開すると、その規則と合わない状態になる（GitHub Issue #118）
+	if req.Status == "1" && role == roleGuardian {
+		var active int
+		a.db.QueryRow(`SELECT COUNT(*) FROM t_guardian_child gc
+			JOIN m_guardian g ON g.guardian_id = gc.guardian_id
+			WHERE g.account_id = ? AND gc.link_status = '1'`, id).Scan(&active)
+		if active == 0 {
+			writeErr(w, http.StatusBadRequest, "有効な紐づけが無いため再開できません。先に紐づけを戻してください")
+			return
+		}
 	}
 	if _, err := a.db.Exec(`UPDATE m_account SET status = ?, updated_at = ? WHERE account_id = ?`,
 		req.Status, now(), id); err != nil {
@@ -275,6 +291,112 @@ func (a *app) handleCreateStaffAccount(w http.ResponseWriter, r *http.Request) {
 	a.log(u.AccountID, fnAccount, opCreate, "m_account", i64(accountID), nil, nil,
 		s("職員アカウントを発行（"+req.StaffName+"）"))
 	writeJSON(w, http.StatusOK, map[string]string{"password": temp})
+}
+
+/*
+handleUpdateStaffAccount は、発行済みの職員の氏名・ロール・担当クラスを変える。
+
+年度の途中の担任の交代と、発行の誤りの訂正を受ける（GitHub Issue #112）。
+ログインIDと職員IDは変えない。記録の作成者として各所から参照されているため。
+*/
+func (a *app) handleUpdateStaffAccount(w http.ResponseWriter, r *http.Request) {
+	u, ok := a.requireAdmin(w, r)
+	if !ok {
+		return
+	}
+	staffID := r.PathValue("staffID")
+	var req struct {
+		StaffName string `json:"staff_name"`
+		Role      string `json:"role"`
+		ClassID   *int64 `json:"class_id"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	req.StaffName = strings.TrimSpace(req.StaffName)
+	if req.StaffName == "" {
+		writeErr(w, http.StatusBadRequest, "氏名を入力してください")
+		return
+	}
+	if req.Role != roleAdmin && req.Role != roleGeneralStaff {
+		writeErr(w, http.StatusBadRequest, "ロールの指定が正しくありません")
+		return
+	}
+
+	var (
+		accountID        int64
+		oldName, oldRole string
+	)
+	if err := a.db.QueryRow(`SELECT s.account_id, s.staff_name, a.role FROM m_staff s
+		JOIN m_account a ON a.account_id = s.account_id WHERE s.staff_id = ?`, staffID).
+		Scan(&accountID, &oldName, &oldRole); err != nil {
+		writeErr(w, http.StatusNotFound, "職員が見つかりません")
+		return
+	}
+	// 自分のロールは変えられない。管理者が自分を一般へ下げると、戻せる人がいなくなることがある
+	if accountID == u.AccountID && req.Role != oldRole {
+		writeErr(w, http.StatusBadRequest, "自分のロールは変更できません")
+		return
+	}
+	oldClass := a.staffClassName(staffID)
+
+	tx, err := a.db.Begin()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "変更に失敗しました")
+		return
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`UPDATE m_staff SET staff_name = ?, updated_at = ? WHERE staff_id = ?`,
+		req.StaffName, now(), staffID); err != nil {
+		writeErr(w, http.StatusInternalServerError, "変更に失敗しました")
+		return
+	}
+	if _, err := tx.Exec(`UPDATE m_account SET role = ?, updated_at = ? WHERE account_id = ?`,
+		req.Role, now(), accountID); err != nil {
+		writeErr(w, http.StatusInternalServerError, "変更に失敗しました")
+		return
+	}
+	// 担当クラスの付け替え。当年度ぶんだけを外し、過年度の割り当ては残す（基本設計書 5-3）
+	if _, err := tx.Exec(`DELETE FROM t_class_staff WHERE staff_id = ?
+		AND class_id IN (SELECT class_id FROM m_class WHERE fiscal_year = ?)`, staffID, fiscalYear); err != nil {
+		writeErr(w, http.StatusInternalServerError, "変更に失敗しました")
+		return
+	}
+	if req.ClassID != nil {
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO t_class_staff (class_id, staff_id) VALUES (?, ?)`,
+			*req.ClassID, staffID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "担当クラスの割り当てに失敗しました")
+			return
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		writeErr(w, http.StatusInternalServerError, "変更に失敗しました")
+		return
+	}
+
+	roleLabel := func(v string) string {
+		if v == roleAdmin {
+			return "管理者"
+		}
+		return "一般"
+	}
+	a.log(u.AccountID, fnAccount, opUpdate, "m_account", i64(accountID), nil,
+		s(oldName+" / "+roleLabel(oldRole)+" / "+oldClass),
+		s(req.StaffName+" / "+roleLabel(req.Role)+" / "+a.staffClassName(staffID)))
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// staffClassName は当年度の担当クラス名を返す。無ければ「担当クラスなし」
+func (a *app) staffClassName(staffID string) string {
+	var name sql.NullString
+	a.db.QueryRow(`SELECT c.class_name FROM t_class_staff cs
+		JOIN m_class c ON c.class_id = cs.class_id AND c.fiscal_year = ?
+		WHERE cs.staff_id = ? LIMIT 1`, fiscalYear, staffID).Scan(&name)
+	if name.Valid {
+		return name.String
+	}
+	return "担当クラスなし"
 }
 
 func (a *app) handleAllAccounts(w http.ResponseWriter, r *http.Request) {
@@ -391,12 +513,19 @@ func (a *app) handleIssueInvitationCodes(w http.ResponseWriter, r *http.Request)
 		ClassID   int64 `json:"class_id"`
 		PerChild  int   `json:"per_child"`
 		ValidDays int   `json:"valid_days"`
+		// 使えるコード（未使用・期限内）をすでに持つ園児にも発行するか。
+		// 既定では飛ばす。配り直しのつもりが無いのに枚数が増えるのを防ぐ（GitHub Issue #122）
+		IncludeExisting bool `json:"include_existing"`
 	}
 	if !readJSON(w, r, &req) {
 		return
 	}
 	if req.PerChild < 1 {
 		writeErr(w, http.StatusBadRequest, "1名あたりの枚数は1以上で指定してください")
+		return
+	}
+	if !validInvitationDays(req.ValidDays) {
+		writeErr(w, http.StatusBadRequest, invitationDaysMessage)
 		return
 	}
 	rows, err := a.db.Query(`SELECT cc.child_id FROM t_class_child cc
@@ -415,8 +544,12 @@ func (a *app) handleIssueInvitationCodes(w http.ResponseWriter, r *http.Request)
 	}
 	rows.Close()
 
-	issued := 0
+	issued, skipped := 0, 0
 	for _, childID := range ids {
+		if !req.IncludeExisting && a.usableCodeCount(childID) > 0 {
+			skipped++
+			continue
+		}
 		for i := 0; i < req.PerChild; i++ {
 			if _, err := a.db.Exec(`INSERT INTO t_invitation_code
 				(code, child_id, expires_on, status, issued_staff_id, created_at)
@@ -428,7 +561,27 @@ func (a *app) handleIssueInvitationCodes(w http.ResponseWriter, r *http.Request)
 	}
 	a.log(u.AccountID, fnAccount, opCreate, "t_invitation_code", nil, nil, nil,
 		s(a.className(req.ClassID)+" へ "+strconv.Itoa(issued)+" 枚を一括発行"))
-	writeJSON(w, http.StatusOK, map[string]int{"issued": issued})
+	writeJSON(w, http.StatusOK, map[string]int{"issued": issued, "skipped": skipped})
+}
+
+// 【仮置き】招待コードの有効日数は 1〜365 日とする。0 や負の値を通すと、発行した時点で
+// 期限切れ・当日期限のコードができる（GitHub Issue #100）。設計に上下限の定めは無い。
+const (
+	invitationDaysMin     = 1
+	invitationDaysMax     = 365
+	invitationDaysMessage = "有効期限は 1〜365 日で指定してください"
+)
+
+func validInvitationDays(days int) bool {
+	return days >= invitationDaysMin && days <= invitationDaysMax
+}
+
+// usableCodeCount は、その園児がいま使えるコード（未使用・期限内）の枚数を返す
+func (a *app) usableCodeCount(childID string) int {
+	var n int
+	a.db.QueryRow(`SELECT COUNT(*) FROM t_invitation_code
+		WHERE child_id = ? AND status = '1' AND expires_on >= ?`, childID, today()).Scan(&n)
+	return n
 }
 
 func (a *app) handleIssueOneInvitationCode(w http.ResponseWriter, r *http.Request) {
@@ -441,6 +594,10 @@ func (a *app) handleIssueOneInvitationCode(w http.ResponseWriter, r *http.Reques
 		ValidDays int    `json:"valid_days"`
 	}
 	if !readJSON(w, r, &req) {
+		return
+	}
+	if !validInvitationDays(req.ValidDays) {
+		writeErr(w, http.StatusBadRequest, invitationDaysMessage)
 		return
 	}
 	code := randomCode()
@@ -612,6 +769,57 @@ func (a *app) handleEndGuardianLink(w http.ResponseWriter, r *http.Request) {
 			now(), req.GuardianID)
 		after = "終了（有効な紐づけがゼロのためアカウントを停止）"
 	}
-	a.log(u.AccountID, fnAccount, opUpdate, "t_guardian_child", nil, s(req.ChildID), s("有効"), s(after))
+	// 紐づけの表は数値の主キーを持たない。相手が分かるよう、保護者のアカウントを対象として残す
+	a.log(u.AccountID, fnAccount, opUpdate, "t_guardian_child", a.guardianAccountID(req.GuardianID),
+		s(req.ChildID), s("有効"), s(after))
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (a *app) guardianAccountID(guardianID string) *int64 {
+	var id sql.NullInt64
+	a.db.QueryRow(`SELECT account_id FROM m_guardian WHERE guardian_id = ?`, guardianID).Scan(&id)
+	return nullInt(id)
+}
+
+/*
+handleRestoreGuardianLink は、解除した紐づけを戻す。
+
+誤って解除したときの戻し先。解除によってアカウントが停止していた場合は、あわせて再開する
+（GitHub Issue #118）。
+*/
+func (a *app) handleRestoreGuardianLink(w http.ResponseWriter, r *http.Request) {
+	u, ok := a.requireAdmin(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		GuardianID string `json:"guardian_id"`
+		ChildID    string `json:"child_id"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	res, err := a.db.Exec(`UPDATE t_guardian_child SET link_status = '1', ended_at = NULL
+		WHERE guardian_id = ? AND child_id = ? AND link_status = '2'`, req.GuardianID, req.ChildID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "紐づけを戻せませんでした")
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		writeErr(w, http.StatusNotFound, "終了した紐づけが見つかりません")
+		return
+	}
+
+	after := "有効"
+	accountID := a.guardianAccountID(req.GuardianID)
+	if accountID != nil {
+		var status string
+		a.db.QueryRow(`SELECT status FROM m_account WHERE account_id = ?`, *accountID).Scan(&status)
+		if status == "2" {
+			a.db.Exec(`UPDATE m_account SET status = '1', updated_at = ? WHERE account_id = ?`, now(), *accountID)
+			after = "有効（アカウントを再開）"
+		}
+	}
+	a.log(u.AccountID, fnAccount, opUpdate, "t_guardian_child", accountID, s(req.ChildID), s("終了"), s(after))
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

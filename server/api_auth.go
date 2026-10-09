@@ -127,6 +127,12 @@ func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *app) handleLogout(w http.ResponseWriter, r *http.Request) {
+	// 編集ロックを持ったままログアウトすると、ほかの職員が無操作の経過まで保存できなくなる。
+	// ログアウトは編集の終了であり、保持しているロックをすべて外す（基本設計書「編集ロックの解除」(4-5)）
+	if accountID, ok := a.sessions.accountID(r); ok {
+		a.db.Exec(`DELETE FROM t_diary_lock WHERE locked_staff_id =
+			(SELECT staff_id FROM m_staff WHERE account_id = ?)`, accountID)
+	}
 	a.sessions.destroy(w, r)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
@@ -218,7 +224,15 @@ func (a *app) handleAgreeTerms(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if _, err := a.db.Exec(`UPDATE m_account SET terms_version = ?, terms_agreed_at = ?, updated_at = ?
+	// アカウントの同意済みの印と、同意履歴の行は、ひとまとまりで書く。
+	// 履歴が欠けたまま同意済みになると、いつ・どの版に同意したかを示せなくなる（GitHub Issue #99）
+	tx, err := a.db.Begin()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "同意の記録に失敗しました")
+		return
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`UPDATE m_account SET terms_version = ?, terms_agreed_at = ?, updated_at = ?
 	                         WHERE account_id = ?`, a.currentTermsVersion, now(), now(), u.AccountID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "同意の記録に失敗しました")
 		return
@@ -228,8 +242,12 @@ func (a *app) handleAgreeTerms(w http.ResponseWriter, r *http.Request) {
 	 * （基本設計書「同意履歴（t_terms_agreement）」(5-2)）。
 	 * 同意は要配慮個人情報を取り扱う根拠であり、いつ・どの版に同意したかを後から示せる必要がある
 	 */
-	if _, err := a.db.Exec(`INSERT INTO t_terms_agreement (account_id, terms_id, agreed_at)
+	if _, err := tx.Exec(`INSERT INTO t_terms_agreement (account_id, terms_id, agreed_at)
 		VALUES (?, ?, ?)`, u.AccountID, a.currentTermsID, now()); err != nil {
+		writeErr(w, http.StatusInternalServerError, "同意の記録に失敗しました")
+		return
+	}
+	if err := tx.Commit(); err != nil {
 		writeErr(w, http.StatusInternalServerError, "同意の記録に失敗しました")
 		return
 	}

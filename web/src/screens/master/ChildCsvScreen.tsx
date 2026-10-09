@@ -10,6 +10,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useSession } from '../../session';
 import { api } from '../../api/client';
 import { Empty, Field, Alert } from '../../components/ui';
+import { notify } from '../../components/feedback';
 import type { CsvRow } from '../../api/client';
 
 const SAMPLE = [
@@ -47,7 +48,7 @@ export default function ChildCsvScreen() {
     setBusy(true); setError(null);
     try {
       const n = await api.importChildCsv(user!, parsed.rows, text);
-      alert(`${n} 件を登録しました`);
+      notify(`${n} 件を登録しました`);
       navigate('/staff/children');
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
@@ -106,7 +107,11 @@ export default function ChildCsvScreen() {
                   <tr key={r.line} style={r.error ? { background: 'var(--c-alert-soft)' } : undefined}>
                     <td className="num">{r.line}</td>
                     {parsed.header.map((_, i) => <td key={i}>{r.values[i] ?? ''}</td>)}
-                    <td>{r.error ? <span style={{ color: 'var(--c-alert)', fontWeight: 700 }}>{r.error}</span> : 'OK'}</td>
+                    <td>
+                      {r.error ? <span style={{ color: 'var(--c-alert)', fontWeight: 700 }}>{r.error}</span> : 'OK'}
+                      {/* 取り込みは妨げないが、確かめてほしいこと（範囲の外の平熱など） */}
+                      {!r.error && r.warning && <div className="muted">確認：{r.warning}</div>}
+                    </td>
                   </tr>
                 ))}
               </tbody>

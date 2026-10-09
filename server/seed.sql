@@ -231,7 +231,7 @@ INSERT INTO t_nap_abnormal (nap_abnormal_id, nap_session_id, child_id, found_at,
 -- ヒヤリハット（異常時の記録から起票済み。相互に参照する）
 INSERT INTO t_diary (diary_id, record_type, child_id, class_id, diary_date, body, status, created_staff_id, approved_staff_id, approved_at, is_shared_to_guardian, shared_at, nap_abnormal_id, returned_reason, is_deleted, created_at, updated_at) VALUES
  (3,'4','C003',1,'2026-08-30','【発生日時】
-2026年8月30日 13時40分
+午睡中の13時40分ごろ
 
 【状況】
 午睡中にうつ伏せの体位を確認した。
