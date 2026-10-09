@@ -69,6 +69,7 @@ export default function DiaryApproveScreen() {
     <div style={{ maxWidth: 820 }}>
       <div className="page-head">
         <Link className="btn btn-quiet btn-sm" to="/staff/admin/approval">&lt; 承認待ち一覧へ</Link>
+        <h1>日誌の承認</h1>
         <div className="spacer" />
         <span className="muted">申請 {formatMDHM(d.updated_at)}　作成者 {staffName(d.created_staff_id)}</span>
       </div>
@@ -99,7 +100,7 @@ export default function DiaryApproveScreen() {
         <h2>保護者への共有</h2>
         {isPersonal ? (
           <>
-            <Radios name="share" value={share}
+            <Radios name="share" label="保護者への共有" value={share}
               options={[{ value: 'yes', label: '共有する' }, { value: 'no', label: '共有しない' }]}
               onChange={setShare} />
             <div className="muted" style={{ marginTop: 8 }}>

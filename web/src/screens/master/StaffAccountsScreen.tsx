@@ -69,7 +69,7 @@ export default function StaffAccountsScreen() {
         {data && (
           <table className="list">
             <thead>
-              <tr><th>職員ID</th><th>氏名</th><th>ログインID</th><th>ロール</th><th>担当クラス</th><th>状態</th><th></th></tr>
+              <tr><th scope="col">職員ID</th><th scope="col">氏名</th><th scope="col">ログインID</th><th scope="col">ロール</th><th scope="col">担当クラス</th><th scope="col">状態</th><th scope="col">操作</th></tr>
             </thead>
             <tbody>
               {data.map((r) => (

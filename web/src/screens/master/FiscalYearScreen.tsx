@@ -26,7 +26,7 @@ export default function FiscalYearScreen() {
           <section className="card">
             <h2>現在の年度の内訳</h2>
             <table className="list">
-              <thead><tr><th>クラス</th><th>在籍</th><th>担任</th><th>更新後のクラス</th></tr></thead>
+              <thead><tr><th scope="col">クラス</th><th scope="col">在籍</th><th scope="col">担任</th><th scope="col">更新後のクラス</th></tr></thead>
               <tbody>
                 {data.classes.map((c) => (
                   <tr key={c.className}>

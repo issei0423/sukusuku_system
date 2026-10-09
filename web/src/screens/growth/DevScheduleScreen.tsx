@@ -55,8 +55,8 @@ export default function DevScheduleScreen() {
           <table className="list">
             <thead>
               <tr>
-                <th>園児</th><th>月齢</th><th>推奨間隔</th>
-                <th>システムの提案</th><th>設定中の予定日</th><th>次回の予定日</th><th></th>
+                <th scope="col">園児</th><th scope="col">月齢</th><th scope="col">推奨間隔</th>
+                <th scope="col">システムの提案</th><th scope="col">設定中の予定日</th><th scope="col">次回の予定日</th><th scope="col">操作</th>
               </tr>
             </thead>
             <tbody>

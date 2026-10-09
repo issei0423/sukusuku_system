@@ -67,6 +67,9 @@ describe('共通・認証（7画面）', () => {
     await settled();
     const locked = container.querySelectorAll('.step.locked');
     expect(locked.length).toBe(2);
+    expect(screen.getByRole('checkbox', { name: '利用規約に同意します' }).matches(':disabled')).toBe(true);
+    expect(screen.getByRole('textbox', { name: '保護者の氏名' }).matches(':disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: '登録する' }).matches(':disabled')).toBe(true);
   });
 
   it('パスワード変更画面', async () => {
@@ -249,7 +252,7 @@ describe('保護者のメニュー', () => {
     await settled();
     fireEvent.click(screen.getByLabelText('メニューを開く'));
     expect(document.querySelector('.drawer')).not.toBeNull();
-    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => { expect(document.querySelector('.drawer')).toBeNull(); });
   });
 });
@@ -281,7 +284,7 @@ describe('チャット画面の表示', () => {
     await settled();
     fireEvent.click(screen.getByText('担任の先生とのやりとり').closest('button')!);
     await threadReady('.msg.mine .bubble.pressable');
-    expect(screen.queryByRole('menu')).toBeNull();
+    expect(screen.queryByRole('group', { name: 'メッセージの操作' })).toBeNull();
     expect(screen.queryByText('編集')).toBeNull();
     expect(screen.queryByText('取消')).toBeNull();
     expect(screen.queryByText('リアクション')).toBeNull();
@@ -291,25 +294,25 @@ describe('チャット画面の表示', () => {
     fireEvent.pointerDown(mine, { button: 0, clientX: 10, clientY: 10 });
     fireEvent.pointerUp(mine);
     await new Promise((r) => setTimeout(r, 900));
-    expect(screen.queryByRole('menu')).toBeNull();
+    expect(screen.queryByRole('group', { name: 'メッセージの操作' })).toBeNull();
 
     // 0.8秒押し続けると、リアクション・編集・取消の3つが出る
     fireEvent.pointerDown(mine, { button: 0, clientX: 10, clientY: 10 });
-    await waitFor(() => { expect(screen.getByRole('menu')).toBeTruthy(); }, { timeout: 2000 });
-    expect(screen.getByRole('menuitem', { name: '了解' })).toBeTruthy();
-    expect(screen.getByRole('menuitem', { name: '編集' })).toBeTruthy();
-    expect(screen.getByRole('menuitem', { name: '取消' })).toBeTruthy();
+    await waitFor(() => { expect(screen.getByRole('group', { name: 'メッセージの操作' })).toBeTruthy(); }, { timeout: 2000 });
+    expect(screen.getByRole('button', { name: '了解' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '編集' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '取消' })).toBeTruthy();
 
     // 長押しで開いた直後に指を離したときのクリックは、一覧のボタンに当たっても無視する
     // （一覧を見える位置へ送ると画面が動き、指の下にボタンが来るため）
     fireEvent.pointerUp(mine);
-    fireEvent.click(screen.getByRole('menuitem', { name: '取消' }));
-    expect(screen.getByRole('menu')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    expect(screen.getByRole('group', { name: 'メッセージの操作' })).toBeTruthy();
     expect(document.querySelectorAll('.msg.mine .bubble.pressable').length).toBeGreaterThan(0);
 
     // 一覧の外を押すと閉じる
     fireEvent.pointerDown(document.body);
-    await waitFor(() => { expect(screen.queryByRole('menu')).toBeNull(); });
+    await waitFor(() => { expect(screen.queryByRole('group', { name: 'メッセージの操作' })).toBeNull(); });
   });
 
   it('保護者：相手のメッセージの長押しでは、リアクションだけを出す', async () => {
@@ -319,10 +322,20 @@ describe('チャット画面の表示', () => {
     await threadReady('.msg:not(.mine) .bubble.pressable');
     // 右クリック（長押しができない操作）からも同じ一覧を開ける
     fireEvent.contextMenu(document.querySelector('.msg:not(.mine) .bubble.pressable')!);
-    await waitFor(() => { expect(screen.getByRole('menu')).toBeTruthy(); });
-    expect(screen.getByRole('menuitem', { name: '了解' })).toBeTruthy();
-    expect(screen.queryByRole('menuitem', { name: '編集' })).toBeNull();
-    expect(screen.queryByRole('menuitem', { name: '取消' })).toBeNull();
+    await waitFor(() => { expect(screen.getByRole('group', { name: 'メッセージの操作' })).toBeTruthy(); });
+    expect(screen.getByRole('button', { name: '了解' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '編集' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '取消' })).toBeNull();
+  });
+
+  it('保護者：長押しをせず、操作ボタンから一覧を開ける', async () => {
+    open('/guardian/chat', guardian);
+    await settled();
+    fireEvent.click(screen.getByText('担任の先生とのやりとり').closest('button')!);
+    await threadReady('.msg.mine .message-actions-trigger');
+    fireEvent.click(document.querySelector('.msg.mine .message-actions-trigger')!);
+    expect(screen.getByRole('group', { name: 'メッセージの操作' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '編集' })).toBeTruthy();
   });
 });
 

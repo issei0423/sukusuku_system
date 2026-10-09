@@ -52,7 +52,7 @@ export default function GuardianAccountsScreen() {
         {data && data.length > 0 && (
           <table className="list">
             <thead>
-              <tr><th>保護者</th><th>ログインID</th><th>電話番号</th><th>紐づく園児</th><th>規約</th><th>状態</th><th></th></tr>
+              <tr><th scope="col">保護者</th><th scope="col">ログインID</th><th scope="col">電話番号</th><th scope="col">紐づく園児</th><th scope="col">規約</th><th scope="col">状態</th><th scope="col">操作</th></tr>
             </thead>
             <tbody>
               {data.map((r) => (

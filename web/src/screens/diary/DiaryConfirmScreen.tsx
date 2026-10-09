@@ -65,10 +65,10 @@ export default function DiaryConfirmScreen() {
       <section className="card">
         <table className="list">
           <tbody>
-            <tr><th style={{ width: 140 }}>記録種別</th><td>{DIARY_RECORD_TYPE[state.recordType]}</td></tr>
-            <tr><th>対象</th><td>{state.childId ? childName(state.childId) : className(state.classId)}</td></tr>
-            <tr><th>記録日</th><td>{formatYMD(state.date)}</td></tr>
-            <tr><th>写真</th><td>{state.photos.length} 枚</td></tr>
+            <tr><th scope="col" style={{ width: 140 }}>記録種別</th><td>{DIARY_RECORD_TYPE[state.recordType]}</td></tr>
+            <tr><th scope="col">対象</th><td>{state.childId ? childName(state.childId) : className(state.classId)}</td></tr>
+            <tr><th scope="col">記録日</th><td>{formatYMD(state.date)}</td></tr>
+            <tr><th scope="col">写真</th><td>{state.photos.length} 枚</td></tr>
           </tbody>
         </table>
         <h3 style={{ marginTop: 16 }}>本文</h3>

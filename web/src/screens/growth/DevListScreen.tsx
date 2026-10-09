@@ -61,7 +61,7 @@ export default function DevListScreen() {
         {data && data.length > 0 && (
           <table className="list">
             <thead>
-              <tr><th>園児</th><th>月齢</th><th>前回の実施日</th><th>次回の予定日</th><th>状態</th><th></th></tr>
+              <tr><th scope="col">園児</th><th scope="col">月齢</th><th scope="col">前回の実施日</th><th scope="col">次回の予定日</th><th scope="col">状態</th><th scope="col">操作</th></tr>
             </thead>
             <tbody>
               {data.map((r) => (

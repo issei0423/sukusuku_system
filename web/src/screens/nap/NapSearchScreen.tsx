@@ -66,8 +66,8 @@ export default function NapSearchScreen() {
             <table className="list">
               <thead>
                 <tr>
-                  <th>日付</th><th>チェック時刻</th><th>園児</th><th>クラス</th>
-                  <th>体位</th><th>呼吸</th><th>顔色</th><th>体温</th><th>記録者</th><th>保存時刻</th>
+                  <th scope="col">日付</th><th scope="col">チェック時刻</th><th scope="col">園児</th><th scope="col">クラス</th>
+                  <th scope="col">体位</th><th scope="col">呼吸</th><th scope="col">顔色</th><th scope="col">体温</th><th scope="col">記録者</th><th scope="col">保存時刻</th>
                 </tr>
               </thead>
               <tbody>

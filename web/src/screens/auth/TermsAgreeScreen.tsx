@@ -39,7 +39,7 @@ export default function TermsAgreeScreen({ readOnly }: { readOnly?: boolean }) {
       <div>
         <div className="page-head"><h1>利用規約</h1></div>
         <section className="card">
-          <div className="terms-box" style={{ maxHeight: 480 }}>{terms.data?.body ?? '読み込んでいます…'}</div>
+          <div className="terms-box" tabIndex={0} aria-label="利用規約の本文" style={{ maxHeight: 480 }}>{terms.data?.body ?? '読み込んでいます…'}</div>
           <div className="muted" style={{ marginTop: 8 }}>
             現在の版：{terms.data?.terms_version}（施行日 {terms.data?.published_on}）
           </div>
@@ -52,7 +52,7 @@ export default function TermsAgreeScreen({ readOnly }: { readOnly?: boolean }) {
     <PublicLayout wide>
       <h1 style={{ marginBottom: 12 }}>利用規約への同意</h1>
       <Alert>利用規約を改定しました。内容をご確認のうえ、同意をお願いします。</Alert>
-      <div className="terms-box" style={{ marginTop: 16, maxHeight: 300 }}>
+      <div className="terms-box" tabIndex={0} aria-label="利用規約の本文" style={{ marginTop: 16, maxHeight: 300 }}>
         {terms.data?.body ?? '読み込んでいます…'}
       </div>
       <label style={{ marginTop: 12 }}>

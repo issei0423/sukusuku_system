@@ -64,7 +64,7 @@ export default function MisdeliveryScreen() {
               既読の有無ととった対応を残してください。
             </Alert>
             <table className="list" style={{ marginTop: 12 }}>
-              <thead><tr><th>送信</th><th>取消</th><th>チャンネル</th><th>送信者</th><th></th></tr></thead>
+              <thead><tr><th scope="col">送信</th><th scope="col">取消</th><th scope="col">チャンネル</th><th scope="col">送信者</th><th scope="col">操作</th></tr></thead>
               <tbody>
                 {pending.data.map((p) => (
                   <tr key={p.chat_message_id}>
@@ -91,7 +91,7 @@ export default function MisdeliveryScreen() {
         {records.data?.length === 0 && <Empty text="記録はありません。" />}
         {records.data && records.data.length > 0 && (
           <table className="list">
-            <thead><tr><th>発生日時</th><th>チャンネル</th><th>既読</th><th>とった対応</th><th>記録者</th></tr></thead>
+            <thead><tr><th scope="col">発生日時</th><th scope="col">チャンネル</th><th scope="col">既読</th><th scope="col">とった対応</th><th scope="col">記録者</th></tr></thead>
             <tbody>
               {records.data.map((r) => (
                 <tr key={r.misdelivery_record_id}>

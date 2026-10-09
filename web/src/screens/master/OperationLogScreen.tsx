@@ -85,8 +85,8 @@ export default function OperationLogScreen() {
             <table className="list">
               <thead>
                 <tr>
-                  <th>操作日時</th><th>操作者</th><th>機能</th><th>操作</th>
-                  <th>対象テーブル</th><th>対象園児</th><th>変更前</th><th>変更後</th>
+                  <th scope="col">操作日時</th><th scope="col">操作者</th><th scope="col">機能</th><th scope="col">操作</th>
+                  <th scope="col">対象テーブル</th><th scope="col">対象園児</th><th scope="col">変更前</th><th scope="col">変更後</th>
                 </tr>
               </thead>
               <tbody>

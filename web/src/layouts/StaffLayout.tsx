@@ -47,13 +47,14 @@ export default function StaffLayout() {
 
   return (
     <div className="staff-shell">
+      <a className="skip-link" href="#staff-main">本文へ移動</a>
       <header className="app-header">
         <div className="header-brand">
           <img className="header-mark" src="/crayon-smiles.png" alt="" aria-hidden="true" />
           <img className="header-wordmark" src="/login-wordmark-crayon.png" alt="すくすく" />
         </div>
         <div className="spacer" />
-        <button className="notify-btn" title="通知" aria-label="通知" onClick={() => navigate('/staff')}>
+        <button className="notify-btn" title="通知" aria-label={`通知 ${pending}件`} onClick={() => navigate('/staff')}>
           <BellIcon />
           {pending > 0 && <span className="notify-badge">{pending}</span>}
         </button>
@@ -70,7 +71,7 @@ export default function StaffLayout() {
       </header>
 
       <div className="staff-body">
-        <nav className="sidenav">
+        <nav className="sidenav" aria-label="職員メニュー">
           {NAV.map((n) => (
             <NavLink key={n.to} to={n.to} end={n.end}
               className={({ isActive }) => (isActive ? 'current' : '')}>
@@ -91,7 +92,7 @@ export default function StaffLayout() {
             </>
           )}
         </nav>
-        <main className="main">
+        <main className="main" id="staff-main" tabIndex={-1}>
           <Outlet />
         </main>
       </div>

@@ -54,22 +54,22 @@ export default function ChildConfirmScreen() {
       <section className="card">
         <table className="list">
           <tbody>
-            <tr><th style={{ width: 150 }}>園児ID</th><td>{form.child_id}</td></tr>
-            <tr><th>氏名</th><td>{form.child_name}</td></tr>
-            <tr><th>よみ</th><td>{form.child_name_kana || '―'}</td></tr>
+            <tr><th scope="col" style={{ width: 150 }}>園児ID</th><td>{form.child_id}</td></tr>
+            <tr><th scope="col">氏名</th><td>{form.child_name}</td></tr>
+            <tr><th scope="col">よみ</th><td>{form.child_name_kana || '―'}</td></tr>
             <tr>
-              <th>生年月日</th>
+              <th scope="col">生年月日</th>
               <td>
                 {formatYMD(form.birth_date)}
                 <span className="muted">（{formatAge(form.birth_date, today())}）</span>
               </td>
             </tr>
-            <tr><th>性別</th><td>{SEX[form.sex]}</td></tr>
-            <tr><th>クラス</th><td>{className(form.class_id)}</td></tr>
-            <tr><th>平熱</th><td>{form.normal_temperature != null ? `${form.normal_temperature} ℃` : '―'}</td></tr>
-            <tr><th>写真の利用同意</th><td>{PHOTO_CONSENT[form.photo_consent_level]}</td></tr>
+            <tr><th scope="col">性別</th><td>{SEX[form.sex]}</td></tr>
+            <tr><th scope="col">クラス</th><td>{className(form.class_id)}</td></tr>
+            <tr><th scope="col">平熱</th><td>{form.normal_temperature != null ? `${form.normal_temperature} ℃` : '―'}</td></tr>
+            <tr><th scope="col">写真の利用同意</th><td>{PHOTO_CONSENT[form.photo_consent_level]}</td></tr>
             <tr>
-              <th>アレルギー</th>
+              <th scope="col">アレルギー</th>
               <td>
                 {form.allergies.filter((a) => a.target_food.trim()).length === 0 ? '―' : (
                   <ul style={{ margin: 0, paddingLeft: 18 }}>
@@ -81,7 +81,7 @@ export default function ChildConfirmScreen() {
               </td>
             </tr>
             <tr>
-              <th>既往歴</th>
+              <th scope="col">既往歴</th>
               <td>
                 {form.medical_histories.filter((m) => m.trim()).length === 0 ? '―'
                   : form.medical_histories.filter((m) => m.trim()).join('／')}

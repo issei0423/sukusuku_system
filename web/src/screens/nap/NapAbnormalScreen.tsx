@@ -104,7 +104,7 @@ export default function NapAbnormalScreen() {
         {list.data && list.data.length > 0 && (
           <table className="list">
             <thead>
-              <tr><th>発見時刻</th><th>園児</th><th>状況</th><th>対応</th><th>記録者</th><th>ヒヤリハット</th></tr>
+              <tr><th scope="col">発見時刻</th><th scope="col">園児</th><th scope="col">状況</th><th scope="col">対応</th><th scope="col">記録者</th><th scope="col">ヒヤリハット</th></tr>
             </thead>
             <tbody>
               {list.data.map((a) => (

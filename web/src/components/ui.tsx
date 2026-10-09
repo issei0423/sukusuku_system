@@ -2,22 +2,35 @@
  * 全画面で使い回す部品
  * 典拠：基本設計書.md「画面基本構成」(3-5)、図/画面詳細図.md「全画面に共通する規定」(0-2)
  */
-import type { ReactNode } from 'react';
+import { Children, cloneElement, isValidElement, useEffect, useId, useRef } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 
 export function Field({ label, required, children, style }: {
   label: string; required?: boolean; children: ReactNode; style?: React.CSSProperties;
 }) {
+  const id = useId();
+  const control = Children.count(children) === 1 && isValidElement(children) &&
+    typeof children.type === 'string' && ['input', 'select', 'textarea'].includes(children.type);
+  const labelledChildren = Children.map(children, (child) => {
+    if (!control || !isValidElement(child)) return child;
+    return cloneElement(child as ReactElement<Record<string, unknown>>, {
+      id, 'aria-required': required || undefined,
+    });
+  });
+  const groupedChildren = Children.map(children, (child) =>
+    isValidElement(child) && child.type === Radios
+      ? cloneElement(child as ReactElement<{ label?: string; required?: boolean }>, { label, required }) : child);
   return (
     <div className={`field${required ? ' req' : ''}`} style={style}>
-      <span className="lbl">{label}</span>
-      {children}
+      {control ? <label className="lbl" htmlFor={id}>{label}</label> : <span className="lbl" id={id}>{label}</span>}
+      {control ? labelledChildren : <div role="group" aria-labelledby={id}>{groupedChildren}</div>}
     </div>
   );
 }
 
 /** 警告・注意喚起。判定ではないことを明確にするため、文言は呼び出し側が持つ */
 export function Alert({ children, soft }: { children: ReactNode; soft?: boolean }) {
-  return <div className={`alert${soft ? ' alert-soft' : ''}`}><span>(!)</span><span>{children}</span></div>;
+  return <div className={`alert${soft ? ' alert-soft' : ''}`} role={soft ? 'status' : 'alert'}><span aria-hidden="true">(!)</span><span>{children}</span></div>;
 }
 
 /**
@@ -68,10 +81,36 @@ export function Card({ title, children, sub, actions }: {
 export function Modal({ title, children, onClose, footer }: {
   title: string; children: ReactNode; onClose: () => void; footer?: ReactNode;
 }) {
+  const id = useId();
+  const dialog = useRef<HTMLDivElement>(null);
+  const close = useRef(onClose);
+  useEffect(() => { close.current = onClose; }, [onClose]);
+  useEffect(() => {
+    const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const root = dialog.current;
+    const focusable = () => Array.from(root?.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+    ) ?? []).filter((element) => element.getAttribute('aria-hidden') !== 'true' &&
+      !(element instanceof HTMLInputElement && element.type === 'hidden'));
+    (root?.querySelector<HTMLElement>('input:not(:disabled), select:not(:disabled), textarea:not(:disabled)')
+      ?? focusable()[0] ?? root)?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { event.preventDefault(); close.current(); return; }
+      if (event.key !== 'Tab') return;
+      const items = focusable();
+      if (!items.length) { event.preventDefault(); root?.focus(); return; }
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('keydown', onKey); before?.focus(); };
+  }, []);
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={title}>
-        <div className="modal-head">{title}</div>
+      <div ref={dialog} className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby={id} tabIndex={-1}>
+        <h2 className="modal-head" id={id}>{title}</h2>
         <div className="modal-body">{children}</div>
         <div className="modal-foot">{footer ?? <button onClick={onClose}>閉じる</button>}</div>
       </div>
@@ -100,11 +139,11 @@ export function Empty({ text }: { text: string }) { return <div className="empty
 export function ErrorBox({ text }: { text: string }) { return <Alert>{text}</Alert>; }
 
 /** 選択肢。(*) が選択中、( ) が未選択（図/画面詳細図.md「表記ルール」(0-1)） */
-export function Radios<T extends string>({ name, value, options, onChange }: {
-  name: string; value: T | null; options: { value: T; label: string }[]; onChange: (v: T) => void;
+export function Radios<T extends string>({ name, value, options, onChange, label, required }: {
+  name: string; value: T | null; options: { value: T; label: string }[]; onChange: (v: T) => void; label?: string; required?: boolean;
 }) {
   return (
-    <div className="choices">
+    <div className="choices" role="radiogroup" aria-label={label ?? name} aria-required={required || undefined}>
       {options.map((o) => (
         <label key={o.value}>
           <input type="radio" name={name} checked={value === o.value} onChange={() => onChange(o.value)} />

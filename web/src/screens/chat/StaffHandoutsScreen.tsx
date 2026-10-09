@@ -98,7 +98,7 @@ export default function StaffHandoutsScreen() {
         {data && data.length > 0 && (
           <table className="list">
             <thead>
-              <tr><th>対象の月</th><th>種類</th><th>題名</th><th>対象</th><th>ファイル</th><th>掲載</th><th></th></tr>
+              <tr><th scope="col">対象の月</th><th scope="col">種類</th><th scope="col">題名</th><th scope="col">対象</th><th scope="col">ファイル</th><th scope="col">掲載</th><th scope="col">操作</th></tr>
             </thead>
             <tbody>
               {data.map((h) => (

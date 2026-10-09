@@ -99,7 +99,7 @@ export default function ChildCsvScreen() {
           {parsed.rows.length > 0 && (
             <table className="list">
               <thead>
-                <tr><th>行</th>{parsed.header.map((h) => <th key={h}>{h}</th>)}<th>判定</th></tr>
+                <tr><th scope="col">行</th>{parsed.header.map((h) => <th scope="col" key={h}>{h}</th>)}<th scope="col">判定</th></tr>
               </thead>
               <tbody>
                 {parsed.rows.map((r) => (
