@@ -47,6 +47,10 @@ func (a *app) handleSaveDevelopmentCheck(w http.ResponseWriter, r *http.Request)
 		writeErr(w, http.StatusBadRequest, "保存する状態の指定が正しくありません")
 		return
 	}
+	if tooLong(req.Note, 1000) {
+		writeErr(w, http.StatusBadRequest, "所見は1,000文字以内で入力してください")
+		return
+	}
 	if req.CheckedOn == "" {
 		req.CheckedOn = today()
 	}

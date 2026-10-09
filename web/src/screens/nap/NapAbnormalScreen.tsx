@@ -80,16 +80,18 @@ export default function NapAbnormalScreen() {
             </Field>
           </div>
           <Field label="発見時の状況" required>
-            <textarea value={situation} onChange={(e) => setSituation(e.target.value)}
+            <textarea value={situation} onChange={(e) => setSituation(e.target.value)} maxLength={1000}
               placeholder="体位・呼吸・顔色・体温など、見たままを書いてください" />
           </Field>
           <Field label="とった対応" required>
-            <textarea value={response} onChange={(e) => setResponse(e.target.value)}
+            <textarea value={response} onChange={(e) => setResponse(e.target.value)} maxLength={1000}
               placeholder="誰が何をしたか、保護者へどう連絡したかを書いてください" />
           </Field>
           {/* システムは判断をしない。記録の内容から重大性を判定しない */}
           <div className="muted">
             この記録は事実を残すためのものです。システムは記録の内容から重大性の判定を行いません。
+            <br />
+            管理者への通知は、端末や通信の状況により届かないことがあります。記録とあわせて、声をかけて応援を呼んでください。
           </div>
           <div className="row-end">
             <button className="btn-primary" onClick={save}

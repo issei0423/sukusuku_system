@@ -45,6 +45,25 @@ func readJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 	return true
 }
 
+// tooLong は、文字数（バイト数ではない）が上限を超えているかを返す。
+// 上限の正は基本設計書「入力項目の制約値」(4-9)
+func tooLong(v string, max int) bool {
+	return len([]rune(v)) > max
+}
+
+// isKana は、よみとして受け取れる文字だけで出来ているかを返す。
+// ひらがな・長音・姓と名のあいだの空白を受け取る
+func isKana(v string) bool {
+	for _, c := range v {
+		switch {
+		case c >= 'ぁ' && c <= 'ゖ', c == 'ー', c == ' ', c == '　':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 func queryInt(r *http.Request, key string, def int) int {
 	v := r.URL.Query().Get(key)
 	if v == "" {

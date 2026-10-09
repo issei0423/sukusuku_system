@@ -368,6 +368,12 @@ func (a *app) handleSetSchedule(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
+	// 手で決める予定日に、過ぎた日は入れさせない（画面詳細図「スケジュール設定画面」(6-3)）。
+	// 「提案に戻す」は、予定日を過ぎた園児では提案そのものが過去の日になるため、対象にしない
+	if req.Manual && req.ScheduledOn < today() {
+		writeErr(w, http.StatusBadRequest, "次回の予定日に、過ぎた日は指定できません")
+		return
+	}
 	var id sql.NullInt64
 	a.db.QueryRow(`SELECT development_schedule_id FROM t_development_schedule
 		WHERE child_id = ? ORDER BY scheduled_on DESC LIMIT 1`, req.ChildID).Scan(&id)

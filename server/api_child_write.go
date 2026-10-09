@@ -54,6 +54,14 @@ func (a *app) handleSaveChild(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "よみを入力してください")
 		return
 	}
+	if tooLong(in.ChildName, 50) || tooLong(in.ChildNameKana, 50) {
+		writeErr(w, http.StatusBadRequest, "氏名とよみは、それぞれ50文字以内で入力してください")
+		return
+	}
+	if !isKana(in.ChildNameKana) {
+		writeErr(w, http.StatusBadRequest, "よみは、ひらがなで入力してください")
+		return
+	}
 	// アレルギーは対象だけでは配膳の場で使えない。症状と対応まで揃えて登録する（GitHub Issue #119）
 	for _, al := range in.Allergies {
 		if strings.TrimSpace(al.TargetFood) == "" {

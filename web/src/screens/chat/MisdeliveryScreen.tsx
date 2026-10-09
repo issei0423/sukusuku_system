@@ -135,9 +135,14 @@ export default function MisdeliveryScreen() {
               </Alert>
             )}
             <Field label="とった対応" required>
-              <textarea value={response} onChange={(e) => setResponse(e.target.value)}
+              <textarea value={response} onChange={(e) => setResponse(e.target.value)} maxLength={1000}
                 placeholder="いつ取り消したか、相手へ何を連絡したか、送り直したかを書いてください" />
             </Field>
+            {/* システムは判断をしない（画面詳細図「誤送信対応記録画面」(4-4)） */}
+            <div className="muted">
+              この記録は、とった対応を残すためのものです。個人情報の漏えいにあたるかどうか、
+              園の外への報告が要るかどうかを、システムは判断しません。
+            </div>
           </div>
         </Modal>
       )}

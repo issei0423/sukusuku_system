@@ -416,6 +416,11 @@ func (a *app) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "メッセージを入力してください")
 		return
 	}
+	// 編集と同じ上限（基本設計書「入力項目の制約値」(4-9)）
+	if tooLong(req.Body, 1000) {
+		writeErr(w, http.StatusBadRequest, "本文は1,000文字以内で入力してください")
+		return
+	}
 
 	var roomType string
 	a.db.QueryRow(`SELECT room_type FROM m_chat_room WHERE chat_room_id = ?`, roomID).Scan(&roomType)
@@ -695,6 +700,10 @@ func (a *app) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "グループ名を入力してください")
 		return
 	}
+	if tooLong(req.Name, 50) {
+		writeErr(w, http.StatusBadRequest, "グループ名は50文字以内で入力してください")
+		return
+	}
 	res, err := a.db.Exec(`INSERT INTO m_chat_room (room_type, room_name, is_archived)
 		VALUES ('3', ?, 0)`, req.Name)
 	if err != nil {
@@ -876,6 +885,10 @@ func (a *app) handleAddMisdeliveryRecord(w http.ResponseWriter, r *http.Request)
 	}
 	if strings.TrimSpace(req.Response) == "" {
 		writeErr(w, http.StatusBadRequest, "とった対応を入力してください")
+		return
+	}
+	if tooLong(req.Response, 1000) {
+		writeErr(w, http.StatusBadRequest, "とった対応は1,000文字以内で入力してください")
 		return
 	}
 	if req.OccurredAt == "" {

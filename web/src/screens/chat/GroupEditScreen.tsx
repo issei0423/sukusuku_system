@@ -104,7 +104,7 @@ export default function GroupEditScreen() {
           </>}>
           <div className="stack">
             <Field label="グループ名" required>
-              <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="運動会実行委員" />
+              <input type="text" value={name} maxLength={50} onChange={(e) => setName(e.target.value)} placeholder="運動会実行委員" />
             </Field>
             <Field label="メンバー">
               <AccountPicker accounts={accounts.data ?? []} picked={picked} onChange={setPicked} />

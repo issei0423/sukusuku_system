@@ -464,6 +464,10 @@ func (a *app) handleRecordNapAbnormal(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "発見時の状況を入力してください")
 		return
 	}
+	if tooLong(req.Situation, 1000) || tooLong(req.Response, 1000) {
+		writeErr(w, http.StatusBadRequest, "発見時の状況と、とった対応は、それぞれ1,000文字以内で入力してください")
+		return
+	}
 	if strings.TrimSpace(req.Response) == "" {
 		writeErr(w, http.StatusBadRequest, "とった対応を入力してください")
 		return

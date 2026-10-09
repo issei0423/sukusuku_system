@@ -72,6 +72,11 @@ func (a *app) parseChildCsv(text string) ([]string, []CsvRow) {
 			}
 			if values[2] == "" {
 				errs = append(errs, "氏名かなが空です")
+			} else if !isKana(values[2]) {
+				errs = append(errs, "氏名かなは、ひらがなで入力してください")
+			}
+			if tooLong(values[1], 50) || tooLong(values[2], 50) {
+				errs = append(errs, "氏名と氏名かなは、それぞれ50文字以内で入力してください")
 			}
 			switch {
 			case !dateRe.MatchString(values[3]):

@@ -84,6 +84,7 @@ export default function ChildInputScreen() {
     if (!form.child_id.trim()) found.push('園児IDを入力してください');
     if (!form.child_name.trim()) found.push('氏名を入力してください');
     if (!form.child_name_kana.trim()) found.push('よみを入力してください');
+    else if (!/^[ぁ-ゖー 　]*$/.test(form.child_name_kana)) found.push('よみは、ひらがなで入力してください');
     if (!form.birth_date) found.push('生年月日を入力してください');
     else if (form.birth_date > today()) found.push('生年月日に未来日は指定できません');
     form.allergies.forEach((a) => {
@@ -155,10 +156,11 @@ export default function ChildInputScreen() {
             <div className="muted">使われている番号の次を入れてあります。園で決めた番号があれば書き換えてください。</div>
           )}
           <Field label="氏名" required>
-            <input type="text" value={form.child_name} onChange={(e) => set('child_name', e.target.value)} />
+            <input type="text" value={form.child_name} maxLength={50} onChange={(e) => set('child_name', e.target.value)} />
           </Field>
           <Field label="よみ" required>
-            <input type="text" value={form.child_name_kana} onChange={(e) => set('child_name_kana', e.target.value)} />
+            <input type="text" value={form.child_name_kana} maxLength={50} placeholder="ひらがなで入力"
+              onChange={(e) => set('child_name_kana', e.target.value)} />
           </Field>
           <Field label="生年月日" required>
             <input type="date" value={form.birth_date} max={today()}

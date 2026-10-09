@@ -87,7 +87,11 @@ export default function DiaryConfirmScreen() {
       </section>
 
       <div className="row-end">
-        <button onClick={() => navigate(-1)} disabled={busy}>戻る</button>
+        {/* 入力していた内容を持って戻る。履歴を戻るだけでは、保存していない入力が消える */}
+        <button disabled={busy} onClick={() => navigate(
+          state.diaryId ? `/staff/diary/${state.diaryId}` : '/staff/diary/new',
+          { state: { draft: state }, replace: true },
+        )}>戻る</button>
         <button className="btn-primary" onClick={submit} disabled={busy}>
           {busy ? '申請しています…' : '申請する'}
         </button>
