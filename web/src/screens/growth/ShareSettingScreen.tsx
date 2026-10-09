@@ -12,6 +12,7 @@ import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api } from '../../api/client';
 import { Loading, ErrorBox, Empty, Alert } from '../../components/ui';
+import { ConfirmDialog, notify } from '../../components/feedback';
 
 export default function ShareSettingScreen() {
   const { user } = useSession();
@@ -19,12 +20,19 @@ export default function ShareSettingScreen() {
   const [error, setError] = useState<string | null>(null);
   const { data, error: loadError, loading } = useAsync(() => api.shareSettings(user!), [tick]);
 
-  const toggle = async (itemId: number, shareable: boolean) => {
-    setError(null);
+  // 保護者へ見せる範囲を変える操作である。触れただけで変わらないよう、保存の前に確かめる
+  // （基本設計書「画面の洗い出しの考え方」(3-1)：設定変更は保存前の確認ダイアログ。GitHub Issue #107）
+  const [pending, setPending] = useState<{ itemId: number; name: string; shareable: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const apply = async () => {
+    if (!pending) return;
+    setError(null); setBusy(true);
     try {
-      await api.setShareable(user!, itemId, shareable);
+      await api.setShareable(user!, pending.itemId, pending.shareable);
+      notify(`「${pending.name}」を、保護者へ${pending.shareable ? '共有する' : '共有しない'}設定にしました`);
       setTick((n) => n + 1);
-    } catch (e) { setError((e as Error).message); }
+    } catch (e) { setError((e as Error).message); } finally { setBusy(false); setPending(null); }
   };
 
   // 区分ごとにまとめる
@@ -74,7 +82,9 @@ export default function ShareSettingScreen() {
                   <td>
                     <label>
                       <input type="checkbox" checked={r.isShareable}
-                        onChange={(e) => toggle(r.item.development_item_id, e.target.checked)} />
+                        onChange={(e) => setPending({
+                          itemId: r.item.development_item_id, name: r.item.item_name, shareable: e.target.checked,
+                        })} />
                       {r.isShareable ? '共有する' : '共有しない'}
                     </label>
                   </td>
@@ -84,6 +94,19 @@ export default function ShareSettingScreen() {
           </table>
         </section>
       ))}
+
+      {pending && (
+        <ConfirmDialog title="共有範囲の変更" busy={busy}
+          confirmLabel={pending.shareable ? '共有する設定にする' : '共有しない設定にする'}
+          onConfirm={apply} onCancel={() => setPending(null)}>
+          <p>「{pending.name}」を、保護者へ<strong>{pending.shareable ? '共有する' : '共有しない'}</strong>設定にします。</p>
+          <p className="muted">
+            {pending.shareable
+              ? 'この項目の記録が、保護者へ渡す記録に含まれるようになります。'
+              : 'この項目の記録は、保護者へ渡す記録に含まれなくなります。園内の記録としては残ります。'}
+          </p>
+        </ConfirmDialog>
+      )}
     </div>
   );
 }

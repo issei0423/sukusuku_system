@@ -8,8 +8,9 @@
 import { useState } from 'react';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
-import { api } from '../../api/client';
+import { api, visibleChildren } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Pager } from '../../components/ui';
+import { notify } from '../../components/feedback';
 import { FUNCTION_TYPE, OPERATION_TYPE } from '../../api/codes';
 import { formatMDHM, today, addDays } from '../../api/util';
 import type { FunctionType } from '../../api/types';
@@ -22,23 +23,33 @@ export default function OperationLogScreen() {
   const [to, setTo] = useState(today());
   const [accountId, setAccountId] = useState<number | ''>('');
   const [functionType, setFunctionType] = useState<FunctionType | ''>('');
+  // 対象園児での絞り込み（基本設計書「画面の一覧」(3-2)。GitHub Issue #116）
+  const [childId, setChildId] = useState('');
+  const children = visibleChildren(user!);
   const [page, setPage] = useState(1);
   const [applied, setApplied] = useState(0);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const { data, error, loading } = useAsync(
-    () => api.operationLogs(user!, { from, to, accountId, functionType, page }),
+    () => api.operationLogs(user!, { from, to, accountId, functionType, childId, page }),
     [page, applied],
   );
 
-  const exportCsv = () => {
+  const exportCsv = async () => {
     if (!data) return;
-    const header = ['操作日時', '操作者', '機能', '操作', '対象テーブル', '対象園児', '変更前', '変更後'];
+    // 出力したことを先に操作ログへ残す。残せなかったときは出力しない（GitHub Issue #115）
+    try {
+      await api.recordExport(user!, 'operation_log', from, to, data.rows.length);
+    } catch (e) {
+      setExportError((e as Error).message);
+      return;
+    }
+    setExportError(null);
+    const header = ['操作日時', '操作者', '機能', '操作', '対象テーブル', '対象', '対象園児', '変更前', '変更後'];
     const lines = data.rows.map((l) => [
       l.operated_at, l.account_name, FUNCTION_TYPE[l.function_type], OPERATION_TYPE[l.operation_type],
-      l.target_table, l.child_name, l.before_value ?? '', l.after_value ?? '',
+      l.target_table, l.target_label, l.child_name, l.before_value ?? '', l.after_value ?? '',
     ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','));
-    // 出力の操作自体もログに残す必要があるが、モックでは記録していない。
-    // 実装時は operation_type='5'（出力）で残すこと（基本設計書 5-8）
     const blob = new Blob([`﻿${[header.join(','), ...lines].join('\n')}`], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -46,6 +57,9 @@ export default function OperationLogScreen() {
     a.download = `操作ログ_${from}_${to}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+    notify('操作ログを CSV で出力しました。出力したことは操作ログに残ります');
+    // いま残した出力の行を一覧に反映する
+    setApplied((n) => n + 1);
   };
 
   return (
@@ -72,9 +86,17 @@ export default function OperationLogScreen() {
               {Object.entries(FUNCTION_TYPE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </Field>
+          <Field label="対象園児">
+            <select value={childId} onChange={(e) => setChildId(e.target.value)}>
+              <option value="">すべて</option>
+              {children.map((c) => <option key={c.child_id} value={c.child_id}>{c.child_name}</option>)}
+            </select>
+          </Field>
           <button onClick={() => { setPage(1); setApplied((n) => n + 1); }}>絞り込む</button>
         </div>
       </section>
+
+      {exportError && <section className="card"><ErrorBox text={exportError} /></section>}
 
       <section className="card">
         {loading && <Loading />}
@@ -86,7 +108,7 @@ export default function OperationLogScreen() {
               <thead>
                 <tr>
                   <th>操作日時</th><th>操作者</th><th>機能</th><th>操作</th>
-                  <th>対象テーブル</th><th>対象園児</th><th>変更前</th><th>変更後</th>
+                  <th>対象テーブル</th><th>対象</th><th>対象園児</th><th>変更前</th><th>変更後</th>
                 </tr>
               </thead>
               <tbody>
@@ -97,6 +119,8 @@ export default function OperationLogScreen() {
                     <td className="nowrap">{FUNCTION_TYPE[l.function_type]}</td>
                     <td className="nowrap">{OPERATION_TYPE[l.operation_type]}</td>
                     <td className="nowrap muted">{l.target_table}</td>
+                    {/* 園児に紐づかない操作の相手（どの職員・保護者・日誌か）。GitHub Issue #114 */}
+                    <td className="nowrap">{l.target_label || '―'}</td>
                     <td className="nowrap">{l.child_name}</td>
                     <td className="muted">{l.before_value ?? '―'}</td>
                     <td>{l.after_value ?? '―'}</td>
@@ -113,6 +137,9 @@ export default function OperationLogScreen() {
         <div className="muted">
           操作ログは追記のみで、更新・削除の手段を設けていません（基本設計書 5-8）。
           操作日時にはサーバの時刻を入れます。
+          <br />
+          CSV 出力は、いま表示しているページの行を出します。出力したことも操作ログに残ります。
+          「対象」は、いまの名前で表示しています（記録した時点の名前ではありません）。
         </div>
       </section>
     </div>

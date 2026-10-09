@@ -138,6 +138,8 @@ export interface CsvRow {
   line: number;
   values: string[];
   error: string | null;
+  /** 取り込みは妨げないが、確かめてほしいこと（範囲の外の平熱など） */
+  warning?: string | null;
 }
 
 export interface FiscalClassRow {
@@ -194,6 +196,8 @@ export interface OperationLogRow {
   after_value: string | null;
   account_name: string;
   child_name: string;
+  /** 操作の相手。園児に紐づかない操作で、誰・何に対する操作かを示す（GitHub Issue #114）。無ければ空 */
+  target_label: string;
 }
 
 /** 職員ダッシュボードの未対応の集計（図/画面詳細図.md 2-4） */

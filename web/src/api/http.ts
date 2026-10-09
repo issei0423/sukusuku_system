@@ -44,6 +44,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     method,
     // セッションの Cookie を送る。認証情報の保持方式は未確定（要決定事項.md 優先度A）
     credentials: 'same-origin',
+    // 編集ロックの解除は、タブを閉じる・読み込み直す途中にも送る。途中で打ち切られないようにする
+    keepalive: method === 'DELETE',
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -215,6 +217,12 @@ const apiAuth = {
     get<Child[]>('/api/children' + qs({ class_id: f.classId ?? '', name: f.name ?? '' })),
 
   getChild: (_u: SessionUser, childId: string) => get<Child>(`/api/children/${childId}`),
+
+  /** 園児IDがすでに使われているか。入力の時点で重複を知らせるために使う（GitHub Issue #121） */
+  async childIdExists(_u: SessionUser, childId: string): Promise<boolean> {
+    const r = await get<{ exists: boolean }>(`/api/children/${encodeURIComponent(childId.trim())}/exists`);
+    return r.exists;
+  },
   allergiesOf: (childId: string) => get<Allergy[]>(`/api/children/${childId}/allergies`),
   medicalHistoriesOf: (childId: string) =>
     get<{ medical_history_id: number; child_id: string; content: string }[]>(
@@ -269,7 +277,7 @@ const apiAuth = {
     del<void>(`/api/diaries/${diaryId}/lock${force ? '?force=true' : ''}`),
 
   lockOf: (diaryId: number) =>
-    get<{ diary_id: number; lock_token: string; locked_staff_id: string; staff_name: string } | null>(
+    get<{ diary_id: number; lock_token: string; locked_staff_id: string; last_active_at: string; staff_name: string } | null>(
       `/api/diaries/${diaryId}/lock`),
 };
 
@@ -454,6 +462,11 @@ const apiAdmin = {
 
   unlock: (_u: SessionUser, accountId: number) => post<void>(`/api/admin/accounts/${accountId}/unlock`),
 
+  updateStaffAccount: (
+    _u: SessionUser, staffId: string,
+    input: { staff_name: string; role: Role; class_id: number | null },
+  ) => post<void>(`/api/admin/staff-accounts/${encodeURIComponent(staffId)}`, input),
+
   setAccountStatus: (_u: SessionUser, accountId: number, status: '1' | '2') =>
     post<void>(`/api/admin/accounts/${accountId}/status`, { status }),
 
@@ -462,19 +475,19 @@ const apiAdmin = {
   endGuardianLink: (_u: SessionUser, guardianId: string, childId: string) =>
     post<void>('/api/admin/guardian-links/end', { guardian_id: guardianId, child_id: childId }),
 
+  restoreGuardianLink: (_u: SessionUser, guardianId: string, childId: string) =>
+    post<void>('/api/admin/guardian-links/restore', { guardian_id: guardianId, child_id: childId }),
+
   invitationCodes: (_u: SessionUser, f: { classId?: number | ''; status?: string } = {}) =>
     get<InvitationCodeRow[]>('/api/admin/invitations' + qs({
       class_id: f.classId ?? '', status: f.status ?? '',
     })),
 
-  issueInvitationCodes: async (
-    _u: SessionUser, classId: number, perChild: number, validDays: number,
-  ): Promise<number> => {
-    const r = await post<{ issued: number }>('/api/admin/invitations/bulk', {
-      class_id: classId, per_child: perChild, valid_days: validDays,
-    });
-    return r.issued;
-  },
+  issueInvitationCodes: (
+    _u: SessionUser, classId: number, perChild: number, validDays: number, includeExisting = false,
+  ) => post<{ issued: number; skipped: number }>('/api/admin/invitations/bulk', {
+    class_id: classId, per_child: perChild, valid_days: validDays, include_existing: includeExisting,
+  }),
 
   issueOneInvitationCode: async (_u: SessionUser, childId: string, validDays: number): Promise<string> => {
     const r = await post<{ code: string }>('/api/admin/invitations', {
@@ -493,6 +506,11 @@ const apiAdmin = {
     from: f.from ?? '', to: f.to ?? '', account_id: f.accountId ?? '',
     function_type: f.functionType ?? '', child_id: f.childId ?? '', page: f.page ?? 1,
   })),
+
+  /** 画面側で組み立てた出力（CSV）を操作ログへ記録する（GitHub Issue #115・#117） */
+  recordExport: (
+    _u: SessionUser, kind: 'operation_log' | 'nap_record', from: string, to: string, count: number,
+  ) => post<void>('/api/exports', { kind, from, to, count }),
 
   /* ---- CSV一括登録・年度更新 ---- */
   parseChildCsv: (text: string) =>

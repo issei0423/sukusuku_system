@@ -178,14 +178,21 @@ func (a *app) handleApproveDiary(w http.ResponseWriter, r *http.Request) {
 	var (
 		status  string
 		childID sql.NullString
+		creator string
 	)
-	if err := a.db.QueryRow(`SELECT status, child_id FROM t_diary WHERE diary_id = ? AND is_deleted = 0`,
-		id).Scan(&status, &childID); err != nil {
+	if err := a.db.QueryRow(`SELECT status, child_id, created_staff_id FROM t_diary
+		WHERE diary_id = ? AND is_deleted = 0`, id).Scan(&status, &childID, &creator); err != nil {
 		writeErr(w, http.StatusNotFound, "日誌が見つかりません")
 		return
 	}
 	if status != "2" {
 		writeErr(w, http.StatusBadRequest, "申請中の日誌のみ承認できます")
+		return
+	}
+	// 【仮置き】承認は、作成者とは別の管理者による確認として扱う（GitHub Issue #106）。
+	// 申請者と承認者が同じでよいかは設計に定めが無い（web/仮置き値.md）。
+	if creator == u.staff() {
+		writeErr(w, http.StatusBadRequest, "自分が申請した日誌は承認できません。ほかの管理者に承認を依頼してください")
 		return
 	}
 

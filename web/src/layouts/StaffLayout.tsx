@@ -6,7 +6,8 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useSession } from '../session';
 import { useAsync } from '../hooks';
 import { api } from '../api/client';
-import { BellIcon } from '../components/ui';
+import { BellIcon, Alert } from '../components/ui';
+import { ToastHost } from '../components/feedback';
 
 const NAV = [
   { to: '/staff', label: 'ダッシュボード', end: true, adminOnly: false },
@@ -92,8 +93,21 @@ export default function StaffLayout() {
           )}
         </nav>
         <main className="main">
+          {/*
+            担当クラスの無い一般の職員は、園児も日誌も1件も見えない。
+            何も出ない理由が画面から分からないため、ここで伝える（GitHub Issue #127）
+          */}
+          {user.role === '2' && !user.class_id && (
+            <div style={{ marginBottom: 16 }}>
+              <Alert soft>
+                担当クラスが割り当てられていません。園児・日誌・チャットは、担当クラスが決まると表示されます。
+                管理者へ割り当てを依頼してください。
+              </Alert>
+            </div>
+          )}
           <Outlet />
         </main>
+        <ToastHost />
       </div>
     </div>
   );

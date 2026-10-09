@@ -126,7 +126,7 @@ func dateColumns(db *sql.DB, table string) ([]string, error) {
 		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultVal, &pk); err != nil {
 			return nil, err
 		}
-		if !hasDateSuffix(name) {
+		if !hasDateSuffix(name) && !seedShiftIncluded[table+"."+name] {
 			continue
 		}
 		if seedShiftExcluded[table+"."+name] {
@@ -135,6 +135,13 @@ func dateColumns(db *sql.DB, table string) ([]string, error) {
 		out = append(out, name)
 	}
 	return out, rows.Err()
+}
+
+// 名前が _date / _at で終わらないが、ずらす必要のある列。テーブル名.列名 で指定する
+var seedShiftIncluded = map[string]bool{
+	// 招待コードの有効期限。発行日（created_at）だけがずれると、発行日より前に期限が来て、
+	// デモデータのコードがすべて期限切れになる（GitHub Issue #129）
+	"t_invitation_code.expires_on": true,
 }
 
 func hasDateSuffix(name string) bool {

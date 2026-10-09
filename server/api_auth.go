@@ -127,6 +127,12 @@ func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *app) handleLogout(w http.ResponseWriter, r *http.Request) {
+	// 編集ロックを持ったままログアウトすると、ほかの職員が無操作の経過まで保存できなくなる。
+	// ログアウトは編集の終了であり、保持しているロックをすべて外す（基本設計書「編集ロックの解除」(4-5)）
+	if accountID, ok := a.sessions.accountID(r); ok {
+		a.db.Exec(`DELETE FROM t_diary_lock WHERE locked_staff_id =
+			(SELECT staff_id FROM m_staff WHERE account_id = ?)`, accountID)
+	}
 	a.sessions.destroy(w, r)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

@@ -52,9 +52,23 @@ describe('招待コード', () => {
   it('一括発行は 園児数 × 枚数 を発行する', async () => {
     const before = db.invitationCodes.length;
     const children = await api.listChildren(admin, { classId: 2 });
-    const issued = await api.issueInvitationCodes(admin, 2, 2, 30);
-    expect(issued).toBe(children.length * 2);
-    expect(db.invitationCodes.length).toBe(before + issued);
+    const r = await api.issueInvitationCodes(admin, 2, 2, 30);
+    expect(r.issued).toBe(children.length * 2);
+    expect(r.skipped).toBe(0);
+    expect(db.invitationCodes.length).toBe(before + r.issued);
+  });
+
+  it('一括発行は、使えるコードをすでに持つ園児を飛ばす（指定すれば重ねて発行する）', async () => {
+    // 直前のテストで、クラス2の全員が使えるコードを持っている
+    const children = await api.listChildren(admin, { classId: 2 });
+    const before = db.invitationCodes.length;
+
+    const skippedAll = await api.issueInvitationCodes(admin, 2, 2, 30);
+    expect(skippedAll).toEqual({ issued: 0, skipped: children.length });
+    expect(db.invitationCodes.length).toBe(before);
+
+    const again = await api.issueInvitationCodes(admin, 2, 1, 30, true);
+    expect(again).toEqual({ issued: children.length, skipped: 0 });
   });
 
   it('登録したメールアドレスは重複させない（ロールをまたいで園内で一意）', async () => {

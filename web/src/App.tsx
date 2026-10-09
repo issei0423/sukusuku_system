@@ -80,7 +80,8 @@ function RequireStaff() {
 function RequireAdmin() {
   const { user } = useSession();
   if (!user) return <Navigate to="/staff-top" replace />;
-  if (user.role !== '1') return <Navigate to="/staff" replace />;
+  // 黙って戻すと、権限が無いのか壊れているのかが分からない。理由を持たせて戻す（GitHub Issue #127）
+  if (user.role !== '1') return <Navigate to="/staff" replace state={{ denied: 'admin' }} />;
   return <StaffLayout />;
 }
 

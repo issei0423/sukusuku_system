@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"net/http"
+	"strconv"
 )
 
 /*
@@ -25,6 +26,91 @@ type operationLogRow struct {
 	AfterValue     *string `json:"after_value"`
 	AccountName    string  `json:"account_name"`
 	ChildName      string  `json:"child_name"`
+	// 操作の相手。園児に紐づかない操作（アカウントの停止、クラス日誌の承認など）は、
+	// 対象園児の列だけでは誰・何に対する操作かが分からない（GitHub Issue #114）
+	TargetLabel string `json:"target_label"`
+}
+
+// targetLabel は、対象テーブルと対象レコードから、人が読める相手の名前を組み立てる。
+// 記録の時点の値ではなく、参照した時点の名前を返す。
+func (a *app) targetLabel(table string, targetID *int64) string {
+	if targetID == nil {
+		return ""
+	}
+	switch table {
+	case "m_account", "t_guardian_child":
+		return a.accountName(*targetID)
+	case "t_diary", "t_diary_lock":
+		var (
+			recordType, date string
+			classID          sql.NullInt64
+			childID          sql.NullString
+		)
+		if a.db.QueryRow(`SELECT record_type, diary_date, class_id, child_id FROM t_diary WHERE diary_id = ?`,
+			*targetID).Scan(&recordType, &date, &classID, &childID) != nil {
+			return ""
+		}
+		label := diaryRecordTypeLabel(recordType)
+		if childID.Valid {
+			label += " " + a.childName(childID.String)
+		} else if classID.Valid {
+			label += " " + a.className(classID.Int64)
+		}
+		return label + " " + date
+	}
+	return ""
+}
+
+func diaryRecordTypeLabel(v string) string {
+	switch v {
+	case "1":
+		return "個人日誌"
+	case "2":
+		return "クラス日誌"
+	case "3":
+		return "週案・月案"
+	case "4":
+		return "ヒヤリハット"
+	}
+	return "日誌"
+}
+
+/*
+handleRecordExport は、画面側で組み立てた出力（CSV）を操作ログへ記録する。
+
+操作ログと午睡記録の CSV は画面側で作るため、サーバは出力そのものを見ていない。
+出力したことを残すために、画面から呼ばせる（GitHub Issue #115・#117）。
+出力は目的を問わず操作ログへ記録する（基本設計書「発達チェック・身体測定」(4-8) と同じ扱い）。
+*/
+func (a *app) handleRecordExport(w http.ResponseWriter, r *http.Request) {
+	u, ok := a.requireStaff(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Kind  string `json:"kind"` // "operation_log" または "nap_record"
+		From  string `json:"from"`
+		To    string `json:"to"`
+		Count int    `json:"count"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	period := "期間 " + req.From + "〜" + req.To + "・" + strconv.Itoa(req.Count) + " 件"
+	switch req.Kind {
+	case "operation_log":
+		if !u.isAdmin() {
+			writeForbidden(w, "操作ログの出力は管理者のみが行えます")
+			return
+		}
+		a.log(u.AccountID, fnAccount, opExport, "t_operation_log", nil, nil, nil, s("操作ログをCSV出力（"+period+"）"))
+	case "nap_record":
+		a.log(u.AccountID, fnNap, opExport, "t_nap_record", nil, nil, nil, s("午睡記録をCSV出力（"+period+"）"))
+	default:
+		writeErr(w, http.StatusBadRequest, "出力の種別が正しくありません")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (a *app) handleOperationLogs(w http.ResponseWriter, r *http.Request) {
@@ -88,6 +174,7 @@ func (a *app) handleOperationLogs(w http.ResponseWriter, r *http.Request) {
 		if out[i].TargetChildID != nil {
 			out[i].ChildName = a.childName(*out[i].TargetChildID)
 		}
+		out[i].TargetLabel = a.targetLabel(out[i].TargetTable, out[i].TargetID)
 	}
 	writeJSON(w, http.StatusOK,
 		page(out, queryInt(r, "page", 1), a.settingInt("paging.operation_log_per_page", 100)))

@@ -65,11 +65,8 @@ export default function PasswordChangeScreen({ forced }: { forced?: boolean }) {
       <Field label="新しいパスワード（確認）" required>
         <input type="password" value={next2} autoComplete="new-password" onChange={(e) => setNext2(e.target.value)} />
       </Field>
-      {/*
-        桁数・使用できる文字の制約値は【要決定】（基本設計書「画面詳細」(3-6)）。
-        モックでは8文字以上のみを課している（web/仮置き値.md 参照）
-      */}
-      <div className="muted">8文字以上で入力してください。（制約値は未確定です）</div>
+      {/* 8〜128文字。文字種の組み合わせは求めない（基本設計書「入力項目の制約値」(4-9)） */}
+      <div className="muted">8文字以上で入力してください。文字の種類の組み合わせは問いません。</div>
       <button className="btn-primary btn-block" type="submit" disabled={busy}>変更する</button>
     </form>
   );
