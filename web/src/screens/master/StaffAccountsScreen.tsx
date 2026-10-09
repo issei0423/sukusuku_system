@@ -268,6 +268,15 @@ export default function StaffAccountsScreen() {
             {editing.accountId === user!.account_id && (
               <div className="muted">自分のロールは変更できません。</div>
             )}
+            {/* 管理者が1名になる操作には警告する（画面詳細図「職員アカウント管理画面」(7-6)） */}
+            {editing.role === '2'
+              && data?.find((r) => r.account.account_id === editing.accountId)?.account.role === '1'
+              && data.filter((r) => r.account.role === '1' && r.account.status === '1').length <= 2 && (
+              <Alert>
+                この変更で、管理者が1名になります。管理者がパスワードを忘れたときに、再発行できる人が居なくなります。
+                管理者は2名以上にしておいてください。
+              </Alert>
+            )}
             <Field label="担当クラス">
               <select value={editing.classId}
                 onChange={(e) => setEditing({ ...editing, classId: e.target.value ? Number(e.target.value) : '' })}>

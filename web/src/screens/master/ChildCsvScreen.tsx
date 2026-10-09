@@ -82,6 +82,8 @@ export default function ChildCsvScreen() {
           </div>
           <div className="muted">
             列の並び：園児ID, 氏名, 氏名かな, 生年月日（YYYY-MM-DD）, 性別（1:男 2:女 9:未回答）, クラス名, 平熱
+            <br />
+            アレルギーと既往歴は、この取込の対象外です。取り込んだあと、園児ごとの編集の画面から入力してください。
           </div>
         </div>
       </section>

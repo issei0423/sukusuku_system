@@ -187,7 +187,7 @@ export default function StaffChatScreen() {
             )}
             {current?.canPost ? (
               <>
-                <textarea value={text} onChange={(e) => setText(e.target.value)}
+                <textarea value={text} onChange={(e) => setText(e.target.value)} maxLength={1000}
                   placeholder="メッセージを入力" style={{ minHeight: 70 }} />
                 <div className="row-end">
                   <button onClick={() => alert('添付はモックでは未実装です')}>添付</button>

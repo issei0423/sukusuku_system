@@ -144,7 +144,7 @@ export default function DevInputScreen() {
 
       <section className="card">
         <Field label="所見">
-          <textarea value={note} onChange={(e) => setNote(e.target.value)}
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000}
             placeholder="気づいたことを記録してください（判定ではありません）" />
         </Field>
         <label style={{ marginTop: 8 }}>

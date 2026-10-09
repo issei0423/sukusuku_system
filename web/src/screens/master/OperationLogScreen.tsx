@@ -29,6 +29,11 @@ export default function OperationLogScreen() {
   const [page, setPage] = useState(1);
   const [applied, setApplied] = useState(0);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [rangeError, setRangeError] = useState<string | null>(null);
+  const search = () => {
+    if (from && to && from > to) { setRangeError('期間の開始は、終了より後の日にできません'); return; }
+    setRangeError(null); setPage(1); setApplied((n) => n + 1);
+  };
 
   const { data, error, loading } = useAsync(
     () => api.operationLogs(user!, { from, to, accountId, functionType, childId, page }),
@@ -92,8 +97,9 @@ export default function OperationLogScreen() {
               {children.map((c) => <option key={c.child_id} value={c.child_id}>{c.child_name}</option>)}
             </select>
           </Field>
-          <button onClick={() => { setPage(1); setApplied((n) => n + 1); }}>絞り込む</button>
+          <button onClick={search}>絞り込む</button>
         </div>
+        {rangeError && <ErrorBox text={rangeError} />}
       </section>
 
       {exportError && <section className="card"><ErrorBox text={exportError} /></section>}

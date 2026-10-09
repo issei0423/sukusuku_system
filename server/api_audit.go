@@ -88,7 +88,7 @@ func (a *app) handleRecordExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Kind  string `json:"kind"` // "operation_log" または "nap_record"
+		Kind  string `json:"kind"` // "operation_log"・"nap_record"・"allergy_list"・"invitation_sheet"
 		From  string `json:"from"`
 		To    string `json:"to"`
 		Count int    `json:"count"`
@@ -106,6 +106,21 @@ func (a *app) handleRecordExport(w http.ResponseWriter, r *http.Request) {
 		a.log(u.AccountID, fnAccount, opExport, "t_operation_log", nil, nil, nil, s("操作ログをCSV出力（"+period+"）"))
 	case "nap_record":
 		a.log(u.AccountID, fnNap, opExport, "t_nap_record", nil, nil, nil, s("午睡記録をCSV出力（"+period+"）"))
+	case "allergy_list":
+		// 要配慮個人情報の一覧。出力できるのは管理者のみ（画面詳細図「アレルギー一覧画面」(7-4)）
+		if !u.isAdmin() {
+			writeForbidden(w, "アレルギー一覧の印刷は管理者のみが行えます")
+			return
+		}
+		a.log(u.AccountID, fnChild, opExport, "m_allergy", nil, nil, nil,
+			s("アレルギー一覧を印刷（"+strconv.Itoa(req.Count)+" 名）"))
+	case "invitation_sheet":
+		if !u.isAdmin() {
+			writeForbidden(w, "招待コードの出力は管理者のみが行えます")
+			return
+		}
+		a.log(u.AccountID, fnAccount, opExport, "t_invitation_code", nil, nil, nil,
+			s("招待コードを配布用に出力（"+strconv.Itoa(req.Count)+" 枚）"))
 	default:
 		writeErr(w, http.StatusBadRequest, "出力の種別が正しくありません")
 		return

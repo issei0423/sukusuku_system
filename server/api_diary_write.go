@@ -38,6 +38,10 @@ func (a *app) handleSaveDiary(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "本文を入力してください")
 		return
 	}
+	if tooLong(in.Body, 2000) {
+		writeErr(w, http.StatusBadRequest, "本文は2,000文字以内で入力してください")
+		return
+	}
 	if in.Status != "1" && in.Status != "2" {
 		writeErr(w, http.StatusBadRequest, "保存する状態の指定が正しくありません")
 		return
@@ -256,6 +260,10 @@ func (a *app) handleReturnDiary(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.TrimSpace(req.Reason) == "" {
 		writeErr(w, http.StatusBadRequest, "差し戻す理由を入力してください")
+		return
+	}
+	if tooLong(req.Reason, 500) {
+		writeErr(w, http.StatusBadRequest, "差し戻す理由は500文字以内で入力してください")
 		return
 	}
 

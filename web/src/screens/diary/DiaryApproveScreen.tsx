@@ -134,7 +134,7 @@ export default function DiaryApproveScreen() {
 
       <section className="card">
         <Field label="差し戻す理由（差し戻すときのみ入力）">
-          <textarea value={reason} onChange={(e) => setReason(e.target.value)} style={{ minHeight: 90 }}
+          <textarea value={reason} onChange={(e) => setReason(e.target.value)} style={{ minHeight: 90 }} maxLength={500}
             placeholder="何を直せばよいかが作成者に伝わるように書いてください" />
         </Field>
       </section>

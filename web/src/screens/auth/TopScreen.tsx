@@ -69,7 +69,7 @@ export default function TopScreen({ entrance }: { entrance: 'staff' | 'guardian'
 
       <form className="stack" onSubmit={submit}>
         <Field label="ログインID" required>
-          <input type="email" value={email} autoComplete="username"
+          <input type="email" value={email} autoComplete="username" maxLength={254}
             placeholder="example@hoiku.example.jp"
             onChange={(e) => setEmail(e.target.value)} />
         </Field>
@@ -122,7 +122,7 @@ function LoginErrorView({ error, entrance }: { error: LoginError; entrance: 'sta
     );
   }
   if (error.kind === 'locked') {
-    return <Alert>ログインを一定回数以上まちがえたため、アカウントをロックしました。園の管理者へご連絡ください。</Alert>;
+    return <Alert>ログインを一定回数以上まちがえたため、アカウントをロックしました。しばらく時間をおくと、もう一度ログインできます。お急ぎのときは、園の管理者へご連絡ください。</Alert>;
   }
   if (error.kind === 'suspended') {
     return <Alert>このアカウントは停止されています。園の管理者へご連絡ください。</Alert>;
