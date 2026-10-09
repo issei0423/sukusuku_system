@@ -524,6 +524,10 @@ func (a *app) handleIssueInvitationCodes(w http.ResponseWriter, r *http.Request)
 		writeErr(w, http.StatusBadRequest, "1名あたりの枚数は1以上で指定してください")
 		return
 	}
+	if !validInvitationDays(req.ValidDays) {
+		writeErr(w, http.StatusBadRequest, invitationDaysMessage)
+		return
+	}
 	rows, err := a.db.Query(`SELECT cc.child_id FROM t_class_child cc
 		JOIN m_child c ON c.child_id = cc.child_id
 		WHERE cc.class_id = ? AND c.is_deleted = 0 AND c.enrollment_status = '1'`, req.ClassID)
@@ -560,6 +564,18 @@ func (a *app) handleIssueInvitationCodes(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]int{"issued": issued, "skipped": skipped})
 }
 
+// 【仮置き】招待コードの有効日数は 1〜365 日とする。0 や負の値を通すと、発行した時点で
+// 期限切れ・当日期限のコードができる（GitHub Issue #100）。設計に上下限の定めは無い。
+const (
+	invitationDaysMin     = 1
+	invitationDaysMax     = 365
+	invitationDaysMessage = "有効期限は 1〜365 日で指定してください"
+)
+
+func validInvitationDays(days int) bool {
+	return days >= invitationDaysMin && days <= invitationDaysMax
+}
+
 // usableCodeCount は、その園児がいま使えるコード（未使用・期限内）の枚数を返す
 func (a *app) usableCodeCount(childID string) int {
 	var n int
@@ -578,6 +594,10 @@ func (a *app) handleIssueOneInvitationCode(w http.ResponseWriter, r *http.Reques
 		ValidDays int    `json:"valid_days"`
 	}
 	if !readJSON(w, r, &req) {
+		return
+	}
+	if !validInvitationDays(req.ValidDays) {
+		writeErr(w, http.StatusBadRequest, invitationDaysMessage)
 		return
 	}
 	code := randomCode()

@@ -119,6 +119,22 @@ function targetLabel(table: string, targetId: number | null): string {
   return '';
 }
 
+/**
+ * その職員がそのクラスを扱えるか。一般（保育士）は自クラスに限る
+ * （要件定義書「対象権限列の読み方」(4-2 冒頭)。サーバ側は server/scope.go の canUseClass）
+ */
+function canUseClass(user: SessionUser, classId: number): boolean {
+  if (user.role === '1') return true;
+  return user.role === '2' && user.class_id === classId;
+}
+
+/**
+ * 【仮置き】招待コードの有効日数は 1〜365 日とする。0 や負の値を通すと、発行した時点で
+ * 期限切れ・当日期限のコードができる（GitHub Issue #100）
+ */
+const INVITATION_DAYS_MESSAGE = '有効期限は 1〜365 日で指定してください';
+const validInvitationDays = (days: number) => Number.isInteger(days) && days >= 1 && days <= 365;
+
 /** ログイン中の職員。ログアウトのときに、保持している編集ロックを外すために持つ */
 let loggedInStaffId: string | null = null;
 
@@ -679,9 +695,12 @@ export const chatApi = {
     if (!(reactionType in REACTION)) return fail('リアクションの指定が正しくありません');
     const m = db.chatMessages.find((x) => x.chat_message_id === messageId);
     if (!m) return fail('メッセージが見つかりません');
-    if (m.is_deleted) return fail('取り消したメッセージには反応できません');
     const member = db.chatMembers.find((x) => x.chat_room_id === m.chat_room_id && x.account_id === user.account_id);
     if (!member || (user.role === '3' && member.left_at)) return fail('このチャンネルを参照する権限がありません');
+    // 後から登録した保護者には、登録より前のメッセージを見せない。見えないものには反応もできない
+    // （GitHub Issue #100）。存在を知らせないよう、見つからないときと同じ応答にする
+    if (hiddenBeforeJoined(user, m)) return fail('メッセージが見つかりません');
+    if (m.is_deleted) return fail('取り消したメッセージには反応できません');
 
     const i = db.chatReactions.findIndex((r) =>
       r.chat_message_id === messageId && r.account_id === user.account_id && r.reaction_type === reactionType);
@@ -756,6 +775,8 @@ export const chatApi = {
     if (m.sender_account_id !== user.account_id && user.role !== '1') {
       return fail('自分が送信したメッセージのみ取り消せます');
     }
+    // 取り消した日時と操作ログを上書き・重複させない（GitHub Issue #100）
+    if (m.is_deleted) return fail('このメッセージはすでに取り消されています');
     const before = m.body;
     m.is_deleted = true;
     m.body = '';
@@ -796,6 +817,13 @@ export const chatApi = {
    * （基本設計書「チャット」(5-5)）
    */
   async members(roomId: number, viewer?: SessionUser) {
+    // 参加していないチャンネルのメンバーは返さない。ほかの家庭の保護者の氏名や続柄が読めてしまう
+    // （GitHub Issue #95）。管理者は、グループ編成のために全チャンネルを参照できる。
+    // 画面からは必ず viewer を渡す。渡さない呼び出しはテストのためだけに残している
+    if (viewer && viewer.role !== '1') {
+      const me = db.chatMembers.find((x) => x.chat_room_id === roomId && x.account_id === viewer.account_id);
+      if (!me || (viewer.role === '3' && me.left_at)) return fail('このチャンネルを参照する権限がありません');
+    }
     const forStaff = !!viewer && viewer.role !== '3';
     return ok(db.chatMembers.filter((m) => m.chat_room_id === roomId && m.left_at === null)
       .map((m) => {
@@ -821,7 +849,9 @@ function hiddenBeforeJoined(user: SessionUser, m: ChatMessage): boolean {
   const room = db.chatRooms.find((r) => r.chat_room_id === m.chat_room_id);
   if (room?.room_type !== '4') return false;
   const member = db.chatMembers.find((x) => x.chat_room_id === m.chat_room_id && x.account_id === user.account_id);
-  return !!member && m.sent_at < member.joined_at;
+  // 【仮置き】時刻は秒の単位で持つため、登録と同じ秒のメッセージは前か後かを区別できない。
+  // 見せない側へ倒す（GitHub Issue #102）。見せる側へ倒すと、登録の直前に送られたものが読めてしまう
+  return !!member && m.sent_at <= member.joined_at;
 }
 
 /** 保護者アカウントの続柄。有効な紐づけのものを、重複を除いて並べる */
@@ -911,7 +941,9 @@ const chatApi2 = {
   async retractedWithoutRecord() {
     const recorded = new Set(db.misdeliveryRecords.map((r) => r.chat_message_id));
     return ok(db.chatMessages
-      .filter((m) => m.is_deleted && !recorded.has(m.chat_message_id))
+      // 【仮置き】配布物の掲載の知らせ（source_type = 4）は対象にしない。取り下げとして操作ログに残る
+      // （GitHub Issue #98）
+      .filter((m) => m.is_deleted && m.source_type !== '4' && !recorded.has(m.chat_message_id))
       .map((m) => ({
         chat_message_id: m.chat_message_id,
         room_name: db.chatRooms.find((r) => r.chat_room_id === m.chat_room_id)?.room_name ?? '―',
@@ -941,13 +973,19 @@ function autoCloseNapSessions(): void {
 
 export const napApi = {
   /** 実施中のセッション。開いたまま運用するため、開始済みかを常に確認する */
-  async activeSession(classId: number, date: string): Promise<NapSession | null> {
+  // 画面からは必ず user を渡す。渡さない呼び出しはテストのためだけに残している
+  async activeSession(classId: number, date: string, user?: SessionUser): Promise<NapSession | null> {
+    // 一般（保育士）は自クラスに限る（GitHub Issue #96）
+    if (user && !canUseClass(user, classId)) return fail('このクラスの午睡チェックを参照する権限がありません');
     autoCloseNapSessions();
     return ok(db.napSessions.find((s) => s.class_id === classId && s.session_date === date && s.ended_at === null) ?? null);
   },
 
   async startSession(user: SessionUser, classId: number, date: string): Promise<NapSession> {
     if (user.role === '3') return fail('午睡チェックは職員のみが行えます');
+    if (!canUseClass(user, classId)) return fail('このクラスの午睡チェックを開始する権限がありません');
+    // 【仮置き】開始できるのは当日だけとする（GitHub Issue #97）。記録は起きたときに付けるものである
+    if (date !== today()) return fail('午睡チェックは当日のぶんだけ開始できます');
     autoCloseNapSessions();
     const existing = db.napSessions.find((s) => s.class_id === classId && s.session_date === date && s.ended_at === null);
     if (existing) return ok(existing);
@@ -972,6 +1010,7 @@ export const napApi = {
 
   /** クラス全体の状況。平熱は比較の材料として並べて表示するのみ（画面詳細図 5-1） */
   async classState(user: SessionUser, classId: number, sessionId: number | null): Promise<NapChildState[]> {
+    if (!canUseClass(user, classId)) return fail('このクラスの午睡チェックを参照する権限がありません');
     const ids = db.classChildren.filter((cc) => cc.class_id === classId).map((cc) => cc.child_id);
     const rows = ids
       .map((id) => findChild(id))
@@ -1003,6 +1042,13 @@ export const napApi = {
     if (!(input.breathing in BREATHING)) return fail('呼吸を選んでください');
     if (!(input.complexion in COMPLEXION)) return fail('顔色を選んでください');
     if (!canSeeChild(user, input.child_id)) return fail('この園児を記録する権限がありません');
+    // 終了した実施へは記録しない。自動で解除された直後に、開いたままの画面から記録が付くのを防ぐ
+    // （GitHub Issue #97）
+    autoCloseNapSessions();
+    const session = db.napSessions.find((x) => x.nap_session_id === sessionId);
+    if (!session) return fail('午睡チェックが見つかりません');
+    if (!canUseClass(user, session.class_id)) return fail('このクラスの午睡チェックを記録する権限がありません');
+    if (session.ended_at !== null) return fail('この午睡チェックは終了しています。画面を読み込み直してください');
     const r: NapRecord = {
       nap_record_id: nextId(), nap_session_id: sessionId, child_id: input.child_id,
       checked_at: now(), saved_at: now(),
@@ -1603,6 +1649,7 @@ const adminApi2 = {
   ): Promise<{ issued: number; skipped: number }> {
     if (user.role !== '1') return fail('招待コードの発行は管理者のみが行えます');
     if (perChild < 1) return fail('1名あたりの枚数は1以上で指定してください');
+    if (!validInvitationDays(validDays)) return fail(INVITATION_DAYS_MESSAGE);
     const ids = db.classChildren.filter((cc) => cc.class_id === classId).map((cc) => cc.child_id)
       .filter((id) => { const c = findChild(id); return c && !c.is_deleted && c.enrollment_status === '1'; });
 
@@ -1630,6 +1677,7 @@ const adminApi2 = {
 
   async issueOneInvitationCode(user: SessionUser, childId: string, validDays: number): Promise<string> {
     if (user.role !== '1') return fail('招待コードの発行は管理者のみが行えます');
+    if (!validInvitationDays(validDays)) return fail(INVITATION_DAYS_MESSAGE);
     const code = randomCode();
     db.invitationCodes.push({
       invitation_code_id: nextId(), code, child_id: childId,

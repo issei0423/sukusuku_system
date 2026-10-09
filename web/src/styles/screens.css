@@ -146,6 +146,18 @@
 .msg-menu-row { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
 .msg-menu-row .btn-sm { min-height: 44px; flex: 1; white-space: nowrap; }
 
+/*
+ * 職員のチャット：メッセージを右クリック（タブレットでは長押し）して開く操作の一覧（GitHub Issue #103）。
+ * PC では本文を選んでコピーできるよう、文字の選択は止めない。指で操作する端末でだけ、
+ * 長押しの間に文字の選択や既定のメニューが出ないようにする
+ */
+.message-hint { margin: 0 0 var(--sp-3); font-size: 12px; color: var(--c-text-sub); }
+.chat3 .msg { position: relative; }
+.msg .bubble.has-menu:focus-visible { outline: 2px solid var(--c-primary-deep); outline-offset: 2px; }
+@media (pointer: coarse) {
+  .msg .bubble.has-menu { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+}
+
 /* チャンネル一覧の印 */
 .channel .mark { font-size: 11px; color: var(--c-text-sub); margin-left: var(--sp-1); }
 .member-group { font-size: 12px; color: var(--c-text-sub); margin: var(--sp-2) 0 var(--sp-1); }

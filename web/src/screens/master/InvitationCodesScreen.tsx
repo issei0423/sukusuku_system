@@ -16,6 +16,9 @@ import { INVITATION_STATUS } from '../../api/codes';
 import { formatYMD } from '../../api/util';
 import type { InvitationStatus } from '../../api/types';
 
+// 有効期限は 1〜365 日。欄を空にすると 0 になり、当日期限のコードができる（GitHub Issue #100）
+const validDaysInput = (days: number) => Number.isInteger(days) && days >= 1 && days <= 365;
+
 export default function InvitationCodesScreen() {
   const { user } = useSession();
   const classesForUser = selectableClasses(user!);
@@ -200,7 +203,8 @@ export default function InvitationCodesScreen() {
         <Modal title="招待コードの発行（1枚）" onClose={() => setOneOpen(false)}
           footer={<>
             <button onClick={() => setOneOpen(false)}>やめる</button>
-            <button className="btn-primary" onClick={issueOne} disabled={!oneChild}>発行する</button>
+            <button className="btn-primary" onClick={issueOne}
+              disabled={!oneChild || !validDaysInput(oneDays)}>発行する</button>
           </>}>
           <div className="stack">
             <Field label="クラス" required>
@@ -222,7 +226,7 @@ export default function InvitationCodesScreen() {
               </div>
             </Field>
             <div className="muted">
-              選んだ園児に1枚だけ発行します。ほかの園児のコードは変わりません。
+              選んだ園児に1枚だけ発行します。ほかの園児のコードは変わりません。有効期限は 1〜365 日で指定します。
             </div>
           </div>
         </Modal>
@@ -232,7 +236,8 @@ export default function InvitationCodesScreen() {
         <Modal title="招待コードの一括発行" onClose={() => setBulkOpen(false)}
           footer={<>
             <button onClick={() => setBulkOpen(false)}>やめる</button>
-            <button className="btn-primary" onClick={bulkIssue} disabled={bulkTargets === 0}>発行する</button>
+            <button className="btn-primary" onClick={bulkIssue}
+              disabled={bulkTargets === 0 || !validDaysInput(validDays) || perChild < 1}>発行する</button>
           </>}>
           {bulkError && <Alert>{bulkError}</Alert>}
           <div className="stack">
