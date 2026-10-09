@@ -254,6 +254,16 @@ describe('保護者のメニュー', () => {
   });
 });
 
+/**
+ * チャンネルを開いた直後は、既読を付けたあとに一覧を読み直すため、いったん読み込み中へ戻る。
+ * それが落ち着いて、目当ての吹き出しが出そろうまで待つ
+ */
+async function threadReady(selector: string) {
+  await waitFor(() => { expect(document.querySelector(selector)).toBeTruthy(); }, { timeout: 3000 });
+  await new Promise((r) => setTimeout(r, 300));
+  await waitFor(() => { expect(document.querySelector(selector)).toBeTruthy(); }, { timeout: 3000 });
+}
+
 describe('チャット画面の表示', () => {
   it('職員：保護者も読むチャンネルでは、入力欄の近くに届く人数を出す', async () => {
     open('/staff/chat', teacher);
@@ -266,11 +276,53 @@ describe('チャット画面の表示', () => {
     }, { timeout: 3000 });
   });
 
-  it('保護者：自分のメッセージに取消を出し、リアクションを付けられる', async () => {
+  it('保護者：リアクション・編集・取消は、メッセージを長押しするまで出さない', async () => {
     open('/guardian/chat', guardian);
     await settled();
     fireEvent.click(screen.getByText('担任の先生とのやりとり').closest('button')!);
-    await waitFor(() => { expect(screen.getAllByText('リアクション').length).toBeGreaterThan(0); }, { timeout: 3000 });
+    await threadReady('.msg.mine .bubble.pressable');
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(screen.queryByText('編集')).toBeNull();
+    expect(screen.queryByText('取消')).toBeNull();
+    expect(screen.queryByText('リアクション')).toBeNull();
+
+    // 押してすぐ離したときは開かない
+    const mine = document.querySelector('.msg.mine .bubble.pressable')!;
+    fireEvent.pointerDown(mine, { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(mine);
+    await new Promise((r) => setTimeout(r, 900));
+    expect(screen.queryByRole('menu')).toBeNull();
+
+    // 0.8秒押し続けると、リアクション・編集・取消の3つが出る
+    fireEvent.pointerDown(mine, { button: 0, clientX: 10, clientY: 10 });
+    await waitFor(() => { expect(screen.getByRole('menu')).toBeTruthy(); }, { timeout: 2000 });
+    expect(screen.getByRole('menuitem', { name: '了解' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: '編集' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: '取消' })).toBeTruthy();
+
+    // 長押しで開いた直後に指を離したときのクリックは、一覧のボタンに当たっても無視する
+    // （一覧を見える位置へ送ると画面が動き、指の下にボタンが来るため）
+    fireEvent.pointerUp(mine);
+    fireEvent.click(screen.getByRole('menuitem', { name: '取消' }));
+    expect(screen.getByRole('menu')).toBeTruthy();
+    expect(document.querySelectorAll('.msg.mine .bubble.pressable').length).toBeGreaterThan(0);
+
+    // 一覧の外を押すと閉じる
+    fireEvent.pointerDown(document.body);
+    await waitFor(() => { expect(screen.queryByRole('menu')).toBeNull(); });
+  });
+
+  it('保護者：相手のメッセージの長押しでは、リアクションだけを出す', async () => {
+    open('/guardian/chat', guardian);
+    await settled();
+    fireEvent.click(screen.getByText('担任の先生とのやりとり').closest('button')!);
+    await threadReady('.msg:not(.mine) .bubble.pressable');
+    // 右クリック（長押しができない操作）からも同じ一覧を開ける
+    fireEvent.contextMenu(document.querySelector('.msg:not(.mine) .bubble.pressable')!);
+    await waitFor(() => { expect(screen.getByRole('menu')).toBeTruthy(); });
+    expect(screen.getByRole('menuitem', { name: '了解' })).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: '編集' })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: '取消' })).toBeNull();
   });
 });
 

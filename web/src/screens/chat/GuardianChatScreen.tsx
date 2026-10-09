@@ -9,14 +9,23 @@
  * 2026/09/07 に「分けない」と決着した（基本設計書「画面の一覧」(3-2)）。
  * 分けても表示項目は増えず、画面数と図の分量だけが増えるため。
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { KeyboardEvent, MouseEvent, PointerEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api, accountName } from '../../api/client';
+import { REACTION } from '../../api/codes';
 import { Loading, ErrorBox, Empty } from '../../components/ui';
 import Reactions from '../../components/Reactions';
 import { formatHM, formatMD } from '../../api/util';
+
+/*
+ * メッセージを長押しして操作の一覧を開くまでの時間と、長押しとみなす指のずれの上限。
+ * 設計に定めが無く、仮に置いた値（web/仮置き値.md）
+ */
+const LONG_PRESS_MS = 800;
+const LONG_PRESS_MOVE_PX = 10;
 
 export default function GuardianChatScreen() {
   const { user } = useSession();
@@ -31,12 +40,68 @@ export default function GuardianChatScreen() {
    */
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draft, setDraft] = useState('');
+  /*
+   * リアクション・編集・取消は、メッセージを長押しして開く操作の一覧に置く。
+   * 各メッセージの下へ常に並べると、やりとりが続いたときに本文が読みにくくなるため。
+   * 長押しができない操作（キーボード、マウスの右クリック）からも同じ一覧を開ける。
+   */
+  const [menuId, setMenuId] = useState<number | null>(null);
+  /*
+   * 一覧を出す位置。メッセージが画面の中央より上にあれば下へ、下にあれば上へ出す。
+   * 画面の端のメッセージでも一覧が画面の外へ出ないようにするため。
+   * メッセージの並びは押し広げず、重ねて出す（開いたときに画面が動かない）
+   */
+  const [menuPlace, setMenuPlace] = useState<{ above: boolean; offset: number }>({ above: false, offset: 0 });
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const pressTimer = useRef<number | null>(null);
+  const pressStart = useRef<{ x: number; y: number } | null>(null);
+  /*
+   * 長押しで一覧を開いた直後に指を離すと、その位置が「押された」ことになる。
+   * 一覧を見える位置へ送ると画面が動くため、指の下に来たリアクションのボタンや本文中のリンクが
+   * 意図せず押されてしまう。長押しで開いた直後の1回だけ、どこに当たっても無視する
+   */
+  const suppressClick = useRef(false);
 
   const messages = useAsync(async () => (roomId ? api.messages(user!, roomId) : []), [roomId, tick]);
 
   useEffect(() => {
     if (roomId) api.markRead(user!, roomId).then(() => rooms.reload());
   }, [roomId, tick]);
+
+  // 一覧の外を押すか Esc で閉じる。開いたら最初の操作へ移る
+  useEffect(() => {
+    if (menuId === null) return;
+    menuRef.current?.querySelector('button')?.focus({ preventScroll: true });
+    const onDown = (e: Event) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuId(null);
+    };
+    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') setMenuId(null); };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [menuId]);
+
+  useEffect(() => {
+    const swallow = (e: Event) => {
+      if (!suppressClick.current) return;
+      suppressClick.current = false;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    // 次に押し始めたら、無視する指定を解く（指を離しても「押された」ことにならなかった場合に残さない）
+    const reset = () => { suppressClick.current = false; };
+    document.addEventListener('click', swallow, true);
+    document.addEventListener('pointerdown', reset, true);
+    return () => {
+      document.removeEventListener('click', swallow, true);
+      document.removeEventListener('pointerdown', reset, true);
+      if (pressTimer.current !== null) clearTimeout(pressTimer.current);
+    };
+  }, []);
+  useEffect(() => { setMenuId(null); }, [roomId]);
 
   if (rooms.loading) return <Loading />;
   if (rooms.error) return <ErrorBox text={rooms.error} />;
@@ -75,6 +140,61 @@ export default function GuardianChatScreen() {
     catch (e) { setError((e as Error).message); }
   };
 
+  const cancelPress = () => {
+    if (pressTimer.current !== null) { clearTimeout(pressTimer.current); pressTimer.current = null; }
+    pressStart.current = null;
+  };
+
+  // 吹き出しの位置から、一覧を上下どちらへ出すかを決めて開く
+  const openMenu = (messageId: number, bubble: HTMLElement) => {
+    const r = bubble.getBoundingClientRect();
+    const above = r.top + r.height / 2 > window.innerHeight / 2;
+    const msg = bubble.parentElement;
+    const gap = 4;
+    setMenuPlace({
+      above,
+      offset: above
+        ? (msg ? msg.offsetHeight - bubble.offsetTop : 0) + gap
+        // 下へ出すときは、付いているリアクションの印を隠さないよう、その下に置く
+        : (msg ? msg.offsetHeight : bubble.offsetTop + bubble.offsetHeight) + gap,
+    });
+    setMenuId(messageId);
+  };
+
+  // 吹き出しに付ける。押したまま LONG_PRESS_MS が過ぎたら、そのメッセージの操作の一覧を開く
+  const pressHandlers = (messageId: number) => ({
+    onPointerDown: (e: PointerEvent) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      cancelPress();
+      pressStart.current = { x: e.clientX, y: e.clientY };
+      const bubble = e.currentTarget as HTMLElement;
+      pressTimer.current = window.setTimeout(() => {
+        pressTimer.current = null;
+        suppressClick.current = true;
+        openMenu(messageId, bubble);
+      }, LONG_PRESS_MS);
+    },
+    // 画面を送ろうとして指が動いたときは、長押しとみなさない
+    onPointerMove: (e: PointerEvent) => {
+      const s = pressStart.current;
+      if (s && Math.hypot(e.clientX - s.x, e.clientY - s.y) > LONG_PRESS_MOVE_PX) cancelPress();
+    },
+    onPointerUp: cancelPress,
+    onPointerCancel: cancelPress,
+    onPointerLeave: cancelPress,
+    // 右クリックと、端末が長押しで出す既定のメニューの代わりに開く
+    onContextMenu: (e: MouseEvent) => {
+      e.preventDefault();
+      cancelPress();
+      openMenu(messageId, e.currentTarget as HTMLElement);
+    },
+    onKeyDown: (e: KeyboardEvent) => {
+      if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
+      e.preventDefault();
+      openMenu(messageId, e.currentTarget as HTMLElement);
+    },
+  });
+
   // 一覧
   if (!current) {
     return (
@@ -112,6 +232,11 @@ export default function GuardianChatScreen() {
       </div>
 
       <div className="guardian-message-list">
+        {(messages.data?.length ?? 0) > 0 && (
+          <p id="guardian-message-hint" className="guardian-message-hint">
+            メッセージを長押しすると、リアクションを付けられます。自分のメッセージは編集・取消もできます。
+          </p>
+        )}
         {messages.loading && <Loading />}
         {messages.error && <ErrorBox text={messages.error} />}
         {messages.data?.length === 0 && <Empty text="まだメッセージはありません。" />}
@@ -124,6 +249,8 @@ export default function GuardianChatScreen() {
               </div>
             );
           }
+          const editing = editingId === m.chat_message_id;
+          const menuOpen = menuId === m.chat_message_id;
           return (
             <div key={m.chat_message_id} className={`msg${mine ? ' mine' : ''}`}>
               <div className="meta">
@@ -135,8 +262,16 @@ export default function GuardianChatScreen() {
                 {/* 編集済みの印は送信者・受信者の双方に出す（基本設計書「メッセージの編集」(4-6)） */}
                 {m.edited_at && <span className="weak">（編集済み）</span>}
               </div>
-              <div className="bubble">
-                {editingId === m.chat_message_id ? (
+              {/* 編集中は本文の入力欄を普通に触れるよう、長押しを受け付けない */}
+              <div className={`bubble${editing ? '' : ' pressable'}`}
+                {...(editing ? {} : {
+                  ...pressHandlers(m.chat_message_id),
+                  tabIndex: 0,
+                  'aria-haspopup': 'menu' as const,
+                  'aria-expanded': menuOpen,
+                  'aria-describedby': 'guardian-message-hint',
+                })}>
+                {editing ? (
                   <>
                     <textarea value={draft} onChange={(e) => setDraft(e.target.value)}
                       maxLength={1000} rows={4} style={{ width: '100%', boxSizing: 'border-box' }} />
@@ -165,12 +300,35 @@ export default function GuardianChatScreen() {
               </div>
               {/* 既読は保護者側には表示しない（基本設計書 5-5） */}
               {/* 編集は送信者本人のみ（同 4-6）。既読が付いたあとも編集できる */}
-              <Reactions reactions={m.reactions ?? []} onToggle={(type) => react(m.chat_message_id, type)} />
-              {mine && editingId !== m.chat_message_id && (
-                <div className="row-end">
-                  <button className="btn-sm btn-quiet"
-                    onClick={() => { setDraft(m.body); setEditingId(m.chat_message_id); }}>編集</button>
-                  <button className="btn-sm btn-quiet" onClick={() => retract(m.chat_message_id)}>取消</button>
+              {/* 付いているリアクションは常に出す。付ける・編集・取消は長押しの一覧から */}
+              <Reactions reactions={m.reactions ?? []} showAdd={false}
+                onToggle={(type) => react(m.chat_message_id, type)} />
+              {menuOpen && !editing && (
+                <div className={`msg-menu-wrap${menuPlace.above ? ' above' : ''}`}
+                  style={menuPlace.above ? { bottom: menuPlace.offset } : { top: menuPlace.offset }}>
+                  <div ref={menuRef} className="msg-menu" role="menu" aria-label="メッセージの操作">
+                    <div className="msg-menu-row">
+                      {Object.entries(REACTION).map(([type, def]) => (
+                        <button key={type} type="button" role="menuitem" className="reaction pick"
+                          aria-label={def.label} title={def.label}
+                          onClick={() => { setMenuId(null); react(m.chat_message_id, type); }}>
+                          <span aria-hidden="true">{def.emoji}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="msg-menu-row">
+                      {mine && (
+                        <>
+                          <button type="button" role="menuitem" className="btn-sm"
+                            onClick={() => { setMenuId(null); setDraft(m.body); setEditingId(m.chat_message_id); }}>編集</button>
+                          <button type="button" role="menuitem" className="btn-sm"
+                            onClick={() => { setMenuId(null); retract(m.chat_message_id); }}>取消</button>
+                        </>
+                      )}
+                      <button type="button" role="menuitem" className="btn-sm btn-quiet"
+                        onClick={() => setMenuId(null)}>閉じる</button>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
