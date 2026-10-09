@@ -134,7 +134,7 @@ export default function StaffAccountsScreen() {
       {issued.length > 0 && (
         <div style={{ marginBottom: 16 }}>
           <Alert soft>
-            一時パスワードを本人へ口頭または書面で伝えてください。この表示を閉じると再表示できません。
+            一時パスワードを本人へ口頭または手渡しで伝えてください。この表示を閉じると再表示できません。
             <ul style={{ margin: '6px 0', paddingLeft: 18 }}>
               {issued.map((x) => (
                 <li key={x.name}>{x.name} さん：<strong style={{ fontFamily: 'monospace' }}>{x.password}</strong></li>
