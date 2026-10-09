@@ -54,6 +54,9 @@ func openDB(path string) (*sql.DB, error) {
 		}
 		log.Printf("デモデータを投入しました")
 	}
+	if err := upgradeGrowthStandards(db); err != nil {
+		return nil, fmt.Errorf("成長曲線基準値の入れ替えに失敗しました: %w", err)
+	}
 	if err := ensureTermsAgreement(db); err != nil {
 		return nil, err
 	}
@@ -300,33 +303,9 @@ func ensureTermsAgreement(db *sql.DB) error {
 
 // 成長曲線基準値（m_growth_standard）
 //
-// ここで生成する値は仮置きである。実装時は厚生労働省の乳幼児身体発育調査の公表値を
-// 投入する（web/仮置き値.md）。source_version に「仮置き（未投入）」を入れてあり、
-// 公表値を入れたら差し替わる。
-var (
-	heightMedian = map[string][]float64{
-		"1": {49.0, 74.9, 86.7, 95.1, 102.0, 108.2, 114.9},
-		"2": {48.5, 73.3, 85.4, 93.9, 100.9, 107.3, 113.7},
-	}
-	weightMedian = map[string][]float64{
-		"1": {3.0, 9.3, 11.9, 14.1, 16.2, 18.4, 21.0},
-		"2": {2.9, 8.7, 11.3, 13.6, 15.7, 17.9, 20.2},
-	}
-	percentiles = []int{3, 10, 25, 50, 75, 90, 97}
-	heightRatio = map[int]float64{3: 0.930, 10: 0.955, 25: 0.978, 50: 1.0, 75: 1.022, 90: 1.045, 97: 1.070}
-	weightRatio = map[int]float64{3: 0.820, 10: 0.880, 25: 0.940, 50: 1.0, 75: 1.070, 90: 1.150, 97: 1.240}
-)
-
-// 0/12/24/36/48/60/72 か月の値を線形に補間する
-func interpolate(anchors []float64, month int) float64 {
-	i := month / 12
-	if i > len(anchors)-2 {
-		i = len(anchors) - 2
-	}
-	t := float64(month-i*12) / 12
-	return anchors[i] + (anchors[i+1]-anchors[i])*t
-}
-
+// 厚生労働省「平成22年乳幼児身体発育調査」の公表値を投入する（GitHub Issue #69）。
+// 値と、月齢への当て方は growth_standard_2010.go にある。
+// 公表値そのものの月齢と、補間で求めた月齢は、source_version で見分けられる。
 func seedGrowthStandards(db *sql.DB) error {
 	tx, err := db.Begin()
 	if err != nil {
@@ -342,21 +321,58 @@ func seedGrowthStandards(db *sql.DB) error {
 	}
 	defer stmt.Close()
 
+	source := func(interpolated bool) string {
+		if interpolated {
+			return growthSource2010Interpolated
+		}
+		return growthSource2010
+	}
 	for _, sex := range []string{"1", "2"} {
 		for m := 0; m <= 72; m++ {
-			for _, p := range percentiles {
-				h := round2(interpolate(heightMedian[sex], m) * heightRatio[p])
-				w := round2(interpolate(weightMedian[sex], m) * weightRatio[p])
-				if _, err := stmt.Exec(sex, m, "1", p, h, "仮置き（未投入）"); err != nil {
+			for pi, p := range growthPercentiles {
+				// 公表値は、身長が小数第1位、体重が小数第2位まで
+				h, hi := growthValue2010(heightClasses2010, sex, m, pi)
+				w, wi := growthValue2010(weightClasses2010, sex, m, pi)
+				if _, err := stmt.Exec(sex, m, "1", p, roundTo(h, 1), source(hi)); err != nil {
 					return err
 				}
-				if _, err := stmt.Exec(sex, m, "2", p, w, "仮置き（未投入）"); err != nil {
+				if _, err := stmt.Exec(sex, m, "2", p, roundTo(w, 2), source(wi)); err != nil {
 					return err
 				}
 			}
 		}
 	}
 	return tx.Commit()
+}
+
+// upgradeGrowthStandards は、以前に作ったデータベースに残る仮の値を、公表値へ入れ替える。
+// 基準値はマスタであり、利用者が入力した記録ではないため、起動のたびに確かめて入れ替えてよい。
+func upgradeGrowthStandards(db *sql.DB) error {
+	var provisional int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM m_growth_standard WHERE source_version LIKE '仮置き%'`).
+		Scan(&provisional); err != nil {
+		return err
+	}
+	if provisional == 0 {
+		return nil
+	}
+	if _, err := db.Exec(`DELETE FROM m_growth_standard`); err != nil {
+		return err
+	}
+	if err := seedGrowthStandards(db); err != nil {
+		return err
+	}
+	log.Printf("成長曲線基準値を、仮の値から厚生労働省の公表値へ入れ替えました")
+	return nil
+}
+
+// roundTo は小数第 digits 位に丸める
+func roundTo(v float64, digits int) float64 {
+	scale := 1.0
+	for i := 0; i < digits; i++ {
+		scale *= 10
+	}
+	return float64(int64(v*scale+0.5)) / scale
 }
 
 func round2(v float64) float64 {

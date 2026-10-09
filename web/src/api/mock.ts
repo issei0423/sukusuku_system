@@ -224,11 +224,18 @@ export const authApi = {
 
     if (a.password_hash !== password) {
       a.failed_login_count += 1;
+      // ログインの失敗と、失敗が続いたことによるロックを操作ログに残す（GitHub Issue #115）。
+      // 成功とログアウトは残さない。操作者の欄には、試されたアカウントを入れる（本人とは限らない）。
+      // サーバ側（server/api_auth.go の handleLogin）と同じ扱い
+      const attempt = `続けて ${a.failed_login_count} 回目`;
       if (a.failed_login_count >= max) {
         const mins = settingNumber('auth.lock_minutes', 30);
         a.locked_until = fromNowMinutes(mins);
+        log(a.account_id, '7', '2', 'm_account', a.account_id, null, null,
+          `ログインに失敗（${attempt}）。失敗が続いたためロック`);
         return fail(JSON.stringify({ kind: 'locked', until: a.locked_until } satisfies LoginError));
       }
+      log(a.account_id, '7', '2', 'm_account', a.account_id, null, null, `ログインに失敗（${attempt}）`);
       return fail(JSON.stringify({ kind: 'credential', remaining: max - a.failed_login_count } satisfies LoginError));
     }
 

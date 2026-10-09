@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"regexp"
 	"strings"
 	"unicode"
@@ -74,10 +75,21 @@ func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(req.Password)) != nil {
 		failedCount++
+		/*
+		 * ログインの失敗と、失敗が続いたことによるロックを操作ログに残す（GitHub Issue #115）。
+		 * 不正な試行に気づくための記録である。成功とログアウトは残さない。誰が記録したかは、
+		 * 各操作の記録で追えるため（基本設計書「共通基盤：ログインとアカウント」(4-3)）。
+		 * ログインできていないので、操作者は確かめられない。操作者の欄には、試された
+		 * アカウントを入れる（本人とは限らない）。存在しないログインIDへの試行は、入れる先の
+		 * アカウントが無いため残らない。
+		 */
+		attempt := "続けて " + strconv.Itoa(failedCount) + " 回目"
 		if failedCount >= maxFailed {
 			lockMinutes := a.settingInt("auth.lock_minutes", 30)
 			a.db.Exec(`UPDATE m_account SET failed_login_count = ?, locked_until = ? WHERE account_id = ?`,
 				failedCount, fromNowMinutes(lockMinutes), accountID)
+			a.log(accountID, fnAccount, opUpdate, "m_account", i64(accountID), nil, nil,
+				s("ログインに失敗（"+attempt+"）。失敗が続いたためロック"))
 			writeJSON(w, http.StatusUnauthorized, apiError{
 				Kind:    "locked",
 				Message: "ログインを一定回数以上まちがえたため、アカウントをロックしました。園の管理者へご連絡ください",
@@ -85,6 +97,7 @@ func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.db.Exec(`UPDATE m_account SET failed_login_count = ? WHERE account_id = ?`, failedCount, accountID)
+		a.log(accountID, fnAccount, opUpdate, "m_account", i64(accountID), nil, nil, s("ログインに失敗（"+attempt+"）"))
 		writeJSON(w, http.StatusUnauthorized, apiError{
 			Kind: "credential", Remaining: maxFailed - failedCount,
 			Message: "ログインIDまたはパスワードが違います",

@@ -9,6 +9,10 @@
  * メールアドレス・招待コード・測定値・記録の内容はすべて架空である
  * （図/画面詳細図.md「本書の位置づけ」(0)）。
  */
+import {
+  GROWTH_PERCENTILES, GROWTH_SOURCE_2010, GROWTH_SOURCE_2010_INTERPOLATED,
+  HEIGHT_CLASSES_2010, WEIGHT_CLASSES_2010, growthValue2010,
+} from './growthStandard2010';
 import { now, today } from './util';
 import type {
   Account, Staff, Guardian, InvitationCode, Terms,
@@ -182,10 +186,10 @@ export const termsDocs: Terms[] = [
     terms_id: 1, terms_version: '1.0', document_type: '1', published_on: '2026-09-01',
     body: [
       '第1条（本規約について）',
-      '本規約は、当園が提供する保育支援システム（以下「本システム」）の利用条件を定めるものです。',
+      '本規約は、当園が提供する保育支援システム（以下「本システム」）の利用条件を定めるものです。本システムを利用する職員および保護者の双方に適用します。',
       '',
       '第2条（アカウント）',
-      '保護者のアカウントは、当園が発行する招待コードによって登録します。招待コードは1枚につき1アカウントの登録にのみ使用できます。',
+      '職員のアカウントは、当園が発行します。保護者のアカウントは、当園が発行する招待コードによって登録します。招待コードは1枚につき1アカウントの登録にのみ使用できます。',
       'アカウントの情報は第三者に共有しないでください。',
       '',
       '第3条（本システムが行わないこと）',
@@ -199,7 +203,7 @@ export const termsDocs: Terms[] = [
       '第5条（記録の取り扱い）',
       '保護者への記録の共有範囲は、当園が項目ごとに設定します。',
       '',
-      '※本文は草案です。園情報の記入と法務の確認が未了です。',
+      '※本文は演習用の草案です。',
     ].join('\n'),
   },
   {
@@ -517,46 +521,34 @@ export const physicalRecords: PhysicalRecord[] = [
 
 /* ============ 成長曲線基準値（m_growth_standard） ============
  *
- * ここで生成している値は仮置きである。実装時は厚生労働省の乳幼児身体発育調査の
- * 公表値を投入する（web/仮置き値.md 参照）。
+ * 厚生労働省「平成22年乳幼児身体発育調査」の公表値を入れる（GitHub Issue #69）。
+ * 値と、月齢への当て方は growthStandard2010.ts にある。サーバ側（server/db.go）と同じ規則で作る。
  * 一意制約：sex + age_in_months + measure_type + percentile（基本設計書 5-7）
  */
-const HEIGHT_MEDIAN: Record<'1' | '2', number[]> = {
-  '1': [49.0, 74.9, 86.7, 95.1, 102.0, 108.2, 114.9],
-  '2': [48.5, 73.3, 85.4, 93.9, 100.9, 107.3, 113.7],
-};
-const WEIGHT_MEDIAN: Record<'1' | '2', number[]> = {
-  '1': [3.0, 9.3, 11.9, 14.1, 16.2, 18.4, 21.0],
-  '2': [2.9, 8.7, 11.3, 13.6, 15.7, 17.9, 20.2],
-};
-const PERCENTILES = [3, 10, 25, 50, 75, 90, 97];
-const HEIGHT_RATIO: Record<number, number> = { 3: 0.930, 10: 0.955, 25: 0.978, 50: 1.0, 75: 1.022, 90: 1.045, 97: 1.070 };
-const WEIGHT_RATIO: Record<number, number> = { 3: 0.820, 10: 0.880, 25: 0.940, 50: 1.0, 75: 1.070, 90: 1.150, 97: 1.240 };
-
-/** 0/12/24/36/48/60/72 か月の値を線形に補間する */
-function interpolate(anchors: number[], month: number): number {
-  const i = Math.min(Math.floor(month / 12), anchors.length - 2);
-  const t = (month - i * 12) / 12;
-  return anchors[i] + (anchors[i + 1] - anchors[i]) * t;
+function roundTo(v: number, digits: number): number {
+  const scale = 10 ** digits;
+  return Math.round(v * scale) / scale;
 }
 
 function buildGrowthStandards(): GrowthStandard[] {
   const rows: GrowthStandard[] = [];
   let id = 1;
+  const source = (interpolated: boolean) => (interpolated ? GROWTH_SOURCE_2010_INTERPOLATED : GROWTH_SOURCE_2010);
   for (const sex of ['1', '2'] as const) {
     for (let m = 0; m <= 72; m++) {
-      for (const p of PERCENTILES) {
+      GROWTH_PERCENTILES.forEach((p, pi) => {
+        // 公表値は、身長が小数第1位、体重が小数第2位まで
+        const h = growthValue2010(HEIGHT_CLASSES_2010, sex, m, pi);
+        const w = growthValue2010(WEIGHT_CLASSES_2010, sex, m, pi);
         rows.push({
           growth_standard_id: id++, sex, age_in_months: m, measure_type: '1', percentile: p,
-          standard_value: Math.round(interpolate(HEIGHT_MEDIAN[sex], m) * HEIGHT_RATIO[p] * 100) / 100,
-          source_version: '仮置き（未投入）',
+          standard_value: roundTo(h.value, 1), source_version: source(h.interpolated),
         });
         rows.push({
           growth_standard_id: id++, sex, age_in_months: m, measure_type: '2', percentile: p,
-          standard_value: Math.round(interpolate(WEIGHT_MEDIAN[sex], m) * WEIGHT_RATIO[p] * 100) / 100,
-          source_version: '仮置き（未投入）',
+          standard_value: roundTo(w.value, 2), source_version: source(w.interpolated),
         });
-      }
+      });
     }
   }
   return rows;
