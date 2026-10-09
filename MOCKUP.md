@@ -73,15 +73,17 @@ cd web && npm run dev:mock
 
 | ログインID | 役割 | 確かめられること |
 | :-- | :-- | :-- |
-| `takahashi@hoiku.example.jp` | 管理者（園長） | 承認・マスター管理・アカウント管理・操作ログ |
-| `yamada@hoiku.example.jp` | 一般（さくら組担任） | 自クラスに絞られた参照範囲 |
-| `tanaka@hoiku.example.jp` | 一般（ひまわり組担任） | 担当が違うと見えるものが変わること |
-| `sato@hoiku.example.jp` | 一般（一時パスワード中） | 変更するまで他の画面へ進めないこと（パスワードは `temp0901`） |
-| `yamada.k@example.jp` | 保護者（山田 太郎の保護者） | 保護者の7画面と、共有された記録だけが見えること |
-| `suzuki.m@example.jp` | 保護者（規約の再同意が必要） | 同意するまで他の画面へ進めないこと |
-| `sato.n@example.jp` | 保護者（停止中） | 停止されたアカウントがログインできないこと |
+| `nohara@hoiku.example.jp` | 管理者（園長） | 承認・マスター管理・アカウント管理・操作ログ |
+| `takanashi@hoiku.example.jp` | 一般（さくら組担任） | 自クラスに絞られた参照範囲 |
+| `kinjo@hoiku.example.jp` | 一般（ひまわり組担任） | 担当が違うと見えるものが変わること |
+| `miyagi@hoiku.example.jp` | 一般（一時パスワード中） | 変更するまで他の画面へ進めないこと（パスワードは `temp0901`） |
+| `nohara.i@example.jp` | 保護者（野原 太郎の保護者） | 保護者の7画面と、共有された記録だけが見えること |
+| `uezono.k@example.jp` | 保護者（規約の再同意が必要） | 同意するまで他の画面へ進めないこと |
+| `takanashi.r@example.jp` | 保護者（停止中） | 停止されたアカウントがログインできないこと |
+| `miyagi.r@example.jp` | 保護者（宮城 美咲の保護者） | 保護者ごとに、見える園児と記録が違うこと |
+| `kinjo.s@example.jp` | 保護者（金城 陸の保護者） | 同上 |
 
-新規登録は保護者用トップから。未使用の招待コードは `ABCD-1234-EFGH`（山田 太郎）。
+新規登録は保護者用トップから。未使用の招待コードは `ABCD-1234-EFGH`（野原 太郎）。
 
 ## 日付と時刻の扱い
 
@@ -146,7 +148,7 @@ cd web && SUKUSUKU_API=http://localhost:8080 npm run test:integration
 - SQLite ドライバは **`modernc.org/sqlite`**（純 Go）。gcc が無い環境でもビルドできる
 - スキーマは `server/schema.sql`（39テーブル。設計と一致する）。`t_physical_record` の部分一意インデックスが
   「削除した測定日に登録し直せる」ことを満たす（基本設計書 5-7）
-- デモデータは `server/seed.sql`。氏名・メールアドレス・招待コード・測定値はすべて架空
+- デモデータは `server/seed.sql`。職員と保護者の氏名はチームの5人の名前を借りている。メールアドレス・招待コード・測定値・記録の内容はすべて架空
 - **権限の担保はサーバ側が行う。** 画面側の出し分けは操作性のため
   （基本設計書「権限チェックの実装方針」(6-2)）
 

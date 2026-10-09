@@ -12,30 +12,30 @@ import type { SessionUser } from '../src/api/types';
 import { today, addDays } from '../src/api/util';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'takahashi@hoiku.example.jp', role: '1', display_name: '高橋 美咲',
+  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const teacher: SessionUser = {
-  account_id: 3, email: 'yamada@hoiku.example.jp', role: '2', display_name: '山田 花子',
+  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
 // ひまわり組（class_id 2）の担任
 const otherTeacher: SessionUser = {
-  account_id: 5, email: 'tanaka@hoiku.example.jp', role: '2', display_name: '田中 陽子',
+  account_id: 5, email: 'kinjo@hoiku.example.jp', role: '2', display_name: '金城 宗一郎',
   staff_id: 'S005', guardian_id: null, class_id: 2, class_name: 'ひまわり組',
   is_temp_password: false, terms_agreed: true,
 };
-// 山田 太郎（C001）の保護者。個人チャットは chat_room_id 6
+// 野原 太郎（C001）の保護者。個人チャットは chat_room_id 6
 const guardian: SessionUser = {
-  account_id: 6, email: 'yamada.k@example.jp', role: '3', display_name: '山田 健一',
+  account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
   staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
-// 鈴木 花子（C002）の保護者。山田 太郎の個人チャットには参加していない
+// 上園 花子（C002）の保護者。野原 太郎の個人チャットには参加していない
 const otherGuardian: SessionUser = {
-  account_id: 7, email: 'suzuki.m@example.jp', role: '3', display_name: '鈴木 美和',
+  account_id: 7, email: 'uezono.k@example.jp', role: '3', display_name: '上園 謙心',
   staff_id: null, guardian_id: 'G002', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
@@ -98,7 +98,7 @@ describe('メッセージの取消とリアクション（GitHub Issue #98・#10
     const old = db.chatMessages.find((m) => m.chat_room_id === 6 && !m.is_deleted)!;
     const code = await api.issueOneInvitationCode(admin, 'C001', 30);
     const late = await api.signUpGuardian({
-      code, email: 'late.review@example.jp', password: 'pass12345', guardian_name: '山田 節子', relationship: '祖母',
+      code, email: 'late.review@example.jp', password: 'pass12345', guardian_name: '野原 節子', relationship: '祖母',
     });
     await expect(api.toggleReaction(late, old.chat_message_id, '1')).rejects.toThrow('メッセージが見つかりません');
     // 先に登録していた保護者は付けられる
@@ -111,7 +111,7 @@ describe('メッセージの取消とリアクション（GitHub Issue #98・#10
     await api.send(teacher, 6, '登録の直前のメッセージ');
     const code = await api.issueOneInvitationCode(admin, 'C001', 30);
     const late = await api.signUpGuardian({
-      code, email: 'late.same@example.jp', password: 'pass12345', guardian_name: '山田 茂', relationship: '祖父',
+      code, email: 'late.same@example.jp', password: 'pass12345', guardian_name: '野原 茂', relationship: '祖父',
     });
     expect(await api.messages(late, 6)).toHaveLength(0);
   });
