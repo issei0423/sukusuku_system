@@ -2,7 +2,7 @@
 
 `基本設計書.md` 第1.9版の**全36画面**を、要件定義書の技術スタック（Go + TypeScript/React）で実装したもの。
 
-既存の Flask 版（`hoiku_app/`）は消していない。チームのデモに使えるよう残してある。
+旧 Flask 版（`hoiku_app/`）はこのブランチから外した。見たいときは `mockup` ブランチにある。
 
 ## 構成
 
@@ -10,7 +10,6 @@
 | :-- | :-- |
 | `web/` | React 19 + TypeScript + Vite。36画面 |
 | `server/` | Go 1.27 + SQLite。API とスキーマ。静的ファイルの配信も行う |
-| `hoiku_app/` | 旧 Flask 版（参考として保持） |
 
 画面は `web/src/api/client.ts` を通してデータ層を呼ぶ。実装は2つある。
 
