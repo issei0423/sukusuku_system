@@ -124,8 +124,14 @@ export default function DiaryEditScreen() {
   const applyTemplate = (templateId: number) => {
     const t = templates.data?.find((x) => x.diary_template_id === templateId);
     if (!t) return;
-    setRecordType(t.record_type);
-    setBody(t.body);
+    // 書きかけを失わせない。本文が空なら入れ、入力済みなら末尾へ足す（画面詳細図「日誌作成・編集画面」(3-2)）
+    if (body.trim()) {
+      setBody(`${body.trimEnd()}\n\n${t.body}`);
+    } else {
+      setRecordType(t.record_type);
+      setBody(t.body);
+    }
+    setDirty(true);
   };
 
   const save = async (status: '1' | '2') => {
