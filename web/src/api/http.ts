@@ -299,6 +299,9 @@ const apiChatNap = {
   edit: (_u: SessionUser, messageId: number, body: string) =>
     post<void>(`/api/chat/messages/${messageId}/edit`, { body }),
   groups: () => get<ChatRoom[]>('/api/chat/groups'),
+  // 目的別グループへ入れられる相手（有効な職員）。一般の職員も取得できる
+  groupCandidates: (_u: SessionUser) =>
+    get<{ account_id: number; name: string; role: Role }[]>('/api/chat/group-candidates'),
   createGroup: (_u: SessionUser, name: string, accountIds: number[]) =>
     post<ChatRoom>('/api/chat/groups', { name, account_ids: accountIds }),
   updateGroupMembers: (_u: SessionUser, roomId: number, accountIds: number[]) =>

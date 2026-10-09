@@ -618,6 +618,39 @@ func (a *app) relationshipOf(accountID int64) *string {
 
 // ---- グループ編成（基本設計書「画面の一覧」(3-2)） ----
 
+// handleGroupCandidates は、目的別グループへ入れられる相手（有効な職員）を返す。
+// グループの編成は一般（保育士）にも認めている（基本設計書の権限一覧「グループの作成・メンバー編成」）。
+// 管理者向けのアカウント一覧（/api/admin/accounts）は一般には返さないため、候補を別に用意する。
+// 目的別グループは職員だけのものなので、保護者は含めない（基本設計書「チャット」(5-5)）。
+func (a *app) handleGroupCandidates(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireStaff(w, r); !ok {
+		return
+	}
+	rows, err := a.db.Query(`SELECT account_id, role FROM m_account
+		WHERE role IN ('1', '2') AND status = '1' ORDER BY account_id`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "候補を取得できませんでした")
+		return
+	}
+	type row struct {
+		AccountID int64  `json:"account_id"`
+		Name      string `json:"name"`
+		Role      string `json:"role"`
+	}
+	out := []row{}
+	for rows.Next() {
+		var x row
+		if rows.Scan(&x.AccountID, &x.Role) == nil {
+			out = append(out, x)
+		}
+	}
+	rows.Close()
+	for i := range out {
+		out[i].Name = a.accountName(out[i].AccountID)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (a *app) handleChatGroups(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.requireStaff(w, r); !ok {
 		return

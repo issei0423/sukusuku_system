@@ -921,6 +921,17 @@ const chatApi2 = {
     return ok(db.chatRooms.filter((r) => r.room_type === '3'));
   },
 
+  /**
+   * 目的別グループへ入れられる相手（有効な職員）。
+   * グループの編成は一般（保育士）にも認めている（基本設計書の権限一覧）。管理者向けのアカウント一覧は
+   * 一般には返さないため、候補を別に用意する。目的別グループは職員だけのものなので、保護者は含めない
+   */
+  async groupCandidates(user: SessionUser) {
+    if (user.role === '3') return fail('グループの編成は職員のみが行えます');
+    return ok(db.accounts.filter((a) => a.role !== '3' && a.status === '1')
+      .map((a) => ({ account_id: a.account_id, name: accountName(a.account_id), role: a.role })));
+  },
+
   /** 誤送信への対応の記録。管理者のみ（画面詳細図 3-2 の一覧に対応） */
   async misdeliveryRecords(user: SessionUser) {
     if (user.role !== '1') return fail('誤送信対応の記録は管理者のみが参照できます');

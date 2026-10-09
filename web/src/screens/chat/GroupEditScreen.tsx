@@ -16,7 +16,8 @@ export default function GroupEditScreen() {
   const { user } = useSession();
   const [tick, setTick] = useState(0);
   const groups = useAsync(() => api.groups(), [tick]);
-  const accounts = useAsync(() => api.allAccounts(user!).catch(() => []), [user?.account_id]);
+  // 候補は職員だけ。一般の職員も編成できるため、管理者向けのアカウント一覧は使わない
+  const accounts = useAsync(() => api.groupCandidates(user!), [user?.account_id]);
 
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
@@ -63,6 +64,7 @@ export default function GroupEditScreen() {
       </div>
 
       {error && <div style={{ marginBottom: 16 }}><Alert>{error}</Alert></div>}
+      {accounts.error && <div style={{ marginBottom: 16 }}><ErrorBox text={accounts.error} /></div>}
 
       <section className="card">
         {groups.loading && <Loading />}

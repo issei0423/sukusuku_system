@@ -474,6 +474,16 @@ describe('設計の決定を反映したもの（基本設計書 第2.3版）', 
     expect((await api.messages(teacher, 6)).length).toBeGreaterThan(before);
   });
 
+  it('グループ編成の候補は、一般の職員も取得でき、職員だけが並ぶ', async () => {
+    // 編成は一般にも認めている（基本設計書の権限一覧）。候補が取れないと、選ぶ相手が1人も出ない
+    const forTeacher = await api.groupCandidates(teacher);
+    expect(forTeacher.map((x) => x.name)).toContain('金城 宗一郎');
+    // 目的別グループは職員だけのもの。保護者は候補に含めない
+    expect(forTeacher.every((x) => x.role !== '3')).toBe(true);
+    expect(await api.groupCandidates(admin)).toEqual(forTeacher);
+    await expect(api.groupCandidates(guardian)).rejects.toThrow(/職員のみ/);
+  });
+
   it('続柄は職員側のメンバー一覧にだけ出る', async () => {
     const forStaff = await api.members(6, teacher);
     // 保護者の野原 一誠は、職員（園長）の野原 一誠と同じ氏名なので、ロールで見分ける
