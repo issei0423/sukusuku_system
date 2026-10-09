@@ -30,6 +30,7 @@ export default function TopScreen({ entrance }: { entrance: 'staff' | 'guardian'
   if (user) {
     return (
       <PublicLayout>
+        <h1>ログイン中</h1>
         <p>すでにログインしています。</p>
         <p>別のアカウントでログインするには、先にログアウトしてください。</p>
         <div className="stack">
@@ -62,9 +63,9 @@ export default function TopScreen({ entrance }: { entrance: 'staff' | 'guardian'
 
   return (
     <PublicLayout>
-      <div className="muted" style={{ textAlign: 'center', marginTop: -16, marginBottom: 16 }}>
+      <h1 className="muted" style={{ textAlign: 'center', marginTop: -16, marginBottom: 16, fontSize: 20 }}>
         {entrance === 'staff' ? '職員用の入口' : '保護者用の入口'}
-      </div>
+      </h1>
 
       <form className="stack" onSubmit={submit}>
         <Field label="ログインID" required>

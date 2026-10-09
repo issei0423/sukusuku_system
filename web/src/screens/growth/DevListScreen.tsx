@@ -73,10 +73,10 @@ export default function DevListScreen() {
           <table className="list">
             <thead>
               <tr>
-                <th>園児</th>{showClass && <th>クラス</th>}
+                <th scope="col">園児</th>{showClass && <th scope="col">クラス</th>}
                 {/* 何の時点の月齢かを書く。画面によって基準が違い、食い違って見えるため（GitHub Issue #124） */}
-                <th>月齢<span className="weak">（予定日の時点）</span></th>
-                <th>前回の実施日</th><th>次回の予定日</th><th>状態</th><th></th>
+                <th scope="col">月齢<span className="weak">（予定日の時点）</span></th>
+                <th scope="col">前回の実施日</th><th scope="col">次回の予定日</th><th scope="col">状態</th><th scope="col">操作</th>
               </tr>
             </thead>
             <tbody>

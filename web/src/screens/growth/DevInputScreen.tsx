@@ -120,7 +120,7 @@ export default function DevInputScreen() {
                     </div>
                   )}
                 </div>
-                <div className="choices">
+                <div className="choices" role="radiogroup" aria-label={it.item_name}>
                   {(Object.keys(DEVELOPMENT_RESULT) as DevelopmentResult[]).map((k) => (
                     <label key={k}>
                       <input type="radio" name={`item-${it.development_item_id}`}

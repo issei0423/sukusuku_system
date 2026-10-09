@@ -41,7 +41,7 @@ export default function GuardianDiaryScreen() {
       </div>
 
       <section className="card guardian-diary-card">
-        <h2>{formatYMD(d.diary_date)}</h2>
+        <h1>{formatYMD(d.diary_date)}</h1>
         <div className="muted" style={{ marginBottom: 12 }}>
           {DIARY_RECORD_TYPE[d.record_type]}
           {d.child_id && <>／{childName(d.child_id)}</>}

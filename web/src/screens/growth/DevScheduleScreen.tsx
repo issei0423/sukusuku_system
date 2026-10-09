@@ -56,8 +56,8 @@ export default function DevScheduleScreen() {
             <thead>
               <tr>
                 {/* 何の時点の月齢かを書く（GitHub Issue #124） */}
-                <th>園児</th><th>月齢<span className="weak">（提案日の時点）</span></th><th>推奨間隔</th>
-                <th>システムの提案</th><th>設定中の予定日</th><th>次回の予定日</th><th></th>
+                <th scope="col">園児</th><th scope="col">月齢<span className="weak">（提案日の時点）</span></th><th scope="col">推奨間隔</th>
+                <th scope="col">システムの提案</th><th scope="col">設定中の予定日</th><th scope="col">次回の予定日</th><th scope="col">操作</th>
               </tr>
             </thead>
             <tbody>

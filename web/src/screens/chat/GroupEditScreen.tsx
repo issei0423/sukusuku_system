@@ -70,7 +70,7 @@ export default function GroupEditScreen() {
         {groups.data?.length === 0 && <Empty text="目的別グループはまだありません。" />}
         {groups.data && groups.data.length > 0 && (
           <table className="list">
-            <thead><tr><th>グループ名</th><th>メンバー</th><th></th></tr></thead>
+            <thead><tr><th scope="col">グループ名</th><th scope="col">メンバー</th><th scope="col">操作</th></tr></thead>
             <tbody>
               {groups.data.map((g) => (
                 <tr key={g.chat_room_id}>

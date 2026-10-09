@@ -73,7 +73,7 @@ export default function ShareSettingScreen() {
         <section className="card" key={categoryName}>
           <h2>{categoryName}</h2>
           <table className="list">
-            <thead><tr><th style={{ width: 120 }}>領域</th><th>項目</th><th style={{ width: 160 }}>保護者へ共有</th></tr></thead>
+            <thead><tr><th scope="col" style={{ width: 120 }}>領域</th><th scope="col">項目</th><th scope="col" style={{ width: 160 }}>保護者へ共有</th></tr></thead>
             <tbody>
               {rows!.map((r) => (
                 <tr key={r.item.development_item_id}>

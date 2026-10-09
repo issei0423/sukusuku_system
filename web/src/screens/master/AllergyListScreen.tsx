@@ -38,7 +38,7 @@ export default function AllergyListScreen() {
         {data && data.length > 0 && (
           <table className="list">
             <thead>
-              <tr><th>クラス</th><th>氏名</th><th>生年月日</th><th>対象</th><th>症状</th><th>対応</th></tr>
+              <tr><th scope="col">クラス</th><th scope="col">氏名</th><th scope="col">生年月日</th><th scope="col">対象</th><th scope="col">症状</th><th scope="col">対応</th></tr>
             </thead>
             <tbody>
               {data.map((r) =>
