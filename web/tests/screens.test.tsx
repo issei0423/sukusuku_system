@@ -49,6 +49,23 @@ async function settled() {
 
 afterEach(cleanup);
 
+/*
+ * 午睡の時間帯（13:00-15:00）を過ぎると、デモの実施は自動で解除される。
+ * 実行した時刻で結果が変わらないよう、時計を時間帯の中（13:30）に固定する。
+ * 固定するのは Date だけで、タイマー（setTimeout）は本物のまま動かす。
+ *
+ * 午睡のテストだけでなく、このファイルの全部のテストに掛ける。職員の画面はどれも
+ * ヘッダーの件数を出すときに自動の解除を走らせ、デモデータはファイルの中で使い回している。
+ * 15時以降に実時間のまま先のテストが走ると、そこで実施が終了済みになり、
+ * あとから時計を戻しても午睡のテストが落ちる。
+ */
+beforeEach(() => {
+  const day = today();
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(`${day}T13:30:00+09:00`));
+});
+afterEach(() => { vi.useRealTimers(); });
+
 describe('共通・認証（7画面）', () => {
   it('保護者用トップ：新規登録の導線を置く', async () => {
     open('/', null);
@@ -357,18 +374,6 @@ describe('日誌作成画面の入力の検査', () => {
 });
 
 describe('午睡チェック（3画面）', () => {
-  /*
-   * 午睡の時間帯（13:00-15:00）を過ぎると、デモの実施は自動で解除される。
-   * 実行した時刻で結果が変わらないよう、時計を時間帯の中（13:30）に固定する。
-   * 固定するのは Date だけで、タイマー（setTimeout）は本物のまま動かす。
-   */
-  beforeEach(() => {
-    const day = today();
-    vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(new Date(`${day}T13:30:00+09:00`));
-  });
-  afterEach(() => { vi.useRealTimers(); });
-
   it('午睡チェック画面：実施中はタイマーと園児カードを出す', async () => {
     open('/staff/nap', teacher);
     /*
