@@ -201,7 +201,16 @@ func (a *app) handlePostHandout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	res, err := a.db.Exec(`INSERT INTO t_handout
+	// 配布物の行と、掲載の知らせの行は、ひとまとまりで書く。片方だけが残る状態を作らない
+	// （GitHub Issue #99）。接続は1本のため、トランザクションの中では tx だけを使う
+	tx, err := a.db.Begin()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "掲載に失敗しました")
+		return
+	}
+	defer tx.Rollback()
+
+	res, err := tx.Exec(`INSERT INTO t_handout
 		(handout_type, title, target_month, class_id, file_name, file_path, file_type, file_size,
 		 posted_staff_id, posted_at, is_deleted)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
@@ -212,22 +221,29 @@ func (a *app) handlePostHandout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, _ := res.LastInsertId()
-	a.log(u.AccountID, fnChat, opCreate, "t_handout", i64(id), nil, nil, s("配布物を掲載（"+req.Title+"）"))
 
 	// 掲載したことをチャットで知らせる。園全体向けは園チャット、クラス向けはそのクラスグループ
 	var roomID sql.NullInt64
 	if req.ClassID == nil {
-		a.db.QueryRow(`SELECT chat_room_id FROM m_chat_room WHERE room_type = '1' ORDER BY chat_room_id LIMIT 1`).Scan(&roomID)
+		tx.QueryRow(`SELECT chat_room_id FROM m_chat_room WHERE room_type = '1' ORDER BY chat_room_id LIMIT 1`).Scan(&roomID)
 	} else {
-		a.db.QueryRow(`SELECT chat_room_id FROM m_chat_room WHERE room_type = '2' AND class_id = ?
+		tx.QueryRow(`SELECT chat_room_id FROM m_chat_room WHERE room_type = '2' AND class_id = ?
 			ORDER BY chat_room_id LIMIT 1`, *req.ClassID).Scan(&roomID)
 	}
 	if roomID.Valid {
-		a.db.Exec(`INSERT INTO t_chat_message
+		if _, err := tx.Exec(`INSERT INTO t_chat_message
 			(chat_room_id, sender_account_id, body, source_type, source_id, sent_at, is_deleted)
 			VALUES (?, ?, ?, '4', ?, ?, 0)`,
-			roomID.Int64, u.AccountID, "「"+req.Title+"」を掲載しました。", id, now())
+			roomID.Int64, u.AccountID, "「"+req.Title+"」を掲載しました。", id, now()); err != nil {
+			writeErr(w, http.StatusInternalServerError, "掲載に失敗しました")
+			return
+		}
 	}
+	if err := tx.Commit(); err != nil {
+		writeErr(w, http.StatusInternalServerError, "掲載に失敗しました")
+		return
+	}
+	a.log(u.AccountID, fnChat, opCreate, "t_handout", i64(id), nil, nil, s("配布物を掲載（"+req.Title+"）"))
 	writeJSON(w, http.StatusOK, map[string]int64{"handout_id": id})
 }
 
@@ -247,14 +263,28 @@ func (a *app) handleWithdrawHandout(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "配布物が見つかりません")
 		return
 	}
-	if _, err := a.db.Exec(`UPDATE t_handout SET is_deleted = 1, deleted_at = ?, deleted_staff_id = ?
+	// 配布物の取り下げと、掲載の知らせの取り消しは、ひとまとまりで書く（GitHub Issue #99）
+	tx, err := a.db.Begin()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "取り下げに失敗しました")
+		return
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`UPDATE t_handout SET is_deleted = 1, deleted_at = ?, deleted_staff_id = ?
 		WHERE handout_id = ?`, now(), u.staff(), id); err != nil {
 		writeErr(w, http.StatusInternalServerError, "取り下げに失敗しました")
 		return
 	}
 	// 掲載の知らせも取り消す。知らせだけが残ると、開いても見つからない配布物へ案内し続けることになる
-	a.db.Exec(`UPDATE t_chat_message SET is_deleted = 1, body = '', deleted_at = ?, deleted_account_id = ?
-		WHERE source_type = '4' AND source_id = ? AND is_deleted = 0`, now(), u.AccountID, id)
+	if _, err := tx.Exec(`UPDATE t_chat_message SET is_deleted = 1, body = '', deleted_at = ?, deleted_account_id = ?
+		WHERE source_type = '4' AND source_id = ? AND is_deleted = 0`, now(), u.AccountID, id); err != nil {
+		writeErr(w, http.StatusInternalServerError, "取り下げに失敗しました")
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		writeErr(w, http.StatusInternalServerError, "取り下げに失敗しました")
+		return
+	}
 	a.log(u.AccountID, fnChat, opDelete, "t_handout", i64(id), nil, s(title), s("取り下げ"))
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

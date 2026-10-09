@@ -317,7 +317,8 @@ const apiChatNap = {
   readCount: async (_messageId: number) => 0,
 
   /* ---- 午睡チェック ---- */
-  activeSession: (classId: number, date: string) =>
+  // 第3引数はモック実装（mock.ts）が権限の判定に使う。サーバはセッションから利用者を引く
+  activeSession: (classId: number, date: string, _u?: SessionUser) =>
     get<NapSession | null>('/api/nap/session' + qs({ class_id: classId, date })),
   startSession: (_u: SessionUser, classId: number, date: string) =>
     post<NapSession>('/api/nap/session', { class_id: classId, date }),

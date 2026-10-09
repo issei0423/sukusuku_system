@@ -6,19 +6,24 @@
  * 未読はチャンネル一覧に件数で示す。既読はメッセージ側に人数で示す。
  * 園全体は一般には投稿欄を表示しない（閲覧のみ）。
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api, accountName } from '../../api/client';
 import { Loading, ErrorBox, Empty, Alert, Tag } from '../../components/ui';
 import Reactions from '../../components/Reactions';
-import { CHAT_ROOM_TYPE, THREAD_STATUS } from '../../api/codes';
+import { CHAT_ROOM_TYPE, THREAD_STATUS, REACTION } from '../../api/codes';
 import { formatHM, formatMD } from '../../api/util';
 import type { ChatMessage } from '../../api/types';
 
+/** 長押しとみなすまでの時間。保護者のチャット画面と同じ値（web/仮置き値.md） */
+const LONG_PRESS_MS = 800;
+
 export default function StaffChatScreen() {
   const { user } = useSession();
+  // 操作の一覧を開いているメッセージ。同時に開くのは1件だけ
+  const [menuId, setMenuId] = useState<number | null>(null);
   const rooms = useAsync(() => api.rooms(user!), [user?.account_id]);
   const [roomId, setRoomId] = useState<number | null>(null);
   const [text, setText] = useState('');
@@ -152,9 +157,17 @@ export default function StaffChatScreen() {
             {messages.loading && <Loading />}
             {messages.error && <ErrorBox text={messages.error} />}
             {messages.data?.length === 0 && <Empty text="まだメッセージはありません。" />}
+            {/* 右クリックと長押しは、見ただけでは気づけない。先頭で知らせる（GitHub Issue #103） */}
+            {(messages.data?.length ?? 0) > 0 && (
+              <p className="message-hint">
+                メッセージを右クリック（タブレットでは長押し）すると、リアクション・編集・取消ができます。
+              </p>
+            )}
             {messages.data?.map((m) => (
               <MessageRow key={m.chat_message_id} message={m} mine={m.sender_account_id === user!.account_id}
                 canEdit={m.sender_account_id === user!.account_id || schoolWideAdmin}
+                menuOpen={menuId === m.chat_message_id}
+                onMenu={(open) => setMenuId((cur) => (open ? m.chat_message_id : cur === m.chat_message_id ? null : cur))}
                 onReact={(type) => react(m.chat_message_id, type)}
                 onRetract={async () => { await api.retract(user!, m.chat_message_id); setTick((n) => n + 1); }}
                 onEdit={async (body) => { await api.edit(user!, m.chat_message_id, body); setTick((n) => n + 1); }} />
@@ -215,11 +228,57 @@ export default function StaffChatScreen() {
 }
 
 /** 1件のメッセージ。既読は人数で示す（画面詳細図 4-1） */
-function MessageRow({ message, mine, canEdit, onRetract, onEdit, onReact }: {
+function MessageRow({ message, mine, canEdit, onRetract, onEdit, onReact, menuOpen, onMenu }: {
   message: ChatMessage; mine: boolean; canEdit: boolean;
   onRetract: () => void; onEdit: (body: string) => Promise<void>; onReact: (reactionType: string) => void;
+  menuOpen: boolean; onMenu: (open: boolean) => void;
 }) {
   const read = useAsync(() => api.readCount(message.chat_message_id), [message.chat_message_id]);
+  /*
+   * リアクション・編集・取消は、メッセージを右クリック（タブレットでは長押し）して開く一覧に置く。
+   * 各メッセージの下へ常に並べると、やりとりが続いたときに本文が読みにくくなる（GitHub Issue #103）。
+   * キーボードでは、メッセージを選んで Enter／スペースで同じ一覧を開ける。
+   */
+  const bubbleRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const pressTimer = useRef<number | null>(null);
+  // 長押しで開いた直後に指を離したとき、指の下に来たボタンが押されないようにする
+  const openedByPressAt = useRef(0);
+  // 一覧を出す向き。メッセージが画面の中央より下にあれば上へ出し、画面の外へ出ないようにする
+  const [above, setAbove] = useState(false);
+
+  const openMenu = () => {
+    const r = bubbleRef.current?.getBoundingClientRect();
+    setAbove(!!r && r.top + r.height / 2 > window.innerHeight / 2);
+    onMenu(true);
+  };
+  const cancelPress = () => {
+    if (pressTimer.current !== null) { clearTimeout(pressTimer.current); pressTimer.current = null; }
+  };
+  // 本文中のリンクや入力欄の上では、ブラウザの既定の動きを残す
+  const onControl = (target: EventTarget) => !!(target as HTMLElement).closest('a, button, textarea');
+  const guarded = (fn: () => void) => () => {
+    if (Date.now() - openedByPressAt.current < 400) return;
+    fn();
+  };
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    menuRef.current?.querySelector('button')?.focus({ preventScroll: true });
+    const onDown = (e: Event) => { if (!menuRef.current?.contains(e.target as Node)) onMenu(false); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      onMenu(false);
+      bubbleRef.current?.focus({ preventScroll: true });
+    };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [menuOpen]);
+  useEffect(() => cancelPress, []);
   /*
    * 編集は送信者本人のみ。園チャットに限り管理者同士でも編集できる
    * （基本設計書「メッセージの編集」(4-6)）。可否の判定は canEdit で受け取る。
@@ -255,7 +314,31 @@ function MessageRow({ message, mine, canEdit, onRetract, onEdit, onReact }: {
         {(message.sender_name ?? accountName(message.sender_account_id))} {formatMD(message.sent_at.slice(0, 10))} {formatHM(message.sent_at)}
         {message.edited_at && <span className="weak">（編集済み）</span>}
       </div>
-      <div className="bubble">
+      <div ref={bubbleRef} className={`bubble${editing ? '' : ' has-menu'}`}
+        tabIndex={editing ? undefined : 0}
+        aria-haspopup={editing ? undefined : 'menu'} aria-expanded={editing ? undefined : menuOpen}
+        onContextMenu={(e) => {
+          if (editing || onControl(e.target)) return;
+          e.preventDefault();
+          cancelPress();
+          openMenu();
+        }}
+        onPointerDown={(e) => {
+          // マウスは右クリックで開く。長押しはタッチ・ペンのための操作
+          if (editing || e.pointerType === 'mouse' || onControl(e.target)) return;
+          cancelPress();
+          pressTimer.current = window.setTimeout(() => {
+            pressTimer.current = null;
+            openedByPressAt.current = Date.now();
+            openMenu();
+          }, LONG_PRESS_MS);
+        }}
+        onPointerUp={cancelPress} onPointerCancel={cancelPress} onPointerLeave={cancelPress}
+        onKeyDown={(e) => {
+          if (editing || e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
+          e.preventDefault();
+          openMenu();
+        }}>
         {editing ? (
           <>
             <textarea value={draft} onChange={(e) => setDraft(e.target.value)}
@@ -284,17 +367,41 @@ function MessageRow({ message, mine, canEdit, onRetract, onEdit, onReact }: {
           <Link className="shared-card" to="/staff/handouts">園からの配布物を開く</Link>
         )}
       </div>
-      {/* リアクションは編集の影響を受けない（基本設計書「メッセージの編集」(4-6)） */}
-      <Reactions reactions={message.reactions ?? []} onToggle={onReact} />
-      {(mine || canEdit) && !editing && (
-        <div className="read">
-          {/* 既読と取消は自分の発言にだけ出す。園チャットの相互編集で直せるのは本文だけ */}
-          {mine && <>既読 {read.data ?? 0}{' '}</>}
-          {canEdit && (
-            <button className="btn-sm btn-quiet" onClick={() => { setDraft(message.body); setEditing(true); }}>編集</button>
-          )}
-          {' '}
-          {mine && <button className="btn-sm btn-quiet" onClick={onRetract}>取消</button>}
+      {/*
+        リアクションは編集の影響を受けない（基本設計書「メッセージの編集」(4-6)）。
+        付いているものだけを並べる。付けるためのボタンは、操作の一覧の中に置く
+      */}
+      <Reactions reactions={message.reactions ?? []} onToggle={onReact} showAdd={false} />
+      {/* 既読は自分の発言にだけ出す */}
+      {mine && !editing && <div className="read">既読 {read.data ?? 0}</div>}
+
+      {menuOpen && !editing && (
+        <div className="msg-menu-wrap" style={above ? { bottom: '100%' } : { top: '100%' }}>
+          <div ref={menuRef} className="msg-menu" role="menu" aria-label="メッセージの操作">
+            <div className="msg-menu-row">
+              {Object.entries(REACTION).map(([type, def]) => (
+                <button key={type} type="button" role="menuitem" className="reaction pick"
+                  aria-label={def.label} title={def.label}
+                  onClick={guarded(() => { onReact(type); onMenu(false); })}>
+                  <span aria-hidden="true">{def.emoji}</span>
+                </button>
+              ))}
+            </div>
+            <div className="msg-menu-row">
+              {/* 編集は送信者本人。園チャットに限り管理者同士でもできる。取消は自分の発言だけ */}
+              {canEdit && (
+                <button type="button" role="menuitem" className="btn-sm"
+                  onClick={guarded(() => { setDraft(message.body); setEditing(true); onMenu(false); })}>編集</button>
+              )}
+              {mine && (
+                <button type="button" role="menuitem" className="btn-sm"
+                  onClick={guarded(() => { onRetract(); onMenu(false); })}>取消</button>
+              )}
+              <button type="button" role="menuitem" className="btn-sm btn-quiet" onClick={() => onMenu(false)}>
+                閉じる
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

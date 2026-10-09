@@ -103,12 +103,16 @@ beforeJoinedClause は、保護者に見せないメッセージを除く条件�
 （基本設計書「チャット」(5-5)）。先に登録していた保護者は、自分の書いたものが
 後から加わる人に読まれることを知らないため。職員には適用しない。
 メッセージの表を m として引く問い合わせに足し、引数にアカウントIDを1つ加える。
+
+【仮置き】時刻は秒の単位で持つため、登録と同じ秒に送られたメッセージは、登録の前か後かを
+区別できない。見せない側へ倒す（GitHub Issue #102）。見せる側へ倒すと、登録の直前に送られた
+ものが読めてしまう。
 */
 const beforeJoinedClause = ` AND NOT EXISTS (
 	SELECT 1 FROM t_chat_member gm
 	  JOIN m_chat_room gr ON gr.chat_room_id = gm.chat_room_id
 	 WHERE gm.chat_room_id = m.chat_room_id AND gm.account_id = ?
-	   AND gr.room_type = '4' AND m.sent_at < gm.joined_at)`
+	   AND gr.room_type = '4' AND m.sent_at <= gm.joined_at)`
 
 func (a *app) unreadCount(u *SessionUser, roomID int64) int {
 	q := `SELECT COUNT(*) FROM t_chat_message m
@@ -298,6 +302,17 @@ func (a *app) handleToggleReaction(w http.ResponseWriter, r *http.Request) {
 		writeForbidden(w, "このチャンネルを参照する権限がありません")
 		return
 	}
+	// 後から登録した保護者には、登録より前のメッセージを見せない。見えないものには反応もできない
+	// （GitHub Issue #100）。存在を知らせないよう、見つからないときと同じ応答にする
+	if u.isGuardian() {
+		var visible int
+		a.db.QueryRow(`SELECT COUNT(*) FROM t_chat_message m WHERE m.chat_message_id = ?`+beforeJoinedClause,
+			id, u.AccountID).Scan(&visible)
+		if visible == 0 {
+			writeErr(w, http.StatusNotFound, "メッセージが見つかりません")
+			return
+		}
+	}
 	if isDeleted {
 		writeErr(w, http.StatusConflict, "取り消したメッセージには反応できません")
 		return
@@ -444,13 +459,19 @@ func (a *app) handleRetractMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	var sender int64
 	var body string
-	if err := a.db.QueryRow(`SELECT sender_account_id, body FROM t_chat_message WHERE chat_message_id = ?`,
-		id).Scan(&sender, &body); err != nil {
+	var isDeleted bool
+	if err := a.db.QueryRow(`SELECT sender_account_id, body, is_deleted FROM t_chat_message
+		WHERE chat_message_id = ?`, id).Scan(&sender, &body, &isDeleted); err != nil {
 		writeErr(w, http.StatusNotFound, "メッセージが見つかりません")
 		return
 	}
 	if sender != u.AccountID && !u.isAdmin() {
 		writeForbidden(w, "自分が送信したメッセージのみ取り消せます")
+		return
+	}
+	// 取り消した日時と操作ログを上書き・重複させない（GitHub Issue #100）
+	if isDeleted {
+		writeErr(w, http.StatusConflict, "このメッセージはすでに取り消されています")
 		return
 	}
 	if _, err := a.db.Exec(`UPDATE t_chat_message
@@ -539,6 +560,12 @@ func (a *app) handleChatMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	roomID, _ := pathInt64(r, "id")
+	// 参加していないチャンネルのメンバーは返さない。ほかの家庭の保護者の氏名や続柄が読めてしまう
+	// （GitHub Issue #95）。管理者は、グループ編成のために全チャンネルを参照できる
+	if !u.isAdmin() && !a.isMember(u, roomID) {
+		writeForbidden(w, "このチャンネルを参照する権限がありません")
+		return
+	}
 	rows, err := a.db.Query(`SELECT account_id FROM t_chat_member
 		WHERE chat_room_id = ? AND left_at IS NULL ORDER BY account_id`, roomID)
 	if err != nil {
@@ -755,6 +782,9 @@ func (a *app) handleMisdeliveryRecords(w http.ResponseWriter, r *http.Request) {
 
 // handleRetractedWithoutRecord は取消済みで、まだ対応を記録していないメッセージを返す。
 // 「取り消した」だけで終わらせず、既読の有無と対応を残させるため。
+// 【仮置き】配布物の掲載の知らせ（source_type = 4）は対象にしない。配布物を取り下げると知らせも
+// 取り消されるが、それは人が打ったメッセージの誤送信ではなく、取り下げとして操作ログに残る
+// （GitHub Issue #98）。
 func (a *app) handleRetractedWithoutRecord(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.requireAdmin(w, r); !ok {
 		return
@@ -764,6 +794,7 @@ func (a *app) handleRetractedWithoutRecord(w http.ResponseWriter, r *http.Reques
 		FROM t_chat_message m
 		LEFT JOIN m_chat_room r ON r.chat_room_id = m.chat_room_id
 		WHERE m.is_deleted = 1
+		  AND m.source_type <> '4'
 		  AND m.chat_message_id NOT IN (SELECT chat_message_id FROM t_misdelivery_record)
 		ORDER BY m.sent_at DESC`)
 	if err != nil {

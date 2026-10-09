@@ -152,6 +152,15 @@ func (a *app) selectableClasses(u *SessionUser) ([]ClassRoom, error) {
 	return out, rows.Err()
 }
 
+// canUseClass は、その職員がそのクラスを扱えるかを返す。
+// 一般（保育士）は自クラスに限る（要件定義書「対象権限列の読み方」(4-2 冒頭)）。
+func (a *app) canUseClass(u *SessionUser, classID int64) bool {
+	if u.isAdmin() {
+		return true
+	}
+	return u.isGeneralStaff() && u.ClassID != nil && *u.ClassID == classID
+}
+
 // ---- 名前の解決 ----
 
 func (a *app) childName(childID string) string {
