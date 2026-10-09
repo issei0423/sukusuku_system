@@ -180,7 +180,7 @@ export default function ChildInputScreen() {
           </Field>
           <Field label="平熱">
             <div className="row">
-              <input type="number" step="0.1" style={{ maxWidth: 130 }}
+              <input type="number" step="0.1" style={{ maxWidth: 130 }} aria-label="平熱（℃）"
                 value={form.normal_temperature ?? ''}
                 onChange={(e) => set('normal_temperature', e.target.value ? Number(e.target.value) : null)} />
               <span>℃</span>

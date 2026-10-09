@@ -215,14 +215,14 @@ export default function DiaryEditScreen() {
 
             <div className="row">
               <select defaultValue="" onChange={(e) => { if (e.target.value) applyTemplate(Number(e.target.value)); }}
-                disabled={readOnly} style={{ maxWidth: 240 }}>
+                aria-label="雛形を呼び出す" disabled={readOnly} style={{ maxWidth: 240 }}>
                 <option value="">雛形を呼び出す</option>
                 {templates.data?.map((t) => (
                   <option key={t.diary_template_id} value={t.diary_template_id}>{t.template_name}</option>
                 ))}
               </select>
               <select defaultValue="" onChange={(e) => { if (e.target.value) { setBody((b) => `${b}${e.target.value}\n`); e.target.value = ''; } }}
-                disabled={readOnly} style={{ maxWidth: 320 }}>
+                aria-label="定型文を入れる" disabled={readOnly} style={{ maxWidth: 320 }}>
                 <option value="">定型文を入れる</option>
                 {phrases.data?.map((p) => <option key={p} value={p}>{p}</option>)}
               </select>

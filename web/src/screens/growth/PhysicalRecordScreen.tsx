@@ -149,6 +149,7 @@ export default function PhysicalRecordScreen() {
                   <Field label="身長" required>
                     <div className="row">
                       <input type="number" step="0.1" value={height} style={{ maxWidth: 130 }}
+                        aria-label="身長（cm）" aria-required="true"
                         onChange={(e) => { setHeight(e.target.value); setWarned(false); }} />
                       <span>cm</span>
                       <span className="muted">前回 {previous ? previous.height_cm : '―'}</span>
@@ -157,6 +158,7 @@ export default function PhysicalRecordScreen() {
                   <Field label="体重" required>
                     <div className="row">
                       <input type="number" step="0.1" value={weight} style={{ maxWidth: 130 }}
+                        aria-label="体重（kg）" aria-required="true"
                         onChange={(e) => { setWeight(e.target.value); setWarned(false); }} />
                       <span>kg</span>
                       <span className="muted">前回 {previous ? previous.weight_kg : '―'}</span>

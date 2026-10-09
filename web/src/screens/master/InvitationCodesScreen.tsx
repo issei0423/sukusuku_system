@@ -221,6 +221,7 @@ export default function InvitationCodesScreen() {
             <Field label="有効期限" required>
               <div className="row">
                 <input type="number" min={1} max={365} value={oneDays} style={{ maxWidth: 100 }}
+                  aria-label="有効期限（日）" aria-required="true"
                   onChange={(e) => setOneDays(Number(e.target.value))} />
                 <span>日</span>
               </div>
@@ -249,6 +250,7 @@ export default function InvitationCodesScreen() {
             <Field label="園児1名あたりの枚数" required>
               <div className="row">
                 <input type="number" min={1} max={5} value={perChild} style={{ maxWidth: 100 }}
+                  aria-label="園児1名あたりの枚数" aria-required="true"
                   onChange={(e) => setPerChild(Number(e.target.value))} />
                 <span>枚</span>
               </div>
@@ -256,6 +258,7 @@ export default function InvitationCodesScreen() {
             <Field label="有効期限" required>
               <div className="row">
                 <input type="number" min={1} max={365} value={validDays} style={{ maxWidth: 100 }}
+                  aria-label="有効期限（日）" aria-required="true"
                   onChange={(e) => setValidDays(Number(e.target.value))} />
                 <span>日</span>
               </div>
