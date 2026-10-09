@@ -77,6 +77,18 @@ export default function NapCheckScreen() {
   const isDue = (latestAt: string | null) =>
     !!s && plusMinutes(latestAt ?? s.started_at, intervalMinutes) <= now();
 
+  // 選べるクラスが無い（担当クラスの無い一般の職員）。ほかのクラスの実施を表示しない（GitHub Issue #127）
+  if (classesForUser.length === 0) {
+    return (
+      <div>
+        <div className="page-head"><h1>午睡チェック</h1></div>
+        <section className="card">
+          <div className="empty">担当クラスが割り当てられていないため、午睡チェックを行えません。</div>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div>
       {s && <NapTimer startedAt={s.started_at} intervalMinutes={intervalMinutes} rows={rows} />}

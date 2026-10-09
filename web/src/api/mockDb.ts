@@ -235,7 +235,7 @@ export const diaries: Diary[] = [
     created_staff_id: 'S003', approved_staff_id: null, approved_at: null, is_shared_to_guardian: false, shared_at: null,
     nap_abnormal_id: null, returned_reason: null, is_deleted: false, created_at: '2026-08-31T17:20:00', updated_at: '2026-08-31T17:20:00' },
   { diary_id: 3, record_type: '4', child_id: 'C003', class_id: 1, diary_date: '2026-08-30', status: '4',
-    body: '【発生日時】\n2026年8月30日 13時40分\n\n【状況】\n午睡中にうつ伏せの体位を確認した。\n\n【とった対応】\n仰向けに直し、呼吸と顔色を確認した。',
+    body: '【発生日時】\n午睡中の13時40分ごろ\n\n【状況】\n午睡中にうつ伏せの体位を確認した。\n\n【とった対応】\n仰向けに直し、呼吸と顔色を確認した。',
     created_staff_id: 'S004', approved_staff_id: 'S001', approved_at: null, is_shared_to_guardian: false, shared_at: null,
     nap_abnormal_id: 1, returned_reason: '発生時の呼吸・顔色の記録が本文にありません。異常時の記録と同じ内容を転記してください。',
     is_deleted: false, created_at: '2026-08-30T18:00:00', updated_at: '2026-08-31T09:10:00' },

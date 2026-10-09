@@ -11,6 +11,7 @@ import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api, selectableClasses } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Alert, Modal, Tag } from '../../components/ui';
+import { ConfirmDialog, notify } from '../../components/feedback';
 import { INVITATION_STATUS } from '../../api/codes';
 import { formatYMD } from '../../api/util';
 import type { InvitationStatus } from '../../api/types';
@@ -35,6 +36,11 @@ export default function InvitationCodesScreen() {
   const [perChild, setPerChild] = useState(2);
   const [validDays, setValidDays] = useState(30);
   const [printOpen, setPrintOpen] = useState(false);
+  // 使えるコードをすでに持つ園児にも発行するか。既定では飛ばす（GitHub Issue #122）
+  const [includeExisting, setIncludeExisting] = useState(false);
+  const [revoking, setRevoking] = useState<{ id: number; code: string; childName: string } | null>(null);
+  // 絞り込みにかかわらず、いま使えるコードを持つ園児を知るために全件を持つ
+  const allCodes = useAsync(() => api.invitationCodes(user!, {}), [tick]);
 
   // 1枚だけの発行。祖父母の分を足す、紛失や期限切れで出し直す、といった場面で使う
   const [oneOpen, setOneOpen] = useState(false);
@@ -62,21 +68,38 @@ export default function InvitationCodesScreen() {
     [bulkClass],
   );
 
+  const usableChildIds = new Set(
+    (allCodes.data ?? []).filter((c) => c.status === '1' && !c.expired).map((c) => c.child_id));
+  const bulkTotal = childCount.data?.length ?? 0;
+  const bulkHolding = childCount.data?.filter((c) => usableChildIds.has(c.child_id)).length ?? 0;
+  const bulkTargets = includeExisting ? bulkTotal : bulkTotal - bulkHolding;
+
+  const [bulkError, setBulkError] = useState<string | null>(null);
   const bulkIssue = async () => {
-    setError(null);
+    setBulkError(null);
     try {
-      const n = await api.issueInvitationCodes(user!, bulkClass, perChild, validDays);
+      const r = await api.issueInvitationCodes(user!, bulkClass, perChild, validDays, includeExisting);
       setBulkOpen(false);
       setTick((t) => t + 1);
-      alert(`${n} 枚を発行しました`);
-    } catch (e) { setError((e as Error).message); }
+      notify(r.skipped > 0
+        ? `${r.issued} 枚を発行しました（使えるコードをすでに持つ ${r.skipped} 名は飛ばしました）`
+        : `${r.issued} 枚を発行しました`);
+    } catch (e) { setBulkError((e as Error).message); }
   };
 
-  const revoke = async (id: number) => {
+  const revoke = async () => {
+    if (!revoking) return;
     setError(null);
-    try { await api.revokeInvitationCode(user!, id); setTick((t) => t + 1); }
-    catch (e) { setError((e as Error).message); }
+    try {
+      await api.revokeInvitationCode(user!, revoking.id);
+      notify(`${revoking.childName} の招待コード ${revoking.code} を失効しました`);
+      setTick((t) => t + 1);
+    } catch (e) { setError((e as Error).message); } finally { setRevoking(null); }
   };
+
+  // 配布用の出力は園児ごとにまとめる。同じ園児のコードが離れて並ぶと、切り分けるときに数え間違える
+  const printable = (data ?? []).filter((r) => r.status === '1' && !r.expired)
+    .sort((a, b) => a.child_name.localeCompare(b.child_name, 'ja') || a.created_at.localeCompare(b.created_at));
 
   // 園児名でまとめる
   const grouped = new Map<string, NonNullable<typeof data>>();
@@ -150,7 +173,10 @@ export default function InvitationCodesScreen() {
                     </td>
                     <td className="nowrap">
                       {r.status === '1' && (
-                        <button className="btn-sm" onClick={() => revoke(r.invitation_code_id)}>失効</button>
+                        <button className="btn-sm"
+                          onClick={() => setRevoking({ id: r.invitation_code_id, code: r.code, childName: r.child_name })}>
+                          失効
+                        </button>
                       )}
                     </td>
                   </tr>
@@ -206,8 +232,9 @@ export default function InvitationCodesScreen() {
         <Modal title="招待コードの一括発行" onClose={() => setBulkOpen(false)}
           footer={<>
             <button onClick={() => setBulkOpen(false)}>やめる</button>
-            <button className="btn-primary" onClick={bulkIssue}>発行する</button>
+            <button className="btn-primary" onClick={bulkIssue} disabled={bulkTargets === 0}>発行する</button>
           </>}>
+          {bulkError && <Alert>{bulkError}</Alert>}
           <div className="stack">
             <Field label="クラス" required>
               <select value={bulkClass} onChange={(e) => setBulkClass(Number(e.target.value))}>
@@ -228,9 +255,18 @@ export default function InvitationCodesScreen() {
                 <span>日</span>
               </div>
             </Field>
+            {bulkHolding > 0 && (
+              <label>
+                <input type="checkbox" checked={includeExisting}
+                  onChange={(e) => setIncludeExisting(e.target.checked)} />
+                使えるコードをすでに持つ {bulkHolding} 名にも発行する（配り直すとき）
+              </label>
+            )}
             <Alert soft>
               {classesForUser.find((c) => c.class_id === bulkClass)?.class_name}
-              {' '}{childCount.data?.length ?? 0} 名 × {perChild} 枚 ＝ {(childCount.data?.length ?? 0) * perChild} 枚を発行します
+              {' '}{bulkTotal} 名
+              {bulkHolding > 0 && !includeExisting && `のうち、使えるコードをすでに持つ ${bulkHolding} 名を除く ${bulkTargets} 名`}
+              {' '}× {perChild} 枚 ＝ {bulkTargets * perChild} 枚を発行します
             </Alert>
           </div>
         </Modal>
@@ -244,10 +280,10 @@ export default function InvitationCodesScreen() {
           </>}>
           <div className="muted" style={{ marginBottom: 12 }}>
             コードと園児名の対応を取り違えないよう、1枚ずつ切り分けられる様式にしています。
-            未使用のコードのみを載せています。
+            未使用で期限内のコードのみを、園児ごとにまとめて載せています。
           </div>
           <div className="stack">
-            {data?.filter((r) => r.status === '1' && !r.expired).map((r) => (
+            {printable.map((r) => (
               <div key={r.invitation_code_id} className="card" style={{ margin: 0 }}>
                 <div style={{ fontSize: 13, color: 'var(--c-text-sub)' }}>お子さまのお名前</div>
                 <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>{r.child_name}</div>
@@ -258,11 +294,23 @@ export default function InvitationCodesScreen() {
                 </div>
               </div>
             ))}
-            {data?.filter((r) => r.status === '1' && !r.expired).length === 0 && (
+            {printable.length === 0 && (
               <Empty text="配布できる未使用のコードがありません。" />
             )}
           </div>
         </Modal>
+      )}
+
+      {revoking && (
+        <ConfirmDialog title="招待コードの失効" confirmLabel="失効する" danger
+          onConfirm={revoke} onCancel={() => setRevoking(null)}>
+          <p>
+            {revoking.childName} の招待コード
+            <strong style={{ fontFamily: 'monospace' }}> {revoking.code} </strong>
+            を失効します。
+          </p>
+          <p className="muted">失効したコードでは登録できなくなります。元には戻せません。必要なときは発行し直してください。</p>
+        </ConfirmDialog>
       )}
     </div>
   );

@@ -49,6 +49,22 @@ func (a *app) handleSaveChild(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "氏名を入力してください")
 		return
 	}
+	// 【仮置き】よみを必須とする。一覧の並びと検索がよみに頼っているため（GitHub Issue #119）
+	if strings.TrimSpace(in.ChildNameKana) == "" {
+		writeErr(w, http.StatusBadRequest, "よみを入力してください")
+		return
+	}
+	// アレルギーは対象だけでは配膳の場で使えない。症状と対応まで揃えて登録する（GitHub Issue #119）
+	for _, al := range in.Allergies {
+		if strings.TrimSpace(al.TargetFood) == "" {
+			continue
+		}
+		if strings.TrimSpace(al.Symptom) == "" || strings.TrimSpace(al.Response) == "" {
+			writeErr(w, http.StatusBadRequest,
+				"アレルギー「"+strings.TrimSpace(al.TargetFood)+"」の症状と対応を入力してください")
+			return
+		}
+	}
 	// 生年月日は月齢算出の唯一の根拠。未来日不可（基本設計書 5-3）
 	if in.BirthDate == "" || in.BirthDate > today() {
 		writeErr(w, http.StatusBadRequest, "生年月日に未来日は指定できません")
@@ -140,6 +156,15 @@ func (a *app) handleSaveChild(w http.ResponseWriter, r *http.Request) {
 	row := a.db.QueryRow(`SELECT `+childColumns+` FROM m_child WHERE child_id = ?`, in.ChildID)
 	c, _ := scanChild(row)
 	writeJSON(w, http.StatusOK, c)
+}
+
+// handleChildIDExists は、園児IDがすでに使われているかを返す。
+// 入力の時点で重複を知らせるために使う（GitHub Issue #121）。取り消した園児のIDも「使われている」と数える。
+func (a *app) handleChildIDExists(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireAdmin(w, r); !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"exists": a.childExists(strings.TrimSpace(r.PathValue("childID")))})
 }
 
 // handleRemoveChild は誤登録の取消。論理削除とする（基本設計書 5-1）

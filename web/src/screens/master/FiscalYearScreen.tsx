@@ -47,19 +47,13 @@ export default function FiscalYearScreen() {
           <section className="card">
             <Alert>{data.note}</Alert>
             <div className="muted" style={{ marginTop: 12 }}>
-              決めておく必要があること：
-              <ul style={{ marginTop: 4 }}>
-                <li>進級先クラスの割り当て規則（年齢で自動か、園が手で割り当てるか）</li>
-                <li>卒園の判定条件（年齢か、園が個別に指定するか）</li>
-                <li>年度更新の実行日時（設定マスタ scope.fiscal_year_update_date の既定は 04-01）</li>
-                <li>引き継ぎ猶予期間の扱い（前担任がいつまで参照できるか）</li>
-              </ul>
-              これらは <code>要決定事項.md</code> に載せて、決まってから実装します。
+              実行の流れ（更新内容の一覧の確認 → 個別の修正 → 確定）は、基本設計書「年度更新」(4-4) が定めています。
+              担任の交代など、年度の途中の変更は「職員アカウント」の画面から行えます。
             </div>
           </section>
 
           <div className="row-end">
-            <button className="btn-primary" disabled title="未確定事項があるため実行できません">
+            <button className="btn-primary" disabled title="このモックアップでは年度更新の実行を実装していません">
               年度更新を実行する
             </button>
           </div>

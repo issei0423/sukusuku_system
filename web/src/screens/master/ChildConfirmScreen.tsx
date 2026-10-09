@@ -10,6 +10,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useSession } from '../../session';
 import { api, className } from '../../api/client';
 import { Alert, Empty } from '../../components/ui';
+import { notify } from '../../components/feedback';
 import { SEX, PHOTO_CONSENT } from '../../api/codes';
 import { formatYMD, formatAge, today } from '../../api/util';
 import type { ChildInput } from '../../api/client';
@@ -31,6 +32,7 @@ export default function ChildConfirmScreen() {
     setBusy(true); setError(null);
     try {
       await api.saveChild(user!, form, mode);
+      notify(mode === 'create' ? `${form.child_name} を登録しました` : `${form.child_name} の情報を更新しました`);
       navigate('/staff/children');
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
@@ -92,7 +94,14 @@ export default function ChildConfirmScreen() {
       </section>
 
       <div className="row-end">
-        <button onClick={() => navigate(-1)} disabled={busy}>戻る</button>
+        {/* 入力していた内容を持って戻る。戻るたびに打ち直させない（GitHub Issue #120） */}
+        <button disabled={busy}
+          onClick={() => navigate(
+            mode === 'create' ? '/staff/children/new' : `/staff/children/${form.child_id}/edit`,
+            { state: { form }, replace: true },
+          )}>
+          戻る
+        </button>
         <button className="btn-primary" onClick={submit} disabled={busy}>
           {mode === 'create' ? '登録する' : '更新する'}
         </button>

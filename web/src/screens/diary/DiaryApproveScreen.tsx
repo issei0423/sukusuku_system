@@ -11,6 +11,7 @@ import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api, childName, className, staffName } from '../../api/client';
 import { Loading, ErrorBox, Field, Alert, Radios } from '../../components/ui';
+import { ConfirmDialog, notify } from '../../components/feedback';
 import { DIARY_RECORD_TYPE } from '../../api/codes';
 import { formatYMD, formatMDHM } from '../../api/util';
 
@@ -28,6 +29,7 @@ export default function DiaryApproveScreen() {
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   /*
    * 【要確認】「共有する」の既定値を「する／しない」のどちらに置くかは未定（画面詳細図 3-3）。
@@ -47,23 +49,31 @@ export default function DiaryApproveScreen() {
   const d = diary.data;
   if (!d) return null;
 
+  const isPersonal = d.record_type === '1';
+  const willShare = isPersonal && share === 'yes';
+  const target = d.child_id ? childName(d.child_id) : className(d.class_id);
+  // 【仮置き】自分が申請した日誌は承認できない（GitHub Issue #106。web/仮置き値.md）
+  const own = d.created_staff_id === user!.staff_id;
+
   const approve = async () => {
     setBusy(true); setError(null);
     try {
-      await api.approveDiary(user!, diaryId, share === 'yes');
+      await api.approveDiary(user!, diaryId, willShare);
+      notify(willShare
+        ? `${target}の${DIARY_RECORD_TYPE[d.record_type]}を承認し、保護者へ共有しました`
+        : `${target}の${DIARY_RECORD_TYPE[d.record_type]}を承認しました（保護者へは共有していません）`);
       navigate('/staff/admin/approval');
-    } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+    } catch (e) { setError((e as Error).message); setConfirming(false); } finally { setBusy(false); }
   };
 
   const sendBack = async () => {
     setBusy(true); setError(null);
     try {
       await api.returnDiary(user!, diaryId, reason);
+      notify(`${target}の${DIARY_RECORD_TYPE[d.record_type]}を差し戻しました`);
       navigate('/staff/admin/approval');
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
-
-  const isPersonal = d.record_type === '1';
 
   return (
     <div style={{ maxWidth: 820 }}>
@@ -74,6 +84,13 @@ export default function DiaryApproveScreen() {
       </div>
 
       {error && <div style={{ marginBottom: 16 }}><Alert>{error}</Alert></div>}
+      {own && (
+        <div style={{ marginBottom: 16 }}>
+          <Alert soft>
+            自分が申請した日誌は承認できません。ほかの管理者に承認を依頼してください。差し戻して書き直すことはできます。
+          </Alert>
+        </div>
+      )}
 
       <section className="card">
         <h2>
@@ -108,9 +125,8 @@ export default function DiaryApproveScreen() {
           </>
         ) : (
           <div className="muted">
-            {DIARY_RECORD_TYPE[d.record_type]}は特定の園児に紐づかないため、個人チャットへの共有先がありません。
-            <br />
-            【要確認】クラス日誌・週案の共有先（クラスチャットへ流すか、共有しないか）は未定です。
+            {/* クラス日誌・週案月案は保護者への共有の対象外（ナレッジ/決定事項.md、GitHub Issue #61） */}
+            {DIARY_RECORD_TYPE[d.record_type]}は保護者への共有の対象外です。承認しても保護者へは送られません。
           </div>
         )}
       </section>
@@ -124,8 +140,18 @@ export default function DiaryApproveScreen() {
 
       <div className="row-end">
         <button className="btn-danger" onClick={sendBack} disabled={busy || !reason.trim()}>差し戻す</button>
-        <button className="btn-primary" onClick={approve} disabled={busy || (isPersonal && share === null)}>承認する</button>
+        {/* 保護者へ出る操作は、押す前に何が起きるかを確かめる（GitHub Issue #107） */}
+        <button className="btn-primary" onClick={() => (willShare ? setConfirming(true) : approve())}
+          disabled={busy || own || (isPersonal && share === null)}>承認する</button>
       </div>
+
+      {confirming && (
+        <ConfirmDialog title="承認して保護者へ共有します" confirmLabel="承認して共有する" busy={busy}
+          onConfirm={approve} onCancel={() => setConfirming(false)}>
+          <p>{target}の{DIARY_RECORD_TYPE[d.record_type]}を承認し、{target} 保護者（個人チャット）へ共有します。</p>
+          <p className="muted">共有したあとは、この画面から取り下げることはできません。</p>
+        </ConfirmDialog>
+      )}
     </div>
   );
 }

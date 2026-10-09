@@ -11,8 +11,9 @@ import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api, selectableClasses } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Pager } from '../../components/ui';
+import { notify } from '../../components/feedback';
 import { BODY_POSITION, BREATHING, COMPLEXION } from '../../api/codes';
-import { formatMD, formatHM, today, addDays } from '../../api/util';
+import { formatMD, formatHM, formatMDHM, today, addDays } from '../../api/util';
 
 export default function NapSearchScreen() {
   const { user } = useSession();
@@ -32,12 +33,56 @@ export default function NapSearchScreen() {
 
   const search = () => { setPage(1); setApplied((n) => n + 1); };
 
+  /*
+   * 同じ期間の異常時の記録。チェックの記録と別の画面にあると、同じ時刻の出来事を
+   * 2つの画面を行き来して突き合わせることになる（GitHub Issue #117）。
+   * 絞り込みを押した時点の期間・園児名で並べる。
+   */
+  const abnormals = useAsync(async () => {
+    const all = await api.abnormals(user!);
+    return all
+      .filter((a) => a.found_at.slice(0, 10) >= from && a.found_at.slice(0, 10) <= to)
+      .filter((a) => !childNameQ.trim() || a.child_name.includes(childNameQ.trim()))
+      .sort((a, b) => b.found_at.localeCompare(a.found_at));
+  }, [user?.account_id, applied]);
+
+  const [exportError, setExportError] = useState<string | null>(null);
+  const exportCsv = async () => {
+    if (!data) return;
+    // 出力したことを先に操作ログへ残す。残せなかったときは出力しない
+    try {
+      await api.recordExport(user!, 'nap_record', from, to, data.rows.length);
+    } catch (e) {
+      setExportError((e as Error).message);
+      return;
+    }
+    setExportError(null);
+    const header = ['日付', 'チェック時刻', '園児', 'クラス', '体位', '呼吸', '顔色', '体温', '記録者', '保存時刻'];
+    const lines = data.rows.map((r) => [
+      r.session_date, r.checked_at, r.child_name, r.class_name,
+      BODY_POSITION[r.body_position], BREATHING[r.breathing], COMPLEXION[r.complexion],
+      r.temperature ?? '', r.staff_name, r.saved_at,
+    ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','));
+    const blob = new Blob([`\uFEFF${[header.join(','), ...lines].join('\n')}`], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `午睡記録_${from}_${to}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    notify('午睡記録を CSV で出力しました。出力したことは操作ログに残ります');
+  };
+
   return (
     <div>
       <div className="page-head">
         <Link className="btn btn-quiet btn-sm" to="/staff/nap">&lt; 午睡チェックへ</Link>
         <h1>午睡記録の検索</h1>
+        <div className="spacer" />
+        <button onClick={exportCsv} disabled={!data || data.rows.length === 0}>CSV出力</button>
       </div>
+
+      {exportError && <section className="card"><ErrorBox text={exportError} /></section>}
 
       <section className="card">
         <div className="filterbar">
@@ -97,8 +142,40 @@ export default function NapSearchScreen() {
         )}
       </section>
 
+      <section className="card">
+        <div className="page-head" style={{ marginBottom: 12 }}>
+          <h2>同じ期間の異常時の記録</h2>
+          <div className="spacer" />
+          <Link className="btn btn-sm" to="/staff/nap/abnormal">異常時の記録へ</Link>
+        </div>
+        {abnormals.loading && <Loading />}
+        {abnormals.error && <ErrorBox text={abnormals.error} />}
+        {abnormals.data?.length === 0 && <Empty text="この期間の異常時の記録はありません。" />}
+        {abnormals.data && abnormals.data.length > 0 && (
+          <table className="list">
+            <thead>
+              <tr><th>発見時刻</th><th>園児</th><th>状況</th><th>対応</th><th>記録者</th><th>ヒヤリハット</th></tr>
+            </thead>
+            <tbody>
+              {abnormals.data.map((a) => (
+                <tr key={a.nap_abnormal_id}>
+                  <td className="nowrap">{formatMDHM(a.found_at)}</td>
+                  <td className="nowrap">{a.child_name}</td>
+                  <td>{a.situation}</td>
+                  <td>{a.response}</td>
+                  <td className="nowrap">{a.staff_name}</td>
+                  <td className="nowrap">{a.diary_id ? '起票済み' : '未起票'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
       <section className="card card-sub">
         <div className="muted">
+          CSV 出力は、いま表示しているページの行を出します。出力したことは操作ログに残ります。
+          <br />
           午睡の記録は削除できません。誤りは修正の履歴として残ります
           （基本設計書「記録の修正と改ざん防止」(4-7)）。
           チェック時刻と保存時刻が離れている行は、後からまとめて入力された記録です。
