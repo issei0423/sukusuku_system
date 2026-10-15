@@ -5,18 +5,19 @@
  * タイマーを画面の上部に固定する。スクロールしても視界から外さない。
  * 平熱は比較の材料として並べて表示するのみであり、発熱の判定は行わない。
  * うつ伏せを選んだときの警告は注意喚起であって判定ではない。記録自体は妨げない。
- * 記録は園児カードから1件ずつ行い、確認画面を挟まない。
+ * 記録は園児ごとの行で直接行う。体温は実測したときだけ選ぶ。
  * この画面は開いたまま運用し、実施中は自動ログアウトの対象外とする。
  */
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
-import { api, selectableClasses, childName } from '../../api/client';
-import { Loading, ErrorBox, Empty, Field, Alert, Modal, Radios } from '../../components/ui';
+import { api, selectableClasses } from '../../api/client';
+import { Loading, ErrorBox, Empty, Field, Alert, Modal } from '../../components/ui';
 import { BODY_POSITION, BREATHING, COMPLEXION } from '../../api/codes';
 import { formatHM, today, now, napTimerBase, plusMinutes } from '../../api/util';
 import type { BodyPosition, Breathing, Complexion } from '../../api/types';
+import type { NapChildState } from '../../api/shapes';
 
 export default function NapCheckScreen() {
   const { user } = useSession();
@@ -33,7 +34,6 @@ export default function NapCheckScreen() {
     [classId, session.data?.nap_session_id, tick],
   );
 
-  const [target, setTarget] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const start = async () => {
@@ -145,31 +145,11 @@ export default function NapCheckScreen() {
 
           <div className="nap-grid">
             {rows.map((r) => (
-              <div key={r.child.child_id}
-                className={`nap-card${!r.latest || isDue(r.latest.checked_at) ? ' unrecorded' : ''}`}>
-                <div className="name">{r.child.child_name}</div>
-                {/* 平熱は比較の材料として並べて表示するのみ。発熱の判定は行わない */}
-                <div className="last">平熱 {r.child.normal_temperature ?? '―'}</div>
-                <div className="last">
-                  {r.latest
-                    ? `${isDue(r.latest.checked_at) ? '(!) ' : ''}${formatHM(r.latest.checked_at)} ${BODY_POSITION[r.latest.body_position]}`
-                    : '(!) 未記録'}
-                </div>
-                <button className="btn-primary btn-sm" onClick={() => setTarget(r.child.child_id)}>記録</button>
-              </div>
+              <NapRecordRow key={r.child.child_id} row={r} sessionId={s.nap_session_id}
+                due={isDue(r.latest?.checked_at ?? null)} onSaved={() => setTick((n) => n + 1)} />
             ))}
           </div>
         </>
-      )}
-
-      {target && s && (
-        <RecordDialog
-          childId={target}
-          sessionId={s.nap_session_id}
-          normalTemperature={rows.find((r) => r.child.child_id === target)?.child.normal_temperature ?? null}
-          onClose={() => setTarget(null)}
-          onSaved={() => { setTarget(null); setTick((n) => n + 1); }}
-        />
       )}
     </div>
   );
@@ -238,77 +218,122 @@ function NapTimer({ startedAt, intervalMinutes, rows }: {
   );
 }
 
-/** 記録のダイアログ。同じ画面の中で開き、確認画面を挟まない（画面詳細図 5-1） */
-function RecordDialog({ childId, sessionId, normalTemperature, onClose, onSaved }: {
-  childId: string; sessionId: number; normalTemperature: number | null;
-  onClose: () => void; onSaved: () => void;
+/** 園児の行から直接記録する。選択肢に前回値を入れず、毎回の目視確認を促す。 */
+function NapRecordRow({ row, sessionId, due, onSaved }: {
+  row: NapChildState; sessionId: number; due: boolean; onSaved: () => void;
 }) {
   const { user } = useSession();
   const [position, setPosition] = useState<BodyPosition | null>(null);
-  /*
-   * 体位・呼吸・顔色は、どれも選ばれていない状態から始める。
-   * 午睡チェックは保育士が見て確かめた事実の記録であり、見ていない値を先に入れない。
-   */
   const [breathing, setBreathing] = useState<Breathing | null>(null);
   const [complexion, setComplexion] = useState<Complexion | null>(null);
-  const [temperature, setTemperature] = useState('');
+  const [temperature, setTemperature] = useState<number | null>(null);
+  const [temperatureOpen, setTemperatureOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+  const id = row.child.child_id;
+  const name = row.child.child_name;
+
+  useEffect(() => { setJustSaved(false); }, [row.latest?.nap_record_id]);
 
   const save = async () => {
-    if (!position || !breathing || !complexion) return;
-    setBusy(true); setError(null);
+    if (busy || !position || !breathing || !complexion) return;
+    setBusy(true); setError(null); setJustSaved(false);
     try {
       await api.record(user!, sessionId, {
-        child_id: childId, body_position: position, breathing, complexion,
-        temperature: temperature ? Number(temperature) : null,
+        child_id: id, body_position: position, breathing, complexion, temperature,
       });
+      setPosition(null); setBreathing(null); setComplexion(null); setTemperature(null);
+      setJustSaved(true);
       onSaved();
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
 
   return (
-    <Modal title={`${childName(childId)}　${formatHM(now())}`} onClose={onClose}
-      footer={<>
-        <button onClick={onClose} disabled={busy}>やめる</button>
-        <button className="btn-primary" onClick={save} disabled={busy || !position || !breathing || !complexion}>記録する</button>
-      </>}>
-      <div className="stack">
-        {error && <Alert>{error}</Alert>}
+    <section className={`nap-card nap-record-row${!row.latest || due ? ' unrecorded' : ''}`} aria-label={`${name}の午睡チェック`}>
+      <div className="nap-row-head">
+        <strong className="name">{name}</strong>
+        <span className={`nap-row-status${!row.latest || due ? ' due' : ''}`} role="status">
+          {justSaved ? '保存しました' : !row.latest ? '未記録' : due ? 'チェック時刻を過ぎています' : '確認済み'}
+        </span>
+        <span className="last">{row.latest ? `前回 ${formatHM(row.latest.checked_at)} ${BODY_POSITION[row.latest.body_position]}` : '前回の記録なし'}</span>
+        <span className="last">平熱 {row.child.normal_temperature ?? '―'}℃</span>
+      </div>
 
-        <Field label="体位" required>
-          <Radios name="position" value={position}
-            options={(Object.keys(BODY_POSITION) as BodyPosition[]).map((k) => ({ value: k, label: BODY_POSITION[k] }))}
-            onChange={setPosition} />
-        </Field>
+      <div className="nap-inline-fields">
+        <NapChoices label="体位" name={`position-${id}`} options={BODY_POSITION} value={position} onChange={setPosition} />
+        <NapChoices label="呼吸" name={`breathing-${id}`} options={BREATHING} value={breathing} onChange={setBreathing} />
+        <NapChoices label="顔色" name={`complexion-${id}`} options={COMPLEXION} value={complexion} onChange={setComplexion} />
+      </div>
 
-        {/* うつ伏せの警告は注意喚起であって判定ではない。記録自体は妨げない */}
-        {position === '2' && <Alert>うつ伏せです。仰向けに直してください。</Alert>}
+      {position === '2' && <Alert>うつ伏せです。仰向けに直してください。</Alert>}
+      {breathing === '2' && <Alert>呼吸が確認できません。ただちに応援を呼び、異常時の記録を残してください。</Alert>}
+      {error && <Alert>{error}</Alert>}
 
-        <Field label="呼吸" required>
-          <Radios name="breathing" value={breathing}
-            options={(Object.keys(BREATHING) as Breathing[]).map((k) => ({ value: k, label: BREATHING[k] }))}
-            onChange={setBreathing} />
-        </Field>
-        {breathing === '2' && (
-          <Alert>呼吸が確認できません。ただちに応援を呼び、異常時の記録を残してください。</Alert>
-        )}
+      <div className="nap-row-actions">
+        <button type="button" className="nap-temperature-button" onClick={() => setTemperatureOpen(true)}
+          aria-label={`${name}の体温を選ぶ`}>
+          体温 {temperature === null ? '未測定' : `${temperature.toFixed(1)}℃`}
+        </button>
+        {temperature !== null && <button type="button" className="btn-quiet btn-sm" onClick={() => setTemperature(null)}>体温を消す</button>}
+        <div className="spacer" />
+        <button type="button" className="btn-primary" onClick={save}
+          disabled={busy || !position || !breathing || !complexion}>
+          {busy ? '保存中…' : 'この子を記録'}
+        </button>
+      </div>
 
-        <Field label="顔色" required>
-          <Radios name="complexion" value={complexion}
-            options={(Object.keys(COMPLEXION) as Complexion[]).map((k) => ({ value: k, label: COMPLEXION[k] }))}
-            onChange={setComplexion} />
-        </Field>
+      {temperatureOpen && <TemperaturePicker name={name} onClose={() => setTemperatureOpen(false)}
+        onSelect={(value) => { setTemperature(value); setTemperatureOpen(false); }} />}
+    </section>
+  );
+}
 
-        <Field label="体温">
-          <div className="row">
-            <input type="number" step="0.1" value={temperature} onChange={(e) => setTemperature(e.target.value)}
-              style={{ maxWidth: 140 }} />
-            <span>℃</span>
-            {/* 平熱は並べて表示するのみ。差の判定は行わない */}
-            <span className="muted">（平熱 {normalTemperature ?? '―'}）</span>
-          </div>
-        </Field>
+function NapChoices<T extends string>({ label, name, options, value, onChange }: {
+  label: string; name: string; options: Record<T, string>; value: T | null; onChange: (next: T) => void;
+}) {
+  return (
+    <fieldset className="nap-choice-field">
+      <legend>{label}</legend>
+      <div className="nap-choice-options">
+        {(Object.entries(options) as [T, string][]).map(([code, text]) => (
+          <label className="nap-choice" key={code}>
+            <input type="radio" name={name} value={code} checked={value === code} onChange={() => onChange(code)} />
+            <span>{text}</span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+/** 実測したときだけ開く体温パネル。よく使う範囲はキーボードなしで2タップ。 */
+function TemperaturePicker({ name, onClose, onSelect }: {
+  name: string; onClose: () => void; onSelect: (value: number) => void;
+}) {
+  const [whole, setWhole] = useState<number | null>(null);
+  const [manual, setManual] = useState('');
+  const [manualOpen, setManualOpen] = useState(false);
+  return (
+    <Modal title={`${name}の体温`} onClose={onClose} footer={<button onClick={onClose}>閉じる</button>}>
+      <div className="nap-temperature-picker">
+        <p className="muted">体温計で測った値を選んでください。測っていない場合は閉じます。</p>
+        <div className="nap-temp-heading">{whole === null ? '整数部分を選ぶ' : `${whole}℃ の小数部分を選ぶ`}</div>
+        <div className={`nap-temp-grid${whole === null ? ' whole' : ''}`}>
+          {whole === null
+            ? [35, 36, 37, 38, 39, 40].map((n) => <button key={n} onClick={() => setWhole(n)}>{n}℃</button>)
+            : Array.from({ length: 10 }, (_, n) => <button key={n} onClick={() => onSelect(whole + n / 10)}>.{n}</button>)}
+        </div>
+        {whole !== null && <button className="btn-quiet btn-sm" onClick={() => setWhole(null)}>整数部分を選び直す</button>}
+        <div className="nap-temp-manual">
+          {manualOpen ? <>
+            <label htmlFor={`temperature-manual-${name}`}>範囲外の体温</label>
+            <input id={`temperature-manual-${name}`} type="number" inputMode="decimal" step="0.1" value={manual}
+              onChange={(e) => setManual(e.target.value)} placeholder="例：34.9" />
+            <button onClick={() => { const value = Number(manual); if (manual && Number.isFinite(value)) onSelect(value); }}
+              disabled={!manual || !Number.isFinite(Number(manual))}>設定</button>
+          </> : <button className="btn-quiet btn-sm" onClick={() => setManualOpen(true)}>範囲外の値を入力</button>}
+        </div>
       </div>
     </Modal>
   );
