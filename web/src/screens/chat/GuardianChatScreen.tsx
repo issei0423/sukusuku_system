@@ -12,7 +12,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { MouseEvent, PointerEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { useAsync } from '../../hooks';
+import { useAsync, useFollowLatest, AUTO_REFRESH_MS } from '../../hooks';
 import { useSession } from '../../session';
 import { api, accountName } from '../../api/client';
 import { REACTION } from '../../api/codes';
@@ -29,10 +29,14 @@ const LONG_PRESS_MOVE_PX = 10;
 
 export default function GuardianChatScreen() {
   const { user } = useSession();
-  const rooms = useAsync(() => api.rooms(user!), [user?.account_id]);
+  /*
+   * 連絡先の一覧（未読の件数）とメッセージは、開いたままでも裏で読み直す。
+   * 園からの返信・リアクションが、数秒で表れるようにするため。
+   * 読み直しでは読み込み中の表示を出さず、入力中の文字・開いている操作の一覧・編集中の本文は残す
+   */
+  const rooms = useAsync(() => api.rooms(user!), [user?.account_id], { refreshMs: AUTO_REFRESH_MS });
   const [roomId, setRoomId] = useState<number | null>(null);
   const [text, setText] = useState('');
-  const [tick, setTick] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState('');
   /*
@@ -63,11 +67,19 @@ export default function GuardianChatScreen() {
    */
   const suppressClick = useRef(false);
 
-  const messages = useAsync(async () => (roomId ? api.messages(user!, roomId) : []), [roomId, tick]);
+  const messages = useAsync(async () => (roomId ? api.messages(user!, roomId) : []), [roomId],
+    { refreshMs: AUTO_REFRESH_MS });
 
+  // 開いたチャンネルは既読にする。開いている間に届いたメッセージも、届いたときに既読にする
+  const shownRoom = messages.data?.[0]?.chat_room_id ?? null;
+  const lastMessageId = messages.data?.at(-1)?.chat_message_id ?? null;
   useEffect(() => {
-    if (roomId) api.markRead(user!, roomId).then(() => rooms.reload());
-  }, [roomId, tick]);
+    if (roomId) api.markRead(user!, roomId).then(() => rooms.refresh(), () => {});
+  }, [roomId, lastMessageId]);
+
+  // いちばん下を読んでいるときに届いたメッセージは、見える位置まで送る。上へ戻って読んでいるときは動かさない
+  const listRef = useRef<HTMLDivElement | null>(null);
+  useFollowLatest(listRef, shownRoom, lastMessageId);
 
   // 一覧の外を押すか Esc で閉じる。開いたら最初の操作へ移る
   useEffect(() => {
@@ -109,7 +121,8 @@ export default function GuardianChatScreen() {
   }, []);
   useEffect(() => { setMenuId(null); }, [roomId]);
 
-  if (rooms.loading) return <Loading />;
+  // 読み込み中の表示は最初の1回だけ。読み直しのたびに画面を入れ替えると、入力中の文字や読んでいた位置が失われる
+  if (rooms.loading && !rooms.data) return <Loading />;
   if (rooms.error) return <ErrorBox text={rooms.error} />;
 
   const current = rooms.data?.find((r) => r.room.chat_room_id === roomId);
@@ -120,7 +133,7 @@ export default function GuardianChatScreen() {
     try {
       await api.send(user!, roomId, text);
       setText('');
-      setTick((n) => n + 1);
+      messages.refresh();
       setStatus('メッセージを送信しました');
     } catch (e) { setError((e as Error).message); }
   };
@@ -130,7 +143,7 @@ export default function GuardianChatScreen() {
     try {
       await api.edit(user!, messageId, draft);
       setEditingId(null);
-      setTick((n) => n + 1);
+      messages.refresh();
       setStatus('メッセージを更新しました');
     } catch (e) { setError((e as Error).message); }
   };
@@ -138,13 +151,13 @@ export default function GuardianChatScreen() {
   // 取消は送信者本人ができる。保護者にも認めている（基本設計書の権限一覧「メッセージの編集・送信取消」）
   const retract = async (messageId: number) => {
     setError(null);
-    try { await api.retract(user!, messageId); setTick((n) => n + 1); setStatus('メッセージを取り消しました'); }
+    try { await api.retract(user!, messageId); messages.refresh(); setStatus('メッセージを取り消しました'); }
     catch (e) { setError((e as Error).message); }
   };
 
   const react = async (messageId: number, type: string) => {
     setError(null);
-    try { await api.toggleReaction(user!, messageId, type); setTick((n) => n + 1); setStatus('リアクションを更新しました'); }
+    try { await api.toggleReaction(user!, messageId, type); messages.refresh(); setStatus('リアクションを更新しました'); }
     catch (e) { setError((e as Error).message); }
   };
 
@@ -234,7 +247,7 @@ export default function GuardianChatScreen() {
         <h1>{labelFor(current.room.room_type, current.room.room_name)}</h1>
       </div>
 
-      <div className="guardian-message-list">
+      <div className="guardian-message-list" ref={listRef}>
         {(messages.data?.length ?? 0) > 0 && (
           <p id="guardian-message-hint" className="guardian-message-hint">
             メッセージの「操作」ボタンか長押しで、リアクションを付けられます。自分のメッセージは編集・取消もできます。

@@ -204,6 +204,13 @@ export interface OperationLogRow {
 export interface StaffSummary {
   returned: number;
   unreadChat: number;
+  /**
+   * 未対応のままの、保護者との個人チャットの数（要件定義書「チャットツール」(4-3) の未対応スレッド）。
+   * 自分が参加しているものだけを数える。チャット画面の見出しの「未対応 n 件」と同じ範囲
+   */
+  unhandledChat: number;
+  /** そのうち、チャット画面の一覧でいちばん上に来るもの。ダッシュボードの「開く」でここを開く。無ければ null */
+  unhandledChatRoom: { chat_room_id: number; room_name: string } | null;
   devOverdue: number;
   pending: number;
   abnormalWithoutDiary: number;

@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, Outlet, useNavigate } from 'react-router-dom';
 import { useSession } from '../session';
-import { useAsync } from '../hooks';
+import { useAsync, AUTO_REFRESH_MS } from '../hooks';
 import { api, settingText } from '../api/client';
 import { BellIcon } from '../components/ui';
 
@@ -18,7 +18,8 @@ export default function GuardianLayout() {
   const [open, setOpen] = useState(false);
   const drawer = useRef<HTMLElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
-  const home = useAsync(() => api.guardianHome(user!), [user?.account_id]);
+  // 園からの返信が、どの画面を開いていても数秒で通知の件数に表れるよう、裏で読み直す
+  const home = useAsync(() => api.guardianHome(user!), [user?.account_id], { refreshMs: AUTO_REFRESH_MS });
 
   // 開いたらメニューに入り、閉じたら開いたボタンへ戻る
   useEffect(() => {
