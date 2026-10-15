@@ -100,6 +100,14 @@ export default function InvitationCodesScreen() {
     } catch (e) { setError((e as Error).message); } finally { setRevoking(null); }
   };
 
+  // 配布用に出したことを先に記録し、記録できなければ印刷しない（画面詳細図「招待コード管理画面」(7-7)）
+  const printSheet = async () => {
+    try {
+      await api.recordExport(user!, 'invitation_sheet', '', '', printable.length);
+      window.print();
+    } catch (e) { notify((e as Error).message); }
+  };
+
   // 配布用の出力は園児ごとにまとめる。同じ園児のコードが離れて並ぶと、切り分けるときに数え間違える
   const printable = (data ?? []).filter((r) => r.status === '1' && !r.expired)
     .sort((a, b) => a.child_name.localeCompare(b.child_name, 'ja') || a.created_at.localeCompare(b.created_at));
@@ -284,7 +292,7 @@ export default function InvitationCodesScreen() {
         <Modal title="配布用の出力" onClose={() => setPrintOpen(false)}
           footer={<>
             <button onClick={() => setPrintOpen(false)}>閉じる</button>
-            <button className="btn-primary" onClick={() => window.print()}>印刷する</button>
+            <button className="btn-primary" onClick={printSheet} disabled={printable.length === 0}>印刷する</button>
           </>}>
           <div className="muted" style={{ marginBottom: 12 }}>
             コードと園児名の対応を取り違えないよう、1枚ずつ切り分けられる様式にしています。

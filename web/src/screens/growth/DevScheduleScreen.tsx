@@ -12,7 +12,7 @@ import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api, selectableClasses } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Alert, Tag } from '../../components/ui';
-import { formatYMD, formatAge } from '../../api/util';
+import { formatYMD, formatAge, today } from '../../api/util';
 
 export default function DevScheduleScreen() {
   const { user } = useSession();
@@ -75,7 +75,7 @@ export default function DevScheduleScreen() {
                       {r.isManualOverride && <> <Tag label="手動上書き" className="tag-applied" /></>}
                     </td>
                     <td className="nowrap">
-                      <input type="date" value={value} style={{ minWidth: 160 }}
+                      <input type="date" value={value} min={today()} style={{ minWidth: 160 }}
                         aria-label={`${r.child.child_name}の次回の予定日`}
                         onChange={(e) => setEdits({ ...edits, [r.child.child_id]: e.target.value })} />
                     </td>

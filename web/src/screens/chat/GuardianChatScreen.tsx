@@ -349,7 +349,7 @@ export default function GuardianChatScreen() {
         {error && <ErrorBox text={error} />}
         {current.canPost ? (
           <div className="row">
-            <input type="text" aria-label="メッセージを入力" value={text} onChange={(e) => setText(e.target.value)}
+            <input type="text" aria-label="メッセージを入力" value={text} maxLength={1000} onChange={(e) => setText(e.target.value)}
               placeholder="メッセージを入力" style={{ flex: 1 }} />
             <button className="btn-primary" onClick={send} disabled={!text.trim()}>送信</button>
           </div>

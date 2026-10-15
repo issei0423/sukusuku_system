@@ -7,7 +7,7 @@
  * 写真は3枚まで。上限に達したら追加を無効にする。
  */
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api, selectableClasses, visibleChildren, settingNumber, staffName } from '../../api/client';
@@ -16,6 +16,19 @@ import { ConfirmDialog, notify } from '../../components/feedback';
 import { DIARY_RECORD_TYPE, DIARY_STATUS, DIARY_STATUS_CLASS } from '../../api/codes';
 import { formatMD, formatMDHM, today, now, plusMinutes } from '../../api/util';
 import type { DiaryRecordType } from '../../api/types';
+
+// 本文の上限（基本設計書「入力項目の制約値」(4-9)）
+const BODY_MAX = 2000;
+
+/** 確認画面とのあいだで受け渡す、入力中の内容 */
+interface DiaryDraft {
+  recordType: DiaryRecordType;
+  childId: string | null;
+  classId: number | null;
+  date: string;
+  body: string;
+  photos: string[];
+}
 
 export default function DiaryEditScreen() {
   const { user } = useSession();
@@ -28,12 +41,20 @@ export default function DiaryEditScreen() {
   const templates = useAsync(() => api.templates(), []);
   const phrases = useAsync(() => api.phrases(), []);
 
-  const [recordType, setRecordType] = useState<DiaryRecordType>('1');
-  const [childId, setChildId] = useState('');
-  const [classId, setClassId] = useState<number | ''>(user!.class_id ?? '');
-  const [date, setDate] = useState(today());
-  const [body, setBody] = useState('');
-  const [photos, setPhotos] = useState<string[]>([]);
+  /*
+   * 確認画面の「戻る」から来たときは、入力していた内容を受け取る（画面詳細図「日誌確認画面」(3-3)）。
+   * 受け取らないと、まだ保存していない日誌の入力が、戻っただけで消える
+   */
+  const draft = (useLocation().state as { draft?: DiaryDraft } | null)?.draft;
+  const [recordType, setRecordType] = useState<DiaryRecordType>(draft?.recordType ?? '1');
+  const [childId, setChildId] = useState(draft?.childId ?? '');
+  const [classId, setClassId] = useState<number | ''>(draft ? (draft.classId ?? '') : (user!.class_id ?? ''));
+  const [date, setDate] = useState(draft?.date ?? today());
+  const [body, setBody] = useState(draft?.body ?? '');
+  const [photos, setPhotos] = useState<string[]>(draft?.photos ?? []);
+  // 保存していない入力があるか。一覧へ戻る前に確かめるために持つ
+  const [dirty, setDirty] = useState(!!draft);
+  const [leaving, setLeaving] = useState(false);
   const [lockToken, setLockToken] = useState<string | undefined>();
   const [heldBy, setHeldBy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -47,12 +68,15 @@ export default function DiaryEditScreen() {
   useEffect(() => {
     const d = existing.data;
     if (!d) return;
-    setRecordType(d.record_type);
-    setChildId(d.child_id ?? '');
-    setClassId(d.class_id ?? '');
-    setDate(d.diary_date);
-    setBody(d.body);
-    api.attachmentsOf(d.diary_id).then((a) => setPhotos(a.map((x) => x.file_path)));
+    // 確認画面から戻ったときは、保存済みの値で上書きしない
+    if (!draft) {
+      setRecordType(d.record_type);
+      setChildId(d.child_id ?? '');
+      setClassId(d.class_id ?? '');
+      setDate(d.diary_date);
+      setBody(d.body);
+      api.attachmentsOf(d.diary_id).then((a) => setPhotos(a.map((x) => x.file_path)));
+    }
     // 申請中・承認済みは編集できない。読むだけの人にロックを取らせない（GitHub Issue #110）
     // ロックは取らないが、ほかの職員が開いていればその旨は出す（画面詳細図 3-2）
     if (d.status === '2' || d.status === '3') {
@@ -100,8 +124,14 @@ export default function DiaryEditScreen() {
   const applyTemplate = (templateId: number) => {
     const t = templates.data?.find((x) => x.diary_template_id === templateId);
     if (!t) return;
-    setRecordType(t.record_type);
-    setBody(t.body);
+    // 書きかけを失わせない。本文が空なら入れ、入力済みなら末尾へ足す（画面詳細図「日誌作成・編集画面」(3-2)）
+    if (body.trim()) {
+      setBody(`${body.trimEnd()}\n\n${t.body}`);
+    } else {
+      setRecordType(t.record_type);
+      setBody(t.body);
+    }
+    setDirty(true);
   };
 
   const save = async (status: '1' | '2') => {
@@ -133,7 +163,8 @@ export default function DiaryEditScreen() {
   return (
     <div>
       <div className="page-head">
-        <Link className="btn btn-quiet btn-sm" to="/staff/diary">&lt; 日誌一覧へ</Link>
+        <Link className="btn btn-quiet btn-sm" to="/staff/diary"
+          onClick={(e) => { if (dirty && !readOnly) { e.preventDefault(); setLeaving(true); } }}>&lt; 日誌一覧へ</Link>
         <h1>{diaryId ? '日誌の編集' : '日誌の作成'}</h1>
         <div className="spacer" />
         {d && <Tag label={`状態：${DIARY_STATUS[d.status]}`} className={DIARY_STATUS_CLASS[d.status]} />}
@@ -229,9 +260,10 @@ export default function DiaryEditScreen() {
             </div>
 
             <Field label="本文" required>
-              <textarea value={body} onChange={(e) => setBody(e.target.value)} disabled={readOnly || !!heldBy}
-                style={{ minHeight: 280 }} />
+              <textarea value={body} onChange={(e) => { setBody(e.target.value); setDirty(true); }}
+                disabled={readOnly || !!heldBy} maxLength={BODY_MAX} style={{ minHeight: 280 }} />
             </Field>
+            {!readOnly && <div className="muted" aria-live="polite">残り {BODY_MAX - [...body].length} 文字</div>}
 
             {/* 写真は3枚まで。上限に達したら追加を無効にする（画面詳細図 3-2） */}
             <Field label={`写真（1〜${maxPhotos}枚）`}>
@@ -267,6 +299,14 @@ export default function DiaryEditScreen() {
             </div>
           </div>
         </section>
+
+        {leaving && (
+          <ConfirmDialog title="保存していない内容があります" confirmLabel="保存せずに戻る" danger
+            onConfirm={() => navigate('/staff/diary')} onCancel={() => setLeaving(false)}>
+            <p>入力した内容を保存していません。このまま一覧へ戻ると、入力した内容は残りません。</p>
+            <p className="muted">残すときは、「やめる」を押してから「下書き保存」を押してください。</p>
+          </ConfirmDialog>
+        )}
 
         {unlocking && (
           <ConfirmDialog title="編集ロックの強制解除" confirmLabel="強制解除する" danger busy={busy}

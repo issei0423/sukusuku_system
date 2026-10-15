@@ -34,7 +34,11 @@ export default function DiaryListScreen() {
     [user?.account_id, page, applied],
   );
 
-  const search = () => { setPage(1); setApplied((n) => n + 1); };
+  const [rangeError, setRangeError] = useState<string | null>(null);
+  const search = () => {
+    if (from && to && from > to) { setRangeError('期間の開始は、終了より後の日にできません'); return; }
+    setRangeError(null); setPage(1); setApplied((n) => n + 1);
+  };
 
   return (
     <div>
@@ -69,6 +73,7 @@ export default function DiaryListScreen() {
           <Field label="期間（終了）"><input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
           <button onClick={search}>絞り込む</button>
         </div>
+        {rangeError && <ErrorBox text={rangeError} />}
         {user!.role === '2' && (
           <div className="muted" style={{ marginTop: 8 }}>
             担当するクラスの日誌のみ表示しています。

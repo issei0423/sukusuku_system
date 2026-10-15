@@ -157,7 +157,7 @@ export default function PhysicalRecordScreen() {
                   </Field>
                   <Field label="体重" required>
                     <div className="row">
-                      <input type="number" step="0.1" value={weight} style={{ maxWidth: 130 }}
+                      <input type="number" step="0.01" value={weight} style={{ maxWidth: 130 }}
                         aria-label="体重（kg）" aria-required="true"
                         onChange={(e) => { setWeight(e.target.value); setWarned(false); }} />
                       <span>kg</span>

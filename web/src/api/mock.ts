@@ -370,6 +370,10 @@ export const childApi = {
     if (!input.child_name.trim()) return fail('氏名を入力してください');
     // 【仮置き】よみを必須とする。一覧の並びと検索がよみに頼っているため（GitHub Issue #119）
     if (!input.child_name_kana.trim()) return fail('よみを入力してください');
+    if (tooLong(input.child_name, 50) || tooLong(input.child_name_kana, 50)) {
+      return fail('氏名とよみは、それぞれ50文字以内で入力してください');
+    }
+    if (!isKana(input.child_name_kana)) return fail('よみは、ひらがなで入力してください');
     if (!input.birth_date || input.birth_date > today()) return fail('生年月日に未来日は指定できません');
     // アレルギーは対象だけでは配膳の場で使えない。症状と対応まで揃えて登録する（GitHub Issue #119）
     const incomplete = input.allergies.find((a) => a.target_food.trim() && (!a.symptom.trim() || !a.response.trim()));
@@ -524,6 +528,7 @@ const diaryApi2 = {
   /** 下書き保存・申請。status は呼び出し側が指定する */
   async saveDiary(user: SessionUser, input: DiaryInput, status: '1' | '2'): Promise<Diary> {
     if (!input.body.trim()) return fail('本文を入力してください');
+    if (tooLong(input.body, 2000)) return fail('本文は2,000文字以内で入力してください');
     if (input.record_type === '1' || input.record_type === '4') {
       if (!input.child_id) return fail('対象の園児を選んでください');
       if (!canSeeChild(user, input.child_id)) return fail('この園児の日誌を作成する権限がありません');
@@ -620,6 +625,7 @@ const diaryApi2 = {
   async returnDiary(user: SessionUser, diaryId: number, reason: string): Promise<Diary> {
     if (user.role !== '1') return fail('差し戻しは管理者のみが行えます');
     if (!reason.trim()) return fail('差し戻す理由を入力してください');
+    if (tooLong(reason, 500)) return fail('差し戻す理由は500文字以内で入力してください');
     const d = db.diaries.find((x) => x.diary_id === diaryId);
     if (!d) return fail('日誌が見つかりません');
     if (d.status !== '2') return fail('申請中の日誌のみ差し戻せます');
@@ -758,6 +764,8 @@ export const chatApi = {
 
   async send(user: SessionUser, roomId: number, body: string): Promise<ChatMessage> {
     if (!body.trim()) return fail('メッセージを入力してください');
+    // 編集と同じ上限（基本設計書「入力項目の制約値」(4-9)）
+    if (tooLong(body, 1000)) return fail('本文は1,000文字以内で入力してください');
     const rooms = await chatApi.rooms(user);
     const view = rooms.find((r) => r.room.chat_room_id === roomId);
     if (!view) return fail('このチャンネルを参照する権限がありません');
@@ -888,6 +896,7 @@ const chatApi2 = {
   async createGroup(user: SessionUser, name: string, accountIds: number[]): Promise<ChatRoom> {
     if (user.role === '3') return fail('グループの編成は職員のみが行えます');
     if (!name.trim()) return fail('グループ名を入力してください');
+    if (tooLong(name, 50)) return fail('グループ名は50文字以内で入力してください');
     const room: ChatRoom = {
       chat_room_id: nextId(), room_type: '3', class_id: null,
       room_name: name, is_archived: false, thread_status: null,
@@ -948,6 +957,7 @@ const chatApi2 = {
   ): Promise<void> {
     if (user.role !== '1') return fail('誤送信対応の記録は管理者のみが行えます');
     if (!input.response.trim()) return fail('とった対応を入力してください');
+    if (tooLong(input.response, 1000)) return fail('とった対応は1,000文字以内で入力してください');
     db.misdeliveryRecords.unshift({
       misdelivery_record_id: nextId(), staff_id: user.staff_id!, ...input,
     });
@@ -1086,6 +1096,9 @@ export const napApi = {
   ): Promise<NapAbnormal> {
     if (!input.situation.trim()) return fail('発見時の状況を入力してください');
     if (!input.response.trim()) return fail('とった対応を入力してください');
+    if (tooLong(input.situation, 1000) || tooLong(input.response, 1000)) {
+      return fail('発見時の状況と、とった対応は、それぞれ1,000文字以内で入力してください');
+    }
     const a: NapAbnormal = {
       nap_abnormal_id: nextId(), nap_session_id: sessionId, staff_id: user.staff_id!,
       diary_id: null, ...input,
@@ -1280,6 +1293,7 @@ export const devApi = {
   ): Promise<DevelopmentCheck> {
     if (user.role === '3') return fail('発達チェックの入力は職員のみが行えます');
     if (!canSeeChild(user, childId)) return fail('この園児を記録する権限がありません');
+    if (tooLong(note, 1000)) return fail('所見は1,000文字以内で入力してください');
 
     let check = db.developmentChecks.find((c) => c.child_id === childId && c.checked_on === checkedOn);
     if (!check) {
@@ -1350,6 +1364,9 @@ const devApi2 = {
 
   async setSchedule(user: SessionUser, childId: string, scheduledOn: string, manual: boolean): Promise<void> {
     if (user.role !== '1') return fail('スケジュールの設定は管理者のみが行えます');
+    // 手で決める予定日に、過ぎた日は入れさせない。「提案に戻す」は、予定日を過ぎた園児では
+    // 提案そのものが過去の日になるため、対象にしない
+    if (manual && scheduledOn < today()) return fail('次回の予定日に、過ぎた日は指定できません');
     const cur = db.developmentSchedules
       .filter((s) => s.child_id === childId)
       .sort((a, b) => b.scheduled_on.localeCompare(a.scheduled_on))[0];
@@ -1877,15 +1894,22 @@ const adminApi3 = {
    * GitHub Issue #115・#117）
    */
   async recordExport(
-    user: SessionUser, kind: 'operation_log' | 'nap_record', from: string, to: string, count: number,
+    user: SessionUser, kind: ExportKind, from: string, to: string, count: number,
   ): Promise<void> {
     if (user.role === '3') return fail('出力は職員のみが行えます');
     const period = `期間 ${from}〜${to}・${count} 件`;
     if (kind === 'operation_log') {
       if (user.role !== '1') return fail('操作ログの出力は管理者のみが行えます');
       log(user.account_id, '7', '5', 't_operation_log', null, null, null, `操作ログをCSV出力（${period}）`);
-    } else {
+    } else if (kind === 'nap_record') {
       log(user.account_id, '3', '5', 't_nap_record', null, null, null, `午睡記録をCSV出力（${period}）`);
+    } else if (kind === 'allergy_list') {
+      // 要配慮個人情報の一覧。出力できるのは管理者のみ（画面詳細図「アレルギー一覧画面」(7-4)）
+      if (user.role !== '1') return fail('アレルギー一覧の印刷は管理者のみが行えます');
+      log(user.account_id, '6', '5', 'm_allergy', null, null, null, `アレルギー一覧を印刷（${count} 名）`);
+    } else {
+      if (user.role !== '1') return fail('招待コードの出力は管理者のみが行えます');
+      log(user.account_id, '7', '5', 't_invitation_code', null, null, null, `招待コードを配布用に出力（${count} 枚）`);
     }
     return ok(undefined);
   },
@@ -1921,6 +1945,8 @@ const bulkApi = {
         else if (db.children.some((c) => c.child_id === values[0])) errors.push('その園児IDはすでに登録されています');
         if (!values[1]) errors.push('氏名が空です');
         if (!values[2]) errors.push('氏名かなが空です');
+        else if (!isKana(values[2])) errors.push('氏名かなは、ひらがなで入力してください');
+        if (tooLong(values[1], 50) || tooLong(values[2], 50)) errors.push('氏名と氏名かなは、それぞれ50文字以内で入力してください');
         if (!/^\d{4}-\d{2}-\d{2}$/.test(values[3])) errors.push('生年月日は YYYY-MM-DD で入力してください');
         else if (values[3] > today()) errors.push('生年月日に未来日は指定できません');
         if (!['1', '2', '9'].includes(values[4])) errors.push('性別は 1:男 2:女 9:未回答 で入力してください');
@@ -2142,3 +2168,18 @@ export const api = {
   ...devApi, ...devApi2, ...physicalApi, ...adminApi, ...adminApi2, ...adminApi3,
   ...bulkApi, ...dashboardApi, ...handoutApi,
 };
+
+/* ============ 入力の検査の補助（Go サーバの httpx.go と同じ規則） ============ */
+
+/** 出力の記録の種別 */
+export type ExportKind = 'operation_log' | 'nap_record' | 'allergy_list' | 'invitation_sheet';
+
+/** 文字数（符号位置の数）が上限を超えているか。上限の正は基本設計書「入力項目の制約値」(4-9) */
+function tooLong(v: string, max: number): boolean {
+  return [...v].length > max;
+}
+
+/** よみとして受け取れる文字だけで出来ているか。ひらがな・長音・姓と名のあいだの空白を受け取る */
+function isKana(v: string): boolean {
+  return /^[ぁ-ゖー 　]*$/.test(v);
+}

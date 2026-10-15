@@ -134,7 +134,7 @@ export default function StaffAccountsScreen() {
       {issued.length > 0 && (
         <div style={{ marginBottom: 16 }}>
           <Alert soft>
-            一時パスワードを本人へ口頭または書面で伝えてください。この表示を閉じると再表示できません。
+            一時パスワードを本人へ口頭または手渡しで伝えてください。この表示を閉じると再表示できません。
             <ul style={{ margin: '6px 0', paddingLeft: 18 }}>
               {issued.map((x) => (
                 <li key={x.name}>{x.name} さん：<strong style={{ fontFamily: 'monospace' }}>{x.password}</strong></li>
@@ -267,6 +267,15 @@ export default function StaffAccountsScreen() {
             </Field>
             {editing.accountId === user!.account_id && (
               <div className="muted">自分のロールは変更できません。</div>
+            )}
+            {/* 管理者が1名になる操作には警告する（画面詳細図「職員アカウント管理画面」(7-6)） */}
+            {editing.role === '2'
+              && data?.find((r) => r.account.account_id === editing.accountId)?.account.role === '1'
+              && data.filter((r) => r.account.role === '1' && r.account.status === '1').length <= 2 && (
+              <Alert>
+                この変更で、管理者が1名になります。管理者がパスワードを忘れたときに、再発行できる人が居なくなります。
+                管理者は2名以上にしておいてください。
+              </Alert>
             )}
             <Field label="担当クラス">
               <select value={editing.classId}

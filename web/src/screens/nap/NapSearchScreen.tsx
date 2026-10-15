@@ -31,7 +31,11 @@ export default function NapSearchScreen() {
     [user?.account_id, page, applied],
   );
 
-  const search = () => { setPage(1); setApplied((n) => n + 1); };
+  const [rangeError, setRangeError] = useState<string | null>(null);
+  const search = () => {
+    if (from && to && from > to) { setRangeError('期間の開始は、終了より後の日にできません'); return; }
+    setRangeError(null); setPage(1); setApplied((n) => n + 1);
+  };
 
   /*
    * 同じ期間の異常時の記録。チェックの記録と別の画面にあると、同じ時刻の出来事を
@@ -100,6 +104,7 @@ export default function NapSearchScreen() {
           </Field>
           <button onClick={search}>絞り込む</button>
         </div>
+        {rangeError && <ErrorBox text={rangeError} />}
       </section>
 
       <section className="card">

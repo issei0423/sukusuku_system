@@ -14,6 +14,7 @@ import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api, selectableClasses } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Alert, Modal } from '../../components/ui';
+import { ConfirmDialog } from '../../components/feedback';
 import { BODY_POSITION, BREATHING, COMPLEXION } from '../../api/codes';
 import { formatHM, today, now, napTimerBase, plusMinutes } from '../../api/util';
 import type { BodyPosition, Breathing, Complexion } from '../../api/types';
@@ -35,6 +36,8 @@ export default function NapCheckScreen() {
   );
 
   const [error, setError] = useState<string | null>(null);
+  // 未記録の園児が残っているときに、終了の前に確かめる（画面詳細図「午睡チェック画面」(5-1)）
+  const [ending, setEnding] = useState(false);
 
   const start = async () => {
     setError(null);
@@ -43,6 +46,7 @@ export default function NapCheckScreen() {
   };
   const end = async () => {
     if (!session.data) return;
+    setEnding(false);
     setError(null);
     try { endedByUser.current = true; await api.endSession(user!, session.data.nap_session_id); setTick((n) => n + 1); }
     catch (e) { setError((e as Error).message); }
@@ -137,8 +141,15 @@ export default function NapCheckScreen() {
             <span>記録済み {recorded} / {rows.length} 名</span>
             <div className="spacer" />
             <Link className="btn" to="/staff/nap/abnormal">異常を記録する</Link>
-            <button onClick={end}>午睡チェックを終了</button>
+            <button onClick={() => (recorded < rows.length ? setEnding(true) : end())}>午睡チェックを終了</button>
           </div>
+          {ending && (
+            <ConfirmDialog title="記録していない園児がいます" confirmLabel="このまま終了する" danger
+              onConfirm={end} onCancel={() => setEnding(false)}>
+              <p>{rows.length - recorded} 名の記録がありません。このまま午睡チェックを終了しますか。</p>
+              <p className="muted">終了したあとは、この実施へ記録を足せません。</p>
+            </ConfirmDialog>
+          )}
 
           {state.loading && <Loading />}
           {state.error && <ErrorBox text={state.error} />}
@@ -223,6 +234,8 @@ function NapRecordRow({ row, sessionId, due, onSaved }: {
   row: NapChildState; sessionId: number; due: boolean; onSaved: () => void;
 }) {
   const { user } = useSession();
+  const TEMP_MIN = 30.0;
+  const TEMP_MAX = 43.0;
   const [position, setPosition] = useState<BodyPosition | null>(null);
   const [breathing, setBreathing] = useState<Breathing | null>(null);
   const [complexion, setComplexion] = useState<Complexion | null>(null);
@@ -236,14 +249,21 @@ function NapRecordRow({ row, sessionId, due, onSaved }: {
 
   useEffect(() => { setJustSaved(false); }, [row.latest?.nap_record_id]);
 
+  // 体温が範囲の外のときは、1度確かめてから記録する。記録は妨げない（園児の平熱と同じ範囲）
+  const [confirmedTemp, setConfirmedTemp] = useState<number | null>(null);
   const save = async () => {
     if (busy || !position || !breathing || !complexion) return;
+    if (temperature !== null && (temperature < TEMP_MIN || temperature > TEMP_MAX) && confirmedTemp !== temperature) {
+      setConfirmedTemp(temperature);
+      setError(`体温が ${TEMP_MIN.toFixed(1)}〜${TEMP_MAX.toFixed(1)}℃ の外です。入力に誤りがなければ、もう一度「この子を記録」を押してください。`);
+      return;
+    }
     setBusy(true); setError(null); setJustSaved(false);
     try {
       await api.record(user!, sessionId, {
         child_id: id, body_position: position, breathing, complexion, temperature,
       });
-      setPosition(null); setBreathing(null); setComplexion(null); setTemperature(null);
+      setPosition(null); setBreathing(null); setComplexion(null); setTemperature(null); setConfirmedTemp(null);
       setJustSaved(true);
       onSaved();
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }

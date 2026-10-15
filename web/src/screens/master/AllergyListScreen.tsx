@@ -6,21 +6,36 @@
  * 園児一覧のアレルギー列とは別。こちらは全園児が対象で、給食室・調理室に掲示する用途を想定する。
  * 参照範囲を自クラスに絞らない理由：誤食は担任以外が配膳する場面でも起こるため。
  */
+import { useState } from 'react';
 import { useAsync } from '../../hooks';
+import { useSession } from '../../session';
 import { api } from '../../api/client';
 import { Loading, ErrorBox, Empty } from '../../components/ui';
 import { formatYMD } from '../../api/util';
 
 export default function AllergyListScreen() {
+  const { user } = useSession();
   const { data, error, loading } = useAsync(() => api.allAllergies(), []);
+  const [printError, setPrintError] = useState<string | null>(null);
+  const isAdmin = user!.role === '1';
+
+  // 要配慮個人情報の一覧を紙に出す。出したことを先に記録し、記録できなければ印刷しない
+  const print = async () => {
+    setPrintError(null);
+    try {
+      await api.recordExport(user!, 'allergy_list', '', '', data?.length ?? 0);
+      window.print();
+    } catch (e) { setPrintError((e as Error).message); }
+  };
 
   return (
     <div>
       <div className="page-head">
         <h1>アレルギー一覧（全園児）</h1>
         <div className="spacer" />
-        <button onClick={() => window.print()}>印刷する</button>
+        {isAdmin && <button onClick={print} disabled={!data}>印刷する</button>}
       </div>
+      {printError && <section className="card"><ErrorBox text={printError} /></section>}
 
       <section className="card card-sub">
         <div className="muted">
@@ -28,6 +43,7 @@ export default function AllergyListScreen() {
           誤食は担任以外が配膳する場面でも起こるためです。
           <br />
           アレルギー・既往歴は要配慮個人情報です。印刷したものの取り扱いにご注意ください。
+          印刷は管理者が行い、印刷したことは操作ログに残ります。
         </div>
       </section>
 
