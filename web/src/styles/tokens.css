@@ -105,8 +105,16 @@ button, .btn {
   align-items: center;
   justify-content: center;
   gap: var(--sp-2);
+  font-weight: 600;
+  box-shadow: 0 1px 0 rgba(74, 55, 8, .08);
+  transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease, transform .15s ease;
 }
-button:hover:not(:disabled), .btn:hover { background: var(--c-surface-sub); }
+button:hover:not(:disabled), .btn:hover {
+  background: var(--c-surface-sub);
+  border-color: #a99e87;
+  box-shadow: 0 2px 5px rgba(74, 55, 8, .10);
+}
+button:active:not(:disabled), .btn:active { transform: translateY(1px); box-shadow: none; }
 button:disabled { opacity: .45; cursor: not-allowed; }
 button:focus-visible, a:focus-visible, input:focus-visible,
 select:focus-visible, textarea:focus-visible {
@@ -120,7 +128,7 @@ select:focus-visible, textarea:focus-visible {
   color: var(--c-primary-ink);
   font-weight: 700;
 }
-.btn-primary:hover:not(:disabled) { background: var(--c-primary-deep); }
+.btn-primary:hover:not(:disabled) { background: #ebba38; border-color: #bc8810; }
 
 .btn-danger {
   background: var(--c-alert);
@@ -130,9 +138,14 @@ select:focus-visible, textarea:focus-visible {
 }
 .btn-danger:hover:not(:disabled) { background: #a31f1f; }
 
-.btn-quiet { border-color: transparent; background: transparent; text-decoration: underline; }
+.btn-quiet { border-color: transparent; background: transparent; text-decoration: underline; box-shadow: none; }
+.btn-quiet:hover:not(:disabled) { border-color: transparent; box-shadow: none; }
 .btn-sm    { min-height: var(--tap-min); padding: 0 var(--sp-3); font-size: 13px; }
 .btn-block { width: 100%; }
+
+@media (prefers-reduced-motion: reduce) {
+  button, .btn { transition: none; }
+}
 
 /* ---- 入力欄 ---- */
 input[type="text"], input[type="password"], input[type="email"],
