@@ -691,11 +691,14 @@ export const chatApi = {
     if (user.role === '3' && member.left_at) return fail('このチャンネルは参照できません');
     // 送信者名を添える。保護者はアカウントの名簿を参照できないため、画面側では引けない
     // （サーバ側の api_chat.go も同じ扱い。片方だけ直すと食い違う）
+    const isStaff = user.role === '1' || user.role === '2';
     return ok(db.chatMessages.filter((m) => m.chat_room_id === roomId && !hiddenBeforeJoined(user, m))
       .sort((a, b) => a.sent_at.localeCompare(b.sent_at))
       .map((m) => ({
         ...m,
         sender_name: accountName(m.sender_account_id),
+        // 既読の人数は職員にだけ添える。保護者側には表示しないため、そもそも返さない（基本設計書 5-5。api_chat.go と同じ）
+        ...(isStaff ? { read_count: db.chatReads.filter((r) => r.chat_message_id === m.chat_message_id).length } : {}),
         reactions: reactionSummary(m.chat_message_id, user.account_id),
       })));
   },
@@ -2019,6 +2022,16 @@ const dashboardApi = {
       rooms.includes(m.chat_room_id) && !m.is_deleted && m.sender_account_id !== user.account_id
       && !db.chatReads.some((r) => r.chat_message_id === m.chat_message_id && r.account_id === user.account_id)).length;
 
+    // 未対応のままの、保護者との個人チャット。チャット画面の見出しの「未対応 n 件」と同じ範囲を数え、
+    // 一覧と同じ並び（チャンネルの番号順）で先頭のものを「開く」の行き先にする（server/api_dashboard.go と同じ）
+    const unhandledRooms = db.chatRooms
+      .filter((r) => r.room_type === '4' && r.thread_status === '1' && rooms.includes(r.chat_room_id))
+      .sort((a, b) => a.chat_room_id - b.chat_room_id);
+    const unhandledChat = unhandledRooms.length;
+    const unhandledChatRoom = unhandledRooms[0]
+      ? { chat_room_id: unhandledRooms[0].chat_room_id, room_name: unhandledRooms[0].room_name }
+      : null;
+
     const devOverdue = db.developmentSchedules.filter((s) => {
       if (!visible.has(s.child_id)) return false;
       if (s.scheduled_on > today()) return false;
@@ -2038,7 +2051,7 @@ const dashboardApi = {
     autoCloseNapSessions();
     const activeNap = db.napSessions.find((s) => s.ended_at === null && myClasses.has(s.class_id)) ?? null;
 
-    return ok({ returned, unreadChat, devOverdue, pending, abnormalWithoutDiary, activeNap });
+    return ok({ returned, unreadChat, unhandledChat, unhandledChatRoom, devOverdue, pending, abnormalWithoutDiary, activeNap });
   },
 
   /** 保護者ホーム。自児の情報とチャットへの導線（基本設計書「画面の一覧」(3-2)） */

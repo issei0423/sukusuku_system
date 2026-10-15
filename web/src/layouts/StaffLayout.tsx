@@ -4,7 +4,7 @@
  */
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useSession } from '../session';
-import { useAsync } from '../hooks';
+import { useAsync, AUTO_REFRESH_MS } from '../hooks';
 import { api } from '../api/client';
 import { BellIcon, Alert } from '../components/ui';
 import { ToastHost } from '../components/feedback';
@@ -31,14 +31,17 @@ const ADMIN_NAV = [
 export default function StaffLayout() {
   const { user, logout } = useSession();
   const navigate = useNavigate();
-  const summary = useAsync(() => api.staffSummary(user!), [user?.account_id]);
+  // どの画面を開いていても、保護者からのチャットなどが数秒で通知の件数に表れるよう、裏で読み直す
+  const summary = useAsync(() => api.staffSummary(user!), [user?.account_id], { refreshMs: AUTO_REFRESH_MS });
 
   if (!user) return null;
   const isAdmin = user.role === '1';
 
-  // 未対応の総数をヘッダの通知に添える（画面詳細図 1-1）
+  // 未対応の総数をヘッダの通知に添える（画面詳細図 1-1）。ダッシュボードに並ぶ件数の合計
   const s = summary.data;
-  const pending = s ? s.returned + s.unreadChat + s.devOverdue + s.pending + s.abnormalWithoutDiary : 0;
+  const pending = s
+    ? s.returned + s.unreadChat + s.unhandledChat + s.devOverdue + s.pending + s.abnormalWithoutDiary
+    : 0;
 
   const onLogout = async () => {
     await logout();

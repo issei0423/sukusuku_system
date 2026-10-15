@@ -6,7 +6,7 @@
  * 承認待ちの区画は管理者にのみ表示する。
  */
 import { Link, useLocation } from 'react-router-dom';
-import { useAsync } from '../../hooks';
+import { useAsync, AUTO_REFRESH_MS } from '../../hooks';
 import { useSession } from '../../session';
 import { api } from '../../api/client';
 import { Loading, ErrorBox, Alert } from '../../components/ui';
@@ -14,7 +14,9 @@ import { formatYMD, today } from '../../api/util';
 
 export default function StaffDashboard() {
   const { user } = useSession();
-  const { data, error, loading } = useAsync(() => api.staffSummary(user!), [user?.account_id]);
+  // 開いたままでも、保護者からのチャットや承認の結果が数秒で件数に表れるよう、裏で読み直す
+  const { data, error, loading } = useAsync(() => api.staffSummary(user!), [user?.account_id],
+    { refreshMs: AUTO_REFRESH_MS });
   // 管理者に限る画面を開こうとして戻されたとき（App.tsx の RequireAdmin）
   const denied = (useLocation().state as { denied?: string } | null)?.denied === 'admin';
 
@@ -22,9 +24,21 @@ export default function StaffDashboard() {
   if (error) return <ErrorBox text={error} />;
   if (!data || !user) return null;
 
-  const rows = [
+  /*
+   * 未対応のままの個人チャット。保護者からの連絡（欠席・お迎え時間の変更など）の対応漏れを防ぐ
+   * （要件定義書「チャットツール」(4-3)）。「開く」は先頭のチャンネルを選んだ状態でチャット画面を開く。
+   * 2件以上あるときは、どこが開くかが分かるよう、先頭のチャンネル名に残りの件数を添える
+   */
+  const firstUnhandled = data.unhandledChatRoom;
+  const unhandledNote = firstUnhandled
+    ? `${firstUnhandled.room_name}${data.unhandledChat > 1 ? ` ほか${data.unhandledChat - 1}件` : ''}`
+    : undefined;
+
+  const rows: { label: string; note?: string; count: number; unit: string; to: string }[] = [
     { label: '差し戻された日誌', count: data.returned, unit: '件', to: '/staff/diary?status=4' },
     { label: '未読のチャット', count: data.unreadChat, unit: '件', to: '/staff/chat' },
+    { label: '未対応の個人チャット', note: unhandledNote, count: data.unhandledChat, unit: '件',
+      to: firstUnhandled ? `/staff/chat?room=${firstUnhandled.chat_room_id}` : '/staff/chat' },
     // 数える範囲は、参照できる園児の全体。管理者は全クラス、一般は担当クラス（GitHub Issue #125）
     { label: `発達チェックの未実施（${user.role === '1' ? '全クラス' : '担当クラス'}）`,
       count: data.devOverdue, unit: '名', to: '/staff/growth' },
@@ -56,7 +70,10 @@ export default function StaffDashboard() {
                 <tbody>
                   {rows.map((r) => (
                     <tr key={r.label}>
-                      <td>{r.label}</td>
+                      <td>
+                        {r.label}
+                        {r.note && <div className="muted">{r.note}</div>}
+                      </td>
                       <td className="num nowrap">{r.count} {r.unit}</td>
                       <td className="nowrap"><Link className="btn btn-sm" to={r.to}>開く</Link></td>
                     </tr>

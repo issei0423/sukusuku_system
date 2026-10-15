@@ -1,26 +1,203 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { RefObject } from 'react';
+
+/**
+ * 開いたままの画面で、ほかの人の操作（保護者からのチャット、職員の返信・承認など）を拾うために
+ * 裏で読み直す間隔。
+ *
+ * 【仮置き】設計に定めが無い（web/仮置き値.md）。通知は「ログイン後の画面内表示を基本とする」
+ * （要件定義書「通知」(4-1-4 (1))）とだけ定まっており、画面を開いている間にどれだけ早く
+ * 反映するかは決まっていない。チャットの返事を待つ間に気にならない長さとして5秒を置いた。
+ */
+export const AUTO_REFRESH_MS = 5_000;
+
+export interface AsyncOptions {
+  /**
+   * 指定すると、この間隔で裏で読み直す（AUTO_REFRESH_MS を渡す）。
+   * タブが隠れている間は止め、戻ったときに待たずに1回読む。
+   */
+  refreshMs?: number;
+}
+
+export interface AsyncState<T> {
+  data: T | null;
+  error: string | null;
+  loading: boolean;
+  /** 読み込み中の表示を出して読み直す。条件を変えたときなど、いまの表示が古いと分かっているときに使う */
+  reload: () => void;
+  /**
+   * 読み込み中の表示を出さずに読み直す。自分の操作のあとや、相手の操作を拾うときに使う。
+   * 中身が変わっていなければ描き直さない。失敗しても、いまの表示をそのまま残す。
+   * 読み込みの途中で呼ばれたら、終わったあとにもう1回読む（操作の結果を取りこぼさないため）
+   */
+  refresh: () => void;
+}
+
+/** 比べるための写し。写せないもの（循環する参照など）は、毎回「変わった」とみなす */
+function snapshot(v: unknown): string | undefined {
+  try { return JSON.stringify(v); } catch { return undefined; }
+}
 
 /** 非同期の読み込みを扱う。Go サーバへ差し替えても画面側は変わらない */
-export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): {
-  data: T | null; error: string | null; loading: boolean; reload: () => void;
-} {
+export function useAsync<T>(fn: () => Promise<T>, deps: unknown[], options: AsyncOptions = {}): AsyncState<T> {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0);
 
+  // 裏の読み直しは、最後に描いたときの条件（チャンネルなど）で読む
+  const latestFn = useRef(fn);
+  useEffect(() => { latestFn.current = fn; });
+
+  // 読み込み中の表示を出す読み込みのたびに進める。条件が変わる前に出した問い合わせの応答を捨てるため
+  const generation = useRef(0);
+  const foregroundBusy = useRef(false);
+  const backgroundBusy = useRef(false);
+  const queued = useRef(false);
+  // 最後に画面へ渡した値の写し。モック（api/mock.ts）は保持している実物をそのまま返すことがあり、
+  // 渡した値そのものと比べると、書き換わっていても「同じ」に見えるため、写しで比べる
+  const shown = useRef<string | undefined>(undefined);
+  // いま出している失敗の文言。消すものが無いときに setError を呼ぶと、同じ値でも1回描き直されるため
+  const shownError = useRef<string | null>(null);
+  const showError = useCallback((v: string | null) => {
+    shownError.current = v;
+    setError(v);
+  }, []);
+
+  const background = useCallback((whenBusy: 'queue' | 'skip') => {
+    if (foregroundBusy.current || backgroundBusy.current) {
+      if (whenBusy === 'queue') queued.current = true;
+      return;
+    }
+    const gen = generation.current;
+    backgroundBusy.current = true;
+    latestFn.current()
+      .then(
+        (v) => {
+          if (gen !== generation.current) return;
+          const next = snapshot(v);
+          // 変わっていなければ描き直さない。読み直しのたびに画面がちらつかないようにする
+          if (next === undefined || next !== shown.current) {
+            shown.current = next;
+            setData(v);
+          }
+          // 最初の読み込みに失敗していた画面も、読み直しに成功したら元に戻す
+          if (shownError.current !== null) showError(null);
+        },
+        // 裏の読み直しの失敗は画面に出さない。いまの表示を残し、次の回にまた読む
+        () => {},
+      )
+      .finally(() => {
+        backgroundBusy.current = false;
+        if (queued.current) {
+          queued.current = false;
+          background('queue');
+        }
+      });
+  }, [showError]);
+
   const reload = useCallback(() => setTick((t) => t + 1), []);
+  const refresh = useCallback(() => background('queue'), [background]);
 
   useEffect(() => {
-    let alive = true;
+    const gen = ++generation.current;
+    foregroundBusy.current = true;
     setLoading(true);
-    setError(null);
-    fn()
-      .then((v) => { if (alive) { setData(v); setLoading(false); } })
-      .catch((e: Error) => { if (alive) { setError(e.message); setLoading(false); } });
-    return () => { alive = false; };
+    showError(null);
+    const done = () => {
+      foregroundBusy.current = false;
+      setLoading(false);
+      if (queued.current) {
+        queued.current = false;
+        background('queue');
+      }
+    };
+    fn().then(
+      (v) => {
+        if (gen !== generation.current) return;
+        shown.current = snapshot(v);
+        setData(v);
+        done();
+      },
+      (e: Error) => {
+        if (gen !== generation.current) return;
+        showError(e.message);
+        done();
+      },
+    );
+    return () => { generation.current += 1; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, tick]);
 
-  return { data, error, loading, reload };
+  useAutoRefresh(() => background('skip'), options.refreshMs);
+
+  return { data, error, loading, reload, refresh };
+}
+
+/**
+ * 一定の間隔で callback を呼ぶ。タブが隠れている間は止め、戻ったときに待たずに1回呼ぶ。
+ * ms を渡さなければ何もしない。
+ *
+ * 隠れている間に止めるのは、見ていない画面のために問い合わせを続けないため。
+ * 戻ったときに待たないのは、開き直した直後に古い表示を見せないため。
+ */
+export function useAutoRefresh(callback: () => void, ms: number | undefined): void {
+  const latest = useRef(callback);
+  useEffect(() => { latest.current = callback; });
+
+  useEffect(() => {
+    if (!ms || typeof document === 'undefined') return undefined;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (timer === null) timer = setInterval(() => latest.current(), ms);
+    };
+    const stop = () => {
+      if (timer !== null) { clearInterval(timer); timer = null; }
+    };
+    const onVisibility = () => {
+      if (document.hidden) { stop(); return; }
+      latest.current();
+      start();
+    };
+    if (!document.hidden) start();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [ms]);
+}
+
+/** いちばん下とみなす余り。指やホイールで少し戻しただけなら、いちばん下にいるものとして扱う */
+const FOLLOW_SLACK_PX = 48;
+
+/** 縦に送れる、いちばん近い祖先（自分を含む）。見つからなければ null */
+function scrollParent(el: HTMLElement | null): HTMLElement | null {
+  for (let node = el; node; node = node.parentElement) {
+    const y = getComputedStyle(node).overflowY;
+    if (y === 'auto' || y === 'scroll') return node;
+  }
+  return null;
+}
+
+/**
+ * 新しいメッセージが届いたとき、いちばん下を読んでいた人だけを、いちばん下へ送る。
+ * 上へ戻って読んでいる人の位置は動かさない。
+ *
+ * scope は表示している一覧が何のものか（チャンネル）。scope が変わったとき（チャンネルを
+ * 切り替えたとき）は送らない。latest は一覧の最後のメッセージ。これが変わったときだけ見る。
+ */
+export function useFollowLatest(target: RefObject<HTMLElement | null>, scope: unknown, latest: unknown): void {
+  const prev = useRef<{ scope: unknown; height: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = scrollParent(target.current);
+    if (!el) { prev.current = null; return; }
+    const p = prev.current;
+    // 描き直す前の高さで、いちばん下にいたかを判定する。下に足されても scrollTop は変わらない
+    if (p && p.scope === scope && p.height - el.scrollTop - el.clientHeight <= FOLLOW_SLACK_PX) {
+      el.scrollTop = el.scrollHeight;
+    }
+    prev.current = { scope, height: el.scrollHeight };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope, latest]);
 }

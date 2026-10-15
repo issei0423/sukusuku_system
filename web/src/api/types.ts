@@ -281,6 +281,11 @@ export interface ChatMessage {
    * 画面側で sender_account_id から引くことができない。
    */
   sender_name?: string;
+  /**
+   * 既読の人数。職員にだけ返す（保護者側には表示しない。基本設計書 5-5）。
+   * メッセージと一緒に受け取り、読み直したときに人数も新しくなるようにする
+   */
+  read_count?: number;
   /** リアクションの集計。種別ごとの人数と、自分が付けているか */
   reactions?: ReactionSummary[];
 }
