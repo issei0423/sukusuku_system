@@ -1,0 +1,45 @@
+name: Claude 自動実装（ラベル claude）
+
+# Issue に「claude」ラベルを付けると、Claude が mockup-go-react から作業ブランチ（claude/issue-番号-…）を作り、
+# コードを書いてそのブランチに push する。終わると Issue に「PR を作る」リンクが出るので、
+# あなたが PR を作る（→ claude-review.yml の自動レビューが付く）→ 確かめてマージする。
+#
+# Claude が push できるのはこのワークフローだけ。@claude の返事と PR レビューは読み取り専用のまま。
+# push は action の git-push.sh を通るので「origin <ブランチ名>」の形しか通らず、
+# Claude は作業ブランチ以外に自分の commit を載せられない（git checkout も使えない）。
+# ただし GitHub 側の鍵（ブランチ保護）ではないので、マージ前に必ず中身を見ること。
+#
+# Issue の issues イベントはデフォルトブランチ（mockup）のワークフローで動くので、このファイルは mockup に置く。
+
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  implement:
+    if: github.event.label.name == 'claude'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30     # 止まらなくなっても 30 分で打ち切る（使用枠の守り）
+    concurrency:            # 同じ Issue で二重に走らせない
+      group: claude-implement-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    permissions:
+      contents: write       # 作業ブランチに push するため
+      issues: write         # 進み具合を Issue に書くため
+      pull-requests: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Implement with Claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          label_trigger: claude
+          # ふだんの開発ブランチから分ける（デフォルトの mockup ではなく）
+          base_branch: mockup-go-react
+          claude_args: |
+            --append-system-prompt "Issue に書かれたことを実装する。最初に MOCKUP.md と セットアップ手順.md を読んで、このリポジトリの作りに合わせる。変更は今いる作業ブランチにだけ commit して push する。mockup・mockup-go-react・main には push しない。.github/ の中は変えない。Issue の内容があいまいで決められないときは、実装せずに Issue へ質問を書いて終わる。報告は日本語で、何を変えたか・確かめていないことを短く書く。"
