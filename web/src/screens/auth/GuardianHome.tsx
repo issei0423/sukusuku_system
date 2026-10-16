@@ -6,7 +6,7 @@
  * ここに置くのは自児の基本情報と、共有された記録への導線までとする。
  */
 import { Link } from 'react-router-dom';
-import { useAsync } from '../../hooks';
+import { useAsync, AUTO_REFRESH_MS } from '../../hooks';
 import { useSession } from '../../session';
 import { api } from '../../api/client';
 import { Loading, ErrorBox, Empty, Tag } from '../../components/ui';
@@ -15,9 +15,11 @@ import { DIARY_RECORD_TYPE, HANDOUT_TYPE } from '../../api/codes';
 
 export default function GuardianHome() {
   const { user } = useSession();
-  const { data, error, loading } = useAsync(() => api.guardianHome(user!), [user?.account_id]);
+  // 開いたままでも、園が共有した記録・掲載した配布物・チャットの未読が数秒で表れるよう、裏で読み直す
+  const { data, error, loading } = useAsync(() => api.guardianHome(user!), [user?.account_id],
+    { refreshMs: AUTO_REFRESH_MS });
   // 園からの配布物。園だより・献立表など、あとから見返すもの
-  const handouts = useAsync(() => api.handouts(user!), [user?.account_id]);
+  const handouts = useAsync(() => api.handouts(user!), [user?.account_id], { refreshMs: AUTO_REFRESH_MS });
 
   if (loading) return <Loading />;
   if (error) return <ErrorBox text={error} />;

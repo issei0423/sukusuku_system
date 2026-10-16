@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.app.json",
+  "compilerOptions": { "types": ["vite/client", "node"], "strict": true },
+  "include": ["./**/*.ts", "./**/*.tsx", "../../playwright.responsive.config.ts"]
+}

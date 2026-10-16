@@ -33,6 +33,12 @@ func (a *app) handleStaffSummary(w http.ResponseWriter, r *http.Request) {
 		                   WHERE x.chat_message_id = m.chat_message_id AND x.account_id = ?)`,
 		u.AccountID, u.AccountID, u.AccountID).Scan(&unreadChat)
 
+	unhandledChat, unhandledChatRoom, err := a.unhandledPersonalChats(u)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "集計に失敗しました")
+		return
+	}
+
 	// 承認待ちは管理者にのみ数える
 	pending := 0
 	if u.isAdmin() {
@@ -101,11 +107,59 @@ func (a *app) handleStaffSummary(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"returned":             returned,
 		"unreadChat":           unreadChat,
+		"unhandledChat":        unhandledChat,
+		"unhandledChatRoom":    unhandledChatRoom,
 		"devOverdue":           devOverdue,
 		"pending":              pending,
 		"abnormalWithoutDiary": abnormalWithoutDiary,
 		"activeNap":            activeNap,
 	})
+}
+
+// chatRoomRef は、ダッシュボードから開くチャンネル
+type chatRoomRef struct {
+	ChatRoomID int64  `json:"chat_room_id"`
+	RoomName   string `json:"room_name"`
+}
+
+/*
+unhandledPersonalChats は、未対応のままの保護者との個人チャットを数え、先頭のものを返す。
+
+未対応／対応済みは、保護者からの連絡（欠席・遅刻・お迎え時間の変更など）の対応漏れを防ぐための状態
+（要件定義書「チャットツール」(4-3)）。開いたままのダッシュボードでも気づけるよう、「未対応」の欄に出す。
+
+数える範囲は、チャット画面の見出しの「未対応 n 件」と同じにする（自分が参加している個人チャット。
+handleChatRooms と同じく left_at は問わない）。先頭は、チャット画面の一覧と同じ並び（チャンネルの番号順）で決める。
+旧いデモデータは状態を文言（未対応）で持っていたため、それも数える（handleChatRooms と同じ扱い）。
+画面側のモック（web/src/api/mock.ts の staffSummary）も同じ規則にしてある。片方だけ直すと食い違う。
+
+数え損ねたときは 0 件として返さず、エラーにする。「未対応 0 件」は「対応漏れなし」と読まれるため。
+*/
+func (a *app) unhandledPersonalChats(u *SessionUser) (int, *chatRoomRef, error) {
+	rows, err := a.db.Query(`SELECT r.chat_room_id, r.room_name FROM m_chat_room r
+		JOIN t_chat_member m ON m.chat_room_id = r.chat_room_id AND m.account_id = ?
+		WHERE r.room_type = '4' AND r.thread_status IN ('1', '未対応')
+		ORDER BY r.chat_room_id`, u.AccountID)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer rows.Close()
+	count := 0
+	var first *chatRoomRef
+	for rows.Next() {
+		var ref chatRoomRef
+		if err := rows.Scan(&ref.ChatRoomID, &ref.RoomName); err != nil {
+			return 0, nil, err
+		}
+		if first == nil {
+			first = &ref
+		}
+		count++
+	}
+	if err := rows.Err(); err != nil {
+		return 0, nil, err
+	}
+	return count, first, nil
 }
 
 // handleGuardianHome は自児の情報とチャットへの導線を返す。

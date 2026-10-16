@@ -263,15 +263,29 @@
 .field > label.lbl { display: block; min-height: 0; }
 .field.req > .lbl::after { content: " 必須"; color: var(--c-alert); }
 
-table.list { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.list { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
 table.list th, table.list td {
-  padding: var(--sp-2) var(--sp-3);
+  padding: 10px var(--sp-3);
   border-bottom: 1px solid var(--c-border);
   text-align: left; vertical-align: middle;
 }
-table.list th { background: var(--c-surface-sub); font-size: 13px; color: var(--c-text-sub); white-space: nowrap; }
-table.list tr:hover td { background: var(--c-primary-soft); }
+table.list th {
+  background: var(--c-surface-sub);
+  border-bottom: 2px solid var(--c-border-strong);
+  font-size: 13px; color: var(--c-text-sub); font-weight: 700; white-space: nowrap;
+}
+table.list tbody tr:nth-child(even) td { background: #fdfbf6; }
+table.list tbody tr:hover td, table.list tbody tr:focus-within td { background: var(--c-primary-soft); }
+table.list tbody tr:last-child td { border-bottom: 0; }
 table.list td.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.list td .btn-sm:not(.btn-primary):not(.btn-danger):not(.btn-quiet) {
+  background: #fffdf8;
+  border-color: var(--c-border);
+}
+table.list td .btn-sm:not(.btn-primary):not(.btn-danger):not(.btn-quiet):hover {
+  background: var(--c-primary-soft);
+  border-color: var(--c-primary-deep);
+}
 
 .pager { display: flex; align-items: center; gap: var(--sp-3); justify-content: flex-end; margin-top: var(--sp-3); font-size: 13px; color: var(--c-text-sub); }
 

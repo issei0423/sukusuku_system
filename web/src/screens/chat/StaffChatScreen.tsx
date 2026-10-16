@@ -7,8 +7,8 @@
  * 園全体は一般には投稿欄を表示しない（閲覧のみ）。
  */
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { useAsync } from '../../hooks';
+import { Link, useSearchParams } from 'react-router-dom';
+import { useAsync, useFollowLatest, AUTO_REFRESH_MS } from '../../hooks';
 import { useSession } from '../../session';
 import { api, accountName } from '../../api/client';
 import { Loading, ErrorBox, Empty, Alert, Tag } from '../../components/ui';
@@ -24,26 +24,46 @@ export default function StaffChatScreen() {
   const { user } = useSession();
   // 操作の一覧を開いているメッセージ。同時に開くのは1件だけ
   const [menuId, setMenuId] = useState<number | null>(null);
-  const rooms = useAsync(() => api.rooms(user!), [user?.account_id]);
+  /*
+   * チャンネルの一覧（未読の件数・未対応の印）とメッセージは、開いたままでも裏で読み直す。
+   * 保護者からの送信・リアクション・既読が、数秒で表れるようにするため。
+   * 読み直しでは読み込み中の表示を出さず、入力中の文字・開いている操作の一覧・編集中の本文は残す
+   */
+  const rooms = useAsync(() => api.rooms(user!), [user?.account_id], { refreshMs: AUTO_REFRESH_MS });
   const [roomId, setRoomId] = useState<number | null>(null);
   const [text, setText] = useState('');
-  const [tick, setTick] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // ダッシュボードの「未対応の個人チャット」から来たときは、そのチャンネルを開いた状態で始める
+  const [searchParams] = useSearchParams();
 
   useEffect(() => {
-    if (roomId === null && rooms.data && rooms.data.length > 0) setRoomId(rooms.data[0].room.chat_room_id);
+    if (roomId !== null || !rooms.data || rooms.data.length === 0) return;
+    const wanted = Number(searchParams.get('room'));
+    const hit = rooms.data.find((r) => r.room.chat_room_id === wanted);
+    setRoomId((hit ?? rooms.data[0]).room.chat_room_id);
   }, [rooms.data]);
 
   const messages = useAsync(
     async () => (roomId ? api.messages(user!, roomId) : []),
-    [roomId, tick],
+    [roomId],
+    { refreshMs: AUTO_REFRESH_MS },
   );
   const members = useAsync(async () => (roomId ? api.members(roomId, user!) : []), [roomId]);
 
-  // 開いたチャンネルは既読にする
+  /*
+   * 開いたチャンネルは既読にする。開いている間に届いたメッセージも、届いたときに既読にする
+   * （見ている画面に出たものを、未読として数え続けないため）。タブが隠れている間は読み直しが
+   * 止まるので、見ていないあいだに届いたものは既読にならない
+   */
+  const shownRoom = messages.data?.[0]?.chat_room_id ?? null;
+  const lastMessageId = messages.data?.at(-1)?.chat_message_id ?? null;
   useEffect(() => {
-    if (roomId) api.markRead(user!, roomId).then(() => rooms.reload());
-  }, [roomId, tick]);
+    if (roomId) api.markRead(user!, roomId).then(() => rooms.refresh(), () => {});
+  }, [roomId, lastMessageId]);
+
+  // いちばん下を読んでいるときに届いたメッセージは、見える位置まで送る。上へ戻って読んでいるときは動かさない
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  useFollowLatest(scrollRef, shownRoom, lastMessageId);
 
   const current = rooms.data?.find((r) => r.room.chat_room_id === roomId);
 
@@ -60,7 +80,7 @@ export default function StaffChatScreen() {
     try {
       await api.send(user!, roomId, text);
       setText('');
-      setTick((n) => n + 1);
+      messages.refresh();
     } catch (e) { setError((e as Error).message); }
   };
 
@@ -71,13 +91,13 @@ export default function StaffChatScreen() {
   const setThread = async (status: '1' | '2') => {
     if (!roomId) return;
     setError(null);
-    try { await api.setThreadStatus(user!, roomId, status); rooms.reload(); }
+    try { await api.setThreadStatus(user!, roomId, status); rooms.refresh(); }
     catch (e) { setError((e as Error).message); }
   };
 
   const react = async (messageId: number, type: string) => {
     setError(null);
-    try { await api.toggleReaction(user!, messageId, type); setTick((n) => n + 1); }
+    try { await api.toggleReaction(user!, messageId, type); messages.refresh(); }
     catch (e) { setError((e as Error).message); }
   };
 
@@ -153,7 +173,7 @@ export default function StaffChatScreen() {
               </span>
             )}
           </h2>
-          <div className="chat-scroll">
+          <div className="chat-scroll" ref={scrollRef}>
             {messages.loading && <Loading />}
             {messages.error && <ErrorBox text={messages.error} />}
             {messages.data?.length === 0 && <Empty text="まだメッセージはありません。" />}
@@ -169,8 +189,8 @@ export default function StaffChatScreen() {
                 menuOpen={menuId === m.chat_message_id}
                 onMenu={(open) => setMenuId((cur) => (open ? m.chat_message_id : cur === m.chat_message_id ? null : cur))}
                 onReact={(type) => react(m.chat_message_id, type)}
-                onRetract={async () => { await api.retract(user!, m.chat_message_id); setTick((n) => n + 1); }}
-                onEdit={async (body) => { await api.edit(user!, m.chat_message_id, body); setTick((n) => n + 1); }} />
+                onRetract={async () => { await api.retract(user!, m.chat_message_id); messages.refresh(); }}
+                onEdit={async (body) => { await api.edit(user!, m.chat_message_id, body); messages.refresh(); }} />
             ))}
           </div>
           <div className="chat-compose">
@@ -233,7 +253,12 @@ function MessageRow({ message, mine, canEdit, onRetract, onEdit, onReact, menuOp
   onRetract: () => void; onEdit: (body: string) => Promise<void>; onReact: (reactionType: string) => void;
   menuOpen: boolean; onMenu: (open: boolean) => void;
 }) {
-  const read = useAsync(() => api.readCount(message.chat_message_id), [message.chat_message_id]);
+  /*
+   * 既読の人数はメッセージと一緒に受け取る（read_count）。1件ずつ問い合わせると往復が増えるうえ、
+   * メッセージを読み直しても人数が古いまま残るため。Go サーバ（api_chat.go）は read_count だけを
+   * 返し、api.readCount は 0 を返すので、これまでの1件ずつの問い合わせでは常に「既読 0」だった
+   */
+  const readCount = message.read_count ?? 0;
   /*
    * リアクション・編集・取消は、メッセージを右クリック（タブレットでは長押し）して開く一覧に置く。
    * 各メッセージの下へ常に並べると、やりとりが続いたときに本文が読みにくくなる（GitHub Issue #103）。
@@ -382,7 +407,7 @@ function MessageRow({ message, mine, canEdit, onRetract, onEdit, onReact, menuOp
       )}
       <Reactions reactions={message.reactions ?? []} onToggle={onReact} showAdd={false} />
       {/* 既読は自分の発言にだけ出す */}
-      {mine && !editing && <div className="read">既読 {read.data ?? 0}</div>}
+      {mine && !editing && <div className="read">既読 {readCount}</div>}
 
       {menuOpen && !editing && (
         <div className="msg-menu-wrap" style={above ? { bottom: '100%' } : { top: '100%' }}>

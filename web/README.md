@@ -10,6 +10,10 @@
 | `npm test` | テスト87件（モックに対して回すため、サーバは不要） |
 | `npm run test:integration` | Go サーバとの結合テスト11件。`SUKUSUKU_API` の指定が要る |
 | `npm run build` | 本番ビルド。成果物は Go サーバが配信する |
+| `npm run review:responsive` | iPad縦横・PC・保護者向けスマホの画面画像とレイアウト指摘を収集する |
+
+レスポンシブレビューの初期設定・対象画面・結果の読み方は
+[`tests/responsive/README.md`](tests/responsive/README.md) を参照。
 
 ## データ層
 

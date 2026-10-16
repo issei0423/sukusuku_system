@@ -4,6 +4,8 @@
 # Node（web/ の React アプリ）
 node_modules/
 dist/
+web/responsive-report/
+web/test-results/
 
 # Go（server/ のサーバ）
 server/*.db

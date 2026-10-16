@@ -394,17 +394,43 @@ describe('午睡チェック（3画面）', () => {
     }, { timeout: 3000 });
   });
 
-  it('午睡チェック画面：記録の窓は、体位・呼吸・顔色のどれも選ばれていない状態で開く', async () => {
+  it('午睡チェック画面：園児の行で直接選び、体温は実測したときだけ設定できる', async () => {
     open('/staff/nap', teacher);
     await waitFor(() => {
-      expect(screen.getAllByText('記録').length).toBeGreaterThan(0);
+      expect(document.querySelectorAll('.nap-record-row').length).toBeGreaterThan(0);
     }, { timeout: 3000 });
-    fireEvent.click(screen.getAllByText('記録')[0]);
-    const radios = Array.from(document.querySelectorAll<HTMLInputElement>('.modal input[type="radio"], [role="dialog"] input[type="radio"]'));
-    const all = radios.length > 0 ? radios : Array.from(document.querySelectorAll<HTMLInputElement>('input[type="radio"]'));
-    expect(all.length).toBeGreaterThan(0);
-    expect(all.some((r) => r.checked)).toBe(false);
-    expect((screen.getByText('記録する') as HTMLButtonElement).disabled).toBe(true);
+    const first = document.querySelector<HTMLElement>('.nap-record-row')!;
+    const radios = Array.from(first.querySelectorAll<HTMLInputElement>('input[type="radio"]'));
+    expect(radios.length).toBe(10);
+    expect(radios.every((r) => !r.checked)).toBe(true);
+    const save = first.querySelector<HTMLButtonElement>('.nap-row-actions .btn-primary')!;
+    expect(save.disabled).toBe(true);
+    expect(first.textContent).toContain('体温 未測定');
+
+    fireEvent.click(first.querySelector<HTMLButtonElement>('.nap-temperature-button')!);
+    expect(screen.getByRole('dialog', { name: /体温/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '36℃' }));
+    fireEvent.click(screen.getByRole('button', { name: '.6' }));
+    expect(first.textContent).toContain('体温 36.6℃');
+    expect(save.disabled).toBe(true);
+
+    for (const field of ['position', 'breathing', 'complexion']) {
+      fireEvent.click(first.querySelector<HTMLInputElement>(`input[name^="${field}-"][value="1"]`)!);
+    }
+    expect(save.disabled).toBe(false);
+    const before = first.querySelector('.last')!.textContent;
+    fireEvent.click(save);
+    await waitFor(() => expect(first.textContent).toContain('保存しました'));
+    expect(Array.from(first.querySelectorAll<HTMLInputElement>('input[type="radio"]')).every((r) => !r.checked)).toBe(true);
+    expect(save.disabled).toBe(true);
+
+    // 保存後の読み直しで前回の記録が新しくなっても、「保存しました」は残る
+    await waitFor(() => expect(first.querySelector('.last')!.textContent).not.toBe(before), { timeout: 3000 });
+    expect(first.textContent).toContain('保存しました');
+
+    // 次の入力を始めたら消す
+    fireEvent.click(first.querySelector<HTMLInputElement>('input[name^="position-"][value="1"]')!);
+    expect(first.textContent).not.toContain('保存しました');
   });
 
   it('午睡チェック画面：平熱を並べて表示する（判定はしない）', async () => {
