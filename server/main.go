@@ -59,7 +59,11 @@ func (a *app) init() error {
 	if err := a.seedPasswords(); err != nil {
 		return err
 	}
-	return a.refreshDemoLock()
+	if err := a.refreshDemoLock(); err != nil {
+		return err
+	}
+	// 職員のチャットの参加を、担任・ロール・状態から決まる規則に合わせる（chat_membership.go）
+	return a.syncChatMembership()
 }
 
 // seedPasswords は、デモデータに入れた平文の目印（!pass1234）を bcrypt のハッシュへ置き換える。

@@ -302,10 +302,12 @@ export const chatMembers: ChatMember[] = [
   ...[1, 2, 3, 4, 6, 7, 9, 10].map((account_id) => ({ chat_room_id: 3, account_id, joined_at: '2026-04-01T09:00:00', left_at: null })),
   ...[1, 2, 5].map((account_id) => ({ chat_room_id: 4, account_id, joined_at: '2026-04-01T09:00:00', left_at: null })),
   ...[1, 3, 5].map((account_id) => ({ chat_room_id: 5, account_id, joined_at: '2026-06-01T09:00:00', left_at: null })),
-  ...[1, 3, 4, 6].map((account_id) => ({ chat_room_id: 6, account_id, joined_at: '2025-06-10T10:00:00', left_at: null })),
-  ...[1, 3, 4, 7].map((account_id) => ({ chat_room_id: 7, account_id, joined_at: '2025-04-05T10:00:00', left_at: null })),
-  ...[1, 3, 4, 9].map((account_id) => ({ chat_room_id: 8, account_id, joined_at: '2025-07-01T10:00:00', left_at: null })),
-  ...[1, 3, 4, 10].map((account_id) => ({ chat_room_id: 9, account_id, joined_at: '2025-07-05T10:00:00', left_at: null })),
+  // 個人チャットには、担任と、管理者の全員が入る。管理者も保護者との個人チャットを送受信できる
+  // （要件定義書「チャットツール」(4-3)。職員の参加は mock.ts の syncStaffChatRooms が決める。server/seed.sql と同じ）
+  ...[1, 2, 3, 4, 6].map((account_id) => ({ chat_room_id: 6, account_id, joined_at: '2025-06-10T10:00:00', left_at: null })),
+  ...[1, 2, 3, 4, 7].map((account_id) => ({ chat_room_id: 7, account_id, joined_at: '2025-04-05T10:00:00', left_at: null })),
+  ...[1, 2, 3, 4, 9].map((account_id) => ({ chat_room_id: 8, account_id, joined_at: '2025-07-01T10:00:00', left_at: null })),
+  ...[1, 2, 3, 4, 10].map((account_id) => ({ chat_room_id: 9, account_id, joined_at: '2025-07-05T10:00:00', left_at: null })),
 ];
 
 export const chatMessages: ChatMessage[] = [

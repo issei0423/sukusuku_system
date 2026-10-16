@@ -649,7 +649,10 @@ const diaryApi2 = {
 /* ============ チャットツール（基本設計書「チャットツール」(4-6)） ============ */
 
 export const chatApi = {
-  /** 参加しているチャンネル。left_at が入っていても職員は参照できる（基本設計書 5-5） */
+  /**
+   * 参加しているチャンネル。left_at が入っていても職員は参照できる（基本設計書 5-5）。
+   * 外れたチャンネルは閲覧のみとし、外れるまでの過去ログだけを見せる（GitHub Issue #161。server/api_chat.go と同じ）
+   */
   async rooms(user: SessionUser): Promise<ChatRoomView[]> {
     const isStaff = user.role === '1' || user.role === '2';
     const mine = db.chatMembers.filter((m) => m.account_id === user.account_id
@@ -661,6 +664,7 @@ export const chatApi = {
         msg.chat_room_id === room.chat_room_id
         && !msg.is_deleted
         && !hiddenBeforeJoined(user, msg)
+        && !hiddenAfterLeft(user, msg)
         && msg.sender_account_id !== user.account_id
         && !db.chatReads.some((r) => r.chat_message_id === msg.chat_message_id && r.account_id === user.account_id),
       ).length;
@@ -669,13 +673,16 @@ export const chatApi = {
       let canPost = true;
       if (room.room_type === '1') canPost = user.role === '1';
       if (user.role === '3') canPost = room.room_type === '4';
+      // 外れたチャンネルへは投稿できない（図/画面詳細図.md「グループ編成画面」(4-3) No.8）
+      const left = m.left_at !== null;
+      if (left) canPost = false;
 
       // 参加している保護者の人数。投稿が保護者にも届くことを入力欄の近くで示すために使う
       const guardianCount = db.chatMembers.filter((x) =>
         x.chat_room_id === room.chat_room_id && x.left_at === null
         && findAccount(x.account_id)?.role === '3').length;
 
-      return { room, unread, canPost, guardianCount };
+      return { room, unread, canPost, guardianCount, left };
     });
 
     const order: Record<string, number> = { '1': 0, '5': 1, '2': 2, '3': 3, '4': 4 };
@@ -692,7 +699,9 @@ export const chatApi = {
     // 送信者名を添える。保護者はアカウントの名簿を参照できないため、画面側では引けない
     // （サーバ側の api_chat.go も同じ扱い。片方だけ直すと食い違う）
     const isStaff = user.role === '1' || user.role === '2';
-    return ok(db.chatMessages.filter((m) => m.chat_room_id === roomId && !hiddenBeforeJoined(user, m))
+    // 外れた職員には、外れたあとの投稿を返さない（GitHub Issue #161）
+    return ok(db.chatMessages.filter((m) => m.chat_room_id === roomId
+      && !hiddenBeforeJoined(user, m) && !hiddenAfterLeft(user, m))
       .sort((a, b) => a.sent_at.localeCompare(b.sent_at))
       .map((m) => ({
         ...m,
@@ -713,6 +722,8 @@ export const chatApi = {
     if (!m) return fail('メッセージが見つかりません');
     const member = db.chatMembers.find((x) => x.chat_room_id === m.chat_room_id && x.account_id === user.account_id);
     if (!member || (user.role === '3' && member.left_at)) return fail('このチャンネルを参照する権限がありません');
+    // 外れたチャンネルの過去ログには反応できない。閲覧のみである（GitHub Issue #161）
+    if (member.left_at) return fail(LEFT_ROOM_MESSAGE);
     // 後から登録した保護者には、登録より前のメッセージを見せない。見えないものには反応もできない
     // （GitHub Issue #100）。存在を知らせないよう、見つからないときと同じ応答にする
     if (hiddenBeforeJoined(user, m)) return fail('メッセージが見つかりません');
@@ -740,6 +751,8 @@ export const chatApi = {
     const room = db.chatRooms.find((r) => r.chat_room_id === roomId);
     const member = db.chatMembers.find((x) => x.chat_room_id === roomId && x.account_id === user.account_id);
     if (!room || !member) return fail('このチャンネルを参照する権限がありません');
+    // 外れた個人チャット（前のクラスの家庭など）の状態は切り替えられない（GitHub Issue #161・#162）
+    if (member.left_at) return fail(LEFT_ROOM_MESSAGE);
     if (room.room_type !== '4') return fail('未対応／対応済みを持つのは個人チャットだけです');
     const before = room.thread_status;
     room.thread_status = status;
@@ -754,8 +767,12 @@ export const chatApi = {
   },
 
   async markRead(user: SessionUser, roomId: number): Promise<void> {
+    const member = db.chatMembers.find((x) => x.chat_room_id === roomId && x.account_id === user.account_id);
+    if (!member || (user.role === '3' && member.left_at)) return fail('このチャンネルを参照する権限がありません');
+    // 既読にするのは読めるメッセージだけ。外れた職員の、外れたあとの投稿は含めない（GitHub Issue #161）
     db.chatMessages
-      .filter((m) => m.chat_room_id === roomId && m.sender_account_id !== user.account_id && !m.is_deleted)
+      .filter((m) => m.chat_room_id === roomId && m.sender_account_id !== user.account_id && !m.is_deleted
+        && !hiddenAfterLeft(user, m))
       .forEach((m) => {
         const already = db.chatReads.some((r) => r.chat_message_id === m.chat_message_id && r.account_id === user.account_id);
         if (!already) {
@@ -772,6 +789,9 @@ export const chatApi = {
     const rooms = await chatApi.rooms(user);
     const view = rooms.find((r) => r.room.chat_room_id === roomId);
     if (!view) return fail('このチャンネルを参照する権限がありません');
+    // 外れたチャンネルへは投稿できない。閲覧のみの権限では拒否する
+    // （基本設計書「メッセージの送受信」(4-6)、図/画面詳細図.md 4-3 No.8。GitHub Issue #161）
+    if (view.left) return fail(LEFT_ROOM_MESSAGE);
     if (!view.canPost) return fail('このチャンネルへは投稿できません');
 
     const msg: ChatMessage = {
@@ -793,6 +813,9 @@ export const chatApi = {
     if (m.sender_account_id !== user.account_id && user.role !== '1') {
       return fail('自分が送信したメッセージのみ取り消せます');
     }
+    // 外れたチャンネルのメッセージは、送った本人でも取り消せない（閲覧のみ。GitHub Issue #161）。
+    // 誤送信への対応は管理者が行う（基本設計書「誤送信への対応」(4-6)）ため、管理者は参加を問わない
+    if (user.role !== '1' && !isParticipant(user, m.chat_room_id)) return fail(LEFT_ROOM_MESSAGE);
     // 取り消した日時と操作ログを上書き・重複させない（GitHub Issue #100）
     if (m.is_deleted) return fail('このメッセージはすでに取り消されています');
     const before = m.body;
@@ -821,6 +844,9 @@ export const chatApi = {
     if (m.sender_account_id !== user.account_id && !schoolWide) {
       return fail('自分が送信したメッセージのみ編集できます');
     }
+    // 外れたチャンネルのメッセージは、送った本人でも編集できない。編集はいまの参加者が読む本文を
+    // 書き換えるため、投稿と同じく閲覧のみの権限では拒否する（GitHub Issue #161）
+    if (!isParticipant(user, m.chat_room_id)) return fail(LEFT_ROOM_MESSAGE);
     // 取り消し済みのものは編集できない（基本設計書「メッセージの編集」(4-6)）
     if (m.is_deleted) return fail('取り消したメッセージは編集できません');
     const before = m.body;
@@ -836,11 +862,11 @@ export const chatApi = {
    */
   async members(roomId: number, viewer?: SessionUser) {
     // 参加していないチャンネルのメンバーは返さない。ほかの家庭の保護者の氏名や続柄が読めてしまう
-    // （GitHub Issue #95）。管理者は、グループ編成のために全チャンネルを参照できる。
+    // （GitHub Issue #95）。外れた人にも、いまの参加者は返さない（外れたあとのことは見せない。#161）。
+    // 管理者は、グループ編成のために全チャンネルを参照できる。
     // 画面からは必ず viewer を渡す。渡さない呼び出しはテストのためだけに残している
-    if (viewer && viewer.role !== '1') {
-      const me = db.chatMembers.find((x) => x.chat_room_id === roomId && x.account_id === viewer.account_id);
-      if (!me || (viewer.role === '3' && me.left_at)) return fail('このチャンネルを参照する権限がありません');
+    if (viewer && viewer.role !== '1' && !isParticipant(viewer, roomId)) {
+      return fail('このチャンネルを参照する権限がありません');
     }
     const forStaff = !!viewer && viewer.role !== '3';
     return ok(db.chatMembers.filter((m) => m.chat_room_id === roomId && m.left_at === null)
@@ -872,6 +898,85 @@ function hiddenBeforeJoined(user: SessionUser, m: ChatMessage): boolean {
   return !!member && m.sent_at <= member.joined_at;
 }
 
+/**
+ * チャンネルから外れた人に見せないメッセージか
+ *
+ * 外れたあとの投稿は参照させない。読めるのは所属していた期間の過去ログだけである
+ * （図/画面詳細図.md「グループ編成画面」(4-3) No.8、基本設計書「メッセージの送受信」(4-6)。GitHub Issue #161）。
+ * 保護者は外れた時点でチャンネルごと参照できなくなるため、実際に効くのは職員である。
+ * Go サーバ（server/api_chat.go の afterLeftClause）と同じ規則にしてある。
+ */
+function hiddenAfterLeft(user: SessionUser, m: ChatMessage): boolean {
+  const member = db.chatMembers.find((x) => x.chat_room_id === m.chat_room_id && x.account_id === user.account_id);
+  // 【仮置き】外れたのと同じ秒に送られたメッセージは、外れる前か後かを区別できない。見せない側へ倒す
+  return !!member?.left_at && m.sent_at >= member.left_at;
+}
+
+/**
+ * いまそのチャンネルに参加しているか（外れていないか）。
+ * 投稿・編集・取消・リアクション・未対応の切り替え・メンバー一覧の取得は、いまの参加者に限る
+ * （基本設計書「メッセージの送受信」(4-6)「閲覧のみの権限では拒否する」。server/api_chat.go の isParticipant）
+ */
+function isParticipant(user: SessionUser, roomId: number): boolean {
+  const member = db.chatMembers.find((x) => x.chat_room_id === roomId && x.account_id === user.account_id);
+  return !!member && member.left_at === null;
+}
+
+/** 外れたチャンネルへ書こうとしたときの知らせ */
+const LEFT_ROOM_MESSAGE = 'このチャンネルからは外れているため、閲覧のみです';
+
+/**
+ * 職員1人のチャットの参加を、アカウント・ロール・担任の割り当てから決まる規則に合わせる（GitHub Issue #162）
+ *
+ *   園全体・職員チャット … 有効な全職員（職員チャットは作成・停止に連動する。基本設計書「チャット」(5-5)）
+ *   クラス・個人チャット … そのクラスの当年度の担任と、管理者（要件定義書「チャットツール」(4-3)）
+ *   目的別グループ       … ここでは決めない。グループ編成画面で手で編成する
+ *
+ * 停止した職員は、自動構成のチャンネルからすべて外れる。外れるときは left_at を入れ、戻るときは入れ直す。
+ * アーカイブ（過年度のクラスグループ）は動かさない。
+ * 【仮置き】個人チャットの担任は、ルームの class_id（園児のクラス）で決める（名前で引くと同じ氏名の園児を取り違えるため）。
+ * Go サーバ（server/chat_membership.go の syncStaffChatRooms）と同じ規則にしてある。片方だけ直すと食い違う。
+ */
+function syncStaffChatRooms(accountId: number): void {
+  const a = findAccount(accountId);
+  if (!a || (a.role !== '1' && a.role !== '2')) return;
+  const staffId = db.staff.find((s) => s.account_id === accountId)?.staff_id;
+  const myClasses = new Set(db.classStaff
+    .filter((cs) => cs.staff_id === staffId
+      && db.classes.some((c) => c.class_id === cs.class_id && c.fiscal_year === db.FISCAL_YEAR))
+    .map((cs) => cs.class_id));
+  const auto = db.chatRooms.filter((r) => !r.is_archived && ['1', '2', '4', '5'].includes(r.room_type));
+  const wanted = new Set(a.status !== '1' ? [] : auto
+    .filter((r) => r.room_type === '1' || r.room_type === '5' || a.role === '1'
+      || (r.class_id !== null && myClasses.has(r.class_id)))
+    .map((r) => r.chat_room_id));
+
+  for (const r of auto) {
+    const cur = db.chatMembers.find((m) => m.chat_room_id === r.chat_room_id && m.account_id === accountId);
+    if (wanted.has(r.chat_room_id)) {
+      if (!cur) db.chatMembers.push({ chat_room_id: r.chat_room_id, account_id: accountId, joined_at: now(), left_at: null });
+      else if (cur.left_at) { cur.left_at = null; cur.joined_at = now(); }
+    } else if (cur && cur.left_at === null) {
+      cur.left_at = now();
+    }
+  }
+}
+
+/**
+ * 目的別グループへ入れられない相手が含まれていれば、その理由を返す（server/api_chat.go の groupMemberError と同じ）。
+ * 入れられるのは職員だけで、保護者は入れない（基本設計書「チャット」(5-5)、図/画面詳細図.md 4-3 No.6）。
+ * 新しく加えるのは有効な職員に限る。【仮置き】すでに参加している職員は、停止していてもそのまま残せる
+ */
+function groupMemberError(ids: Iterable<number>, current: Set<number>): string | null {
+  for (const id of ids) {
+    const a = findAccount(id);
+    if (!a) return '存在しないアカウントが含まれています';
+    if (a.role !== '1' && a.role !== '2') return '目的別グループに入れられるのは職員だけです。保護者は入れられません';
+    if (a.status !== '1' && !current.has(id)) return '停止している職員は加えられません';
+  }
+  return null;
+}
+
 /** 保護者アカウントの続柄。有効な紐づけのものを、重複を除いて並べる */
 function relationshipOf(accountId: number): string | null {
   const g = db.guardians.find((x) => x.account_id === accountId);
@@ -900,12 +1005,15 @@ const chatApi2 = {
     if (user.role === '3') return fail('グループの編成は職員のみが行えます');
     if (!name.trim()) return fail('グループ名を入力してください');
     if (tooLong(name, 50)) return fail('グループ名は50文字以内で入力してください');
+    const ids = new Set([...accountIds, user.account_id]);
+    // 入れられるのは有効な職員だけ。保護者は入れない（GitHub Issue #161）
+    const invalid = groupMemberError(ids, new Set());
+    if (invalid) return fail(invalid);
     const room: ChatRoom = {
       chat_room_id: nextId(), room_type: '3', class_id: null,
       room_name: name, is_archived: false, thread_status: null,
     };
     db.chatRooms.push(room);
-    const ids = new Set([...accountIds, user.account_id]);
     ids.forEach((account_id) => db.chatMembers.push({
       chat_room_id: room.chat_room_id, account_id, joined_at: now(), left_at: null,
     }));
@@ -913,10 +1021,27 @@ const chatApi2 = {
     return ok(room);
   },
 
-  /** メンバーの追加・退出。退出は left_at を入れて所属期間を残す（基本設計書 5-5） */
+  /**
+   * メンバーの追加・退出。退出は left_at を入れて所属期間を残す（基本設計書 5-5）。
+   * 編成できるのは目的別グループだけ。クラス・個人・職員・園全体のチャンネルの参加者は、担任の割り当てと
+   * アカウントから自動で決まる（要件定義書「チャットツール」(4-3) 機能一覧・(a)、syncStaffChatRooms）。
+   * 【仮置き】一般は、いま参加している目的別グループだけを編成できる。参加していないグループに自分を
+   * 加えられると、所属したことのないグループの過去ログが読めてしまう（同 (c)）。管理者はすべて。
+   * server/api_chat.go の handleUpdateGroupMembers と同じ規則（GitHub Issue #161）
+   */
   async updateGroupMembers(user: SessionUser, roomId: number, accountIds: number[]): Promise<void> {
     if (user.role === '3') return fail('グループの編成は職員のみが行えます');
+    const room = db.chatRooms.find((r) => r.chat_room_id === roomId);
+    if (!room) return fail('グループが見つかりません');
+    if (room.room_type !== '3') {
+      return fail('メンバーを編成できるのは目的別グループだけです。クラス・個人・職員・園全体のチャンネルの参加者は、担任の割り当てとアカウントから自動で決まります');
+    }
+    if (user.role !== '1' && !isParticipant(user, roomId)) return fail('参加していないグループは編成できません');
     const target = new Set(accountIds);
+    const current = new Set(db.chatMembers
+      .filter((m) => m.chat_room_id === roomId && m.left_at === null).map((m) => m.account_id));
+    const invalid = groupMemberError(target, current);
+    if (invalid) return fail(invalid);
     db.chatMembers
       .filter((m) => m.chat_room_id === roomId && m.left_at === null && !target.has(m.account_id))
       .forEach((m) => { m.left_at = now(); });
@@ -1583,6 +1708,9 @@ export const adminApi = {
     const before = a.status;
     a.status = status;
     a.updated_at = now();
+    // 職員は、停止で園全体・職員・クラス・個人チャットから外れ、再開で戻る。職員チャットの参加は
+    // 職員アカウントの作成・停止に連動する（基本設計書「チャット」(5-5)、GitHub Issue #162）
+    syncStaffChatRooms(accountId);
     log(user.account_id, '7', '2', 'm_account', accountId, null,
       before === '1' ? '有効' : '停止', status === '1' ? '有効' : '停止');
     return ok(undefined);
@@ -1610,6 +1738,9 @@ export const adminApi = {
     });
     db.staff.push({ staff_id: input.staff_id, account_id: accountId, staff_name: input.staff_name, created_at: now(), updated_at: now() });
     if (input.class_id) db.classStaff.push({ class_id: input.class_id, staff_id: input.staff_id });
+    // 園全体・職員チャットと、担当クラスのチャンネルへ入れる。職員チャットは作成に連動する
+    // （基本設計書「チャット」(5-5)、GitHub Issue #162）
+    syncStaffChatRooms(accountId);
     log(user.account_id, '7', '1', 'm_account', accountId, null, null, `職員アカウントを発行（${input.staff_name}）`);
     return ok(temp);
   },
@@ -1653,6 +1784,9 @@ export const adminApi = {
       }
     }
     if (input.class_id) db.classStaff.push({ class_id: input.class_id, staff_id: staffId });
+    // クラスのチャンネルと個人チャットを、新しい担当クラス・ロールに合わせる。前のクラスからは外れ、
+    // 外れるまでの過去ログだけを読める（要件定義書「チャットツール」(4-3) (a)、GitHub Issue #162）
+    syncStaffChatRooms(a.account_id);
 
     log(user.account_id, '7', '2', 'm_account', a.account_id, null, before,
       `${name} / ${roleLabel(input.role)} / ${currentClass()}`);
@@ -2018,14 +2152,17 @@ const dashboardApi = {
       && d.created_staff_id === user.staff_id).length;
 
     const rooms = db.chatMembers.filter((m) => m.account_id === user.account_id).map((m) => m.chat_room_id);
+    // 外れたチャンネルの、外れたあとの投稿は数えない（読めないため。GitHub Issue #161）
     const unreadChat = db.chatMessages.filter((m) =>
       rooms.includes(m.chat_room_id) && !m.is_deleted && m.sender_account_id !== user.account_id
+      && !hiddenAfterLeft(user, m)
       && !db.chatReads.some((r) => r.chat_message_id === m.chat_message_id && r.account_id === user.account_id)).length;
 
     // 未対応のままの、保護者との個人チャット。チャット画面の見出しの「未対応 n 件」と同じ範囲を数え、
-    // 一覧と同じ並び（チャンネルの番号順）で先頭のものを「開く」の行き先にする（server/api_dashboard.go と同じ）
+    // 一覧と同じ並び（チャンネルの番号順）で先頭のものを「開く」の行き先にする（server/api_dashboard.go と同じ）。
+    // 外れた個人チャット（担任を付け替える前のクラスの家庭など）は数えない。返信も状態の切り替えもできないため
     const unhandledRooms = db.chatRooms
-      .filter((r) => r.room_type === '4' && r.thread_status === '1' && rooms.includes(r.chat_room_id))
+      .filter((r) => r.room_type === '4' && r.thread_status === '1' && isParticipant(user, r.chat_room_id))
       .sort((a, b) => a.chat_room_id - b.chat_room_id);
     const unhandledChat = unhandledRooms.length;
     const unhandledChatRoom = unhandledRooms[0]

@@ -24,14 +24,14 @@ func (a *app) handleStaffSummary(w http.ResponseWriter, r *http.Request) {
 	a.db.QueryRow(`SELECT COUNT(*) FROM t_diary
 		WHERE is_deleted = 0 AND status = '4' AND created_staff_id = ?`, u.staff()).Scan(&returned)
 
-	// 未読のチャット
+	// 未読のチャット。外れたチャンネルの、外れたあとの投稿は数えない（読めないため。api_chat.go の afterLeftClause）
 	var unreadChat int
 	a.db.QueryRow(`SELECT COUNT(*) FROM t_chat_message m
 		WHERE m.is_deleted = 0 AND m.sender_account_id <> ?
 		  AND m.chat_room_id IN (SELECT chat_room_id FROM t_chat_member WHERE account_id = ?)
 		  AND NOT EXISTS (SELECT 1 FROM t_chat_read x
-		                   WHERE x.chat_message_id = m.chat_message_id AND x.account_id = ?)`,
-		u.AccountID, u.AccountID, u.AccountID).Scan(&unreadChat)
+		                   WHERE x.chat_message_id = m.chat_message_id AND x.account_id = ?)`+afterLeftClause,
+		u.AccountID, u.AccountID, u.AccountID, u.AccountID).Scan(&unreadChat)
 
 	unhandledChat, unhandledChatRoom, err := a.unhandledPersonalChats(u)
 	if err != nil {
@@ -128,8 +128,9 @@ unhandledPersonalChats は、未対応のままの保護者との個人チャッ
 未対応／対応済みは、保護者からの連絡（欠席・遅刻・お迎え時間の変更など）の対応漏れを防ぐための状態
 （要件定義書「チャットツール」(4-3)）。開いたままのダッシュボードでも気づけるよう、「未対応」の欄に出す。
 
-数える範囲は、チャット画面の見出しの「未対応 n 件」と同じにする（自分が参加している個人チャット。
-handleChatRooms と同じく left_at は問わない）。先頭は、チャット画面の一覧と同じ並び（チャンネルの番号順）で決める。
+数える範囲は、チャット画面の見出しの「未対応 n 件」と同じにする（いま参加している個人チャット）。
+外れた個人チャット（担任を付け替える前のクラスの家庭など）は数えない。返信も状態の切り替えもできないため
+（GitHub Issue #161・#162）。先頭は、チャット画面の一覧と同じ並び（チャンネルの番号順）で決める。
 旧いデモデータは状態を文言（未対応）で持っていたため、それも数える（handleChatRooms と同じ扱い）。
 画面側のモック（web/src/api/mock.ts の staffSummary）も同じ規則にしてある。片方だけ直すと食い違う。
 
@@ -137,7 +138,7 @@ handleChatRooms と同じく left_at は問わない）。先頭は、チャッ�
 */
 func (a *app) unhandledPersonalChats(u *SessionUser) (int, *chatRoomRef, error) {
 	rows, err := a.db.Query(`SELECT r.chat_room_id, r.room_name FROM m_chat_room r
-		JOIN t_chat_member m ON m.chat_room_id = r.chat_room_id AND m.account_id = ?
+		JOIN t_chat_member m ON m.chat_room_id = r.chat_room_id AND m.account_id = ? AND m.left_at IS NULL
 		WHERE r.room_type = '4' AND r.thread_status IN ('1', '未対応')
 		ORDER BY r.chat_room_id`, u.AccountID)
 	if err != nil {

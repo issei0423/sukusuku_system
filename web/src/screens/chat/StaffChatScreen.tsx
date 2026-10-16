@@ -48,7 +48,13 @@ export default function StaffChatScreen() {
     [roomId],
     { refreshMs: AUTO_REFRESH_MS },
   );
-  const members = useAsync(async () => (roomId ? api.members(roomId, user!) : []), [roomId]);
+  /*
+   * 外れたチャンネル（left）は閲覧のみ。外れるまでの過去ログだけが返り、投稿・リアクション・編集・取消・
+   * 未対応の切り替えはできない。いまの参加者も返らないので、メンバーは問い合わせない
+   * （図/画面詳細図.md「グループ編成画面」(4-3) No.8、GitHub Issue #161・#162）
+   */
+  const leftRoom = rooms.data?.find((r) => r.room.chat_room_id === roomId)?.left ?? false;
+  const members = useAsync(async () => (roomId && !leftRoom ? api.members(roomId, user!) : []), [roomId, leftRoom]);
 
   /*
    * 開いたチャンネルは既読にする。開いている間に届いたメッセージも、届いたときに既読にする
@@ -105,14 +111,17 @@ export default function StaffChatScreen() {
   if (rooms.loading && !rooms.data) return <Loading />;
   if (rooms.error) return <ErrorBox text={rooms.error} />;
 
-  const unhandled = rooms.data?.filter((r) => r.room.room_type === '4' && r.room.thread_status === '1').length ?? 0;
+  // 外れた個人チャットは数えない。返信も状態の切り替えもできないため（server/api_dashboard.go と同じ）
+  const unhandled = rooms.data?.filter((r) => r.room.room_type === '4' && r.room.thread_status === '1' && !r.left).length ?? 0;
   const staffMembers = members.data?.filter((m) => m.role !== '3') ?? [];
   const guardianMembers = members.data?.filter((m) => m.role === '3') ?? [];
 
+  // 外れたチャンネルは最後にまとめる。担任を付け替えたあとの前のクラスなどが、いまのチャンネルに混ざらないようにする
   const grouped = [
-    { label: '園・職員', types: ['1', '5'] },
-    { label: 'クラス・グループ', types: ['2', '3'] },
-    { label: '保護者との個人チャット', types: ['4'] },
+    { label: '園・職員', types: ['1', '5'], left: false },
+    { label: 'クラス・グループ', types: ['2', '3'], left: false },
+    { label: '保護者との個人チャット', types: ['4'], left: false },
+    { label: '外れたチャンネル（閲覧のみ）', types: ['1', '2', '3', '4', '5'], left: true },
   ];
 
   return (
@@ -132,7 +141,7 @@ export default function StaffChatScreen() {
           <h2>チャンネル</h2>
           <div className="chat-scroll" style={{ padding: 0 }}>
             {grouped.map((g) => {
-              const list = rooms.data!.filter((r) => g.types.includes(r.room.room_type));
+              const list = rooms.data!.filter((r) => g.types.includes(r.room.room_type) && r.left === g.left);
               if (list.length === 0) return null;
               return (
                 <div key={g.label}>
@@ -162,7 +171,7 @@ export default function StaffChatScreen() {
             {current ? current.room.room_name : 'チャンネルを選んでください'}
             {current && <span className="muted">（{CHAT_ROOM_TYPE[current.room.room_type]}）</span>}
             {/* 未対応スレッドの切り替えは個人チャットだけが持つ */}
-            {current?.room.room_type === '4' && (
+            {current?.room.room_type === '4' && !current.left && (
               <span style={{ float: 'right' }}>
                 <Tag label={THREAD_STATUS[current.room.thread_status ?? '2'] ?? '対応済み'}
                   className={current.room.thread_status === '1' ? 'tag-returned' : 'tag-approved'} />
@@ -178,7 +187,7 @@ export default function StaffChatScreen() {
             {messages.error && <ErrorBox text={messages.error} />}
             {messages.data?.length === 0 && <Empty text="まだメッセージはありません。" />}
             {/* 右クリックと長押しは、見ただけでは気づけない。先頭で知らせる（GitHub Issue #103） */}
-            {(messages.data?.length ?? 0) > 0 && (
+            {(messages.data?.length ?? 0) > 0 && !current?.left && (
               <p className="message-hint">
                 メッセージの「操作」ボタンか、右クリック（タブレットでは長押し）で、リアクション・編集・取消ができます。
               </p>
@@ -186,6 +195,7 @@ export default function StaffChatScreen() {
             {messages.data?.map((m) => (
               <MessageRow key={m.chat_message_id} message={m} mine={m.sender_account_id === user!.account_id}
                 canEdit={m.sender_account_id === user!.account_id || schoolWideAdmin}
+                readOnly={!!current?.left}
                 menuOpen={menuId === m.chat_message_id}
                 onMenu={(open) => setMenuId((cur) => (open ? m.chat_message_id : cur === m.chat_message_id ? null : cur))}
                 onReact={(type) => react(m.chat_message_id, type)}
@@ -216,9 +226,11 @@ export default function StaffChatScreen() {
               </>
             ) : (
               <div className="muted">
-                {current?.room.room_type === '1'
-                  ? 'このチャンネルは閲覧のみです。園全体への投稿は管理者が行います。'
-                  : 'このチャンネルへは投稿できません。'}
+                {current?.left
+                  ? 'このチャンネルからは外れているため、閲覧のみです。外れるまでのやりとりだけを表示しています。'
+                  : current?.room.room_type === '1'
+                    ? 'このチャンネルは閲覧のみです。園全体への投稿は管理者が行います。'
+                    : 'このチャンネルへは投稿できません。'}
               </div>
             )}
           </div>
@@ -228,8 +240,9 @@ export default function StaffChatScreen() {
         <div className="chat-pane">
           <h2>メンバー</h2>
           <div className="chat-scroll">
+            {current?.left && <div className="muted">外れたチャンネルの、いまのメンバーは表示しません。</div>}
             {/* 職員と保護者を分けて並べる。保護者が入っているかをひと目で分かるようにするため */}
-            <div className="member-group">職員 {staffMembers.length} 名</div>
+            {!current?.left && <div className="member-group">職員 {staffMembers.length} 名</div>}
             {staffMembers.map((m) => <div key={m.account_id}>{m.name}</div>)}
             {guardianMembers.length > 0 && (
               <>
@@ -248,8 +261,10 @@ export default function StaffChatScreen() {
 }
 
 /** 1件のメッセージ。既読は人数で示す（画面詳細図 4-1） */
-function MessageRow({ message, mine, canEdit, onRetract, onEdit, onReact, menuOpen, onMenu }: {
+function MessageRow({ message, mine, canEdit, readOnly, onRetract, onEdit, onReact, menuOpen, onMenu }: {
   message: ChatMessage; mine: boolean; canEdit: boolean;
+  /** 外れたチャンネルの過去ログ。操作の一覧（リアクション・編集・取消）を出さない */
+  readOnly: boolean;
   onRetract: () => void; onEdit: (body: string) => Promise<void>; onReact: (reactionType: string) => void;
   menuOpen: boolean; onMenu: (open: boolean) => void;
 }) {
@@ -344,16 +359,16 @@ function MessageRow({ message, mine, canEdit, onRetract, onEdit, onReact, menuOp
         {(message.sender_name ?? accountName(message.sender_account_id))} {formatMD(message.sent_at.slice(0, 10))} {formatHM(message.sent_at)}
         {message.edited_at && <span className="weak">（編集済み）</span>}
       </div>
-      <div ref={bubbleRef} className={`bubble${editing ? '' : ' has-menu'}`}
+      <div ref={bubbleRef} className={`bubble${editing || readOnly ? '' : ' has-menu'}`}
         onContextMenu={(e) => {
-          if (editing || onControl(e.target)) return;
+          if (editing || readOnly || onControl(e.target)) return;
           e.preventDefault();
           cancelPress();
           openMenu();
         }}
         onPointerDown={(e) => {
           // マウスは右クリックで開く。長押しはタッチ・ペンのための操作
-          if (editing || e.pointerType === 'mouse' || onControl(e.target)) return;
+          if (editing || readOnly || e.pointerType === 'mouse' || onControl(e.target)) return;
           cancelPress();
           pressTimer.current = window.setTimeout(() => {
             pressTimer.current = null;
@@ -398,7 +413,7 @@ function MessageRow({ message, mine, canEdit, onRetract, onEdit, onReact, menuOp
         操作の一覧を開くボタン。キーボードと読み上げからは、ここから開く。
         吹き出しそのものには役割を持たせない（GitHub Issue #105）
       */}
-      {!editing && (
+      {!editing && !readOnly && (
         <button ref={triggerRef} type="button" className="message-actions-trigger"
           aria-label={`${mine ? '自分' : message.sender_name ?? accountName(message.sender_account_id)}のメッセージの操作`}
           aria-expanded={menuOpen}
