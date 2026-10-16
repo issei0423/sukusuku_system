@@ -1,0 +1,136 @@
+name: CI（テスト）
+
+# mockup-go-react への PR と push で、Go サーバと画面（web）のテストを回す。
+# 3 つのジョブは並んで走る。どれかが赤なら、マージの前に直す。
+#
+# - server … go vet と go test
+# - web    … 型検査とビルド（tsc・vite）・lint（oxlint）・テスト（vitest。相手はブラウザ内のモック）
+# - 結合   … Go サーバを立て、画面と同じ経路（web/src/api/http.ts）でつないで確かめる
+#
+# 読み取り専用（contents: read）。秘密は使わない。
+# 手元で同じことを回すコマンドは AGENTS.md の「コマンド」にある。
+# 実行環境の時刻は UTC。手元で同じ条件を見るには TZ=UTC を付けて回す。
+
+on:
+  pull_request:
+    branches: [mockup-go-react]
+  push:
+    branches: [mockup-go-react]
+  workflow_dispatch:        # Actions の画面から手で走らせる
+
+permissions:
+  contents: read
+
+concurrency:                # 同じ PR（同じブランチ）で走っている古い実行は止める
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: server（go vet・go test）
+    runs-on: ubuntu-latest
+    timeout-minutes: 10     # ふだんは 1〜2 分。止まったときの打ち切り
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - name: ソースを取り出す
+        uses: actions/checkout@v7
+
+      - name: Go を入れる（server/go.mod の版）
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test -count=1 ./...
+
+  web:
+    name: web（型検査・ビルド・lint・vitest）
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: ソースを取り出す
+        uses: actions/checkout@v7
+
+      # Vite 8 が求める版（20.19 以上か 22.12 以上）を満たす LTS
+      - name: Node.js を入れる
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: 依存を入れる（package-lock.json のとおり）
+        run: npm ci
+
+      - name: 型検査とビルド（tsc -b ＋ vite build）
+        run: npm run build
+
+      - name: 型検査（レスポンシブレビューの仕組み）
+        run: npm run review:responsive:check
+
+      - name: lint（oxlint）
+        run: npm run lint
+
+      - name: テスト（vitest）
+        run: npm test
+
+  integration:
+    name: 結合（Go サーバ ＋ api/http.ts）
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: ソースを取り出す
+        uses: actions/checkout@v7
+
+      - name: Go を入れる（server/go.mod の版）
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: Node.js を入れる
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: 依存を入れる（web）
+        working-directory: web
+        run: npm ci
+
+      - name: サーバをビルドする
+        working-directory: server
+        run: go build -o "$RUNNER_TEMP/sukusuku-server" .
+
+      # データベースは作業ツリーの外に新しく作る（毎回デモデータから始める）
+      - name: サーバを立てる（:8080）
+        run: |
+          "$RUNNER_TEMP/sukusuku-server" -addr 127.0.0.1:8080 -db "$RUNNER_TEMP/ci.db" -web "$RUNNER_TEMP/no-web" \
+            > "$RUNNER_TEMP/server.log" 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null http://127.0.0.1:8080/api/me; then exit 0; fi
+            sleep 1
+          done
+          echo "サーバが 30 秒たっても応答しない"
+          cat "$RUNNER_TEMP/server.log"
+          exit 1
+
+      - name: 結合テスト
+        working-directory: web
+        env:
+          SUKUSUKU_API: http://127.0.0.1:8080
+        run: npm run test:integration
+
+      - name: サーバのログ（落ちたときだけ）
+        if: failure()
+        run: cat "$RUNNER_TEMP/server.log"
