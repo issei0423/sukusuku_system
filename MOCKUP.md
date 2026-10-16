@@ -162,3 +162,9 @@ cd web && SUKUSUKU_API=http://localhost:8080 npm run test:integration
 なぜそう作ったかは、コメントから設計書へ辿れる。
 
 設計で確定していない値をどこにどう置いたかは `web/仮置き値.md` にまとめている。
+
+## GitHub の Claude の使い方
+
+- Issue や PR に「@claude ○○」と書くと、Claude が日本語で答える（ファイルは変えない）
+- PR を開くと、Claude が自動でレビューする（下書きの PR は除く）
+- Issue に `claude` ラベルを付けると、Claude が `mockup-go-react` から作業ブランチを作って実装し、PR を作るリンクを出す。マージする前に必ず中身を確かめる
