@@ -124,6 +124,23 @@ func TestStaffSummaryUnhandledPersonalChats(t *testing.T) {
 	})
 }
 
+// 数え損ねたときに「未対応 0 件」と返すと、保育士は「対応漏れなし」と受け取ってしまう。
+// 失敗はエラーとして返し、画面には前回の表示を残させる
+func TestStaffSummaryFailsInsteadOfZeroUnhandled(t *testing.T) {
+	a, h := newTestApp(t)
+	teacher := loginAs(a, 3, "staff")
+	if _, err := a.db.Exec(`ALTER TABLE m_chat_room RENAME TO m_chat_room_gone`); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest("GET", "/api/dashboard/staff", nil)
+	req.AddCookie(teacher)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 (body: %s)", rec.Code, rec.Body.String())
+	}
+}
+
 // 既読の人数はメッセージと一緒に職員へ返し、保護者には返さない（基本設計書 5-5）。
 // 画面はこの値を読み直しのたびに使う（web/src/screens/chat/StaffChatScreen.tsx）
 func TestChatMessagesReadCount(t *testing.T) {
@@ -131,26 +148,34 @@ func TestChatMessagesReadCount(t *testing.T) {
 	teacher := loginAs(a, 3, "staff")
 	guardian := loginAs(a, 6, "guardian")
 
-	call(t, h, teacher, "POST", "/api/chat/rooms/6/messages", `{"body":"お大事になさってください。"}`)
-	readCountOfLast := func(c *http.Cookie) (int, bool) {
+	const sent = "お大事になさってください。"
+	call(t, h, teacher, "POST", "/api/chat/rooms/6/messages", `{"body":"`+sent+`"}`)
+	// 一覧の末尾ではなく本文で探す。デモデータには今日の 07:40 のメッセージがあり、
+	// それより前の時刻に走らせると、送ったメッセージが末尾に並ばないため
+	readCountOfSent := func(c *http.Cookie) int {
 		var list []map[string]any
 		if err := json.Unmarshal(call(t, h, c, "GET", "/api/chat/rooms/6/messages", "").Body.Bytes(), &list); err != nil {
 			t.Fatal(err)
 		}
-		last := list[len(list)-1]
-		n, _ := last["read_count"].(float64)
-		return int(n), last["body"] == "お大事になさってください。"
+		for _, m := range list {
+			if m["body"] == sent {
+				n, _ := m["read_count"].(float64)
+				return int(n)
+			}
+		}
+		t.Fatalf("送ったメッセージが一覧にない")
+		return 0
 	}
 
-	if n, ok := readCountOfLast(teacher); !ok || n != 0 {
-		t.Fatalf("送った直後: read_count = %d (最後のメッセージか: %v)", n, ok)
+	if n := readCountOfSent(teacher); n != 0 {
+		t.Fatalf("送った直後: read_count = %d, want 0", n)
 	}
 	call(t, h, guardian, "POST", "/api/chat/rooms/6/read", "")
-	if n, _ := readCountOfLast(teacher); n != 1 {
+	if n := readCountOfSent(teacher); n != 1 {
 		t.Fatalf("保護者が読んだあと: read_count = %d, want 1", n)
 	}
 	// 保護者には既読の人数を見せない（0 のまま返る）
-	if n, _ := readCountOfLast(guardian); n != 0 {
+	if n := readCountOfSent(guardian); n != 0 {
 		t.Fatalf("保護者への応答に既読の人数が入っている: %d", n)
 	}
 }

@@ -33,7 +33,11 @@ func (a *app) handleStaffSummary(w http.ResponseWriter, r *http.Request) {
 		                   WHERE x.chat_message_id = m.chat_message_id AND x.account_id = ?)`,
 		u.AccountID, u.AccountID, u.AccountID).Scan(&unreadChat)
 
-	unhandledChat, unhandledChatRoom := a.unhandledPersonalChats(u)
+	unhandledChat, unhandledChatRoom, err := a.unhandledPersonalChats(u)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "集計に失敗しました")
+		return
+	}
 
 	// 承認待ちは管理者にのみ数える
 	pending := 0
@@ -128,29 +132,34 @@ unhandledPersonalChats は、未対応のままの保護者との個人チャッ
 handleChatRooms と同じく left_at は問わない）。先頭は、チャット画面の一覧と同じ並び（チャンネルの番号順）で決める。
 旧いデモデータは状態を文言（未対応）で持っていたため、それも数える（handleChatRooms と同じ扱い）。
 画面側のモック（web/src/api/mock.ts の staffSummary）も同じ規則にしてある。片方だけ直すと食い違う。
+
+数え損ねたときは 0 件として返さず、エラーにする。「未対応 0 件」は「対応漏れなし」と読まれるため。
 */
-func (a *app) unhandledPersonalChats(u *SessionUser) (int, *chatRoomRef) {
+func (a *app) unhandledPersonalChats(u *SessionUser) (int, *chatRoomRef, error) {
 	rows, err := a.db.Query(`SELECT r.chat_room_id, r.room_name FROM m_chat_room r
 		JOIN t_chat_member m ON m.chat_room_id = r.chat_room_id AND m.account_id = ?
 		WHERE r.room_type = '4' AND r.thread_status IN ('1', '未対応')
 		ORDER BY r.chat_room_id`, u.AccountID)
 	if err != nil {
-		return 0, nil
+		return 0, nil, err
 	}
 	defer rows.Close()
 	count := 0
 	var first *chatRoomRef
 	for rows.Next() {
 		var ref chatRoomRef
-		if rows.Scan(&ref.ChatRoomID, &ref.RoomName) != nil {
-			continue
+		if err := rows.Scan(&ref.ChatRoomID, &ref.RoomName); err != nil {
+			return 0, nil, err
 		}
 		if first == nil {
 			first = &ref
 		}
 		count++
 	}
-	return count, first
+	if err := rows.Err(); err != nil {
+		return 0, nil, err
+	}
+	return count, first, nil
 }
 
 // handleGuardianHome は自児の情報とチャットへの導線を返す。

@@ -418,10 +418,19 @@ describe('午睡チェック（3画面）', () => {
       fireEvent.click(first.querySelector<HTMLInputElement>(`input[name^="${field}-"][value="1"]`)!);
     }
     expect(save.disabled).toBe(false);
+    const before = first.querySelector('.last')!.textContent;
     fireEvent.click(save);
     await waitFor(() => expect(first.textContent).toContain('保存しました'));
     expect(Array.from(first.querySelectorAll<HTMLInputElement>('input[type="radio"]')).every((r) => !r.checked)).toBe(true);
     expect(save.disabled).toBe(true);
+
+    // 保存後の読み直しで前回の記録が新しくなっても、「保存しました」は残る
+    await waitFor(() => expect(first.querySelector('.last')!.textContent).not.toBe(before), { timeout: 3000 });
+    expect(first.textContent).toContain('保存しました');
+
+    // 次の入力を始めたら消す
+    fireEvent.click(first.querySelector<HTMLInputElement>('input[name^="position-"][value="1"]')!);
+    expect(first.textContent).not.toContain('保存しました');
   });
 
   it('午睡チェック画面：平熱を並べて表示する（判定はしない）', async () => {

@@ -20,6 +20,9 @@ import { formatHM, today, now, napTimerBase, plusMinutes } from '../../api/util'
 import type { BodyPosition, Breathing, Complexion } from '../../api/types';
 import type { NapChildState } from '../../api/shapes';
 
+/** 園児の行に「保存しました」を出しておく時間（仮置き値.md「午睡チェックの動き」） */
+const SAVED_NOTICE_MS = 5000;
+
 export default function NapCheckScreen() {
   const { user } = useSession();
   const classesForUser = selectableClasses(user!);
@@ -247,7 +250,14 @@ function NapRecordRow({ row, sessionId, due, onSaved }: {
   const id = row.child.child_id;
   const name = row.child.child_name;
 
-  useEffect(() => { setJustSaved(false); }, [row.latest?.nap_record_id]);
+  // 「保存しました」は確認の画面を出さない記録の、唯一の手応え。保存後の読み直しで前回の記録が
+  // 新しくなっても消さず、一定時間たつか、次の入力を始めたときに消す（仮置き値.md）
+  useEffect(() => {
+    if (!justSaved) return;
+    const timer = setTimeout(() => setJustSaved(false), SAVED_NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [justSaved]);
+  const startInput = <T,>(set: (value: T) => void) => (value: T) => { setJustSaved(false); set(value); };
 
   // 体温が範囲の外のときは、1度確かめてから記録する。記録は妨げない（園児の平熱と同じ範囲）
   const [confirmedTemp, setConfirmedTemp] = useState<number | null>(null);
@@ -281,9 +291,9 @@ function NapRecordRow({ row, sessionId, due, onSaved }: {
       </div>
 
       <div className="nap-inline-fields">
-        <NapChoices label="体位" name={`position-${id}`} options={BODY_POSITION} value={position} onChange={setPosition} />
-        <NapChoices label="呼吸" name={`breathing-${id}`} options={BREATHING} value={breathing} onChange={setBreathing} />
-        <NapChoices label="顔色" name={`complexion-${id}`} options={COMPLEXION} value={complexion} onChange={setComplexion} />
+        <NapChoices label="体位" name={`position-${id}`} options={BODY_POSITION} value={position} onChange={startInput(setPosition)} />
+        <NapChoices label="呼吸" name={`breathing-${id}`} options={BREATHING} value={breathing} onChange={startInput(setBreathing)} />
+        <NapChoices label="顔色" name={`complexion-${id}`} options={COMPLEXION} value={complexion} onChange={startInput(setComplexion)} />
       </div>
 
       {position === '2' && <Alert>うつ伏せです。仰向けに直してください。</Alert>}
