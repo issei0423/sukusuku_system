@@ -22,6 +22,7 @@ jobs:
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
       (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
     runs-on: ubuntu-latest
+    timeout-minutes: 15     # 止まらなくなっても 15 分で打ち切る（使用枠の守り）
     permissions:
       contents: read        # push できない（読み取り専用の本体）
       pull-requests: write  # PR にコメントするため
@@ -40,5 +41,5 @@ jobs:
           # Claude の GitHub App ではなく、このジョブの読み取り専用トークンを使う
           github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_args: |
-            --disallowedTools "Edit,Write,MultiEdit,NotebookEdit"
+            --disallowedTools "Edit,Write,MultiEdit,NotebookEdit,Bash(git add:*),Bash(git commit:*),Bash(git rm:*)"
             --append-system-prompt "このリポジトリでは読み取り専用で動く。ファイルの変更・commit・push はしない（権限がないので失敗する）。直し方を提案するときは、コメントの中にコードブロックで示す。返事は日本語で書く。"
