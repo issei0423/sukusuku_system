@@ -13,8 +13,11 @@
  * - テストファイルを読み込む前（デモデータを組み立てる前）に掛かる。
  *   デモの編集ロックは読み込んだ時刻を使うため、あとから時計を動かすと食い違う
  *
- * 時計を自分で扱うテスト（screens.test.tsx・autoRefresh.test.tsx・integration.test.ts）は、
- * そのファイルの中で vi.useFakeTimers / vi.useRealTimers を呼ぶ。呼んだあとはそちらが優先される。
+ * 時計を自分で扱うテストは、そのファイルの中で vi.useFakeTimers / vi.useRealTimers を呼ぶ。
+ * 呼んだあとはそちらが優先されるので、次の 3 つにはこの 18:00 も SUKUSUKU_TEST_CLOCK も効かない。
+ * - screens.test.tsx … テストごとに 13:30 に置き直す（午睡の時間帯の中）
+ * - autoRefresh.test.tsx … setInterval だけを偽物にし直すので、Date は本物の時計に戻る
+ * - integration.test.ts … 本物の時計で動くサーバが相手なので、本物の時計に戻す
  *
  * 別の時刻で回して、時刻に頼っているテストを探すときは SUKUSUKU_TEST_CLOCK に HH:MM を渡す。
  *   SUKUSUKU_TEST_CLOCK=03:00 npx vitest run
