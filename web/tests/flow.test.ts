@@ -3,7 +3,7 @@
  * 典拠：基本設計書.md「日誌の作成から保護者への共有」(4-5)、「保護者アカウントの自己登録」(4-3)、
  *      「異常時の記録」(4-7)、5-2（招待コードは1枚＝1アカウント）
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { api } from '../src/api/client';
 import * as db from '../src/api/mockDb';
 import type { SessionUser } from '../src/api/types';
@@ -463,8 +463,9 @@ describe('設計の決定を反映したもの（基本設計書 第2.3版）', 
     expect(await api.messages(grandma, 6)).toHaveLength(0);
     expect((await api.rooms(grandma)).find((r) => r.room.chat_room_id === 6)!.unread).toBe(0);
 
-    // 登録したあとのメッセージは見える
-    await new Promise((r) => setTimeout(r, 1100));
+    // 登録したあとのメッセージは見える。時刻は秒の単位のため、時計を 1 秒より先へ進めてから送る
+    // （テストの時計は止めてある。tests/setup-clock.ts）
+    vi.advanceTimersByTime(1100);
     await api.send(teacher, 6, '明日の持ち物は水筒です。');
     const seen = await api.messages(grandma, 6);
     expect(seen.map((m) => m.body)).toEqual(['明日の持ち物は水筒です。']);
