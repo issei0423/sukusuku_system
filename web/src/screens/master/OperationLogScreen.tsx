@@ -11,6 +11,7 @@ import { useSession } from '../../session';
 import { api, visibleChildren } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Pager } from '../../components/ui';
 import { notify } from '../../components/feedback';
+import { downloadCsv } from '../../csv';
 import { FUNCTION_TYPE, OPERATION_TYPE } from '../../api/codes';
 import { formatMDHM, today, addDays } from '../../api/util';
 import type { FunctionType } from '../../api/types';
@@ -50,18 +51,13 @@ export default function OperationLogScreen() {
       return;
     }
     setExportError(null);
+    // 操作者の氏名には保護者の自己登録の入力がそのまま入る。式として開かれないよう csv.ts を通す（GitHub Issue #153）
     const header = ['操作日時', '操作者', '機能', '操作', '対象テーブル', '対象', '対象園児', '変更前', '変更後'];
-    const lines = data.rows.map((l) => [
+    const rows = data.rows.map((l) => [
       l.operated_at, l.account_name, FUNCTION_TYPE[l.function_type], OPERATION_TYPE[l.operation_type],
       l.target_table, l.target_label, l.child_name, l.before_value ?? '', l.after_value ?? '',
-    ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','));
-    const blob = new Blob([`﻿${[header.join(','), ...lines].join('\n')}`], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `操作ログ_${from}_${to}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    ]);
+    downloadCsv(`操作ログ_${from}_${to}.csv`, header, rows);
     notify('操作ログを CSV で出力しました。出力したことは操作ログに残ります');
     // いま残した出力の行を一覧に反映する
     setApplied((n) => n + 1);

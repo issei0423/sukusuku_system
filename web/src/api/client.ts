@@ -32,6 +32,9 @@ export const findChild = impl.findChild;
 export const findStaff = impl.findStaff;
 export const findAccount = impl.findAccount;
 
+/** 手続き（パスワードの変更・規約への同意）を終えるまで拒否されたことの知らせ。どちらの実装も同じものを使う */
+export { onProcedureRequired } from './procedure';
+
 /** いまどちらの実装で動いているか。画面の注記に使う */
 export const backend: 'http' | 'mock' = useMock ? 'mock' : 'http';
 

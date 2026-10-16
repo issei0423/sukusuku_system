@@ -115,6 +115,17 @@ func (a *app) visibleDiaryCondition(u *SessionUser) (string, []any) {
 	}
 }
 
+// canSeeDiary は、その日誌を参照できるかを返す。日誌本体（handleGetDiary）と同じ条件で判定する。
+// 無い日誌も「参照できない」とする。あるかどうかを推測させないため
+func (a *app) canSeeDiary(u *SessionUser, diaryID int64) bool {
+	cond, args := a.visibleDiaryCondition(u)
+	args = append(args, diaryID)
+	var n int
+	err := a.db.QueryRow(`SELECT COUNT(*) FROM t_diary
+	                       WHERE is_deleted = 0 AND `+cond+` AND diary_id = ?`, args...).Scan(&n)
+	return err == nil && n > 0
+}
+
 func (a *app) queryDiaries(q string, args ...any) ([]Diary, error) {
 	rows, err := a.db.Query(q, args...)
 	if err != nil {
@@ -303,11 +314,28 @@ type DiaryAttachment struct {
 	FileType          string `json:"file_type"`
 }
 
+/*
+handleDiaryAttachments は日誌の添付の一覧を返す。
+
+添付も日誌本体と同じ参照範囲に従う。承認済みであっても参照範囲は広がらない
+（基本設計書「日誌の作成から保護者への共有」(4-5)）。添付には園児の写真が含まれるため、
+権限の判定を通してから渡す（同「添付ファイルの実体の保存先」(5-5)）。
+件数とファイル名だけでも、担当外の園児の写真があることが分かる（GitHub Issue #153）。
+*/
 func (a *app) handleDiaryAttachments(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.requireUser(w, r); !ok {
+	u, ok := a.requireUser(w, r)
+	if !ok {
 		return
 	}
-	id, _ := pathInt64(r, "id")
+	id, valid := pathInt64(r, "id")
+	if !valid {
+		writeErr(w, http.StatusBadRequest, "日誌の指定が正しくありません")
+		return
+	}
+	if !a.canSeeDiary(u, id) {
+		writeForbidden(w, "この日誌を参照する権限がありません")
+		return
+	}
 	rows, err := a.db.Query(`SELECT diary_attachment_id, diary_id, file_path, file_type
 	                           FROM t_diary_attachment WHERE diary_id = ? ORDER BY diary_attachment_id`, id)
 	if err != nil {

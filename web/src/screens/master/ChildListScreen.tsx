@@ -95,7 +95,8 @@ export default function ChildListScreen() {
 }
 
 function ClassCell({ childId }: { childId: string }) {
-  const c = useAsync(() => api.classOf(childId), [childId]);
+  const { user } = useSession();
+  const c = useAsync(() => api.classOf(user!, childId), [childId]);
   return <>{c.data ? className(c.data) : '―'}</>;
 }
 

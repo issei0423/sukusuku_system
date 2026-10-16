@@ -151,8 +151,9 @@ func (a *app) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleMe はログイン中の利用者を返す。パスワード変更・規約同意のあと画面を進めるためにも使う。
+// 手続きの途中でも返す。画面はこの値で、どの手続きの画面へ進めるかを決める（session.go の requireUser）
 func (a *app) handleMe(w http.ResponseWriter, r *http.Request) {
-	u, ok := a.requireUser(w, r)
+	u, ok := a.requireLogin(w, r)
 	if !ok {
 		return
 	}
@@ -164,8 +165,9 @@ type changePasswordRequest struct {
 	Next    string `json:"next"`
 }
 
+// handleChangePassword はパスワードを変更する。一時パスワード中に使う手続きのため、requireLogin で通す
 func (a *app) handleChangePassword(w http.ResponseWriter, r *http.Request) {
-	u, ok := a.requireUser(w, r)
+	u, ok := a.requireLogin(w, r)
 	if !ok {
 		return
 	}
@@ -232,8 +234,9 @@ func (a *app) handleCurrentTerms(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, t)
 }
 
+// handleAgreeTerms は規約への同意を記録する。再同意が要る間に使う手続きのため、requireLogin で通す
 func (a *app) handleAgreeTerms(w http.ResponseWriter, r *http.Request) {
-	u, ok := a.requireUser(w, r)
+	u, ok := a.requireLogin(w, r)
 	if !ok {
 		return
 	}

@@ -22,7 +22,7 @@ export default function DiaryApproveScreen() {
   const diaryId = Number(id);
 
   const diary = useAsync(() => api.getDiary(user!, diaryId), [diaryId]);
-  const attachments = useAsync(() => api.attachmentsOf(diaryId), [diaryId]);
+  const attachments = useAsync(() => api.attachmentsOf(user!, diaryId), [diaryId]);
   const templates = useAsync(() => api.templates(), []);
 
   const [share, setShare] = useState<'yes' | 'no' | null>(null);

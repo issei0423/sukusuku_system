@@ -22,7 +22,7 @@ export default function GuardianDiaryScreen() {
   const { user } = useSession();
   const { id } = useParams();
   const diary = useAsync(() => api.getDiary(user!, Number(id)), [id]);
-  const attachments = useAsync(() => api.attachmentsOf(Number(id)), [id]);
+  const attachments = useAsync(() => api.attachmentsOf(user!, Number(id)), [id]);
 
   if (diary.loading) return <Loading />;
   if (diary.error) return <ErrorBox text={diary.error} />;

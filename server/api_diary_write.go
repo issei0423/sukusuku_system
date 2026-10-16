@@ -58,6 +58,21 @@ func (a *app) handleSaveDiary(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		in.ChildID = nil
+		/*
+		 * クラス日誌・週案は、対象クラスで参照範囲を判定する（api_diary.go の visibleDiaryCondition）。
+		 * 一般（保育士）が扱えるのは、閲覧・入力・編集のいずれも自クラスに限る
+		 * （要件定義書「参照範囲の全体規定」(4-1-5)）。他クラスを対象に作ると、作った本人には見えず、
+		 * そのクラスの担任には見える日誌ができてしまう（GitHub Issue #153）。
+		 * クラスを指定しないものは管理者にしか見えないため、一般には作らせない
+		 */
+		if in.ClassID == nil && !u.isAdmin() {
+			writeErr(w, http.StatusBadRequest, "対象のクラスを選んでください")
+			return
+		}
+		if in.ClassID != nil && !a.canUseClass(u, *in.ClassID) {
+			writeForbidden(w, "このクラスの日誌を作成する権限がありません")
+			return
+		}
 	}
 
 	if in.DiaryID != nil {
@@ -90,6 +105,12 @@ func (a *app) updateDiary(w http.ResponseWriter, u *SessionUser, in diaryInput) 
 	if err := a.db.QueryRow(`SELECT status FROM t_diary WHERE diary_id = ? AND is_deleted = 0`,
 		*in.DiaryID).Scan(&status); err != nil {
 		writeErr(w, http.StatusNotFound, "日誌が見つかりません")
+		return
+	}
+	// 書き換える日誌そのものも、参照範囲の内にあるものに限る。入力の園児・クラスを確かめるだけでは、
+	// 他クラスの日誌を日誌IDで指定して自クラスへ書き換えられてしまう（GitHub Issue #153）
+	if !a.canSeeDiary(u, *in.DiaryID) {
+		writeForbidden(w, "この日誌を編集する権限がありません")
 		return
 	}
 	if status == "2" || status == "3" {
@@ -311,6 +332,12 @@ func (a *app) handleAcquireLock(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "日誌の指定が正しくありません")
 		return
 	}
+	// ロックを取れるのは、その日誌を参照できる職員に限る。担当外の日誌のロックを取られると、
+	// 担任が無操作の経過まで保存できなくなる（GitHub Issue #153）
+	if !a.canSeeDiary(u, id) {
+		writeForbidden(w, "この日誌を編集する権限がありません")
+		return
+	}
 	idleMinutes := a.settingInt("ui.diary_lock_minutes", 15)
 
 	var (
@@ -379,11 +406,21 @@ func (a *app) handleReleaseLock(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+// handleLockOf は編集ロックの状態を返す。誰が編集中かは日誌の中身と同じ範囲で見せる（GitHub Issue #153）
 func (a *app) handleLockOf(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.requireStaff(w, r); !ok {
+	u, ok := a.requireStaff(w, r)
+	if !ok {
 		return
 	}
-	id, _ := pathInt64(r, "id")
+	id, valid := pathInt64(r, "id")
+	if !valid {
+		writeErr(w, http.StatusBadRequest, "日誌の指定が正しくありません")
+		return
+	}
+	if !a.canSeeDiary(u, id) {
+		writeForbidden(w, "この日誌を参照する権限がありません")
+		return
+	}
 	var token, staffID, lockedAt, lastActive string
 	err := a.db.QueryRow(`SELECT lock_token, locked_staff_id, locked_at, last_active_at
 	                        FROM t_diary_lock WHERE diary_id = ?`, id).

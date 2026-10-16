@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useSession } from './session';
-import { api, backend } from './api/client';
+import { api, backend, onProcedureRequired } from './api/client';
 import StaffLayout from './layouts/StaffLayout';
 import GuardianLayout from './layouts/GuardianLayout';
 
@@ -132,9 +132,23 @@ function RequireGuardian() {
 }
 
 export default function App() {
-  const { setUser } = useSession();
+  const { user, setUser } = useSession();
   // モックはメモリ上にしか状態を持たないため、復元するものが無い
   const [ready, setReady] = useState(backend === 'mock');
+
+  /*
+   * 手続きの途中と分かったら、その画面へ案内する。
+   * ログイン中に管理者が一時パスワードを発行し直したときなど、画面が持つ利用者の情報が古いと、
+   * サーバは手続きの API 以外を理由つきで拒否する（server/session.go の requireUser、api/procedure.ts）。
+   * 利用者を読み直せば、RequireStaff / RequireGuardian がパスワードの変更・規約への同意の画面へ送る
+   */
+  const accountId = user?.account_id;
+  useEffect(() => {
+    if (accountId === undefined) return;
+    return onProcedureRequired(() => {
+      api.reloadSession(accountId).then(setUser, () => {});
+    });
+  }, [accountId, setUser]);
 
   /*
    * ページを開き直したときにセッションを復元する。
