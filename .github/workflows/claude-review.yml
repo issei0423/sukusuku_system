@@ -1,0 +1,54 @@
+name: Claude PR レビュー
+
+# PR を開いたとき（下書きでないもの）に Claude が自動でレビューする。
+# push のたびには動かない（プランの使用枠の節約）。
+# もう一度見てほしいときは PR に「@claude もう一度レビューして」と書く（claude.yml が動く）。
+# 読み取り専用: Claude はコメントするだけで、push はできない。
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, reopened]
+
+jobs:
+  review:
+    # 下書き・フォークからの PR・Dependabot の PR では動かさない（鍵が渡らず失敗するため）
+    if: |
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15     # 止まらなくなっても 15 分で打ち切る（使用枠の守り）
+    concurrency:            # 同じ PR のレビューが重なったら古い方を止める
+      group: claude-review-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    permissions:
+      contents: read        # push できない
+      pull-requests: write  # レビューコメントを書くため
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Review with Claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            この PR をレビューしてください。日本語で書いてください。
+
+            見るところ:
+            1. バグ・動かなくなるところ
+            2. セキュリティ（入力チェック、認証まわり、秘密情報の書き込み）
+            3. 読みやすさ・わかりやすさ
+            4. 保育の現場で使う人（保育士・保護者）にとって困る動き
+
+            具体的な指摘は行ごとのインラインコメントで書き、全体のまとめは PR へのコメント 1 つにしてください。
+            問題がなければ、そう短く書いてください。
+            指摘は、実際にファイルを読んで確かめたものだけ書いてください。確かめられなかったことは「未確認」と書いてください。
+          claude_args: |
+            --allowedTools "Read,Grep,Glob,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
