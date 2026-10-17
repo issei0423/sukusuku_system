@@ -90,4 +90,16 @@ describe('日誌の写真を保存する（#175 の 2）', () => {
     expect(db.diaries.find((x) => x.diary_id === 1)!.body).toBe(before);
     await api.releaseLock(teacher, 1, false, token);
   });
+
+  it('設定マスタの形式の並びに空白が混じっていても、並べた形式を受け付ける（レビューの指摘）', async () => {
+    const row = db.settings.find((x) => x.setting_key === 'attachment.allowed_types')!;
+    const before = row.setting_value;
+    row.setting_value = 'image/jpeg, image/png';
+    try {
+      const d = await api.saveDiary(teacher, personal({ attachments: [{ file_path: 'demo/p.png', file_type: 'image/png' }] }), '1');
+      expect(await photosOf(teacher, d.diary_id)).toEqual(['demo/p.png']);
+    } finally {
+      row.setting_value = before;
+    }
+  });
 });

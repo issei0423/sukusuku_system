@@ -51,7 +51,11 @@ func (a *app) checkDiaryAttachments(list []diaryAttachmentInput) string {
 	if len(list) > max {
 		return "写真は" + itoa64(int64(max)) + "枚までです"
 	}
+	// 設定マスタの並びに空白が混じっていても（「image/jpeg, image/png」）、並べた形式を受け付ける
 	allowed := strings.Split(a.settingText("attachment.allowed_types", "image/jpeg,image/png"), ",")
+	for i := range allowed {
+		allowed[i] = strings.TrimSpace(allowed[i])
+	}
 	for _, p := range list {
 		if strings.TrimSpace(p.FilePath) == "" {
 			return "写真のファイルを選んでください"

@@ -780,7 +780,8 @@ function heldDiaryLock(user: SessionUser, diaryId: number, token: string | undef
 function diaryAttachmentError(photos: DiaryAttachmentInput[]): string | null {
   const max = settingNumber('attachment.max_count_diary', 3);
   if (photos.length > max) return `写真は${max}枚までです`;
-  const allowed = settingText('attachment.allowed_types', 'image/jpeg,image/png').split(',');
+  // 設定マスタの並びに空白が混じっていても（「image/jpeg, image/png」）、並べた形式を受け付ける
+  const allowed = settingText('attachment.allowed_types', 'image/jpeg,image/png').split(',').map((x) => x.trim());
   for (const p of photos) {
     if (!p.file_path.trim()) return '写真のファイルを選んでください';
     if (!allowed.includes(p.file_type)) return '添付できる写真は JPEG・PNG のファイルです';

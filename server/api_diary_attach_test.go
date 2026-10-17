@@ -146,3 +146,18 @@ func TestDiaryPhotosAreLimited(t *testing.T) {
 		t.Error("写真の上限で断った保存で、本文が書き換わった")
 	}
 }
+
+// 設定マスタの形式の並びに空白が混じっていても（「image/jpeg, image/png」）、並べた形式を受け付ける（レビューの指摘）
+func TestDiaryPhotoTypesToleratesSpacesInSetting(t *testing.T) {
+	a, h := newTestApp(t)
+	teacher := loginAs(a, 3, "staff")
+	if _, err := a.db.Exec(`UPDATE m_setting SET setting_value = 'image/jpeg, image/png'
+		WHERE setting_key = 'attachment.allowed_types'`); err != nil {
+		t.Fatal(err)
+	}
+	rec := request(t, h, teacher, "POST", "/api/diaries", strings.Replace(personalDiary(0, "C001", "1", today(), "本文", "1"),
+		`"status"`, `"attachments":[{"file_path":"demo/p.png","file_type":"image/png"}],"status"`, 1))
+	if rec.Code != http.StatusOK {
+		t.Errorf("PNG の写真：%d %s、want 200", rec.Code, rec.Body.String())
+	}
+}
