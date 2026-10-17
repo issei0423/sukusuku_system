@@ -284,9 +284,8 @@ export function selectableClasses(user: SessionUser): ClassRoom[] {
 
 /**
  * その日誌を参照できるか。個人日誌・ヒヤリハットは対象園児で、クラス日誌・週案は対象クラスで判定する。
- * 保護者に見えるのは、承認済みかつ保護者へ共有した自児の個人日誌のみ。承認済みであっても参照範囲は広がらない
- * （基本設計書「日誌の作成から保護者への共有」(4-5)）。クラス日誌・週案月案・ヒヤリハットは保護者への共有の
- * 対象外であり、共有の印が付いてしまったものがあっても見せない（同 (4-5)。GitHub Issue #157）。
+ * 承認済みであっても参照範囲は広がらない。日誌は園内の記録で、保護者には見せない
+ * （基本設計書「日誌システム（園内の記録）」(4-6)、詳細設計書「日誌」(4-13 (10))）。
  * サーバ側（server/api_diary.go の visibleDiaryCondition・canSeeDiary）と同じ規則
  */
 function canSeeDiary(user: SessionUser, d: Diary): boolean {
@@ -296,33 +295,58 @@ function canSeeDiary(user: SessionUser, d: Diary): boolean {
     if (d.child_id) return canSeeChild(user, d.child_id);
     return user.class_id != null && d.class_id === user.class_id;
   }
-  return d.record_type === '1' && d.status === '3' && d.is_shared_to_guardian
-    && !!d.child_id && canSeeChild(user, d.child_id);
+  return false;
 }
 
 /*
- * 申請したことを残す操作ログの「変更後」の文言。最後に申請した職員は、これで操作ログから引く（diaryApplicant）。
- * 申請と差し戻しの往復の経緯は操作ログで追うと定めているため（基本設計書「日誌（t_diary）」(5-4)）。
- * サーバ側（server/api_diary_write.go の diaryLogApply・diaryLogCreateAndApply）と同じ文言
+ * 申請したことを残す操作ログの「変更後」の文言。申請した職員は日誌の applied_staff_id で持つ
+ * （詳細設計書「日誌の状態」(3-6)）。サーバ側（server/api_diary_write.go の diaryLogApply・diaryLogCreateAndApply）と同じ文言
  */
 const DIARY_LOG_APPLY = '申請';
 const DIARY_LOG_CREATE_AND_APPLY = '作成して申請';
 
-/** その日誌を最後に申請した職員の職員ID。申請の記録が無ければ null（サーバ側は diaryApplicant） */
-function diaryApplicant(diaryId: number): string | null {
-  // 操作ログは新しいものが先頭（log が unshift する）
-  const l = db.operationLogs.find((x) => x.function_type === '1' && x.target_table === 't_diary'
-    && x.target_id === diaryId && (x.after_value === DIARY_LOG_APPLY || x.after_value === DIARY_LOG_CREATE_AND_APPLY));
-  if (!l) return null;
-  return db.staff.find((st) => st.account_id === l.account_id)?.staff_id ?? null;
+/**
+ * 日誌を書き換えるときの新しい updated_at。読んだ版で取り下げ・承認の取り消しを確かめるため、書くたびに必ず前の値より
+ * 進める（詳細設計書の決めたこと D-40）。サーバ側は server/api_diary_write.go の nextDiaryVersion
+ */
+function nextDiaryVersion(previous: string): string {
+  const current = now();
+  if (current > previous) return current;
+  // 文字列は JST の日時。ずれを持ち込まないよう、UTC として読んで1秒足し、同じ形で書き戻す
+  return new Date(Date.parse(`${previous}Z`) + 1000).toISOString().slice(0, 19);
 }
 
 /**
- * 保護者が見られない日誌を開いたときの文言。自児の共有されていない日誌・他児の日誌・無い日誌を同じ文言にし、
- * あるかどうかを推測させない（図/画面詳細図.md「共有日誌閲覧画面」(2-8)）。
- * サーバ側（server/api_diary.go の unsharedDiaryMessage）と同じ文言
+ * 日誌を読めないときの文言。保護者が日誌の経路を呼んだときも同じ文言にする（詳細設計書「日誌」(4-13)
+ * 「保護者が呼んだら 403『この日誌を参照する権限がありません』」）。サーバ側は server/api_diary.go の msgDiaryForbidden
  */
-const UNSHARED_DIARY_MESSAGE = 'この記録は共有されていません';
+const DIARY_FORBIDDEN_MESSAGE = 'この日誌を参照する権限がありません';
+
+/** 日誌の状態の遷移で返す文言（詳細設計書「日誌の状態」(3-6)・「日誌」(4-13)）。サーバ側（api_diary_write.go）と同じ */
+const DIARY_MSG = {
+  approveAdminOnly: '承認は管理者のみが行えます',
+  withdrawn: 'この日誌は取り下げられました。',
+  approveNotApplied: '申請中の日誌のみ承認できます',
+  returnNotApplied: '申請中の日誌のみ差し戻せます',
+  ownApplication: '自分が申請した日誌は承認できません。ほかの管理者に依頼してください。',
+  withdrawOwnOnly: '申請を取り下げられるのは、申請した本人だけです。',
+  withdrawTooLate: 'すでに承認または差し戻しされたため、取り下げられません。',
+  revokeAdminOnly: '承認の取り消しは管理者のみが行えます。',
+  revokeReason: '承認を取り消す理由を入力してください。',
+  revokeReasonLong: '承認を取り消す理由は500文字以内で入力してください。',
+  notApproved: '承認済みの日誌ではありません。画面を読み込み直してください。',
+  versionConflict: '他の職員が更新しています。内容を再読み込みしてください。',
+} as const;
+
+/** 日誌に名前を添える。Go サーバ（server/api_diary.go の enrich）と同じ */
+function withDiaryNames(d: Diary): Diary {
+  return {
+    ...d,
+    staff_name: staffName(d.created_staff_id),
+    approved_staff_name: d.approved_staff_id ? staffName(d.approved_staff_id) : null,
+    applied_staff_name: d.applied_staff_id ? staffName(d.applied_staff_id) : null,
+  };
+}
 
 /** 職員に限る操作を、保護者が呼んだときの文言。サーバ側（server/session.go の requireStaff）と同じ */
 const STAFF_ONLY_MESSAGE = '職員のみが行えます';
@@ -665,14 +689,15 @@ export const childApi = {
   },
 };
 
-/* ============ 日誌システム（基本設計書「日誌システム」(4-5)） ============ */
+/* ============ 日誌システム（基本設計書「日誌システム（園内の記録）」(4-6)） ============ */
 
 export const diaryApi = {
   async listDiaries(user: SessionUser, f: DiaryFilter = {}): Promise<Paged<Diary>> {
+    // 日誌は園内の記録。保護者には一覧も返さない（詳細設計書「日誌」(4-13)。サーバ側は requireDiaryStaff）
+    if (user.role === '3') return fail(DIARY_FORBIDDEN_MESSAGE);
     const perPage = settingNumber('paging.diary_per_page', 50);
 
-    // 個人日誌・ヒヤリハットは対象園児で、クラス日誌・週案は対象クラスで参照範囲を判定する。
-    // 保護者は、承認済みかつ共有した自児の個人日誌だけ（サーバ側の visibleDiaryCondition と同じ。GitHub Issue #157）
+    // 個人日誌・ヒヤリハットは対象園児で、クラス日誌・週案は対象クラスで参照範囲を判定する（サーバ側の visibleDiaryCondition と同じ）
     let rows = db.diaries.filter((d) => canSeeDiary(user, d));
 
     if (f.recordType) rows = rows.filter((d) => d.record_type === f.recordType);
@@ -694,46 +719,36 @@ export const diaryApi = {
 
     rows.sort((a, b) => b.diary_date.localeCompare(a.diary_date) || b.diary_id - a.diary_id);
     const page = f.page ?? 1;
-    return ok({ rows: rows.slice((page - 1) * perPage, page * perPage), total: rows.length, page, per_page: perPage });
+    return ok({ rows: rows.slice((page - 1) * perPage, page * perPage).map(withDiaryNames), total: rows.length, page, per_page: perPage });
   },
 
   async getDiary(user: SessionUser, diaryId: number): Promise<Diary> {
     const d = db.diaries.find((x) => x.diary_id === diaryId && !x.is_deleted);
-    // 保護者には、見られない日誌を「この記録は共有されていません」と示す（画面詳細図 2-8。GitHub Issue #157）
-    if (user.role === '3' && (!d || !canSeeDiary(user, d))) return fail(UNSHARED_DIARY_MESSAGE);
-    if (!d) return fail('日誌が見つかりません');
-    if (!canSeeDiary(user, d)) return fail('この日誌を参照する権限がありません');
-    // 記入した職員・確認した職員の氏名を載せる。Go サーバ（server/api_diary.go の enrich）と同じ
-    // 最後に申請した職員は、職員にだけ返す（承認画面が使う。サーバ側の handleGetDiary と同じ）
-    const applied = user.role === '3' ? null : diaryApplicant(d.diary_id);
-    return ok({
-      ...d,
-      staff_name: staffName(d.created_staff_id),
-      approved_staff_name: d.approved_staff_id ? staffName(d.approved_staff_id) : null,
-      ...(applied ? { applied_staff_id: applied } : {}),
-    });
+    // 保護者には、どの日誌も返さない。無い日誌・他児の日誌・承認済みの自児の日誌を同じ文言にする（詳細設計書「日誌」(4-13)）
+    if (user.role === '3' || !d || !canSeeDiary(user, d)) return fail(DIARY_FORBIDDEN_MESSAGE);
+    // 作成した職員・申請した職員・承認した職員の氏名を載せる（承認の経緯。詳細設計書「日誌」(4-13 (6))）
+    return ok(withDiaryNames(d));
   },
 
   async templates(): Promise<typeof db.diaryTemplates> { return ok(db.diaryTemplates); },
   async phrases(): Promise<string[]> { return ok(db.fixedPhrases); },
   /**
-   * 日誌の添付。日誌本体と同じ参照範囲に従う（基本設計書「日誌の作成から保護者への共有」(4-5)・
-   * 「添付ファイルの実体の保存先」(5-5)）。サーバ側は server/api_diary.go の handleDiaryAttachments
+   * 日誌の添付。日誌本体と同じ参照範囲に従い、保護者には返さない（詳細設計書「日誌」(4-13)、
+   * 基本設計書「添付ファイルの実体の保存先」(5-5)）。サーバ側は server/api_diary.go の handleDiaryAttachments
    */
   async attachmentsOf(user: SessionUser, diaryId: number) {
     const d = db.diaries.find((x) => x.diary_id === diaryId);
-    if (!d || !canSeeDiary(user, d)) return fail('この日誌を参照する権限がありません');
+    if (user.role === '3' || !d || !canSeeDiary(user, d)) return fail(DIARY_FORBIDDEN_MESSAGE);
     return ok(db.diaryAttachments.filter((a) => a.diary_id === diaryId));
   },
 
   /**
    * その園児の過去の記録。前回の記述を見ながら書けるようにする（画面詳細図 3-2）
-   * 職員の編集画面のための経路であり、保護者には使わせない。下書き・申請中・差し戻し（理由を含む）・ヒヤリハットまで、
-   * 共有していない日誌がすべて返るため（基本設計書 6-1 ※3「自児のみ、かつ共有されたものに限る」。GitHub Issue #157）。
-   * サーバ側は server/api_diary.go の handlePastDiaries
+   * 職員の編集画面のための経路であり、保護者には使わせない。日誌は園内の記録で、保護者へ返さない
+   * （詳細設計書「日誌」(4-13)。GitHub Issue #157）。サーバ側は server/api_diary.go の handlePastDiaries
    */
   async pastDiariesOf(user: SessionUser, childId: string, excludeDiaryId?: number): Promise<Diary[]> {
-    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
+    if (user.role === '3') return fail(DIARY_FORBIDDEN_MESSAGE);
     if (!canSeeChild(user, childId)) return fail('この園児を参照する権限がありません');
     return ok(db.diaries
       .filter((d) => !d.is_deleted && d.child_id === childId && d.diary_id !== excludeDiaryId)
@@ -906,9 +921,14 @@ const diaryApi2 = {
       d.diary_date = input.diary_date;
       d.body = input.body;
       d.status = status;
+      // 申請するときは、申請した職員と日時を入れ直す。下書き保存では変えない（詳細設計書「日誌の状態」(3-6)）
+      if (status === '2') {
+        d.applied_staff_id = user.staff_id;
+        d.applied_at = now();
+      }
       // 差し戻す理由は、再申請しても消さない。承認されるまで残し、次に差し戻されたときに上書きする
       // （基本設計書「日誌（t_diary）」(5-4)。GitHub Issue #174）
-      d.updated_at = now();
+      d.updated_at = nextDiaryVersion(d.updated_at);
       // 申請したらロックを外す（申請中の日誌は編集できない）。下書き保存は編集画面に残って書き続けるため外さず、
       // 操作として最終操作時刻を進める（【仮置き】web/仮置き値.md「日誌の編集ロックの動き」）
       if (status === '2') db.diaryLocks.splice(db.diaryLocks.indexOf(lock), 1);
@@ -929,7 +949,8 @@ const diaryApi2 = {
       status,
       created_staff_id: user.staff_id!,
       approved_staff_id: null, approved_at: null,
-      is_shared_to_guardian: false, shared_at: null,
+      // 作って申請するときは、申請した職員と日時を入れる（詳細設計書「日誌」(4-13 (1))）
+      applied_staff_id: status === '2' ? user.staff_id : null, applied_at: status === '2' ? now() : null,
       nap_abnormal_id: null, returned_reason: null,
       is_deleted: false, created_at: now(), updated_at: now(),
     };
@@ -941,76 +962,107 @@ const diaryApi2 = {
     return ok(row);
   },
 
-  /** 承認待ちの一覧。管理者のみ（画面詳細図 2-4） */
+  /**
+   * 承認待ちの一覧。管理者のみ（画面詳細図 2-4）。申請日時の古い順、同じ時刻は日誌の番号の順
+   * （詳細設計書「日誌の画面（作り直し）」(2-13 (1)) の承認待ち一覧画面。サーバ側は handlePendingDiaries）
+   */
   async pendingDiaries(user: SessionUser): Promise<Diary[]> {
-    if (user.role !== '1') return fail('承認は管理者のみが行えます');
+    if (user.role !== '1') return fail(DIARY_MSG.approveAdminOnly);
     return ok(db.diaries.filter((d) => !d.is_deleted && d.status === '2')
-      .sort((a, b) => a.updated_at.localeCompare(b.updated_at)));
+      .sort((a, b) => (a.applied_at ?? '').localeCompare(b.applied_at ?? '') || a.diary_id - b.diary_id)
+      .map(withDiaryNames));
   },
 
   /**
-   * 承認。保護者への共有の指定を同じ操作で受け取る（画面詳細図 3-3）
-   * 承認後に別画面で指定させると共有し忘れが起きるため
+   * 承認。承認は園内の確認であり、保護者へは何も届かない（基本設計書「日誌システム（園内の記録）」(4-6)、
+   * 詳細設計書「日誌」(4-13 (2))）。サーバ側は server/api_diary_write.go の handleApproveDiary
    */
-  async approveDiary(user: SessionUser, diaryId: number, shareToGuardian: boolean): Promise<Diary> {
-    if (user.role !== '1') return fail('承認は管理者のみが行えます');
-    const d = db.diaries.find((x) => x.diary_id === diaryId);
+  async approveDiary(user: SessionUser, diaryId: number): Promise<Diary> {
+    if (user.role !== '1') return fail(DIARY_MSG.approveAdminOnly);
+    const d = db.diaries.find((x) => x.diary_id === diaryId && !x.is_deleted);
     if (!d) return fail('日誌が見つかりません');
-    if (d.status !== '2') return fail('申請中の日誌のみ承認できます');
-    // 共有を選べるのは個人日誌だけ。クラス日誌・週案月案・ヒヤリハットは保護者への共有の対象外とする
-    // （基本設計書「日誌システム」(4-5)。GitHub Issue #61・#157）。サーバ側は server/api_diary_write.go の handleApproveDiary
-    if (shareToGuardian && d.record_type !== '1') {
-      return fail('保護者へ共有できるのは個人日誌だけです。共有しないで承認してください');
-    }
-    // 自分が申請した日誌は承認できない（基本設計書「日誌の作成から保護者への共有」(4-5)。演習上の想定。GitHub Issue #106）。
-    // 作成者だけでなく、最後に申請した職員も見る。担任の下書きを書き直して申請した管理者が、
-    // 自分で承認して保護者へ共有できていた（GitHub Issue #174）。サーバ側は server/api_diary_write.go の handleApproveDiary
-    if (d.created_staff_id === user.staff_id || diaryApplicant(d.diary_id) === user.staff_id) {
-      return fail('自分が申請した日誌は承認できません。ほかの管理者に承認を依頼してください');
-    }
+    // 下書きなら、申請が取り下げられたあとに届いた承認である（詳細設計書「日誌の状態」(3-6)）
+    if (d.status !== '2') return fail(d.status === '1' ? DIARY_MSG.withdrawn : DIARY_MSG.approveNotApplied);
+    // 自分が申請した日誌は承認できない。申請者の列（applied_staff_id）で判定し、作成者が管理者でも、ほかの職員が
+    // 申請したものは承認できる（詳細設計書「日誌の状態」(3-6)。GitHub Issue #106・#174）
+    if (d.applied_staff_id === user.staff_id) return fail(DIARY_MSG.ownApplication);
 
     d.status = '3';
     d.approved_staff_id = user.staff_id;
     d.approved_at = now();
     d.returned_reason = null;
-    d.is_shared_to_guardian = shareToGuardian;
-    d.shared_at = shareToGuardian ? now() : null;
-    d.updated_at = now();
-    log(user.account_id, '1', '3', 't_diary', d.diary_id, d.child_id, '申請中',
-      shareToGuardian ? '承認済み・保護者へ共有' : '承認済み・共有しない');
-
-    // 共有する場合、個人チャットへ日誌の共有としてメッセージを流す（基本設計書 5-5 source_type=2）。
-    // 個人チャットは園児ID で引く。部屋の名前で探すと、同じ氏名の別の園児の家庭へ流れる（GitHub Issue #163）
-    if (shareToGuardian && d.child_id) {
-      const room = db.chatRooms.find((r) => r.room_type === '4' && r.child_id === d.child_id);
-      if (room) {
-        db.chatMessages.push({
-          chat_message_id: nextId(), chat_room_id: room.chat_room_id, sender_account_id: user.account_id,
-          body: '日誌を共有しました。', source_type: '2', source_id: d.diary_id, sent_at: now(),
-          edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null,
-        });
-        publishRoomPost(room.chat_room_id);
-      }
-    }
+    d.updated_at = nextDiaryVersion(d.updated_at);
+    log(user.account_id, '1', '3', 't_diary', d.diary_id, d.child_id, '申請中', '承認済み');
     publishDiary(d);
-    return ok(d);
+    return ok(withDiaryNames(d));
   },
 
-  /** 差し戻し。理由の入力を必須とする（画面詳細図 3-3） */
+  /**
+   * 差し戻し。理由の入力を必須とする（画面詳細図 3-3）。差し戻した管理者は承認者の列に書かない。
+   * 承認していない人が「承認の経緯」に出るため（詳細設計書「日誌の状態」(3-6)）
+   */
   async returnDiary(user: SessionUser, diaryId: number, reason: string): Promise<Diary> {
     if (user.role !== '1') return fail('差し戻しは管理者のみが行えます');
     if (!reason.trim()) return fail('差し戻す理由を入力してください');
     if (tooLong(reason, 500)) return fail('差し戻す理由は500文字以内で入力してください');
-    const d = db.diaries.find((x) => x.diary_id === diaryId);
+    const d = db.diaries.find((x) => x.diary_id === diaryId && !x.is_deleted);
     if (!d) return fail('日誌が見つかりません');
-    if (d.status !== '2') return fail('申請中の日誌のみ差し戻せます');
+    if (d.status !== '2') return fail(d.status === '1' ? DIARY_MSG.withdrawn : DIARY_MSG.returnNotApplied);
     d.status = '4';
     d.returned_reason = reason;
-    d.approved_staff_id = user.staff_id;
-    d.updated_at = now();
+    d.updated_at = nextDiaryVersion(d.updated_at);
     log(user.account_id, '1', '3', 't_diary', d.diary_id, d.child_id, '申請中', `差し戻し：${reason}`);
     publishDiary(d);
-    return ok(d);
+    return ok(withDiaryNames(d));
+  },
+
+  /**
+   * 申請の取り下げ。申請した本人だけが、申請中（承認・差し戻しの前）のときだけ、読んだ版のときだけ取り下げられる。
+   * 下書きに戻り、申請者が空になる（詳細設計書「日誌の状態」(3-6)・「日誌」(4-13 (4))）。
+   * サーバ側は server/api_diary_write.go の handleWithdrawDiary
+   */
+  async withdrawDiary(user: SessionUser, diaryId: number, updatedAt: string): Promise<Diary> {
+    const d = db.diaries.find((x) => x.diary_id === diaryId && !x.is_deleted);
+    if (user.role === '3' || !d || !canSeeDiary(user, d)) return fail(DIARY_FORBIDDEN_MESSAGE);
+    // 承認・差し戻しのあとも申請者の列は残るため、本人なら次の状態の検査で断る
+    if (!d.applied_staff_id || d.applied_staff_id !== user.staff_id) return fail(DIARY_MSG.withdrawOwnOnly);
+    if (d.status !== '2') return fail(DIARY_MSG.withdrawTooLate);
+    if (d.updated_at !== updatedAt) return fail(DIARY_MSG.versionConflict);
+    const before = `申請者：${staffName(d.applied_staff_id)}（${d.applied_staff_id}）・申請日時：${d.applied_at ?? ''}`;
+    d.status = '1';
+    d.applied_staff_id = null;
+    d.applied_at = null;
+    d.updated_at = nextDiaryVersion(d.updated_at);
+    log(user.account_id, '1', '2', 't_diary', diaryId, d.child_id, before, '取り下げ');
+    publishDiary(d);
+    return ok(withDiaryNames(d));
+  },
+
+  /**
+   * 承認の取り消し。管理者なら、自分が承認したものも、ほかの管理者が承認したものも取り消せる。理由は必須（500文字）。
+   * 差し戻しになり、承認者・承認日時を空にする。元の値は操作ログに残す（詳細設計書「日誌の状態」(3-6)・「日誌」(4-13 (5))、
+   * 基本設計書「承認の取り消し」(4-6)）。サーバ側は server/api_diary_write.go の handleRevokeDiaryApproval
+   */
+  async revokeDiaryApproval(user: SessionUser, diaryId: number, reason: string, updatedAt: string): Promise<Diary> {
+    if (user.role !== '1') return fail(DIARY_MSG.revokeAdminOnly);
+    const text = reason.trim();
+    if (!text) return fail(DIARY_MSG.revokeReason);
+    if (tooLong(text, 500)) return fail(DIARY_MSG.revokeReasonLong);
+    const d = db.diaries.find((x) => x.diary_id === diaryId && !x.is_deleted);
+    if (!d) return fail('日誌が見つかりません');
+    if (d.status !== '3') return fail(DIARY_MSG.notApproved);
+    if (d.updated_at !== updatedAt) return fail(DIARY_MSG.versionConflict);
+    let before = '承認者：';
+    if (d.approved_staff_id) before += `${staffName(d.approved_staff_id)}（${d.approved_staff_id}）`;
+    if (d.approved_at) before += `・承認日時：${d.approved_at}`;
+    d.status = '4';
+    d.approved_staff_id = null;
+    d.approved_at = null;
+    d.returned_reason = text;
+    d.updated_at = nextDiaryVersion(d.updated_at);
+    log(user.account_id, '1', '2', 't_diary', diaryId, d.child_id, before, `承認の取り消し：${text}`);
+    publishDiary(d);
+    return ok(withDiaryNames(d));
   },
 
   /**
@@ -1018,7 +1070,7 @@ const diaryApi2 = {
    * （pastDiariesOf と同じ。サーバ側は server/api_diary.go の handleTimeline。GitHub Issue #157）
    */
   async timelineOf(user: SessionUser, childId: string): Promise<Diary[]> {
-    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
+    if (user.role === '3') return fail(DIARY_FORBIDDEN_MESSAGE);
     if (!canSeeChild(user, childId)) return fail('この園児を参照する権限がありません');
     return ok(db.diaries
       .filter((d) => !d.is_deleted && d.child_id === childId)
@@ -1545,10 +1597,11 @@ const chatApi2 = {
     return ok([...db.chatMessages]
       .sort((a, b) => b.sent_at.localeCompare(a.sent_at) || b.chat_message_id - a.chat_message_id)
       // 配布物の掲載の知らせ（source_type = 4）は対象にしない。取り下げとして操作ログに残る
-      // （基本設計書「誤送信への対応」(4-6)。GitHub Issue #98）
+      // （基本設計書「誤送信への対応」(4-6)。GitHub Issue #98）。日誌・発達身体の共有の知らせ（source_type = 2・3）も
+      // 対象にしない。日誌を園内の記録にしたときにシステムがまとめて取り消したもので、人の誤送信ではない（api_chat.go と同じ）
       // 【仮置き】保護者が送ったメッセージも対象にしない。誤送信への対応は、園が誤って送ったときのもの（同 (4-6) の
       // 利用タイミング）であり、保護者の打ちまちがいの取消は当たらない（GitHub Issue #171。api_chat.go と同じ）
-      .filter((m) => m.is_deleted && m.source_type !== '4' && findAccount(m.sender_account_id)?.role !== '3'
+      .filter((m) => m.is_deleted && m.source_type === '1' && findAccount(m.sender_account_id)?.role !== '3'
         && !recorded.has(m.chat_message_id))
       .map((m) => ({
         chat_message_id: m.chat_message_id,
@@ -1753,7 +1806,7 @@ export const napApi = {
       class_id: session?.class_id ?? null, diary_date: diaryDate,
       body: `【発生日時】\n${a.found_at.replace('T', ' ')}\n\n【状況】\n${a.situation}\n\n【とった対応】\n${a.response}\n\n【今後の対策】\n`,
       status: '1', created_staff_id: user.staff_id!, approved_staff_id: null, approved_at: null,
-      is_shared_to_guardian: false, shared_at: null, nap_abnormal_id: abnormalId,
+      applied_staff_id: null, applied_at: null, nap_abnormal_id: abnormalId,
       returned_reason: null, is_deleted: false, created_at: now(), updated_at: now(),
     };
     db.diaries.unshift(d);
@@ -3087,10 +3140,6 @@ const dashboardApi = {
       child,
       ageMonths: ageInMonths(child.birth_date, today()),
       className: className(db.classChildren.find((cc) => cc.child_id === child.child_id)?.class_id ?? null),
-      // 共有された個人日誌のみ。承認と共有の指定が済んだものだけが保護者に見える（canSeeDiary と同じ条件）
-      sharedDiaries: db.diaries
-        .filter((d) => d.child_id === child.child_id && canSeeDiary(user, d))
-        .sort((a, b) => b.diary_date.localeCompare(a.diary_date)),
       unread,
       // 園児1人の「きょう」（詳細設計書「ダッシュボード」(4-8 (1))。server/api_contact.go の guardianToday）
       today: guardianTodayOf(user, child),

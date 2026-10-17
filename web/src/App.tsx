@@ -31,7 +31,6 @@ import DiaryConfirmScreen from './screens/diary/DiaryConfirmScreen';
 import ApprovalListScreen from './screens/diary/ApprovalListScreen';
 import DiaryApproveScreen from './screens/diary/DiaryApproveScreen';
 import ChildTimelineScreen from './screens/diary/ChildTimelineScreen';
-import GuardianDiaryScreen from './screens/diary/GuardianDiaryScreen';
 
 // チャットツール
 import StaffChatScreen from './screens/chat/StaffChatScreen';
@@ -91,8 +90,7 @@ function PageNavigation() {
     : pathname.startsWith('/staff/diary/timeline/') ? '園児の記録'
     : pathname.startsWith('/staff/diary/') ? '日誌の編集'
     : pathname.startsWith('/staff/growth/dev/') ? '発達チェックの入力'
-    : pathname.startsWith('/staff/children/') ? '園児情報の編集'
-    : pathname.startsWith('/guardian/diary/') ? '共有された日誌' : 'すくすく');
+    : pathname.startsWith('/staff/children/') ? '園児情報の編集' : 'すくすく');
   useEffect(() => {
     document.title = `${name} — すくすく`;
     if (initial.current) { initial.current = false; return; }
@@ -293,7 +291,6 @@ export default function App() {
         <Route path="contact/:childId" element={<GuardianContactScreen />} />
         <Route path="chat" element={<GuardianChatScreen />} />
         <Route path="handouts" element={<GuardianHandoutsScreen />} />
-        <Route path="diary/:id" element={<GuardianDiaryScreen />} />
         <Route path="password" element={<PasswordChangeScreen />} />
         <Route path="terms" element={<TermsAgreeScreen readOnly />} />
       </Route>

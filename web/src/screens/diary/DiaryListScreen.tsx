@@ -4,6 +4,7 @@
  *
  * 状態を列として持つ（下書き／申請中／差し戻し／承認済）。差し戻しは他と区別できる色にする。
  * 一般（保育士）の既定の絞り込みは自クラス。他クラスは選べない。
+ * 自分が申請した申請中の行には「申請を取り下げる」を出す（詳細設計書「日誌の画面（作り直し）」(2-13 (2))）。
  */
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -14,7 +15,8 @@ import { api, selectableClasses, childName, className, staffName } from '../../a
 import { Loading, ErrorBox, Empty, Pager, Field, Tag } from '../../components/ui';
 import { DIARY_RECORD_TYPE, DIARY_STATUS, DIARY_STATUS_CLASS } from '../../api/codes';
 import { formatMD, today, addDays } from '../../api/util';
-import type { DiaryRecordType, DiaryStatus } from '../../api/types';
+import type { Diary, DiaryRecordType, DiaryStatus } from '../../api/types';
+import { ConfirmDialog, notify } from '../../components/feedback';
 
 export default function DiaryListScreen() {
   const { user } = useSession();
@@ -37,6 +39,24 @@ export default function DiaryListScreen() {
   const [to, setTo] = useState(fromDashboard ? '' : today());
   const [page, setPage] = useState(1);
   const [applied, setApplied] = useState(0);
+  // 取り下げを確かめている行（申請の取り下げ。詳細設計書「日誌の画面（作り直し）」(2-13 (2))）
+  const [withdrawing, setWithdrawing] = useState<Diary | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  /*
+   * 一覧で読んだ版を添えて取り下げる。承認・差し戻しが先に済んでいたら断られ、その文言を出す。
+   * どちらの場合も一覧を読み直す（状態の列と、取り下げのボタンの有無を今に合わせる）
+   */
+  const withdraw = async () => {
+    if (!withdrawing) return;
+    setBusy(true); setActionError(null);
+    try {
+      await api.withdrawDiary(user!, withdrawing.diary_id, withdrawing.updated_at);
+      notify('申請を取り下げました。下書きに戻っています');
+    } catch (e) { setActionError((e as Error).message); }
+    finally { setBusy(false); setWithdrawing(null); setApplied((n) => n + 1); }
+  };
 
   // 同じ画面のままサイドナビから再訪した場合も、URL の条件を反映する。
   useEffect(() => {
@@ -112,6 +132,7 @@ export default function DiaryListScreen() {
       </section>
 
       <section className="card">
+        {actionError && <div style={{ marginBottom: 12 }}><ErrorBox text={actionError} /></div>}
         {loading && <Loading />}
         {error && <ErrorBox text={error} />}
         {data && data.rows.length === 0 && <Empty text="該当する日誌はありません。" />}
@@ -131,7 +152,15 @@ export default function DiaryListScreen() {
                     <td>{d.child_id ? childName(d.child_id) : className(d.class_id)}</td>
                     <td className="nowrap">{staffName(d.created_staff_id)}</td>
                     <td className="nowrap"><Tag label={DIARY_STATUS[d.status]} className={DIARY_STATUS_CLASS[d.status]} /></td>
-                    <td className="nowrap"><Link className="btn btn-sm" to={`/staff/diary/${d.diary_id}`}>開く</Link></td>
+                    <td className="nowrap">
+                      <Link className="btn btn-sm" to={`/staff/diary/${d.diary_id}`}>開く</Link>
+                      {/* 申請した本人の、申請中の行だけ（サーバも本人以外を断る） */}
+                      {d.status === '2' && !!d.applied_staff_id && d.applied_staff_id === user!.staff_id && (
+                        <button className="btn-sm" style={{ marginLeft: 8 }} onClick={() => setWithdrawing(d)} disabled={busy}>
+                          申請を取り下げる
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -140,6 +169,12 @@ export default function DiaryListScreen() {
           </>
         )}
       </section>
+      {withdrawing && (
+        <ConfirmDialog title="申請の取り下げ" confirmLabel="取り下げる" busy={busy}
+          onConfirm={withdraw} onCancel={() => setWithdrawing(null)}>
+          <p>申請を取り下げますか。下書きに戻り、承認待ちから外れます。</p>
+        </ConfirmDialog>
+      )}
     </div>
   );
 }

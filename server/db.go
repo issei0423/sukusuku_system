@@ -78,6 +78,10 @@ func openDB(path string) (*sql.DB, error) {
 	if err := ensureContactSchema(db); err != nil {
 		return nil, err
 	}
+	// 日誌を園内の記録の形へ移す（詳細設計書「既存の DB の移し方」(5-4) の 7。db_diary.go）
+	if err := ensureInternalDiary(db); err != nil {
+		return nil, fmt.Errorf("日誌を園内の記録の形へ移せません: %w", err)
+	}
 	return db, nil
 }
 

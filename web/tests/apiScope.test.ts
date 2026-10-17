@@ -84,8 +84,8 @@ describe('手続きを終えるまで、ほかの API を使わせない（基�
   });
 });
 
-describe('日誌の添付（基本設計書「日誌の作成から保護者への共有」(4-5)「承認済みであっても参照範囲は広がらない」）', () => {
-  // 日誌 4 は上園 花子（C002・さくら組）の個人日誌。承認済み・保護者へ共有、添付2件
+describe('日誌の添付（詳細設計書「日誌」(4-13)。承認済みであっても参照範囲は広がらず、保護者には返さない）', () => {
+  // 日誌 4 は上園 花子（C002・さくら組）の個人日誌。承認済み、添付2件
   const diaryId = 4;
 
   it('日誌本体を見られない人には、添付も返さない', async () => {
@@ -94,22 +94,15 @@ describe('日誌の添付（基本設計書「日誌の作成から保護者へ�
     await expect(api.getDiary(otherTeacher, diaryId)).rejects.toThrow('この日誌を参照する権限がありません');
   });
 
-  it('日誌本体を見られる人には返す', async () => {
-    for (const u of [admin, teacher, childGuardian]) {
+  it('日誌本体を見られる職員には返す', async () => {
+    for (const u of [admin, teacher]) {
       expect(await api.attachmentsOf(u, diaryId)).toHaveLength(2);
     }
   });
 
-  it('保護者へ共有していない日誌は、自児の保護者にも本体・添付を見せない', async () => {
-    const d = db.diaries.find((x) => x.diary_id === diaryId)!;
-    d.is_shared_to_guardian = false;
-    try {
-      await expect(api.attachmentsOf(childGuardian, diaryId)).rejects.toThrow('この日誌を参照する権限がありません');
-      // 保護者には「この記録は共有されていません」と示す（画面詳細図 2-8。GitHub Issue #157）
-      await expect(api.getDiary(childGuardian, diaryId)).rejects.toThrow('この記録は共有されていません');
-    } finally {
-      d.is_shared_to_guardian = true;
-    }
+  it('保護者には承認済みでも本体・添付を見せない', async () => {
+    await expect(api.attachmentsOf(childGuardian, diaryId)).rejects.toThrow('この日誌を参照する権限がありません');
+    await expect(api.getDiary(childGuardian, diaryId)).rejects.toThrow('この日誌を参照する権限がありません');
   });
 });
 

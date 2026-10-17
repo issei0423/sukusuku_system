@@ -166,7 +166,7 @@ describe('個人チャットは園児ID で結ぶ（GitHub Issue #163 の 1）',
     const d = await api.saveDiary(himawariTeacher, {
       record_type: '1', child_id: 'C023', class_id: 2, diary_date: today(), body: 'ひまわり組の太郎くんの記録',
     }, '2');
-    await api.approveDiary(admin, d.diary_id, true);
+    await api.approveDiary(admin, d.diary_id);
     expect(db.chatMessages.filter((m) => m.chat_room_id === 6)).toHaveLength(before);
   });
 

@@ -137,8 +137,8 @@ INSERT INTO m_terms (terms_id, terms_version, document_type, body, published_on)
  (2,'0.9','1','（旧版）第1条（本規約について）本規約は、当園が提供する保育支援システムの利用条件を定めるものです。','2025-04-01');
 
 -- ============ 日誌の雛形 ============
--- 保護者共有の既定値を雛形側に持ち、コードに書かない（基本設計書 5-4）
-INSERT INTO m_diary_template (diary_template_id, record_type, template_name, body, default_share_to_guardian) VALUES
+-- 日誌は保護者へ届かないため、個人日誌の雛形に保護者あての見出しを置かない（詳細設計書「デモデータ」(5-5)）
+INSERT INTO m_diary_template (diary_template_id, record_type, template_name, body, is_deleted) VALUES
  (1,'1','個人日誌（標準）','【今日の様子】
 
 【食事】
@@ -147,8 +147,8 @@ INSERT INTO m_diary_template (diary_template_id, record_type, template_name, bod
 
 【午睡】
 
-【保護者へのお伝え】
-',1),
+【気づいたこと】
+',0),
  (2,'2','クラス日誌（標準）','【ねらい】
 
 【活動内容】
@@ -177,7 +177,7 @@ INSERT INTO m_diary_template (diary_template_id, record_type, template_name, bod
 ',0);
 
 -- ============ 日誌 ============
-INSERT INTO t_diary (diary_id, record_type, child_id, class_id, diary_date, body, status, created_staff_id, approved_staff_id, approved_at, is_shared_to_guardian, shared_at, nap_abnormal_id, returned_reason, is_deleted, created_at, updated_at) VALUES
+INSERT INTO t_diary (diary_id, record_type, child_id, class_id, diary_date, body, status, created_staff_id, applied_staff_id, applied_at, approved_staff_id, approved_at, occurred_at, place, nap_abnormal_id, returned_reason, is_deleted, created_at, updated_at) VALUES
  (1,'1','C001',1,'2026-09-01','【今日の様子】
 積み木を高く積んで遊んでいました。崩れても笑って積み直していました。
 
@@ -185,29 +185,29 @@ INSERT INTO t_diary (diary_id, record_type, child_id, class_id, diary_date, body
 完食。
 
 【午睡】
-13:05に入眠。','1','S003',NULL,NULL,0,NULL,NULL,NULL,0,'2026-09-01T16:40:00','2026-09-01T16:40:00'),
+13:05に入眠。','1','S003',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,'2026-09-01T16:40:00','2026-09-01T16:40:00'),
  (2,'2',NULL,1,'2026-08-31','【ねらい】
 身近な友だちと関わる楽しさを味わう。
 
 【活動内容】
-園庭でしゃぼん玉遊び。','2','S003',NULL,NULL,0,NULL,NULL,NULL,0,'2026-08-31T17:20:00','2026-08-31T17:20:00'),
+園庭でしゃぼん玉遊び。','2','S003','S003','2026-08-31T17:20:00',NULL,NULL,NULL,NULL,NULL,NULL,0,'2026-08-31T17:20:00','2026-08-31T17:20:00'),
  (4,'1','C002',1,'2026-08-29','【今日の様子】
 絵本の読み聞かせに集中していました。
 
 【食事】
-野菜を残しましたが、声をかけると一口食べました。','3','S003','S001','2026-08-29T18:05:00',1,'2026-08-29T18:05:00',NULL,NULL,0,'2026-08-29T17:10:00','2026-08-29T18:05:00'),
+野菜を残しましたが、声をかけると一口食べました。','3','S003','S003','2026-08-29T17:10:00','S001','2026-08-29T18:05:00',NULL,NULL,NULL,NULL,0,'2026-08-29T17:10:00','2026-08-29T18:05:00'),
  (5,'1','C001',1,'2026-08-29','【今日の様子】
 砂場でスコップを使い、型抜きを繰り返していました。
 
 【午睡】
-12:55に入眠。','3','S003','S001','2026-08-29T18:06:00',1,'2026-08-29T18:06:00',NULL,NULL,0,'2026-08-29T17:15:00','2026-08-29T18:06:00'),
+12:55に入眠。','3','S003','S003','2026-08-29T17:15:00','S001','2026-08-29T18:06:00',NULL,NULL,NULL,NULL,0,'2026-08-29T17:15:00','2026-08-29T18:06:00'),
  (6,'2',NULL,2,'2026-09-01','【ねらい】
 身の回りのことを自分でやってみようとする。
 
 【活動内容】
-散歩（近隣公園）。','2','S005',NULL,NULL,0,NULL,NULL,NULL,0,'2026-09-01T17:00:00','2026-09-01T17:00:00'),
+散歩（近隣公園）。','2','S005','S005','2026-09-01T17:00:00',NULL,NULL,NULL,NULL,NULL,NULL,0,'2026-09-01T17:00:00','2026-09-01T17:00:00'),
  (7,'1','C004',1,'2026-09-01','【今日の様子】
-手洗いを自分でしようとする姿がありました。','2','S004',NULL,NULL,0,NULL,NULL,NULL,0,'2026-09-01T17:20:00','2026-09-01T17:20:00');
+手洗いを自分でしようとする姿がありました。','2','S004','S004','2026-09-01T17:20:00',NULL,NULL,NULL,NULL,NULL,NULL,0,'2026-09-01T17:20:00','2026-09-01T17:20:00');
 
 INSERT INTO t_diary_attachment (diary_attachment_id, diary_id, file_path, file_type) VALUES
  (1,4,'demo/photo-1','image/jpeg'),
@@ -237,7 +237,7 @@ INSERT INTO t_nap_abnormal (nap_abnormal_id, nap_session_id, child_id, found_at,
  (2,2,'C005','2026-08-31T14:10:00','顔色がやや紅潮していた。体温37.4度。','別室で休ませ、保護者へ連絡した。','S003',NULL);
 
 -- ヒヤリハット（異常時の記録から起票済み。相互に参照する）
-INSERT INTO t_diary (diary_id, record_type, child_id, class_id, diary_date, body, status, created_staff_id, approved_staff_id, approved_at, is_shared_to_guardian, shared_at, nap_abnormal_id, returned_reason, is_deleted, created_at, updated_at) VALUES
+INSERT INTO t_diary (diary_id, record_type, child_id, class_id, diary_date, body, status, created_staff_id, applied_staff_id, applied_at, approved_staff_id, approved_at, occurred_at, place, nap_abnormal_id, returned_reason, is_deleted, created_at, updated_at) VALUES
  (3,'4','C003',1,'2026-08-30','【発生日時】
 午睡中の13時40分ごろ
 
@@ -245,7 +245,7 @@ INSERT INTO t_diary (diary_id, record_type, child_id, class_id, diary_date, body
 午睡中にうつ伏せの体位を確認した。
 
 【とった対応】
-仰向けに直し、呼吸と顔色を確認した。','4','S004','S001',NULL,0,NULL,1,'発生時の呼吸・顔色の記録が本文にありません。異常時の記録と同じ内容を転記してください。',0,'2026-08-30T18:00:00','2026-08-31T09:10:00');
+仰向けに直し、呼吸と顔色を確認した。','4','S004',NULL,NULL,NULL,NULL,'2026-08-30T00:00:00','（第3.0版より前の記録）',1,'発生時の呼吸・顔色の記録が本文にありません。異常時の記録と同じ内容を転記してください。',0,'2026-08-30T18:00:00','2026-08-31T09:10:00');
 -- ヒヤリハットと異常時の記録は相互に参照する。循環参照になるため、日誌の登録後に紐づける
 UPDATE t_nap_abnormal SET diary_id = 3 WHERE nap_abnormal_id = 1;
 
@@ -284,10 +284,10 @@ INSERT INTO t_chat_message (chat_message_id, chat_room_id, sender_account_id, bo
  (1,1,1,'9月の献立表を掲示しました。ご確認ください。','1',NULL,'2026-09-01T08:30:00',NULL,0,NULL,NULL),
  (2,3,4,'明日の遠足の集合時間ですが、9時でよろしいでしょうか。','1',NULL,'2026-09-01T15:02:00',NULL,0,NULL,NULL),
  (3,3,3,'9時に園庭でお願いします。','1',NULL,'2026-09-01T15:10:00',NULL,0,NULL,NULL),
- (4,6,3,'本日の日誌を共有しました。','2',5,'2026-08-29T18:06:00',NULL,0,NULL,NULL),
+ (4,6,3,'今日は砂場でスコップを使って、型抜きを何度もしていました。','1',NULL,'2026-08-29T18:06:00',NULL,0,NULL,NULL),
  (5,6,6,'ありがとうございます。確認しました。','1',NULL,'2026-08-29T20:30:00',NULL,0,NULL,NULL),
  (6,6,6,'明日は祖母がお迎えに伺います。よろしくお願いします。','1',NULL,'2026-09-01T07:40:00',NULL,0,NULL,NULL),
- (7,7,3,'本日の日誌を共有しました。','2',4,'2026-08-29T18:05:00',NULL,0,NULL,NULL),
+ (7,7,3,'今日は絵本の読み聞かせを、最後まで座って聞いていました。','1',NULL,'2026-08-29T18:05:00',NULL,0,NULL,NULL),
  (8,2,2,'来週の職員会議は水曜16時からです。','1',NULL,'2026-08-31T11:00:00',NULL,0,NULL,NULL),
  (9,5,1,'種目案を今週中にまとめましょう。','1',NULL,'2026-08-28T13:00:00',NULL,0,NULL,NULL),
  -- 取消済み。誤送信への対応の記録と対にする
@@ -372,7 +372,7 @@ INSERT INTO t_operation_log (operation_log_id, account_id, operated_at, function
  (1,3,'2026-09-01T16:40:00','1','1','t_diary',1,'C001',NULL,'下書き作成'),
  (2,3,'2026-09-01T13:20:30','3','1','t_nap_record',1,'C001',NULL,'体位=仰向け 呼吸=あり 顔色=通常 体温=36.6'),
  (3,1,'2026-08-31T09:10:00','1','3','t_diary',3,'C003','申請中','差し戻し'),
- (4,1,'2026-08-29T18:05:00','1','3','t_diary',4,'C002','申請中','承認済み・保護者へ共有'),
+ (4,1,'2026-08-29T18:05:00','1','3','t_diary',4,'C002','申請中','承認済み'),
  (5,3,'2026-09-01T10:00:00','5','1','t_physical_record',7,'C001',NULL,'身長=78.5 体重=9.8'),
  (6,1,'2026-08-25T10:00:00','7','1','t_invitation_code',1,'C001',NULL,'招待コードを発行'),
  (7,1,'2026-08-20T10:00:00','7','2','m_account',8,NULL,'有効','停止'),
