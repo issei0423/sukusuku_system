@@ -119,3 +119,67 @@ func TestGuardianJoinsExistingRoomAfterRegistration(t *testing.T) {
 		t.Fatal("保護者登録で個人チャットが重複した")
 	}
 }
+
+// 最初の保護者が参加する前の投稿だけは、後から参加した保護者も読める。
+func TestPersonalRoomMessagesBeforeFirstGuardianJoin(t *testing.T) {
+	a, h := newTestApp(t)
+	admin := loginAs(a, 1, "staff")
+	body, _ := json.Marshal(childInput{ChildID: "C901", ChildName: "試験 花", ChildNameKana: "しけん はな", BirthDate: "2025-01-01", Sex: "2", PhotoConsentLevel: "2", ClassID: 2, Mode: "create"})
+	expectStatus(t, request(t, h, admin, "POST", "/api/children", string(body)), http.StatusOK)
+	var roomID int64
+	if err := a.db.QueryRow(`SELECT chat_room_id FROM m_chat_room WHERE child_id = 'C901'`).Scan(&roomID); err != nil {
+		t.Fatal(err)
+	}
+	room := itoa(roomID)
+	for _, msg := range []struct {
+		sender     int
+		body, sent string
+	}{
+		{5, "保護者登録前", "2026-01-01T10:00:00"},
+		{5, "最初の保護者が参加した後の園の投稿", "2026-01-03T10:00:00"},
+		{6, "最初の保護者の投稿", "2026-01-03T11:00:00"},
+	} {
+		if _, err := a.db.Exec(`INSERT INTO t_chat_message (chat_room_id, sender_account_id, body, source_type, sent_at, is_deleted)
+			VALUES (?, ?, ?, '1', ?, 0)`, roomID, msg.sender, msg.body, msg.sent); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, member := range []struct {
+		id     int
+		joined string
+		left   any
+	}{
+		{6, "2026-01-02T10:00:00", nil},
+		{7, "2026-01-05T10:00:00", nil},
+	} {
+		if _, err := a.db.Exec(`INSERT INTO t_chat_member (chat_room_id, account_id, joined_at, left_at) VALUES (?, ?, ?, ?)`, roomID, member.id, member.joined, member.left); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := a.db.Exec(`UPDATE m_account SET terms_version = ?, terms_agreed_at = ? WHERE account_id IN (6, 7)`, a.currentTermsVersion, now()); err != nil {
+		t.Fatal(err)
+	}
+	first := loginAs(a, 6, "guardian")
+	second := loginAs(a, 7, "guardian")
+	if got := roomViews(t, h, first)[roomID].Unread; got != 2 {
+		t.Fatalf("最初の保護者の未読 = %d, want 2", got)
+	}
+	if got := chatMessagesOf(t, h, first, room); len(got) != 3 {
+		t.Fatalf("最初の保護者に見える投稿 = %v", got)
+	}
+	// 既存の保護者が抜けても、最初に参加した日時を境界として残す。
+	if _, err := a.db.Exec(`UPDATE t_chat_member SET left_at = '2026-01-04T10:00:00' WHERE chat_room_id = ? AND account_id = 6`, roomID); err != nil {
+		t.Fatal(err)
+	}
+	if got := roomViews(t, h, second)[roomID].Unread; got != 1 {
+		t.Fatalf("後から参加した保護者の未読 = %d, want 1", got)
+	}
+	if got := chatMessagesOf(t, h, second, room); len(got) != 1 {
+		t.Fatalf("後から参加した保護者に見える投稿 = %v", got)
+	}
+	expectStatus(t, send(t, h, first, "GET", "/api/chat/rooms/"+room+"/messages", ""), http.StatusForbidden)
+	expectStatus(t, call(t, h, second, "POST", "/api/chat/rooms/"+room+"/read", ""), http.StatusOK)
+	if got := roomViews(t, h, second)[roomID].Unread; got != 0 {
+		t.Fatalf("既読後の未読 = %d", got)
+	}
+}

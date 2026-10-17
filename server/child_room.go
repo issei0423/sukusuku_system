@@ -27,13 +27,13 @@ func createPersonalRoom(q dbtx, childID string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	if err := syncPersonalRoomStaff(q, roomID); err != nil {
+	if err := syncPersonalRoomStaff(q); err != nil {
 		return 0, err
 	}
 	return roomID, nil
 }
 
-func syncPersonalRoomStaff(q dbtx, roomID int64) error {
+func syncPersonalRoomStaff(q dbtx) error {
 	ids, err := queryIDs(q, `SELECT account_id FROM m_account WHERE role IN ('1','2')`)
 	if err != nil {
 		return err

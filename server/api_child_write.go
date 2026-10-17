@@ -142,7 +142,7 @@ func (a *app) handleSaveChild(w http.ResponseWriter, r *http.Request) {
 		_, err = tx.Exec(`UPDATE m_chat_room SET room_name = ?, class_id = ? WHERE room_type = '4' AND child_id = ?`,
 			in.ChildName+"の保護者", in.ClassID, in.ChildID)
 		if err == nil {
-			err = syncPersonalRoomStaff(tx, 0)
+			err = syncPersonalRoomStaff(tx)
 		}
 	}
 	if err != nil {

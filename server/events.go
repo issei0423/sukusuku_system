@@ -312,7 +312,7 @@ func (a *app) notifyRoomMembers(roomID int64) {
 }
 
 // notifyMessage は、そのメッセージを見られる人へ送る（編集・取消・リアクション）。
-// handleChatMessages と同じ判定：後から加わった保護者には加わる前の、外れた人には外れたあとのメッセージを見せない
+// handleChatMessages と同じ判定：後から加わった保護者には加わる前の（保護者がまだいなかった間を除く）、外れた人には外れたあとのメッセージを見せない
 func (a *app) notifyMessage(roomID, messageID int64) {
 	a.notify(liveEvent{Type: evChat, RoomID: roomID}, func(u *SessionUser) bool {
 		return a.isMember(u, roomID) && a.messageVisibleTo(u, messageID)

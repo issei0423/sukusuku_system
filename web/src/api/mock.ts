@@ -1317,9 +1317,12 @@ function readCountOf(messageId: number, roomType: string): number {
 /**
  * 保護者に見せないメッセージか
  *
- * 後から登録した保護者には、登録より前の個人チャットのやりとりを見せない
- * （基本設計書「チャット」(5-5)）。先に登録していた保護者は、自分の書いたものが
+ * 後から登録した保護者には、先に参加していた保護者と園のやりとりを見せない
+ * （基本設計書 第3.1版「チャット」(5-6)）。先に登録していた保護者は、自分の書いたものが
  * 後から加わる人に読まれることを知らないため。職員には適用しない。
+ * ただし、保護者がまだ1人も参加していなかった間の投稿は、どの保護者にも見せる
+ * （個人チャットは園児の登録時に作り、登録前から園が書けるため。GitHub Issue #140）。
+ * 境は、保護者の参加の行（抜けた行も含む）のうち最も早い joined_at。
  * Go サーバ（server/api_chat.go の beforeJoinedClause）と同じ規則にしてある。
  */
 function hiddenBeforeJoined(user: SessionUser, m: ChatMessage): boolean {
@@ -1329,7 +1332,11 @@ function hiddenBeforeJoined(user: SessionUser, m: ChatMessage): boolean {
   const member = db.chatMembers.find((x) => x.chat_room_id === m.chat_room_id && x.account_id === user.account_id);
   // 【仮置き】時刻は秒の単位で持つため、登録と同じ秒のメッセージは前か後かを区別できない。
   // 見せない側へ倒す（GitHub Issue #102）。見せる側へ倒すと、登録の直前に送られたものが読めてしまう
-  return !!member && m.sent_at <= member.joined_at;
+  const firstGuardianJoin = db.chatMembers
+    .filter((x) => x.chat_room_id === m.chat_room_id && findAccount(x.account_id)?.role === '3')
+    .reduce<string | null>((first, x) => first === null || x.joined_at < first ? x.joined_at : first, null);
+  return !!member && firstGuardianJoin !== null && member.joined_at > firstGuardianJoin
+    && m.sent_at <= member.joined_at && m.sent_at >= firstGuardianJoin;
 }
 
 /**
