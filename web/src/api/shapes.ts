@@ -55,6 +55,17 @@ export interface DiaryInput {
   diary_date: string;
   body: string;
   lock_token?: string;
+  /**
+   * 日誌に付ける写真。保存のたびに、この並びで日誌の写真を置き換える。送らなければ付いている写真に触らず、
+   * 空の並びはすべて外す（【仮置き】web/仮置き値.md「日誌作成・編集画面の動き」。GitHub Issue #175 の 2）
+   */
+  attachments?: DiaryAttachmentInput[];
+}
+
+/** 日誌に付ける写真 1 枚。実体は持たず、ファイルの名前と形式だけを持つ（web/仮置き値.md 7「添付ファイルの実体」） */
+export interface DiaryAttachmentInput {
+  file_path: string;
+  file_type: string;
 }
 
 export interface DiaryTemplate {

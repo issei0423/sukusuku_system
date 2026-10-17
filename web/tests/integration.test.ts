@@ -129,6 +129,33 @@ run('Go サーバとの結合', () => {
     expect(await http.api.lockOf(dummy, 1)).toBeNull();
   });
 
+  it('日誌の写真は保存のときに日誌へ付き、空の並びで外れる（GitHub Issue #175 の 2）', async () => {
+    // 日誌 1 は高梨（さくら組）の下書きで、写真は付いていない。終わったら元の 0 枚へ戻す
+    const r = await http.api.acquireLock(dummy, 1);
+    if (!('token' in r)) throw new Error(`ロックを取れませんでした（${r.heldBy}さんが編集中）`);
+    const d = await http.api.getDiary(dummy, 1);
+    const input = {
+      diary_id: 1, record_type: d.record_type, child_id: d.child_id, class_id: d.class_id,
+      diary_date: d.diary_date, body: d.body, lock_token: r.token,
+    };
+    try {
+      await http.api.saveDiary(dummy, { ...input, attachments: [
+        { file_path: 'demo/photo-it-1', file_type: 'image/jpeg' },
+        { file_path: 'demo/photo-it-2', file_type: 'image/png' },
+      ] }, '1');
+      expect((await http.api.attachmentsOf(dummy, 1)).map((a) => [a.file_path, a.file_type])).toEqual([
+        ['demo/photo-it-1', 'image/jpeg'], ['demo/photo-it-2', 'image/png'],
+      ]);
+      await expect(http.api.saveDiary(dummy, { ...input, attachments: [
+        { file_path: 'demo/a.pdf', file_type: 'application/pdf' },
+      ] }, '1')).rejects.toThrow(/JPEG・PNG/);
+    } finally {
+      await http.api.saveDiary(dummy, { ...input, attachments: [] }, '1');
+      await http.api.releaseLock(dummy, 1, false, r.token);
+    }
+    expect(await http.api.attachmentsOf(dummy, 1)).toEqual([]);
+  });
+
   it('一般は園児を登録できない', async () => {
     await expect(http.api.saveChild(dummy, {
       child_id: 'C901', child_name: 'テスト', child_name_kana: 'てすと',
