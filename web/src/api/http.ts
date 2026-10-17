@@ -245,8 +245,9 @@ const apiAuth = {
     const r = await get<{ exists: boolean }>(`/api/children/${encodeURIComponent(childId.trim())}/exists`);
     return r.exists;
   },
-  allergiesOf: (childId: string) => get<Allergy[]>(`/api/children/${childId}/allergies`),
-  medicalHistoriesOf: (childId: string) =>
+  // 第1引数はモック実装（mock.ts）が権限の判定に使う。サーバはセッションから利用者を引く
+  allergiesOf: (_u: SessionUser, childId: string) => get<Allergy[]>(`/api/children/${childId}/allergies`),
+  medicalHistoriesOf: (_u: SessionUser, childId: string) =>
     get<{ medical_history_id: number; child_id: string; content: string }[]>(
       `/api/children/${childId}/medical-histories`),
   classOf: (_u: SessionUser, childId: string) => get<number | null>(`/api/children/${childId}/class`),
@@ -277,7 +278,7 @@ const apiAuth = {
   attachmentsOf: (_u: SessionUser, diaryId: number) =>
     get<{ diary_attachment_id: number; diary_id: number; file_path: string; file_type: string }[]>(
       `/api/diaries/${diaryId}/attachments`),
-  pastDiariesOf: (childId: string, _exclude?: number) => get<Diary[]>(`/api/children/${childId}/diaries`),
+  pastDiariesOf: (_u: SessionUser, childId: string, _exclude?: number) => get<Diary[]>(`/api/children/${childId}/diaries`),
   timelineOf: (_u: SessionUser, childId: string) => get<Diary[]>(`/api/children/${childId}/timeline`),
   pendingDiaries: (_u: SessionUser) => get<Diary[]>('/api/diaries/pending'),
 

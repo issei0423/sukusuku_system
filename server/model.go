@@ -159,15 +159,28 @@ func ageInMonths(birthDate, baseDate string) int {
 	return months
 }
 
+// splitDate は 'YYYY-MM-DD'（後ろに時刻が続いてもよい）を年月日に分ける。
+//
+// 形の崩れた値でも落ちない。読めなければ ok を偽で返し、月齢は 0 になる。
+// 保存の API で検査を入れる前に入ってしまった値（2026-10-1 など）があっても、
+// 一覧やダッシュボードが開けなくならないようにするため（GitHub Issue #164）。
+// 1桁の月日は、そのまま数として読む
 func splitDate(iso string) (y, m, d int, ok bool) {
-	parts := strings.Split(iso, "-")
+	parts := strings.SplitN(iso, "-", 3)
 	if len(parts) < 3 {
 		return 0, 0, 0, false
 	}
+	day := parts[2]
+	if i := strings.IndexAny(day, "T "); i >= 0 {
+		day = day[:i]
+	}
 	y, e1 := strconv.Atoi(parts[0])
 	m, e2 := strconv.Atoi(parts[1])
-	d, e3 := strconv.Atoi(parts[2][:2])
-	return y, m, d, e1 == nil && e2 == nil && e3 == nil
+	d, e3 := strconv.Atoi(day)
+	if e1 != nil || e2 != nil || e3 != nil || m < 1 || m > 12 || d < 1 || d > 31 {
+		return 0, 0, 0, false
+	}
+	return y, m, d, true
 }
 
 func lastDayOfMonth(year, month int) int {

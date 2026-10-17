@@ -108,12 +108,20 @@ func (a *app) visibleDiaryCondition(u *SessionUser) (string, []any) {
 		if u.GuardianID == nil {
 			return "1 = 0", nil
 		}
-		// 保護者に見えるのは、承認済みかつ共有指定のある自児の日誌のみ
-		return `(status = '3' AND is_shared_to_guardian = 1 AND child_id IN
+		// 保護者に見えるのは、承認済みかつ共有指定のある自児の個人日誌のみ。
+		// クラス日誌・週案月案・ヒヤリハットは保護者への共有の対象外とする（基本設計書「日誌システム」(4-5)）。
+		// 共有の印が付いてしまったものがあっても見せない（GitHub Issue #157）
+		return `(record_type = '1' AND status = '3' AND is_shared_to_guardian = 1 AND child_id IN
 		          (SELECT child_id FROM t_guardian_child WHERE guardian_id = ? AND link_status = '1'))`,
 			[]any{*u.GuardianID}
 	}
 }
+
+// unsharedDiaryMessage は、保護者が見られない日誌を開いたときの文言。
+// 自児の共有されていない日誌・他児の日誌・無い日誌を同じ文言にし、あるかどうかを推測させない
+// （図/画面詳細図.md「共有日誌閲覧画面」(2-8)「どちらかが欠けていれば『この記録は共有されていません』と示す」）。
+// 画面側のモック（web/src/api/mock.ts の getDiary）と同じ文言にしてある
+const unsharedDiaryMessage = "この記録は共有されていません"
 
 // canSeeDiary は、その日誌を参照できるかを返す。日誌本体（handleGetDiary）と同じ条件で判定する。
 // 無い日誌も「参照できない」とする。あるかどうかを推測させないため
@@ -205,6 +213,10 @@ func (a *app) handleGetDiary(w http.ResponseWriter, r *http.Request) {
 	                       WHERE is_deleted = 0 AND `+cond+` AND diary_id = ?`, args...)
 	d, err := a.scanDiary(row)
 	if err != nil {
+		if u.isGuardian() {
+			writeForbidden(w, unsharedDiaryMessage)
+			return
+		}
 		writeForbidden(w, "この日誌を参照する権限がありません")
 		return
 	}
@@ -214,8 +226,12 @@ func (a *app) handleGetDiary(w http.ResponseWriter, r *http.Request) {
 
 // handlePastDiaries はその園児の過去の記録を返す。
 // 前回の記述を見ながら書けるようにするため（画面詳細図 3-2）。
+//
+// 職員の編集画面のための経路であり、保護者には使わせない。下書き・申請中・差し戻し（理由を含む）・
+// ヒヤリハットまで、共有していない日誌がすべて返るため（基本設計書「権限と利用可能機能」(6-1) ※3
+// 「自児のみ、かつ共有されたものに限る」。GitHub Issue #157）。保護者の閲覧は visibleDiaryCondition を通す
 func (a *app) handlePastDiaries(w http.ResponseWriter, r *http.Request) {
-	u, ok := a.requireUser(w, r)
+	u, ok := a.requireStaff(w, r)
 	if !ok {
 		return
 	}
@@ -233,9 +249,10 @@ func (a *app) handlePastDiaries(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// handleTimeline は園児タイムライン画面のための日誌を返す
+// handleTimeline は園児タイムライン画面のための日誌を返す。
+// 職員の画面のための経路であり、保護者には使わせない（handlePastDiaries と同じ。GitHub Issue #157）
 func (a *app) handleTimeline(w http.ResponseWriter, r *http.Request) {
-	u, ok := a.requireUser(w, r)
+	u, ok := a.requireStaff(w, r)
 	if !ok {
 		return
 	}
