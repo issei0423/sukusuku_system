@@ -14,9 +14,10 @@
  * 同じ知らせを出す（api/mock.ts の publish）。接続は無いため、つながっていない扱いのまま読み直しを続ける。
  */
 import { useSyncExternalStore } from 'react';
+import { useReachable, startReachabilityProbe } from './api/reachability';
 
 /** 知らせの種類。サーバ（server/events.go の ev*）と同じ並び */
-export type LiveEventType = 'chat' | 'diary' | 'handout' | 'nap' | 'development' | 'physical';
+export type LiveEventType = 'chat' | 'diary' | 'handout' | 'nap' | 'development' | 'physical' | 'contact';
 
 export interface LiveEvent {
   type: LiveEventType;
@@ -26,9 +27,9 @@ export interface LiveEvent {
   diary_id?: number;
   /** handout：どの配布物が変わったか */
   handout_id?: number;
-  /** nap：どのクラスの午睡チェックか */
+  /** nap：どのクラスの午睡チェックか。contact：どのクラスのクラスのようすか */
   class_id?: number;
-  /** nap・development・physical：どの園児の記録か */
+  /** nap・development・physical・contact：どの園児の記録か */
   child_id?: string;
 }
 
@@ -51,6 +52,13 @@ export const LIVE_REFRESH_MS = 30_000;
  */
 export const RECONNECT_MIN_MS = 3_000;
 export const RECONNECT_MAX_MS = 30_000;
+
+/**
+ * 心拍（サーバの event: ping。30秒ごと）がこの間届かなければ「知らせが切れている」とみなし、つなぎ直す。
+ * 見張りは WATCH_INTERVAL_MS ごとに確かめる（詳細設計書「画面の受け取り」(6-4)。値は基本設計書の初期値）
+ */
+export const PING_TIMEOUT_MS = 45_000;
+export const WATCH_INTERVAL_MS = 5_000;
 
 /**
  * 接続の状態。
@@ -109,6 +117,17 @@ export function useLiveConnected(): boolean {
 }
 
 /**
+ * つながっているかの3つの状態（詳細設計書「つながっているかの3つの状態の決め方」(6-6)）。
+ * サーバに届かない（api/reachability.ts）なら unreachable、そうでなく接続が開いていれば connected、ほかは disconnected
+ */
+export type ConnectionState = 'connected' | 'disconnected' | 'unreachable';
+export function useConnectionState(): ConnectionState {
+  const live = useLiveStatus();
+  const reachable = useReachable();
+  return !reachable ? 'unreachable' : live === 'open' ? 'connected' : 'disconnected';
+}
+
+/**
  * サーバにつなぐ。返す関数で切る。api/http.ts の connectLive が呼ぶ。
  *
  * 再接続は EventSource に任せる（サーバが retry で待ちを渡す）。ただし、サーバが 200 以外を返すと
@@ -122,12 +141,41 @@ export function startLive(url = '/api/events'): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let delay = RECONNECT_MIN_MS;
   let stopped = false;
+  // サーバに届かない間は、5秒ごとに /api/me を試みて戻す（api/reachability.ts）
+  const stopProbe = startReachabilityProbe();
+  /** 最後に心拍（または接続）を受けた時刻 */
+  let lastPing = 0;
+
+  /** 閉じて、待ってから新しくつなぎ直す。待ちは倍々に延ばす */
+  const reconnectLater = () => {
+    source?.close();
+    source = null;
+    // 切れていた間の変化は知らせが届いていない。1回読み直させる（401 なら画面が入口へ戻る）
+    emitLive({ type: 'resync' });
+    if (timer !== null) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = null;
+      if (!stopped) open();
+    }, delay);
+    delay = Math.min(delay * 2, RECONNECT_MAX_MS);
+  };
+
+  /*
+   * 心拍の見張り（詳細設計書「画面の受け取り」(6-4)）。つながっている状態で心拍が45秒届かなければ、
+   * 間の仕組みが黙って接続を止めたとみなし、知らせが切れている状態にしてつなぎ直す
+   */
+  const watchdog = setInterval(() => {
+    if (stopped || status !== 'open' || Date.now() - lastPing <= PING_TIMEOUT_MS) return;
+    setStatus('connecting');
+    reconnectLater();
+  }, WATCH_INTERVAL_MS);
 
   const open = () => {
     const es = new EventSource(url);
     source = es;
     es.onopen = () => {
       delay = RECONNECT_MIN_MS;
+      lastPing = Date.now();
       setStatus('open');
       // つながるまで（切れていた間）に起きた変化は、知らせが届いていない。1回読み直させる
       emitLive({ type: 'resync' });
@@ -137,19 +185,14 @@ export function startLive(url = '/api/events'): () => void {
       try { e = JSON.parse(m.data) as LiveEvent; } catch { return; }
       if (e && typeof e.type === 'string') emitLive(e);
     };
+    // 心拍は名前付きの event: ping（server/events.go）。中身は空
+    es.addEventListener('ping', () => { lastPing = Date.now(); });
     es.onerror = () => {
       if (stopped) return;
       setStatus('connecting');
       if (es.readyState !== CLOSED) return;
       // サーバに断られた。セッションが切られていれば、読み直しで分かる（401 → 入口へ戻る）
-      es.close();
-      source = null;
-      emitLive({ type: 'resync' });
-      timer = setTimeout(() => {
-        timer = null;
-        if (!stopped) open();
-      }, delay);
-      delay = Math.min(delay * 2, RECONNECT_MAX_MS);
+      reconnectLater();
     };
   };
 
@@ -157,11 +200,26 @@ export function startLive(url = '/api/events'): () => void {
   open();
   return () => {
     stopped = true;
+    stopProbe();
+    clearInterval(watchdog);
     if (timer !== null) clearTimeout(timer);
     source?.close();
     source = null;
     setStatus('off');
   };
+}
+
+/**
+ * 連絡帳の1ページ（園児）の知らせだけを通す。その園児か、そのページのクラス（クラスのようす）
+ * （詳細設計書「画面の受け取り」(6-4)・「画面ごとの読み直し」(6-5)）
+ */
+export function onContactChild(childId: string, classId: number | null): (e: LiveEvent) => boolean {
+  return (e) => e.type === 'contact' && (e.child_id === childId || (classId !== null && e.class_id === classId));
+}
+
+/** 連絡帳（クラス）画面の知らせだけを通す。そのクラスか、そのクラスの園児 */
+export function onContactClass(classId: number, childIds: string[]): (e: LiveEvent) => boolean {
+  return (e) => e.type === 'contact' && (e.class_id === classId || (!!e.child_id && childIds.includes(e.child_id)));
 }
 
 /** 知らせの種類で絞る。useAsync の live に渡す */

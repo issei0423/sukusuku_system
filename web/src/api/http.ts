@@ -19,11 +19,14 @@ import type {
   DevListRow, DevScheduleRow, CsvRow, FiscalClassRow, StaffAccountRow,
   GuardianAccountRow, InvitationCodeRow, OperationLogRow, StaffSummary, GuardianHomeRow,
   DevDraftView,
+  ContactPage, ContactClassView, ContactHome, ContactHomeInput, NapSleep,
 } from './shapes';
 import {
   ProcedureRequiredError, isProcedureKind, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
 } from './procedure';
 import { startLive } from '../live';
+import { setReachable } from './reachability';
+import { TEXT } from '../messages';
 
 // 画面はこれまでどおり client 経由で型を参照する。定義の実体は shapes.ts が持つ
 export type {
@@ -54,16 +57,42 @@ class ApiError extends Error {
   }
 }
 
+/** 画面からサーバへの要求の上限（詳細設計書「押したときの処理の型」(2-0 (2))、決めたこと D-19） */
+const REQUEST_TIMEOUT_MS = 15_000;
+/** 画面に出す文（サーバに届かないとき。詳細設計書「つながっているかの表示」(2-8)） */
+const UNREACHABLE_MESSAGE = `${TEXT.unreachableBanner}。つながったら、もう一度送ってください。`;
+
+/** ログインの失敗理由（LoginError）。画面（TopScreen）が JSON にして分岐に使う */
+const LOGIN_KINDS = new Set(['credential', 'locked', 'suspended', 'wrong_entrance', 'temp_expired', 'already_logged_in']);
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(path, {
-    method,
-    // セッションの Cookie を送る。認証情報の保持方式は未確定（要決定事項.md 優先度A）
-    credentials: 'same-origin',
-    // 編集ロックの解除は、タブを閉じる・読み込み直す途中にも送る。途中で打ち切られないようにする
-    keepalive: method === 'DELETE',
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      method,
+      // セッションの Cookie を送る。認証情報の保持方式は未確定（要決定事項.md 優先度A）
+      credentials: 'same-origin',
+      // 編集ロックの解除は、タブを閉じる・読み込み直す途中にも送る。途中で打ち切られないようにする
+      keepalive: method === 'DELETE',
+      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch {
+    // 通信の失敗・時間切れは「サーバに届かない」（詳細設計書「画面の受け取り」(6-4)）。貯めて後から送ることはしない
+    setReachable(false);
+    throw new ApiError({ message: UNREACHABLE_MESSAGE, kind: 'unreachable' });
+  }
+  // 502・503（AI が下書きを返さなかったものを除く）・504 も「サーバに届かない」。ほかの応答はサーバに届いている
+  if (res.status === 502 || res.status === 504 || res.status === 503) {
+    const retryBody = await res.clone().json().catch(() => null);
+    if (res.status !== 503 || retryBody?.kind !== 'ai_unavailable') {
+      setReachable(false);
+      throw new ApiError({ message: UNREACHABLE_MESSAGE, kind: 'unreachable' });
+    }
+  } else {
+    setReachable(true);
+  }
 
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
@@ -87,8 +116,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       clearReference();
       notifySessionEnded();
     }
-    // ログインの失敗理由は画面が分岐に使う。mock 実装と同じ形（JSON 文字列）で投げる
-    if (err.kind) {
+    // ログインの失敗理由は画面が分岐に使う。mock 実装と同じ形（JSON 文字列）で投げる。
+    // ほかの kind（version_conflict など）は文言をそのまま見せる
+    if (err.kind && LOGIN_KINDS.has(err.kind)) {
       throw new Error(JSON.stringify({ kind: err.kind, remaining: err.remaining, correct: err.correct }));
     }
     throw err;
@@ -625,4 +655,22 @@ const apiHandout = {
 };
 
 /* ============ 画面が使う入口 ============ */
-export const api = { ...apiAuth, ...apiChatNap, ...apiGrowth, ...apiAdmin, ...apiHandout };
+/* 連絡帳と、ねた・おきた（詳細設計書「経路の一覧」(4-2)。名前はモック（api/mock.ts の contactApi）と同じ） */
+const contactApi = {
+  contactPage: (_u: SessionUser, childId: string, date?: string) =>
+    get<ContactPage>(`/api/contact/children/${encodeURIComponent(childId)}${date ? qs({ date }) : ''}`),
+  markContactRead: (_u: SessionUser, childId: string, date: string) =>
+    post<{ ok: true }>(`/api/contact/children/${encodeURIComponent(childId)}/read`, { date }),
+  contactClasses: (_u: SessionUser) => get<{ class_id: number; class_name: string }[]>('/api/contact/classes'),
+  contactClass: (_u: SessionUser, classId: number, date?: string) =>
+    get<ContactClassView>(`/api/contact/classes/${classId}${date ? qs({ date }) : ''}`),
+  saveHome: (_u: SessionUser, childId: string, input: ContactHomeInput) =>
+    put<ContactHome>(`/api/contact/children/${encodeURIComponent(childId)}/home`, input),
+  confirmHome: (_u: SessionUser, homeId: number, updatedAt: string) =>
+    post<ContactHome>(`/api/contact/home/${homeId}/confirm`, { updated_at: updatedAt }),
+  sleep: (_u: SessionUser, sessionId: number, childId: string) =>
+    post<NapSleep>(`/api/nap/session/${sessionId}/sleeps`, { child_id: childId }),
+  wake: (_u: SessionUser, sleepId: number) => post<NapSleep>(`/api/nap/sleeps/${sleepId}/wake`),
+};
+
+export const api = { ...apiAuth, ...apiChatNap, ...apiGrowth, ...apiAdmin, ...apiHandout, ...contactApi };

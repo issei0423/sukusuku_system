@@ -8,7 +8,7 @@
 import type {
   Account, Child, ChatRoom, Diary, DevelopmentItem, GuardianChild, NapRecord, NapSession,
   DiaryRecordType, DiaryStatus, InvitationStatus, Role, FunctionType, OperationType,
-  DevelopmentCheck, DevelopmentResultRecord,
+  DevelopmentCheck, DevelopmentResultRecord, MealAmount, ContactEventType,
 } from './types';
 
 /** ログインの失敗理由。画面が分岐に使う（図/画面詳細図.md「職員用トップ／保護者用トップ」(2-1)） */
@@ -113,6 +113,10 @@ export interface RetractedRow {
 export interface NapChildState {
   child: Child;
   latest: NapRecord | null;
+  /** その実施の、取り消していない「ねた・おきた」（入眠時の体温を含む。詳細設計書「午睡（ねた・おきた・対象外）」(4-6 (6))） */
+  sleeps: NapSleep[];
+  /** その実施の「きょうは対象外」 */
+  exclusion: NapExclusion | null;
 }
 
 export interface NapAbnormalRow {
@@ -250,6 +254,11 @@ export interface StaffSummary {
   pending: number;
   abnormalWithoutDiary: number;
   activeNap: NapSession | null;
+  /** 今日の家庭からの「未確認」「更新」の園児の数（詳細設計書「ダッシュボード」(4-8 (2))） */
+  homeUnconfirmed: number;
+  homeRevised: number;
+  /** 実施中の午睡で、おひるね中の園児の数 */
+  napSleeping: number;
 }
 
 export interface GuardianHomeRow {
@@ -259,6 +268,208 @@ export interface GuardianHomeRow {
   /** 承認済みかつ共有指定のあるものだけ */
   sharedDiaries: Diary[];
   unread: number;
+  /** 園児1人の「きょう」（詳細設計書「ダッシュボード」(4-8 (1))） */
+  today: GuardianToday;
+}
+
+/* ============ 連絡帳（詳細設計書「型」(4-1 (4))、図/インタフェース一覧「やり取りするデータの項目」(2)） ============
+ * 職員と保護者で返す項目が違う。「職員の応答だけ」の項目は、保護者の応答には入らない（段3）
+ */
+
+export type { MealAmount, ContactEventType };
+/** 家庭からの状態（詳細設計書「家庭から」(3-1)） */
+export type HomeState = 'none' | 'unconfirmed' | 'confirmed' | 'revised';
+
+/** 家庭から（t_contact_home） */
+export interface ContactHome {
+  contact_home_id: number;
+  child_id: string;
+  contact_date: string;
+  /** 最後に送った保護者 */
+  guardian_id: string;
+  /** 職員の応答だけ（父母のどちらが書いたか） */
+  guardian_name?: string;
+  /** 職員の応答だけ。「母 7:40」と出すための続柄（詳細設計書「家庭からの列」(2-2 (3))） */
+  guardian_relationship?: string;
+  temperature: number | null;
+  night_sleep_from: string | null;
+  night_sleep_to: string | null;
+  breakfast: MealAmount | null;
+  mood_label: string | null;
+  pickup_type: '1' | '2' | null;
+  pickup_person: string | null;
+  pickup_time: string | null;
+  message: string | null;
+  submitted_at: string;
+  confirmed_at: string | null;
+  /** 職員の応答だけ */
+  confirmed_staff_name?: string;
+  revised_at: string | null;
+  /** 同時編集の検出に使う */
+  updated_at: string;
+}
+
+/** 家庭からを送るときの入力。updated_at は読んだときの版（初めてなら null） */
+export interface ContactHomeInput {
+  temperature: number | null;
+  night_sleep_from: string | null;
+  night_sleep_to: string | null;
+  breakfast: MealAmount | null;
+  mood_label: string | null;
+  pickup_type: '1' | '2' | null;
+  pickup_person: string | null;
+  pickup_time: string | null;
+  message: string | null;
+  updated_at: string | null;
+}
+
+/** 出来事（t_contact_event）。きょうのようすの1件・園児1人 */
+export interface ContactEvent {
+  contact_event_id: number;
+  child_id: string;
+  contact_date: string;
+  event_type: ContactEventType;
+  recorded_at: string;
+  meal_kind: '1' | '2' | null;
+  meal_amount: MealAmount | null;
+  toilet_label: string | null;
+  temperature: number | null;
+  body: string | null;
+  contact_photo_id: number | null;
+  keep_in_growth: boolean;
+  /** 職員の応答だけ */
+  staff_name?: string;
+  corrected_at: string | null;
+  is_deleted: boolean;
+}
+
+/** クラスのようす（t_contact_class） */
+export interface ContactClass {
+  contact_class_id: number;
+  class_id: number;
+  contact_date: string;
+  body: string;
+  contact_photo_id: number | null;
+  /** 職員の応答だけ */
+  source_diary_id?: number | null;
+  recorded_at: string;
+  corrected_at: string | null;
+  is_deleted: boolean;
+}
+
+/** 園から（t_contact_facility） */
+export interface ContactFacility {
+  contact_facility_id: number;
+  child_id: string;
+  contact_date: string;
+  body: string;
+  /** 職員の応答だけ（保護者には返さない） */
+  staff_name?: string;
+  recorded_at: string;
+  corrected_at: string | null;
+  is_deleted: boolean;
+}
+
+/** ねた・おきた（t_nap_sleep） */
+export interface NapSleep {
+  nap_sleep_id: number;
+  child_id: string;
+  slept_at: string;
+  woke_at: string | null;
+  /** 職員の応答だけ。入眠時の体温（監査の層） */
+  sleep_temperature?: number | null;
+  /** 職員の応答だけ */
+  nap_session_id?: number;
+  corrected_at: string | null;
+  is_deleted: boolean;
+  /**
+   * その実施が終わったか（自動の解除を含む）。おきたが無いまま終わった組を「おひるね中」でなく「ねた」と出すため
+   * （詳細設計書「午睡の園児」(3-4) の「ねた（おきた時刻なし）」。図/インタフェース一覧の NapSleep に足した）
+   */
+  session_ended: boolean;
+}
+
+/** きょうは対象外（t_nap_exclusion）。保護者へは返さない */
+export interface NapExclusion {
+  nap_exclusion_id: number;
+  nap_session_id: number;
+  child_id: string;
+  reason: '1' | '2';
+  staff_id: string;
+  is_deleted: boolean;
+}
+
+/** 連絡帳の1ページ（GET /api/contact/children/{childID}） */
+export interface ContactPage {
+  child_id: string;
+  child_name: string;
+  contact_date: string;
+  /** その日のクラス。無ければ null */
+  class_id: number | null;
+  home: ContactHome | null;
+  events: ContactEvent[];
+  sleeps: NapSleep[];
+  class_notes: ContactClass[];
+  facility: ContactFacility | null;
+  /** 保護者が家庭からを書けるか（有効な紐づけで、サーバの今日のページ） */
+  can_write_home: boolean;
+  /** 保護者の応答だけ。そのページを前に開いた時刻（無ければ null） */
+  last_read_at?: string | null;
+}
+
+/** 連絡帳（クラス）画面の1行（園児） */
+export interface ContactClassRow {
+  child: Child;
+  home_state: HomeState;
+  home: ContactHome | null;
+  events: ContactEvent[];
+  sleeps: NapSleep[];
+  exclusion: NapExclusion | null;
+  facility: ContactFacility | null;
+}
+
+/** 連絡帳（クラス）画面（GET /api/contact/classes/{classID}） */
+export interface ContactClassView {
+  class_id: number;
+  class_name: string;
+  contact_date: string;
+  /** 有効な紐づけの保護者が1人以上いる在籍園児の数（決めたこと D-27） */
+  family_count: number;
+  unregistered_count: number;
+  /** このクラスの記録を書けるか（フリーの職員は読むだけ） */
+  can_write: boolean;
+  rows: ContactClassRow[];
+  class_notes: ContactClass[];
+}
+
+/** 保護者ホームの「きょう」の1件（午睡を除く） */
+export interface TodayItem {
+  kind: 'meal' | 'toilet' | 'temperature' | 'comment' | 'photo' | 'class_note';
+  recorded_at: string;
+  corrected_at: string | null;
+  text: string;
+  contact_photo_id: number | null;
+}
+
+/** 保護者ホームの「きょう」（GET /api/dashboard/guardian の1件の today） */
+export interface GuardianToday {
+  child_id: string;
+  child_name: string;
+  class_name: string;
+  contact_date: string;
+  can_write_home: boolean;
+  grace_ends_on: string | null;
+  home: { submitted_at: string; confirmed_at: string | null; revised_at: string | null } | null;
+  /** その日のいちばん新しい組（無ければ null） */
+  nap: NapSleep | null;
+  /** 午睡を除く新しい3件 */
+  latest: TodayItem[];
+  facility: { recorded_at: string; corrected_at: string | null; excerpt: string } | null;
+  unread_contact: number;
+  unread_chat: number;
+  personal_room_id: number | null;
+  /** 成長の記録を作るまでは常に偽 */
+  growth_new: boolean;
 }
 
 /** 参照のみに使う型の再輸出。画面が types.ts を直接読まなくて済むようにする */

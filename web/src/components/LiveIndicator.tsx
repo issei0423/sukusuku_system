@@ -1,35 +1,34 @@
 /*
  * 相手の操作がすぐに出る状態かを、職員のヘッダに小さく示す
- * 典拠：ナレッジ/決定事項.md 2026-10-15「相手の画面への反映は、SSE で即時にする。5秒ごとの読み直しは、
- *      接続が切れたときの保険として残す」、src/live.ts
+ * 典拠：詳細設計書「つながっているかの表示」(2-8)・「つながっているかの3つの状態の決め方」(6-6)、
+ *      基本設計書「つながっているかの表示」(3-5)、src/live.ts
  *
- * つながっている間は「すぐに反映」、切れている間（つなぎ直すまで）は「自動で読み直しています」と出す。
- * 切れていても画面は数秒ごとに読み直しているため、操作を止める必要は無いことを伝える。
+ * 3つの状態を出す。つながっている間は「すぐに反映」、知らせが切れている間は「自動で読み直しています」、
+ * サーバに届かないときは「サーバにつながりません」。画面の上端の帯（ConnectionBanner）は別に出す。
  * 接続を使っていないとき（ログイン前・モック）は何も出さない。
  *
- * 【仮置き】出す場所・文言・色は設計に定めが無い（web/仮置き値.md「開いたままの画面の読み直し（自動更新）」）。
  * 色だけに頼らないよう、文言でも示す。狭い画面では文言を読み上げ用にだけ残し、点だけを見せる。
+ * 【仮置き】点にかざしたときの説明の文と色は設計に定めが無い（web/仮置き値.md「開いたままの画面の読み直し（自動更新）」）。
  */
-import { useLiveStatus } from '../live';
+import { useConnectionState, useLiveStatus } from '../live';
+import { TEXT } from '../messages';
 
-/** 【仮置き】ヘッダに出す文言（web/仮置き値.md） */
-const LIVE_TEXT = {
-  open: 'すぐに反映',
-  fallback: '自動で読み直しています',
-  /** 点にかざしたときの説明 */
-  openTitle: 'ほかの人の操作が、すぐに画面に出ます',
-  fallbackTitle: 'サーバとのつながりが切れているため、数秒ごとに読み直しています',
+/** 【仮置き】点にかざしたときの説明（web/仮置き値.md） */
+const LIVE_TITLE = {
+  connected: 'ほかの人の操作が、すぐに画面に出ます',
+  disconnected: 'サーバとのつながりが切れているため、数秒ごとに読み直しています',
+  unreachable: 'サーバに届きません。押した操作は保存されていません',
 } as const;
 
 export default function LiveIndicator() {
   const status = useLiveStatus();
+  const state = useConnectionState();
   if (status === 'off') return null;
-  const open = status === 'open';
+  const text = state === 'connected' ? TEXT.liveOpen : state === 'unreachable' ? TEXT.unreachable : TEXT.liveFallback;
   return (
-    <span className={`live-indicator ${open ? 'is-open' : 'is-fallback'}`} role="status"
-      title={open ? LIVE_TEXT.openTitle : LIVE_TEXT.fallbackTitle}>
+    <span className={`live-indicator ${state === 'connected' ? 'is-open' : 'is-fallback'}`} role="status" title={LIVE_TITLE[state]}>
       <span className="live-dot" aria-hidden="true" />
-      <span className="live-text">{open ? LIVE_TEXT.open : LIVE_TEXT.fallback}</span>
+      <span className="live-text">{text}</span>
     </span>
   );
 }
