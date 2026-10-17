@@ -18,6 +18,17 @@ const NAV = [
   { to: '/staff/children', label: '園児', end: false, adminOnly: false },
 ];
 
+/*
+ * 自分のアカウントにかかわる画面。メニューからパスワードの変更・利用規約の参照へ移る
+ * （図/画面遷移図.md「共通・認証」(2) の「職員ダッシュボード／保護者ホーム｜メニューからパスワードの変更・利用規約」。
+ * GitHub Issue #178 の 3）。図/画面詳細図.md「職員（タブレット／PC）」(1-1) 項目5 のサイドナビの列挙には無く、
+ * 設計書どうしでそろっていない。【仮置き】職員のメニューであるサイドナビの末尾に置く（web/仮置き値.md）
+ */
+const ACCOUNT_NAV = [
+  { to: '/staff/password', label: 'パスワードの変更' },
+  { to: '/staff/terms', label: '利用規約' },
+];
+
 const ADMIN_NAV = [
   { to: '/staff/admin/approval', label: '承認待ち' },
   { to: '/staff/admin/staff-accounts', label: '職員アカウント' },
@@ -95,6 +106,13 @@ export default function StaffLayout() {
               ))}
             </>
           )}
+          <hr />
+          {ACCOUNT_NAV.map((n) => (
+            <NavLink key={n.to} to={n.to}
+              className={({ isActive }) => (isActive ? 'current' : '')}>
+              {n.label}
+            </NavLink>
+          ))}
         </nav>
         <main className="main" id="staff-main" tabIndex={-1}>
           {/*

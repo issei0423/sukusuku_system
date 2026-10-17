@@ -62,8 +62,14 @@ export default function DevScheduleScreen() {
             </thead>
             <tbody>
               {data.map((r) => {
-                const value = edits[r.child.child_id] ?? r.scheduledOn ?? r.suggested;
-                const changed = value !== (r.scheduledOn ?? '');
+                /*
+                 * 次回の予定日の初期値は、設定中の予定日。無ければシステムの提案（間隔から算出した日）。
+                 * 「上書きする」は日付を変えるまで押せない（画面詳細図「スケジュール設定画面」(6-3) 項目5・8）。
+                 * 予定の無い園児では、提案の日を初期値に出しながら空と比べていたため、初めから押せた（GitHub Issue #178 の 7）
+                 */
+                const initial = r.scheduledOn ?? r.suggested;
+                const value = edits[r.child.child_id] ?? initial;
+                const changed = value !== '' && value !== initial;
                 return (
                   <tr key={r.child.child_id}>
                     <td className="nowrap">{r.child.child_name}</td>

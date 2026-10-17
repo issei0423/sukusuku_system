@@ -221,16 +221,20 @@ describe('保育士と保護者の画面を並べたとき', () => {
     const link = screen.getByText('未対応の個人チャット').closest('tr')!.querySelector('a')!;
     expect(link.getAttribute('href')).toBe(`/staff/chat?room=${personalRoom}`);
 
+    // 0 件になっても行は消さない（画面詳細図「職員ダッシュボード」(2-6)。GitHub Issue #178 の 6）
+    const countOf = () => screen.getByText('未対応の個人チャット').closest('tr')!.querySelector('td.num')!.textContent;
     const watch = watchLoading();
-    // 別の画面（保育士の別の窓）で対応済みにする → 開いたままのダッシュボードから消える
+    // 別の画面（保育士の別の窓）で対応済みにする → 開いたままのダッシュボードで 0 件になる
     await api.setThreadStatus(teacher, personalRoom, '2');
     await tickRefresh();
-    await waitFor(() => expect(screen.queryByText('未対応の個人チャット')).toBeNull());
+    await waitFor(() => expect(countOf()).toBe('0 件'));
+    expect(screen.queryByText('野原 太郎の保護者')).toBeNull();
 
-    // 保護者が送る → 未対応へ戻り、ダッシュボードに出る
+    // 保護者が送る → 未対応へ戻り、ダッシュボードの件数に出る
     await api.send(guardian, personalRoom, '昨夜37.4℃ありました。今朝は36.8℃です。');
     await tickRefresh();
-    await waitFor(() => expect(screen.getByText('未対応の個人チャット')).toBeTruthy());
+    await waitFor(() => expect(countOf()).toBe('1 件'));
+    expect(screen.getByText('野原 太郎の保護者')).toBeTruthy();
     watch.stop();
     expect(watch.seen()).toBe(false);
   });

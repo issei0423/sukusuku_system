@@ -1151,8 +1151,15 @@ func (a *app) handleAddMisdeliveryRecord(w http.ResponseWriter, r *http.Request)
 		writeErr(w, http.StatusBadRequest, "とった対応は1,000文字以内で入力してください")
 		return
 	}
+	// 発生日時は必須（図/画面詳細図.md「誤送信対応記録画面（管理者）」(4-4) 項目3）。
+	// 空のときに記録した時刻を入れると、監査の記録が事実と違う時刻になるため断る（GitHub Issue #178 の 1）
 	if req.OccurredAt == "" {
-		req.OccurredAt = now()
+		writeErr(w, http.StatusBadRequest, "発生日時を入力してください")
+		return
+	}
+	if !isISODateTime(req.OccurredAt) {
+		writeErr(w, http.StatusBadRequest, "発生日時の形式が正しくありません")
+		return
 	}
 	if _, err := a.db.Exec(`INSERT INTO t_misdelivery_record
 		(chat_message_id, occurred_at, was_read, response, staff_id) VALUES (?, ?, ?, ?, ?)`,
