@@ -12,7 +12,7 @@
  */
 import { useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { api, findChild } from '../../api/client';
+import { api, className, findChild } from '../../api/client';
 import type { ContactEventInput, ContactPage, MealAmount } from '../../api/shapes';
 import { useSession } from '../../session';
 import { useAsync, AUTO_REFRESH_MS } from '../../hooks';
@@ -118,7 +118,7 @@ export default function ContactChildScreen() {
           <ChildAvatar name={name} size="lg" />
           <div>
             <h1>{name}</h1>
-            <span className="muted">連絡帳</span>
+            <span className="muted">{data.class_id ? `${className(data.class_id)}・` : ''}連絡帳</span>
           </div>
         </div>
         <nav className="contact-date" aria-label="連絡帳の日付">

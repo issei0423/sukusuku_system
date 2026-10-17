@@ -369,6 +369,7 @@ button.guardian-record-link {
  * 選んだものは、テーマカラーの塗りに加えて枠を太く黒くする（色だけに頼らない）。体温に判定の色を付けない。
  */
 .pre-wrap { white-space: pre-wrap; }
+.toast .btn-sm { white-space: nowrap; }
 .contact-picks { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
 .contact-pick { min-height: 44px; min-width: 44px; padding: 0 var(--sp-2); font-weight: 700; }
 .contact-pick[aria-pressed="true"] {
