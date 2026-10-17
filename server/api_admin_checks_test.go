@@ -125,9 +125,15 @@ func TestChildEditLogsChangedFields(t *testing.T) {
 	a, h := newTestApp(t)
 	admin := loginAs(a, 1, "staff")
 
-	// 上園 花子（C002・さくら組・平熱 36.8・写真の利用同意 2）のクラス・平熱・写真の利用同意・アレルギーを変える
+	// 上園 花子（C002・さくら組・平熱 36.8・写真の利用同意 2）のクラス・平熱・写真の利用同意・アレルギーを変える。
+	// 生年月日はデモの日付ずらし（seed_shift.go）で起動した日に合わせて動くので、いまの値をそのまま送る
+	// （GitHub Issue #164。モック側の web/tests/adminChecks.test.ts と同じく、変えない項目はいまの値で送る）
+	var birthDate string
+	if err := a.db.QueryRow(`SELECT birth_date FROM m_child WHERE child_id = 'C002'`).Scan(&birthDate); err != nil {
+		t.Fatal(err)
+	}
 	call(t, h, admin, "POST", "/api/children", `{"mode":"edit","child_id":"C002","child_name":"上園 花子",`+
-		`"child_name_kana":"うえぞの はなこ","birth_date":"2025-03-12","sex":"2","normal_temperature":37.2,`+
+		`"child_name_kana":"うえぞの はなこ","birth_date":"`+birthDate+`","sex":"2","normal_temperature":37.2,`+
 		`"photo_consent_level":"3","class_id":2,`+
 		`"allergies":[{"target_food":"えび","symptom":"じんましん","response":"除去食"}],"medical_histories":[]}`)
 
