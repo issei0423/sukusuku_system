@@ -379,7 +379,36 @@ func withHonorific(runes []rune, end int) int {
 anonymize は、外部の AI へ送る文を置き換える。recipients は宛先の園児（クラスあては空）、all は在籍園児の全員。
 replacedOthers は、宛先以外の園児の名前を「おともだち」に置き換えたか（画面に「置き換えて送りました」を出すため）。
 */
-func anonymize(text string, recipients []nameChild, all []nameChild) (out string, replacedOthers bool) {
+// nameAdult は、送る前に伏せる大人（保護者・職員）の氏名と、置き換える語
+type nameAdult struct {
+	Name, Repl string
+}
+
+// 【仮置き】大人の氏名を置き換える語（web/仮置き値.md）
+const (
+	anonGuardian = "保護者の方"
+	anonStaff    = "先生"
+)
+
+// adultHonorifics は、大人の氏名のすぐ後ろに続けば一緒に置き換える呼び方（「高梨先生」→「先生」）
+var adultHonorifics = []string{"さん", "先生", "様"}
+
+func withAdultHonorific(runes []rune, end int) int {
+	rest := string(runes[end:])
+	for _, h := range adultHonorifics {
+		if strings.HasPrefix(rest, h) {
+			return end + utf8.RuneCountInString(h)
+		}
+	}
+	return end
+}
+
+/*
+anonymize の adults は、園の保護者と職員の氏名（姓・名・姓名、空白あり・なし）。基本設計書「外部の AI へ送る情報」(6-3) の
+「氏名を送らない」により、メモなどに書かれていれば Repl（「保護者の方」「先生」）に置き換える。戻さない（下書きに残っても人が直して送る）。
+園児の名前と重なれば長いほう、同じ長さなら園児の名前を選ぶ
+*/
+func anonymize(text string, recipients []nameChild, all []nameChild, adults ...nameAdult) (out string, replacedOthers bool) {
 	runes := []rune(maskContacts(text))
 	type span struct {
 		s, e int
@@ -415,6 +444,19 @@ func anonymize(text string, recipients []nameChild, all []nameChild) (out string
 				}
 				if !inside {
 					spans = append(spans, span{o[0], withHonorific(runes, o[1]), anonOther})
+				}
+			}
+		}
+	}
+	// 「先生」が続く当たりは職員として先に足す（同じ人が保護者と職員の両方にいても「高梨先生」は「先生」に）
+	for _, staffFirst := range []bool{true, false} {
+		for _, ad := range adults {
+			for _, v := range nameVariants(nameChild{Name: ad.Name}) {
+				for _, o := range occurrences(runes, v) {
+					e := withAdultHonorific(runes, o[1])
+					if staffFirst == (ad.Repl == anonStaff && string(runes[o[1]:e]) == "先生") {
+						spans = append(spans, span{o[0], e, ad.Repl})
+					}
 				}
 			}
 		}

@@ -89,6 +89,27 @@ func TestAnonymizeTable(t *testing.T) {
 	}
 }
 
+// anonymizeAdultCases は、保護者・職員の氏名を伏せる表（web/tests/ai.test.ts の同じ名前の表と同じ行）。宛先は野原 太郎（A）
+var anonymizeAdultCases = []struct{ name, text, want string }{
+	{"保護者の姓名", "野原一誠さんから電話がありました。", "保護者の方から電話がありました。"},
+	{"保護者の名と敬称", "一誠さんに伝えました。", "保護者の方に伝えました。"},
+	{"職員の姓と先生", "高梨先生と散歩しました。", "先生と散歩しました。"},
+	{"職員の姓名（空白あり）", "金城 宗一郎が見ていました。", "先生が見ていました。"},
+	{"園児の姓と同じなら園児として", "野原さんが笑っていました。", "〇〇ちゃんが笑っていました。"},
+	{"保護者と職員の両方にいる人に先生が続けば職員として", "一誠先生が来ました。", "先生が来ました。"},
+}
+
+var anonymizeAdults = []nameAdult{{Name: "野原 一誠", Repl: anonGuardian}, {Name: "野原 一誠", Repl: anonStaff}, {Name: "高梨 倫太朗", Repl: anonStaff}, {Name: "金城 宗一郎", Repl: anonStaff}}
+
+func TestAnonymizeAdultsTable(t *testing.T) {
+	for _, c := range anonymizeAdultCases {
+		got, _ := anonymize(c.text, nameCheckChildren[:1], nameCheckChildren, anonymizeAdults...)
+		if got != c.want {
+			t.Errorf("%s: %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
 var restoreCases = []struct {
 	name, recipient, text, want string
 }{

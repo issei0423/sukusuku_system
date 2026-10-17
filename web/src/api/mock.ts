@@ -4519,7 +4519,23 @@ function withHonorific(runes: string[], end: number): number {
  * 宛先の名前（敬称を含む）を「〇〇ちゃん」、ほかの在籍園児の名前を「おともだち」、電話番号・メールアドレスを「（伏せました）」に。
  * recipients が空ならクラスあて（全員を「おともだち」に）。重なった当たりは長いほうを選ぶ
  */
-export function anonymize(text: string, recipients: NameChild[], all: NameChild[]): { text: string; replacedOthers: boolean } {
+/** 送る前に伏せる大人（保護者・職員）の氏名と置き換える語（server/namecheck.go の nameAdult） */
+export interface NameAdult { name: string; repl: string }
+/** 【仮置き】大人の氏名を置き換える語（web/仮置き値.md） */
+export const ANON_GUARDIAN = '保護者の方';
+export const ANON_STAFF = '先生';
+const ADULT_HONORIFICS = ['さん', '先生', '様'];
+function withAdultHonorific(runes: string[], end: number): number {
+  const rest = runes.slice(end).join('');
+  const h = ADULT_HONORIFICS.find((x) => rest.startsWith(x));
+  return h ? end + [...h].length : end;
+}
+
+/**
+ * adults は園の保護者と職員の氏名（基本設計書「外部の AI へ送る情報」(6-3) の「氏名を送らない」）。「保護者の方」「先生」に置き換え、戻さない。
+ * 園児の名前と重なれば長いほう、同じ長さなら園児。「先生」が続く当たりは職員として先に足す（server/namecheck.go と同じ）
+ */
+export function anonymize(text: string, recipients: NameChild[], all: NameChild[], adults: NameAdult[] = []): { text: string; replacedOthers: boolean } {
   const runes = [...maskContacts(text)];
   type Span = { s: number; e: number; repl: string };
   const spans: Span[] = [];
@@ -4541,6 +4557,16 @@ export function anonymize(text: string, recipients: NameChild[], all: NameChild[
         let inside = true;
         for (let k = s; k < e; k++) if (!masked[k]) { inside = false; break; }
         if (!inside) spans.push({ s, e: withHonorific(runes, e), repl: ANON_OTHER });
+      }
+    }
+  }
+  for (const staffFirst of [true, false]) {
+    for (const ad of adults) {
+      for (const v of nameVariants({ id: '', name: ad.name, kana: '', nickname: '' })) {
+        for (const [s, e0] of occurrences(runes, v)) {
+          const e = withAdultHonorific(runes, e0);
+          if (staffFirst === (ad.repl === ANON_STAFF && runes.slice(e0, e).join('') === '先生')) spans.push({ s, e, repl: ad.repl });
+        }
       }
     }
   }
@@ -4733,9 +4759,14 @@ const aiApi = {
       return failKind(MSG.aiLimit, 'ai_limit');
     }
 
+    // 保護者を先に並べる（同じ氏名なら保護者として伏せる。server/api_ai.go の aiAdultNames）
+    const adults: NameAdult[] = [
+      ...db.guardians.map((g) => ({ name: g.guardian_name, repl: ANON_GUARDIAN })),
+      ...db.staff.map((x) => ({ name: x.staff_name, repl: ANON_STAFF })),
+    ].filter((x) => x.name.trim() !== '');
     let replaced = false;
-    const anonWritten = (s: string) => { const r = anonymize(s, recipients, all); replaced ||= r.replacedOthers; return r.text; };
-    const anonRecord = (s: string) => anonymize(s, recipients, all).text;
+    const anonWritten = (s: string) => { const r = anonymize(s, recipients, all, adults); replaced ||= r.replacedOthers; return r.text; };
+    const anonRecord = (s: string) => anonymize(s, recipients, all, adults).text;
     const user2 = input.purpose === 'facility_note'
       ? { ...facilityFacts(input.child_id!, input.date, anonRecord), ...(memo ? { 先生のメモ: anonWritten(memo) } : {}) }
       : { 先生の文: anonWritten(text) };

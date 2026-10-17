@@ -183,7 +183,7 @@ func TestAiDraftSendsNoNamesAndRestores(t *testing.T) {
 	insertTodayRecords(t, a)
 	teacher := loginAs(a, accTeacher, "staff")
 	// メモには AI を使える子（宮城 美咲。保護者が同意している）の名前を書く。使えない子の名前なら呼ばずに 400（TestAiDraftRejections）
-	memo := "美咲ちゃんとしゃぼん玉を追いかけた。電話は 090-1234-5678、メールは nohara.i@example.jp"
+	memo := "美咲ちゃんとしゃぼん玉を追いかけた。電話は 090-1234-5678、メールは nohara.i@example.jp。野原一誠さんと金城先生に伝えた"
 	var res aiDraftResult
 	decode(t, call(t, h, teacher, "POST", "/api/ai/drafts",
 		jsonBody(t, map[string]any{"purpose": "facility_note", "child_id": "C001", "date": today(), "memo": memo})), &res)
@@ -195,7 +195,7 @@ func TestAiDraftSendsNoNamesAndRestores(t *testing.T) {
 	var birth string
 	a.db.QueryRow(`SELECT birth_date FROM m_child WHERE child_id = 'C001'`).Scan(&birth)
 	for _, ng := range []string{"野原", "太郎", "たっくん", "のはら", "たろう", "伊藤", "あおちゃん", "あおい", "小林", "ゆいちゃん", "宮城", "美咲",
-		birth, "37.8", "36.9", "36.4", "うんち", "おしっこ", "090", "1234", "@", "example", "さくら組", "高梨", "家庭からの連絡の文", "取り消した文", "卵"} {
+		birth, "37.8", "36.9", "36.4", "一誠", "金城", "うんち", "おしっこ", "090", "1234", "@", "example", "さくら組", "高梨", "家庭からの連絡の文", "取り消した文", "卵"} {
 		if strings.Contains(sent.User, ng) || strings.Contains(sent.System, ng) {
 			t.Errorf("送った文に %q が入っている: %s", ng, sent.User)
 		}
@@ -207,7 +207,7 @@ func TestAiDraftSendsNoNamesAndRestores(t *testing.T) {
 	if !strings.HasSuffix(facts.Age, "歳") || strings.Contains(facts.Age, "か月") {
 		t.Errorf("年齢: %q", facts.Age)
 	}
-	if facts.Memo != "おともだちとしゃぼん玉を追いかけた。電話は （伏せました）、メールは （伏せました）" {
+	if facts.Memo != "おともだちとしゃぼん玉を追いかけた。電話は （伏せました）、メールは （伏せました）。保護者の方と先生に伝えた" {
 		t.Errorf("メモの置き換え: %q", facts.Memo)
 	}
 	// テストで入れた 0 時台の記録だけを見る（本物の時計で動くため、昼すぎに回すとデモの今日の記録も入る）

@@ -228,6 +228,7 @@ func (a *app) handleAiDrafts(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, msgContactLoadFailed)
 		return
 	}
+	adults := a.aiAdultNames()
 	recipients := []nameChild{}
 	if !t.isClass() {
 		recipients = append(recipients, a.nameChildOf(t.ChildID))
@@ -253,12 +254,12 @@ func (a *app) handleAiDrafts(w http.ResponseWriter, r *http.Request) {
 	// 送る文を作る（8-4・8-5・8-6）。置き換えたのはメモか職員の文か（「置き換えて送りました」を出す）
 	replaced := false
 	anonWritten := func(s string) string {
-		out, hit := anonymize(s, recipients, all)
+		out, hit := anonymize(s, recipients, all, adults...)
 		replaced = replaced || hit
 		return out
 	}
 	anonRecord := func(s string) string {
-		out, _ := anonymize(s, recipients, all)
+		out, _ := anonymize(s, recipients, all, adults...)
 		return out
 	}
 	var user any
@@ -396,6 +397,28 @@ func (a *app) releaseAiCall() {
 	a.aiMu.Lock()
 	a.aiInFlight--
 	a.aiMu.Unlock()
+}
+
+// aiAdultNames は、送る前に伏せる大人の氏名（保護者は「保護者の方」、職員は「先生」。保護者を先に並べ、同じ氏名なら保護者として伏せる）
+func (a *app) aiAdultNames() []nameAdult {
+	out := []nameAdult{}
+	for _, q := range []struct{ sql, repl string }{
+		{`SELECT guardian_name FROM m_guardian`, anonGuardian},
+		{`SELECT staff_name FROM m_staff`, anonStaff},
+	} {
+		rows, err := a.db.Query(q.sql)
+		if err != nil {
+			continue
+		}
+		for rows.Next() {
+			var n string
+			if rows.Scan(&n) == nil && strings.TrimSpace(n) != "" {
+				out = append(out, nameAdult{Name: n, Repl: q.repl})
+			}
+		}
+		rows.Close()
+	}
+	return out
 }
 
 // aiSucceededToday は、その日（サーバの日付）に成功した AI の下書きの数（8-7 (3)。園全体で1つの上限）

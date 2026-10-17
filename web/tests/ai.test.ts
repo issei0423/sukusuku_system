@@ -9,8 +9,8 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { api } from '../src/api/client';
-import { anonymize, restoreName, aiAvailableFor, mockAi, AI_SYSTEM } from '../src/api/mock';
-import type { NameChild } from '../src/api/mock';
+import { anonymize, restoreName, aiAvailableFor, mockAi, AI_SYSTEM, ANON_GUARDIAN, ANON_STAFF } from '../src/api/mock';
+import type { NameChild, NameAdult } from '../src/api/mock';
 import * as db from '../src/api/mockDb';
 import { today, addDays } from '../src/api/util';
 import { MSG, aiTextTooLong } from '../src/messages';
@@ -68,7 +68,24 @@ const restoreCases: [name: string, recipient: string, text: string, want: string
   ['おともだちは戻さない', 'A', 'おともだちと〇〇ちゃんが遊びました。', 'おともだちとたっくんが遊びました。'],
 ];
 
+/** server/ai_test.go の anonymizeAdultCases と同じ行（宛先は野原 太郎） */
+const anonymizeAdultCases: [name: string, text: string, want: string][] = [
+  ['保護者の姓名', '野原一誠さんから電話がありました。', '保護者の方から電話がありました。'],
+  ['保護者の名と敬称', '一誠さんに伝えました。', '保護者の方に伝えました。'],
+  ['職員の姓と先生', '高梨先生と散歩しました。', '先生と散歩しました。'],
+  ['職員の姓名（空白あり）', '金城 宗一郎が見ていました。', '先生が見ていました。'],
+  ['園児の姓と同じなら園児として', '野原さんが笑っていました。', '〇〇ちゃんが笑っていました。'],
+  ['保護者と職員の両方にいる人に先生が続けば職員として', '一誠先生が来ました。', '先生が来ました。'],
+];
+const adults: NameAdult[] = [
+  { name: '野原 一誠', repl: ANON_GUARDIAN }, { name: '野原 一誠', repl: ANON_STAFF },
+  { name: '高梨 倫太朗', repl: ANON_STAFF }, { name: '金城 宗一郎', repl: ANON_STAFF },
+];
+
 describe('送る前の置き換え（server/namecheck.go の anonymize と同じ表）', () => {
+  it.each(anonymizeAdultCases)('保護者・職員：%s', (_name, text, want) => {
+    expect(anonymize(text, children.slice(0, 1), children, adults).text).toBe(want);
+  });
   it.each(anonymizeCases)('%s', (_name, recipient, text, want, replaced) => {
     expect(anonymize(text, children.filter((c) => c.id === recipient), children)).toEqual({ text: want, replacedOthers: replaced });
   });
@@ -186,18 +203,18 @@ describe('AI に氏名が送られない（9-1）', () => {
     const undo = insertTodayRecords();
     try {
       // メモには AI を使える子（宮城 美咲）の名前を書く
-      const memo = '美咲ちゃんとしゃぼん玉を追いかけた。電話は 090-1234-5678、メールは nohara.i@example.jp';
+      const memo = '美咲ちゃんとしゃぼん玉を追いかけた。電話は 090-1234-5678、メールは nohara.i@example.jp。野原一誠さんと金城先生に伝えた';
       const res = await api.aiDrafts(teacher, { purpose: 'facility_note', child_id: 'C001', date: today(), memo });
       const sent = mockAi.lastSent!;
       const birth = db.children.find((c) => c.child_id === 'C001')!.birth_date;
-      for (const ng of ['野原', '太郎', 'たっくん', 'のはら', 'たろう', '伊藤', 'あおちゃん', 'あおい', '小林', 'ゆいちゃん', '宮城', '美咲',
+      for (const ng of ['野原', '太郎', 'たっくん', 'のはら', 'たろう', '伊藤', 'あおちゃん', 'あおい', '小林', 'ゆいちゃん', '宮城', '美咲', '一誠', '金城',
         birth, '37.8', '36.9', 'うんち', 'おしっこ', '090', '1234', '@', 'example', 'さくら組', '高梨', '取り消した文', '卵']) {
         expect(sent.user, ng).not.toContain(ng);
         expect(sent.system, ng).not.toContain(ng);
       }
       const facts = JSON.parse(sent.user);
       expect(facts.年齢).toMatch(/^\d+歳$/);
-      expect(facts.先生のメモ).toBe('おともだちとしゃぼん玉を追いかけた。電話は （伏せました）、メールは （伏せました）');
+      expect(facts.先生のメモ).toBe('おともだちとしゃぼん玉を追いかけた。電話は （伏せました）、メールは （伏せました）。保護者の方と先生に伝えた');
       const mine = facts.きょうの記録.filter((r: { 時刻: string }) => r.時刻 < '01:00');
       expect(mine).toEqual([
         { 時刻: '00:13', こと: 'ひとこと', 文: '〇〇ちゃんは、おともだちと砂場で型抜きをくり返していました。' },
