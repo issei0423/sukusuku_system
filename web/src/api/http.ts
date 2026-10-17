@@ -168,6 +168,7 @@ export const accountName = (accountId: number) =>
 export function settingNumber(key: string, fallback: number): number {
   const raw = ref.settings[key];
   const n = Number(raw);
+  if (raw === undefined && Object.keys(ref.settings).length === 0) return fallback;
   if (raw === undefined || Number.isNaN(n)) {
     console.warn(`[設定マスタ] ${key} を数値として解釈できません。既定値 ${fallback} を用います`);
     return fallback;

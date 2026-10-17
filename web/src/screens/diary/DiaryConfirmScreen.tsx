@@ -7,7 +7,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { keepDiaryLock, releaseDiaryLockLater, releaseDiaryLockNow } from './diaryLock';
+import { acquireDiaryLock, consumeDiaryLockHandOver, keepDiaryLock, releaseDiaryLockLater, releaseDiaryLockNow } from './diaryLock';
 import { useSession } from '../../session';
 import { api, childName, className } from '../../api/client';
 import type { DiaryAttachmentInput } from '../../api/client';
@@ -34,6 +34,7 @@ export default function DiaryConfirmScreen() {
   const state = useLocation().state as ConfirmState | null;
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [activeToken, setActiveToken] = useState<string | null>(null);
   // 編集画面へ戻るときは、ロックを編集画面へ返す（外さない。編集画面が取り直す）
   const handBackRef = useRef(false);
 
@@ -43,17 +44,37 @@ export default function DiaryConfirmScreen() {
    * 黙って上書きする（GitHub Issue #166 の 1 の手順 B）。申請するとサーバが外す
    */
   const lockDiaryId = state?.diaryId ?? null;
-  const lockToken = state?.lockToken;
   useEffect(() => {
-    if (!lockDiaryId || !lockToken) return;
-    keepDiaryLock(lockDiaryId, lockToken);
-    const onPageHide = () => { void releaseDiaryLockNow(user!, lockDiaryId, lockToken); };
+    if (!lockDiaryId || !state?.lockToken) return;
+    let token: string | null = null;
+    let cancelled = false;
+    const attach = (next: string) => {
+      token = next;
+      if (cancelled) { releaseDiaryLockLater(user!, lockDiaryId, next); return; }
+      keepDiaryLock(lockDiaryId, next);
+      setActiveToken(next);
+    };
+    if (consumeDiaryLockHandOver(lockDiaryId, state.lockToken)) {
+      attach(state.lockToken);
+    } else {
+      // 読み込み直し・履歴移動で pagehide が古いロックを外すため、確認画面で取得し直す。
+      // 基本設計書「同時編集の検出」(4-2) に従い、他者が持つ場合は申請させない。
+      void acquireDiaryLock(user!, lockDiaryId).then((result) => {
+        if (!('token' in result)) {
+          if (!cancelled) setError(`${result.heldBy}さんが編集中です。日誌の作成画面へ戻ってください。`);
+          return;
+        }
+        attach(result.token);
+      }).catch((e: Error) => { if (!cancelled) setError(e.message); });
+    }
+    const onPageHide = () => { if (token) void releaseDiaryLockNow(user!, lockDiaryId, token); };
     window.addEventListener('pagehide', onPageHide);
     return () => {
+      cancelled = true;
       window.removeEventListener('pagehide', onPageHide);
-      if (!handBackRef.current) releaseDiaryLockLater(user!, lockDiaryId, lockToken);
+      if (token && !handBackRef.current) releaseDiaryLockLater(user!, lockDiaryId, token);
     };
-  }, [user, lockDiaryId, lockToken]);
+  }, [user, lockDiaryId, state?.lockToken]);
 
   // 申請の直前に、前の画面の「下書きを保存しました」を残さない（GitHub Issue #139 の 2）
   useEffect(() => { clearNotice(); }, []);
@@ -73,7 +94,7 @@ export default function DiaryConfirmScreen() {
         class_id: state.classId,
         diary_date: state.date,
         body: state.body,
-        lock_token: state.lockToken,
+        lock_token: activeToken ?? undefined,
         // ここで示した写真を、そのまま日誌に付ける（画面詳細図「日誌確認画面」(3-3) 項目3。GitHub Issue #175 の 2）
         attachments: state.photos,
       }, '2');
@@ -122,7 +143,7 @@ export default function DiaryConfirmScreen() {
             { state: { draft: state }, replace: true },
           );
         }}>戻る</button>
-        <button className="btn-primary" onClick={submit} disabled={busy}>
+        <button className="btn-primary" onClick={submit} disabled={busy || (!!state.diaryId && !activeToken)}>
           {busy ? '申請しています…' : '申請する'}
         </button>
       </div>

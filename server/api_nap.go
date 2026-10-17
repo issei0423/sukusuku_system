@@ -448,6 +448,7 @@ type napAbnormalView struct {
 	NapSessionID  int64  `json:"nap_session_id"`
 	ChildID       string `json:"child_id"`
 	FoundAt       string `json:"found_at"`
+	RecordedAt    string `json:"recorded_at"`
 	Situation     string `json:"situation"`
 	Response      string `json:"response"`
 	StaffID       string `json:"staff_id"`
@@ -463,7 +464,7 @@ func (a *app) handleNapAbnormals(w http.ResponseWriter, r *http.Request) {
 	}
 	// 【仮置き】並びは発見時刻の新しい順、同じ時刻はあとで記録したものを先にする（web/仮置き値.md「一覧の並び順」）。
 	// 同じ時刻の並びを決めておかないと、モック（web/src/api/mock.ts の abnormals）と食い違う（GitHub Issue #177 の 7）
-	rows, err := a.db.Query(`SELECT nap_abnormal_id, nap_session_id, child_id, found_at,
+	rows, err := a.db.Query(`SELECT nap_abnormal_id, nap_session_id, child_id, found_at, recorded_at,
 		situation, response, staff_id, diary_id
 		FROM t_nap_abnormal ORDER BY found_at DESC, nap_abnormal_id DESC`)
 	if err != nil {
@@ -476,7 +477,7 @@ func (a *app) handleNapAbnormals(w http.ResponseWriter, r *http.Request) {
 			x       napAbnormalView
 			diaryID sql.NullInt64
 		)
-		if rows.Scan(&x.NapAbnormalID, &x.NapSessionID, &x.ChildID, &x.FoundAt,
+		if rows.Scan(&x.NapAbnormalID, &x.NapSessionID, &x.ChildID, &x.FoundAt, &x.RecordedAt,
 			&x.Situation, &x.Response, &x.StaffID, &diaryID) == nil {
 			x.DiaryID = nullInt(diaryID)
 			all = append(all, x)
@@ -573,9 +574,9 @@ func (a *app) handleRecordNapAbnormal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := a.db.Exec(`INSERT INTO t_nap_abnormal
-		(nap_session_id, child_id, found_at, situation, response, staff_id)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		sessionID, req.ChildID, req.FoundAt, req.Situation, req.Response, u.staff())
+		(nap_session_id, child_id, found_at, recorded_at, situation, response, staff_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		sessionID, req.ChildID, req.FoundAt, now(), req.Situation, req.Response, u.staff())
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "記録に失敗しました")
 		return

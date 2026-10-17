@@ -99,11 +99,11 @@ export default function NapCheckScreen() {
    * 【仮置き】強調の形（カードの印と枠）は設計が定めていない（web/仮置き値.md）
    */
   const abnormals = useAsync(async () => (activeId !== null ? api.abnormals(user!) : []), [activeId, tick]);
-  const abnormalAt = new Map<string, string>();
+  const abnormalAt = new Map<string, { found: string; recorded: string }>();
   for (const a of abnormals.data ?? []) {
     if (a.nap_session_id !== activeId) continue;
     const seen = abnormalAt.get(a.child_id);
-    if (!seen || a.found_at > seen) abnormalAt.set(a.child_id, a.found_at);
+    if (!seen || (a.recorded_at ?? a.found_at) > seen.recorded) abnormalAt.set(a.child_id, { found: a.found_at, recorded: a.recorded_at ?? a.found_at });
   }
 
   // 選べるクラスが無い（担当クラスの無い一般の職員）。ほかのクラスの実施を表示しない（GitHub Issue #127）
@@ -179,7 +179,7 @@ export default function NapCheckScreen() {
           <div className="nap-grid">
             {rows.map((r) => (
               <NapRecordRow key={r.child.child_id} row={r} sessionId={s.nap_session_id}
-                due={isDue(r.latest?.checked_at ?? null)} abnormalAt={abnormalAt.get(r.child.child_id) ?? null}
+                due={isDue(r.latest?.checked_at ?? null)} abnormal={abnormalAt.get(r.child.child_id) ?? null}
                 onSaved={() => setTick((n) => n + 1)} />
             ))}
           </div>
@@ -258,8 +258,8 @@ function NapTimer({ startedAt, intervalMinutes, rows }: {
 }
 
 /** 園児の行から直接記録する。選択肢に前回値を入れず、毎回の目視確認を促す。 */
-function NapRecordRow({ row, sessionId, due, abnormalAt, onSaved }: {
-  row: NapChildState; sessionId: number; due: boolean; abnormalAt: string | null; onSaved: () => void;
+function NapRecordRow({ row, sessionId, due, abnormal, onSaved }: {
+  row: NapChildState; sessionId: number; due: boolean; abnormal: { found: string; recorded: string } | null; onSaved: () => void;
 }) {
   const { user } = useSession();
   const TEMP_MIN = 30.0;
@@ -308,14 +308,14 @@ function NapRecordRow({ row, sessionId, due, abnormalAt, onSaved }: {
    * 直近の記録で「呼吸 確認できず」としたのに、そのあとの異常時の記録が無いときは、その園児を選んだ状態で
    * 異常時記録画面へ移る導線を出す（図/画面詳細図.md「異常時記録画面」(5-2) 項目2「初期値：午睡チェック画面で選んでいた園児」、
    * 「午睡チェック画面」(5-1) 項目10。GitHub Issue #142）。発見時刻は分までで入るため、分の単位で比べる。
-   * 【仮置き】導線を出す条件は設計が定めていない（web/仮置き値.md）
+   * 【仮置き】導線を出す条件は設計が定めていない。発見時刻と保存時刻は別に扱う（web/仮置き値.md）。
    */
   const latest = row.latest;
   const needsAbnormal = !!latest && latest.breathing === '2'
-    && !(abnormalAt && abnormalAt.slice(0, 16) >= latest.checked_at.slice(0, 16));
+    && !(abnormal && abnormal.recorded.slice(0, 16) >= latest.checked_at.slice(0, 16));
 
   return (
-    <section className={`nap-card nap-record-row${!row.latest || due ? ' unrecorded' : ''}${abnormalAt ? ' has-abnormal' : ''}`}
+    <section className={`nap-card nap-record-row${!row.latest || due ? ' unrecorded' : ''}${abnormal ? ' has-abnormal' : ''}`}
       aria-label={`${name}の午睡チェック`}>
       <div className="nap-row-head">
         <strong className="name">{name}</strong>
@@ -325,7 +325,7 @@ function NapRecordRow({ row, sessionId, due, abnormalAt, onSaved }: {
         <span className="last">{row.latest ? `前回 ${formatHM(row.latest.checked_at)} ${BODY_POSITION[row.latest.body_position]}` : '前回の記録なし'}</span>
         {latest && <LatestObservation record={latest} />}
         <span className="last">平熱 {formatTemperature(row.child.normal_temperature)}℃</span>
-        {abnormalAt && <span className="tag tag-returned">異常時の記録あり {formatHM(abnormalAt)}</span>}
+        {abnormal && <span className="tag tag-returned">異常時の記録あり {formatHM(abnormal.found)}</span>}
       </div>
 
       {needsAbnormal && latest && (

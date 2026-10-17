@@ -515,6 +515,12 @@ func (a *app) handleAcquireLock(w http.ResponseWriter, r *http.Request) {
 		writeForbidden(w, "この日誌を編集する権限がありません")
 		return
 	}
+	// 基本設計書「編集ロックの解除」(4-5)：申請中・承認済みの日誌にはロックを取得しない。
+	var status string
+	if err := a.db.QueryRow(`SELECT status FROM t_diary WHERE diary_id = ?`, id).Scan(&status); err != nil || (status != "1" && status != "4") {
+		writeForbidden(w, "この日誌は編集できません")
+		return
+	}
 	idleMinutes := a.settingInt("ui.diary_lock_minutes", 15)
 
 	var (

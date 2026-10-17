@@ -112,8 +112,8 @@ export default function SignUpScreen() {
       {/* (1) 招待コードの入力 */}
       <div className="step">
         <div className="step-title">(1) 招待コードの入力</div>
-        <div className="row">
-          <Field label="招待コード" required style={{ flex: 1 }}>
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          <Field label="招待コード" required style={{ flex: '1 1 210px' }}>
             <input type="text" value={code} placeholder="ABCD-1234-EFGH"
               onChange={(e) => { setCode(e.target.value); setCodeOk(false); }} />
           </Field>

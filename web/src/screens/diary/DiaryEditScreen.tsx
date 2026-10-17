@@ -18,7 +18,7 @@ import { ConfirmDialog, notify } from '../../components/feedback';
 import { DIARY_RECORD_TYPE, DIARY_STATUS, DIARY_STATUS_CLASS } from '../../api/codes';
 import { formatMD, formatMDHM, today, now, plusMinutes } from '../../api/util';
 import type { DiaryRecordType } from '../../api/types';
-import { acquireDiaryLock, releaseDiaryLock, releaseDiaryLockNow, LOCK_TOUCH_MS } from './diaryLock';
+import { acquireDiaryLock, releaseDiaryLock, releaseDiaryLockNow, markDiaryLockHandOver, LOCK_TOUCH_MS } from './diaryLock';
 
 // 本文の上限（基本設計書「入力項目の制約値」(4-9)）
 const BODY_MAX = 2000;
@@ -266,6 +266,7 @@ export default function DiaryEditScreen() {
     // ロックは確認画面へ引き継ぐ。確認画面にいる間に、ほかの職員が開いて直せないようにする（GitHub Issue #166 の 1）。
     // 記録日で止めたときは編集画面に残るので、引き継ぎの印は進むと決まってから付ける
     handOverRef.current = true;
+    if (diaryId && lockToken) markDiaryLockHandOver(diaryId, lockToken);
     navigate('/staff/diary/confirm', {
       state: { recordType, childId: needsChild ? childId : null, classId: classId === '' ? null : classId,
                date, body, diaryId, lockToken, photos },

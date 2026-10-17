@@ -74,6 +74,15 @@ func lockRowCount(t *testing.T, a *app, id int) int {
 	return n
 }
 
+func TestApprovedDiaryCannotBeLocked(t *testing.T) {
+	a, h := newTestApp(t)
+	staff := loginAs(a, 3, "staff")
+	r := chatReq(h, staff, "POST", "/api/diaries/5/lock", "")
+	if r.Code == http.StatusOK || lockRowCount(t, a, 5) != 0 {
+		t.Fatalf("承認済みの日誌にロックを取得できました: %d %s", r.Code, r.Body.String())
+	}
+}
+
 func TestForceUnlockedEditorCannotSave(t *testing.T) {
 	a, h := newTestApp(t)
 	takanashi := loginAs(a, 3, "staff") // さくら組の担任。日誌 1 を書いた本人

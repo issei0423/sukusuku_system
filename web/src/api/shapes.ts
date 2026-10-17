@@ -120,6 +120,7 @@ export interface NapAbnormalRow {
   nap_session_id: number;
   child_id: string;
   found_at: string;
+  recorded_at?: string;
   situation: string;
   response: string;
   staff_id: string;

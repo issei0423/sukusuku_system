@@ -5,7 +5,7 @@
  * 状態を列として持つ（下書き／申請中／差し戻し／承認済）。差し戻しは他と区別できる色にする。
  * 一般（保育士）の既定の絞り込みは自クラス。他クラスは選べない。
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
@@ -36,6 +36,17 @@ export default function DiaryListScreen() {
   const [to, setTo] = useState(fromDashboard ? '' : today());
   const [page, setPage] = useState(1);
   const [applied, setApplied] = useState(0);
+
+  // 同じ画面のままサイドナビから再訪した場合も、URL の条件を反映する。
+  useEffect(() => {
+    const dashboard = params.get('mine') === '1';
+    setStatus((params.get('status') as DiaryStatus) ?? '');
+    setMine(dashboard);
+    setFrom(dashboard ? '' : addDays(today(), -31));
+    setTo(dashboard ? '' : today());
+    setPage(1);
+    setApplied((n) => n + 1);
+  }, [params]);
 
   const { data, error, loading } = useAsync(
     () => api.listDiaries(user!, { recordType, classId, status, from, to, page, mine }),

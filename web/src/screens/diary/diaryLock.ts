@@ -21,6 +21,18 @@ import type { SessionUser } from '../../api/types';
 export const LOCK_TOUCH_MS = 30_000;
 
 let queue: Promise<unknown> = Promise.resolve();
+const handedOver = new Set<string>();
+
+export function markDiaryLockHandOver(diaryId: number, token: string): void {
+  handedOver.add(`${diaryId}:${token}`);
+}
+
+export function consumeDiaryLockHandOver(diaryId: number, token: string): boolean {
+  const key = `${diaryId}:${token}`;
+  const present = handedOver.has(key);
+  handedOver.delete(key);
+  return present;
+}
 
 function inOrder<T>(f: () => Promise<T>): Promise<T> {
   const p = queue.then(f, f);

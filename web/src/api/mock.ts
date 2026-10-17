@@ -253,7 +253,9 @@ export function childrenOfGuardian(guardianId: string): Child[] {
 
 /** 職員が参照できる園児の一覧 */
 export function visibleChildren(user: SessionUser): Child[] {
-  const alive = db.children.filter((c) => !c.is_deleted && c.enrollment_status === '1');
+  // server/scope.go の visibleChildren と同じよみ順にする。
+  const alive = db.children.filter((c) => !c.is_deleted && c.enrollment_status === '1')
+    .sort((a, b) => a.child_name_kana.localeCompare(b.child_name_kana, 'ja') || a.child_id.localeCompare(b.child_id));
   if (user.role === '1') return alive;
   if (user.role === '2') {
     if (user.class_id == null) return [];
@@ -736,6 +738,8 @@ export const diaryApi = {
     // ロックを取れるのは、その日誌を参照できる職員に限る（サーバ側は server/api_diary_write.go の handleAcquireLock）
     const d = db.diaries.find((x) => x.diary_id === diaryId);
     if (!d || !canSeeDiary(user, d)) return fail('この日誌を編集する権限がありません');
+    // 基本設計書「編集ロックの解除」(4-5)：申請中・承認済みは編集しない。
+    if (d.status === '2' || d.status === '3') return fail('この日誌は編集できません');
     const idle = settingNumber('ui.diary_lock_minutes', 15);
     const held = db.diaryLocks.find((l) => l.diary_id === diaryId);
     if (held && held.locked_staff_id !== user.staff_id) {
@@ -1233,7 +1237,8 @@ export const chatApi = {
     // （GitHub Issue #95）。外れた人にも、いまの参加者は返さない（外れたあとのことは見せない。#161）。
     // 管理者は、グループ編成のために全チャンネルを参照できる。
     // 画面からは必ず viewer を渡す。渡さない呼び出しはテストのためだけに残している
-    if (viewer && viewer.role !== '1' && !isParticipant(viewer, roomId)) {
+    // 要件定義書「チャットツール」(4-3)：メンバー一覧は管理者・一般のみ。
+    if (viewer && (viewer.role === '3' || (viewer.role !== '1' && !isParticipant(viewer, roomId)))) {
       return fail('このチャンネルを参照する権限がありません');
     }
     const forStaff = !!viewer && viewer.role !== '3';
@@ -1681,7 +1686,7 @@ export const napApi = {
     if (session.ended_at !== null) return fail('この午睡チェックは終了しています。画面を読み込み直してください');
     const a: NapAbnormal = {
       nap_abnormal_id: nextId(), nap_session_id: sessionId, staff_id: user.staff_id!,
-      diary_id: null, ...input, found_at: foundAt,
+      diary_id: null, ...input, found_at: foundAt, recorded_at: now(),
     };
     db.napAbnormals.unshift(a);
     log(user.account_id, '3', '1', 't_nap_abnormal', a.nap_abnormal_id, input.child_id, null, '異常時の記録');

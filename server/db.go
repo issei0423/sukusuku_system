@@ -69,7 +69,25 @@ func openDB(path string) (*sql.DB, error) {
 	if err := ensurePersonalRoomChild(db); err != nil {
 		return nil, err
 	}
+	if err := ensureNapAbnormalRecordedAt(db); err != nil {
+		return nil, err
+	}
 	return db, nil
+}
+
+// 発見時刻と保存時刻を分ける（図/画面詳細図「異常時記録画面」(5-2)）。
+func ensureNapAbnormalRecordedAt(db *sql.DB) error {
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('t_nap_abnormal') WHERE name = 'recorded_at'`).Scan(&n); err != nil {
+		return err
+	}
+	if n == 0 {
+		if _, err := db.Exec(`ALTER TABLE t_nap_abnormal ADD COLUMN recorded_at TEXT`); err != nil {
+			return err
+		}
+	}
+	_, err := db.Exec(`UPDATE t_nap_abnormal SET recorded_at = found_at WHERE recorded_at IS NULL`)
+	return err
 }
 
 /*

@@ -189,6 +189,7 @@ describe('写真（#175 の 2）', () => {
     await screen.findByText('この内容で申請します');
     const photoRow = screen.getByText('写真', { selector: 'th' }).closest('tr')!;
     expect(within(photoRow).getByText('3 枚')).toBeTruthy();
+    await waitFor(() => expect(button('申請する').disabled).toBe(false));
     fireEvent.click(button('申請する'));
     await onList();
     expect(db.diaryAttachments.filter((a) => a.diary_id === saved.diary_id)).toHaveLength(3);

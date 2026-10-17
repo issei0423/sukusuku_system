@@ -714,6 +714,8 @@ function shiftRows(rows: Record<string, unknown>[], days: number): void {
     // 記録の配列だけを対象にする。マスタ（children・classes など）は含めない
     const recordSets: Record<string, unknown>[][] = [
       invitationCodes as unknown as Record<string, unknown>[],
+      guardianChildren as unknown as Record<string, unknown>[],
+      termsAgreements as unknown as Record<string, unknown>[],
       diaries as unknown as Record<string, unknown>[],
       diaryLocks as unknown as Record<string, unknown>[],
       chatMembers as unknown as Record<string, unknown>[],

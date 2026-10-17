@@ -113,6 +113,8 @@ export default function StaffLayout() {
               {n.label}
             </NavLink>
           ))}
+          {/* 【仮置き】小さい画面で下の項目があることを示す（web/仮置き値.md）。 */}
+          {isAdmin && <div className="sidenav-hint">↕ メニューはスクロールできます</div>}
         </nav>
         <main className="main" id="staff-main" tabIndex={-1}>
           {/*

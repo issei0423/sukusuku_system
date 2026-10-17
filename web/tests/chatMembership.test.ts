@@ -36,6 +36,12 @@ const guardian: SessionUser = {
   is_temp_password: false, terms_agreed: true,
 };
 
+it('保護者には参加中の園・クラスのメンバー一覧も返さない', async () => {
+  await expect(api.members(1, guardian)).rejects.toThrow('権限がありません');
+  await expect(api.members(3, guardian)).rejects.toThrow('権限がありません');
+  expect((await api.members(3, teacher)).length).toBeGreaterThan(0);
+});
+
 /**
  * いま参加している（left_at の無い）デモデータのチャンネル（1〜9）を番号順に返す。
  * 同じファイルの中では状態が続くため、テストの途中で作ったグループは数えない
