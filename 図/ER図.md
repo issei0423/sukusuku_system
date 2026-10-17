@@ -3,7 +3,7 @@
 | 項目 | 内容 |
 | :-- | :-- |
 | 対象システム | 保育支援システム（すくすくシステム） |
-| 版数 | 第 2.2 版 |
+| 版数 | 第 2.3 版 |
 | 作成日 | 2026 年 8 月 4 日 |
 | 典拠 | `要件定義書.md` 第3.0版、`基本設計書.md` 第3.0版「データベース設計」(5) |
 | 作成区分 | チーム開発演習 基本設計 |
@@ -12,6 +12,7 @@
 
 | 版 | 日付 | 変更内容 |
 | :-: | :-: | :-- |
+| 2.3 | 2026/10/18 | 園児のクラスの在籍に期間（`t_class_child.started_on`・`ended_on`）を足し、保護者がクラスのようすを参照できるかの経路を、年度ではなく在籍の期間で引く形にした（`基本設計書.md` 第3.2版「クラスと紐づけ」(5-3)） |
 | 2.2 | 2026/10/17 | 保護者が個人チャットを読める範囲に「保護者がまだ1人も参加していなかった間のやりとり」を足した（`基本設計書.md` 第3.1版） |
 | 2.1 | 2026/10/17 | `m_staff.staff_id` を参照する表の案内を、基本設計書 第3.0版の節（「発達チェック・身体測定」(5-8)）に直した。基本設計書 第3.0版の統合で名前と番号の対を照合した結果である |
 | 2.0 | 2026/10/17 | **`要件定義書.md` 第3.0版と `基本設計書.md` 第3.0版に合わせ、「連絡帳」のエリア（2-3）を足した。** 連絡帳の7つの表（`t_contact_home`・`t_contact_event`・`t_contact_class`・`t_contact_facility`・`t_contact_photo`・`t_contact_photo_child`・`t_contact_read`）、午睡の `t_nap_sleep`（ねた・おきた）と `t_nap_exclusion`（きょうは対象外）、チャットの `t_chat_attachment_child`（写っている子）、共通の `m_phrase`（定型文）・`t_push_subscription`（通知の購読）・`t_push_preference`（通知のオン・オフ）の13の表を足した。日誌の保護者共有の列（`is_shared_to_guardian`・`shared_at`）、雛形の共有の既定（`default_share_to_guardian`）、発達チェック・身体測定の `share_status` を外した。個人チャットの園児の列、「確認しました」の列、日誌の申請者・申請日時とヒヤリハットの発生日時・場所、異常時の記録の保護者への連絡と管理者の確認、発達の保護者へのひとこと・確定日時、保護者の猶予中の紐づけ、外部の AI を断った印を足した。全体像から「共有」の点線を外し、連絡帳への引き渡しに改めた。エリアの番号を送った（日誌 2-3→2-4、チャット 2-4→2-5、午睡 2-5→2-6、発達 2-6→2-7） |
@@ -225,6 +226,8 @@ erDiagram
         bigint class_child_id PK "自動採番"
         bigint class_id FK "m_class を参照"
         varchar child_id FK "m_child を参照"
+        date started_on "在籍の始まり"
+        date ended_on "在籍の終わり。空なら在籍中"
         datetime created_at "登録日時"
     }
     t_class_staff {
@@ -868,7 +871,7 @@ erDiagram
 | 一般が園児を参照できるか（通常） | `m_account` → `m_staff` → `t_class_staff`（現在年度の `m_class`）→ `t_class_child` → `m_child` |
 | 一般が園児を参照できるか（猶予期間中） | 上記に加え、`t_class_staff`（前年度の `m_class`）→ `t_class_child`。年度更新の実行日時＋猶予期間内であり、かつ**閲覧のみ** |
 | 保護者が連絡帳・成長の記録を参照できるか | `m_account` → `m_guardian` → `t_guardian_child`（`link_status` が 1:有効 か 3:猶予中）→ `m_child`。**`linked_at` で切らない**（紐づけより前の日の分も読める）。書けるのは 1:有効 だけ |
-| 保護者がクラスのようすを参照できるか | 上記の `m_child` → `t_class_child`（`contact_date` の年度）→ `m_class` → `t_contact_class` |
+| 保護者がクラスのようすを参照できるか | 上記の `m_child` → `t_class_child`（在籍の期間が `contact_date` を含む行）→ `m_class` → `t_contact_class` |
 | 保護者が個人チャットを参照できるか | 上記に加え、`t_chat_member` の `joined_at` 以降のメッセージと、その部屋の保護者の最も早い `joined_at` より前のメッセージだけ |
 | 職員が個人チャットを参照できるか | `m_chat_room.child_id` の園児について、一般が園児を参照できるか（通常・猶予期間中）と同じ。参加の行（`t_chat_member`）では判定しない |
 | クラスに属さない職員（例外③） | 今年度の `t_class_staff` に行が無い職員は、全クラスを閲覧のみ |
