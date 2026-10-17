@@ -17,7 +17,7 @@ export default function MisdeliveryScreen() {
   const { user } = useSession();
   const [tick, setTick] = useState(0);
   const records = useAsync(() => api.misdeliveryRecords(user!), [user?.account_id, tick]);
-  const pending = useAsync(() => api.retractedWithoutRecord(), [tick]);
+  const pending = useAsync(() => api.retractedWithoutRecord(user!), [tick]);
 
   const [target, setTarget] = useState<{ chat_message_id: number; room_name: string; sent_at: string } | null>(null);
   const [wasRead, setWasRead] = useState<'yes' | 'no' | null>(null);

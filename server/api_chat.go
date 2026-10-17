@@ -1090,6 +1090,9 @@ func (a *app) handleRetractedWithoutRecord(w http.ResponseWriter, r *http.Reques
 	if _, ok := a.requireAdmin(w, r); !ok {
 		return
 	}
+	// 【仮置き】並びは送信の新しい順、同じ時刻はあとで送ったもの（メッセージの番号の大きいもの）を先にする
+	// （web/仮置き値.md「一覧の並び順」）。モック（web/src/api/mock.ts の retractedWithoutRecord）も同じ並びにした
+	// （GitHub Issue #177 の 7）
 	rows, err := a.db.Query(`SELECT m.chat_message_id, IFNULL(r.room_name, '―'), m.sent_at,
 		m.deleted_at, m.sender_account_id
 		FROM t_chat_message m
@@ -1098,7 +1101,7 @@ func (a *app) handleRetractedWithoutRecord(w http.ResponseWriter, r *http.Reques
 		  AND m.source_type <> '4'
 		  AND m.sender_account_id NOT IN (SELECT account_id FROM m_account WHERE role = '3')
 		  AND m.chat_message_id NOT IN (SELECT chat_message_id FROM t_misdelivery_record)
-		ORDER BY m.sent_at DESC`)
+		ORDER BY m.sent_at DESC, m.chat_message_id DESC`)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "取消メッセージを取得できませんでした")
 		return
