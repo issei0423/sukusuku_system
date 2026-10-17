@@ -52,7 +52,12 @@ export default function NapCheckScreen() {
     setEnding(false);
     setError(null);
     try { endedByUser.current = true; await api.endSession(user!, session.data.nap_session_id); setTick((n) => n + 1); }
-    catch (e) { setError((e as Error).message); }
+    catch (e) {
+      // 自動で解除された・ほかの職員が終了した実施は、もう終了できない（GitHub Issue #158）。読み直して今の状態を出す
+      endedByUser.current = false;
+      setError((e as Error).message);
+      setTick((n) => n + 1);
+    }
   };
 
   const s = session.data;

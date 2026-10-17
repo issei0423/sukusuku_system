@@ -196,8 +196,33 @@ func (a *app) handleEndNapSession(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "午睡チェックの指定が正しくありません")
 		return
 	}
+	/*
+	 * 終了できるのは、そのクラスを扱える職員が、実施中の実施を終了するときに限る。
+	 * 一般（保育士）は自クラスに限る（基本設計書「午睡チェックの実施」(4-7)「午睡チェックの開始・参照・記録は、
+	 * 一般（保育士）は自クラスに限る」）。開始と取得だけでなく終了も同じ（GitHub Issue #96・#158）。
+	 * 終了した実施（自動で解除されたものを含む）は、終了時刻と終了した職員を書き換えない。
+	 * 画面側のモック（web/src/api/mock.ts の endSession）と同じ規則
+	 */
+	a.autoCloseNapSessions()
+	var (
+		classID int64
+		endedAt sql.NullString
+	)
+	if err := a.db.QueryRow(`SELECT class_id, ended_at FROM t_nap_session WHERE nap_session_id = ?`, id).
+		Scan(&classID, &endedAt); err != nil {
+		writeErr(w, http.StatusNotFound, "午睡チェックが見つかりません")
+		return
+	}
+	if !a.canUseClass(u, classID) {
+		writeForbidden(w, "このクラスの午睡チェックを終了する権限がありません")
+		return
+	}
+	if endedAt.Valid {
+		writeErr(w, http.StatusConflict, "この午睡チェックはすでに終了しています。画面を読み込み直してください")
+		return
+	}
 	if _, err := a.db.Exec(`UPDATE t_nap_session SET ended_staff_id = ?, ended_at = ?
-		WHERE nap_session_id = ?`, u.staff(), now(), id); err != nil {
+		WHERE nap_session_id = ? AND ended_at IS NULL`, u.staff(), now(), id); err != nil {
 		writeErr(w, http.StatusInternalServerError, "終了できませんでした")
 		return
 	}
@@ -472,12 +497,50 @@ func (a *app) handleRecordNapAbnormal(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "とった対応を入力してください")
 		return
 	}
+	if req.FoundAt == "" {
+		req.FoundAt = now()
+	}
+	if msg := foundAtProblem(req.FoundAt); msg != "" {
+		writeErr(w, http.StatusBadRequest, msg)
+		return
+	}
 	if !a.canSeeChild(u, req.ChildID) {
 		writeForbidden(w, "この園児を記録する権限がありません")
 		return
 	}
-	if req.FoundAt == "" {
-		req.FoundAt = now()
+	/*
+	 * 記録は、その園児のクラスの、実施中の午睡チェックにつなぐ（GitHub Issue #158）。
+	 * 起票するヒヤリハットの「対象のクラス」は実施のクラスから引くため、別のクラスの実施へ付けると
+	 * 園児と違うクラスの記録になる。終了した実施へは記録しない（午睡の記録と同じ。基本設計書「午睡チェックの実施」(4-7)）。
+	 *
+	 * 【仮置き】実施中の午睡チェックが無いときは記録できない。記録の操作で午睡チェックを開始しない
+	 * （開始は「午睡チェックを開始する」を押したときに限る。同 (4-7) 処理内容 1・2）。web/仮置き値.md
+	 * 画面側のモック（web/src/api/mock.ts の recordAbnormal）と同じ規則
+	 */
+	a.autoCloseNapSessions()
+	var (
+		sessionClass int64
+		endedAt      sql.NullString
+	)
+	if err := a.db.QueryRow(`SELECT class_id, ended_at FROM t_nap_session WHERE nap_session_id = ?`,
+		sessionID).Scan(&sessionClass, &endedAt); err != nil {
+		writeErr(w, http.StatusNotFound, "午睡チェックが見つかりません")
+		return
+	}
+	if !a.canUseClass(u, sessionClass) {
+		writeForbidden(w, "このクラスの午睡チェックへ記録する権限がありません")
+		return
+	}
+	var inClass int
+	a.db.QueryRow(`SELECT COUNT(*) FROM t_class_child WHERE class_id = ? AND child_id = ?`,
+		sessionClass, req.ChildID).Scan(&inClass)
+	if inClass == 0 {
+		writeErr(w, http.StatusBadRequest, "この園児のクラスの午睡チェックではありません。園児のクラスの午睡チェックへ記録してください")
+		return
+	}
+	if endedAt.Valid {
+		writeErr(w, http.StatusConflict, "この午睡チェックは終了しています。画面を読み込み直してください")
+		return
 	}
 	res, err := a.db.Exec(`INSERT INTO t_nap_abnormal
 		(nap_session_id, child_id, found_at, situation, response, staff_id)
@@ -490,6 +553,26 @@ func (a *app) handleRecordNapAbnormal(w http.ResponseWriter, r *http.Request) {
 	id, _ := res.LastInsertId()
 	a.log(u.AccountID, fnNap, opCreate, "t_nap_abnormal", i64(id), s(req.ChildID), nil, s("異常時の記録"))
 	writeJSON(w, http.StatusOK, map[string]int64{"nap_abnormal_id": id})
+}
+
+/*
+foundAtProblem は発見時刻を確かめ、受け付けられないときは利用者に見せる文言を返す。
+
+形は 'YYYY-MM-DDTHH:MM:SS'（画面は datetime-local の値に秒を足して送る）。崩れた値を保存すると、
+起票のときに記録日を取り出せない（GitHub Issue #158）。未来の日時は認めない
+（基本設計書「入力項目の制約値」(4-9)「記録日・測定日　未来日は認めない」「記録は起きたことを書くものである」）。
+
+【仮置き】未来かどうかは分の単位で比べる。画面が送る値は分までで、端末とサーバの時計のわずかなずれで
+今の時刻を断らないようにするため（web/仮置き値.md）。画面側のモック（web/src/api/mock.ts）と同じ規則
+*/
+func foundAtProblem(v string) string {
+	if !isISODateTime(v) {
+		return "発見時刻の形式が正しくありません"
+	}
+	if v[:16] > now()[:16] {
+		return "発見時刻に未来の日時は指定できません"
+	}
+	return ""
 }
 
 // handleRaiseIncidentDiary は異常時の記録からヒヤリハットを起票し、相互に参照させる（基本設計書 5-6）
@@ -518,13 +601,34 @@ func (a *app) handleRaiseIncidentDiary(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "異常時の記録が見つかりません")
 		return
 	}
+	// 起票できるのは、その園児を参照できる職員に限る。一般（保育士）は自クラスの園児のみ
+	// （基本設計書「権限と利用可能機能」(6-1)「異常時の記録　一般 ※1」。GitHub Issue #158）。
+	// 拒否するときは、記録の中身も起票済みかどうかも返さない
+	if !a.canSeeChild(u, childID) {
+		writeForbidden(w, "この園児の記録からヒヤリハットを起票する権限がありません")
+		return
+	}
 	if diaryID.Valid {
 		writeErr(w, http.StatusBadRequest, "この記録からはすでにヒヤリハットを起票しています")
 		return
 	}
 
-	var classID sql.NullInt64
-	a.db.QueryRow(`SELECT class_id FROM t_nap_session WHERE nap_session_id = ?`, sessionID).Scan(&classID)
+	var (
+		classID     sql.NullInt64
+		sessionDate sql.NullString
+	)
+	a.db.QueryRow(`SELECT class_id, session_date FROM t_nap_session WHERE nap_session_id = ?`, sessionID).
+		Scan(&classID, &sessionDate)
+
+	// 記録日は発見時刻の日付。検査を入れる前に入ってしまった崩れた値では、その実施の日にする。
+	// 崩れた値の先頭を切り出してサーバの処理を落とさない（GitHub Issue #158）
+	diaryDate := today()
+	switch {
+	case len(foundAt) >= 10 && isISODate(foundAt[:10]):
+		diaryDate = foundAt[:10]
+	case sessionDate.Valid && isISODate(sessionDate.String):
+		diaryDate = sessionDate.String
+	}
 
 	body := "【発生日時】\n" + strings.Replace(foundAt, "T", " ", 1) +
 		"\n\n【状況】\n" + situation +
@@ -535,7 +639,7 @@ func (a *app) handleRaiseIncidentDiary(w http.ResponseWriter, r *http.Request) {
 		(record_type, child_id, class_id, diary_date, body, status, created_staff_id,
 		 is_shared_to_guardian, nap_abnormal_id, is_deleted, created_at, updated_at)
 		VALUES ('4', ?, ?, ?, ?, '1', ?, 0, ?, 0, ?, ?)`,
-		childID, classID, foundAt[:10], body, u.staff(), abnormalID, now(), now())
+		childID, classID, diaryDate, body, u.staff(), abnormalID, now(), now())
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "起票に失敗しました")
 		return

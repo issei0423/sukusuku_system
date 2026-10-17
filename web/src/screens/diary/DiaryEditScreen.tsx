@@ -117,7 +117,7 @@ export default function DiaryEditScreen() {
   };
 
   const past = useAsync(
-    async () => (childId ? api.pastDiariesOf(childId, diaryId ?? undefined) : []),
+    async () => (childId ? api.pastDiariesOf(user!, childId, diaryId ?? undefined) : []),
     [childId, diaryId],
   );
 

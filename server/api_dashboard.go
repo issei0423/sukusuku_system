@@ -55,17 +55,18 @@ func (a *app) handleStaffSummary(w http.ResponseWriter, r *http.Request) {
 		visible[c.ChildID] = true
 	}
 
-	// 発達チェックの未実施
-	devOverdue := 0
-	rows, err := a.db.Query(`SELECT s.child_id, s.scheduled_on,
+	// 発達チェックの未実施。園児ごとに最新の予定日で判定し、発達チェック一覧の「未実施」と同じ数にする
+	// （判定は api_dev.go の devOverdue。過去の予定をすべて数えると一覧と食い違う。GitHub Issue #164）
+	overdueCount := 0
+	rows, err := a.db.Query(`SELECT s.child_id, MAX(s.scheduled_on),
 		(SELECT MAX(checked_on) FROM t_development_check c
 		  WHERE c.child_id = s.child_id AND c.status = '2')
-		FROM t_development_schedule s WHERE s.scheduled_on <= ?`, today())
+		FROM t_development_schedule s GROUP BY s.child_id`)
 	if err == nil {
 		for rows.Next() {
 			var (
 				childID   string
-				scheduled string
+				scheduled sql.NullString
 				last      sql.NullString
 			)
 			if rows.Scan(&childID, &scheduled, &last) != nil {
@@ -74,8 +75,8 @@ func (a *app) handleStaffSummary(w http.ResponseWriter, r *http.Request) {
 			if !visible[childID] {
 				continue
 			}
-			if !last.Valid || last.String < scheduled {
-				devOverdue++
+			if devOverdue(nullStr(scheduled), nullStr(last)) {
+				overdueCount++
 			}
 		}
 		rows.Close()
@@ -109,7 +110,7 @@ func (a *app) handleStaffSummary(w http.ResponseWriter, r *http.Request) {
 		"unreadChat":           unreadChat,
 		"unhandledChat":        unhandledChat,
 		"unhandledChatRoom":    unhandledChatRoom,
-		"devOverdue":           devOverdue,
+		"devOverdue":           overdueCount,
 		"pending":              pending,
 		"abnormalWithoutDiary": abnormalWithoutDiary,
 		"activeNap":            activeNap,
@@ -211,9 +212,10 @@ func (a *app) handleGuardianHome(w http.ResponseWriter, r *http.Request) {
 			out[i].ClassName = a.className(classID.Int64)
 		}
 
-		// 承認済みかつ共有指定のあるものだけが保護者に見える
+		// 承認済みかつ共有指定のある個人日誌だけが保護者に見える。ヒヤリハットは共有の対象外
+		// （基本設計書「日誌システム」(4-5)。条件は api_diary.go の visibleDiaryCondition と同じ）
 		diaries, _ := a.queryDiaries(`SELECT `+diaryColumns+` FROM t_diary
-			WHERE is_deleted = 0 AND child_id = ? AND status = '3' AND is_shared_to_guardian = 1
+			WHERE is_deleted = 0 AND child_id = ? AND record_type = '1' AND status = '3' AND is_shared_to_guardian = 1
 			ORDER BY diary_date DESC`, childID)
 		if diaries == nil {
 			diaries = []Diary{}

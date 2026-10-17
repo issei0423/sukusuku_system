@@ -54,6 +54,18 @@ func (a *app) handleSaveDevelopmentCheck(w http.ResponseWriter, r *http.Request)
 	if req.CheckedOn == "" {
 		req.CheckedOn = today()
 	}
+	// 実施日は、形の崩れた値と未来日を断る（基本設計書「入力項目の制約値」(4-9)「記録日・測定日　未来日は認めない
+	// （当日まで）」、図/画面詳細図.md「発達チェック入力画面」(6-2) 項目3「実施日　制限：未来日は選べない」）。
+	// 崩れた日付で確定すると、月齢の計算でサーバの処理が落ち、そのクラスの一覧が開けなくなっていた
+	// （GitHub Issue #164）。画面側のモック（web/src/api/mock.ts の saveCheck）と同じ規則
+	if !isISODate(req.CheckedOn) {
+		writeErr(w, http.StatusBadRequest, "実施日の形式が正しくありません")
+		return
+	}
+	if req.CheckedOn > today() {
+		writeErr(w, http.StatusBadRequest, "実施日に未来日は指定できません")
+		return
+	}
 
 	tx, err := a.db.Begin()
 	if err != nil {
@@ -67,9 +79,23 @@ func (a *app) handleSaveDevelopmentCheck(w http.ResponseWriter, r *http.Request)
 		note = req.Note
 	}
 
-	var checkID int64
-	err = tx.QueryRow(`SELECT development_check_id FROM t_development_check
-		WHERE child_id = ? AND checked_on = ?`, req.ChildID, req.CheckedOn).Scan(&checkID)
+	var (
+		checkID   int64
+		curStatus string
+	)
+	err = tx.QueryRow(`SELECT development_check_id, status FROM t_development_check
+		WHERE child_id = ? AND checked_on = ?`, req.ChildID, req.CheckedOn).Scan(&checkID, &curStatus)
+
+	/*
+	 * 確定した記録は、下書きに戻さない。確定のまま直すこと（もう一度「確定する」）はできる。
+	 * 下書きに戻すと、確定で作った次回の予定日だけが残り、一覧の「予定どおり」とダッシュボードの
+	 * 「未実施」が食い違う（GitHub Issue #164）。
+	 * 【仮置き】確定を取り消す操作は設けない（web/仮置き値.md）。画面側のモックも同じ規則
+	 */
+	if err == nil && curStatus == "2" && req.Status == "1" {
+		writeErr(w, http.StatusBadRequest, "確定した発達チェックは下書きに戻せません。直すときは「確定する」で保存してください")
+		return
+	}
 
 	isNew := err == sql.ErrNoRows
 	switch {

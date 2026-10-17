@@ -105,7 +105,8 @@ describe('日誌の添付（基本設計書「日誌の作成から保護者へ�
     d.is_shared_to_guardian = false;
     try {
       await expect(api.attachmentsOf(childGuardian, diaryId)).rejects.toThrow('この日誌を参照する権限がありません');
-      await expect(api.getDiary(childGuardian, diaryId)).rejects.toThrow('この日誌を参照する権限がありません');
+      // 保護者には「この記録は共有されていません」と示す（画面詳細図 2-8。GitHub Issue #157）
+      await expect(api.getDiary(childGuardian, diaryId)).rejects.toThrow('この記録は共有されていません');
     } finally {
       d.is_shared_to_guardian = true;
     }

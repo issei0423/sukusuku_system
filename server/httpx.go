@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 )
 
 // apiError は画面へ返すエラー。本文はそのまま利用者に見せる文言とする。
@@ -62,6 +63,20 @@ func isKana(v string) bool {
 		}
 	}
 	return true
+}
+
+// isISODate は、'YYYY-MM-DD' の形で、実在する日付かを返す。
+// 月日を1桁で書いた値（2026-10-1）や、2月30日のような値は受け取らない。
+// 崩れた日付を保存すると、月齢の計算や日付の並べ替えが狂うため（GitHub Issue #164）
+func isISODate(v string) bool {
+	t, err := time.ParseInLocation("2006-01-02", v, jst)
+	return err == nil && t.Format("2006-01-02") == v
+}
+
+// isISODateTime は、'YYYY-MM-DDTHH:MM:SS' の形で、実在する日時かを返す
+func isISODateTime(v string) bool {
+	t, err := time.ParseInLocation("2006-01-02T15:04:05", v, jst)
+	return err == nil && t.Format("2006-01-02T15:04:05") == v
 }
 
 func queryInt(r *http.Request, key string, def int) int {

@@ -79,6 +79,8 @@ export default function DevInputScreen() {
   const prevOf = (itemId: number) => prevResults.find((r) => r.development_item_id === itemId)?.result ?? null;
 
   const unfilled = (items.data ?? []).filter((it) => !results[it.development_item_id]).length;
+  // 確定した記録は下書きに戻さない。直すときは「確定する」で保存する（GitHub Issue #164。web/仮置き値.md）
+  const confirmed = draft.data?.check.status === '2';
 
   return (
     <div style={{ maxWidth: 860 }}>
@@ -169,8 +171,13 @@ export default function DevInputScreen() {
       {/* 免責表示を保存操作の直上に固定する（画面詳細図 6-1） */}
       <Disclaimer text={DISCLAIMER} />
 
+      {confirmed && (
+        <div className="muted" style={{ marginTop: 12 }}>
+          この日の記録は確定しています。直すときは「確定する」で保存してください（下書きには戻せません）。
+        </div>
+      )}
       <div className="row-end" style={{ marginTop: 12 }}>
-        <button onClick={() => save('1')} disabled={busy}>下書き保存</button>
+        {!confirmed && <button onClick={() => save('1')} disabled={busy}>下書き保存</button>}
         {/* 未入力が残っているときは、確定の前に確かめる。確定そのものは妨げない */}
         <button className="btn-primary" disabled={busy}
           onClick={() => (unfilled > 0 ? setConfirming(true) : save('2'))}>確定する</button>
