@@ -11,7 +11,8 @@
  */
 import { useEffect, useState } from 'react';
 import { api, settingText } from '../../api/client';
-import type { ContactEvent, MealAmount, NapSleep, Readers } from '../../api/shapes';
+import type { ContactEvent, ContactFacility, MealAmount, NameMatch, NapSleep, Readers } from '../../api/shapes';
+import NameCheckDialog from '../../components/NameCheckDialog';
 import type { ToastAction } from '../../components/feedback';
 import { useSession } from '../../session';
 import { Modal } from '../../components/ui';
@@ -23,7 +24,8 @@ import type { SessionUser } from '../../api/types';
 
 export type FixTarget =
   | { kind: 'event'; event: ContactEvent; childName: string }
-  | { kind: 'sleep'; sleep: NapSleep; childName: string; date: string };
+  | { kind: 'sleep'; sleep: NapSleep; childName: string; date: string }
+  | { kind: 'facility'; facility: ContactFacility; childName: string };
 
 /** 排せつの選択肢（設定。サーバの defaultToiletChoices と同じ既定） */
 export function toiletChoices(): string[] {
@@ -45,17 +47,20 @@ export function timeOptions(date: string, current?: string): string[] {
 
 /** 取り消しの確認に出す要約（「12:10 給食 ぜんぶ（野原 太郎）」） */
 export function targetSummary(t: FixTarget): string {
-  if (t.kind === 'event') return `${formatHM(t.event.recorded_at)} ${eventText(t.event)}（${t.childName}）`;
+  if (t.kind === 'event') return `${formatHM(t.event.recorded_at)} ${eventText(t.event).slice(0, 30)}（${t.childName}）`;
+  if (t.kind === 'facility') return `${formatHM(t.facility.recorded_at)} 園から「${t.facility.body.slice(0, 20)}${[...t.facility.body].length > 20 ? '…' : ''}」（${t.childName}）`;
   const lines = sleepLines(t.sleep, false, 'staff').map((l) => l.text).join('・');
   return `${lines}（${t.childName}）`;
 }
 
 async function readersOf(user: SessionUser, t: FixTarget): Promise<Readers> {
+  if (t.kind === 'facility') return api.facilityReaders(user, t.facility.contact_facility_id);
   return t.kind === 'event' ? api.eventReaders(user, t.event.contact_event_id) : api.sleepReaders(user, t.sleep.nap_sleep_id);
 }
 
 async function cancelTarget(user: SessionUser, t: FixTarget): Promise<void> {
   if (t.kind === 'event') await api.cancelEvent(user, t.event.contact_event_id);
+  else if (t.kind === 'facility') await api.cancelFacility(user, t.facility.contact_facility_id);
   else await api.cancelSleep(user, t.sleep.nap_sleep_id);
 }
 
@@ -79,8 +84,10 @@ export function cancelAction(user: SessionUser, t: FixTarget): ToastAction {
   };
 }
 
-export default function FixDialog({ target, normalTemperature, onDone, onClose }: {
+export default function FixDialog({ target, normalTemperature, startMode = 'edit', onDone, onClose }: {
   target: FixTarget;
+  /** 「取り消す」から開いたときは、取り消しの確認から始める */
+  startMode?: 'edit' | 'cancel';
   /** 体温を直すときの一覧の位置（平熱） */
   normalTemperature?: number | null;
   /** 直した・取り消したあと。結果の文を受け取る */
@@ -88,14 +95,17 @@ export default function FixDialog({ target, normalTemperature, onDone, onClose }
   onClose: () => void;
 }) {
   const { user } = useSession();
-  const [mode, setMode] = useState<'edit' | 'cancel'>('edit');
+  const [mode, setMode] = useState<'edit' | 'cancel'>(startMode);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [readers, setReaders] = useState<Readers | null>(null);
   const summary = targetSummary(target);
   const e = target.kind === 'event' ? target.event : null;
   const s = target.kind === 'sleep' ? target.sleep : null;
-  const date = e ? e.contact_date : target.kind === 'sleep' ? target.date : today();
+  const date = e ? e.contact_date : target.kind === 'sleep' ? target.date : target.kind === 'facility' ? target.facility.contact_date : today();
+  // 活動のひとことの文を直す（訂正も他児の名前の照合を通る。当たれば注意を出して承諾を付けて送り直す）
+  const [body, setBody] = useState(e?.body ?? '');
+  const [check, setCheck] = useState<{ names: string[]; matches: NameMatch[] } | null>(null);
   const [toilet, setToilet] = useState(e?.toilet_label ?? '');
   const [temperature, setTemperature] = useState(e?.temperature ?? normalTemperature ?? 36.5);
   const [time, setTime] = useState(e ? formatHM(e.recorded_at) : '');
@@ -113,7 +123,9 @@ export default function FixDialog({ target, normalTemperature, onDone, onClose }
     if (busy) return;
     setBusy(true); setError(null);
     try {
-      onDone(await work());
+      const message = await work();
+      // 空の文は「他児の名前の注意を開いた」（まだ送っていない）
+      if (message) onDone(message);
     } catch (err) {
       // 入力は残し、ダイアログの中に何が違うかと次にすることを出す
       setError((err as Error).message);
@@ -137,6 +149,17 @@ export default function FixDialog({ target, normalTemperature, onDone, onClose }
     });
     return fixedText;
   });
+  const correctBody = (acknowledged: string[]) => run(async () => {
+    try {
+      await api.correctEvent(user!, e!.contact_event_id, { body, acknowledged_names: acknowledged, updated_at: e!.updated_at ?? '' });
+    } catch (err) {
+      const x = err as Error & { kind?: string; names?: string[]; matches?: NameMatch[] };
+      if (x.kind === 'other_child_names' && x.names) { setCheck({ names: x.names, matches: x.matches ?? [] }); return ''; }
+      throw err;
+    }
+    setCheck(null);
+    return fixedText;
+  });
   const correctSleep = () => run(async () => {
     await api.correctSleep(user!, s!.nap_sleep_id, {
       ...(slept !== formatHM(s!.slept_at) ? { slept_at: `${date}T${slept}:00` } : {}),
@@ -150,7 +173,7 @@ export default function FixDialog({ target, normalTemperature, onDone, onClose }
     return (
       <Modal title="この記録を取り消しますか" onClose={onClose}
         footer={<>
-          <button type="button" onClick={() => { setMode('edit'); setError(null); }} disabled={busy}>やめる</button>
+          <button type="button" onClick={() => { if (startMode === 'cancel') onClose(); else { setMode('edit'); setError(null); } }} disabled={busy}>やめる</button>
           <button type="button" className="btn-danger" onClick={() => run(async () => { await cancelTarget(user!, target); return cancelledText(summary); })}
             disabled={busy || readers === null} aria-busy={busy}>{busy ? TEXT.sending : '取り消す'}</button>
         </>}>
@@ -161,7 +184,7 @@ export default function FixDialog({ target, normalTemperature, onDone, onClose }
     );
   }
 
-  const editable = target.kind === 'sleep' || ['1', '2', '3'].includes(e!.event_type);
+  const editable = target.kind === 'sleep' || (!!e && ['1', '2', '3', '4'].includes(e.event_type));
   return (
     <Modal title="記録を直す" onClose={onClose}
       footer={<>
@@ -208,6 +231,20 @@ export default function FixDialog({ target, normalTemperature, onDone, onClose }
           <button type="button" className="btn-primary contact-wide-button" onClick={correctOther} disabled={busy} aria-busy={busy}>
             {busy ? TEXT.sending : '直す'}
           </button>
+        )}
+        {e?.event_type === '4' && (
+          <>
+            <label className="contact-field">
+              <span>ひとこと（200文字まで）</span>
+              <textarea value={body} maxLength={200} onChange={(ev) => setBody(ev.target.value)} disabled={busy} />
+            </label>
+            <button type="button" className="btn-primary contact-wide-button" onClick={() => correctBody([])}
+              disabled={busy || body.trim() === '' || body === e.body} aria-busy={busy}>{busy ? TEXT.sending : '直して送る'}</button>
+            {check && (
+              <NameCheckDialog names={check.names} matches={check.matches} text={body.trim()} busy={busy}
+                onFix={() => setCheck(null)} onSend={() => correctBody(check.names)} />
+            )}
+          </>
         )}
         {s && (
           <>

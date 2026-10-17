@@ -430,3 +430,29 @@ button.guardian-record-link {
   .contact-child-body { grid-template-columns: 1fr; }
   .contact-child-record { position: static; }
 }
+
+/*
+ * 段2を送る欄（宛先・他児の名前の注意・定型文）
+ * 典拠：図/画面詳細図「宛先の表示」(1-3 (1))（宛先は「送る」のすぐ上に大きく）・「他児の名前の注意」(1-3 (3))（当たった語を強調）
+ */
+.contact-composer { display: grid; gap: var(--sp-2); }
+.contact-composer textarea { display: block; width: 100%; min-height: 96px; }
+.contact-composer-tools { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.contact-composer-tools .contact-count { margin-left: auto; }
+.contact-composer-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.contact-composer-actions button { min-height: 48px; }
+.contact-composer-actions .btn-primary { flex: 1; }
+.recipient-badge {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3); border: 2px solid var(--c-primary-deep); border-radius: var(--radius); background: var(--c-primary-soft);
+}
+.recipient-label { font-size: var(--fs-small); font-weight: 700; }
+.recipient-name { font-size: 20px; }
+.recipient-to { font-weight: 700; }
+.recipient-badge.is-unregistered .recipient-to { font-weight: 400; }
+.name-check-message { font-weight: 700; }
+.name-check-text { padding: var(--sp-2) var(--sp-3); border: 1px solid var(--c-border); border-radius: var(--radius); white-space: pre-wrap; overflow-wrap: anywhere; }
+.name-check-text mark { background: var(--c-primary); color: var(--c-primary-ink); font-weight: 700; outline: 2px solid var(--c-primary-ink); }
+.phrase-list { display: grid; gap: var(--sp-2); }
+.phrase-list button { min-height: 48px; text-align: left; justify-content: flex-start; white-space: normal; }
+.contact-unsent { font-weight: 700; color: var(--c-alert); }

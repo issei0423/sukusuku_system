@@ -119,7 +119,7 @@ export default function ContactClassScreen() {
   const classes = useAsync(() => api.contactClasses(user!), [user?.account_id]);
   const classId = Number(params.get('class') ?? user?.class_id ?? classes.data?.[0]?.class_id ?? 0);
   const date = params.get('date') ?? today();
-  const sort = params.get('sort') === 'home' ? 'home' : 'kana';
+  const sort = params.get('sort') === 'home' ? 'home' : params.get('sort') === 'facility' ? 'facility' : 'kana';
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [slot, setSlot] = useState<MealSlot>({ kind: '1', round: 1 });
@@ -145,7 +145,7 @@ export default function ContactClassScreen() {
     const s = next.sort ?? sort;
     if (c) p.class = String(c);
     if (d !== today()) p.date = d;
-    if (s === 'home') p.sort = 'home';
+    if (s === 'home' || s === 'facility') p.sort = s;
     setError(null); setTentative(null); setPendingSlot(null);
     setParams(p);
   };
@@ -230,6 +230,9 @@ export default function ContactClassScreen() {
 
   const rows = [...(data?.rows ?? [])];
   if (sort === 'home') rows.sort((a, b) => HOME_ORDER[a.home_state] - HOME_ORDER[b.home_state]);
+  // 園からを送っていない園児を上に（欠席は未送信に数えない。詳細設計書 (2-2 (2))）
+  const unsent = (r: ContactClassRow) => !r.facility && r.exclusion?.reason !== '1';
+  if (sort === 'facility') rows.sort((a, b) => Number(unsent(b)) - Number(unsent(a)));
   const isToday = date === today();
   const canRecord = isToday && !!data?.can_write;
   // おやつを2回出す園のために、その日におやつの記録が1人でもあれば「おやつ（2回目）」を足す（決めたこと D-5）
@@ -263,6 +266,7 @@ export default function ContactClassScreen() {
           <select value={sort} onChange={(e) => go({ sort: e.target.value })}>
             <option value="kana">よみの順</option>
             <option value="home">家庭からの未確認を上に</option>
+            <option value="facility">園からを送っていない園児を上に</option>
           </select>
         </label>
       </div>
@@ -393,7 +397,13 @@ export default function ContactClassScreen() {
                         </td>
                         <td>{nap ? <Link to="/staff/nap">{nap}</Link> : <span className="muted">―</span>}</td>
                         <td className="num"><Link to={childPath} aria-label={`${name}のひとこと・写真`}>{comments > 0 ? `${comments} 件` : '―'}</Link></td>
-                        <td>{row.facility ? `送った ${formatHM(row.facility.recorded_at)}` : <span className="muted">未送信</span>}</td>
+                        {/* 園から：未送信・送った（時刻）。午睡で欠席にした子は「欠席」（未送信に数えない）。押すと連絡帳（園児）画面の園から */}
+                        <td>
+                          <Link to={`${childPath}#facility`} aria-label={`${name}の園から`}>
+                            {row.facility ? `送った ${formatHM(row.facility.recorded_at)}`
+                              : row.exclusion?.reason === '1' ? '欠席' : <span className="contact-unsent">未送信</span>}
+                          </Link>
+                        </td>
                       </tr>
                     );
                   })}

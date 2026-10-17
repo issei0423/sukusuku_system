@@ -9,9 +9,12 @@
  * 記録の行の「直す・取り消す」は、その日はその園児のクラスの担任（記録した職員に限らない）、管理者はいつでも。
  * 午睡チェックを終えたあとの「ねた」「おきた」の直しもここで行う。
  * 前の日のページ・書けない職員（フリー）には、足す部品を出さず、その旨を示す。
+ *
+ * 活動のひとことと園からのひとことは段2：「送る」のすぐ上に宛先を大きく示し、サーバが他児の名前を照合する
+ * （詳細設計書「園からのひとことを送る」(2-3 (3))）。園からは園児・日に1件。送ったあとは送った文と「直す」「取り消す」。
  */
-import { useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { api, className, findChild } from '../../api/client';
 import type { ContactEventInput, ContactPage, MealAmount } from '../../api/shapes';
 import { useSession } from '../../session';
@@ -28,6 +31,7 @@ import TodayTimeline from './TodayTimeline';
 import type { TimelineFix } from './TodayTimeline';
 import { dayLabel, eventText, homeLines } from './contactText';
 import FixDialog, { cancelAction, timeOptions, toiletChoices } from './FixDialog';
+import Composer from './Composer';
 import type { FixTarget } from './FixDialog';
 
 const HOME_STATE_TEXT = { unconfirmed: '未確認', revised: '更新', confirmed: '確認済み' } as const;
@@ -49,8 +53,15 @@ export default function ContactChildScreen() {
   const [time, setTime] = useState('');
   const [mealKind, setMealKind] = useState<'1' | '2'>('1');
   const [tempOpen, setTempOpen] = useState(false);
-  const [fix, setFix] = useState<FixTarget | null>(null);
+  const [fix, setFix] = useState<{ target: FixTarget; mode: 'edit' | 'cancel' } | null>(null);
+  const [editingFacility, setEditingFacility] = useState(false);
   const reachable = useReachable();
+  // 連絡帳（クラス）画面の「園から」の列から来たときは、園からの欄を見せる
+  const { hash } = useLocation();
+  const loaded = !!page.data;
+  useEffect(() => {
+    if (loaded && hash === '#facility') document.getElementById('facility')?.scrollIntoView?.({ block: 'start' });
+  }, [loaded, hash]);
 
   if (page.loading) return <Loading />;
   if (page.error) return <ErrorBox text={page.error} />;
@@ -62,7 +73,31 @@ export default function ContactChildScreen() {
   // 直せるのは、その日はその園児のクラスの担任、管理者はいつでも（基本設計書「取り消し・訂正」(4-2)）
   const canFix = !!data.can_write && (isToday || user?.role === '1');
   const classPath = `/staff/contact${data.class_id ? `?class=${data.class_id}` : ''}${!isToday ? `${data.class_id ? '&' : '?'}date=${date}` : ''}`;
-  const moveTo = (d: string) => { setError(null); setTime(''); setParams(d === today() ? {} : { date: d }); };
+  const moveTo = (d: string) => { setError(null); setTime(''); setEditingFacility(false); setParams(d === today() ? {} : { date: d }); };
+  const childClass = data.class_id ? className(data.class_id) : null;
+  // 段2を送ったあとの文（基本設計書「メッセージ一覧」(4-12)）。保護者が未登録なら「登録すると読めます」
+  const sentText = data.recipient && data.recipient.relationships.length === 0 ? TEXT.sentUnregistered : TEXT.sentToGuardian;
+
+  /** 活動のひとことを送る（段2。POST /api/contact/events の種類 4） */
+  const sendComment = async (body: string, acknowledged: string[]) => {
+    const res = await api.recordEvents(user!, [{ child_id: childId, event_type: '4', body }], acknowledged);
+    const saved = res.events[0];
+    notify(`${name}さんへのひとこと：${sentText}`, saved ? cancelAction(user!, { kind: 'event', event: saved, childName: name }) : undefined);
+    page.refresh();
+  };
+  /** 園からのひとことを送る・直す（段2。園児・日に1件） */
+  const sendFacility = async (body: string, acknowledged: string[]) => {
+    const f = data.facility;
+    if (f && editingFacility) {
+      await api.correctFacility(user!, f.contact_facility_id, { body, acknowledged_names: acknowledged, updated_at: f.updated_at ?? '' });
+      setEditingFacility(false);
+      notify(`${name}さんの園からを直しました。保護者の画面に「訂正しました」と出ます。`);
+    } else {
+      const saved = await api.sendFacility(user!, childId, body, acknowledged);
+      notify(`${name}さんの園から：${sentText}`, cancelAction(user!, { kind: 'facility', facility: saved, childName: name }));
+    }
+    page.refresh();
+  };
 
   const act = async (key: string, work: () => Promise<void>) => {
     if (busy) return;
@@ -104,8 +139,10 @@ export default function ContactChildScreen() {
     });
   };
 
-  const openFix = (t: TimelineFix) =>
-    setFix(t.kind === 'event' ? { kind: 'event', event: t.event, childName: name } : { kind: 'sleep', sleep: t.sleep, childName: name, date });
+  const openFix = (t: TimelineFix) => setFix({
+    target: t.kind === 'event' ? { kind: 'event', event: t.event, childName: name } : { kind: 'sleep', sleep: t.sleep, childName: name, date },
+    mode: 'edit',
+  });
   const h = data.home;
   const homeState = !h ? null : h.confirmed_at ? 'confirmed' : h.revised_at ? 'revised' : 'unconfirmed';
   const label = (key: string, text: string) => (busy === key ? TEXT.sending : failed && !reachable ? TEXT.resend : text);
@@ -163,12 +200,27 @@ export default function ContactChildScreen() {
             {!canFix && data.can_write && <p className="muted">{TEXT.fixAskAdmin}</p>}
           </section>
 
-          <section className="card contact-section" aria-labelledby="child-facility-title">
+          <section className="card contact-section" id="facility" aria-labelledby="child-facility-title">
             <h2 id="child-facility-title">園から</h2>
-            {data.facility
-              ? <p><span className="tag tag-approved">送った {formatHM(data.facility.recorded_at)} {data.facility.staff_name}</span>
-                {' '}{data.facility.body}{data.facility.corrected_at && <span className="muted">　訂正しました（{formatHM(data.facility.corrected_at)}）</span>}</p>
-              : <p className="muted">未送信</p>}
+            {data.facility && !editingFacility && (
+              <>
+                <p><span className="tag tag-approved">送った {formatHM(data.facility.recorded_at)} {data.facility.staff_name}</span>
+                  {' '}{data.facility.body}{data.facility.corrected_at && <span className="muted">　訂正しました（{formatHM(data.facility.corrected_at)}）</span>}</p>
+                {canFix && (
+                  <div className="contact-composer-actions">
+                    <button type="button" onClick={() => setEditingFacility(true)}>直す</button>
+                    <button type="button" className="btn-quiet" onClick={() => setFix({ target: { kind: 'facility', facility: data.facility!, childName: name }, mode: 'cancel' })}>取り消す</button>
+                  </div>
+                )}
+              </>
+            )}
+            {!data.facility && !canRecord && <p className="muted">{isToday ? '未送信' : 'この日の園からはありません'}</p>}
+            {((!data.facility && canRecord) || (data.facility && editingFacility)) && (
+              <Composer key={editingFacility ? `fix-${data.facility?.contact_facility_id}` : 'new'} label={editingFacility ? '園から（直して送る）' : '園からのひとこと'}
+                max={500} scope="1" recipient={data.recipient} className={childClass} initial={editingFacility ? data.facility?.body : ''}
+                submitLabel={editingFacility ? '直して送る' : '送る'} onSend={sendFacility}
+                onCancel={editingFacility ? () => setEditingFacility(false) : undefined} />
+            )}
           </section>
         </div>
 
@@ -220,6 +272,8 @@ export default function ContactChildScreen() {
                   ))}
                 </div>
               </div>
+              <Composer label="活動のひとこと" max={200} scope="2" recipient={data.recipient} className={childClass}
+                submitLabel="ひとことを送る" onSend={sendComment} />
             </>
           )}
         </aside>
@@ -230,7 +284,7 @@ export default function ContactChildScreen() {
           onSelect={(value) => { setTempOpen(false); void record('temp', { child_id: childId, event_type: '3', temperature: value }); }} />
       )}
       {fix && (
-        <FixDialog target={fix} normalTemperature={findChild(childId)?.normal_temperature ?? null} onClose={() => setFix(null)} onDone={(message) => { setFix(null); notify(message); page.refresh(); }} />
+        <FixDialog target={fix.target} startMode={fix.mode} normalTemperature={findChild(childId)?.normal_temperature ?? null} onClose={() => setFix(null)} onDone={(message) => { setFix(null); notify(message); page.refresh(); }} />
       )}
     </div>
   );

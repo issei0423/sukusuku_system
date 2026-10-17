@@ -222,9 +222,16 @@ func (a *app) handleCancelFacility(w http.ResponseWriter, r *http.Request) {
 	if f == nil {
 		return
 	}
+	// 起点は送った時刻（園からは recorded_at と保存した時刻が同じ）
 	families, _ := a.readersOf([]string{f.ChildID}, f.ContactDate, f.RecordedAt)
-	if _, err := a.db.Exec(`UPDATE t_contact_facility SET is_deleted = 1, updated_at = ? WHERE contact_facility_id = ?`, now(), f.ID); err != nil {
+	res, err := a.db.Exec(`UPDATE t_contact_facility SET is_deleted = 1, updated_at = ? WHERE contact_facility_id = ? AND is_deleted = 0`, now(), f.ID)
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, msgContactSaveFailed)
+		return
+	}
+	// ほかの職員が先に取り消していた（同時に押した）。二重に記録・知らせしない
+	if n, _ := res.RowsAffected(); n == 0 {
+		writeForbidden(w, msgContactForbidden)
 		return
 	}
 	a.log(u.AccountID, fnContact, opDelete, "t_contact_facility", i64(f.ID), &f.ChildID, s(fieldsJSON([]field{{"body", f.Body}})), nil)
