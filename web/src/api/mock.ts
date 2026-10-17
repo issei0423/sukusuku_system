@@ -496,10 +496,17 @@ export const childApi = {
     return ok(db.allergies.filter((a) => a.child_id === childId));
   },
 
-  /** アレルギー一覧画面は全園児が対象（画面詳細図 7-1 の補足） */
-  async allAllergies(): Promise<{ child: Child; className: string; allergies: Allergy[] }[]> {
+  /**
+   * アレルギー一覧画面は全園児が対象（画面詳細図 7-1 の補足）。一般にも自クラスの制限をかけないが、保護者には返さない
+   * （基本設計書「権限と利用可能機能」(6-1)「アレルギー一覧の参照｜保護者 ×・一般 ○※2」。GitHub Issue #177 の 3）。
+   * 【仮置き】並びは園児のよみ順（web/仮置き値.md「一覧の並び順」。GitHub Issue #177 の 7）。
+   * サーバ側は server/api_child.go の handleAllAllergies
+   */
+  async allAllergies(user: SessionUser): Promise<{ child: Child; className: string; allergies: Allergy[] }[]> {
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
     const rows = db.children
       .filter((c) => !c.is_deleted && c.enrollment_status === '1')
+      .sort((a, b) => a.child_name_kana.localeCompare(b.child_name_kana, 'ja'))
       .map((c) => ({
         child: c,
         className: className(db.classChildren.find((cc) => cc.child_id === c.child_id)?.class_id ?? null),
@@ -1424,10 +1431,17 @@ const chatApi2 = {
     return ok(undefined);
   },
 
-  /** 取消済みで、まだ対応を記録していないメッセージ */
-  async retractedWithoutRecord() {
+  /**
+   * 取消済みで、まだ対応を記録していないメッセージ。誤送信への対応の記録と同じく管理者に限る
+   * （基本設計書「権限と利用可能機能」(6-1)「誤送信への対応の記録｜管理者のみ」。GitHub Issue #177 の 3）。
+   * 【仮置き】並びは送信の新しい順、同じ時刻はあとで送ったもの（メッセージの番号の大きいもの）を先にする
+   * （web/仮置き値.md「一覧の並び順」。サーバ側の server/api_chat.go の handleRetractedWithoutRecord と同じ。GitHub Issue #177 の 7）
+   */
+  async retractedWithoutRecord(user: SessionUser) {
+    if (user.role !== '1') return fail('誤送信対応の記録は管理者のみが参照できます');
     const recorded = new Set(db.misdeliveryRecords.map((r) => r.chat_message_id));
-    return ok(db.chatMessages
+    return ok([...db.chatMessages]
+      .sort((a, b) => b.sent_at.localeCompare(a.sent_at) || b.chat_message_id - a.chat_message_id)
       // 配布物の掲載の知らせ（source_type = 4）は対象にしない。取り下げとして操作ログに残る
       // （基本設計書「誤送信への対応」(4-6)。GitHub Issue #98）
       // 【仮置き】保護者が送ったメッセージも対象にしない。誤送信への対応は、園が誤って送ったときのもの（同 (4-6) の
@@ -1633,9 +1647,17 @@ export const napApi = {
     return ok(d);
   },
 
+  /**
+   * 異常時の記録の一覧。職員に限り、一般は自クラスの園児の記録に限る
+   * （基本設計書「権限と利用可能機能」(6-1)「異常時の記録｜保護者 ×・一般 ※1」。GitHub Issue #177 の 3）。
+   * 【仮置き】並びは発見時刻の新しい順、同じ時刻はあとで記録したものを先にする
+   * （web/仮置き値.md「一覧の並び順」。GitHub Issue #177 の 7）。サーバ側は server/api_nap.go の handleNapAbnormals
+   */
   async abnormals(user: SessionUser) {
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
     return ok(db.napAbnormals
       .filter((a) => canSeeChild(user, a.child_id))
+      .sort((a, b) => b.found_at.localeCompare(a.found_at) || b.nap_abnormal_id - a.nap_abnormal_id)
       .map((a) => ({ ...a, child_name: childName(a.child_id), staff_name: staffName(a.staff_id) })));
   },
 };
@@ -1646,6 +1668,9 @@ const napApi2 = {
     user: SessionUser,
     f: { from?: string; to?: string; classId?: number | ''; childName?: string; page?: number },
   ): Promise<Paged<NapRecord & { child_name: string; class_name: string; staff_name: string; session_date: string }>> {
+    // 職員に限る（基本設計書「権限と利用可能機能」(6-1)「午睡チェックの実施・記録｜保護者 ×」。
+    // サーバ側の server/api_nap.go の handleSearchNapRecords と同じ。GitHub Issue #177 の 3）
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
     const perPage = settingNumber('paging.nap_search_per_page', 50);
     const visible = new Set(visibleChildren(user).map((c) => c.child_id));
 
@@ -1781,6 +1806,9 @@ export const devApi = {
 
   /** 一覧。チェック漏れを強調するため未実施を判定して返す（基本設計書「画面の一覧」(3-2)） */
   async list(user: SessionUser, classId: number): Promise<DevListRow[]> {
+    // 職員に限る（基本設計書「権限と利用可能機能」(6-1)「発達チェックの入力｜保護者 ×」。
+    // サーバ側の server/api_dev.go の handleDevelopmentList と同じ。GitHub Issue #177 の 3）
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
     const ids = new Set(db.classChildren.filter((cc) => cc.class_id === classId).map((cc) => cc.child_id));
     const rows = visibleChildren(user)
       .filter((c) => ids.has(c.child_id))
@@ -1821,8 +1849,15 @@ export const devApi = {
     return ok(rows);
   },
 
-  /** 前回の記録。並べて表示するために使う（画面詳細図 6-1） */
-  async previousCheck(childId: string, beforeDate: string) {
+  /**
+   * 前回の記録。並べて表示するために使う（画面詳細図 6-1）。
+   * その園児を参照できる職員に限る。一般は自クラスの園児に限る（要件定義書「対象権限列の読み方」(4-2 冒頭)、
+   * 基本設計書「権限と利用可能機能」(6-1)「発達チェックの入力｜保護者 ×・一般 ※1」。GitHub Issue #177 の 3）。
+   * サーバ側は server/api_dev.go の handlePreviousCheck
+   */
+  async previousCheck(user: SessionUser, childId: string, beforeDate: string) {
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
+    if (!canSeeChild(user, childId)) return fail('この園児を参照する権限がありません');
     const prev = db.developmentChecks
       .filter((c) => c.child_id === childId && c.status === '2' && c.checked_on < beforeDate)
       .sort((a, b) => b.checked_on.localeCompare(a.checked_on))[0];
@@ -1833,8 +1868,13 @@ export const devApi = {
     });
   },
 
-  /** 当日の下書き。あれば読み直す。確定した記録なら、いつ確定したか（confirmedAt）も返す */
-  async draftFor(childId: string, checkedOn: string): Promise<DevDraftView | null> {
+  /**
+   * 当日の下書き。あれば読み直す。確定した記録なら、いつ確定したか（confirmedAt）も返す。
+   * 参照できる人は previousCheck と同じ（GitHub Issue #177 の 3。サーバ側は server/api_dev.go の handleDraftCheck）
+   */
+  async draftFor(user: SessionUser, childId: string, checkedOn: string): Promise<DevDraftView | null> {
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
+    if (!canSeeChild(user, childId)) return fail('この園児を参照する権限がありません');
     const c = db.developmentChecks.find((x) => x.child_id === childId && x.checked_on === checkedOn);
     if (!c) return ok(null);
     return ok({
@@ -1862,6 +1902,10 @@ export const devApi = {
     if (checkedOn > today()) return fail('実施日に未来日は指定できません');
 
     let check = db.developmentChecks.find((c) => c.child_id === childId && c.checked_on === checkedOn);
+    // 初めての保存か。操作ログの操作区分（1:作成 2:変更）に使う（基本設計書「操作ログ（t_operation_log）」(5-8)）。
+    // 下で記録を作ったあとに check を見ると、いつも「変更」になっていた（GitHub Issue #177 の 6。
+    // サーバ側は server/api_dev_write.go の handleSaveDevelopmentCheck の isNew）
+    const isNew = !check;
     // 確定した記録は、下書きに戻さない。確定のまま直すことはできる。下書きに戻すと、確定で作った次回の予定日だけが残り、
     // 一覧とダッシュボードの「未実施」が食い違うため（GitHub Issue #164）。【仮置き】確定を取り消す操作は設けない
     if (check && check.status === '2' && status === '1') {
@@ -1900,7 +1944,7 @@ export const devApi = {
         note: null,
       });
     });
-    log(user.account_id, '4', check ? '2' : '1', 't_development_check', check.development_check_id, childId,
+    log(user.account_id, '4', isNew ? '1' : '2', 't_development_check', check.development_check_id, childId,
       null, status === '2' ? '確定' : '下書き保存');
 
     if (status === '2') advanceDevelopmentSchedule(user, check, childId, checkedOn);
@@ -1909,10 +1953,16 @@ export const devApi = {
 };
 
 const devApi2 = {
-  /** 園児単位の推奨スケジュールの上書き（スケジュール設定画面。管理者のみ） */
+  /**
+   * 園児単位の推奨スケジュールの上書き（スケジュール設定画面。上書きは管理者のみ）。
+   * 一覧の取得は職員に限る（サーバ側の server/api_dev.go の handleDevelopmentSchedules と同じ。GitHub Issue #177 の 3）。
+   * 【仮置き】並びは園児のよみ順。発達チェック一覧と同じ（web/仮置き値.md「一覧の並び順」。GitHub Issue #177 の 7）
+   */
   async schedules(user: SessionUser, classId: number) {
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
     const ids = new Set(db.classChildren.filter((cc) => cc.class_id === classId).map((cc) => cc.child_id));
-    return ok(visibleChildren(user).filter((c) => ids.has(c.child_id)).map((child) => {
+    return ok(visibleChildren(user).filter((c) => ids.has(c.child_id))
+      .sort((a, b) => a.child_name_kana.localeCompare(b.child_name_kana, 'ja')).map((child) => {
       const sch = db.developmentSchedules
         .filter((s) => s.child_id === child.child_id)
         .sort((a, b) => b.scheduled_on.localeCompare(a.scheduled_on))[0] ?? null;
@@ -1997,6 +2047,9 @@ export const physicalApi = {
    * サーバ側は server/api_physical.go の handlePhysicalClassStatus
    */
   async classStatus(user: SessionUser, classId: number, measuredOn: string) {
+    // 職員に限る（基本設計書「権限と利用可能機能」(6-1)「身体測定の記録｜保護者 ×」。
+    // サーバ側の handlePhysicalClassStatus と同じ。GitHub Issue #177 の 3）
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
     const day = measuredOn || today();
     if (!isISODate(day)) return fail('測定日の形式が正しくありません');
     const ids = new Set(db.classChildren.filter((cc) => cc.class_id === classId).map((cc) => cc.child_id));
@@ -2328,7 +2381,13 @@ const adminApi2 = {
     }));
     if (f.classId) rows = rows.filter((r) => r.class_id === f.classId);
     if (f.status) rows = rows.filter((r) => r.status === f.status);
-    rows.sort((a, b) => a.child_name.localeCompare(b.child_name, 'ja') || a.code.localeCompare(b.code));
+    // 【仮置き】園児のよみ順にまとめ（よみが同じなら園児IDの順）、同じ園児の中は発行の古い順にする
+    // （web/仮置き値.md「一覧の並び順」）。漢字の氏名の順では、よみの順にも発行の順にもならず、
+    // サーバ（並びを決めていなかった）とも食い違っていた（GitHub Issue #177 の 7）。
+    // サーバ側は server/api_admin.go の handleInvitationCodes
+    const kanaOf = (childId: string) => findChild(childId)?.child_name_kana ?? '';
+    rows.sort((a, b) => kanaOf(a.child_id).localeCompare(kanaOf(b.child_id), 'ja')
+      || a.child_id.localeCompare(b.child_id) || a.invitation_code_id - b.invitation_code_id);
     return ok(rows);
   },
 
@@ -2803,6 +2862,8 @@ const bulkApi = {
 const dashboardApi = {
   /** 未対応の件数を最上部に置く。出勤直後に何が残っているかを1画面で把握させる */
   async staffSummary(user: SessionUser) {
+    // 職員ダッシュボードは職員に限る（サーバ側の server/api_dashboard.go の handleStaffSummary と同じ。GitHub Issue #177 の 3）
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
     const visible = new Set(visibleChildren(user).map((c) => c.child_id));
     const myClasses = new Set(selectableClasses(user).map((c) => c.class_id));
 

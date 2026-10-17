@@ -596,6 +596,14 @@ func (a *app) handleInvitationCodes(w http.ResponseWriter, r *http.Request) {
 		q += ` AND c.status = ?`
 		args = append(args, v)
 	}
+	/*
+	 * 【仮置き】園児のよみ順にまとめ（よみが同じなら園児IDの順）、同じ園児の中は発行の古い順にする
+	 * （web/仮置き値.md「一覧の並び順」）。画面は返した順に園児ごとにまとめる（図/画面詳細図.md「招待コード管理画面」(7-7)
+	 * 「同じ園児の複数枚をまとめて見られる」）。並びを決めていなかったため、モック（園児の氏名の順）と、
+	 * まとまりの並びが食い違っていた（GitHub Issue #177 の 7）。画面側のモックは web/src/api/mock.ts の invitationCodes
+	 */
+	q += ` ORDER BY IFNULL((SELECT child_name_kana FROM m_child WHERE child_id = c.child_id), ''),
+		c.child_id, c.invitation_code_id`
 	rows, err := a.db.Query(q, args...)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "招待コードを取得できませんでした")

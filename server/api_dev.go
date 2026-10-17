@@ -338,6 +338,8 @@ func (a *app) handleDevelopmentSchedules(w http.ResponseWriter, r *http.Request)
 	}
 	classID, _ := queryInt64(r, "class_id")
 
+	// 【仮置き】並びは園児のよみ順（visibleChildren の順）。発達チェック一覧と同じ（web/仮置き値.md「一覧の並び順」）。
+	// モック（web/src/api/mock.ts の schedules）も同じ並びにした（GitHub Issue #177 の 7）
 	children, err := a.visibleChildren(u)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "園児を取得できませんでした")

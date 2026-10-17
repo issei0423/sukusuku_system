@@ -15,7 +15,7 @@ import { formatYMD } from '../../api/util';
 
 export default function AllergyListScreen() {
   const { user } = useSession();
-  const { data, error, loading } = useAsync(() => api.allAllergies(), []);
+  const { data, error, loading } = useAsync(() => api.allAllergies(user!), []);
   const [printError, setPrintError] = useState<string | null>(null);
   const isAdmin = user!.role === '1';
 

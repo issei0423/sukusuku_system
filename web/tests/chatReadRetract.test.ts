@@ -109,7 +109,7 @@ describe('保護者が自分で取り消したメッセージは、誤送信対�
     const byStaff = await api.send(teacher, 8, '（誤送信）野原 太郎くんの発熱の記録');
     await api.retract(teacher, byStaff.chat_message_id);
 
-    const pending = (await api.retractedWithoutRecord()).map((r) => r.chat_message_id);
+    const pending = (await api.retractedWithoutRecord(admin)).map((r) => r.chat_message_id);
     expect(pending).not.toContain(byGuardian.chat_message_id);
     expect(pending).toContain(byStaff.chat_message_id);
   });

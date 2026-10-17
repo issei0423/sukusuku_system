@@ -119,13 +119,13 @@ describe('メッセージの取消とリアクション（GitHub Issue #98・#10
   });
 
   it('配布物を取り下げても、誤送信対応の「対応の記録がない取消メッセージ」には出ない', async () => {
-    const before = (await api.retractedWithoutRecord()).length;
+    const before = (await api.retractedWithoutRecord(admin)).length;
     const posted = await api.postHandout(admin, {
       handout_type: '1', title: '試験用の園だより', target_month: today().slice(0, 7), class_id: null,
       file_name: 'test.pdf', file_type: 'application/pdf', file_size: 1024,
     });
     await api.withdrawHandout(admin, posted.handout_id);
-    expect((await api.retractedWithoutRecord()).length).toBe(before);
+    expect((await api.retractedWithoutRecord(admin)).length).toBe(before);
   });
 });
 
