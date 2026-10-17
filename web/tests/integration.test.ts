@@ -281,4 +281,42 @@ run('Go サーバとの結合', () => {
     // 参照表も捨てられている
     expect(http.visibleChildren(dummy)).toHaveLength(0);
   });
+
+  /*
+   * 一時パスワード中は、手続き以外の API を理由つきで拒否する（GitHub Issue #153）。
+   * 参照表（/api/reference）も拒否されるため、ログインと開き直しが失敗しないことも確かめる。
+   * パスワードは変えない。デモアカウントの一時パスワードを残すため。
+   * ログアウトもしない。宮城 蓮が持っているデモの編集ロック（日誌2）が、ログアウトで外れるため
+   */
+  it('一時パスワード中でもログインでき、手続き以外の API は理由つきで拒否される', async () => {
+    const procedure = await import('../src/api/procedure');
+    const seen: string[] = [];
+    const stop = procedure.onProcedureRequired((kind) => seen.push(kind));
+    try {
+      const u = await http.api.login('miyagi@hoiku.example.jp', 'temp0901', 'staff');
+      expect(u.is_temp_password).toBe(true);
+      // 手続きを終えるまで、園児名などの参照表は持たない
+      expect(http.visibleChildren(dummy)).toHaveLength(0);
+      await expect(http.api.listChildren(dummy)).rejects.toMatchObject({ kind: 'password_change_required' });
+      await expect(http.api.listChildren(dummy)).rejects.toThrow('パスワードを変更してください');
+      expect(seen).toContain('password_change_required');
+      // 開き直しても、手続きの途中として復元される（画面がパスワードの変更へ案内できる）
+      expect((await http.api.bootstrap())?.is_temp_password).toBe(true);
+    } finally {
+      stop();
+    }
+  });
+
+  it('担当外の日誌の添付・編集ロック、園児の所属クラスは拒否される（GitHub Issue #153）', async () => {
+    await http.api.login('kinjo@hoiku.example.jp', 'pass1234', 'staff');
+    try {
+      await expect(http.api.attachmentsOf(dummy, 4)).rejects.toThrow(/権限がありません/);
+      await expect(http.api.acquireLock(dummy, 1)).rejects.toThrow(/権限がありません/);
+      await expect(http.api.lockOf(dummy, 2)).rejects.toThrow(/権限がありません/);
+      await expect(http.api.classOf(dummy, 'C001')).rejects.toThrow(/権限がありません/);
+      await expect(http.api.classOf(dummy, 'C013')).resolves.toBe(2);
+    } finally {
+      await http.api.logout();
+    }
+  });
 });

@@ -12,6 +12,7 @@ import { useSession } from '../../session';
 import { api, selectableClasses } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Pager } from '../../components/ui';
 import { notify } from '../../components/feedback';
+import { downloadCsv } from '../../csv';
 import { BODY_POSITION, BREATHING, COMPLEXION } from '../../api/codes';
 import { formatMD, formatHM, formatMDHM, today, addDays } from '../../api/util';
 
@@ -61,19 +62,14 @@ export default function NapSearchScreen() {
       return;
     }
     setExportError(null);
+    // 園児名・職員名などを式として開かせないよう csv.ts を通す（GitHub Issue #153）
     const header = ['日付', 'チェック時刻', '園児', 'クラス', '体位', '呼吸', '顔色', '体温', '記録者', '保存時刻'];
-    const lines = data.rows.map((r) => [
+    const rows = data.rows.map((r) => [
       r.session_date, r.checked_at, r.child_name, r.class_name,
       BODY_POSITION[r.body_position], BREATHING[r.breathing], COMPLEXION[r.complexion],
       r.temperature ?? '', r.staff_name, r.saved_at,
-    ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','));
-    const blob = new Blob([`\uFEFF${[header.join(','), ...lines].join('\n')}`], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `午睡記録_${from}_${to}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    ]);
+    downloadCsv(`午睡記録_${from}_${to}.csv`, header, rows);
     notify('午睡記録を CSV で出力しました。出力したことは操作ログに残ります');
   };
 

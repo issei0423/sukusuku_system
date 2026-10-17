@@ -194,14 +194,23 @@ func (a *app) handleAllAllergies(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// handleClassOfChild は園児の所属クラスを返す。
+// その園児を参照できる人に限る。クラス番号だけでも、園児IDがあるかどうかと所属が分かるため
+// （基本設計書「権限チェックの実装方針」(6-2)「園児IDを直接指定した不正な取得を許さない」。GitHub Issue #153）
 func (a *app) handleClassOfChild(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.requireUser(w, r); !ok {
+	u, ok := a.requireUser(w, r)
+	if !ok {
+		return
+	}
+	childID := r.PathValue("childID")
+	if !a.canSeeChild(u, childID) {
+		writeForbidden(w, "この園児を参照する権限がありません")
 		return
 	}
 	var id sql.NullInt64
 	a.db.QueryRow(`SELECT cc.class_id FROM t_class_child cc
 	                JOIN m_class c ON c.class_id = cc.class_id AND c.fiscal_year = ?
-	               WHERE cc.child_id = ?`, fiscalYear, r.PathValue("childID")).Scan(&id)
+	               WHERE cc.child_id = ?`, fiscalYear, childID).Scan(&id)
 	writeJSON(w, http.StatusOK, nullInt(id))
 }
 

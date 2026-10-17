@@ -21,6 +21,7 @@ import type {
 } from './types';
 import { ageInMonths, now, today, addDays, plusMinutes, fromNowMinutes, napAutoCloseAt, normalizeInvitationCode, validateEmail } from './util';
 import { BODY_POSITION, BREATHING, COMPLEXION, REACTION, HANDOUT_TYPE } from './codes';
+import { ProcedureRequiredError, notifyProcedureRequired, pendingProcedure } from './procedure';
 import type {
   LoginError, ChildInput, DiaryFilter, DiaryInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
 } from './shapes';
@@ -183,6 +184,22 @@ export function selectableClasses(user: SessionUser): ClassRoom[] {
   const current = db.classes.filter((c) => c.fiscal_year === db.FISCAL_YEAR);
   if (user.role === '1') return current;
   return current.filter((c) => c.class_id === user.class_id);
+}
+
+/**
+ * その日誌を参照できるか。個人日誌・ヒヤリハットは対象園児で、クラス日誌・週案は対象クラスで判定する。
+ * 保護者に見えるのは、承認済みかつ保護者へ共有した自児の日誌のみ。承認済みであっても参照範囲は広がらない
+ * （基本設計書「日誌の作成から保護者への共有」(4-5)）。
+ * サーバ側（server/api_diary.go の visibleDiaryCondition・canSeeDiary）と同じ規則
+ */
+function canSeeDiary(user: SessionUser, d: Diary): boolean {
+  if (d.is_deleted) return false;
+  if (user.role === '1') return true;
+  if (user.role === '2') {
+    if (d.child_id) return canSeeChild(user, d.child_id);
+    return user.class_id != null && d.class_id === user.class_id;
+  }
+  return d.status === '3' && d.is_shared_to_guardian && !!d.child_id && canSeeChild(user, d.child_id);
 }
 
 /* ============ 認証（基本設計書「共通基盤：ログインとアカウント」(4-3)） ============ */
@@ -359,7 +376,12 @@ export const childApi = {
     return ok(db.medicalHistories.filter((m) => m.child_id === childId));
   },
 
-  async classOf(childId: string): Promise<number | null> {
+  /**
+   * 園児の所属クラス。その園児を参照できる人に限る。クラス番号だけでも、園児IDがあるかどうかと
+   * 所属が分かるため（基本設計書「権限チェックの実装方針」(6-2)。サーバ側は server/api_child.go の handleClassOfChild）
+   */
+  async classOf(user: SessionUser, childId: string): Promise<number | null> {
+    if (!canSeeChild(user, childId)) return fail('この園児を参照する権限がありません');
     return ok(db.classChildren.find((cc) => cc.child_id === childId)?.class_id ?? null);
   },
 
@@ -470,7 +492,7 @@ export const diaryApi = {
   async getDiary(user: SessionUser, diaryId: number): Promise<Diary> {
     const d = db.diaries.find((x) => x.diary_id === diaryId && !x.is_deleted);
     if (!d) return fail('日誌が見つかりません');
-    if (d.child_id && !canSeeChild(user, d.child_id)) return fail('この日誌を参照する権限がありません');
+    if (!canSeeDiary(user, d)) return fail('この日誌を参照する権限がありません');
     // 記入した職員・確認した職員の氏名を載せる。Go サーバ（server/api_diary.go の enrich）と同じ
     return ok({
       ...d,
@@ -481,7 +503,15 @@ export const diaryApi = {
 
   async templates(): Promise<typeof db.diaryTemplates> { return ok(db.diaryTemplates); },
   async phrases(): Promise<string[]> { return ok(db.fixedPhrases); },
-  async attachmentsOf(diaryId: number) { return ok(db.diaryAttachments.filter((a) => a.diary_id === diaryId)); },
+  /**
+   * 日誌の添付。日誌本体と同じ参照範囲に従う（基本設計書「日誌の作成から保護者への共有」(4-5)・
+   * 「添付ファイルの実体の保存先」(5-5)）。サーバ側は server/api_diary.go の handleDiaryAttachments
+   */
+  async attachmentsOf(user: SessionUser, diaryId: number) {
+    const d = db.diaries.find((x) => x.diary_id === diaryId);
+    if (!d || !canSeeDiary(user, d)) return fail('この日誌を参照する権限がありません');
+    return ok(db.diaryAttachments.filter((a) => a.diary_id === diaryId));
+  },
 
   /** その園児の過去の記録。前回の記述を見ながら書けるようにする（画面詳細図 3-2） */
   async pastDiariesOf(childId: string, excludeDiaryId?: number): Promise<Diary[]> {
@@ -495,6 +525,9 @@ export const diaryApi = {
    * すでに他者が保持していれば、その職員名を返して画面に出す
    */
   async acquireLock(user: SessionUser, diaryId: number): Promise<{ token: string } | { heldBy: string }> {
+    // ロックを取れるのは、その日誌を参照できる職員に限る（サーバ側は server/api_diary_write.go の handleAcquireLock）
+    const d = db.diaries.find((x) => x.diary_id === diaryId);
+    if (!d || !canSeeDiary(user, d)) return fail('この日誌を編集する権限がありません');
     const idle = settingNumber('ui.diary_lock_minutes', 15);
     const held = db.diaryLocks.find((l) => l.diary_id === diaryId);
     if (held && held.locked_staff_id !== user.staff_id) {
@@ -518,7 +551,10 @@ export const diaryApi = {
     return ok(undefined);
   },
 
-  async lockOf(diaryId: number) {
+  /** 編集ロックの状態。誰が編集中かは日誌の中身と同じ範囲で見せる（サーバ側は handleLockOf） */
+  async lockOf(user: SessionUser, diaryId: number) {
+    const d = db.diaries.find((x) => x.diary_id === diaryId);
+    if (!d || !canSeeDiary(user, d)) return fail('この日誌を参照する権限がありません');
     const l = db.diaryLocks.find((x) => x.diary_id === diaryId);
     return ok(l ? { ...l, staff_name: staffName(l.locked_staff_id) } : null);
   },
@@ -532,11 +568,20 @@ const diaryApi2 = {
     if (input.record_type === '1' || input.record_type === '4') {
       if (!input.child_id) return fail('対象の園児を選んでください');
       if (!canSeeChild(user, input.child_id)) return fail('この園児の日誌を作成する権限がありません');
+    } else {
+      // クラス日誌・週案は対象クラスで参照範囲を判定する。一般が扱えるのは自クラスに限る
+      // （要件定義書「参照範囲の全体規定」(4-1-5)）。サーバ側は server/api_diary_write.go の handleSaveDiary
+      if (input.class_id == null && user.role !== '1') return fail('対象のクラスを選んでください');
+      if (input.class_id != null && !canUseClass(user, input.class_id)) {
+        return fail('このクラスの日誌を作成する権限がありません');
+      }
     }
 
     if (input.diary_id) {
       const d = db.diaries.find((x) => x.diary_id === input.diary_id);
       if (!d) return fail('日誌が見つかりません');
+      // 書き換える日誌そのものも参照範囲の内に限る。他クラスの日誌を日誌IDで指定して書き換えさせない
+      if (!canSeeDiary(user, d)) return fail('この日誌を編集する権限がありません');
       // 保存時にロックのトークンを照合する（基本設計書 5-4）
       const lock = db.diaryLocks.find((l) => l.diary_id === d.diary_id);
       if (lock && lock.lock_token !== input.lock_token) {
@@ -2174,13 +2219,46 @@ const handoutApi = {
   },
 };
 
+/* ============ 手続きを終えるまでの拒否（基本設計書「画面遷移」(3-4)） ============
+ *
+ * 一時パスワード中と規約の再同意が必要な間は、手続きの API 以外を拒否する（api/procedure.ts）。
+ * サーバ側は server/session.go の requireUser。サーバはセッションから利用者を引いて判定するが、
+ * モックでは引数に渡された利用者がセッションの代わりのため、その利用者の状態で判定する。
+ * 利用者を受け取らない関数（allergiesOf など）は、モックでは判定できない（参照範囲の判定も同じ）。
+ */
+
+/** 手続きの途中でも呼べるもの。手続きの画面（TopScreen・PasswordChangeScreen・TermsAgreeScreen）と新規登録が呼ぶ */
+const PROCEDURE_APIS = new Set([
+  'login', 'logout', 'bootstrap', 'reloadSession', 'changePassword', 'agreeTerms', 'currentTerms',
+  'verifyInvitationCode', 'signUpGuardian',
+]);
+
+function isSessionUser(v: unknown): v is SessionUser {
+  return typeof v === 'object' && v !== null && 'account_id' in v && 'is_temp_password' in v && 'terms_agreed' in v;
+}
+
+function guardProcedure<T extends Record<string, unknown>>(apis: T): T {
+  const out: Record<string, unknown> = {};
+  for (const [name, fn] of Object.entries(apis)) {
+    if (typeof fn !== 'function' || PROCEDURE_APIS.has(name)) { out[name] = fn; continue; }
+    out[name] = (...args: unknown[]) => {
+      const caller = args.find(isSessionUser);
+      const kind = caller ? pendingProcedure(caller) : null;
+      if (!kind) return fn(...args);
+      notifyProcedureRequired(kind);
+      return new Promise((_, reject) => setTimeout(() => reject(new ProcedureRequiredError(kind)), 60));
+    };
+  }
+  return out as T;
+}
+
 /* ============ 画面が使う入口 ============ */
-export const api = {
+export const api = guardProcedure({
   ...authApi, ...childApi, ...diaryApi, ...diaryApi2,
   ...chatApi, ...chatApi2, ...napApi, ...napApi2,
   ...devApi, ...devApi2, ...physicalApi, ...adminApi, ...adminApi2, ...adminApi3,
   ...bulkApi, ...dashboardApi, ...handoutApi,
-};
+});
 
 /* ============ 入力の検査の補助（Go サーバの httpx.go と同じ規則） ============ */
 
