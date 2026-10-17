@@ -341,6 +341,8 @@ export interface ContactEvent {
   staff_name?: string;
   corrected_at: string | null;
   is_deleted: boolean;
+  /** 職員の応答だけ。訂正のときに読んだ版として送り返す（詳細設計書「訂正・取り消し」(4-7 (1))） */
+  updated_at?: string;
 }
 
 /** クラスのようす（t_contact_class） */
@@ -387,6 +389,8 @@ export interface NapSleep {
    * （詳細設計書「午睡の園児」(3-4) の「ねた（おきた時刻なし）」。図/インタフェース一覧の NapSleep に足した）
    */
   session_ended: boolean;
+  /** 職員の応答だけ。訂正のときに読んだ版として送り返す（詳細設計書「午睡」(4-6 (4))） */
+  updated_at?: string;
 }
 
 /** きょうは対象外（t_nap_exclusion）。保護者へは返さない */
@@ -415,6 +419,11 @@ export interface ContactPage {
   can_write_home: boolean;
   /** 保護者の応答だけ。そのページを前に開いた時刻（無ければ null） */
   last_read_at?: string | null;
+  /**
+   * 職員の応答だけ。その園児の記録を書けるか（contactAccess の Write）。記録・直す部品を出すかに使う。
+   * 前の日のページに記録を足せないこと・翌日以降は管理者だけが直せることは、日付で決める
+   */
+  can_write?: boolean;
 }
 
 /** 連絡帳（クラス）画面の1行（園児） */
@@ -440,6 +449,54 @@ export interface ContactClassView {
   can_write: boolean;
   rows: ContactClassRow[];
   class_notes: ContactClass[];
+}
+
+/** きょうのようすの1件を記録するときの入力（詳細設計書「型」(4-1 (4))）。meal_round は決めたこと D-5 */
+export interface ContactEventInput {
+  child_id: string;
+  event_type: ContactEventType;
+  meal_kind?: '1' | '2';
+  meal_amount?: MealAmount;
+  meal_round?: 1 | 2;
+  toilet_label?: string;
+  temperature?: number;
+  body?: string;
+  /** 排せつ・体温だけ。その日の0時からいままで */
+  recorded_at?: string;
+}
+
+/** POST /api/contact/events の応答。skipped は「全員ぜんぶ」で記録のある子として飛ばした園児（詳細設計書 (4-4 (1))） */
+export interface RecordEventsResult {
+  events: ContactEvent[];
+  skipped: string[];
+}
+
+/** 出来事の訂正（POST /api/contact/events/{id}/correct）。種類に合う項目と、読んだときの版 */
+export interface ContactEventCorrection {
+  meal_amount?: MealAmount;
+  toilet_label?: string;
+  temperature?: number;
+  recorded_at?: string;
+  updated_at: string;
+}
+
+/** ねた・おきたの訂正（POST /api/nap/sleeps/{id}/correct） */
+export interface NapSleepCorrection {
+  slept_at?: string;
+  woke_at?: string;
+  updated_at: string;
+}
+
+/** 取り消しの応答。取り消す時点で読んでいた家庭の数（詳細設計書「訂正・取り消し」(4-7 (2))） */
+export interface CancelResult {
+  ok: true;
+  read_family_count: number;
+}
+
+/** 取り消しの確認に出す、いま読んでいる家庭の数と人数（詳細設計書 (4-7 (3))） */
+export interface Readers {
+  family_count: number;
+  guardian_count: number;
 }
 
 /** 保護者ホームの「きょう」の1件（午睡を除く） */

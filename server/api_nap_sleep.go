@@ -41,9 +41,9 @@ func (a *app) napSleepTarget(w http.ResponseWriter, u *SessionUser, sessionID in
 func (a *app) loadNapSleep(id int64) (*napSleepOut, error) {
 	var v napSleepOut
 	err := a.db.QueryRow(`SELECT s.nap_sleep_id, s.child_id, s.slept_at, s.woke_at, s.sleep_temperature, s.nap_session_id,
-		s.corrected_at, s.is_deleted, n.ended_at IS NOT NULL
+		s.corrected_at, s.is_deleted, n.ended_at IS NOT NULL, s.updated_at
 		FROM t_nap_sleep s JOIN t_nap_session n ON n.nap_session_id = s.nap_session_id WHERE s.nap_sleep_id = ?`, id).
-		Scan(&v.ID, &v.ChildID, &v.SleptAt, &v.WokeAt, &v.SleepTemperature, &v.NapSessionID, &v.CorrectedAt, &v.IsDeleted, &v.SessionEnded)
+		Scan(&v.ID, &v.ChildID, &v.SleptAt, &v.WokeAt, &v.SleepTemperature, &v.NapSessionID, &v.CorrectedAt, &v.IsDeleted, &v.SessionEnded, &v.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +153,7 @@ func (a *app) handleWake(w http.ResponseWriter, r *http.Request) {
 // napSessionSleeps は、その実施の園児の、取り消していない「ねた・おきた」（入眠時の体温を含む。職員だけ）
 func (a *app) napSessionSleeps(sessionID int64, childID string) []napSleepOut {
 	rows, err := a.db.Query(`SELECT s.nap_sleep_id, s.child_id, s.slept_at, s.woke_at, s.sleep_temperature, s.nap_session_id,
-		s.corrected_at, s.is_deleted, n.ended_at IS NOT NULL
+		s.corrected_at, s.is_deleted, n.ended_at IS NOT NULL, s.updated_at
 		FROM t_nap_sleep s JOIN t_nap_session n ON n.nap_session_id = s.nap_session_id
 		WHERE s.nap_session_id = ? AND s.child_id = ? AND s.is_deleted = 0 ORDER BY s.slept_at, s.nap_sleep_id`, sessionID, childID)
 	out := []napSleepOut{}
@@ -163,7 +163,7 @@ func (a *app) napSessionSleeps(sessionID int64, childID string) []napSleepOut {
 	defer rows.Close()
 	for rows.Next() {
 		var v napSleepOut
-		if rows.Scan(&v.ID, &v.ChildID, &v.SleptAt, &v.WokeAt, &v.SleepTemperature, &v.NapSessionID, &v.CorrectedAt, &v.IsDeleted, &v.SessionEnded) == nil {
+		if rows.Scan(&v.ID, &v.ChildID, &v.SleptAt, &v.WokeAt, &v.SleepTemperature, &v.NapSessionID, &v.CorrectedAt, &v.IsDeleted, &v.SessionEnded, &v.UpdatedAt) == nil {
 			out = append(out, v)
 		}
 	}

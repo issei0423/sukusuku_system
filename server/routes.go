@@ -33,6 +33,14 @@ func (a *app) routeContact(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/nap/sleeps/{id}/wake", a.handleWake)
 	mux.HandleFunc("POST /api/nap/session/{id}/exclusions", a.handleExclude)
 	mux.HandleFunc("POST /api/nap/exclusions/{id}/cancel", a.handleCancelExclusion)
+	// きょうのようすの記録と、訂正・取り消し（詳細設計書「きょうのようす」(4-4)・「訂正・取り消し」(4-7)・(4-6 (4))）
+	mux.HandleFunc("POST /api/contact/events", a.handleRecordEvents)
+	mux.HandleFunc("POST /api/contact/events/{id}/correct", a.handleCorrectEvent)
+	mux.HandleFunc("POST /api/contact/events/{id}/cancel", a.handleCancelEvent)
+	mux.HandleFunc("GET /api/contact/events/{id}/readers", a.handleEventReaders)
+	mux.HandleFunc("POST /api/nap/sleeps/{id}/correct", a.handleCorrectSleep)
+	mux.HandleFunc("POST /api/nap/sleeps/{id}/cancel", a.handleCancelSleep)
+	mux.HandleFunc("GET /api/nap/sleeps/{id}/readers", a.handleSleepReaders)
 }
 
 // 共通基盤：ログインとアカウント（基本設計書 4-3）
