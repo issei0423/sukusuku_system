@@ -414,6 +414,18 @@ func TestAiDailyLimit(t *testing.T) {
 	if !st.Available {
 		t.Fatal("上限に達したら status を偽にしない（決めたこと D-9）")
 	}
+
+	// 呼び出し中の数も上限に含める（同時に押されて上限を超えないように。自動レビューの指摘）
+	mustExec(t, a, `UPDATE m_setting SET setting_value = '3' WHERE setting_key = 'ai.daily_limit'`)
+	if !a.reserveAiCall(3) {
+		t.Fatal("成功2件・呼び出し中0件で、上限3に空きがあるのに取れない")
+	}
+	expectStatus(t, request(t, h, teacher, "POST", "/api/ai/drafts", body), http.StatusTooManyRequests)
+	a.releaseAiCall()
+	call(t, h, teacher, "POST", "/api/ai/drafts", body)
+	if fake.calls() != 3 || a.aiInFlight != 0 {
+		t.Fatalf("呼んだ回数 %d・呼び出し中 %d", fake.calls(), a.aiInFlight)
+	}
 }
 
 // 言い換え・続きの候補（8-6）。候補はちょうど3つ。続きは書きかけの文と合わせて欄の上限以内
@@ -445,6 +457,13 @@ func TestAiRephraseAndContinue(t *testing.T) {
 	expectStatus(t, request(t, h, teacher, "POST", "/api/ai/drafts",
 		jsonBody(t, map[string]any{"purpose": "rephrase", "child_id": "C001", "date": today(), "text": text})), http.StatusServiceUnavailable)
 
+	// 続き：書きかけが欄の上限いっぱいなら、呼ばずに 400（自動レビューの指摘）
+	before := fake.calls()
+	raw := expectStatus(t, request(t, h, teacher, "POST", "/api/ai/drafts",
+		jsonBody(t, map[string]any{"purpose": "continue", "child_id": "C001", "date": today(), "field": "comment", "text": strings.Repeat("あ", 200)})), http.StatusBadRequest)
+	if !strings.Contains(raw, msgAiNoRoom) || fake.calls() != before {
+		t.Fatalf("空きの無い続き: %s（呼んだ回数 %d）", raw, fake.calls()-before)
+	}
 	// 続き：ひとこと（200文字）の書きかけ 190 文字に、11 文字の続きは上限を超える
 	long := strings.Repeat("あ", 190)
 	fake.reply = draftReply{JSON: `{"candidates":["おうちでも聞いてみてください。","た。","た。"]}`}

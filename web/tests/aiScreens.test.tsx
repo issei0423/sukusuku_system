@@ -138,6 +138,10 @@ describe('連絡帳（園児）画面：AI の下書き', () => {
     expect(box.value).toBe('たっくんは砂場で遊んでいました。');
     expect(within(aside).getByText(AI_TEXT.checkBeforeSend)).toBeTruthy();
 
+    // 続き：欄の上限まで空きが少ないときは押せない
+    fireEvent.change(box, { target: { value: 'あ'.repeat(195) } });
+    expect((within(aside).getByRole('button', { name: AI_TEXT.continueButton }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(box, { target: { value: 'たっくんは砂場で遊んでいました。' } });
     // 続き：選ぶと欄の終わりに足す
     fireEvent.click(within(aside).getByRole('button', { name: AI_TEXT.continueButton }));
     const more = await within(aside).findAllByRole('button', { name: AI_TEXT.useThis }, { timeout: 3000 });

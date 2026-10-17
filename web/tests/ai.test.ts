@@ -291,6 +291,11 @@ describe('下書きの検査と失敗（8-2・8-7）', () => {
     expect(JSON.parse(mockAi.lastSent!.user)).toEqual({ 先生の文: '〇〇ちゃんは砂場で遊んでいました。おうちでも聞いてみてください。' });
     expect(r.drafts[1]).toBe('たっくんは砂場で遊んでいました。');
     expect(db.operationLogs.find((l) => l.operation_type === '6')!.target_table).toBe('t_contact_event');
+    // 書きかけが欄の上限いっぱいなら呼ばない（server/api_ai.go と同じ）
+    const calls = mockAi.calls;
+    await expect(api.aiDrafts(teacher, { purpose: 'continue', child_id: 'C001', date: today(), field: 'comment', text: 'あ'.repeat(200) }))
+      .rejects.toThrow(MSG.aiNoRoom);
+    expect(mockAi.calls).toBe(calls);
     const text = 'あ'.repeat(195);
     const c = await api.aiDrafts(teacher, { purpose: 'continue', child_id: 'C001', date: today(), field: 'comment', text });
     expect(c.drafts).toHaveLength(3);

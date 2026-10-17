@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -39,6 +40,9 @@ type app struct {
 	aiKeyRejected atomic.Bool
 	// テストで AI の時間の上限を短くするとき（0 なら aiTimeout）
 	aiTimeoutForTest time.Duration
+	// 呼び出し中の AI の下書きの数（1日の上限に含める。api_ai.go の reserveAiCall）
+	aiMu       sync.Mutex
+	aiInFlight int
 }
 
 func main() {

@@ -4716,6 +4716,8 @@ const aiApi = {
     const memo = (input.memo ?? '').trim();
     if (tooLong(memo, AI_MEMO_MAX)) return fail(MSG.aiMemoTooLong);
     if (tooLong(text, fld.max)) return fail(aiTextTooLong(fld.max));
+    // 【仮置き】続きを足す空きが無ければ呼ばない（server/api_ai.go と同じ）
+    if (input.purpose === 'continue' && [...text].length >= fld.max) return fail(MSG.aiNoRoom);
     const target: AiTarget = isClass ? { class_id: input.class_id! } : { child_id: input.child_id! };
     if (!aiAvailableFor(user, target)) return fail(MSG.aiUnavailableForTarget);
 

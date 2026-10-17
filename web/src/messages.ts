@@ -50,6 +50,8 @@ export const MSG = {
   aiExcludedName: 'AI を使わないお子さんの名前が入っています。このまま書いて送ってください。',
   aiLimit: 'きょうの AI の下書きの回数を使い切りました。そのまま書いて送れます。',
   aiFailed: 'いまは下書きを作れません。そのまま書いて送れます。',
+  /** 【仮置き】続きを足す空きが無い（web/仮置き値.md。server/messages.go の msgAiNoRoom） */
+  aiNoRoom: '文字数の上限に達しているため、続きは作れません。',
   settingNotEditable: 'この設定は画面から変えられません。',
   settingConflict: 'ほかの管理者が設定を変えました。読み直してから変えてください。',
   settingAiDailyLimit: '1日の上限回数は1〜10000の整数で入力してください。',

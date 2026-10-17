@@ -80,7 +80,7 @@ export default function Composer({ label, max, scope, recipient, className, init
         <span className="muted contact-count" aria-live="polite">残り {left} 文字</span>
       </div>
       {ai && (
-        <AiDraftPanel key={sentCount} childId={ai.childId} date={ai.date} field={ai.field} allowDraft={ai.allowDraft}
+        <AiDraftPanel key={sentCount} childId={ai.childId} date={ai.date} field={ai.field} max={max} allowDraft={ai.allowDraft}
           text={text} disabled={busy}
           onUse={(value, mode) => setText((t) => [...(mode === 'append' ? `${t}${value}` : value)].slice(0, max).join(''))} />
       )}

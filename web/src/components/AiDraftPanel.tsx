@@ -22,13 +22,17 @@ import { AI_TEXT } from '../messages';
 
 /** メモの上限（詳細設計書「経路」(8-2)） */
 const MEMO_MAX = 500;
+/** 【仮置き】「続き」を押せるのは、欄の上限まで少なくともこの文字数の空きがあるとき（web/仮置き値.md） */
+const CONTINUE_MIN_ROOM = 10;
 
 type Result = { purpose: AiPurpose; drafts: string[]; replaced: boolean; inserted: boolean };
 
-export default function AiDraftPanel({ childId, date, field, text, disabled, allowDraft, onUse }: {
+export default function AiDraftPanel({ childId, date, field, max, text, disabled, allowDraft, onUse }: {
   childId: string;
   date: string;
   field: AiField;
+  /** 欄の上限の文字数 */
+  max: number;
   /** いまの入力欄の文 */
   text: string;
   /** 送っている間など、押せないとき */
@@ -60,6 +64,7 @@ export default function AiDraftPanel({ childId, date, field, text, disabled, all
 
   if (!available) return null;
   const hasText = text.trim() !== '';
+  const roomForMore = max - [...text.trim()].length >= CONTINUE_MIN_ROOM;
 
   const make = async (purpose: AiPurpose) => {
     if (making) return;
@@ -97,7 +102,7 @@ export default function AiDraftPanel({ childId, date, field, text, disabled, all
         )}
         <button type="button" className="contact-pick" disabled={disabled || making !== null || !hasText}
           onClick={() => void make('rephrase')}>{AI_TEXT.rephraseButton}</button>
-        <button type="button" className="contact-pick" disabled={disabled || making !== null || !hasText}
+        <button type="button" className="contact-pick" disabled={disabled || making !== null || !hasText || !roomForMore}
           onClick={() => void make('continue')}>{AI_TEXT.continueButton}</button>
       </div>
 

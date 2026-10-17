@@ -212,6 +212,12 @@ func (a *app) handleAiDrafts(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, aiTextTooLong(fld.max))
 		return
 	}
+	// 【仮置き】続きを足す空きが無い（書きかけが欄の上限いっぱい）なら呼ばない。呼んでも候補が上限を超えて必ず失敗するため
+	// （自動レビューの指摘。web/仮置き値.md）
+	if in.Purpose == aiPurposeContinue && len([]rune(text)) >= fld.max {
+		writeErr(w, http.StatusBadRequest, msgAiNoRoom)
+		return
+	}
 	if !a.aiAvailableFor(u, t) {
 		writeForbidden(w, msgAiUnavailableForTarget)
 		return
@@ -236,10 +242,13 @@ func (a *app) handleAiDrafts(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// 1日の上限（8-7 (3)）。失敗した呼び出しは数えない。呼ぶ前に止めたもの（403・400・429）は操作ログに残さない
-	if a.aiSucceededToday() >= a.settingInt("ai.daily_limit", 300) {
+	// 呼び出し中の数も数える（設計は「同時に押されると超えることがある」を許すが、外部の AI は費用が掛かるため、
+	// このサーバの中では呼び出し中の分も上限に含める。自動レビューの指摘）
+	if !a.reserveAiCall(a.settingInt("ai.daily_limit", 300)) {
 		writeJSON(w, http.StatusTooManyRequests, apiError{Message: msgAiLimit, Kind: kindAiLimit})
 		return
 	}
+	defer a.releaseAiCall()
 
 	// 送る文を作る（8-4・8-5・8-6）。置き換えたのはメモか職員の文か（「置き換えて送りました」を出す）
 	replaced := false
@@ -369,6 +378,24 @@ func aiJSON(v any) string {
 		return "{}"
 	}
 	return strings.TrimSuffix(buf.String(), "\n")
+}
+
+// reserveAiCall は、その日の成功の数と呼び出し中の数の合計が上限より少なければ、呼び出し中の数を1つ増やして真を返す
+func (a *app) reserveAiCall(limit int) bool {
+	a.aiMu.Lock()
+	defer a.aiMu.Unlock()
+	if a.aiSucceededToday()+a.aiInFlight >= limit {
+		return false
+	}
+	a.aiInFlight++
+	return true
+}
+
+// releaseAiCall は、呼び出し中の数を1つ減らす（成功の操作ログを書いたあとに呼ぶ）
+func (a *app) releaseAiCall() {
+	a.aiMu.Lock()
+	a.aiInFlight--
+	a.aiMu.Unlock()
 }
 
 // aiSucceededToday は、その日（サーバの日付）に成功した AI の下書きの数（8-7 (3)。園全体で1つの上限）
