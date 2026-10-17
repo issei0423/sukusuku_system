@@ -39,6 +39,44 @@ const kana = (childId: string) => db.children.find((c) => c.child_id === childId
 const isSortedByKana = (ids: string[]) =>
   ids.every((id, i) => i === 0 || kana(ids[i - 1]).localeCompare(kana(id), 'ja') <= 0);
 
+/*
+ * Issue #177 の 1・2・5 は、土台の PR（#168・#180・#184・#187）でモックがサーバとそろった。
+ * Issue に書かれた再現手順のとおりに、モックがサーバと同じ結果を返すことを確かめておく
+ */
+describe('Issue #177 の再現手順で、モックがサーバと同じ結果を返す（1・2・5）', () => {
+  const inputOf = (diaryId: number, lockToken?: string) => {
+    const d = db.diaries.find((x) => x.diary_id === diaryId)!;
+    return {
+      diary_id: d.diary_id, record_type: d.record_type, child_id: d.child_id, class_id: d.class_id,
+      diary_date: d.diary_date, body: d.body, lock_token: lockToken,
+    };
+  };
+
+  it('1：一般は他クラスのクラス日誌を開けず、保護者には下書き・申請中の日誌を返さない', async () => {
+    // 日誌 6 はひまわり組のクラス日誌（申請中）。日誌 1 は 野原 太郎 の下書き、日誌 2 はさくら組のクラス日誌（申請中）
+    await expect(api.getDiary(teacher, 6)).rejects.toThrow('この日誌を参照する権限がありません');
+    for (const id of [1, 2, 6]) await expect(api.getDiary(guardian, id)).rejects.toThrow('この記録は共有されていません');
+  });
+
+  it('2：申請中・承認済みの日誌は、下書きとして保存し直せない', async () => {
+    // 日誌 4 は承認済み、日誌 7 は申請中（どちらもさくら組）
+    for (const id of [4, 7]) {
+      await expect(api.saveDiary(teacher, inputOf(id), '1')).rejects.toThrow('申請中または承認済みの日誌は編集できません');
+    }
+    expect(db.diaries.find((d) => d.diary_id === 4)!.status).toBe('3');
+    expect(db.diaries.find((d) => d.diary_id === 7)!.status).toBe('2');
+  });
+
+  it('5：管理者が強制解除して自分がロックを持ったあと、元の職員の保存は設計の文言で断る', async () => {
+    const mine = await api.acquireLock(teacher, 1);
+    if (!('token' in mine)) throw new Error('ロックを取れませんでした');
+    await api.releaseLock(admin, 1, true);
+    expect(await api.acquireLock(admin, 1)).toHaveProperty('token');
+    await expect(api.saveDiary(teacher, inputOf(1, mine.token), '1'))
+      .rejects.toThrow('編集ロックが解除されました。内容を再読み込みしてください');
+  });
+});
+
 describe('職員・管理者だけの API を、保護者と担当外の職員に使わせない（Issue #177 の 3）', () => {
   it('前回の発達チェックと当日の下書きは、その園児を参照できる職員に限る', async () => {
     // 野原 太郎（C001・さくら組）には、確定した前回の記録がある
