@@ -120,9 +120,13 @@ export function plusMinutes(isoDateTime: string, minutes: number): string {
   return formatLocal(new Date(new Date(isoDateTime).getTime() + minutes * 60_000));
 }
 
-/** 現在時刻に分を足す（現地時刻） */
+/**
+ * 現在時刻（now() と同じ JST）に分を足す。
+ * 端末の時計の時刻のまま作ると、JST でない端末（UTC で回る CI など）では now() と時差のぶんずれ、
+ * ロックの期限（locked_until）がはじめから過ぎていることになる（GitHub Issue #166 の 6 の確かめで見つけた）
+ */
 export function fromNowMinutes(minutes: number): string {
-  return formatLocal(new Date(Date.now() + minutes * 60_000));
+  return plusMinutes(now(), minutes);
 }
 
 function formatLocal(d: Date): string {
