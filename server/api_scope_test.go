@@ -215,7 +215,12 @@ func TestClassDiaryRequiresOwnClass(t *testing.T) {
 		call(t, h, takanashi, "POST", "/api/diaries", diary("2", "1", "1"))
 		call(t, h, kinjo, "POST", "/api/diaries", diary("3", "2", "1"))
 		call(t, h, admin, "POST", "/api/diaries", diary("2", "2", "1"))
-		call(t, h, admin, "POST", "/api/diaries", diary("3", "null", "1"))
+	})
+
+	// 対象のクラスは必須（図/画面詳細図.md「日誌作成・編集画面」(3-2) 項目5「入力：必須」）。
+	// 以前は管理者だけクラスを空けて作れたが、記録種別によらず断る（GitHub Issue #174。api_diary_flow_test.go）
+	t.Run("管理者も、クラスを指定しない週案は作れない", func(t *testing.T) {
+		expectStatus(t, request(t, h, admin, "POST", "/api/diaries", diary("3", "null", "1")), http.StatusBadRequest)
 	})
 
 	t.Run("更新で他クラスへ移すことも、他クラスの日誌を書き換えることもできない", func(t *testing.T) {

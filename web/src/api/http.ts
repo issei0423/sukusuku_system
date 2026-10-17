@@ -288,7 +288,7 @@ const apiAuth = {
   listDiaries: (_u: SessionUser, f: DiaryFilter = {}) =>
     get<Paged<Diary>>('/api/diaries' + qs({
       record_type: f.recordType ?? '', class_id: f.classId ?? '', status: f.status ?? '',
-      from: f.from ?? '', to: f.to ?? '', page: f.page ?? 1,
+      from: f.from ?? '', to: f.to ?? '', page: f.page ?? 1, mine: f.mine ? 1 : '',
     })),
 
   getDiary: (_u: SessionUser, diaryId: number) => get<Diary>(`/api/diaries/${diaryId}`),
@@ -297,7 +297,9 @@ const apiAuth = {
   attachmentsOf: (_u: SessionUser, diaryId: number) =>
     get<{ diary_attachment_id: number; diary_id: number; file_path: string; file_type: string }[]>(
       `/api/diaries/${diaryId}/attachments`),
-  pastDiariesOf: (_u: SessionUser, childId: string, _exclude?: number) => get<Diary[]>(`/api/children/${childId}/diaries`),
+  // いま開いている日誌そのものは除く（GitHub Issue #139・#174）。サーバが除く日誌を受け取る
+  pastDiariesOf: (_u: SessionUser, childId: string, exclude?: number) =>
+    get<Diary[]>(`/api/children/${childId}/diaries${qs({ exclude })}`),
   timelineOf: (_u: SessionUser, childId: string) => get<Diary[]>(`/api/children/${childId}/timeline`),
   pendingDiaries: (_u: SessionUser) => get<Diary[]>('/api/diaries/pending'),
 

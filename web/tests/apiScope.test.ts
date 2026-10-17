@@ -134,7 +134,12 @@ describe('クラス日誌・週案のクラス（要件定義書「参照範囲�
     await expect(api.saveDiary(teacher, classDiary(1), '1')).resolves.toMatchObject({ class_id: 1 });
     await expect(api.saveDiary(otherTeacher, classDiary(2, '3'), '1')).resolves.toMatchObject({ class_id: 2 });
     await expect(api.saveDiary(admin, classDiary(2), '1')).resolves.toMatchObject({ class_id: 2 });
-    await expect(api.saveDiary(admin, classDiary(null, '3'), '1')).resolves.toMatchObject({ class_id: null });
+  });
+
+  // 対象のクラスは必須（図/画面詳細図.md「日誌作成・編集画面」(3-2) 項目5「入力：必須」）。
+  // 以前は管理者だけクラスを空けて作れたが、記録種別によらず断る（GitHub Issue #174。tests/diaryFlow.test.ts）
+  it('管理者も、クラスを指定しない週案は作れない', async () => {
+    await expect(api.saveDiary(admin, classDiary(null, '3'), '1')).rejects.toThrow('対象のクラスを選んでください');
   });
 
   it('更新で他クラスへ移すことも、他クラスの日誌を書き換えることもできない', async () => {
