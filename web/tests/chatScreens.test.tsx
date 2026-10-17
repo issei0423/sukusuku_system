@@ -66,11 +66,11 @@ describe('書きかけの本文は、書いていたチャンネルにだけ結�
   it('職員：チャンネルを切り替えると入力欄は空になり、別の家庭へは送れない。戻ると書きかけが戻る', async () => {
     open('/staff/chat?room=8', teacher);
     await settled();
-    await waitFor(() => expect(document.querySelector('.channel.current')?.textContent).toContain('宮城 美咲の保護者'));
+    await waitFor(() => expect(document.querySelector('.channel.current')?.textContent).toContain('宮城 美咲の園とのやりとり'));
     fireEvent.change(composer(), { target: { value: 'A1 美咲ちゃんは今日、少し熱っぽかったです。' } });
 
-    fireEvent.click(channel('金城 陸の保護者'));
-    await waitFor(() => expect(document.querySelector('.channel.current')?.textContent).toContain('金城 陸の保護者'));
+    fireEvent.click(channel('金城 陸の園とのやりとり'));
+    await waitFor(() => expect(document.querySelector('.channel.current')?.textContent).toContain('金城 陸の園とのやりとり'));
     expect(composer().value).toBe('');
     expect((screen.getByRole('button', { name: '送信' }) as HTMLButtonElement).disabled).toBe(true);
 
@@ -80,8 +80,8 @@ describe('書きかけの本文は、書いていたチャンネルにだけ結�
     expect(db.chatMessages.some((m) => m.chat_room_id === 9 && m.body.startsWith('A1'))).toBe(false);
     expect(composer().value).toBe('');
 
-    fireEvent.click(channel('宮城 美咲の保護者'));
-    await waitFor(() => expect(document.querySelector('.channel.current')?.textContent).toContain('宮城 美咲の保護者'));
+    fireEvent.click(channel('宮城 美咲の園とのやりとり'));
+    await waitFor(() => expect(document.querySelector('.channel.current')?.textContent).toContain('宮城 美咲の園とのやりとり'));
     expect(composer().value).toBe('A1 美咲ちゃんは今日、少し熱っぽかったです。');
   });
 

@@ -86,7 +86,9 @@ function child(
   id: string, name: string, kana: string, birth: string, sex: Child['sex'], temp: number,
 ): Child {
   return {
-    child_id: id, child_name: name, child_name_kana: kana, birth_date: birth, sex,
+    child_id: id, child_name: name, child_name_kana: kana,
+    nickname: ({ C001: 'たっくん', C006: 'あおちゃん', C008: 'ゆいちゃん' } as Record<string, string>)[id] ?? '',
+    birth_date: birth, sex,
     normal_temperature: temp, enrollment_status: '1', photo_consent_level: '2',
     is_deleted: false, created_at: '2025-04-01T09:00:00', updated_at: '2026-04-01T09:00:00',
   };
@@ -302,6 +304,12 @@ export const chatRooms: ChatRoomRow[] = [
   { chat_room_id: 7, room_type: '4', class_id: 1,    room_name: '上園 花子の保護者', is_archived: false, thread_status: null, child_id: 'C002' },
   { chat_room_id: 8, room_type: '4', class_id: 1,    room_name: '宮城 美咲の保護者', is_archived: false, thread_status: null, child_id: 'C004' },
   { chat_room_id: 9, room_type: '4', class_id: 1,    room_name: '金城 陸の保護者',   is_archived: false, thread_status: null, child_id: 'C005' },
+  // 詳細設計書「デモデータ」(5-5)。保護者未登録でも在籍園児には個人チャットがある。
+  ...children.filter((c) => !['C001', 'C002', 'C004', 'C005'].includes(c.child_id)).map((c, i) => ({
+    chat_room_id: 10 + i, room_type: '4' as const,
+    class_id: classChildren.find((cc) => cc.child_id === c.child_id)!.class_id,
+    room_name: `${c.child_name}の保護者`, is_archived: false, thread_status: '2' as const, child_id: c.child_id,
+  })),
 ];
 
 /** 参加者（t_chat_member）。left_at で過去の所属期間を保持する（基本設計書 5-5） */
@@ -317,6 +325,12 @@ export const chatMembers: ChatMember[] = [
   ...[1, 2, 3, 4, 7].map((account_id) => ({ chat_room_id: 7, account_id, joined_at: '2025-04-05T10:00:00', left_at: null })),
   ...[1, 2, 3, 4, 9].map((account_id) => ({ chat_room_id: 8, account_id, joined_at: '2025-07-01T10:00:00', left_at: null })),
   ...[1, 2, 3, 4, 10].map((account_id) => ({ chat_room_id: 9, account_id, joined_at: '2025-07-05T10:00:00', left_at: null })),
+  ...chatRooms.filter((r) => r.room_type === '4' && r.chat_room_id >= 10).flatMap((r) => {
+    const teacherIds = new Set(classStaff.filter((cs) => cs.class_id === r.class_id).map((cs) => cs.staff_id));
+    return accounts.filter((a) => a.status === '1' && (a.role === '1' ||
+      (a.role === '2' && staff.some((s) => s.account_id === a.account_id && teacherIds.has(s.staff_id)))))
+      .map((a) => ({ chat_room_id: r.chat_room_id, account_id: a.account_id, joined_at: '2026-09-01T09:00:00', left_at: null }));
+  }),
 ];
 
 export const chatMessages: ChatMessage[] = [

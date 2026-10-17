@@ -131,6 +131,7 @@ export interface Child {
   child_id: string;
   child_name: string;
   child_name_kana: string;
+  nickname?: string;
   /** 月齢算出の唯一の根拠。未来日不可（5-3） */
   birth_date: string;
   sex: Sex;

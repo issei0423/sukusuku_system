@@ -148,6 +148,7 @@ function childFields(childId: string): Field[] {
   return [
     ['氏名', c.child_name],
     ['よみ', c.child_name_kana],
+    ['呼び名', c.nickname ?? ''],
     ['生年月日', c.birth_date],
     ['性別', SEX[c.sex]],
     ['平熱', c.normal_temperature],
@@ -565,6 +566,7 @@ export const childApi = {
     if (tooLong(input.child_name, 50) || tooLong(input.child_name_kana, 50)) {
       return fail('氏名とよみは、それぞれ50文字以内で入力してください');
     }
+    if ([...(input.nickname ?? '')].length > 20) return fail('呼び名は20文字以内で入力してください。');
     if (!isKana(input.child_name_kana)) return fail('よみは、ひらがなで入力してください');
     if (!input.birth_date || input.birth_date > today()) return fail('生年月日に未来日は指定できません');
     // アレルギーは対象だけでは配膳の場で使えない。症状と対応まで揃えて登録する（GitHub Issue #119）
@@ -574,12 +576,16 @@ export const childApi = {
     const existing = findChild(input.child_id);
     if (mode === 'create' && existing) return fail('その園児IDはすでに使われています');
     if (mode === 'edit' && !existing) return fail('園児が見つかりません');
+    if (!db.classes.some((c) => c.class_id === input.class_id && c.fiscal_year === db.FISCAL_YEAR)) {
+      return fail('登録できませんでした。もう一度お試しください。');
+    }
 
     const before = existing ? childFields(input.child_id) : null;
     const row: Child = {
       child_id: input.child_id,
       child_name: input.child_name,
       child_name_kana: input.child_name_kana,
+      nickname: input.nickname ?? '',
       birth_date: input.birth_date,
       sex: input.sex,
       normal_temperature: input.normal_temperature,
@@ -596,6 +602,13 @@ export const childApi = {
     const idx = db.classChildren.findIndex((cc) => cc.child_id === input.child_id);
     if (idx >= 0) db.classChildren[idx].class_id = input.class_id;
     else db.classChildren.push({ class_id: input.class_id, child_id: input.child_id });
+
+    if (!existing) createPersonalRoom(input.child_id);
+    else {
+      const room = db.chatRooms.find((r) => r.room_type === '4' && r.child_id === input.child_id);
+      if (room) { room.room_name = `${input.child_name}の保護者`; room.class_id = input.class_id; }
+      db.accounts.filter((a) => a.role === '1' || a.role === '2').forEach((a) => syncStaffChatRooms(a.account_id));
+    }
 
     // アレルギー・既往歴は入力内容で置き換える
     for (let i = db.allergies.length - 1; i >= 0; i--) {
@@ -652,6 +665,8 @@ export const childApi = {
     if (childHasRecords(childId)) return fail('記録が登録されている園児は取り消せません。在籍状態を変更してください。');
     c.is_deleted = true;
     c.updated_at = now();
+    const room = db.chatRooms.find((r) => r.room_type === '4' && r.child_id === childId);
+    if (room) room.is_archived = true;
     log(user.account_id, '6', '4', 'm_child', null, childId, c.child_name, '取消（論理削除）');
     return ok(undefined);
   },
@@ -1053,8 +1068,10 @@ export const chatApi = {
       // 実際に読める保護者の数なので、停止中の保護者は数えない（GitHub Issue #171。api_chat.go の activeGuardianWhere）
       const guardianCount = db.chatMembers.filter((x) =>
         x.chat_room_id === room.chat_room_id && x.left_at === null && isActiveGuardian(x.account_id)).length;
+	  const guardianRegisteredCount = db.chatMembers.filter((x) => x.chat_room_id === room.chat_room_id
+	    && x.left_at === null && findAccount(x.account_id)?.role === '3').length;
 
-      return { room, unread, canPost, guardianCount, left };
+      return { room, unread, canPost, guardianCount, guardianRegisteredCount, left };
     });
 
     const order: Record<string, number> = { '1': 0, '5': 1, '2': 2, '3': 3, '4': 4 };
@@ -1377,6 +1394,17 @@ function syncStaffChatRooms(accountId: number): void {
       cur.left_at = now();
     }
   }
+}
+
+// 詳細設計書「園児の登録と個人チャット」(4-9)。既存の参加規則を作成直後に適用する。
+function createPersonalRoom(childId: string): void {
+  const child = findChild(childId);
+  const classId = db.classChildren.find((cc) => cc.child_id === childId
+    && db.classes.some((c) => c.class_id === cc.class_id && c.fiscal_year === db.FISCAL_YEAR))?.class_id;
+  if (!child || !classId) throw new Error('登録できませんでした。もう一度お試しください。');
+  db.chatRooms.push({ chat_room_id: nextId(), room_type: '4', class_id: classId,
+    room_name: `${child.child_name}の保護者`, is_archived: false, thread_status: '2', child_id: childId });
+  db.accounts.filter((a) => a.role === '1' || a.role === '2').forEach((a) => syncStaffChatRooms(a.account_id));
 }
 
 /**
@@ -2951,6 +2979,9 @@ const bulkApi = {
     }
     if (rows.some((r) => r.error)) return fail('エラー行があるため取り込めません。すべて解消してから実行してください');
     if (rows.length === 0) return fail('取り込む行がありません');
+    if (rows.some((r) => !db.classes.some((c) => c.fiscal_year === db.FISCAL_YEAR && c.class_name === r.values[5]))) {
+      return fail('登録できませんでした。もう一度お試しください。');
+    }
 
     rows.forEach((r) => {
       const [id, name, kana, birth, sex, clsName, temp] = r.values;
@@ -2962,6 +2993,7 @@ const bulkApi = {
       });
       const cls = db.classes.find((c) => c.fiscal_year === db.FISCAL_YEAR && c.class_name === clsName)!;
       db.classChildren.push({ class_id: cls.class_id, child_id: id });
+      createPersonalRoom(id);
     });
     // 登録した園児ごとに、対象園児つきで残す。件数だけの 1 行では、対象園児で絞り込んだときに出ない
     // （基本設計書「操作ログ（t_operation_log）」(5-8)、GitHub Issue #166 の 5。サーバ側は handleImportChildCsv）
