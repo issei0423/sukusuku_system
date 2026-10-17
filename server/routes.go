@@ -81,6 +81,8 @@ func (a *app) routeDiary(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/diaries/{id}/attachments", a.handleDiaryAttachments)
 	mux.HandleFunc("POST /api/diaries/{id}/approve", a.handleApproveDiary)
 	mux.HandleFunc("POST /api/diaries/{id}/return", a.handleReturnDiary)
+	mux.HandleFunc("POST /api/diaries/{id}/withdraw", a.handleWithdrawDiary)
+	mux.HandleFunc("POST /api/diaries/{id}/revoke-approval", a.handleRevokeDiaryApproval)
 	mux.HandleFunc("POST /api/diaries/{id}/lock", a.handleAcquireLock)
 	mux.HandleFunc("PUT /api/diaries/{id}/lock", a.handleTouchLock)
 	mux.HandleFunc("DELETE /api/diaries/{id}/lock", a.handleReleaseLock)

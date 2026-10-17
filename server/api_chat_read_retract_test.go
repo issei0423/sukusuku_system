@@ -72,7 +72,7 @@ func TestMarkReadSkipsMessagesBeforeJoined(t *testing.T) {
 	expectStatus(t, rec, http.StatusOK)
 	haha := sessionCookieOf(t, rec)
 
-	const personalRoom = "7" // 上園 花子の保護者。ID 7「本日の日誌を共有しました。」は登録より前のもの
+	const personalRoom = "7" // 上園 花子の保護者。ID 7（担任が送ったメッセージ）は登録より前のもの
 	if got := chatMessagesOf(t, h, haha, personalRoom); len(got) != 0 {
 		t.Fatalf("登録より前のメッセージが見えている: %v", got)
 	}
@@ -180,7 +180,7 @@ func TestChatMessageCarriesSenderRole(t *testing.T) {
 		cookie *http.Cookie
 	}{{"職員", loginAs(a, 3, "staff")}, {"保護者", loginAs(a, 6, "guardian")}} {
 		got := chatMessagesOf(t, h, viewer.cookie, "6")
-		// ID 4 は担任（高梨）が送った日誌の共有、ID 5 は保護者（野原 一誠）が送ったもの
+		// ID 4 は担任（高梨）が送ったもの、ID 5 は保護者（野原 一誠）が送ったもの
 		if got[4].SenderRole != roleGeneralStaff || got[5].SenderRole != roleGuardian {
 			t.Errorf("%sの画面：送信者のロール = %q・%q, want %q・%q", viewer.name,
 				got[4].SenderRole, got[5].SenderRole, roleGeneralStaff, roleGuardian)

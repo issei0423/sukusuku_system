@@ -415,17 +415,6 @@ func TestSignUpJoinsPersonalRoomOfThatChild(t *testing.T) {
 	expectStatus(t, request(t, h, hanako, "POST", "/api/chat/rooms/6/messages", `{"body":"明日はお休みします"}`),
 		http.StatusForbidden)
 
-	t.Run("日誌の共有も、同じ氏名の別の園児の家庭へ流さない", func(t *testing.T) {
-		var before int
-		a.db.QueryRow(`SELECT COUNT(*) FROM t_chat_message WHERE chat_room_id = 6`).Scan(&before)
-		a.shareDiaryToGuardian(&SessionUser{AccountID: 1}, 1, "C023")
-		var after int
-		a.db.QueryRow(`SELECT COUNT(*) FROM t_chat_message WHERE chat_room_id = 6`).Scan(&after)
-		if after != before {
-			t.Fatalf("C023 の日誌の共有が C001 の家庭の個人チャットへ流れた（%d → %d 件）", before, after)
-		}
-	})
-
 	t.Run("元の家庭（C001）の新しい保護者は、これまでどおり C001 の個人チャットへ入る", func(t *testing.T) {
 		rec := send(t, h, nil, "POST", "/api/signup", `{"code":"ABCD-1234-EFGH","email":"nohara.m@example.jp",
 			"password":"mama-5678-x","guardian_name":"野原 みさえ","relationship":"母","terms_agreed":true,"terms_version":"1.0"}`)

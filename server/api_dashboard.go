@@ -225,11 +225,10 @@ func (a *app) handleGuardianHome(w http.ResponseWriter, r *http.Request) {
 		u.AccountID, u.AccountID, u.AccountID, u.AccountID).Scan(&unread)
 
 	type homeRow struct {
-		Child         Child   `json:"child"`
-		AgeMonths     int     `json:"ageMonths"`
-		ClassName     string  `json:"className"`
-		SharedDiaries []Diary `json:"sharedDiaries"`
-		Unread        int     `json:"unread"`
+		Child     Child  `json:"child"`
+		AgeMonths int    `json:"ageMonths"`
+		ClassName string `json:"className"`
+		Unread    int    `json:"unread"`
 		// 園児1人の「きょう」（詳細設計書「ダッシュボード」(4-8 (1)) の GuardianToday）
 		Today *guardianTodayOut `json:"today"`
 	}
@@ -251,19 +250,6 @@ func (a *app) handleGuardianHome(w http.ResponseWriter, r *http.Request) {
 			out[i].ClassName = a.className(classID.Int64)
 		}
 
-		// 承認済みかつ共有指定のある個人日誌だけが保護者に見える。ヒヤリハットは共有の対象外
-		// （基本設計書「日誌システム」(4-5)。条件は api_diary.go の visibleDiaryCondition と同じ）。
-		// 日誌は有効な紐づけの自児だけ（canSeeChild）。猶予中の子を並べても、日誌の範囲は広げない
-		diaries := []Diary{}
-		if a.canSeeChild(u, childID) {
-			diaries, _ = a.queryDiaries(`SELECT `+diaryColumns+` FROM t_diary
-				WHERE is_deleted = 0 AND child_id = ? AND record_type = '1' AND status = '3' AND is_shared_to_guardian = 1
-				ORDER BY diary_date DESC`, childID)
-			if diaries == nil {
-				diaries = []Diary{}
-			}
-		}
-		out[i].SharedDiaries = diaries
 		t, err := a.guardianToday(u, childID)
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "取得に失敗しました")

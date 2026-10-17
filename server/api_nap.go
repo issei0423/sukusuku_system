@@ -679,11 +679,13 @@ func (a *app) handleRaiseIncidentDiary(w http.ResponseWriter, r *http.Request) {
 		"\n\n【とった対応】\n" + response +
 		"\n\n【今後の対策】\n"
 
+	// 発生日時は発見時刻（詳細設計書「日誌の画面（作り直し）」(2-13 (8))）。場所は【仮置き】（incidentPlaceholder）
+	occurredAt, place := incidentPlaceholder("4", foundAt)
 	res, err := a.db.Exec(`INSERT INTO t_diary
 		(record_type, child_id, class_id, diary_date, body, status, created_staff_id,
-		 is_shared_to_guardian, nap_abnormal_id, is_deleted, created_at, updated_at)
-		VALUES ('4', ?, ?, ?, ?, '1', ?, 0, ?, 0, ?, ?)`,
-		childID, classID, diaryDate, body, u.staff(), abnormalID, now(), now())
+		 occurred_at, place, nap_abnormal_id, is_deleted, created_at, updated_at)
+		VALUES ('4', ?, ?, ?, ?, '1', ?, ?, ?, ?, 0, ?, ?)`,
+		childID, classID, diaryDate, body, u.staff(), occurredAt, place, abnormalID, now(), now())
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "起票に失敗しました")
 		return

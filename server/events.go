@@ -52,7 +52,7 @@ type liveEvent struct {
 const (
 	// チャンネルの中身が変わった（送信・編集・取消・リアクション・既読・未対応／対応済み・メンバー）
 	evChat = "chat"
-	// 日誌が変わった（作成・保存・申請・承認・差し戻し・保護者への共有、ヒヤリハットの起票）
+	// 日誌が変わった（作成・保存・申請・取り下げ・承認・差し戻し・承認の取り消し、ヒヤリハットの起票）
 	evDiary = "diary"
 	// 配布物が掲載された・取り下げられた
 	evHandout = "handout"
@@ -365,7 +365,7 @@ func (a *app) notifyRead(roomID int64, reader *SessionUser) {
 // ---- 誰に送るか（日誌システム。基本設計書「日誌システム」(4-5)） ----
 
 // notifyDiary は、その日誌を参照できる職員へ送る（handleGetDiary と同じ判定。canSeeDiary）。
-// 保護者へは送らない（詳細設計書「PR #196 からの変更」(6-1)。日誌の共有の道そのものは日誌の作り直しで外す）
+// 日誌は園内の記録で、保護者へは送らない（詳細設計書「PR #196 からの変更」(6-1)・「日誌」(4-13)）
 func (a *app) notifyDiary(diaryID int64) {
 	a.notify(liveEvent{Type: evDiary, DiaryID: diaryID}, func(u *SessionUser) bool {
 		return u.isStaff() && a.canSeeDiary(u, diaryID)
