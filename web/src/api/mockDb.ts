@@ -612,7 +612,7 @@ export const settings: Setting[] = [
   setting('scope.handover_grace_days', '14', '引き継ぎ猶予期間（日）'),
   setting('scope.fiscal_year_update_date', '04-01', '年度更新の実行日'),
   // 身体測定
-  setting('physical.measure_months', '4,7,10,1', '測定を行う月'),
+  setting('physical.measure_months', '4,8,12', '測定を行う月'),
   setting('physical.height_min', '40', '身長の下限（cm）'),
   setting('physical.height_max', '140', '身長の上限（cm）'),
   setting('physical.weight_min', '2', '体重の下限（kg）'),

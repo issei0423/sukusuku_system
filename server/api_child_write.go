@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"net/http"
 	"strings"
 )
@@ -90,11 +91,10 @@ func (a *app) handleSaveChild(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var before string
+	// 変更前の値。取引の中では a.db へ問い合わせない（db.go）ため、先に読んでおく
+	var before []field
 	if existing > 0 {
-		var name, birth string
-		a.db.QueryRow(`SELECT child_name, birth_date FROM m_child WHERE child_id = ?`, in.ChildID).Scan(&name, &birth)
-		before = name + " / " + birth
+		before = a.childFieldsOf(in.ChildID)
 	}
 
 	tx, err := a.db.Begin()
@@ -152,14 +152,18 @@ func (a *app) handleSaveChild(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	op := opCreate
-	var beforePtr *string
+	/*
+	 * 操作ログには、変更のあった項目だけを {"項目名": 値} の JSON で残す（基本設計書「操作ログ（t_operation_log）」(5-8)、
+	 * 「共通の処理」(4-2)「変更前後の値：訂正内容を追えるようにするため」）。氏名と生年月日だけを残すと、
+	 * クラス・アレルギー・平熱を変えても前後が同じに見え、誰がいつ変えたかを追えない（GitHub Issue #166 の 5）
+	 */
+	after := a.childFieldsOf(in.ChildID)
 	if existing > 0 {
-		op = opUpdate
-		beforePtr = &before
+		b, af := changedFields(before, after)
+		a.log(u.AccountID, fnChild, opUpdate, "m_child", nil, s(in.ChildID), s(b), s(af))
+	} else {
+		a.log(u.AccountID, fnChild, opCreate, "m_child", nil, s(in.ChildID), nil, s(fieldsJSON(after)))
 	}
-	a.log(u.AccountID, fnChild, op, "m_child", nil, s(in.ChildID), beforePtr,
-		s(in.ChildName+" / "+in.BirthDate))
 
 	row := a.db.QueryRow(`SELECT `+childColumns+` FROM m_child WHERE child_id = ?`, in.ChildID)
 	c, _ := scanChild(row)
@@ -175,6 +179,91 @@ func (a *app) handleChildIDExists(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"exists": a.childExists(strings.TrimSpace(r.PathValue("childID")))})
 }
 
+/*
+childFieldsOf は、操作ログに残す園児の項目を、いま保存されている値で並べる。
+
+区分値は表示名にする（操作ログ参照画面でそのまま読めるように）。クラスは当年度の在籍クラス、
+アレルギーは「対象（症状／対応）」の形で並べる。画面側のモック（web/src/api/mock.ts の childFields）と同じ項目・同じ順。
+*/
+func (a *app) childFieldsOf(childID string) []field {
+	var (
+		name, kana, birth, sex, consent string
+		temp                            sql.NullFloat64
+		className                       sql.NullString
+	)
+	a.db.QueryRow(`SELECT child_name, child_name_kana, birth_date, sex, normal_temperature, photo_consent_level
+		FROM m_child WHERE child_id = ?`, childID).Scan(&name, &kana, &birth, &sex, &temp, &consent)
+	a.db.QueryRow(`SELECT c.class_name FROM t_class_child cc
+		JOIN m_class c ON c.class_id = cc.class_id AND c.fiscal_year = ?
+		WHERE cc.child_id = ? LIMIT 1`, fiscalYear, childID).Scan(&className)
+
+	allergies := []string{}
+	if rows, err := a.db.Query(`SELECT target_food, IFNULL(symptom, ''), IFNULL(response, '') FROM m_allergy
+		WHERE child_id = ? ORDER BY allergy_id`, childID); err == nil {
+		for rows.Next() {
+			var food, symptom, response string
+			if rows.Scan(&food, &symptom, &response) == nil {
+				allergies = append(allergies, food+"（"+symptom+"／"+response+"）")
+			}
+		}
+		rows.Close()
+	}
+	histories := []string{}
+	if rows, err := a.db.Query(`SELECT content FROM m_medical_history
+		WHERE child_id = ? ORDER BY medical_history_id`, childID); err == nil {
+		for rows.Next() {
+			var content string
+			if rows.Scan(&content) == nil {
+				histories = append(histories, content)
+			}
+		}
+		rows.Close()
+	}
+
+	var tempValue any
+	if temp.Valid {
+		tempValue = temp.Float64
+	}
+	class := "所属クラスなし"
+	if className.Valid {
+		class = className.String
+	}
+	return []field{
+		{"氏名", name},
+		{"よみ", kana},
+		{"生年月日", birth},
+		{"性別", sexLabels[sex]},
+		{"平熱", tempValue},
+		{"写真の利用同意", photoConsentLabels[consent]},
+		{"クラス", class},
+		{"アレルギー", allergies},
+		{"既往歴", histories},
+	}
+}
+
+// 区分値の表示名（基本設計書「園児（m_child）」(5-3)。画面は web/src/api/codes.ts の SEX・PHOTO_CONSENT）
+var (
+	sexLabels          = map[string]string{"1": "男", "2": "女", "9": "未回答"}
+	photoConsentLabels = map[string]string{"1": "園内記録のみ", "2": "自児保護者へ共有まで", "3": "他保護者にも見える場まで"}
+)
+
+// childHasRecords は、日誌・午睡チェック・発達チェック・身体測定・チャットのいずれかの記録が紐づいているかを返す
+// （基本設計書「園児情報の取消（誤登録の削除）」(4-4)）。論理削除した記録も、残っていて園児に紐づくため数える。
+// チャットは、その園児の個人チャットのメッセージ（取消したものを含む）を数える（【仮置き】web/仮置き値.md）
+func (a *app) childHasRecords(childID string) bool {
+	var n int
+	a.db.QueryRow(`SELECT
+		  (SELECT COUNT(*) FROM t_diary WHERE child_id = ?)
+		+ (SELECT COUNT(*) FROM t_nap_record WHERE child_id = ?)
+		+ (SELECT COUNT(*) FROM t_nap_abnormal WHERE child_id = ?)
+		+ (SELECT COUNT(*) FROM t_development_check WHERE child_id = ?)
+		+ (SELECT COUNT(*) FROM t_physical_record WHERE child_id = ?)
+		+ (SELECT COUNT(*) FROM t_chat_message m JOIN m_chat_room r ON r.chat_room_id = m.chat_room_id
+		    WHERE r.room_type = '4' AND r.child_id = ?)`,
+		childID, childID, childID, childID, childID, childID).Scan(&n)
+	return n > 0
+}
+
 // handleRemoveChild は誤登録の取消。論理削除とする（基本設計書 5-1）
 func (a *app) handleRemoveChild(w http.ResponseWriter, r *http.Request) {
 	u, ok := a.requireAdmin(w, r)
@@ -183,8 +272,16 @@ func (a *app) handleRemoveChild(w http.ResponseWriter, r *http.Request) {
 	}
 	childID := r.PathValue("childID")
 	var name string
-	if err := a.db.QueryRow(`SELECT child_name FROM m_child WHERE child_id = ?`, childID).Scan(&name); err != nil {
+	// 取り消した園児は「見つからない」として扱う。同じ取消を重ねて受けて、操作ログに 2 行残さない（GitHub Issue #166 の 4）
+	if err := a.db.QueryRow(`SELECT child_name FROM m_child WHERE child_id = ? AND is_deleted = 0`, childID).
+		Scan(&name); err != nil {
 		writeErr(w, http.StatusNotFound, "園児が見つかりません")
+		return
+	}
+	// 記録のある園児は取り消せない。在籍の終了（退園・卒園）は在籍状態の変更で行う
+	// （基本設計書「園児情報の取消（誤登録の削除）」(4-4)、文言は「メッセージ一覧」(4-9)「取消の不可」）
+	if a.childHasRecords(childID) {
+		writeErr(w, http.StatusBadRequest, "記録が登録されている園児は取り消せません。在籍状態を変更してください。")
 		return
 	}
 	if _, err := a.db.Exec(`UPDATE m_child SET is_deleted = 1, updated_at = ? WHERE child_id = ?`, now(), childID); err != nil {

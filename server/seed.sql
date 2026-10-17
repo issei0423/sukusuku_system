@@ -393,7 +393,7 @@ INSERT INTO m_setting (setting_key, setting_value, description, updated_staff_id
  ('ui.diary_lock_minutes','15','編集ロックの無操作時間（分）','S001','2026-04-01T09:00:00'),
  ('scope.handover_grace_days','14','引き継ぎ猶予期間（日）','S001','2026-04-01T09:00:00'),
  ('scope.fiscal_year_update_date','04-01','年度更新の実行日','S001','2026-04-01T09:00:00'),
- ('physical.measure_months','4,7,10,1','測定を行う月','S001','2026-04-01T09:00:00'),
+ ('physical.measure_months','4,8,12','測定を行う月','S001','2026-04-01T09:00:00'),
  ('physical.height_min','40','身長の下限（cm）','S001','2026-04-01T09:00:00'),
  ('physical.height_max','140','身長の上限（cm）','S001','2026-04-01T09:00:00'),
  ('physical.weight_min','2','体重の下限（kg）','S001','2026-04-01T09:00:00'),

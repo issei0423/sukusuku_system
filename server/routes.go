@@ -64,6 +64,7 @@ func (a *app) routeDiary(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/diaries/{id}/approve", a.handleApproveDiary)
 	mux.HandleFunc("POST /api/diaries/{id}/return", a.handleReturnDiary)
 	mux.HandleFunc("POST /api/diaries/{id}/lock", a.handleAcquireLock)
+	mux.HandleFunc("PUT /api/diaries/{id}/lock", a.handleTouchLock)
 	mux.HandleFunc("DELETE /api/diaries/{id}/lock", a.handleReleaseLock)
 	mux.HandleFunc("GET /api/diaries/{id}/lock", a.handleLockOf)
 	mux.HandleFunc("GET /api/children/{childID}/diaries", a.handlePastDiaries)

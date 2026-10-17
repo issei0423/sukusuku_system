@@ -260,8 +260,15 @@ func (a *app) handleImportChildCsv(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.log(u.AccountID, fnChild, opCreate, "m_child", nil, nil, nil,
-		s("CSV一括登録 "+strconv.Itoa(len(rows))+" 件"))
+	/*
+	 * 登録した園児ごとに、対象園児つきで残す。件数だけの 1 行では、対象園児で絞り込んだときに出ず
+	 * （基本設計書「操作ログ（t_operation_log）」(5-8) target_child_id「絞り込みに用いる」）、
+	 * 何を登録したかも追えない（GitHub Issue #166 の 5）。登録の内容は 1 件ずつの登録と同じ項目で残す
+	 */
+	for _, row := range rows {
+		after := append([]field{{"登録", "CSV一括登録"}}, a.childFieldsOf(row.Values[0])...)
+		a.log(u.AccountID, fnChild, opCreate, "m_child", nil, s(row.Values[0]), nil, s(fieldsJSON(after)))
+	}
 	writeJSON(w, http.StatusOK, map[string]int{"imported": len(rows)})
 }
 

@@ -239,7 +239,10 @@ func TestClassDiaryRequiresOwnClass(t *testing.T) {
 		if body != "クラスの様子" {
 			t.Fatalf("ひまわり組の日誌が書き換わっています: %q", body)
 		}
-		call(t, h, takanashi, "POST", "/api/diaries", update(own.DiaryID, "1"))
+		// 自分の日誌は、編集ロックを取れば書き直せる（保存には本人のロックの識別子が要る。GitHub Issue #166）
+		token := acquireToken(t, h, takanashi, itoa(own.DiaryID))
+		call(t, h, takanashi, "POST", "/api/diaries",
+			strings.Replace(update(own.DiaryID, "1"), `"status"`, `"lock_token":"`+token+`","status"`, 1))
 	})
 }
 
@@ -309,8 +312,10 @@ func TestDiaryUpdateRequiresVisibleDiary(t *testing.T) {
 			expectStatus(t, request(t, h, takanashi, "POST", "/api/diaries", body), http.StatusForbidden)
 		}
 		unchanged(t)
+		// 範囲の内の書き直しは、編集ロックを取れば通る（保存には本人のロックの識別子が要る。GitHub Issue #166）
+		token := acquireToken(t, h, takanashi, "1")
 		call(t, h, takanashi, "POST", "/api/diaries",
-			`{"diary_id":1,"record_type":"1","child_id":"C001","class_id":1,"diary_date":"2026-09-01","body":"書き直し","status":"1"}`)
+			`{"diary_id":1,"record_type":"1","child_id":"C001","class_id":1,"diary_date":"2026-09-01","body":"書き直し","lock_token":"`+token+`","status":"1"}`)
 	})
 }
 

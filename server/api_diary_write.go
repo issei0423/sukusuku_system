@@ -118,10 +118,15 @@ func (a *app) updateDiary(w http.ResponseWriter, u *SessionUser, in diaryInput) 
 		return
 	}
 
-	// 保存時にロックの識別子を照合する。一致しない場合は保存を拒否する（基本設計書 5-4）
-	var token sql.NullString
-	a.db.QueryRow(`SELECT lock_token FROM t_diary_lock WHERE diary_id = ?`, *in.DiaryID).Scan(&token)
-	if token.Valid && token.String != in.LockToken {
+	/*
+	 * 保存時のロック識別子が、現在有効なロックと一致するかを照合する。一致しない場合は、他者の更新の有無に
+	 * かかわらず保存を拒否する（基本設計書「同時編集の検出」(4-2)・「編集ロックの解除」(4-5)、5-4）。
+	 * ロックの行が無いとき（管理者が強制解除して行を消したまま、ほかの職員が保存して離れたあと）も
+	 * 一致しないとみなす。行が無いからと照合を飛ばすと、強制解除された人の古い識別子でも、識別子なしでも
+	 * 保存が通り、ほかの人の直しを黙って上書きする（GitHub Issue #166 の 1）。
+	 * 識別子が一致しても、ロックを持つ本人でなければ通さない（同 2）
+	 */
+	if !a.holdsDiaryLock(u, *in.DiaryID, in.LockToken) {
 		writeErr(w, http.StatusConflict, "編集ロックが解除されました。内容を再読み込みしてください")
 		return
 	}
@@ -139,6 +144,17 @@ func (a *app) updateDiary(w http.ResponseWriter, u *SessionUser, in diaryInput) 
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "日誌の保存に失敗しました")
 		return
+	}
+
+	/*
+	 * 申請したらロックを外す。申請中の日誌は編集できず、読むだけの人にロックを持たせない（基本設計書「編集ロックの解除」(4-5)
+	 * 「保存…でロックを解除する」）。下書き保存は、編集画面に残って書き続けるため外さず、操作として最終操作時刻を進める
+	 * （【仮置き】web/仮置き値.md「日誌の編集ロックの動き」）
+	 */
+	if in.Status == "2" {
+		a.db.Exec(`DELETE FROM t_diary_lock WHERE diary_id = ?`, *in.DiaryID)
+	} else {
+		a.db.Exec(`UPDATE t_diary_lock SET last_active_at = ? WHERE diary_id = ?`, now(), *in.DiaryID)
 	}
 
 	after := "下書き保存"
@@ -382,6 +398,10 @@ func (a *app) handleAcquireLock(w http.ResponseWriter, r *http.Request) {
 //
 // 管理者が強制解除するとレコードを削除する。
 // 保存時にトークンが一致せず、他者の更新が無くても保存が拒否される（基本設計書 5-4）。
+//
+// 本人の解除（保存せずに離れる・タブを閉じる）は、取得のときに渡した識別子を添えて送らせ、一致するときだけ外す。
+// 同じ職員が取り直したあと（確認画面から戻ったとき、開発時に画面を 2 回描いたとき）に、古い識別子の解除が
+// 遅れて届いても、取り直したロックを外さないため（GitHub Issue #166）
 func (a *app) handleReleaseLock(w http.ResponseWriter, r *http.Request) {
 	u, ok := a.requireStaff(w, r)
 	if !ok {
@@ -394,8 +414,9 @@ func (a *app) handleReleaseLock(w http.ResponseWriter, r *http.Request) {
 	}
 	force := r.URL.Query().Get("force") == "true"
 
-	var held sql.NullString
-	if err := a.db.QueryRow(`SELECT locked_staff_id FROM t_diary_lock WHERE diary_id = ?`, id).Scan(&held); err != nil {
+	var held, token string
+	if err := a.db.QueryRow(`SELECT locked_staff_id, lock_token FROM t_diary_lock WHERE diary_id = ?`, id).
+		Scan(&held, &token); err != nil {
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 		return
 	}
@@ -403,7 +424,7 @@ func (a *app) handleReleaseLock(w http.ResponseWriter, r *http.Request) {
 		writeForbidden(w, "ロックの強制解除は管理者のみが行えます")
 		return
 	}
-	if !force && held.String != u.staff() {
+	if !force && (held != u.staff() || token != r.URL.Query().Get("token")) {
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 		return
 	}
@@ -415,7 +436,64 @@ func (a *app) handleReleaseLock(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-// handleLockOf は編集ロックの状態を返す。誰が編集中かは日誌の中身と同じ範囲で見せる（GitHub Issue #153）
+/*
+handleTouchLock は、編集画面での操作を知らせ、ロックの最終操作時刻（last_active_at）を進める。
+
+無操作の判定は、取得した時刻からではなく最後の操作から数える（基本設計書「編集ロックの解除」(4-5)
+「編集画面で一定時間（マスタ値）操作がない場合、自動で解除する」、5-4 last_active_at「無操作の判定に用いる」）。
+取得のときにしか進めないと、書き続けていても取得から無操作の時間で切れ、ほかの職員に取られる（GitHub Issue #166 の 3）。
+識別子が一致しない（ロックが外れた・ほかの職員へ移った）ときは 409 を返し、画面に解除を知らせる。
+*/
+func (a *app) handleTouchLock(w http.ResponseWriter, r *http.Request) {
+	u, ok := a.requireStaff(w, r)
+	if !ok {
+		return
+	}
+	id, valid := pathInt64(r, "id")
+	if !valid {
+		writeErr(w, http.StatusBadRequest, "日誌の指定が正しくありません")
+		return
+	}
+	var req struct {
+		LockToken string `json:"lock_token"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if !a.holdsDiaryLock(u, id, req.LockToken) {
+		writeErr(w, http.StatusConflict, "編集ロックが解除されました。内容を再読み込みしてください")
+		return
+	}
+	a.db.Exec(`UPDATE t_diary_lock SET last_active_at = ? WHERE diary_id = ?`, now(), id)
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+/*
+holdsDiaryLock は、その職員が、渡した識別子のロックをいま持っているかを返す。
+
+無操作の時間を過ぎていても、ほかの職員が取り直すまでは、持っていた本人の識別子を有効とみなす
+（【仮置き】web/仮置き値.md「日誌の編集ロックの動き」）。無操作の解除は、ほかの職員が取りにきたときに行い
+（handleAcquireLock）、そのとき識別子が替わるので、元の編集者の保存は断られる。
+*/
+func (a *app) holdsDiaryLock(u *SessionUser, diaryID int64, token string) bool {
+	if token == "" {
+		return false
+	}
+	var held, current string
+	if err := a.db.QueryRow(`SELECT locked_staff_id, lock_token FROM t_diary_lock WHERE diary_id = ?`, diaryID).
+		Scan(&held, &current); err != nil {
+		return false
+	}
+	return held == u.staff() && current == token
+}
+
+/*
+handleLockOf は編集ロックの状態を返す。誰が編集中かは日誌の中身と同じ範囲で見せる（GitHub Issue #153）。
+
+ロックの識別子は返さない。識別子は取得した本人だけが持ち、保存のときに照合するものである（基本設計書
+「日誌の作成から保護者への共有」(4-5)）。ほかの人に渡すと、その識別子で編集中の日誌を上書きできてしまう
+（GitHub Issue #166 の 2）。画面が使うのは、編集中の職員と最終操作時刻だけである
+*/
 func (a *app) handleLockOf(w http.ResponseWriter, r *http.Request) {
 	u, ok := a.requireStaff(w, r)
 	if !ok {
@@ -430,17 +508,16 @@ func (a *app) handleLockOf(w http.ResponseWriter, r *http.Request) {
 		writeForbidden(w, "この日誌を参照する権限がありません")
 		return
 	}
-	var token, staffID, lockedAt, lastActive string
-	err := a.db.QueryRow(`SELECT lock_token, locked_staff_id, locked_at, last_active_at
+	var staffID, lockedAt, lastActive string
+	err := a.db.QueryRow(`SELECT locked_staff_id, locked_at, last_active_at
 	                        FROM t_diary_lock WHERE diary_id = ?`, id).
-		Scan(&token, &staffID, &lockedAt, &lastActive)
+		Scan(&staffID, &lockedAt, &lastActive)
 	if err != nil {
 		writeJSON(w, http.StatusOK, nil)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"diary_id":        id,
-		"lock_token":      token,
 		"locked_staff_id": staffID,
 		"locked_at":       lockedAt,
 		"last_active_at":  lastActive,

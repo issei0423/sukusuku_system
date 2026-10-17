@@ -18,6 +18,10 @@ import type { InvitationStatus } from '../../api/types';
 
 // 有効期限は 1〜365 日。欄を空にすると 0 になり、当日期限のコードができる（GitHub Issue #100）
 const validDaysInput = (days: number) => Number.isInteger(days) && days >= 1 && days <= 365;
+// 園児1名あたりの枚数は 1〜5 枚（図/画面詳細図.md「招待コード管理画面」(7-7) 項目10「上限は5枚」）。
+// 入力欄の max は打ち込みを止めないため、発行の前に確かめる（GitHub Issue #167 の 3）
+const PER_CHILD_MAX = 5;
+const validPerChildInput = (n: number) => Number.isInteger(n) && n >= 1 && n <= PER_CHILD_MAX;
 
 export default function InvitationCodesScreen() {
   const { user } = useSession();
@@ -246,7 +250,7 @@ export default function InvitationCodesScreen() {
           footer={<>
             <button onClick={() => setBulkOpen(false)}>やめる</button>
             <button className="btn-primary" onClick={bulkIssue}
-              disabled={bulkTargets === 0 || !validDaysInput(validDays) || perChild < 1}>発行する</button>
+              disabled={bulkTargets === 0 || !validDaysInput(validDays) || !validPerChildInput(perChild)}>発行する</button>
           </>}>
           {bulkError && <Alert>{bulkError}</Alert>}
           <div className="stack">
@@ -257,11 +261,14 @@ export default function InvitationCodesScreen() {
             </Field>
             <Field label="園児1名あたりの枚数" required>
               <div className="row">
-                <input type="number" min={1} max={5} value={perChild} style={{ maxWidth: 100 }}
-                  aria-label="園児1名あたりの枚数" aria-required="true"
+                <input type="number" min={1} max={PER_CHILD_MAX} value={perChild} style={{ maxWidth: 100 }}
+                  aria-label="園児1名あたりの枚数" aria-required="true" aria-invalid={!validPerChildInput(perChild)}
                   onChange={(e) => setPerChild(Number(e.target.value))} />
                 <span>枚</span>
               </div>
+              {!validPerChildInput(perChild) && (
+                <div className="muted" role="alert">1名あたりの枚数は1〜{PER_CHILD_MAX}枚で指定してください。</div>
+              )}
             </Field>
             <Field label="有効期限" required>
               <div className="row">
@@ -278,12 +285,14 @@ export default function InvitationCodesScreen() {
                 使えるコードをすでに持つ {bulkHolding} 名にも発行する（配り直すとき）
               </label>
             )}
-            <Alert soft>
-              {classesForUser.find((c) => c.class_id === bulkClass)?.class_name}
-              {' '}{bulkTotal} 名
-              {bulkHolding > 0 && !includeExisting && `のうち、使えるコードをすでに持つ ${bulkHolding} 名を除く ${bulkTargets} 名`}
-              {' '}× {perChild} 枚 ＝ {bulkTargets * perChild} 枚を発行します
-            </Alert>
+            {validPerChildInput(perChild) && (
+              <Alert soft>
+                {classesForUser.find((c) => c.class_id === bulkClass)?.class_name}
+                {' '}{bulkTotal} 名
+                {bulkHolding > 0 && !includeExisting && `のうち、使えるコードをすでに持つ ${bulkHolding} 名を除く ${bulkTargets} 名`}
+                {' '}× {perChild} 枚 ＝ {bulkTargets * perChild} 枚を発行します
+              </Alert>
+            )}
           </div>
         </Modal>
       )}

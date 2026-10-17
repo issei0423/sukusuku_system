@@ -186,6 +186,23 @@ export function validateEmail(email: string): string | null {
 }
 
 /**
+ * 職員アカウントの発行の入力を確かめ、誤りがあれば利用者に見せる文言を返す。問題が無ければ null。
+ * 値は前後の空白を除いてから渡す（基本設計書「入力項目の制約値」(4-9)「ログインID（メールアドレス）254文字以内、
+ * メールアドレス形式」「氏名 各50文字以内」「園児ID・職員ID 20文字以内」。GitHub Issue #167 の 1）。
+ * 画面（職員アカウント管理画面）とモックが使う。サーバ側は server/api_admin.go の validateStaffAccountInput
+ */
+export function validateStaffAccountInput(staffId: string, staffName: string, email: string, role: string): string | null {
+  const length = (v: string) => [...v].length;
+  if (!staffId) return '職員IDを入力してください';
+  if (length(staffId) > 20) return '職員IDは20文字以内で入力してください';
+  if (!staffName) return '氏名を入力してください';
+  if (length(staffName) > 50) return '氏名は50文字以内で入力してください';
+  if (role !== '1' && role !== '2') return 'ロールの指定が正しくありません';
+  const emailError = validateEmail(email);
+  return emailError ? emailError.replace('メールアドレス', 'ログインID（メールアドレス）') : null;
+}
+
+/**
  * よく使われるため拒否するパスワード。大文字・小文字を区別せずに照らす
  * （基本設計書「パスワードの要件」(6-3)「password などは拒否する」）。
  * 【仮置き】設計は一覧を定めていない（web/仮置き値.md）。サーバ側（server/password.go の commonPasswords）と同じ一覧
