@@ -37,8 +37,9 @@ const bodyOf1 = () => db.diaries.find((d) => d.diary_id === 1)!.body;
 const lockOf1 = () => db.diaryLocks.find((l) => l.diary_id === 1);
 
 it('承認済みの日誌には編集ロックを取得できない', async () => {
+  await expect(api.acquireLock(teacher, 2)).rejects.toThrow();
   await expect(api.acquireLock(teacher, 5)).rejects.toThrow();
-  expect(db.diaryLocks.some((l) => l.diary_id === 5)).toBe(false);
+  expect(db.diaryLocks.some((l) => l.diary_id === 2 || l.diary_id === 5)).toBe(false);
 });
 
 async function tokenOf(u: SessionUser, diaryId: number): Promise<string> {

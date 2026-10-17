@@ -274,7 +274,7 @@ export const diaries: Diary[] = [
  * デモで常にロック中の状態を見せるため、取得時刻は読み込み時の現在時刻にしている
  */
 export const diaryLocks: DiaryLock[] = [
-  { diary_id: 2, lock_token: 'lock-demo-0001', locked_staff_id: 'S004', locked_at: now(), last_active_at: now() },
+  { diary_id: 3, lock_token: 'lock-demo-0001', locked_staff_id: 'S004', locked_at: now(), last_active_at: now() },
 ];
 
 /** 添付（t_diary_attachment）。1〜3枚（基本設計書 5-4） */

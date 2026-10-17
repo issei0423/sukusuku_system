@@ -132,7 +132,7 @@ describe('日誌システム（6画面）', () => {
 
   it('日誌作成・編集画面：他の職員が編集中ならその旨を出す', async () => {
     // 日誌2は宮城 蓮（S004）がロックを保持している
-    open('/staff/diary/2', teacher);
+    open('/staff/diary/3', teacher);
     await waitFor(() => {
       expect(document.body.textContent).toContain('宮城 蓮さんが編集中です');
     }, { timeout: 3000 });
