@@ -528,3 +528,45 @@ func TestNapSleepAndExclusionAtOnce(t *testing.T) {
 		}
 	}
 }
+
+// 卒園・退園して猶予中（3）の自児も、保護者ホームの「きょう」に出す。家庭からは書けず、読める期限を添える
+// （詳細設計書「ダッシュボード」(4-8 (1))「紐づけが 1:有効・3:猶予中の自児ごとに1件」・「保護者ホーム（「きょう」）」(2-5 (2))）。
+// 日誌の共有の範囲は広げない（猶予中の保護者は日誌を読めない）。紐づけを終えた（2）子は出さない。
+// モックの同じ観点は web/tests/contact.test.ts の「猶予中の自児も保護者ホームの「きょう」に出す」
+func TestGuardianTodayGrace(t *testing.T) {
+	a, h := newTestApp(t)
+	guardian := loginAs(a, accGuardian, "guardian")
+	type row struct {
+		Child struct {
+			ChildID string `json:"child_id"`
+		} `json:"child"`
+		SharedDiaries []json.RawMessage `json:"sharedDiaries"`
+		Today         *struct {
+			ChildID      string  `json:"child_id"`
+			CanWriteHome bool    `json:"can_write_home"`
+			GraceEndsOn  *string `json:"grace_ends_on"`
+		} `json:"today"`
+	}
+	read := func() []row {
+		var rows []row
+		decode(t, call(t, h, guardian, "GET", "/api/dashboard/guardian", ""), &rows)
+		return rows
+	}
+	grace := daysFromToday(20)
+	a.db.Exec(`UPDATE m_child SET enrollment_status = '2', withdrawn_on = ? WHERE child_id = 'C001'`, today())
+	a.db.Exec(`UPDATE t_guardian_child SET link_status = '3', grace_ends_on = ? WHERE guardian_id = 'G001' AND child_id = 'C001'`, grace)
+	rows := read()
+	if len(rows) != 1 || rows[0].Child.ChildID != "C001" || rows[0].Today == nil {
+		t.Fatalf("猶予中の自児が保護者ホームに無い: %+v", rows)
+	}
+	if got := rows[0].Today; got.CanWriteHome || got.GraceEndsOn == nil || *got.GraceEndsOn != grace {
+		t.Errorf("猶予中の「きょう」: can_write_home=%v grace_ends_on=%v, want false・%s", got.CanWriteHome, got.GraceEndsOn, grace)
+	}
+	if len(rows[0].SharedDiaries) != 0 {
+		t.Errorf("猶予中の保護者に共有された日誌が出ている: %d 件", len(rows[0].SharedDiaries))
+	}
+	a.db.Exec(`UPDATE t_guardian_child SET link_status = '2' WHERE guardian_id = 'G001' AND child_id = 'C001'`)
+	if rows := read(); len(rows) != 0 {
+		t.Errorf("紐づけを終えた子が保護者ホームに出ている: %+v", rows)
+	}
+}

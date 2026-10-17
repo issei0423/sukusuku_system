@@ -3065,7 +3065,8 @@ const dashboardApi = {
     // 保護者ホームは保護者のためのもの。職員が呼ぶと、参照範囲の園児すべてが「自児」として並ぶ
     // （GitHub Issue #159 の 3。server/api_dashboard.go の handleGuardianHome と同じ）
     if (user.role !== '3') return fail('保護者ホームは保護者のみが利用できます');
-    const mine = user.guardian_id ? childrenOfGuardian(user.guardian_id) : [];
+    // 「きょう」は連絡帳を読める自児ごとに1件（猶予中を含む）。日誌は canSeeDiary が有効な紐づけの自児に絞る
+    const mine = guardianContactChildren(user);
     const rooms = db.chatMembers.filter((m) => m.account_id === user.account_id && m.left_at === null).map((m) => m.chat_room_id);
     const unread = db.chatMessages.filter((m) =>
       rooms.includes(m.chat_room_id) && !m.is_deleted && m.sender_account_id !== user.account_id
@@ -3320,6 +3321,19 @@ export function classContactAccess(user: SessionUser, classId: number): Access {
   if (classes.length === 0) return { read: true, write: false };
   const mine = classes.includes(classId);
   return { read: mine, write: mine };
+}
+
+/**
+ * 保護者ホームの「きょう」に並べる自児（server/contact_scope.go の guardianContactChildren。詳細設計書「ダッシュボード」(4-8 (1))）。
+ * contactAccess の read と同じ条件（紐づけが 1:有効 か 3:猶予中、取り消していない園児）で選び、年上の子から並べる。
+ * 卒園・退園して猶予中の子も「〇月〇日まで読むことができます」として出す（同「保護者ホーム（「きょう」）」(2-5 (2))）
+ */
+export function guardianContactChildren(user: SessionUser): Child[] {
+  if (user.role !== '3' || !user.guardian_id) return [];
+  const ids = new Set(db.guardianChildren
+    .filter((g) => g.guardian_id === user.guardian_id && (g.link_status === '1' || g.link_status === '3')).map((g) => g.child_id));
+  return db.children.filter((c) => ids.has(c.child_id) && !c.is_deleted)
+    .sort((a, b) => a.birth_date.localeCompare(b.birth_date) || a.child_id.localeCompare(b.child_id));
 }
 
 /** その園児の今年度のクラス（無ければ null） */
