@@ -137,7 +137,7 @@ erDiagram
         varchar guardian_id PK "保護者ID"
         bigint account_id FK "m_account を参照。一意"
         varchar guardian_name "氏名"
-        varchar phone_number1 "緊急連絡先の電話番号（優先）"
+        varchar phone_number1 "緊急連絡先の電話番号（優先）。必須"
         varchar phone_number2 "緊急連絡先の電話番号（予備）"
         datetime created_at "登録日時"
         datetime updated_at "更新日時"
@@ -146,6 +146,7 @@ erDiagram
         bigint terms_id PK "自動採番"
         varchar terms_version "版。版と種別の組で一意"
         char document_type "1:利用規約 2:プライバシーポリシー"
+        boolean covers_external_ai "外部の AI を書いた版か"
         text body "本文"
         date published_on "施行日"
     }
@@ -238,7 +239,7 @@ erDiagram
         int contact_order "緊急時にかける順"
         char link_status "1:有効 2:終了 3:猶予中"
         datetime linked_at "紐づけた日時。連絡帳の参照はこれで切らない"
-        date grace_ends_on "保護者の猶予期間の終わり"
+        date grace_ends_on "保護者の猶予期間の終わり。起点は操作を実行した日"
         datetime ended_at "紐づけを終了した日時"
         boolean ai_opt_out "外部の AI を断った"
     }
@@ -564,7 +565,7 @@ erDiagram
 - **個人チャットは園児の登録時に作る**（`child_id`。個人チャットの行で一意）。保護者が読めるのは参加した時点（`joined_at`）以降。**職員は参加の行ではなく園児単位で判定する**（いまの担任と管理者、前の担任は引き継ぎ猶予期間のあいだ閲覧のみ）。
 - クラスグループは `class_id` を持ち、`m_class` が年度ごとに別レコードであるため、**年度が変わると別のチャットルームになる**。過年度分は `is_archived` を立てて投稿不可のアーカイブとして残す。
 - **チャットは会話の窓口に絞る。** 日誌・発達身体の共有の知らせ（`source_type` 2・3）は新しく作らない。記録は連絡帳と成長の記録が届ける。
-- **「確認しました」はメッセージの列に持つ**（既読とは別の、人が確かめた印。保護者に出す）。既読（`t_chat_read`）は保護者に出さず、職員に保護者の既読の人数とまだ読んでいない家庭を出す。
+- **「確認しました」はメッセージの列に持つ**（既読とは別の、人が確かめた印。保護者に出す）。**外す操作は設けない。**既読（`t_chat_read`）は保護者に出さず、職員に保護者の既読の人数とまだ読んでいない家庭を出す。
 - **誤送信への対応の記録は連絡帳も対象**とし、種類と ID（`target_type`・`target_id`）で対象を指す。
 - `thread_status` は個人チャットのスレッド単位の状態。最後に切り替えた職員と日時を見出しに出す。**保護者の画面には表示しない**。
 
@@ -772,7 +773,8 @@ erDiagram
 
     t_operation_log {
         bigint operation_log_id PK "自動採番"
-        bigint account_id FK "操作者"
+        char operator_type "1:利用者 2:システム"
+        bigint account_id FK "操作者。システムのときは空"
         datetime operated_at "サーバ時刻"
         char function_type "1:日誌 2:チャット 3:午睡 4:発達 5:身体測定 6:園児 7:アカウント 8:連絡帳 9:設定"
         char operation_type "1:作成 2:変更 3:承認 4:削除 5:出力 6:AI の下書き"
@@ -818,7 +820,7 @@ erDiagram
     }
 ```
 
-- **操作ログは追記のみとし、更新・削除の手段を設けない**（4-1-4 (2)）。`updated_at` を持たないのはこのため。
+- **操作ログは追記のみとし、更新・削除の手段を設けない**（4-1-4 (2)）。`updated_at` を持たないのはこのため。システムが行った変更（猶予の経過による紐づけの終了・保護者アカウントの停止）は `operator_type = 2` で表し、`account_id` を空にする。
 - `before_value` / `after_value` を保持することで、午睡チェックの修正履歴、身体測定の更新履歴、**連絡帳の訂正・取り消しの元の値**を共通操作ログに統合できる。
 - **AI の下書きを使ったことは、表を足さずに操作ログに残す**（`operation_type = 6`）。誰が・どの園児・いつ・用途・成否だけで、送った文・返った文は残さない。1日の上限回数はこの行を数える。
 - **定型文（`m_phrase`）は連絡帳と日誌で共通**に持ち、管理者が設定画面で直す。
