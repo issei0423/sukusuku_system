@@ -30,17 +30,22 @@ type ChatRoomView struct {
 	CanPost bool `json:"canPost"`
 	// 参加している保護者の人数。投稿が保護者にも届くことを入力欄の近くで示すために使う
 	GuardianCount int `json:"guardianCount"`
+	// 外れたチャンネル。職員は、外れるまでの過去ログだけを読める（投稿はできない）
+	// （図/画面詳細図.md「グループ編成画面」(4-3) No.8、基本設計書「チャット」(5-5)）
+	Left bool `json:"left"`
 }
 
 // handleChatRooms は参加しているチャンネルを返す。
 //
 // 職員は left_at が入っていても参照できる。保護者は入った時点で参照できなくなる（基本設計書 5-5）。
+// 外れたチャンネルは閲覧のみとし、外れるまでの過去ログだけを見せる（afterLeftClause。GitHub Issue #161）。
 func (a *app) handleChatRooms(w http.ResponseWriter, r *http.Request) {
 	u, ok := a.requireUser(w, r)
 	if !ok {
 		return
 	}
-	q := `SELECT r.chat_room_id, r.room_type, r.class_id, r.room_name, r.is_archived, r.thread_status
+	q := `SELECT r.chat_room_id, r.room_type, r.class_id, r.room_name, r.is_archived, r.thread_status,
+	             m.left_at IS NOT NULL
 	        FROM m_chat_room r
 	        JOIN t_chat_member m ON m.chat_room_id = r.chat_room_id
 	       WHERE m.account_id = ?`
@@ -62,9 +67,10 @@ func (a *app) handleChatRooms(w http.ResponseWriter, r *http.Request) {
 			room    ChatRoom
 			classID sql.NullInt64
 			thread  sql.NullString
+			left    bool
 		)
 		if rows.Scan(&room.ChatRoomID, &room.RoomType, &classID, &room.RoomName,
-			&room.IsArchived, &thread) != nil {
+			&room.IsArchived, &thread, &left) != nil {
 			continue
 		}
 		room.ClassID = nullInt(classID)
@@ -81,7 +87,11 @@ func (a *app) handleChatRooms(w http.ResponseWriter, r *http.Request) {
 		if u.isGuardian() {
 			canPost = room.RoomType == "4"
 		}
-		views = append(views, ChatRoomView{Room: room, CanPost: canPost})
+		// 外れたチャンネルへは投稿できない（図/画面詳細図.md「グループ編成画面」(4-3) No.8）
+		if left {
+			canPost = false
+		}
+		views = append(views, ChatRoomView{Room: room, CanPost: canPost, Left: left})
 	}
 	rows.Close()
 
@@ -114,12 +124,29 @@ const beforeJoinedClause = ` AND NOT EXISTS (
 	 WHERE gm.chat_room_id = m.chat_room_id AND gm.account_id = ?
 	   AND gr.room_type = '4' AND m.sent_at <= gm.joined_at)`
 
+/*
+afterLeftClause は、チャンネルから外れた人に見せないメッセージを除く条件。
+
+外れたあとの投稿は参照させない。読めるのは所属していた期間の過去ログだけである
+（図/画面詳細図.md「グループ編成画面」(4-3) No.8「外した参加者は以後の投稿を参照できない」、
+基本設計書「メッセージの送受信」(4-6)。GitHub Issue #161）。保護者は外れた時点でチャンネルごと
+参照できなくなる（isMember）ため、実際に効くのは職員である。
+メッセージの表を m として引く問い合わせに足し、引数にアカウントIDを1つ加える。
+
+【仮置き】時刻は秒の単位で持つため、外れたのと同じ秒に送られたメッセージは、外れる前か後かを
+区別できない。見せない側へ倒す（beforeJoinedClause と同じ考え方。web/仮置き値.md）。
+*/
+const afterLeftClause = ` AND NOT EXISTS (
+	SELECT 1 FROM t_chat_member lm
+	 WHERE lm.chat_room_id = m.chat_room_id AND lm.account_id = ?
+	   AND lm.left_at IS NOT NULL AND m.sent_at >= lm.left_at)`
+
 func (a *app) unreadCount(u *SessionUser, roomID int64) int {
 	q := `SELECT COUNT(*) FROM t_chat_message m
 		WHERE m.chat_room_id = ? AND m.is_deleted = 0 AND m.sender_account_id <> ?
 		  AND NOT EXISTS (SELECT 1 FROM t_chat_read x
-		                   WHERE x.chat_message_id = m.chat_message_id AND x.account_id = ?)`
-	args := []any{roomID, u.AccountID, u.AccountID}
+		                   WHERE x.chat_message_id = m.chat_message_id AND x.account_id = ?)` + afterLeftClause
+	args := []any{roomID, u.AccountID, u.AccountID, u.AccountID}
 	if u.isGuardian() {
 		q += beforeJoinedClause
 		args = append(args, u.AccountID)
@@ -129,20 +156,42 @@ func (a *app) unreadCount(u *SessionUser, roomID int64) int {
 	return n
 }
 
-// isMember はそのチャンネルを参照できるかを判定する
-func (a *app) isMember(u *SessionUser, roomID int64) bool {
+// memberState は、そのチャンネルへの参加の状態を返す。
+// joined は参加の行があるか、left は外れているか（left_at が入っているか）。
+func (a *app) memberState(accountID, roomID int64) (joined, left bool) {
 	var leftAt sql.NullString
-	err := a.db.QueryRow(`SELECT left_at FROM t_chat_member WHERE chat_room_id = ? AND account_id = ?`,
-		roomID, u.AccountID).Scan(&leftAt)
-	if err != nil {
-		return false
+	if err := a.db.QueryRow(`SELECT left_at FROM t_chat_member WHERE chat_room_id = ? AND account_id = ?`,
+		roomID, accountID).Scan(&leftAt); err != nil {
+		return false, false
 	}
-	// 保護者は left_at が入った時点で参照できなくなる（基本設計書 5-5）
-	if u.isGuardian() && leftAt.Valid {
-		return false
-	}
-	return true
+	return true, leftAt.Valid
 }
+
+// isMember はそのチャンネルを参照できるかを判定する。
+// 職員は外れたあとも、所属していた期間の過去ログを参照できる（読む範囲は afterLeftClause で絞る）。
+// 保護者は left_at が入った時点で参照できなくなる（基本設計書 5-5）
+func (a *app) isMember(u *SessionUser, roomID int64) bool {
+	joined, left := a.memberState(u.AccountID, roomID)
+	if !joined {
+		return false
+	}
+	return !(left && u.isGuardian())
+}
+
+/*
+isParticipant は、いまそのチャンネルに参加しているか（外れていないか）を判定する。
+
+投稿・編集・取消・リアクション・未対応の切り替え・メンバー一覧の取得は、いまの参加者に限る。
+外れた職員は過去ログを読めるだけで、書くことはできない（基本設計書「メッセージの送受信」(4-6)
+「閲覧のみの権限では拒否する」、図/画面詳細図.md 4-3 No.8。GitHub Issue #161）。
+*/
+func (a *app) isParticipant(u *SessionUser, roomID int64) bool {
+	joined, left := a.memberState(u.AccountID, roomID)
+	return joined && !left
+}
+
+// leftRoomMessage は、外れたチャンネルへ書こうとしたときの知らせ
+const leftRoomMessage = "このチャンネルからは外れているため、閲覧のみです"
 
 // ChatMessage はメッセージ（t_chat_message）
 type ChatMessage struct {
@@ -213,10 +262,11 @@ func (a *app) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 外れた職員には、外れたあとの投稿を返さない（GitHub Issue #161）
 	q := `SELECT m.chat_message_id, m.chat_room_id, m.sender_account_id, m.body,
 		m.source_type, m.source_id, m.sent_at, m.edited_at, m.is_deleted, m.deleted_at, m.deleted_account_id
-		FROM t_chat_message m WHERE m.chat_room_id = ?`
-	args := []any{roomID}
+		FROM t_chat_message m WHERE m.chat_room_id = ?` + afterLeftClause
+	args := []any{roomID, u.AccountID}
 	// 保護者には、自分が参加するより前の個人チャットのやりとりを返さない
 	if u.isGuardian() {
 		q += beforeJoinedClause
@@ -302,6 +352,11 @@ func (a *app) handleToggleReaction(w http.ResponseWriter, r *http.Request) {
 		writeForbidden(w, "このチャンネルを参照する権限がありません")
 		return
 	}
+	// 外れたチャンネルの過去ログには反応できない。閲覧のみである（GitHub Issue #161）
+	if !a.isParticipant(u, roomID) {
+		writeForbidden(w, leftRoomMessage)
+		return
+	}
 	// 後から登録した保護者には、登録より前のメッセージを見せない。見えないものには反応もできない
 	// （GitHub Issue #100）。存在を知らせないよう、見つからないときと同じ応答にする
 	if u.isGuardian() {
@@ -350,6 +405,11 @@ func (a *app) handleSetThreadStatus(w http.ResponseWriter, r *http.Request) {
 		writeForbidden(w, "このチャンネルを参照する権限がありません")
 		return
 	}
+	// 外れた個人チャット（前のクラスの家庭など）の状態は切り替えられない（GitHub Issue #161・#162）
+	if !a.isParticipant(u, roomID) {
+		writeForbidden(w, leftRoomMessage)
+		return
+	}
 	var req struct {
 		Status string `json:"status"`
 	}
@@ -389,10 +449,11 @@ func (a *app) handleMarkRead(w http.ResponseWriter, r *http.Request) {
 		writeForbidden(w, "このチャンネルを参照する権限がありません")
 		return
 	}
+	// 既読にするのは読めるメッセージだけ。外れた職員の、外れたあとの投稿は含めない（GitHub Issue #161）
 	a.db.Exec(`INSERT OR IGNORE INTO t_chat_read (chat_message_id, account_id, read_at)
-		SELECT chat_message_id, ?, ? FROM t_chat_message
-		 WHERE chat_room_id = ? AND is_deleted = 0 AND sender_account_id <> ?`,
-		u.AccountID, now(), roomID, u.AccountID)
+		SELECT m.chat_message_id, ?, ? FROM t_chat_message m
+		 WHERE m.chat_room_id = ? AND m.is_deleted = 0 AND m.sender_account_id <> ?`+afterLeftClause,
+		u.AccountID, now(), roomID, u.AccountID, u.AccountID)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -404,6 +465,12 @@ func (a *app) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	roomID, valid := pathInt64(r, "id")
 	if !valid || !a.isMember(u, roomID) {
 		writeForbidden(w, "このチャンネルを参照する権限がありません")
+		return
+	}
+	// 外れたチャンネルへは投稿できない。閲覧のみの権限では拒否する
+	// （基本設計書「メッセージの送受信」(4-6)、図/画面詳細図.md 4-3 No.8。GitHub Issue #161）
+	if !a.isParticipant(u, roomID) {
+		writeForbidden(w, leftRoomMessage)
 		return
 	}
 	var req struct {
@@ -462,16 +529,22 @@ func (a *app) handleRetractMessage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "メッセージの指定が正しくありません")
 		return
 	}
-	var sender int64
+	var sender, roomID int64
 	var body string
 	var isDeleted bool
-	if err := a.db.QueryRow(`SELECT sender_account_id, body, is_deleted FROM t_chat_message
-		WHERE chat_message_id = ?`, id).Scan(&sender, &body, &isDeleted); err != nil {
+	if err := a.db.QueryRow(`SELECT sender_account_id, chat_room_id, body, is_deleted FROM t_chat_message
+		WHERE chat_message_id = ?`, id).Scan(&sender, &roomID, &body, &isDeleted); err != nil {
 		writeErr(w, http.StatusNotFound, "メッセージが見つかりません")
 		return
 	}
 	if sender != u.AccountID && !u.isAdmin() {
 		writeForbidden(w, "自分が送信したメッセージのみ取り消せます")
+		return
+	}
+	// 外れたチャンネルのメッセージは、送った本人でも取り消せない（閲覧のみ。GitHub Issue #161）。
+	// 誤送信への対応は管理者が行う（基本設計書「誤送信への対応」(4-6)）ため、管理者は参加を問わない
+	if !u.isAdmin() && !a.isParticipant(u, roomID) {
+		writeForbidden(w, leftRoomMessage)
 		return
 	}
 	// 取り消した日時と操作ログを上書き・重複させない（GitHub Issue #100）
@@ -515,13 +588,13 @@ func (a *app) handleEditMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var sender int64
+	var sender, roomID int64
 	var before string
 	var isDeleted bool
 	var roomType string
-	if err := a.db.QueryRow(`SELECT m.sender_account_id, m.body, m.is_deleted, r.room_type
+	if err := a.db.QueryRow(`SELECT m.sender_account_id, m.chat_room_id, m.body, m.is_deleted, r.room_type
 		FROM t_chat_message m JOIN m_chat_room r ON r.chat_room_id = m.chat_room_id
-		WHERE m.chat_message_id = ?`, id).Scan(&sender, &before, &isDeleted, &roomType); err != nil {
+		WHERE m.chat_message_id = ?`, id).Scan(&sender, &roomID, &before, &isDeleted, &roomType); err != nil {
 		writeErr(w, http.StatusNotFound, "メッセージが見つかりません")
 		return
 	}
@@ -533,6 +606,12 @@ func (a *app) handleEditMessage(w http.ResponseWriter, r *http.Request) {
 	 */
 	if sender != u.AccountID && !(roomType == "1" && u.isAdmin()) {
 		writeForbidden(w, "自分が送信したメッセージのみ編集できます")
+		return
+	}
+	// 外れたチャンネルのメッセージは、送った本人でも編集できない。編集はいまの参加者が読む本文を
+	// 書き換えるため、投稿と同じく閲覧のみの権限では拒否する（GitHub Issue #161）
+	if !a.isParticipant(u, roomID) {
+		writeForbidden(w, leftRoomMessage)
 		return
 	}
 	// 取り消し済みのものは編集できない（基本設計書「メッセージの編集」(4-6)）
@@ -566,8 +645,9 @@ func (a *app) handleChatMembers(w http.ResponseWriter, r *http.Request) {
 	}
 	roomID, _ := pathInt64(r, "id")
 	// 参加していないチャンネルのメンバーは返さない。ほかの家庭の保護者の氏名や続柄が読めてしまう
-	// （GitHub Issue #95）。管理者は、グループ編成のために全チャンネルを参照できる
-	if !u.isAdmin() && !a.isMember(u, roomID) {
+	// （GitHub Issue #95）。外れた人にも、いまの参加者は返さない（外れたあとのことは見せない。#161）。
+	// 管理者は、グループ編成のために全チャンネルを参照できる
+	if !u.isAdmin() && !a.isParticipant(u, roomID) {
 		writeForbidden(w, "このチャンネルを参照する権限がありません")
 		return
 	}
@@ -704,29 +784,87 @@ func (a *app) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "グループ名は50文字以内で入力してください")
 		return
 	}
-	res, err := a.db.Exec(`INSERT INTO m_chat_room (room_type, room_name, is_archived)
+	seen := map[int64]bool{u.AccountID: true}
+	for _, id := range req.AccountIDs {
+		seen[id] = true
+	}
+	// 入れられるのは有効な職員だけ。保護者は入れない（GitHub Issue #161）
+	if msg := a.groupMemberError(seen, nil); msg != "" {
+		writeErr(w, http.StatusBadRequest, msg)
+		return
+	}
+
+	tx, err := a.db.Begin()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "グループを作成できませんでした")
+		return
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`INSERT INTO m_chat_room (room_type, room_name, is_archived)
 		VALUES ('3', ?, 0)`, req.Name)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "グループを作成できませんでした")
 		return
 	}
 	roomID, _ := res.LastInsertId()
-
-	seen := map[int64]bool{u.AccountID: true}
-	for _, id := range req.AccountIDs {
-		seen[id] = true
-	}
 	for id := range seen {
-		a.db.Exec(`INSERT OR IGNORE INTO t_chat_member (chat_room_id, account_id, joined_at)
-			VALUES (?, ?, ?)`, roomID, id, now())
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO t_chat_member (chat_room_id, account_id, joined_at)
+			VALUES (?, ?, ?)`, roomID, id, now()); err != nil {
+			writeErr(w, http.StatusInternalServerError, "グループを作成できませんでした")
+			return
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		writeErr(w, http.StatusInternalServerError, "グループを作成できませんでした")
+		return
 	}
 	a.log(u.AccountID, fnChat, opCreate, "m_chat_room", i64(roomID), nil, nil,
 		s("グループ「"+req.Name+"」を作成"))
 	writeJSON(w, http.StatusOK, map[string]int64{"chat_room_id": roomID})
 }
 
-// handleUpdateGroupMembers はメンバーを編成する。
-// 退出は left_at を入れて所属期間を残す。過去ログの参照範囲の判定に用いるため（基本設計書 5-5）。
+/*
+groupMemberError は、目的別グループへ入れられない相手が含まれていれば、その理由を返す。
+
+入れられるのは職員だけで、保護者は入れない（基本設計書「チャット」(5-5)「保護者は目的別グループへ
+入れない」、図/画面詳細図.md「グループ編成画面」(4-3) No.6「候補に出すのは職員のみ」）。
+新しく加えるのは有効な職員に限る。候補（handleGroupCandidates）と同じ範囲である。
+
+【仮置き】すでに参加している職員は、停止していてもそのまま残せる（current に含めて渡す）。
+停止は目的別グループの参加を変えない（手で編成するものであるため。chat_membership.go）。
+画面は編成の初期値にいまの参加者を入れて送ってくるので、ここで断ると、停止した職員がいる
+グループを誰も編成できなくなる。
+*/
+func (a *app) groupMemberError(ids map[int64]bool, current map[int64]bool) string {
+	for id := range ids {
+		var role, status string
+		if err := a.db.QueryRow(`SELECT role, status FROM m_account WHERE account_id = ?`, id).
+			Scan(&role, &status); err != nil {
+			return "存在しないアカウントが含まれています"
+		}
+		if role != roleAdmin && role != roleGeneralStaff {
+			return "目的別グループに入れられるのは職員だけです。保護者は入れられません"
+		}
+		if status != "1" && !current[id] {
+			return "停止している職員は加えられません"
+		}
+	}
+	return ""
+}
+
+/*
+handleUpdateGroupMembers はメンバーを編成する。
+退出は left_at を入れて所属期間を残す。過去ログの参照範囲の判定に用いるため（基本設計書 5-5）。
+
+編成できるのは目的別グループだけである。クラス・個人・職員・園全体のチャンネルの参加者は、
+担任の割り当てとアカウントから自動で決まり、手で編集しない（要件定義書「チャットツール」(4-3)
+機能一覧「グループの作成・メンバー編成｜目的別グループのみ」・(a)、chat_membership.go）。
+
+【仮置き】一般（保育士）は、いま参加している目的別グループだけを編成できる。参加していない
+グループに自分を加えられると、所属したことのないグループの過去ログが読めてしまう
+（要件定義書 4-3 (c)「所属したことのないグループは…参照できない」）。管理者はすべてのグループを
+参照できる（同 (c)）ため、参加していなくても編成できる。GitHub Issue #161。
+*/
 func (a *app) handleUpdateGroupMembers(w http.ResponseWriter, r *http.Request) {
 	u, ok := a.requireStaff(w, r)
 	if !ok {
@@ -743,39 +881,75 @@ func (a *app) handleUpdateGroupMembers(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
+
+	var roomType string
+	if err := a.db.QueryRow(`SELECT room_type FROM m_chat_room WHERE chat_room_id = ?`, roomID).
+		Scan(&roomType); err != nil {
+		writeErr(w, http.StatusNotFound, "グループが見つかりません")
+		return
+	}
+	if roomType != "3" {
+		writeErr(w, http.StatusBadRequest,
+			"メンバーを編成できるのは目的別グループだけです。クラス・個人・職員・園全体のチャンネルの参加者は、担任の割り当てとアカウントから自動で決まります")
+		return
+	}
+	if !u.isAdmin() && !a.isParticipant(u, roomID) {
+		writeForbidden(w, "参加していないグループは編成できません")
+		return
+	}
+
 	target := map[int64]bool{}
 	for _, id := range req.AccountIDs {
 		target[id] = true
 	}
-
-	rows, err := a.db.Query(`SELECT account_id FROM t_chat_member
+	ids, err := queryIDs(a.db, `SELECT account_id FROM t_chat_member
 		WHERE chat_room_id = ? AND left_at IS NULL`, roomID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "メンバーを取得できませんでした")
 		return
 	}
-	current := []int64{}
-	for rows.Next() {
-		var id int64
-		if rows.Scan(&id) == nil {
-			current = append(current, id)
-		}
+	current := map[int64]bool{}
+	for _, id := range ids {
+		current[id] = true
 	}
-	rows.Close()
+	if msg := a.groupMemberError(target, current); msg != "" {
+		writeErr(w, http.StatusBadRequest, msg)
+		return
+	}
 
+	tx, err := a.db.Begin()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "メンバーを編成できませんでした")
+		return
+	}
+	defer tx.Rollback()
 	// 外れた人は left_at を入れる。レコードは消さない
-	for _, id := range current {
-		if !target[id] {
-			a.db.Exec(`UPDATE t_chat_member SET left_at = ? WHERE chat_room_id = ? AND account_id = ?`,
-				now(), roomID, id)
+	for id := range current {
+		if target[id] {
+			continue
+		}
+		if _, err := tx.Exec(`UPDATE t_chat_member SET left_at = ? WHERE chat_room_id = ? AND account_id = ?`,
+			now(), roomID, id); err != nil {
+			writeErr(w, http.StatusInternalServerError, "メンバーを編成できませんでした")
+			return
 		}
 	}
-	// 加わった人は入れ直す
+	// 加わった人は入れ直す。参加を続ける人の joined_at は動かさない
 	for id := range target {
-		a.db.Exec(`INSERT INTO t_chat_member (chat_room_id, account_id, joined_at, left_at)
+		if current[id] {
+			continue
+		}
+		if _, err := tx.Exec(`INSERT INTO t_chat_member (chat_room_id, account_id, joined_at, left_at)
 			VALUES (?, ?, ?, NULL)
 			ON CONFLICT(chat_room_id, account_id) DO UPDATE SET left_at = NULL, joined_at = excluded.joined_at`,
-			roomID, id, now())
+			roomID, id, now()); err != nil {
+			writeErr(w, http.StatusInternalServerError, "メンバーを編成できませんでした")
+			return
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		writeErr(w, http.StatusInternalServerError, "メンバーを編成できませんでした")
+		return
 	}
 	a.log(u.AccountID, fnChat, opUpdate, "t_chat_member", i64(roomID), nil, nil, s("メンバーを編成"))
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

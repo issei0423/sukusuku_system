@@ -210,8 +210,25 @@ func (a *app) handleSetAccountStatus(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if _, err := a.db.Exec(`UPDATE m_account SET status = ?, updated_at = ? WHERE account_id = ?`,
+	tx, err := a.db.Begin()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "変更に失敗しました")
+		return
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`UPDATE m_account SET status = ?, updated_at = ? WHERE account_id = ?`,
 		req.Status, now(), id); err != nil {
+		writeErr(w, http.StatusInternalServerError, "変更に失敗しました")
+		return
+	}
+	// 職員は、停止で園全体・職員・クラス・個人チャットから外れ、再開で戻る。職員チャットの参加は
+	// 職員アカウントの作成・停止に連動する（基本設計書「チャット」(5-5)、GitHub Issue #162）。
+	// 保護者には何もしない（職員でないアカウントは syncStaffChatRooms が飛ばす）
+	if _, err := syncStaffChatRooms(tx, id); err != nil {
+		writeErr(w, http.StatusInternalServerError, "変更に失敗しました")
+		return
+	}
+	if err := tx.Commit(); err != nil {
 		writeErr(w, http.StatusInternalServerError, "変更に失敗しました")
 		return
 	}
@@ -297,6 +314,12 @@ func (a *app) handleCreateStaffAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ClassID != nil {
 		tx.Exec(`INSERT OR IGNORE INTO t_class_staff (class_id, staff_id) VALUES (?, ?)`, *req.ClassID, req.StaffID)
+	}
+	// 園全体・職員チャットと、担当クラスのチャンネルへ入れる。職員チャットは作成に連動する
+	// （基本設計書「チャット」(5-5)、GitHub Issue #162。chat_membership.go）
+	if _, err := syncStaffChatRooms(tx, accountID); err != nil {
+		writeErr(w, http.StatusInternalServerError, "発行に失敗しました")
+		return
 	}
 	if err := tx.Commit(); err != nil {
 		writeErr(w, http.StatusInternalServerError, "発行に失敗しました")
@@ -384,6 +407,12 @@ func (a *app) handleUpdateStaffAccount(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusInternalServerError, "担当クラスの割り当てに失敗しました")
 			return
 		}
+	}
+	// クラスのチャンネルと個人チャットを、新しい担当クラス・ロールに合わせる。前のクラスからは外れ、
+	// 外れるまでの過去ログだけを読める（要件定義書「チャットツール」(4-3) (a)、GitHub Issue #162）
+	if _, err := syncStaffChatRooms(tx, accountID); err != nil {
+		writeErr(w, http.StatusInternalServerError, "チャットの参加者を変えられませんでした")
+		return
 	}
 	if err := tx.Commit(); err != nil {
 		writeErr(w, http.StatusInternalServerError, "変更に失敗しました")
