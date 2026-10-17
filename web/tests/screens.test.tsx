@@ -91,11 +91,13 @@ describe('共通・認証（7画面）', () => {
 
   it('パスワード変更画面', async () => {
     open('/staff/password', teacher);
-    expect(screen.getByText('パスワードの変更')).toBeTruthy();
+    // サイドナビにも「パスワードの変更」がある（GitHub Issue #178 の 3）。見出しで確かめる
+    expect(screen.getByRole('heading', { name: 'パスワードの変更' })).toBeTruthy();
   });
 
   it('利用規約同意画面', async () => {
-    open('/terms-agree', guardian);
+    // 同意を求める画面は、同意が残っている利用者にだけ出す（GitHub Issue #178 の 4。同意済みなら利用規約の参照へ送る）
+    open('/terms-agree', { ...guardian, terms_agreed: false });
     expect(screen.getByText('利用規約への同意')).toBeTruthy();
   });
 

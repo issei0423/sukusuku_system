@@ -4,7 +4,7 @@
  *
  * 規約の改定時に次回ログインで表示する。同意を完了するまで他の画面へ進めない。
  */
-import { useState } from 'react';
+import { startTransition, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PublicLayout from '../../layouts/PublicLayout';
 import { Alert } from '../../components/ui';
@@ -26,8 +26,15 @@ export default function TermsAgreeScreen({ readOnly }: { readOnly?: boolean }) {
     try {
       await api.agreeTerms(user.account_id);
       const u = await api.reloadSession(user.account_id);
-      setUser(u);
-      navigate(u.role === '3' ? '/guardian' : '/staff');
+      /*
+       * 利用者の更新と画面の移動を同じ描画で行う。ルータは場所の更新を startTransition で行うため、
+       * 利用者だけを先に更新すると、強制の経路の出し分け（App.tsx の RequireProcedure）が、
+       * 同意を終えた利用者を利用規約の参照へ送り直してしまう（GitHub Issue #178 の 4）
+       */
+      startTransition(() => {
+        setUser(u);
+        navigate(u.role === '3' ? '/guardian' : '/staff');
+      });
     } finally {
       setBusy(false);
     }

@@ -1460,6 +1460,10 @@ const chatApi2 = {
     if (user.role !== '1') return fail('誤送信対応の記録は管理者のみが行えます');
     if (!input.response.trim()) return fail('とった対応を入力してください');
     if (tooLong(input.response, 1000)) return fail('とった対応は1,000文字以内で入力してください');
+    // 発生日時は必須（図/画面詳細図.md「誤送信対応記録画面（管理者）」(4-4) 項目3）。記録した時刻で埋めない
+    // （GitHub Issue #178 の 1。server/api_chat.go の handleAddMisdeliveryRecord と同じ）
+    if (!input.occurred_at) return fail('発生日時を入力してください');
+    if (!isISODateTime(input.occurred_at)) return fail('発生日時の形式が正しくありません');
     db.misdeliveryRecords.unshift({
       misdelivery_record_id: nextId(), staff_id: user.staff_id!, ...input,
     });

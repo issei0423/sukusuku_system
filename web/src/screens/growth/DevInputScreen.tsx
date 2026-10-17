@@ -7,7 +7,7 @@
  * 「未入力」と「未確認」は別の状態。未確認は結果として保持し、未入力はチェック漏れの対象となる。
  * 区分は月齢から自動で表示するが、項目はマスタから読む。園が調整できるため。
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
@@ -41,6 +41,7 @@ export default function DevInputScreen() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const noteHintId = useId();
 
   // 下書きがあれば読み直す
   useEffect(() => {
@@ -146,9 +147,17 @@ export default function DevInputScreen() {
 
       <section className="card">
         <Field label="所見">
-          <textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000}
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} aria-describedby={noteHintId}
             placeholder="気づいたことを記録してください（判定ではありません）" />
         </Field>
+        {/*
+          所見は園内限定であり、保護者へは共有しない（画面詳細図「発達チェック入力画面」(6-2) 項目6、
+          基本設計書「発達チェック・身体測定」(5-7)）。書く前に分かるよう、欄に添える（GitHub Issue #178 の 8）。
+          【仮置き】文言（web/仮置き値.md）
+        */}
+        <div className="muted" id={noteHintId} style={{ marginTop: 4 }}>
+          所見は園内限定の記録です。保護者へは共有しません。
+        </div>
         <label style={{ marginTop: 8 }}>
           <input type="checkbox" checked={compare} onChange={(e) => setCompare(e.target.checked)} />
           前回の記録と並べて表示する
