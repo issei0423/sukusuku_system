@@ -26,6 +26,7 @@ export default function PhraseMenu({ scope, disabled, onPick }: {
   return (
     <>
       <button type="button" className="contact-pick" onClick={show} disabled={disabled}>定型文</button>
+      {/* 【仮置き】窓の題・説明・定型文が無いときの文（web/仮置き値.md） */}
       {open && (
         <Modal title="定型文を選ぶ" onClose={() => setOpen(false)}>
           <p className="muted">選ぶと、入力欄の終わりに足します。</p>

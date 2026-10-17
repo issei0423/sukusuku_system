@@ -39,7 +39,7 @@ func (a *app) recipientOf(childID string) *contactRecipient {
 		var rel string
 		if rows.Scan(&rel) == nil {
 			if rel == "" {
-				rel = "保護者"
+				rel = "保護者" // 【仮置き】続柄が入っていない紐づけ（web/仮置き値.md）
 			}
 			r.Relationships = append(r.Relationships, rel)
 		}

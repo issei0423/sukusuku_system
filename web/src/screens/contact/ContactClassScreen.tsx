@@ -188,6 +188,7 @@ export default function ContactClassScreen() {
         notify(`${row.child.child_name}さんの${slotLabel(slot)}は、すでに記録されていました。表を読み直しました。`);
         return;
       }
+      // 【仮置き】記録したときの結果の文。園児名と記録したものを足した（web/仮置き値.md）
       notify(`${row.child.child_name}さんの「${eventText(saved)}」を記録しました。保護者が見られる状態です。`,
         cancelAction(user!, { kind: 'event', event: saved, childName: row.child.child_name }));
     });

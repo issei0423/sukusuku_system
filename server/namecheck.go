@@ -223,7 +223,7 @@ func findOtherNames(text, field string, recipients []nameChild, all []nameChild)
 		}
 		return matches[i].End > matches[j].End
 	})
-	// 位置は強調の表示に使う。同じ位置・ほかの当たりに含まれる位置（同じ名の子、「小林」の中の「林」）は1つにまとめる。
+	// 【仮置き】位置は強調の表示に使う。同じ位置・ほかの当たりに含まれる位置（同じ名の子、「小林」の中の「林」）は1つにまとめる（web/仮置き値.md）。
 	// 名前（names）はまとめない（どちらの子かを決めない。判断しない）
 	uniq := []nameMatch{}
 	for _, m := range matches {

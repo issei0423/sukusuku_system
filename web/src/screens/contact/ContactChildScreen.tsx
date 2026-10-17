@@ -75,7 +75,8 @@ export default function ContactChildScreen() {
   const classPath = `/staff/contact${data.class_id ? `?class=${data.class_id}` : ''}${!isToday ? `${data.class_id ? '&' : '?'}date=${date}` : ''}`;
   const moveTo = (d: string) => { setError(null); setTime(''); setEditingFacility(false); setParams(d === today() ? {} : { date: d }); };
   const childClass = data.class_id ? className(data.class_id) : null;
-  // 段2を送ったあとの文（基本設計書「メッセージ一覧」(4-12)）。保護者が未登録なら「登録すると読めます」
+  // 段2を送ったあとの文（基本設計書「メッセージ一覧」(4-12)）。保護者が未登録なら「登録すると読めます」。
+  // 【仮置き】前に「〇〇さんの園から：」のように、どこへ何を送ったかを足す（web/仮置き値.md）
   const sentText = data.recipient && data.recipient.relationships.length === 0 ? TEXT.sentUnregistered : TEXT.sentToGuardian;
 
   /** 活動のひとことを送る（段2。POST /api/contact/events の種類 4） */
@@ -126,6 +127,7 @@ export default function ContactChildScreen() {
       return;
     }
     setTime('');
+    // 【仮置き】記録したときの結果の文（web/仮置き値.md）
     notify(`${name}さんの「${eventText(saved)}」（${formatHM(saved.recorded_at)}）を記録しました。保護者が見られる状態です。`,
       cancelAction(user!, { kind: 'event', event: saved, childName: name }));
   });
@@ -228,6 +230,7 @@ export default function ContactChildScreen() {
           <h2 id="child-record-title">記録する</h2>
           {!canRecord ? (
             <p className="muted">
+              {/* 【仮置き】書けないときの文（web/仮置き値.md） */}
               {!data.can_write ? 'この園児の連絡帳は読むだけです。記録はクラスの担任が行います。' : '前の日のページには記録を足せません。'}
             </p>
           ) : (

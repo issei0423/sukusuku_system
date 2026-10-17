@@ -31,6 +31,7 @@ export default function NameCheckDialog({ names, matches, text, busy, onFix, onS
   /** このまま送る：承諾を付けて送り直す */
   onSend: () => void;
 }) {
+  // 【仮置き】窓の題（web/仮置き値.md）。注意の文は基本設計書「メッセージ一覧」(4-12) のもの
   return (
     <Modal title="ほかのお子さんの名前の注意" onClose={onFix}
       footer={<>
