@@ -1090,6 +1090,8 @@ func (a *app) handleRetractedWithoutRecord(w http.ResponseWriter, r *http.Reques
 	if _, ok := a.requireAdmin(w, r); !ok {
 		return
 	}
+	// 【仮置き】並びは送信の新しい順（web/仮置き値.md「一覧の並び順」）。モック（web/src/api/mock.ts の
+	// retractedWithoutRecord）も同じ並びにした（GitHub Issue #177 の 7）
 	rows, err := a.db.Query(`SELECT m.chat_message_id, IFNULL(r.room_name, '―'), m.sent_at,
 		m.deleted_at, m.sender_account_id
 		FROM t_chat_message m

@@ -461,9 +461,11 @@ func (a *app) handleNapAbnormals(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// 【仮置き】並びは発見時刻の新しい順、同じ時刻はあとで記録したものを先にする（web/仮置き値.md「一覧の並び順」）。
+	// 同じ時刻の並びを決めておかないと、モック（web/src/api/mock.ts の abnormals）と食い違う（GitHub Issue #177 の 7）
 	rows, err := a.db.Query(`SELECT nap_abnormal_id, nap_session_id, child_id, found_at,
 		situation, response, staff_id, diary_id
-		FROM t_nap_abnormal ORDER BY found_at DESC`)
+		FROM t_nap_abnormal ORDER BY found_at DESC, nap_abnormal_id DESC`)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "異常時の記録を取得できませんでした")
 		return
