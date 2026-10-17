@@ -144,6 +144,17 @@ describe('保護者のログアウト：保存していない入力（#170 の 5
     await screen.findByText('保護者用の入口', {}, { timeout: 3000 });
   });
 
+  it('書きかけを残したまま一覧へ戻っても、ログアウトの前に確かめる（書きかけはチャンネルごとに残る。#172 の 2）', async () => {
+    const input = await openPersonalChat();
+    fireEvent.change(input, { target: { value: '一覧へ戻っても残る書きかけ' } });
+    fireEvent.click(screen.getByText('< もどる'));
+    await screen.findByRole('button', { name: /担任の先生とのやりとり/ });
+    expect(screen.queryByRole('textbox', { name: 'メッセージを入力' })).toBeNull();
+    logoutFromMenu();
+    await screen.findByRole('dialog', { name: '保存していない入力があります' });
+    expect(screen.queryByText('保護者用の入口')).toBeNull();
+  });
+
   it('保存していない入力が無ければ、確かめずにログアウトする', async () => {
     await openPersonalChat();
     logoutFromMenu();

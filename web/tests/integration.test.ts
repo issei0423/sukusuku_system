@@ -216,6 +216,24 @@ run('Go サーバとの結合', () => {
     await http.api.setThreadStatus(dummy, id, original);
   });
 
+  it('届く人数とメンバー欄に停止中の保護者を入れず、送信者のロールを返し、参加中のグループだけを並べる（GitHub Issue #171・#172・#141）', async () => {
+    const me = await http.api.bootstrap();
+    const zen = (await http.api.rooms(dummy)).find((r) => r.room.room_type === '1')!;
+    const members = await http.api.members(zen.room.chat_room_id);
+    // デモの アカウント 8（高梨 倫太朗・保護者）は紐づけを終えて停止している
+    expect(members.map((m) => m.account_id)).not.toContain(8);
+    expect(zen.guardianCount).toBe(members.filter((m) => m.role === '3').length);
+
+    const messages = await http.api.messages(dummy, zen.room.chat_room_id);
+    expect(messages.length).toBeGreaterThan(0);
+    expect(messages.every((m) => m.sender_role === '1' || m.sender_role === '2' || m.sender_role === '3')).toBe(true);
+
+    // 一般の職員には、いま参加している目的別グループだけが返る（モックの groups と同じ）
+    for (const g of await http.api.groups(dummy)) {
+      expect((await http.api.members(g.chat_room_id)).map((m) => m.account_id)).toContain(me!.account_id);
+    }
+  });
+
   it('招待コードはハイフンを省いても引ける。メールアドレスが空の登録は受け付けない', async () => {
     // 使用済みのコードをハイフンなし・小文字で入れる。「確認できません」ではなく「使われています」と返る
     await expect(http.api.verifyInvitationCode('ijkl5678mnop')).rejects.toThrow(/すでに使われています/);
