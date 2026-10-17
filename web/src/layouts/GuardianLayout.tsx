@@ -11,11 +11,16 @@ import { useSession } from '../session';
 import { useAsync, AUTO_REFRESH_MS } from '../hooks';
 import { api, settingText } from '../api/client';
 import { BellIcon } from '../components/ui';
+import { ConfirmDialog } from '../components/feedback';
+import { UnsavedInputContext, useUnsavedInputTracker } from '../unsavedInput';
 
 export default function GuardianLayout() {
   const { user, logout } = useSession();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  // 保存していない入力があるときに出す、ログアウトの確認（基本設計書「ログアウト」(4-3)。GitHub Issue #170）
+  const [confirmLogout, setConfirmLogout] = useState(false);
+  const unsaved = useUnsavedInputTracker();
   const drawer = useRef<HTMLElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
   // 園からの返信が、どの画面を開いていても数秒で通知の件数に表れるよう、裏で読み直す
@@ -42,9 +47,21 @@ export default function GuardianLayout() {
   const unread = home.data?.[0]?.unread ?? 0;
   const phone = settingText('facility.phone_number', '');
 
-  const onLogout = async () => {
+  const doLogout = async () => {
     await logout();
     navigate('/');
+  };
+  /*
+   * 保存していない入力（書きかけのメッセージなど）があれば、破棄される旨を表示して確認する
+   * （基本設計書「ログアウト」(4-3)）。メニューは閉じてから確認を出す（メニューとダイアログを重ねない）
+   */
+  const onLogout = () => {
+    if (unsaved.hasUnsavedInput()) {
+      setOpen(false);
+      setConfirmLogout(true);
+      return;
+    }
+    void doLogout();
   };
 
   return (
@@ -94,8 +111,18 @@ export default function GuardianLayout() {
         </>
       )}
 
+      {confirmLogout && (
+        <ConfirmDialog title="保存していない入力があります" confirmLabel="破棄してログアウトする" danger
+          onConfirm={() => { setConfirmLogout(false); void doLogout(); }} onCancel={() => setConfirmLogout(false)}>
+          <p>入力した内容を送信・保存していません。このままログアウトすると、入力した内容は破棄されます。</p>
+          <p className="muted">残すときは、「やめる」を押してから送信・保存してください。</p>
+        </ConfirmDialog>
+      )}
+
       <main className="guardian-main" tabIndex={-1}>
-        <Outlet />
+        <UnsavedInputContext.Provider value={unsaved.report}>
+          <Outlet />
+        </UnsavedInputContext.Provider>
       </main>
 
       {/*

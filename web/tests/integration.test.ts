@@ -240,6 +240,24 @@ run('Go サーバとの結合', () => {
     await http.api.setThreadStatus(dummy, id, original);
   });
 
+  it('届く人数とメンバー欄に停止中の保護者を入れず、送信者のロールを返し、参加中のグループだけを並べる（GitHub Issue #171・#172・#141）', async () => {
+    const me = await http.api.bootstrap();
+    const zen = (await http.api.rooms(dummy)).find((r) => r.room.room_type === '1')!;
+    const members = await http.api.members(zen.room.chat_room_id);
+    // デモの アカウント 8（高梨 倫太朗・保護者）は紐づけを終えて停止している
+    expect(members.map((m) => m.account_id)).not.toContain(8);
+    expect(zen.guardianCount).toBe(members.filter((m) => m.role === '3').length);
+
+    const messages = await http.api.messages(dummy, zen.room.chat_room_id);
+    expect(messages.length).toBeGreaterThan(0);
+    expect(messages.every((m) => m.sender_role === '1' || m.sender_role === '2' || m.sender_role === '3')).toBe(true);
+
+    // 一般の職員には、いま参加している目的別グループだけが返る（モックの groups と同じ）
+    for (const g of await http.api.groups(dummy)) {
+      expect((await http.api.members(g.chat_room_id)).map((m) => m.account_id)).toContain(me!.account_id);
+    }
+  });
+
   it('招待コードはハイフンを省いても引ける。メールアドレスが空の登録は受け付けない', async () => {
     // 使用済みのコードをハイフンなし・小文字で入れる。「確認できません」ではなく「使われています」と返る
     await expect(http.api.verifyInvitationCode('ijkl5678mnop')).rejects.toThrow(/すでに使われています/);
@@ -249,13 +267,19 @@ run('Go サーバとの結合', () => {
     const adminCookie = cookie;
     try {
       await expect(http.api.verifyInvitationCode(code.replace(/-/g, '').toLowerCase())).resolves.toBeTruthy();
-      const base = { code, password: 'pass12345', guardian_name: '検査 太郎', relationship: '父' };
+      // 規約への同意（いまの版）を添える。同意の無い登録は受け付けない（GitHub Issue #170）
+      const { terms_version } = await http.api.currentTerms();
+      const base = { code, password: 'pass12345', guardian_name: '検査 太郎', relationship: '父', terms_agreed: true, terms_version };
       // ログイン中は新規登録を受け付けない（GitHub Issue #159）
       await expect(http.api.signUpGuardian({ ...base, email: 'taro@example.jp' })).rejects.toThrow(/already_logged_in/);
       // 登録は、ログインしていない端末から行う
       cookie = '';
       await expect(http.api.signUpGuardian({ ...base, email: '' })).rejects.toThrow(/メールアドレスを入力/);
       await expect(http.api.signUpGuardian({ ...base, email: 'taro.example.jp' })).rejects.toThrow(/形式/);
+      // 規約に同意していない登録・大文字違いの既存のメールアドレスは受け付けない（GitHub Issue #170）
+      await expect(http.api.signUpGuardian({ ...base, email: 'noagree@example.jp', terms_agreed: false }))
+        .rejects.toThrow(/利用規約/);
+      await expect(http.api.signUpGuardian({ ...base, email: 'NOHARA.I@EXAMPLE.JP' })).rejects.toThrow(/すでに登録/);
     } finally {
       cookie = adminCookie;
       const row = (await http.api.invitationCodes(dummy)).find((c) => c.code === code)!;

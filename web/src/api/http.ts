@@ -247,6 +247,8 @@ const apiAuth = {
 
   async signUpGuardian(input: {
     code: string; email: string; password: string; guardian_name: string; relationship: string;
+    /** 利用規約に同意したかと、画面に出して同意を得た規約の版（GitHub Issue #170） */
+    terms_agreed: boolean; terms_version: string;
   }): Promise<SessionUser> {
     const u = await post<SessionUser>('/api/signup', input);
     await loadReferenceFor(u);
@@ -348,7 +350,8 @@ const apiChatNap = {
   retract: (_u: SessionUser, messageId: number) => post<void>(`/api/chat/messages/${messageId}/retract`),
   edit: (_u: SessionUser, messageId: number, body: string) =>
     post<void>(`/api/chat/messages/${messageId}/edit`, { body }),
-  groups: () => get<ChatRoom[]>('/api/chat/groups'),
+  // 一般の職員には、いま参加しているグループだけが返る（GitHub Issue #172）。第1引数はモックが判定に使う
+  groups: (_u: SessionUser) => get<ChatRoom[]>('/api/chat/groups'),
   // 目的別グループへ入れられる相手（有効な職員）。一般の職員も取得できる
   groupCandidates: (_u: SessionUser) =>
     get<{ account_id: number; name: string; role: Role }[]>('/api/chat/group-candidates'),

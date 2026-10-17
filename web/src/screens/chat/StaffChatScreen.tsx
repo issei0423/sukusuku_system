@@ -12,8 +12,9 @@ import { useAsync, useFollowLatest, AUTO_REFRESH_MS } from '../../hooks';
 import { useSession } from '../../session';
 import { api, accountName } from '../../api/client';
 import { Loading, ErrorBox, Empty, Alert, Tag } from '../../components/ui';
+import { ConfirmDialog, notify } from '../../components/feedback';
 import Reactions from '../../components/Reactions';
-import { CHAT_ROOM_TYPE, THREAD_STATUS, REACTION } from '../../api/codes';
+import { CHAT_ROOM_TYPE, THREAD_STATUS, REACTION, GUARDIAN_ROOM_TYPES, SENDER_KIND } from '../../api/codes';
 import { formatHM, formatMD } from '../../api/util';
 import type { ChatMessage } from '../../api/types';
 
@@ -31,8 +32,21 @@ export default function StaffChatScreen() {
    */
   const rooms = useAsync(() => api.rooms(user!), [user?.account_id], { refreshMs: AUTO_REFRESH_MS });
   const [roomId, setRoomId] = useState<number | null>(null);
-  const [text, setText] = useState('');
+  /*
+   * 書きかけの本文は、チャンネルごとに持つ。画面全体で1つだけ持つと、チャンネルを切り替えても
+   * 入力欄に残り、ある家庭へ書いた園児の体調などを、そのまま別の家庭へ送れてしまう
+   * （基本設計書「誤送信への対応」(4-6) が最も重く扱う事故。GitHub Issue #172）。
+   * 消さずにチャンネルごとに残すのは、切り替えて確かめてから戻って送る、という使い方を妨げないため
+   */
+  const [drafts, setDrafts] = useState<Record<number, string>>({});
+  const text = roomId !== null ? drafts[roomId] ?? '' : '';
+  const setText = (value: string) => {
+    if (roomId !== null) setDrafts((d) => ({ ...d, [roomId]: value }));
+  };
   const [error, setError] = useState<string | null>(null);
+  // 取消（自分のメッセージ）・削除（管理者が他者のメッセージを）を確かめている対象
+  const [retracting, setRetracting] = useState<ChatMessage | null>(null);
+  const [retractBusy, setRetractBusy] = useState(false);
   // ダッシュボードの「未対応の個人チャット」から来たときは、そのチャンネルを開いた状態で始める
   const [searchParams] = useSearchParams();
 
@@ -67,11 +81,14 @@ export default function StaffChatScreen() {
     if (roomId) api.markRead(user!, roomId).then(() => rooms.refresh(), () => {});
   }, [roomId, lastMessageId]);
 
-  // いちばん下を読んでいるときに届いたメッセージは、見える位置まで送る。上へ戻って読んでいるときは動かさない
+  // 開いたチャンネルは、いちばん下（最新）から見せる（GitHub Issue #172）。いちばん下を読んでいるときに届いた
+  // メッセージは、見える位置まで送る。上へ戻って読んでいるときは動かさない
   const scrollRef = useRef<HTMLDivElement | null>(null);
   useFollowLatest(scrollRef, shownRoom, lastMessageId);
 
   const current = rooms.data?.find((r) => r.room.chat_room_id === roomId);
+  // 保護者が参加するチャンネルか。既読の人数は保護者の既読だけを数え、吹き出しに職員・保護者の印を添える
+  const guardianRoom = !!current && GUARDIAN_ROOM_TYPES.includes(current.room.room_type);
 
   /*
    * 園チャット（room_type=1）だけは、管理者同士なら互いのメッセージを編集できる
@@ -80,14 +97,44 @@ export default function StaffChatScreen() {
    */
   const schoolWideAdmin = current?.room.room_type === '1' && user!.role === '1';
 
+  // チャンネルを切り替えたら、前のチャンネルの知らせと操作の一覧を持ち越さない
+  const selectRoom = (id: number) => {
+    setRoomId(id);
+    setError(null);
+    setMenuId(null);
+  };
+
   const send = async () => {
     if (!roomId || !text.trim()) return;
+    // 送った先のチャンネルの書きかけだけを消す。送っている間に書き足されたら消さない
+    const target = roomId;
+    const body = text;
     setError(null);
     try {
-      await api.send(user!, roomId, text);
-      setText('');
+      await api.send(user!, target, body);
+      setDrafts((d) => (d[target] === body ? { ...d, [target]: '' } : d));
       messages.refresh();
     } catch (e) { setError((e as Error).message); }
+  };
+
+  /*
+   * 取消・削除は、確かめてから行う。元に戻せず、取り消すと誤送信への対応の記録が要るため
+   * （GitHub Issue #141・#107）。取り消せなかったとき（別の画面で先に取り消されていたなど）は知らせる（#171）
+   */
+  const retract = async () => {
+    if (!retracting) return;
+    setRetractBusy(true);
+    setError(null);
+    try {
+      await api.retract(user!, retracting.chat_message_id);
+      notify(retracting.sender_account_id === user!.account_id ? 'メッセージを取り消しました' : 'メッセージを削除しました');
+      messages.refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setRetractBusy(false);
+      setRetracting(null);
+    }
   };
 
   /*
@@ -149,7 +196,7 @@ export default function StaffChatScreen() {
                   {list.map((r) => (
                     <button key={r.room.chat_room_id}
                       className={`channel${r.room.chat_room_id === roomId ? ' current' : ''}`}
-                      onClick={() => setRoomId(r.room.chat_room_id)}>
+                      onClick={() => selectRoom(r.room.chat_room_id)}>
                       <span>
                         {r.room.room_name}
                         {/* 保護者も読むチャンネルは、職員だけのチャンネルと見分けられるようにする */}
@@ -195,11 +242,13 @@ export default function StaffChatScreen() {
             {messages.data?.map((m) => (
               <MessageRow key={m.chat_message_id} message={m} mine={m.sender_account_id === user!.account_id}
                 canEdit={m.sender_account_id === user!.account_id || schoolWideAdmin}
+                canDelete={user!.role === '1' && m.sender_account_id !== user!.account_id}
+                showRole={guardianRoom}
                 readOnly={!!current?.left}
                 menuOpen={menuId === m.chat_message_id}
                 onMenu={(open) => setMenuId((cur) => (open ? m.chat_message_id : cur === m.chat_message_id ? null : cur))}
                 onReact={(type) => react(m.chat_message_id, type)}
-                onRetract={async () => { await api.retract(user!, m.chat_message_id); messages.refresh(); }}
+                onRetract={() => setRetracting(m)}
                 onEdit={async (body) => { await api.edit(user!, m.chat_message_id, body); messages.refresh(); }} />
             ))}
           </div>
@@ -256,13 +305,67 @@ export default function StaffChatScreen() {
           </div>
         </div>
       </div>
+
+      {retracting && (
+        <RetractDialog message={retracting} mine={retracting.sender_account_id === user!.account_id}
+          isAdmin={user!.role === '1'} guardianRoom={guardianRoom} busy={retractBusy}
+          onConfirm={retract} onCancel={() => setRetracting(null)} />
+      )}
     </div>
   );
 }
 
+/*
+ * 取消・削除を確かめるダイアログ。
+ * 管理者が他者のメッセージを消すのは「誤送信への対応」の削除である（基本設計書「誤送信への対応」(4-6) 1
+ * 「管理者がチャット画面で対象のメッセージを削除する」、要件定義書「チャットツール」(4-3)「メッセージの削除」）。
+ * そのとき既読が付いていたかを示す（同 (4-6) 2「当該メッセージが既読になっていたかを表示する」）。
+ * 誤送信対応の記録は管理者が行う（図/画面詳細図.md「誤送信対応記録画面」(4-4)）。一般の職員には、
+ * 誤って送ったときは管理者へ知らせるよう添える（GitHub Issue #141 の 3）
+ */
+function RetractDialog({ message, mine, isAdmin, guardianRoom, busy, onConfirm, onCancel }: {
+  message: ChatMessage; mine: boolean; isAdmin: boolean; guardianRoom: boolean; busy: boolean;
+  onConfirm: () => void; onCancel: () => void;
+}) {
+  const readCount = message.read_count ?? 0;
+  /*
+   * 保護者が送ったものは、誤送信対応の対象にしない（server/api_chat.go の handleRetractedWithoutRecord）。
+   * 管理者が保護者の発言を消すときは誤送信への対応ではなく、既読（保護者が開いたか）も判断の材料にならないため出さない
+   */
+  const fromGuardian = message.sender_role === '3';
+  const title = mine ? 'メッセージを取り消します'
+    : fromGuardian ? '保護者のメッセージを削除します' : 'メッセージを削除します（誤送信への対応）';
+  return (
+    <ConfirmDialog title={title}
+      confirmLabel={mine ? '取り消す' : '削除する'} danger busy={busy} onConfirm={onConfirm} onCancel={onCancel}>
+      <div className="stack">
+        <p>
+          {formatMD(message.sent_at.slice(0, 10))} {formatHM(message.sent_at)} のメッセージを{mine ? '取り消します' : '削除します'}。
+          元に戻せません。相手の画面には「このメッセージは取り消されました」と出ます。
+        </p>
+        {!fromGuardian && (
+          <p>
+            <strong>{guardianRoom ? `既読（保護者）：${readCount} 名` : `既読：${readCount} 名`}</strong>
+            {readCount > 0 && '。すでに読まれているため、内容が伝わったことは取り消せません'}
+          </p>
+        )}
+        {!fromGuardian && (isAdmin ? (
+          <p>削除したあと、<Link to="/staff/admin/misdelivery">誤送信対応の記録</Link>で、既読の有無ととった対応を記録してください。</p>
+        ) : (
+          <p>誤って別の家庭やチャンネルへ送ったときは、管理者へ知らせてください。誤送信対応の記録は管理者が残します。</p>
+        ))}
+      </div>
+    </ConfirmDialog>
+  );
+}
+
 /** 1件のメッセージ。既読は人数で示す（画面詳細図 4-1） */
-function MessageRow({ message, mine, canEdit, readOnly, onRetract, onEdit, onReact, menuOpen, onMenu }: {
+function MessageRow({ message, mine, canEdit, canDelete, showRole, readOnly, onRetract, onEdit, onReact, menuOpen, onMenu }: {
   message: ChatMessage; mine: boolean; canEdit: boolean;
+  /** 管理者が他者のメッセージを削除できるか（誤送信への対応。基本設計書「誤送信への対応」(4-6)） */
+  canDelete: boolean;
+  /** 送信者が職員か保護者かを添えるか。保護者が参加するチャンネルで添える（GitHub Issue #141） */
+  showRole: boolean;
   /** 外れたチャンネルの過去ログ。操作の一覧（リアクション・編集・取消）を出さない */
   readOnly: boolean;
   onRetract: () => void; onEdit: (body: string) => Promise<void>; onReact: (reactionType: string) => void;
@@ -274,6 +377,9 @@ function MessageRow({ message, mine, canEdit, readOnly, onRetract, onEdit, onRea
    * 返し、api.readCount は 0 を返すので、これまでの1件ずつの問い合わせでは常に「既読 0」だった
    */
   const readCount = message.read_count ?? 0;
+  const sender = message.sender_name ?? accountName(message.sender_account_id);
+  const roleMark = showRole && message.sender_role
+    ? <span className="sender-role">{SENDER_KIND[message.sender_role]}</span> : null;
   /*
    * リアクション・編集・取消は、メッセージを右クリック（タブレットでは長押し）して開く一覧に置く。
    * 各メッセージの下へ常に並べると、やりとりが続いたときに本文が読みにくくなる（GitHub Issue #103）。
@@ -298,10 +404,6 @@ function MessageRow({ message, mine, canEdit, readOnly, onRetract, onEdit, onRea
   };
   // 本文中のリンクや入力欄の上では、ブラウザの既定の動きを残す
   const onControl = (target: EventTarget) => !!(target as HTMLElement).closest('a, button, textarea');
-  const guarded = (fn: () => void) => () => {
-    if (Date.now() - openedByPressAt.current < 400) return;
-    fn();
-  };
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -344,10 +446,17 @@ function MessageRow({ message, mine, canEdit, readOnly, onRetract, onEdit, onRea
     }
   };
 
+  // 一覧を閉じたら、開いた「操作」ボタンへ戻す。キーボードで画面の先頭からやり直さずに済むように（GitHub Issue #172）
+  const closeMenu = () => {
+    triggerRef.current?.focus({ preventScroll: true });
+    onMenu(false);
+  };
+
   if (message.is_deleted) {
+    // ほかのメッセージと同じく日付まで出す。日をまたぐといつのものか分からないため（GitHub Issue #141 の 5）
     return (
-      <div className="msg">
-        <div className="meta">{(message.sender_name ?? accountName(message.sender_account_id))} {formatHM(message.sent_at)}</div>
+      <div className={`msg${mine ? ' mine' : ''}`}>
+        <div className="meta">{sender}{roleMark} {formatMD(message.sent_at.slice(0, 10))} {formatHM(message.sent_at)}</div>
         <div className="bubble retracted">このメッセージは取り消されました</div>
       </div>
     );
@@ -356,7 +465,7 @@ function MessageRow({ message, mine, canEdit, readOnly, onRetract, onEdit, onRea
   return (
     <div className={`msg${mine ? ' mine' : ''}`}>
       <div className="meta">
-        {(message.sender_name ?? accountName(message.sender_account_id))} {formatMD(message.sent_at.slice(0, 10))} {formatHM(message.sent_at)}
+        {sender}{roleMark} {formatMD(message.sent_at.slice(0, 10))} {formatHM(message.sent_at)}
         {message.edited_at && <span className="weak">（編集済み）</span>}
       </div>
       <div ref={bubbleRef} className={`bubble${editing || readOnly ? '' : ' has-menu'}`}
@@ -415,39 +524,57 @@ function MessageRow({ message, mine, canEdit, readOnly, onRetract, onEdit, onRea
       */}
       {!editing && !readOnly && (
         <button ref={triggerRef} type="button" className="message-actions-trigger"
-          aria-label={`${mine ? '自分' : message.sender_name ?? accountName(message.sender_account_id)}のメッセージの操作`}
+          aria-label={`${mine ? '自分' : sender}のメッセージの操作`}
           aria-expanded={menuOpen}
           aria-controls={menuOpen ? `message-actions-${message.chat_message_id}` : undefined}
           onClick={() => (menuOpen ? onMenu(false) : openMenu())}>操作</button>
       )}
       <Reactions reactions={message.reactions ?? []} onToggle={onReact} showAdd={false} />
-      {/* 既読は自分の発言にだけ出す */}
-      {mine && !editing && <div className="read">既読 {readCount}</div>}
+      {/*
+        既読は自分の発言にだけ出す。保護者が参加するチャンネルでは、保護者の既読だけを数える
+        （要件定義書「チャットツール」(4-3)「既読確認」。server/api_chat.go の readCountRoles。GitHub Issue #171）
+      */}
+      {mine && !editing && (
+        <div className="read" title={showRole ? '保護者のうち、読んだ人数' : undefined}>既読 {readCount}</div>
+      )}
 
       {menuOpen && !editing && (
         <div className="msg-menu-wrap" style={above ? { bottom: '100%' } : { top: '100%' }}>
           <div ref={menuRef} id={`message-actions-${message.chat_message_id}`} className="msg-menu"
-            role="group" aria-label="メッセージの操作">
+            role="group" aria-label="メッセージの操作"
+            onClickCapture={(e) => {
+              // 長押しで開いた直後に指を離したとき、指の下に来たボタンが押されないようにする
+              if (Date.now() - openedByPressAt.current < 400) { e.preventDefault(); e.stopPropagation(); }
+            }}>
             <div className="msg-menu-row">
               {Object.entries(REACTION).map(([type, def]) => (
                 <button key={type} type="button" className="reaction pick"
                   aria-label={def.label} title={def.label}
-                  onClick={guarded(() => { onReact(type); onMenu(false); })}>
+                  onClick={() => { onReact(type); closeMenu(); }}>
                   <span aria-hidden="true">{def.emoji}</span>
                 </button>
               ))}
             </div>
             <div className="msg-menu-row">
-              {/* 編集は送信者本人。園チャットに限り管理者同士でもできる。取消は自分の発言だけ */}
+              {/*
+                編集は送信者本人。園チャットに限り管理者同士でもできる。取消は自分の発言だけ（画面詳細図 4-1 No.14・15）。
+                管理者には、他者の発言の「削除」を出す。誤送信への対応で、管理者がチャット画面から削除する
+                （基本設計書「誤送信への対応」(4-6)、要件定義書「チャットツール」(4-3)「メッセージの削除｜他者が送信した
+                メッセージを削除する｜管理者」。GitHub Issue #171）。どちらも確かめてから行う
+              */}
               {canEdit && (
                 <button type="button" className="btn-sm"
-                  onClick={guarded(() => { setDraft(message.body); setEditing(true); onMenu(false); })}>編集</button>
+                  onClick={() => { setDraft(message.body); setEditing(true); onMenu(false); }}>編集</button>
               )}
               {mine && (
                 <button type="button" className="btn-sm"
-                  onClick={guarded(() => { onRetract(); onMenu(false); })}>取消</button>
+                  onClick={() => { closeMenu(); onRetract(); }}>取消</button>
               )}
-              <button type="button" className="btn-sm btn-quiet" onClick={() => onMenu(false)}>
+              {canDelete && (
+                <button type="button" className="btn-sm"
+                  onClick={() => { closeMenu(); onRetract(); }}>削除</button>
+              )}
+              <button type="button" className="btn-sm btn-quiet" onClick={closeMenu}>
                 閉じる
               </button>
             </div>

@@ -20,6 +20,16 @@ export default function GuardianHome() {
     { refreshMs: AUTO_REFRESH_MS });
   // 園からの配布物。園だより・献立表など、あとから見返すもの
   const handouts = useAsync(() => api.handouts(user!), [user?.account_id], { refreshMs: AUTO_REFRESH_MS });
+  /*
+   * ホームに出す「新しいもの」3件は、掲載した日時の新しい順に選ぶ（画面詳細図「保護者ホーム」(2-7) 項目7）。
+   * 【仮置き】「新しい」が対象の月か掲載した日時かは設計に定めが無い（web/仮置き値.md）。
+   * 対象の月の順にすると、過去の月の訂正版を今日掲載しても、掲載の知らせだけが届いてホームには出ない（GitHub Issue #170）。
+   * 一覧（配布物一覧画面（保護者）(4-6)）は、これまでどおり対象の月ごとにまとめて新しい月を上に置く
+   */
+  const latestHandouts = [...(handouts.data ?? [])]
+    .sort((a, b) => b.posted_at.localeCompare(a.posted_at)
+      || b.target_month.localeCompare(a.target_month) || b.handout_id - a.handout_id)
+    .slice(0, 3);
 
   if (loading) return <Loading />;
   if (error) return <ErrorBox text={error} />;
@@ -87,7 +97,7 @@ export default function GuardianHome() {
 
       {/*
         園からの配布物は、園児ごとではなく1つにまとめて置く。園全体向けのものが中心であり、
-        きょうだいがいても同じものを二度並べないため。新しいものを3件だけ出し、残りは一覧で見せる
+        きょうだいがいても同じものを二度並べないため。新しく掲載したものを3件だけ出し、残りは一覧で見せる
       */}
       <section className="guardian-home-panel guardian-handout-panel">
         <div className="guardian-panel-heading">
@@ -102,7 +112,7 @@ export default function GuardianHome() {
         {handouts.data && handouts.data.length > 0 && (
           <>
             <div className="guardian-record-list">
-              {handouts.data.slice(0, 3).map((h) => (
+              {latestHandouts.map((h) => (
                 <Link key={h.handout_id} className="guardian-record-link" to="/guardian/handouts">
                   <span className="handout-title">
                     <Tag label={HANDOUT_TYPE[h.handout_type] ?? 'その他'} className="tag-applied" />

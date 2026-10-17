@@ -961,10 +961,10 @@ export const chatApi = {
       const left = m.left_at !== null;
       if (left) canPost = false;
 
-      // 参加している保護者の人数。投稿が保護者にも届くことを入力欄の近くで示すために使う
+      // 参加している保護者の人数。投稿が保護者にも届くことを入力欄の近くで示すために使う。
+      // 実際に読める保護者の数なので、停止中の保護者は数えない（GitHub Issue #171。api_chat.go の activeGuardianWhere）
       const guardianCount = db.chatMembers.filter((x) =>
-        x.chat_room_id === room.chat_room_id && x.left_at === null
-        && findAccount(x.account_id)?.role === '3').length;
+        x.chat_room_id === room.chat_room_id && x.left_at === null && isActiveGuardian(x.account_id)).length;
 
       return { room, unread, canPost, guardianCount, left };
     });
@@ -983,6 +983,7 @@ export const chatApi = {
     // 送信者名を添える。保護者はアカウントの名簿を参照できないため、画面側では引けない
     // （サーバ側の api_chat.go も同じ扱い。片方だけ直すと食い違う）
     const isStaff = user.role === '1' || user.role === '2';
+    const roomType = db.chatRooms.find((r) => r.chat_room_id === roomId)?.room_type ?? '';
     // 外れた職員には、外れたあとの投稿を返さない（GitHub Issue #161）
     return ok(db.chatMessages.filter((m) => m.chat_room_id === roomId
       && !hiddenBeforeJoined(user, m) && !hiddenAfterLeft(user, m))
@@ -990,8 +991,10 @@ export const chatApi = {
       .map((m) => ({
         ...m,
         sender_name: accountName(m.sender_account_id),
+        // 職員か保護者かを吹き出しに添えるために返す（GitHub Issue #141。api_chat.go の SenderRole と同じ）
+        sender_role: findAccount(m.sender_account_id)?.role,
         // 既読の人数は職員にだけ添える。保護者側には表示しないため、そもそも返さない（基本設計書 5-5。api_chat.go と同じ）
-        ...(isStaff ? { read_count: db.chatReads.filter((r) => r.chat_message_id === m.chat_message_id).length } : {}),
+        ...(isStaff ? { read_count: readCountOf(m.chat_message_id, roomType) } : {}),
         reactions: reactionSummary(m.chat_message_id, user.account_id),
       })));
   },
@@ -1045,18 +1048,22 @@ export const chatApi = {
     return ok(undefined);
   },
 
-  /** 既読は人数で示す。保護者側には表示しない（基本設計書 5-5） */
+  /** 既読は人数で示す。保護者側には表示しない（基本設計書 5-5）。数え方は messages の read_count と同じ */
   async readCount(messageId: number): Promise<number> {
-    return ok(db.chatReads.filter((r) => r.chat_message_id === messageId).length);
+    const m = db.chatMessages.find((x) => x.chat_message_id === messageId);
+    const roomType = db.chatRooms.find((r) => r.chat_room_id === m?.chat_room_id)?.room_type ?? '';
+    return ok(readCountOf(messageId, roomType));
   },
 
   async markRead(user: SessionUser, roomId: number): Promise<void> {
     const member = db.chatMembers.find((x) => x.chat_room_id === roomId && x.account_id === user.account_id);
     if (!member || (user.role === '3' && member.left_at)) return fail('このチャンネルを参照する権限がありません');
-    // 既読にするのは読めるメッセージだけ。外れた職員の、外れたあとの投稿は含めない（GitHub Issue #161）
+    // 既読にするのは読めるメッセージだけ。外れた職員の、外れたあとの投稿は含めない（GitHub Issue #161）。
+    // 後から登録した保護者の、登録より前のやりとりも含めない。見えていないものを既読にすると、誤送信のときに
+    // 既読が付いていたかの判断を誤らせる（基本設計書「既読確認」(4-6)・「チャット」(5-5)。GitHub Issue #171）
     db.chatMessages
       .filter((m) => m.chat_room_id === roomId && m.sender_account_id !== user.account_id && !m.is_deleted
-        && !hiddenAfterLeft(user, m))
+        && !hiddenAfterLeft(user, m) && !hiddenBeforeJoined(user, m))
       .forEach((m) => {
         const already = db.chatReads.some((r) => r.chat_message_id === m.chat_message_id && r.account_id === user.account_id);
         if (!already) {
@@ -1153,7 +1160,10 @@ export const chatApi = {
       return fail('このチャンネルを参照する権限がありません');
     }
     const forStaff = !!viewer && viewer.role !== '3';
-    return ok(db.chatMembers.filter((m) => m.chat_room_id === roomId && m.left_at === null)
+    // 停止中の保護者は、読めないため並べない（GitHub Issue #171・#141）。停止中の職員は除かない
+    // （目的別グループの編成は、いまの参加者を初期値にして送るため。api_chat.go の handleChatMembers と同じ）
+    return ok(db.chatMembers.filter((m) => m.chat_room_id === roomId && m.left_at === null
+      && !(findAccount(m.account_id)?.role === '3' && !isActiveGuardian(m.account_id)))
       .map((m) => {
         const role = findAccount(m.account_id)?.role ?? '2';
         return {
@@ -1163,6 +1173,30 @@ export const chatApi = {
       }));
   },
 };
+
+/**
+ * 読める保護者か。停止中の保護者（紐づけを終えて有効な紐づけがゼロになった人など）は、参加の行が残っていても
+ * ログインできず読めないため、「保護者 n 名にも届きます」の n とメンバー欄に入れない（GitHub Issue #171・#141）。
+ * 【仮置き】参加の行（left_at）は動かさず、数えるときに除く。Go サーバ（server/api_chat.go の activeGuardianWhere）と同じ
+ */
+function isActiveGuardian(accountId: number): boolean {
+  const a = findAccount(accountId);
+  return a?.role === '3' && a.status === '1';
+}
+
+/**
+ * 既読の人数。保護者が参加するチャンネル（園全体・クラスグループ・個人チャット）では保護者の既読だけを数える。
+ * 既読確認は、園が送ったものを保護者が開いたかを職員が確かめるためのもの（要件定義書「チャットツール」(4-3)
+ * 「既読確認」、基本設計書「既読確認」(4-6)）。職員の既読を混ぜると「保護者 n 名にも届きます」と並んだ人数が
+ * 読んだ家庭の数に見える（GitHub Issue #171）。
+ * 【仮置き】職員だけのチャンネル（職員チャット・目的別グループ）は職員の既読を数える。
+ * Go サーバ（server/api_chat.go の readCountRoles）と同じ規則にしてある
+ */
+function readCountOf(messageId: number, roomType: string): number {
+  const guardianRoom = roomType === '1' || roomType === '2' || roomType === '4';
+  return db.chatReads.filter((r) => r.chat_message_id === messageId
+    && (findAccount(r.account_id)?.role === '3') === guardianRoom).length;
+}
 
 /**
  * 保護者に見せないメッセージか
@@ -1338,8 +1372,16 @@ const chatApi2 = {
     return ok(undefined);
   },
 
-  async groups(): Promise<ChatRoom[]> {
-    return ok(db.chatRooms.filter((r) => r.room_type === '3'));
+  /**
+   * グループ編成画面に並べる目的別グループ。管理者にはすべて（要件定義書「チャットツール」(4-3) (c)）、
+   * 一般には、いま参加しているグループだけを返す。編成できるのはそれだけであり、参加していないグループの
+   * メンバーは返さないため（図/画面詳細図.md「グループ編成画面」(4-3)。GitHub Issue #172）。
+   * server/api_chat.go の handleChatGroups と同じ規則
+   */
+  async groups(user: SessionUser): Promise<ChatRoom[]> {
+    if (user.role === '3') return fail('グループの編成は職員のみが行えます');
+    return ok(db.chatRooms.filter((r) => r.room_type === '3'
+      && (user.role === '1' || isParticipant(user, r.chat_room_id))));
   },
 
   /**
@@ -1381,9 +1423,12 @@ const chatApi2 = {
   async retractedWithoutRecord() {
     const recorded = new Set(db.misdeliveryRecords.map((r) => r.chat_message_id));
     return ok(db.chatMessages
-      // 【仮置き】配布物の掲載の知らせ（source_type = 4）は対象にしない。取り下げとして操作ログに残る
-      // （GitHub Issue #98）
-      .filter((m) => m.is_deleted && m.source_type !== '4' && !recorded.has(m.chat_message_id))
+      // 配布物の掲載の知らせ（source_type = 4）は対象にしない。取り下げとして操作ログに残る
+      // （基本設計書「誤送信への対応」(4-6)。GitHub Issue #98）
+      // 【仮置き】保護者が送ったメッセージも対象にしない。誤送信への対応は、園が誤って送ったときのもの（同 (4-6) の
+      // 利用タイミング）であり、保護者の打ちまちがいの取消は当たらない（GitHub Issue #171。api_chat.go と同じ）
+      .filter((m) => m.is_deleted && m.source_type !== '4' && findAccount(m.sender_account_id)?.role !== '3'
+        && !recorded.has(m.chat_message_id))
       .map((m) => ({
         chat_message_id: m.chat_message_id,
         room_name: db.chatRooms.find((r) => r.chat_room_id === m.chat_room_id)?.room_name ?? '―',
@@ -2424,6 +2469,9 @@ function rejoinRoomsOfChild(accountId: number, childId: string): void {
     .forEach((m) => { m.left_at = null; });
 }
 
+/** 続柄の選択肢（画面詳細図「新規登録画面（保護者）」(2-3) 項目11。server/api_auth.go の guardianRelationships） */
+const GUARDIAN_RELATIONSHIPS: readonly string[] = ['母', '父', '祖母', '祖父', 'その他'];
+
 /** 推測困難な値とする（基本設計書 5-2）。モックのため乱数の強度は本実装で見直す */
 function randomCode(): string {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -2448,7 +2496,11 @@ const adminApi3 = {
   },
 
   async signUpGuardian(
-    input: { code: string; email: string; password: string; guardian_name: string; relationship: string },
+    input: {
+      code: string; email: string; password: string; guardian_name: string; relationship: string;
+      /** 利用規約に同意したか（画面の「利用規約に同意します」）と、画面に出して同意を得た規約の版 */
+      terms_agreed: boolean; terms_version: string;
+    },
   ): Promise<SessionUser> {
     /*
      * この関数は、コードが未使用かを確かめてから使用済みにするまで、待たずに（await を挟まずに）進める。
@@ -2460,16 +2512,34 @@ const adminApi3 = {
     if (!c || c.status !== '1' || c.expires_on < today() || !childIssuable(c.child_id).issuable) {
       return fail('招待コードが確認できません');
     }
+    /*
+     * 規約への同意を受け取ってから登録する。同意しなかった場合は登録を完了しない
+     * （基本設計書「保護者アカウントの自己登録」(4-3)、画面詳細図 2-3 項目5。GitHub Issue #170）。
+     * 同意した版は、画面に出した版といま有効な版が同じときだけ記録する（同「同意履歴（t_terms_agreement）」(5-2)）。
+     * 文言は server/api_auth.go と同じ
+     */
+    if (input.terms_agreed !== true) return fail('利用規約に同意いただけない場合、ご利用いただけません。');
+    // 【仮置き】画面に出していた規約が、送るまでのあいだに改定されたときの文言（web/仮置き値.md）
+    if (input.terms_version !== CURRENT_TERMS_VERSION) {
+      return fail('利用規約が改定されました。改定後の利用規約をお読みいただき、あらためて同意してください。');
+    }
     // ログインIDはメールアドレス。空や形式の誤りを受け付けない（要件定義書「ログインIDの定義」(4-1-1)）
-    input = { ...input, email: input.email.trim() };
+    input = { ...input, email: input.email.trim(), guardian_name: (input.guardian_name ?? '').trim() };
     const emailError = validateEmail(input.email);
     if (emailError) return fail(emailError);
-    // 大文字・小文字だけが違うものも同じとみなす（職員アカウントの発行と同じ判定）
+    // ログインIDはロールをまたいで園内で一意（基本設計書 5-2）。大文字・小文字だけの違いは同じ宛先として扱う
+    // （GitHub Issue #170。判定は職員アカウントの発行と同じ emailTaken。GitHub Issue #167 の 1）
     if (emailTaken(input.email)) return fail('このメールアドレスはすでに登録されています');
     // 8〜128文字（文字数で数える）。よく使われるパスワードは拒否する（server/password.go と同じ規則。GitHub Issue #159）
     const passwordError = validateNewPassword(input.password);
     if (passwordError) return fail(passwordError);
-    if (!input.guardian_name.trim()) return fail('保護者の氏名を入力してください');
+    // 氏名は前後の空白を落として、50文字以内（基本設計書「入力項目の制約値」(4-9)）
+    if (!input.guardian_name) return fail('保護者の氏名を入力してください');
+    if (tooLong(input.guardian_name, 50)) return fail('保護者の氏名は50文字以内で入力してください');
+    // 続柄は必須で、選択肢のどれか（画面詳細図 2-3 項目11）
+    if (!GUARDIAN_RELATIONSHIPS.includes(input.relationship)) {
+      return fail('続柄は 母・父・祖母・祖父・その他 から選んでください');
+    }
 
     const accountId = nextId();
     db.accounts.push({

@@ -181,11 +181,15 @@ function scrollParent(el: HTMLElement | null): HTMLElement | null {
 }
 
 /**
- * 新しいメッセージが届いたとき、いちばん下を読んでいた人だけを、いちばん下へ送る。
+ * チャンネルを開いたときは、いちばん下（最新）から見せる。
+ * 開いたあとに新しいメッセージが届いたときは、いちばん下を読んでいた人だけを、いちばん下へ送る。
  * 上へ戻って読んでいる人の位置は動かさない。
  *
- * scope は表示している一覧が何のものか（チャンネル）。scope が変わったとき（チャンネルを
- * 切り替えたとき）は送らない。latest は一覧の最後のメッセージ。これが変わったときだけ見る。
+ * scope は表示している一覧が何のものか（チャンネル）。scope が変わったとき（チャンネルを開いた・
+ * 切り替えたとき）は、そのチャンネルのメッセージが出たところで、いちばん下へ置く。
+ * チャットのメッセージは直近から遡って見せる（基本設計書「一覧表示とページング」(3-7)、図/画面詳細図.md 4-1 No.4）。
+ * 古いものから出すと、最新と、開いている間に届いたものが画面の外に残る（GitHub Issue #172）。
+ * latest は一覧の最後のメッセージ。scope と latest が変わったときだけ見る。
  */
 export function useFollowLatest(target: RefObject<HTMLElement | null>, scope: unknown, latest: unknown): void {
   const prev = useRef<{ scope: unknown; height: number } | null>(null);
@@ -193,8 +197,11 @@ export function useFollowLatest(target: RefObject<HTMLElement | null>, scope: un
     const el = scrollParent(target.current);
     if (!el) { prev.current = null; return; }
     const p = prev.current;
+    // チャンネルのメッセージが初めて出た（開いた・切り替えた）。空のチャンネル（scope が無い）では何もしない
+    const opened = scope !== null && scope !== undefined && (!p || p.scope !== scope);
     // 描き直す前の高さで、いちばん下にいたかを判定する。下に足されても scrollTop は変わらない
-    if (p && p.scope === scope && p.height - el.scrollTop - el.clientHeight <= FOLLOW_SLACK_PX) {
+    const atBottom = !!p && p.scope === scope && p.height - el.scrollTop - el.clientHeight <= FOLLOW_SLACK_PX;
+    if (opened || atBottom) {
       el.scrollTop = el.scrollHeight;
     }
     prev.current = { scope, height: el.scrollHeight };

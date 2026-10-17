@@ -52,6 +52,7 @@ describe('園児の取消（GitHub Issue #166 の 4）', () => {
     await expect(api.verifyInvitationCode(code)).rejects.toThrow('招待コードが確認できません');
     await expect(api.signUpGuardian({
       code, email: 'gotoroku@example.jp', password: 'gotoroku-5678', guardian_name: '誤登録 花子', relationship: '母',
+      terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION, // 規約への同意（GitHub Issue #170）
     })).rejects.toThrow('招待コードが確認できません');
     expect(db.accounts.some((a) => a.email === 'gotoroku@example.jp')).toBe(false);
   });

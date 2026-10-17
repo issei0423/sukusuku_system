@@ -11,6 +11,7 @@ import PublicLayout from '../../layouts/PublicLayout';
 import { Field, Alert } from '../../components/ui';
 import { useSession } from '../../session';
 import { api } from '../../api/client';
+import { useUnsavedInput } from '../../unsavedInput';
 
 export default function PasswordChangeScreen({ forced }: { forced?: boolean }) {
   const { user, setUser } = useSession();
@@ -21,6 +22,8 @@ export default function PasswordChangeScreen({ forced }: { forced?: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
+  // 変更する前の入力は、ログアウトの前に確かめる（基本設計書「ログアウト」(4-3)。GitHub Issue #170）
+  useUnsavedInput(!done && (current !== '' || next !== '' || next2 !== ''));
 
   if (!user) return null;
 

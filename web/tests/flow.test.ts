@@ -423,6 +423,7 @@ describe('利用規約の同意履歴（基本設計書「同意履歴（t_terms
     const code = await api.issueOneInvitationCode(admin, 'C002', 30);
     const u = await api.signUpGuardian({
       code, email: 'rireki@example.jp', password: 'pass12345', guardian_name: '履歴 確認', relationship: '母',
+      terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION,
     });
     expect(db.termsAgreements.filter((x) => x.account_id === u.account_id).length).toBe(1);
   });
@@ -458,6 +459,7 @@ describe('設計の決定を反映したもの（基本設計書 第2.3版）', 
     const code = await api.issueOneInvitationCode(admin, 'C001', 30);
     const grandma = await api.signUpGuardian({
       code, email: 'sobo@example.jp', password: 'pass12345', guardian_name: '野原 和子', relationship: '祖母',
+      terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION,
     });
     // 登録した直後は、以前のやりとりが見えず、未読にも数えない
     expect(await api.messages(grandma, 6)).toHaveLength(0);

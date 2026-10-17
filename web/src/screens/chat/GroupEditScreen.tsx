@@ -15,7 +15,11 @@ import { ROLE } from '../../api/codes';
 export default function GroupEditScreen() {
   const { user } = useSession();
   const [tick, setTick] = useState(0);
-  const groups = useAsync(() => api.groups(), [tick]);
+  /*
+   * 一般の職員には、いま参加しているグループだけが返る。編成できるのはそれだけで、参加していないグループの
+   * メンバーは返らないため（server/api_chat.go の handleChatGroups。GitHub Issue #172）。管理者にはすべて返る
+   */
+  const groups = useAsync(() => api.groups(user!), [tick, user?.account_id]);
   // 候補は職員だけ。一般の職員も編成できるため、管理者向けのアカウント一覧は使わない
   const accounts = useAsync(() => api.groupCandidates(user!), [user?.account_id]);
 
@@ -46,10 +50,14 @@ export default function GroupEditScreen() {
     } catch (e) { setError((e as Error).message); }
   };
 
+  // メンバーを読めなかったとき（別の画面で外されたなど）は、編成を開かずに知らせる（GitHub Issue #172）
   const openEdit = async (roomId: number) => {
-    const m = await api.members(roomId, user!);
-    setPicked(m.map((x) => x.account_id));
-    setEditing(roomId);
+    setError(null);
+    try {
+      const m = await api.members(roomId, user!);
+      setPicked(m.map((x) => x.account_id));
+      setEditing(roomId);
+    } catch (e) { setError((e as Error).message); }
   };
 
   return (
@@ -77,7 +85,7 @@ export default function GroupEditScreen() {
               {groups.data.map((g) => (
                 <tr key={g.chat_room_id}>
                   <td>{g.room_name}</td>
-                  <td><MemberNames roomId={g.chat_room_id} /></td>
+                  <td><MemberNames roomId={g.chat_room_id} tick={tick} /></td>
                   <td className="nowrap">
                     <button className="btn-sm" onClick={() => openEdit(g.chat_room_id)}>メンバーを編成</button>
                   </td>
@@ -129,8 +137,14 @@ export default function GroupEditScreen() {
   );
 }
 
-function MemberNames({ roomId }: { roomId: number }) {
-  const m = useAsync(() => api.members(roomId), [roomId]);
+/*
+ * 一覧のメンバー欄。編成を保存したら読み直す（tick）。チャンネルの番号だけを見ていると、保存しても
+ * 再読み込みするまで古いメンバーのまま残る（GitHub Issue #172 の 5）。
+ * 見る人（viewer）を渡し、参加していないグループのメンバーを返さない規則をモックでも通す（同 4）
+ */
+function MemberNames({ roomId, tick }: { roomId: number; tick: number }) {
+  const { user } = useSession();
+  const m = useAsync(() => api.members(roomId, user!), [roomId, tick, user?.account_id]);
   return <span className="muted">{m.data?.map((x) => x.name).join('、') ?? ''}</span>;
 }
 
