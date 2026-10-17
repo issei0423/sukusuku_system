@@ -3875,7 +3875,10 @@ export function canFixContact(user: SessionUser, childId: string, contactDate: s
   return user.role === '1' || contactDate === today();
 }
 
-/** そのページを since 以降に開いた保護者の家庭の数と人数（server/api_contact_events.go の readersOf） */
+/**
+ * そのページを since 以降に開いた保護者の家庭の数と人数（server/api_contact_events.go の readersOf）。
+ * since は記録を保存した時刻（created_at）。時刻を後から付けた記録でも、届く前に開いた家庭を数えない
+ */
 function readersOf(childIds: string[], date: string, since: string): Readers {
   let families = 0;
   let guardians = 0;
@@ -4057,8 +4060,10 @@ const contactEventsApi = {
     const e = target.event;
     const targets = e.contact_photo_id === null ? [e]
       : db.contactEvents.filter((x) => x.contact_photo_id === e.contact_photo_id && !x.is_deleted);
+    // 写っているほかの園児の分も、その園児を直せる人でなければ取り消さない
+    if (targets.some((t) => !canFixContact(user, t.child_id, t.contact_date))) return fail(MSG.fixForbidden);
     const childIds = [...new Set(targets.map((t) => t.child_id))];
-    const { family_count } = readersOf(childIds, e.contact_date, e.recorded_at);
+    const { family_count } = readersOf(childIds, e.contact_date, e.created_at);
     const at = now();
     for (const t of targets) {
       t.is_deleted = true;
@@ -4076,7 +4081,7 @@ const contactEventsApi = {
     if (!e || e.is_deleted || !contactAccess(user, e.child_id).read) return fail(MSG.contactForbidden);
     const childIds = e.contact_photo_id === null ? [e.child_id]
       : [...new Set(db.contactEvents.filter((x) => x.contact_photo_id === e.contact_photo_id && !x.is_deleted).map((x) => x.child_id))];
-    return ok(readersOf(childIds, e.contact_date, e.recorded_at));
+    return ok(readersOf(childIds, e.contact_date, e.created_at));
   },
 
   /** ねた・おきたを直す（POST /api/nap/sleeps/{id}/correct）。実施の後も直せる。slept_at < woke_at ≦ 今、実施の日の中 */
@@ -4110,7 +4115,7 @@ const contactEventsApi = {
     const target = sleepTarget(user, sleepId);
     if (!target.sleep || !target.session) return fail(target.error ?? MSG.contactForbidden);
     const { sleep, session } = target;
-    const { family_count } = readersOf([sleep.child_id], session.session_date, sleep.slept_at);
+    const { family_count } = readersOf([sleep.child_id], session.session_date, sleep.created_at);
     sleep.is_deleted = true;
     sleep.updated_at = now();
     log(user.account_id, '3', '4', 't_nap_sleep', sleep.nap_sleep_id, sleep.child_id,
@@ -4126,7 +4131,7 @@ const contactEventsApi = {
     const sleep = db.napSleeps.find((x) => x.nap_sleep_id === sleepId);
     const session = sleep && db.napSessions.find((x) => x.nap_session_id === sleep.nap_session_id);
     if (!sleep || sleep.is_deleted || !session || !contactAccess(user, sleep.child_id).read) return fail(MSG.contactForbidden);
-    return ok(readersOf([sleep.child_id], session.session_date, sleep.slept_at));
+    return ok(readersOf([sleep.child_id], session.session_date, sleep.created_at));
   },
 };
 

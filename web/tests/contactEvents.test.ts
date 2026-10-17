@@ -191,6 +191,11 @@ describe('訂正・取り消し（詳細設計書 (4-7)）', () => {
     expect(home.latest.some((i) => i.kind === 'temperature' && i.recorded_at === temp.recorded_at && i.text === '36.6℃')).toBe(false);
     await expect(api.cancelEvent(teacher, temp.contact_event_id)).rejects.toThrow(MSG.contactForbidden);
     expect(db.operationLogs.find((l) => l.target_id === temp.contact_event_id && l.operation_type === '4')?.before_value).toContain('"temperature":36.6');
+    // 時刻を後から付けた記録は、保存した時刻より前に開いた家庭を「読んでいる」に数えない
+    const { events: [back] } = await api.recordEvents(teacher, [toilet('C001', 'おしっこ', `${today()}T00:00:00`)]);
+    const read = db.contactReads.find((r) => r.child_id === 'C001' && r.account_id === 6 && r.contact_date === today())!;
+    read.read_at = `${today()}T00:00:01`;
+    expect((await api.eventReaders(teacher, back.contact_event_id)).family_count).toBe(0);
   });
 
   it('職員のページは書けるかを返し、出来事に読んだ版を添える。保護者には返さない', async () => {

@@ -233,15 +233,17 @@ type contactEventRow struct {
 	contactEventOut
 	StaffID string
 	ClassID int64
+	// 保存した時刻。保護者に届いた時刻であり、取り消しの確認の「いま読んでいる家庭」の起点にする
+	CreatedAt string
 }
 
 func (a *app) loadContactEvent(id int64) (*contactEventRow, error) {
 	var e contactEventRow
 	err := a.db.QueryRow(`SELECT contact_event_id, child_id, class_id, contact_date, event_type, recorded_at, meal_kind, meal_amount,
-		toilet_label, temperature, body, contact_photo_id, keep_in_growth, staff_id, corrected_at, is_deleted, updated_at
+		toilet_label, temperature, body, contact_photo_id, keep_in_growth, staff_id, corrected_at, is_deleted, updated_at, created_at
 		FROM t_contact_event WHERE contact_event_id = ?`, id).
 		Scan(&e.ID, &e.ChildID, &e.ClassID, &e.ContactDate, &e.EventType, &e.RecordedAt, &e.MealKind, &e.MealAmount,
-			&e.ToiletLabel, &e.Temperature, &e.Body, &e.ContactPhotoID, &e.KeepInGrowth, &e.StaffID, &e.CorrectedAt, &e.IsDeleted, &e.UpdatedAt)
+			&e.ToiletLabel, &e.Temperature, &e.Body, &e.ContactPhotoID, &e.KeepInGrowth, &e.StaffID, &e.CorrectedAt, &e.IsDeleted, &e.UpdatedAt, &e.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -267,9 +269,13 @@ func (a *app) canFixContact(u *SessionUser, childID, contactDate string) bool {
 	return u.isAdmin() || contactDate == today()
 }
 
-// readersOf は、その園児のその日のページを、時刻 since 以降に開いた保護者の家庭の数と人数
-// （詳細設計書「訂正・取り消し」(4-7 (3))、基本設計書「保護者が開いた時刻（t_contact_read）」(5-4)）。
-// 紐づけが有効か猶予中の保護者だけを数える
+/*
+readersOf は、その園児のその日のページを、時刻 since 以降に開いた保護者の家庭の数と人数
+（詳細設計書「訂正・取り消し」(4-7 (3))、基本設計書「保護者が開いた時刻（t_contact_read）」(5-4)）。
+紐づけが有効か猶予中の保護者だけを数える。
+since は記録を保存した時刻（created_at）を渡す。詳細設計書は recorded_at とするが、排せつ・体温は時刻を後から付けられ、
+そのときは recorded_at より後に保護者へ届く。届く前に開いた家庭を「読んでいる」に数えないため（自動レビューの指摘）
+*/
 func (a *app) readersOf(childIDs []string, contactDate, since string) (families, guardians int) {
 	for _, childID := range childIDs {
 		var n int
@@ -427,6 +433,11 @@ func (a *app) handleCancelEvent(w http.ResponseWriter, r *http.Request) {
 			rows.Close()
 			for _, id := range ids {
 				if other, err := a.loadContactEvent(id); err == nil {
+					// 写っているほかの園児の分も、その園児を直せる人でなければ取り消さない（自動レビューの指摘）
+					if !a.canFixContact(u, other.ChildID, other.ContactDate) {
+						writeForbidden(w, msgFixForbidden)
+						return
+					}
 					targets = append(targets, *other)
 				}
 			}
@@ -438,7 +449,7 @@ func (a *app) handleCancelEvent(w http.ResponseWriter, r *http.Request) {
 			childIDs = append(childIDs, t.ChildID)
 		}
 	}
-	families, _ := a.readersOf(childIDs, e.ContactDate, e.RecordedAt)
+	families, _ := a.readersOf(childIDs, e.ContactDate, e.CreatedAt)
 
 	tx, err := a.db.Begin()
 	if err != nil {
@@ -447,10 +458,21 @@ func (a *app) handleCancelEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 	at := now()
-	for _, t := range targets {
-		if _, err := tx.Exec(`UPDATE t_contact_event SET is_deleted = 1, updated_at = ? WHERE contact_event_id = ?`, at, t.ID); err != nil {
+	done := []contactEventRow{}
+	for i, t := range targets {
+		res, err := tx.Exec(`UPDATE t_contact_event SET is_deleted = 1, updated_at = ? WHERE contact_event_id = ? AND is_deleted = 0`, at, t.ID)
+		if err != nil {
 			writeErr(w, http.StatusInternalServerError, msgContactSaveFailed)
 			return
+		}
+		// 読んだあとに、ほかの職員が先に取り消していた（同時に押した）。二重に記録・知らせしない
+		n, _ := res.RowsAffected()
+		if n == 0 && i == 0 {
+			writeForbidden(w, msgContactForbidden)
+			return
+		}
+		if n > 0 {
+			done = append(done, t)
 		}
 	}
 	if e.ContactPhotoID != nil {
@@ -463,7 +485,7 @@ func (a *app) handleCancelEvent(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, msgContactSaveFailed)
 		return
 	}
-	for _, t := range targets {
+	for _, t := range done {
 		before := fieldsJSON(eventLogFields(t.EventType, t.MealKind, t.MealAmount, t.ToiletLabel, t.Body, t.Temperature, t.RecordedAt))
 		a.log(u.AccountID, fnContact, opDelete, "t_contact_event", i64(t.ID), &t.ChildID, s(before), nil)
 	}
@@ -502,6 +524,6 @@ func (a *app) handleEventReaders(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	families, guardians := a.readersOf(childIDs, e.ContactDate, e.RecordedAt)
+	families, guardians := a.readersOf(childIDs, e.ContactDate, e.CreatedAt)
 	writeJSON(w, http.StatusOK, map[string]int{"family_count": families, "guardian_count": guardians})
 }
