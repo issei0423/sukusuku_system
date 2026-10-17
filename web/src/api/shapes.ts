@@ -341,6 +341,8 @@ export interface ContactEvent {
   staff_name?: string;
   corrected_at: string | null;
   is_deleted: boolean;
+  /** 職員の応答だけ。直すときに読んだ版として送り返す（詳細設計書「訂正・取り消し」(4-7 (1))） */
+  updated_at?: string;
 }
 
 /** クラスのようす（t_contact_class） */

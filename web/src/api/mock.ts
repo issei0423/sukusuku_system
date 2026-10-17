@@ -3395,7 +3395,10 @@ function eventView(e: ContactEventRecord, staff: boolean): ContactEvent {
     temperature: e.temperature, body: e.body, contact_photo_id: e.contact_photo_id, keep_in_growth: e.keep_in_growth,
     corrected_at: e.corrected_at, is_deleted: e.is_deleted,
   };
-  if (staff) view.staff_name = staffName(e.staff_id);
+  if (staff) {
+    view.staff_name = staffName(e.staff_id);
+    view.updated_at = e.updated_at;
+  }
   return view;
 }
 
@@ -3862,7 +3865,45 @@ function growthNew(childId: string): boolean {
   return db.developmentChecks.some((c) => c.child_id === childId && c.status === '2' && c.finalized_at?.slice(0, 10) === day && growthDeliverable(c));
 }
 
+/**
+ * その園児のその日の記録を直せるか（詳細設計書「訂正・取り消しのまとめ」(3-5) の canCorrect。server/api_growth_keep.go の canKeepInGrowth）。
+ * その日はその園児のクラスの担任（contactAccess の write。記録した職員に限らない）、管理者はいつでも。
+ * PR #200 の canFixContact と同じ規則。#200 と合わせるときは canFixContact に寄せて、この関数を消す
+ */
+export function canKeepInGrowth(user: SessionUser, childId: string, contactDate: string): boolean {
+  if (!isStaffUser(user) || !contactAccess(user, childId).write) return false;
+  return user.role === '1' || contactDate === today();
+}
+
+/** 書き換えたときの版。いまの時刻が前の版と同じ秒でも、必ず進める（決めたこと D-40） */
+function laterVersion(prev: string): string {
+  const at = now();
+  return at > prev ? at : plusSeconds(prev, 1);
+}
+
 const growthApi = {
+  /**
+   * 「成長の記録に残す」の付け外し（POST /api/contact/events/{id}/keep-in-growth。詳細設計書 (4-12 (3))）。
+   * 連絡帳の中身は変わらないため corrected_at を変えない。値が変わらなければ書き換えずにいまの行を返す
+   */
+  async keepInGrowth(user: SessionUser, eventId: number, keep: boolean, updatedAt: string): Promise<ContactEvent> {
+    const e = db.contactEvents.find((x) => x.contact_event_id === eventId);
+    if (!e || e.is_deleted || !isStaffUser(user) || !contactAccess(user, e.child_id).read) return fail(MSG.contactForbidden);
+    if (e.event_type !== '4' && e.event_type !== '5') return fail(MSG.badChoice);
+    if (!canKeepInGrowth(user, e.child_id, e.contact_date)) return fail(MSG.growthFixForbidden);
+    if (e.updated_at !== updatedAt) return fail(MSG.versionConflict);
+    if (e.keep_in_growth !== keep) {
+      const label = (v: boolean) => (v ? '残す' : '残さない');
+      const before = e.keep_in_growth;
+      e.keep_in_growth = keep;
+      e.updated_at = laterVersion(e.updated_at);
+      log(user.account_id, '8', '2', 't_contact_event', e.contact_event_id, e.child_id,
+        JSON.stringify({ 成長の記録に残す: label(before) }), JSON.stringify({ 成長の記録に残す: label(keep) }));
+      publishContactChild(e.child_id, EVENT_ITEM[e.event_type]);
+    }
+    return ok(eventView(e, true));
+  },
+
   /** 成長の記録（GET /api/children/{childID}/growth?before=）。before は前の応答の next_before */
   async growthRecord(user: SessionUser, childId: string, before?: string | null): Promise<GrowthRecord> {
     // 保護者は紐づけが有効か猶予中の自児。linked_at で切らない。職員も同じ関数の read で呼べる。

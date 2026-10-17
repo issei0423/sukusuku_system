@@ -389,3 +389,6 @@ button.guardian-record-link {
 /* 「ホームへ」も指で押せる高さにする（44px。基本設計書「画面基本構成」(3-5) のタップ領域） */
 .growth-page .contact-page-head > a { display: inline-flex; align-items: center; min-height: 44px; justify-self: start; }
 .growth-page .contact-page-head > p { margin: 0; }
+/* 職員：ひとこと・写真の行の「成長の記録に残す」（詳細設計書 (2-12 (1))）。指で押せる高さにする */
+.contact-keep-growth { display: inline-flex; align-items: center; gap: var(--sp-1); min-height: 44px; margin-left: var(--sp-2); }
+.contact-keep-growth input { width: 20px; height: 20px; }

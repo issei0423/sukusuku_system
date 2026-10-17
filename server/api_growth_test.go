@@ -332,3 +332,94 @@ func TestEnsureGrowthSchemaUpgradesOldDB(t *testing.T) {
 		}
 	}
 }
+
+// 「成長の記録に残す」の付け外し（詳細設計書 (4-12 (3))・「成長の記録に届くもの」(3-7)）
+func TestKeepInGrowth(t *testing.T) {
+	a, h := newTestApp(t)
+	teacher := loginAs(a, accTeacher, "staff")
+	admin := loginAs(a, accAdmin, "staff")
+	otherTeacher := loginAs(a, accOtherTeacher, "staff")
+	guardian := loginAs(a, accGuardian, "guardian")
+	insert := func(date, eventType, body string) (int64, string) {
+		at := date + "T09:00:00"
+		var res sql.Result
+		var err error
+		if eventType == "4" {
+			res, err = a.db.Exec(`INSERT INTO t_contact_event (child_id, class_id, contact_date, event_type, recorded_at, body, staff_id, created_at, updated_at)
+				VALUES ('C001', 1, ?, '4', ?, ?, 'S004', ?, ?)`, date, at, body, at, at)
+		} else {
+			res, err = a.db.Exec(`INSERT INTO t_contact_event (child_id, class_id, contact_date, event_type, recorded_at, meal_kind, meal_amount, staff_id, created_at, updated_at)
+				VALUES ('C001', 1, ?, '1', ?, '1', '1', 'S004', ?, ?)`, date, at, at, at)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		id, _ := res.LastInsertId()
+		return id, at
+	}
+	path := func(id int64) string { return "/api/contact/events/" + itoa(id) + "/keep-in-growth" }
+	body := func(keep bool, v string) string {
+		return fmt.Sprintf(`{"keep_in_growth":%v,"updated_at":"%s"}`, keep, v)
+	}
+	type eventResp struct {
+		Keep        bool    `json:"keep_in_growth"`
+		CorrectedAt *string `json:"corrected_at"`
+		UpdatedAt   string  `json:"updated_at"`
+	}
+
+	id, v := insert(today(), "4", "きょう残すひとこと")
+	// 記録した職員でなくても、その日はクラスの担任が付けられる。corrected_at は変えず、版は進む
+	var e eventResp
+	json.Unmarshal(call(t, h, teacher, "POST", path(id), body(true, v)).Body.Bytes(), &e)
+	if !e.Keep || e.CorrectedAt != nil || e.UpdatedAt == v || e.UpdatedAt == "" {
+		t.Fatalf("付けたあと: %+v", e)
+	}
+	if _, gb := readGrowth(t, h, guardian, "/api/children/C001/growth"); !strings.Contains(gb, "きょう残すひとこと") {
+		t.Errorf("成長の記録に並ばない: %s", gb)
+	}
+	var after string
+	a.db.QueryRow(`SELECT after_value FROM t_operation_log WHERE target_table = 't_contact_event' AND target_id = ? ORDER BY operation_log_id DESC LIMIT 1`, id).Scan(&after)
+	if !strings.Contains(after, `"成長の記録に残す":"残す"`) {
+		t.Errorf("操作ログ: %s", after)
+	}
+	// 読んだ版が古ければ 409
+	b := expectStatus(t, request(t, h, teacher, "POST", path(id), body(false, v)), http.StatusConflict)
+	if !strings.Contains(b, kindVersionConflict) || !strings.Contains(b, msgVersionConflict) {
+		t.Errorf("古い版: %s", b)
+	}
+	// 値が変わらなければ書き換えない（版も進まない）
+	var same eventResp
+	json.Unmarshal(call(t, h, teacher, "POST", path(id), body(true, e.UpdatedAt)).Body.Bytes(), &same)
+	if same.UpdatedAt != e.UpdatedAt {
+		t.Errorf("同じ値で版が進んだ: %s → %s", e.UpdatedAt, same.UpdatedAt)
+	}
+	// 外すと成長の記録から消える
+	call(t, h, teacher, "POST", path(id), body(false, e.UpdatedAt))
+	if _, gb := readGrowth(t, h, guardian, "/api/children/C001/growth"); strings.Contains(gb, "きょう残すひとこと") {
+		t.Errorf("外したのに成長の記録に残っている: %s", gb)
+	}
+
+	// 読めない職員・保護者は 403（連絡帳と同じ文言）。ひとこと・写真でない行は 400
+	for name, c := range map[string]*http.Cookie{"ひまわり組の担任": otherTeacher, "保護者": guardian} {
+		if b := expectStatus(t, request(t, h, c, "POST", path(id), body(true, "x")), http.StatusForbidden); !strings.Contains(b, msgContactForbidden) {
+			t.Errorf("%s: %s", name, b)
+		}
+	}
+	meal, mv := insert(today(), "1", "")
+	if b := expectStatus(t, request(t, h, teacher, "POST", path(meal), body(true, mv)), http.StatusBadRequest); !strings.Contains(b, msgBadChoice) {
+		t.Errorf("給食の行: %s", b)
+	}
+	// 前の日の行は管理者だけ
+	old, ov := insert(daysFromToday(-1), "4", "きのうのひとこと")
+	if b := expectStatus(t, request(t, h, teacher, "POST", path(old), body(true, ov)), http.StatusForbidden); !strings.Contains(b, msgGrowthFixForbidden) {
+		t.Errorf("前の日の担任: %s", b)
+	}
+	call(t, h, admin, "POST", path(old), body(true, ov))
+	// 取り消した行は 403
+	a.db.Exec(`UPDATE t_contact_event SET is_deleted = 1 WHERE contact_event_id = ?`, old)
+	expectStatus(t, request(t, h, admin, "POST", path(old), body(false, ov)), http.StatusForbidden)
+	// 保護者の連絡帳の応答には版を入れない
+	if b := call(t, h, guardian, "GET", "/api/contact/children/C001", "").Body.String(); strings.Contains(b, "updated_at\":\""+v) {
+		t.Errorf("保護者の応答に出来事の版が入っている: %s", b)
+	}
+}

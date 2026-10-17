@@ -211,3 +211,42 @@ describe('確定した日時（詳細設計書「成長の記録に届くもの�
     expect(find().finalized_at).toBe('2026-01-01T00:00:00');
   });
 });
+
+describe('「成長の記録に残す」の付け外し（詳細設計書 (4-12 (3))、server/api_growth_test.go の TestKeepInGrowth と同じ観点）', () => {
+  it('その日はクラスの担任が付け外しでき、corrected_at を変えず版を進める。古い版・読めない人・ひとこと以外・前の日の担任は断る', async () => {
+    const todayRow = keptComment(9501, today(), 'きょう残すひとこと', { keep_in_growth: false, staff_id: 'S004' });
+    const meal: ContactEventRecord = { ...keptComment(9502, today(), ''), event_type: '1', body: null, meal_kind: '1', meal_amount: '1', keep_in_growth: false };
+    const oldRow = keptComment(9503, day(-1), 'きのうのひとこと', { keep_in_growth: false });
+    const deleted = keptComment(9504, today(), '取り消したひとこと', { keep_in_growth: false, is_deleted: true });
+    await withRows(db.contactEvents, [todayRow, meal, oldRow, deleted], async () => {
+      const v = todayRow.updated_at;
+      const saved = await api.keepInGrowth(teacher, 9501, true, v);
+      expect(saved.keep_in_growth).toBe(true);
+      expect(saved.corrected_at).toBeNull();
+      expect(saved.updated_at).not.toBe(v);
+      expect(JSON.stringify(await api.growthRecord(taroGuardian, 'C001'))).toContain('きょう残すひとこと');
+      const lastLog = db.operationLogs[0]; // 新しいものが先頭
+      expect(lastLog.after_value).toBe(JSON.stringify({ 成長の記録に残す: '残す' }));
+
+      await expect(api.keepInGrowth(teacher, 9501, false, v)).rejects.toThrow(MSG.versionConflict);
+      const same = await api.keepInGrowth(teacher, 9501, true, saved.updated_at!);
+      expect(same.updated_at).toBe(saved.updated_at);
+      await api.keepInGrowth(teacher, 9501, false, saved.updated_at!);
+      expect(JSON.stringify(await api.growthRecord(taroGuardian, 'C001'))).not.toContain('きょう残すひとこと');
+
+      await expect(api.keepInGrowth(otherTeacher, 9501, true, todayRow.updated_at)).rejects.toThrow(MSG.contactForbidden);
+      await expect(api.keepInGrowth(taroGuardian, 9501, true, todayRow.updated_at)).rejects.toThrow(MSG.contactForbidden);
+      await expect(api.keepInGrowth(teacher, 9502, true, meal.updated_at)).rejects.toThrow(MSG.badChoice);
+      await expect(api.keepInGrowth(teacher, 9503, true, oldRow.updated_at)).rejects.toThrow(MSG.growthFixForbidden);
+      await expect(api.keepInGrowth(admin, 9503, true, oldRow.updated_at)).resolves.toMatchObject({ keep_in_growth: true });
+      await expect(api.keepInGrowth(admin, 9504, true, deleted.updated_at)).rejects.toThrow(MSG.contactForbidden);
+    });
+  });
+
+  it('保護者の連絡帳の応答には出来事の版を入れない', async () => {
+    const page = await api.contactPage(taroGuardian, 'C001');
+    expect(page.events.every((e) => e.updated_at === undefined)).toBe(true);
+    const staffPage = await api.contactPage(teacher, 'C001');
+    expect(staffPage.events.every((e) => typeof e.updated_at === 'string')).toBe(true);
+  });
+});

@@ -57,6 +57,8 @@ type contactEventOut struct {
 	StaffName      string   `json:"staff_name,omitempty"` // 職員の応答だけ
 	CorrectedAt    *string  `json:"corrected_at"`
 	IsDeleted      bool     `json:"is_deleted"`
+	// 職員の応答だけ。訂正のときに読んだ版として送り返す（詳細設計書「訂正・取り消し」(4-7 (1))）
+	UpdatedAt string `json:"updated_at,omitempty"`
 }
 
 type contactClassOut struct {
@@ -166,7 +168,7 @@ func (a *app) homeView(h *contactHomeRow, staff bool) *contactHomeOut {
 
 func (a *app) loadContactEvents(childID, date string, staff bool) ([]contactEventOut, error) {
 	rows, err := a.db.Query(`SELECT contact_event_id, child_id, contact_date, event_type, recorded_at, meal_kind, meal_amount,
-		toilet_label, temperature, body, contact_photo_id, keep_in_growth, staff_id, corrected_at, is_deleted
+		toilet_label, temperature, body, contact_photo_id, keep_in_growth, staff_id, corrected_at, is_deleted, updated_at
 		FROM t_contact_event WHERE child_id = ? AND contact_date = ? AND is_deleted = 0
 		ORDER BY recorded_at, contact_event_id`, childID, date)
 	if err != nil {
@@ -179,7 +181,7 @@ func (a *app) loadContactEvents(childID, date string, staff bool) ([]contactEven
 		var e contactEventOut
 		var staffID string
 		if err := rows.Scan(&e.ID, &e.ChildID, &e.ContactDate, &e.EventType, &e.RecordedAt, &e.MealKind, &e.MealAmount,
-			&e.ToiletLabel, &e.Temperature, &e.Body, &e.ContactPhotoID, &e.KeepInGrowth, &staffID, &e.CorrectedAt, &e.IsDeleted); err != nil {
+			&e.ToiletLabel, &e.Temperature, &e.Body, &e.ContactPhotoID, &e.KeepInGrowth, &staffID, &e.CorrectedAt, &e.IsDeleted, &e.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, e)
@@ -190,9 +192,11 @@ func (a *app) loadContactEvents(childID, date string, staff bool) ([]contactEven
 	}
 	rows.Close()
 	// 名前はカーソルを閉じたあとに引く（接続は1本）
-	if staff {
-		for i := range out {
+	for i := range out {
+		if staff {
 			out[i].StaffName = a.staffName(staffIDs[i])
+		} else {
+			out[i].UpdatedAt = ""
 		}
 	}
 	return out, nil

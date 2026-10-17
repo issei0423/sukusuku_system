@@ -33,6 +33,12 @@ export const MSG = {
   excludedTwice: 'すでに対象外になっています。画面を読み込み直してください。',
   /** 参照できない成長の記録（存在しない園児と同じ文言。詳細設計書「成長の記録」(4-12 (1))） */
   growthForbidden: 'この園児の成長の記録は開けません。',
+  /** 直せない人の付け外し（基本設計書「メッセージ一覧」(4-12)。server/messages.go の msgGrowthFixForbidden） */
+  growthFixForbidden: 'この記録を直せるのは、その日はクラスの担任、翌日以降は管理者です。管理者へご依頼ください。',
+  /** 読んだ版が古い（server/messages.go の msgVersionConflict） */
+  versionConflict: '他の職員が更新しています。内容を再読み込みしてください。',
+  /** 保護者へのひとことが長すぎる（詳細設計書 (4-12 (2))） */
+  guardianMessageTooLong: '保護者へのひとことは500文字以内で入力してください。',
 } as const;
 
 /* ---- 画面の文言（図/画面詳細図「連絡帳画面」(8-3)・「連絡帳（クラス）画面」(8-1)、詳細設計書 2章） ---- */
@@ -65,6 +71,11 @@ export const TEXT = {
   growthNoMeasurement: 'まだ測った値はありません',
   growthNoBirthDate: '生年月日が未登録のためグラフを表示できません',
   growthNoSex: '性別が未回答のため成長曲線を表示できません',
+  /** 「成長の記録に残す」（詳細設計書「職員の画面から成長の記録へ届けるもの」(2-12 (1))） */
+  keepInGrowth: '成長の記録に残す',
+  keptInGrowth: '成長の記録に残しました。',
+  removedFromGrowth: '成長の記録から外しました。',
+  keptInGrowthReadOnly: '成長の記録に残しています',
   growthSource: '基準は厚生労働省「平成22年乳幼児身体発育調査」の公表値です。2歳以上は6か月ごとの公表値を、月ごとに補間しています。',
 } as const;
 

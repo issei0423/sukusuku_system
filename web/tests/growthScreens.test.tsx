@@ -14,6 +14,11 @@ import { SessionProvider } from '../src/session';
 import type { ContactEventRecord, SessionUser } from '../src/api/types';
 import * as db from '../src/api/mockDb';
 import { addDays, today } from '../src/api/util';
+import { api } from '../src/api/client';
+import { useSession } from '../src/session';
+import { useAsync } from '../src/hooks';
+import { ToastHost } from '../src/components/feedback';
+import TodayTimeline from '../src/screens/contact/TodayTimeline';
 
 const guardian: SessionUser = {
   account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
@@ -121,5 +126,61 @@ describe('入口（保護者ホームの区画・メニュー）', () => {
     fireEvent.click(screen.getByRole('button', { name: 'メニューを開く' }));
     const menu = screen.getByRole('dialog', { name: 'メニュー' });
     expect(within(menu).getByRole('link', { name: '野原 太郎の成長の記録' }).getAttribute('href')).toBe('/guardian/growth/C001');
+  });
+});
+
+const teacher: SessionUser = {
+  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
+  is_temp_password: false, terms_agreed: true,
+};
+
+/** 職員の画面に置いたときのきょうのようす（連絡帳（園児）画面は PR #200 にあるため、部品だけで確かめる） */
+function StaffTimeline({ canFix }: { canFix: boolean }) {
+  const { user } = useSession();
+  const page = useAsync(() => api.contactPage(user!, 'C001'), [user?.account_id]);
+  if (!page.data) return null;
+  return <TodayTimeline page={page.data} viewer="staff" keepInGrowth={{ canFix, onChanged: page.refresh }} />;
+}
+
+describe('「成長の記録に残す」（職員のきょうのようすの行。詳細設計書 (2-12 (1))）', () => {
+  it('直せる人はチェックで付け外しでき、サーバの結果だけを出す（楽観的更新をしない）', async () => {
+    const at = `${today()}T09:05:00`;
+    const row: ContactEventRecord = {
+      contact_event_id: 9401, child_id: 'C001', class_id: 1, contact_date: today(), event_type: '4', recorded_at: at,
+      meal_kind: null, meal_amount: null, toilet_label: null, temperature: null, body: '積み木を高く積みました', contact_photo_id: null,
+      keep_in_growth: false, staff_id: 'S003', corrected_at: null, is_deleted: false, created_at: at, updated_at: at,
+    };
+    db.contactEvents.push(row);
+    try {
+      render(<MemoryRouter><SessionProvider initialUser={teacher}><StaffTimeline canFix /><ToastHost /></SessionProvider></MemoryRouter>);
+      const box = await screen.findAllByRole('checkbox', { name: '成長の記録に残す' }, { timeout: 3000 });
+      const target = box.find((b) => b.closest('li')?.textContent?.includes('積み木を高く積みました'))!;
+      expect((target as HTMLInputElement).checked).toBe(false);
+      fireEvent.click(target);
+      expect(await screen.findByText('成長の記録に残しました。', undefined, { timeout: 3000 })).toBeTruthy();
+      expect(row.keep_in_growth).toBe(true);
+      expect(row.corrected_at).toBeNull();
+    } finally {
+      db.contactEvents.splice(db.contactEvents.indexOf(row), 1);
+    }
+  });
+
+  it('直せない人には押せる部品を出さず、残しているものに「成長の記録に残しています」とだけ出す', async () => {
+    const at = `${today()}T09:06:00`;
+    const row: ContactEventRecord = {
+      contact_event_id: 9402, child_id: 'C001', class_id: 1, contact_date: today(), event_type: '4', recorded_at: at,
+      meal_kind: null, meal_amount: null, toilet_label: null, temperature: null, body: '砂山を作りました', contact_photo_id: null,
+      keep_in_growth: true, staff_id: 'S003', corrected_at: null, is_deleted: false, created_at: at, updated_at: at,
+    };
+    db.contactEvents.push(row);
+    try {
+      render(<MemoryRouter><SessionProvider initialUser={teacher}><StaffTimeline canFix={false} /></SessionProvider></MemoryRouter>);
+      const item = (await screen.findByText(/砂山を作りました/, undefined, { timeout: 3000 })).closest('li')!;
+      expect(within(item).queryByRole('checkbox')).toBeNull();
+      expect(item.textContent).toContain('成長の記録に残しています');
+    } finally {
+      db.contactEvents.splice(db.contactEvents.indexOf(row), 1);
+    }
   });
 });
