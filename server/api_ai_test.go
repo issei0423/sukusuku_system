@@ -210,9 +210,12 @@ func TestAiDraftSendsNoNamesAndRestores(t *testing.T) {
 	if facts.Memo != "おともだちとしゃぼん玉を追いかけた。電話は （伏せました）、メールは （伏せました）" {
 		t.Errorf("メモの置き換え: %q", facts.Memo)
 	}
+	// テストで入れた 0 時台の記録だけを見る（本物の時計で動くため、昼すぎに回すとデモの今日の記録も入る）
 	whats := []string{}
 	for _, r := range facts.Records {
-		whats = append(whats, r.Time+" "+r.What+" "+r.Amount+r.Woke+" "+r.Text)
+		if r.Time < "01:00" {
+			whats = append(whats, r.Time+" "+r.What+" "+r.Amount+r.Woke+" "+r.Text)
+		}
 	}
 	want := []string{
 		"00:10 給食 ぜんぶ ",
