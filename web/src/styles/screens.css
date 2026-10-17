@@ -131,6 +131,7 @@
 .nap-row-actions { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .nap-row-actions .spacer { flex: 1; }
 .nap-row-actions > button { min-height: 52px; }
+
 .nap-temperature-button { min-width: 145px; justify-content: flex-start; }
 
 /* 体温は実測したときだけ選ぶ。選択パネルは画面の下側に置く。 */
@@ -267,3 +268,93 @@ button.guardian-record-link {
   padding: var(--sp-4); text-align: center; background: var(--c-surface-sub);
 }
 .handout-preview .name { font-weight: 700; word-break: break-all; }
+
+/*
+ * 連絡帳（screens/contact/）と、午睡チェックの行の「ねた・おきた」（screens/nap/SleepControls.tsx）
+ * 典拠：詳細設計書「全画面に共通する部品と決まり」(2-0)（押せるものは 44×44px 以上、隣り合うボタンの間は 8px 以上、
+ *      表の行の高さは 56px 以上）・「配置の基準」(2-0 (5))（職員 1180×820・保護者 幅 360px）、
+ *      「連絡帳（クラス）画面」(2-2)・「保護者ホーム」(2-5)・「連絡帳画面（保護者）」(2-6)
+ * 体温・午睡の長さに判定の色を付けない。
+ */
+.nap-sleep-controls { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); }
+.nap-sleep-state { font-weight: 700; }
+.nap-sleep-button { min-height: 52px; min-width: 120px; }
+.nap-sleep-error { color: var(--c-alert); font-size: var(--fs-small); }
+.nap-card.is-excluded .nap-inline-fields,
+.nap-card.is-excluded .nap-row-actions { opacity: .45; }
+
+/* 保護者：連絡帳画面（幅 360px で1列） */
+.contact-page { max-width: 720px; margin: 0 auto; display: grid; gap: var(--sp-4); }
+.contact-page-head {
+  position: sticky; top: 0; z-index: 2; display: grid; gap: var(--sp-2);
+  padding: var(--sp-2) 0; background: var(--c-bg, var(--c-surface));
+}
+.contact-page-head h1 { font-size: 22px; margin: 0; }
+.contact-date { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.contact-date button { min-height: 44px; min-width: 44px; }
+.contact-section { display: grid; gap: var(--sp-3); }
+.contact-section h2 { font-size: 18px; margin: 0; }
+.contact-home-lines { display: grid; gap: var(--sp-1); margin: 0; }
+.contact-home-lines > div { display: grid; grid-template-columns: 6.5em 1fr; gap: var(--sp-2); }
+.contact-home-lines dt { font-weight: 700; color: var(--c-text-weak); }
+.contact-home-lines dd { margin: 0; overflow-wrap: anywhere; }
+.contact-home-lines .is-marked dt { color: var(--c-primary-ink); }
+.contact-confirmed { font-weight: 700; color: var(--dads-green-900); }
+.contact-call { font-weight: 700; }
+.contact-wide-button { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 48px; }
+.contact-home-form { display: grid; gap: var(--sp-3); }
+.contact-choice-options { flex-wrap: wrap; }
+.contact-choice-options .nap-choice { flex: 1 1 calc(50% - var(--sp-1)); min-width: 7em; }
+.contact-field { display: grid; gap: var(--sp-1); }
+.contact-field > span:first-child { font-weight: 700; font-size: var(--fs-small); }
+.contact-field select, .contact-field input { min-height: 44px; }
+.contact-field textarea { display: block; width: 100%; min-height: 96px; }
+.contact-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); }
+.contact-count { justify-self: end; font-size: var(--fs-small); }
+.contact-pickup { display: grid; gap: var(--sp-2); padding-left: var(--sp-2); border-left: 3px solid var(--c-border); }
+.contact-error { color: var(--c-alert); font-weight: 700; }
+/* 送るボタンは画面の下端に止める（詳細設計書「配置（幅 360px）」(2-6 (2))） */
+.contact-form-actions {
+  position: sticky; bottom: 0; display: flex; gap: var(--sp-2); padding: var(--sp-2) 0;
+  background: var(--c-surface);
+}
+.contact-form-actions button { min-height: 48px; }
+.contact-form-actions .btn-primary { flex: 1; }
+.contact-timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); }
+.contact-timeline li { display: flex; align-items: baseline; gap: var(--sp-2); }
+.contact-timeline time { flex: 0 0 3.2em; font-variant-numeric: tabular-nums; font-weight: 700; }
+.contact-timeline .is-nap { font-weight: 700; font-size: 1.1rem; }
+.contact-timeline-heading { display: block; font-size: var(--fs-small); }
+.contact-timeline-text { flex: 1; overflow-wrap: anywhere; }
+.contact-new { flex: none; }
+.contact-nap { font-size: 1.15rem; font-weight: 700; margin: 0; }
+.contact-nap-note { font-size: var(--fs-small); }
+
+/* 保護者ホームの「きょう」 */
+.contact-today-card { display: grid; gap: var(--sp-3); }
+.contact-today-name { font-size: 20px; }
+.contact-today-block { display: grid; gap: var(--sp-1); }
+.contact-today-block h3 { font-size: 16px; margin: 0; }
+.contact-today-block p { margin: 0; }
+.contact-latest { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1); }
+.contact-latest time { font-weight: 700; margin-right: var(--sp-1); }
+.contact-today-links { display: grid; gap: var(--sp-2); }
+
+/* 職員：連絡帳（クラス）画面。園児名の列を左に止め、表の中だけを横に送る（詳細設計書 (2-2 (2))） */
+.contact-class-head { flex-wrap: wrap; gap: var(--sp-3); }
+.contact-inline-field { display: inline-flex; align-items: center; gap: var(--sp-1); }
+.contact-inline-field > span { white-space: nowrap; }
+.contact-inline-field select { min-height: 44px; }
+.contact-class-error { margin: var(--sp-2) 0; }
+.contact-table-wrap { overflow-x: auto; }
+.contact-class-table { min-width: 1080px; }
+.contact-class-table th, .contact-class-table td { vertical-align: top; padding: var(--sp-2) var(--sp-3); height: 56px; }
+.contact-class-table .contact-col-child {
+  position: sticky; left: 0; z-index: 1; min-width: 160px; background: var(--c-surface); text-align: left;
+}
+.contact-class-table .contact-col-home { width: 240px; min-width: 240px; }
+.contact-home-cell { display: grid; gap: var(--sp-1); }
+.contact-home-cell p { margin: 0; }
+.contact-home-cell .contact-home-lines > div { grid-template-columns: 5.5em 1fr; }
+.contact-confirm-button { min-height: 44px; }
+.dashboard-count.is-due { font-weight: 700; color: var(--c-alert); }

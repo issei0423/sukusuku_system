@@ -12,7 +12,8 @@ import { useAsync, AUTO_REFRESH_MS } from '../hooks';
 import { onLive } from '../live';
 import { api, settingText } from '../api/client';
 import { BellIcon } from '../components/ui';
-import { ConfirmDialog } from '../components/feedback';
+import { ConfirmDialog, ToastHost } from '../components/feedback';
+import ConnectionBanner from '../components/ConnectionBanner';
 import { UnsavedInputContext, useUnsavedInputTracker } from '../unsavedInput';
 
 export default function GuardianLayout() {
@@ -123,6 +124,8 @@ export default function GuardianLayout() {
       )}
 
       <main className="guardian-main" tabIndex={-1}>
+        {/* 知らせが切れている・サーバに届かないときの帯（詳細設計書「つながっているかの表示」(2-8)） */}
+        <ConnectionBanner audience="guardian" />
         <UnsavedInputContext.Provider value={unsaved.report}>
           <Outlet />
         </UnsavedInputContext.Provider>
@@ -137,6 +140,8 @@ export default function GuardianLayout() {
         <span>緊急のご連絡はお電話でお願いします</span>
         {phone && <a href={`tel:${phone.replace(/[^0-9+]/g, '')}`}>{phone}</a>}
       </footer>
+      {/* 押した結果の表示。保護者のレイアウトにも置く（詳細設計書「共通の部品」(2-0 (1))、決めたこと D-21） */}
+      <ToastHost />
     </div>
   );
 }
