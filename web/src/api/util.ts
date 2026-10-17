@@ -103,6 +103,34 @@ export function addDays(iso: string, days: number): string {
   return toISODate(new Date(y, m - 1, d + days));
 }
 
+/**
+ * 日本時間の日時の文字列 'YYYY-MM-DDTHH:MM:SS' を、その時刻のエポックミリ秒にする
+ *
+ * サーバ・モックが返す日時は時差の印を持たない日本時間である。new Date(文字列) で読むと端末の現地時刻として
+ * 読まれ、日本時間以外の端末では時差のぶんだけずれる（MOCKUP.md「日本標準時（JST）に固定している」、GitHub Issue #165）。
+ * 端末の時計（Date.now()）と比べるときは、必ずこの関数を通す。
+ */
+export function jstMs(isoDateTime: string): number {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(isoDateTime);
+  if (!m) return NaN;
+  const [y, mo, d, h, mi, sec] = m.slice(1).map((v) => Number(v ?? 0));
+  return Date.UTC(y, mo - 1, d, h, mi, sec) - JST_OFFSET_MINUTES * 60 * 1000;
+}
+
+/** 'YYYY-MM-DD' を「2026年10月」の形にする。身体測定の測定回（年月）を示すときに使う */
+export function formatYM(iso: string): string {
+  const [y, m] = parts(iso);
+  return `${y}年${m}月`;
+}
+
+/**
+ * 小数第1位までで表せる数か（体温。基本設計書「入力項目の制約値」(4-9)「小数第1位まで」）。
+ * 浮動小数の誤差（36.7 が 36.700000000000003 になるなど）は許す。サーバ側（server/api_nap.go の oneDecimal）と同じ規則
+ */
+export function isOneDecimal(v: number): boolean {
+  return Number.isFinite(v) && Math.abs(v * 10 - Math.round(v * 10)) < 1e-6;
+}
+
 /** サーバ時刻の代わり。モックでは端末の時計を JST に直して用いる */
 export function now(): string {
   const d = jstNow();

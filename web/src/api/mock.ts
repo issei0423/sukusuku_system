@@ -21,7 +21,7 @@ import type {
 } from './types';
 import {
   ageInMonths, now, today, addDays, plusMinutes, fromNowMinutes, napAutoCloseAt, normalizeInvitationCode, validateEmail,
-  validateNewPassword, isRealDate, validateStaffAccountInput,
+  validateNewPassword, isRealDate, validateStaffAccountInput, formatYM, isOneDecimal,
 } from './util';
 import { BODY_POSITION, BREATHING, COMPLEXION, REACTION, HANDOUT_TYPE, SEX, PHOTO_CONSENT } from './codes';
 import {
@@ -1490,6 +1490,9 @@ export const napApi = {
     if (!(input.body_position in BODY_POSITION)) return fail('体位を選んでください');
     if (!(input.breathing in BREATHING)) return fail('呼吸を選んでください');
     if (!(input.complexion in COMPLEXION)) return fail('顔色を選んでください');
+    // 体温は小数第1位まで。範囲（30.0〜43.0℃）の外は画面で確かめるだけで、記録は妨げない
+    // （基本設計書「入力項目の制約値」(4-9)。GitHub Issue #165）。サーバ側は server/api_nap.go の handleNapRecord
+    if (input.temperature !== null && !isOneDecimal(input.temperature)) return fail('体温は小数第1位までで入力してください');
     if (!canSeeChild(user, input.child_id)) return fail('この園児を記録する権限がありません');
     // 終了した実施へは記録しない。自動で解除された直後に、開いたままの画面から記録が付くのを防ぐ
     // （GitHub Issue #97）
@@ -1497,6 +1500,10 @@ export const napApi = {
     const session = db.napSessions.find((x) => x.nap_session_id === sessionId);
     if (!session) return fail('午睡チェックが見つかりません');
     if (!canUseClass(user, session.class_id)) return fail('このクラスの午睡チェックを記録する権限がありません');
+    // 記録は、その園児のクラスの実施に付ける。管理者でも、ほかのクラスの園児を付けさせない（異常時の記録と同じ。GitHub Issue #158）
+    if (!db.classChildren.some((cc) => cc.class_id === session.class_id && cc.child_id === input.child_id)) {
+      return fail('この園児のクラスの午睡チェックではありません。園児のクラスの午睡チェックへ記録してください');
+    }
     if (session.ended_at !== null) return fail('この午睡チェックは終了しています。画面を読み込み直してください');
     const r: NapRecord = {
       nap_record_id: nextId(), nap_session_id: sessionId, child_id: input.child_id,
@@ -1896,14 +1903,22 @@ const devApi2 = {
 /* ============ 身体測定（基本設計書「身体測定の記録」(4-8)） ============ */
 
 export const physicalApi = {
-  /** クラスの実施状況。誰が残っているかを数えさせない（画面詳細図 6-2） */
+  /**
+   * クラスの実施状況。誰が残っているかを数えさせない（画面詳細図 6-2）
+   * 入力済みは、選んだ測定日と同じ年月に未削除の記録があるかで見る。測定日が数日ずれても同じ回として扱う
+   * （基本設計書「身体測定の記録」(4-8)「選択中の測定日と同一の年月」・「測定回の単位は年月とする」。GitHub Issue #47・#165）。
+   * サーバ側は server/api_physical.go の handlePhysicalClassStatus
+   */
   async classStatus(user: SessionUser, classId: number, measuredOn: string) {
+    const day = measuredOn || today();
+    if (!isISODate(day)) return fail('測定日の形式が正しくありません');
     const ids = new Set(db.classChildren.filter((cc) => cc.class_id === classId).map((cc) => cc.child_id));
     const target = visibleChildren(user)
       .filter((c) => ids.has(c.child_id))
       .sort((a, b) => a.child_name_kana.localeCompare(b.child_name_kana, 'ja'));
+    const month = day.slice(0, 7);
     const done = target.filter((c) => db.physicalRecords.some(
-      (r) => !r.is_deleted && r.child_id === c.child_id && r.measured_on === measuredOn));
+      (r) => !r.is_deleted && r.child_id === c.child_id && r.measured_on.slice(0, 7) === month));
     const pending = target.filter((c) => !done.includes(c));
     return ok({ target, done, pending });
   },
@@ -1923,19 +1938,44 @@ export const physicalApi = {
   /**
    * 登録・修正。確認画面を挟まず連続して入力できる（画面詳細図 6-2）
    * 範囲外の値は警告して確認を求めるが、記録自体は妨げない（判定ではないため）
+   *
+   * 登録済みの記録を黙って書き換えない。同一園児・同一測定日の記録は、上書きの承諾（confirm_overwrite）があるときだけ
+   * 書き換える（基本設計書「身体測定の記録」(4-8)「上書き確認を表示する」）。
+   * 【仮置き】同じ年月の別の測定日に記録があるときは、同じ月の別の記録としての承諾（confirm_same_month）があるときだけ
+   * 登録する（web/仮置き値.md、GitHub Issue #165）。承諾は確認の種類ごとに受け付け、一方の承諾で他方を通さない
+   * （同 (4-8)「確認の種類ごとに、対応する承諾だけを受け付ける」）。サーバ側は server/api_physical.go の handleSavePhysical
    */
   async save(
     user: SessionUser,
-    input: { child_id: string; measured_on: string; height_cm: number; weight_kg: number },
+    input: {
+      child_id: string; measured_on: string; height_cm: number; weight_kg: number;
+      confirm_overwrite?: boolean; confirm_same_month?: boolean;
+    },
   ): Promise<PhysicalRecord> {
     if (user.role === '3') return fail('身体測定の記録は職員のみが行えます');
     if (!canSeeChild(user, input.child_id)) return fail('この園児を記録する権限がありません');
+    // 崩れた測定日を保存すると、年月で数える実施状況や月齢の計算が狂う（基本設計書「入力項目の制約値」(4-9)）
+    if (!input.measured_on) return fail('測定日は必須項目です');
+    if (!isISODate(input.measured_on)) return fail('測定日の形式が正しくありません');
     if (input.measured_on > today()) return fail('測定日に未来日は指定できません');
     if (!(input.height_cm > 0) || !(input.weight_kg > 0)) return fail('身長と体重を入力してください');
 
     // child_id + measured_on は is_deleted=false の行のみを対象に一意（基本設計書 5-7）
     const existing = db.physicalRecords.find(
       (r) => !r.is_deleted && r.child_id === input.child_id && r.measured_on === input.measured_on);
+    if (existing && !input.confirm_overwrite) {
+      return fail('この測定日の記録は登録済みです。内容を確かめ、上書きするときはもう一度「登録する」を押してください');
+    }
+    if (!existing && !input.confirm_same_month) {
+      const month = input.measured_on.slice(0, 7);
+      const other = db.physicalRecords
+        .filter((r) => !r.is_deleted && r.child_id === input.child_id && r.measured_on.slice(0, 7) === month)
+        .sort((a, b) => b.measured_on.localeCompare(a.measured_on))[0];
+      if (other) {
+        return fail(`${formatYM(input.measured_on)}の記録は登録済みです（測定日 ${other.measured_on.replace(/-/g, '/')}）。`
+          + '内容を確かめ、別の記録として登録するときはもう一度「登録する」を押してください');
+      }
+    }
 
     if (existing) {
       const before = `身長=${existing.height_cm} 体重=${existing.weight_kg}`;

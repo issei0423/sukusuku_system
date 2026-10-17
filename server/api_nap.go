@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"log"
+	"math"
 	"net/http"
 	"strings"
 )
@@ -341,6 +342,13 @@ func (a *app) handleNapRecord(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "顔色を選んでください")
 		return
 	}
+	// 体温は小数第1位まで。範囲（30.0〜43.0℃）の外は画面で確かめるだけで、記録は妨げない
+	// （基本設計書「入力項目の制約値」(4-9)「体温　30.0〜43.0℃、小数第1位まで」「範囲外でも入力を妨げず、確認を促すだけ」。
+	// GitHub Issue #165）。画面側のモック（web/src/api/mock.ts の record）と同じ規則
+	if req.Temperature != nil && !oneDecimal(*req.Temperature) {
+		writeErr(w, http.StatusBadRequest, "体温は小数第1位までで入力してください")
+		return
+	}
 	if !a.canSeeChild(u, req.ChildID) {
 		writeForbidden(w, "この園児を記録する権限がありません")
 		return
@@ -361,6 +369,18 @@ func (a *app) handleNapRecord(w http.ResponseWriter, r *http.Request) {
 		writeForbidden(w, "このクラスの午睡チェックを記録する権限がありません")
 		return
 	}
+	// 記録は、その園児のクラスの実施に付ける。管理者でも、ほかのクラスの園児を付けさせない
+	// （異常時の記録と同じ。GitHub Issue #158・#165）
+	var inClass int
+	if err := a.db.QueryRow(`SELECT COUNT(*) FROM t_class_child WHERE class_id = ? AND child_id = ?`,
+		sessionClass, req.ChildID).Scan(&inClass); err != nil {
+		writeErr(w, http.StatusInternalServerError, "記録に失敗しました")
+		return
+	}
+	if inClass == 0 {
+		writeErr(w, http.StatusBadRequest, "この園児のクラスの午睡チェックではありません。園児のクラスの午睡チェックへ記録してください")
+		return
+	}
 	if endedAt.Valid {
 		writeErr(w, http.StatusConflict, "この午睡チェックは終了しています。画面を読み込み直してください")
 		return
@@ -379,6 +399,14 @@ func (a *app) handleNapRecord(w http.ResponseWriter, r *http.Request) {
 		s("体位="+req.BodyPosition+" 呼吸="+req.Breathing+" 顔色="+req.Complexion))
 
 	writeJSON(w, http.StatusOK, a.latestNapRecord(sessionID, req.ChildID))
+}
+
+// oneDecimal は、値が小数第1位までで表せるかを返す。浮動小数の誤差（36.7 が 36.700000000000003 になるなど）は許す
+func oneDecimal(v float64) bool {
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return false
+	}
+	return math.Abs(v*10-math.Round(v*10)) < 1e-6
 }
 
 // oneOf は値が選択肢のいずれかであるかを返す
