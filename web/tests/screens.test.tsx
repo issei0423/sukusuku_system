@@ -7,7 +7,7 @@
  * データの読み込みは非同期のため、読み込み完了まで待ってから内容を検査する。
  */
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
-import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, fireEvent, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import App from '../src/App';
 import { SessionProvider } from '../src/session';
@@ -308,19 +308,30 @@ describe('チャット画面の表示', () => {
     expect(screen.queryByText('取消')).toBeNull();
     expect(screen.queryByText('リアクション')).toBeNull();
 
+    /*
+     * 長押しの時間は、偽のタイマーで進める。本物の時間（0.9 秒・0.8 秒）を待つと、負荷の高いときに
+     * テストが長くなるうえ、長押しのタイマーと waitFor の時間切れが同じ回にまとめて来て、
+     * 一覧を描く前に時間切れになることがある。
+     * ここから先は setTimeout も偽物になり、waitFor・findBy の待ちも止まるため使わない。
+     * 進めた時間の中で起きた描画と effect は act の中で済ませ、そのまま見る
+     */
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+
     // 押してすぐ離したときは開かない
     const mine = document.querySelector('.msg.mine .bubble.pressable')!;
     fireEvent.pointerDown(mine, { button: 0, clientX: 10, clientY: 10 });
     fireEvent.pointerUp(mine);
-    await new Promise((r) => setTimeout(r, 900));
+    act(() => { vi.advanceTimersByTime(900); });
     expect(screen.queryByRole('group', { name: 'メッセージの操作' })).toBeNull();
 
     // 0.8秒押し続けると、リアクション・編集・取消の3つが出る
     fireEvent.pointerDown(mine, { button: 0, clientX: 10, clientY: 10 });
-    await waitFor(() => { expect(screen.getByRole('group', { name: 'メッセージの操作' })).toBeTruthy(); }, { timeout: 2000 });
-    // 一覧の外を押したときに閉じる仕組みは、開いたあとの effect で付く。最初の操作へフォーカスが移ったら付いている。
-    // 長押しはタイマーで開くため、待たずに続けると、負荷の高い CI では付く前に外を押してしまうことがある
-    await waitFor(() => { expect(document.activeElement?.getAttribute('aria-label')).toBe('了解'); });
+    act(() => { vi.advanceTimersByTime(799); });
+    expect(screen.queryByRole('group', { name: 'メッセージの操作' })).toBeNull();
+    act(() => { vi.advanceTimersByTime(1); });
+    expect(screen.getByRole('group', { name: 'メッセージの操作' })).toBeTruthy();
+    // 開いたら最初の操作へフォーカスが移る。一覧の外を押したときに閉じる仕組みも、同じ effect で付いている
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('了解');
     expect(screen.getByRole('button', { name: '了解' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '編集' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '取消' })).toBeTruthy();
@@ -334,7 +345,7 @@ describe('チャット画面の表示', () => {
 
     // 一覧の外を押すと閉じる
     fireEvent.pointerDown(document.body);
-    await waitFor(() => { expect(screen.queryByRole('group', { name: 'メッセージの操作' })).toBeNull(); });
+    expect(screen.queryByRole('group', { name: 'メッセージの操作' })).toBeNull();
   });
 
   it('保護者：相手のメッセージの長押しでは、リアクションだけを出す', async () => {
