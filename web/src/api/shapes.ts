@@ -6,7 +6,7 @@
  * 形の定義は本ファイルの1か所に置く。
  */
 import type {
-  Account, Child, ChatRoom, Diary, DevelopmentItem, GuardianChild, NapRecord, NapSession,
+  Account, Child, ChatRoom, DevelopmentItem, GuardianChild, NapRecord, NapSession,
   DiaryRecordType, DiaryStatus, InvitationStatus, Role, FunctionType, OperationType,
   DevelopmentCheck, DevelopmentResultRecord, MealAmount, ContactEventType,
 } from './types';
@@ -73,7 +73,7 @@ export interface DiaryTemplate {
   record_type: DiaryRecordType;
   template_name: string;
   body: string;
-  default_share_to_guardian: boolean;
+  is_deleted: boolean;
 }
 
 /** チャンネル。未読件数と投稿可否を添える（図/画面詳細図.md 4-1） */
@@ -265,8 +265,6 @@ export interface GuardianHomeRow {
   child: Child;
   ageMonths: number;
   className: string;
-  /** 承認済みかつ共有指定のあるものだけ */
-  sharedDiaries: Diary[];
   unread: number;
   /** 園児1人の「きょう」（詳細設計書「ダッシュボード」(4-8 (1))） */
   today: GuardianToday;

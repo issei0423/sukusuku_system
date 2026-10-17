@@ -344,14 +344,22 @@ run('Go サーバとの結合', () => {
     expect((await http.api.handouts(dummy)).some((h) => h.handout_id === handout_id)).toBe(false);
   });
 
-  it('保護者が開く共有日誌には、記入者の氏名が載る（職員IDではない）', async () => {
+  /*
+   * 日誌は園内の記録で、保護者には返さない（詳細設計書「日誌」(4-13)）。以前の版で保護者へ共有した
+   * 自児の承認済みの日誌（日誌 5）も、本物のサーバが 403 で断る。職員には作成者・承認者の氏名が載る
+   */
+  it('保護者には日誌を返さず、職員には作成者・承認者の氏名が載る（職員IDではない）', async () => {
     await switchTo('nohara.i@example.jp', 'pass1234', 'guardian');
     const home = await http.api.guardianHome(dummy);
-    const shared = home.flatMap((h) => h.sharedDiaries)[0];
-    expect(shared).toBeTruthy();
-    const d = await http.api.getDiary(dummy, shared.diary_id);
+    expect(home.every((h) => !('sharedDiaries' in h))).toBe(true);
+    await expect(http.api.getDiary(dummy, 5)).rejects.toThrow('この日誌を参照する権限がありません');
+    await expect(http.api.listDiaries(dummy, {})).rejects.toThrow('この日誌を参照する権限がありません');
+
+    await switchTo('nohara@hoiku.example.jp', 'pass1234', 'staff');
+    const d = await http.api.getDiary(dummy, 5);
     expect(d.staff_name).toBeTruthy();
     expect(d.staff_name).not.toMatch(/^S\d+$/);
+    expect(d.approved_staff_name).toBeTruthy();
   });
 
   /*

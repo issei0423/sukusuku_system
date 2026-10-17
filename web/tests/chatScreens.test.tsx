@@ -298,7 +298,7 @@ describe('送信者が職員か保護者かを吹き出しに添える（GitHub 
     open('/staff/chat?room=6', admin);
     await settled();
     const fromGuardian = await findRow('ありがとうございます。確認しました。');
-    const fromStaff = await findRow('本日の日誌を共有しました。');
+    const fromStaff = await findRow('今日は砂場でスコップを使って、型抜きを何度もしていました。');
     expect(fromGuardian.querySelector('.sender-role')?.textContent).toBe('保護者');
     expect(fromStaff.querySelector('.sender-role')?.textContent).toBe('職員');
   });

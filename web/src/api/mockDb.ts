@@ -216,16 +216,17 @@ export const termsDocs: Terms[] = [
 ];
 
 /* ============ 日誌の雛形（m_diary_template） ============
- * 保護者共有の既定値を雛形側に持ち、コードに書かない（基本設計書 5-4）
+ * 日誌は保護者へ届かないため、保護者への共有の既定を持たず、個人日誌の雛形に保護者あての見出しを置かない
+ * （詳細設計書「変える表」(5-3)・「デモデータ」(5-5)）
  */
 export const diaryTemplates: DiaryTemplate[] = [
-  { diary_template_id: 1, record_type: '1', template_name: '個人日誌（標準）', default_share_to_guardian: true,
-    body: '【今日の様子】\n\n【食事】\n\n【排泄】\n\n【午睡】\n\n【保護者へのお伝え】\n' },
-  { diary_template_id: 2, record_type: '2', template_name: 'クラス日誌（標準）', default_share_to_guardian: false,
+  { diary_template_id: 1, record_type: '1', template_name: '個人日誌（標準）', is_deleted: false,
+    body: '【今日の様子】\n\n【食事】\n\n【排泄】\n\n【午睡】\n\n【気づいたこと】\n' },
+  { diary_template_id: 2, record_type: '2', template_name: 'クラス日誌（標準）', is_deleted: false,
     body: '【ねらい】\n\n【活動内容】\n\n【子どもの姿】\n\n【明日への配慮】\n' },
-  { diary_template_id: 3, record_type: '3', template_name: '週案', default_share_to_guardian: false,
+  { diary_template_id: 3, record_type: '3', template_name: '週案', is_deleted: false,
     body: '【今週のねらい】\n\n【環境構成】\n\n【予想される子どもの活動】\n\n【援助と配慮】\n' },
-  { diary_template_id: 4, record_type: '4', template_name: 'ヒヤリハット', default_share_to_guardian: false,
+  { diary_template_id: 4, record_type: '4', template_name: 'ヒヤリハット', is_deleted: false,
     body: '【発生日時】\n\n【発生場所】\n\n【状況】\n\n【とった対応】\n\n【今後の対策】\n' },
 ];
 
@@ -242,32 +243,32 @@ export const fixedPhrases: string[] = [
 export const diaries: Diary[] = [
   { diary_id: 1, record_type: '1', child_id: 'C001', class_id: 1, diary_date: '2026-09-01', status: '1',
     body: '【今日の様子】\n積み木を高く積んで遊んでいました。崩れても笑って積み直していました。\n\n【食事】\n完食。\n\n【午睡】\n13:05に入眠。',
-    created_staff_id: 'S003', approved_staff_id: null, approved_at: null, is_shared_to_guardian: false, shared_at: null,
+    created_staff_id: 'S003', approved_staff_id: null, approved_at: null, applied_staff_id: null, applied_at: null,
     nap_abnormal_id: null, returned_reason: null, is_deleted: false, created_at: '2026-09-01T16:40:00', updated_at: '2026-09-01T16:40:00' },
   { diary_id: 2, record_type: '2', child_id: null, class_id: 1, diary_date: '2026-08-31', status: '2',
     body: '【ねらい】\n身近な友だちと関わる楽しさを味わう。\n\n【活動内容】\n園庭でしゃぼん玉遊び。',
-    created_staff_id: 'S003', approved_staff_id: null, approved_at: null, is_shared_to_guardian: false, shared_at: null,
+    created_staff_id: 'S003', approved_staff_id: null, approved_at: null, applied_staff_id: 'S003', applied_at: '2026-08-31T17:20:00',
     nap_abnormal_id: null, returned_reason: null, is_deleted: false, created_at: '2026-08-31T17:20:00', updated_at: '2026-08-31T17:20:00' },
   { diary_id: 3, record_type: '4', child_id: 'C003', class_id: 1, diary_date: '2026-08-30', status: '4',
     body: '【発生日時】\n午睡中の13時40分ごろ\n\n【状況】\n午睡中にうつ伏せの体位を確認した。\n\n【とった対応】\n仰向けに直し、呼吸と顔色を確認した。',
-    created_staff_id: 'S004', approved_staff_id: 'S001', approved_at: null, is_shared_to_guardian: false, shared_at: null,
+    created_staff_id: 'S004', approved_staff_id: null, approved_at: null, applied_staff_id: null, applied_at: null,
     nap_abnormal_id: 1, returned_reason: '発生時の呼吸・顔色の記録が本文にありません。異常時の記録と同じ内容を転記してください。',
     is_deleted: false, created_at: '2026-08-30T18:00:00', updated_at: '2026-08-31T09:10:00' },
   { diary_id: 4, record_type: '1', child_id: 'C002', class_id: 1, diary_date: '2026-08-29', status: '3',
     body: '【今日の様子】\n絵本の読み聞かせに集中していました。\n\n【食事】\n野菜を残しましたが、声をかけると一口食べました。',
-    created_staff_id: 'S003', approved_staff_id: 'S001', approved_at: '2026-08-29T18:05:00', is_shared_to_guardian: true, shared_at: '2026-08-29T18:05:00',
+    created_staff_id: 'S003', approved_staff_id: 'S001', approved_at: '2026-08-29T18:05:00', applied_staff_id: 'S003', applied_at: '2026-08-29T17:10:00',
     nap_abnormal_id: null, returned_reason: null, is_deleted: false, created_at: '2026-08-29T17:10:00', updated_at: '2026-08-29T18:05:00' },
   { diary_id: 5, record_type: '1', child_id: 'C001', class_id: 1, diary_date: '2026-08-29', status: '3',
     body: '【今日の様子】\n砂場でスコップを使い、型抜きを繰り返していました。\n\n【午睡】\n12:55に入眠。',
-    created_staff_id: 'S003', approved_staff_id: 'S001', approved_at: '2026-08-29T18:06:00', is_shared_to_guardian: true, shared_at: '2026-08-29T18:06:00',
+    created_staff_id: 'S003', approved_staff_id: 'S001', approved_at: '2026-08-29T18:06:00', applied_staff_id: 'S003', applied_at: '2026-08-29T17:15:00',
     nap_abnormal_id: null, returned_reason: null, is_deleted: false, created_at: '2026-08-29T17:15:00', updated_at: '2026-08-29T18:06:00' },
   { diary_id: 6, record_type: '2', child_id: null, class_id: 2, diary_date: '2026-09-01', status: '2',
     body: '【ねらい】\n身の回りのことを自分でやってみようとする。\n\n【活動内容】\n散歩（近隣公園）。',
-    created_staff_id: 'S005', approved_staff_id: null, approved_at: null, is_shared_to_guardian: false, shared_at: null,
+    created_staff_id: 'S005', approved_staff_id: null, approved_at: null, applied_staff_id: 'S005', applied_at: '2026-09-01T17:00:00',
     nap_abnormal_id: null, returned_reason: null, is_deleted: false, created_at: '2026-09-01T17:00:00', updated_at: '2026-09-01T17:00:00' },
   { diary_id: 7, record_type: '1', child_id: 'C004', class_id: 1, diary_date: '2026-09-01', status: '2',
     body: '【今日の様子】\n手洗いを自分でしようとする姿がありました。',
-    created_staff_id: 'S004', approved_staff_id: null, approved_at: null, is_shared_to_guardian: false, shared_at: null,
+    created_staff_id: 'S004', approved_staff_id: null, approved_at: null, applied_staff_id: 'S004', applied_at: '2026-09-01T17:20:00',
     nap_abnormal_id: null, returned_reason: null, is_deleted: false, created_at: '2026-09-01T17:20:00', updated_at: '2026-09-01T17:20:00' },
 ];
 
@@ -325,10 +326,10 @@ export const chatMessages: ChatMessage[] = [
   { chat_message_id: 1, chat_room_id: 1, sender_account_id: 1, body: '9月の献立表を掲示しました。ご確認ください。', source_type: '1', source_id: null, sent_at: '2026-09-01T08:30:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
   { chat_message_id: 2, chat_room_id: 3, sender_account_id: 4, body: '明日の遠足の集合時間ですが、9時でよろしいでしょうか。', source_type: '1', source_id: null, sent_at: '2026-09-01T15:02:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
   { chat_message_id: 3, chat_room_id: 3, sender_account_id: 3, body: '9時に園庭でお願いします。', source_type: '1', source_id: null, sent_at: '2026-09-01T15:10:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
-  { chat_message_id: 4, chat_room_id: 6, sender_account_id: 3, body: '本日の日誌を共有しました。', source_type: '2', source_id: 5, sent_at: '2026-08-29T18:06:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
+  { chat_message_id: 4, chat_room_id: 6, sender_account_id: 3, body: '今日は砂場でスコップを使って、型抜きを何度もしていました。', source_type: '1', source_id: null, sent_at: '2026-08-29T18:06:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
   { chat_message_id: 5, chat_room_id: 6, sender_account_id: 6, body: 'ありがとうございます。確認しました。', source_type: '1', source_id: null, sent_at: '2026-08-29T20:30:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
   { chat_message_id: 6, chat_room_id: 6, sender_account_id: 6, body: '明日は祖母がお迎えに伺います。よろしくお願いします。', source_type: '1', source_id: null, sent_at: '2026-09-01T07:40:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
-  { chat_message_id: 7, chat_room_id: 7, sender_account_id: 3, body: '本日の日誌を共有しました。', source_type: '2', source_id: 4, sent_at: '2026-08-29T18:05:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
+  { chat_message_id: 7, chat_room_id: 7, sender_account_id: 3, body: '今日は絵本の読み聞かせを、最後まで座って聞いていました。', source_type: '1', source_id: null, sent_at: '2026-08-29T18:05:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
   { chat_message_id: 8, chat_room_id: 2, sender_account_id: 2, body: '来週の職員会議は水曜16時からです。', source_type: '1', source_id: null, sent_at: '2026-08-31T11:00:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
   { chat_message_id: 9, chat_room_id: 5, sender_account_id: 1, body: '種目案を今週中にまとめましょう。', source_type: '1', source_id: null, sent_at: '2026-08-28T13:00:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
   // 取消済みのメッセージ。誤送信への対応の記録と対にする（基本設計書「誤送信への対応」(4-6)）
@@ -673,7 +674,7 @@ export const operationLogs: OperationLog[] = [
   { operation_log_id: 1, account_id: 3, operated_at: '2026-09-01T16:40:00', function_type: '1', operation_type: '1', target_table: 't_diary', target_id: 1, target_child_id: 'C001', before_value: null, after_value: '下書き作成' },
   { operation_log_id: 2, account_id: 3, operated_at: '2026-09-01T13:20:30', function_type: '3', operation_type: '1', target_table: 't_nap_record', target_id: 1, target_child_id: 'C001', before_value: null, after_value: '体位=仰向け 呼吸=あり 顔色=通常 体温=36.6' },
   { operation_log_id: 3, account_id: 1, operated_at: '2026-08-31T09:10:00', function_type: '1', operation_type: '3', target_table: 't_diary', target_id: 3, target_child_id: 'C003', before_value: '申請中', after_value: '差し戻し' },
-  { operation_log_id: 4, account_id: 1, operated_at: '2026-08-29T18:05:00', function_type: '1', operation_type: '3', target_table: 't_diary', target_id: 4, target_child_id: 'C002', before_value: '申請中', after_value: '承認済み・保護者へ共有' },
+  { operation_log_id: 4, account_id: 1, operated_at: '2026-08-29T18:05:00', function_type: '1', operation_type: '3', target_table: 't_diary', target_id: 4, target_child_id: 'C002', before_value: '申請中', after_value: '承認済み' },
   { operation_log_id: 5, account_id: 3, operated_at: '2026-09-01T10:00:00', function_type: '5', operation_type: '1', target_table: 't_physical_record', target_id: 7, target_child_id: 'C001', before_value: null, after_value: '身長=78.5 体重=9.8' },
   { operation_log_id: 6, account_id: 1, operated_at: '2026-08-25T10:00:00', function_type: '7', operation_type: '1', target_table: 't_invitation_code', target_id: 1, target_child_id: 'C001', before_value: null, after_value: '招待コードを発行' },
   { operation_log_id: 7, account_id: 1, operated_at: '2026-08-20T10:00:00', function_type: '7', operation_type: '2', target_table: 'm_account', target_id: 8, target_child_id: null, before_value: '有効', after_value: '停止' },
