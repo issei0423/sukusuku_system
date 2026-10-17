@@ -201,17 +201,25 @@ func (a *app) handleApproveDiary(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var (
-		status  string
-		childID sql.NullString
-		creator string
+		status     string
+		childID    sql.NullString
+		creator    string
+		recordType string
 	)
-	if err := a.db.QueryRow(`SELECT status, child_id, created_staff_id FROM t_diary
-		WHERE diary_id = ? AND is_deleted = 0`, id).Scan(&status, &childID, &creator); err != nil {
+	if err := a.db.QueryRow(`SELECT status, child_id, created_staff_id, record_type FROM t_diary
+		WHERE diary_id = ? AND is_deleted = 0`, id).Scan(&status, &childID, &creator, &recordType); err != nil {
 		writeErr(w, http.StatusNotFound, "日誌が見つかりません")
 		return
 	}
 	if status != "2" {
 		writeErr(w, http.StatusBadRequest, "申請中の日誌のみ承認できます")
+		return
+	}
+	// 共有を選べるのは個人日誌だけ。クラス日誌・週案月案・ヒヤリハットは保護者への共有の対象外とする
+	// （基本設計書「日誌システム」(4-5)）。画面（DiaryApproveScreen）は選ばせないが、API でも断る
+	// （GitHub Issue #61・#157）。画面側のモック（web/src/api/mock.ts の approveDiary）と同じ規則
+	if req.ShareToGuardian && recordType != "1" {
+		writeErr(w, http.StatusBadRequest, "保護者へ共有できるのは個人日誌だけです。共有しないで承認してください")
 		return
 	}
 	// 【仮置き】承認は、作成者とは別の管理者による確認として扱う（GitHub Issue #106）。

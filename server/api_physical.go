@@ -109,9 +109,17 @@ func (a *app) handlePhysicalRecords(w http.ResponseWriter, r *http.Request) {
 		writeForbidden(w, "この園児を参照する権限がありません")
 		return
 	}
+	// 保護者に見せるのは、共有した（連携済の）測定値だけ。未連携・対象外の測定値は園内に留める
+	// （基本設計書「権限と利用可能機能」(6-1)「成長グラフの閲覧｜保護者 ※3」「※3 自児のみ、かつ共有されたものに限る」、
+	// 「身体測定記録」(5-7) share_status＝0:対象外 1:未連携 2:連携済。GitHub Issue #157）。
+	// 画面側のモック（web/src/api/mock.ts の recordsOf）と同じ規則
+	shared := ""
+	if u.isGuardian() {
+		shared = ` AND share_status = '2'`
+	}
 	rows, err := a.db.Query(`SELECT physical_record_id, child_id, measured_on, height_cm, weight_kg,
 		staff_id, share_status, is_deleted, created_at, updated_at
-		FROM t_physical_record WHERE is_deleted = 0 AND child_id = ?
+		FROM t_physical_record WHERE is_deleted = 0 AND child_id = ?`+shared+`
 		ORDER BY measured_on DESC`, childID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "測定値を取得できませんでした")

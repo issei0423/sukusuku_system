@@ -604,8 +604,9 @@ describe('保護者から見える範囲', () => {
   it('共有された日誌は開ける', async () => {
     open('/guardian/diary/4', guardian);
     await settled();
-    // 日誌4は C002（上園 花子）のもの。野原 一誠は参照できない
-    expect(document.body.textContent).toContain('権限がありません');
+    // 日誌4は C002（上園 花子）のもの。野原 一誠は参照できない。
+    // 保護者には、見られない日誌を「この記録は共有されていません」と示す（画面詳細図 2-8。GitHub Issue #157）
+    expect(document.body.textContent).toContain('この記録は共有されていません');
   });
 
   it('自児の共有済みの日誌は開ける', async () => {

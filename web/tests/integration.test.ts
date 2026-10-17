@@ -9,7 +9,10 @@
  *
  * ふだんの npm test はブラウザ内のモックだけで完結させる（サーバに依存させない）。
  */
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
+
+// 相手は本物の時計で動くサーバなので、tests/setup-clock.ts で止めた時計を本物に戻す
+vi.useRealTimers();
 
 const BASE = process.env.SUKUSUKU_API ?? '';
 const run = BASE ? describe : describe.skip;

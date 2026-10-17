@@ -101,7 +101,8 @@ function ClassCell({ childId }: { childId: string }) {
 }
 
 function AllergyCell({ childId }: { childId: string }) {
-  const a = useAsync(() => api.allergiesOf(childId), [childId]);
+  const { user } = useSession();
+  const a = useAsync(() => api.allergiesOf(user!, childId), [childId]);
   if (!a.data || a.data.length === 0) return <span className="muted">―</span>;
   return (
     <>

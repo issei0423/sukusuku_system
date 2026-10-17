@@ -102,7 +102,7 @@ cd web && npm run dev:mock
 | モック | `web/src/api/mockDb.ts` の末尾 | モジュールを読み込むたび（メモリ上のため毎回） |
 
 ずらすのは**記録だけ**である。園児の生年月日や年度の開始日は絶対の日付なので動かさない。
-サーバ側は `t_` で始まるテーブルの `_date` / `_at` 列のみを対象とし、
+サーバ側は `t_` で始まるテーブルの `_date` / `_at` / `_on` 列のみを対象とし、
 `t_invitation_code.birth_date` は明示的に除外している。
 
 > **サーバ側は作り直さないとずれたままになる。** すでにあるデータベースへ毎回かけると、
@@ -128,6 +128,14 @@ cd web && npm test
 | `tests/admin.test.ts` | 管理側の操作。自分が申請した日誌の承認、編集ロックの解除、職員の情報の変更、紐づけの復元、操作ログの相手と出力の記録、園児情報と CSV の検査 |
 | `tests/apiScope.test.ts` | API を直接呼んだときの権限（GitHub Issue #153）。一時パスワード中・規約の再同意が要る間の拒否、日誌の添付・編集ロック・更新の参照範囲、クラス日誌のクラス、園児の所属クラス。Go 側は `server/api_scope_test.go` |
 | `tests/csv.test.ts` | CSV 出力のセルの無害化（先頭の `=` `+` `-` `@` など） |
+
+**テストの時計は、日本時間の今日の 18:00 で止めてある**（`tests/setup-clock.ts`）。
+デモデータは「今日」の出来事を 17:20 までに置いているため、本物の時計のまま夜中や朝に回すと、
+それらが未来の出来事になって落ちていた（GitHub Issue #152）。
+別の時刻で回すときは `SUKUSUKU_TEST_CLOCK=03:00 npx vitest run` のように渡す。
+
+`mockup-go-react` への PR と push では、GitHub Actions（`.github/workflows/ci.yml`）が
+Go のテスト・画面のテスト・下の結合テストを自動で回す。
 
 ### Go サーバとの結合テスト
 

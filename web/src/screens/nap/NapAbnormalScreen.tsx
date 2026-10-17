@@ -4,30 +4,26 @@
  *      基本設計書.md「異常時の記録」(4-7)、5-6 t_nap_abnormal
  *
  * diary_id が空なら「記録したがヒヤリハットを起票していない」状態として一覧で示す。
+ *
+ * 記録は、選んだ園児のクラスの、実施中の午睡チェックにつなぐ。記録の操作で午睡チェックを開始しない
+ * （基本設計書「午睡チェックの実施」(4-7)。GitHub Issue #158）。
+ * 【仮置き】実施中の午睡チェックが無いときは記録できない（web/仮置き値.md）。
  */
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
-import { api, selectableClasses, visibleChildren } from '../../api/client';
+import { api, visibleChildren } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Alert } from '../../components/ui';
 import { formatMDHM, now, today } from '../../api/util';
 
 export default function NapAbnormalScreen() {
   const { user } = useSession();
   const navigate = useNavigate();
-  const classesForUser = selectableClasses(user!);
   const [tick, setTick] = useState(0);
 
   const list = useAsync(() => api.abnormals(user!), [user?.account_id, tick]);
   const children = visibleChildren(user!);
-
-  const [classId] = useState<number>(user!.class_id ?? classesForUser[0]?.class_id ?? 1);
-  // 選べるクラスが無いときは問い合わせない（GitHub Issue #96）
-  const session = useAsync(
-    async () => (classesForUser.length > 0 ? api.activeSession(classId, today(), user!) : null),
-    [classId, tick],
-  );
 
   const [childId, setChildId] = useState('');
   const [foundAt, setFoundAt] = useState(now().slice(0, 16));
@@ -39,9 +35,14 @@ export default function NapAbnormalScreen() {
   const save = async () => {
     setBusy(true); setError(null);
     try {
-      const sessionId = session.data?.nap_session_id
-        ?? (await api.startSession(user!, classId, today())).nap_session_id;
-      await api.recordAbnormal(user!, sessionId, {
+      // 園児のクラスの、実施中の午睡チェックを探す。無ければ記録しない（午睡チェックを勝手に開始しない）
+      const classId = await api.classOf(user!, childId);
+      const session = classId != null ? await api.activeSession(classId, today(), user!) : null;
+      if (!session) {
+        setError('この園児のクラスで実施中の午睡チェックがありません。午睡チェック画面で開始してから記録してください');
+        return;
+      }
+      await api.recordAbnormal(user!, session.nap_session_id, {
         child_id: childId, found_at: `${foundAt}:00`, situation, response,
       });
       setChildId(''); setSituation(''); setResponse('');
@@ -76,7 +77,9 @@ export default function NapAbnormalScreen() {
               </select>
             </Field>
             <Field label="発見時刻" required>
-              <input type="datetime-local" value={foundAt} onChange={(e) => setFoundAt(e.target.value)} />
+              {/* 未来の日時は選べない（基本設計書「入力項目の制約値」(4-9)。GitHub Issue #158） */}
+              <input type="datetime-local" value={foundAt} max={now().slice(0, 16)}
+                onChange={(e) => setFoundAt(e.target.value)} />
             </Field>
           </div>
           <Field label="発見時の状況" required>
@@ -94,8 +97,9 @@ export default function NapAbnormalScreen() {
             管理者への通知は、端末や通信の状況により届かないことがあります。記録とあわせて、声をかけて応援を呼んでください。
           </div>
           <div className="row-end">
+            {/* 発見時刻は必須（画面詳細図 5-2 項目3）。空のまま送ると崩れた値になる（GitHub Issue #158） */}
             <button className="btn-primary" onClick={save}
-              disabled={busy || !childId || !situation.trim() || !response.trim()}>
+              disabled={busy || !childId || !foundAt || !situation.trim() || !response.trim()}>
               記録する
             </button>
           </div>

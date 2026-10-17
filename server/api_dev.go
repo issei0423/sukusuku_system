@@ -269,11 +269,27 @@ func (a *app) handleDevelopmentList(w http.ResponseWriter, r *http.Request) {
 		}
 		out[i].AgeMonths = ageInMonths(out[i].Child.BirthDate, base)
 
-		// 予定日を過ぎているのに、その予定日以降の確定した記録が無ければ未実施
-		out[i].Overdue = scheduled.Valid && scheduled.String <= today() &&
-			(!last.Valid || last.String < scheduled.String)
+		// 予定日を過ぎているのに、その予定日以降の確定した記録が無ければ未実施。
+		// 予定日の当日はまだ未実施にしない（基本設計書「発達チェックの実施」(4-8)「実施予定日を過ぎて未入力の
+		// 項目・園児をチェック漏れとして強調表示」。GitHub Issue #164）。判定は devOverdue と同じ
+		out[i].Overdue = devOverdue(nullStr(scheduled), nullStr(last))
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+/*
+devOverdue は、発達チェックが「未実施」かを返す。
+
+園児の最新の予定日（scheduledOn）を過ぎていて、その予定日以降に確定した実施（lastCheckedOn）が無ければ未実施とする。
+予定日の当日は、まだ未実施にしない（基本設計書「発達チェックの実施」(4-8)「実施予定日を過ぎて」）。
+発達チェック一覧（handleDevelopmentList）と職員ダッシュボード（handleStaffSummary）が同じ判定を使い、
+件数を食い違わせない（GitHub Issue #164）。画面側のモック（web/src/api/mock.ts の isDevOverdue）と同じ規則
+*/
+func devOverdue(scheduledOn, lastCheckedOn *string) bool {
+	if scheduledOn == nil || *scheduledOn >= today() {
+		return false
+	}
+	return lastCheckedOn == nil || *lastCheckedOn < *scheduledOn
 }
 
 // ---- スケジュール設定（管理者のみ） ----
@@ -366,6 +382,12 @@ func (a *app) handleSetSchedule(w http.ResponseWriter, r *http.Request) {
 		Manual      bool   `json:"manual"`
 	}
 	if !readJSON(w, r, &req) {
+		return
+	}
+	// 予定日は 'YYYY-MM-DD' の形の、実在する日付に限る。崩れた日付は一覧の判定と月齢の計算を狂わせる
+	// （GitHub Issue #164）
+	if !isISODate(req.ScheduledOn) {
+		writeErr(w, http.StatusBadRequest, "次回の予定日の形式が正しくありません")
 		return
 	}
 	// 手で決める予定日に、過ぎた日は入れさせない（画面詳細図「スケジュール設定画面」(6-3)）。
