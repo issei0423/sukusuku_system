@@ -47,6 +47,8 @@ const (
 	kindVersionConflict = "version_conflict"
 	kindAlreadyExists   = "already_exists"
 	kindSessionEnded    = "session_ended"
+	// 段2の送信で、本文に宛先以外の園児の名前があり、まだ承諾していない（詳細設計書 (4-5 (2))）
+	kindOtherChildNames = "other_child_names"
 )
 
 // きょうのようすの記録と、訂正・取り消し（詳細設計書「きょうのようす」(4-4)・「訂正・取り消し」(4-7)・「訂正・取り消しのまとめ」(3-5)）
@@ -65,4 +67,12 @@ const (
 	msgFixConflict = "他の職員が更新しています。内容を再読み込みしてください。"
 	// 【仮置き】ねた・おきたの訂正で、おきたがねたより前。設計に文言が無い（web/仮置き値.md）
 	msgWakeBeforeSleep = "「おきた」は「ねた」より後の時刻にしてください。"
+)
+
+// 園からのひとこと・活動のひとこと・定型文（詳細設計書「園からのひとことと他児の名前」(4-5)・「本書で足す文言」(4-1 (6))）
+const (
+	msgFacilityEmpty   = "園からのひとことを入力してください。"
+	msgFacilityTooLong = "園からのひとことは500文字以内で入力してください。"
+	msgFacilitySent    = "この日の園からは、もう送られています。直すときは送られた文の「直す」から行ってください。"
+	msgCommentTooLong  = "ひとことは200文字以内で入力してください。"
 )

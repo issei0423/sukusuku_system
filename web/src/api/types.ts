@@ -435,6 +435,19 @@ export interface ContactHomeRecord {
   updated_at: string;
 }
 
+/** 定型文（m_phrase）。連絡帳と日誌で共通（基本設計書「定型文（m_phrase）」(5-9)） */
+export interface PhraseRecord {
+  phrase_id: number;
+  /** 1:園から 2:活動のひとこと 3:クラスのようす 4:日誌 */
+  phrase_scope: '1' | '2' | '3' | '4';
+  body: string;
+  display_order: number;
+  is_deleted: boolean;
+  updated_staff_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
 /** 出来事（t_contact_event）。きょうのようすの1件・園児1人 */
 export interface ContactEventRecord {
   contact_event_id: number;
