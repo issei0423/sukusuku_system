@@ -2173,6 +2173,9 @@ function rejoinRoomsOfChild(accountId: number, childId: string): void {
     .forEach((m) => { m.left_at = null; });
 }
 
+/** 続柄の選択肢（画面詳細図「新規登録画面（保護者）」(2-3) 項目11。server/api_auth.go の guardianRelationships） */
+const GUARDIAN_RELATIONSHIPS: readonly string[] = ['母', '父', '祖母', '祖父', 'その他'];
+
 /** 推測困難な値とする（基本設計書 5-2）。モックのため乱数の強度は本実装で見直す */
 function randomCode(): string {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -2194,7 +2197,11 @@ const adminApi3 = {
   },
 
   async signUpGuardian(
-    input: { code: string; email: string; password: string; guardian_name: string; relationship: string },
+    input: {
+      code: string; email: string; password: string; guardian_name: string; relationship: string;
+      /** 利用規約に同意したか（画面の「利用規約に同意します」）と、画面に出して同意を得た規約の版 */
+      terms_agreed: boolean; terms_version: string;
+    },
   ): Promise<SessionUser> {
     /*
      * この関数は、コードが未使用かを確かめてから使用済みにするまで、待たずに（await を挟まずに）進める。
@@ -2204,15 +2211,34 @@ const adminApi3 = {
     const normalized = normalizeInvitationCode(input.code);
     const c = db.invitationCodes.find((x) => normalizeInvitationCode(x.code) === normalized);
     if (!c || c.status !== '1' || c.expires_on < today()) return fail('招待コードが確認できません');
+    /*
+     * 規約への同意を受け取ってから登録する。同意しなかった場合は登録を完了しない
+     * （基本設計書「保護者アカウントの自己登録」(4-3)、画面詳細図 2-3 項目5。GitHub Issue #170）。
+     * 同意した版は、画面に出した版といま有効な版が同じときだけ記録する（同「同意履歴（t_terms_agreement）」(5-2)）。
+     * 文言は server/api_auth.go と同じ
+     */
+    if (input.terms_agreed !== true) return fail('利用規約に同意いただけない場合、ご利用いただけません。');
+    // 【仮置き】画面に出していた規約が、送るまでのあいだに改定されたときの文言（web/仮置き値.md）
+    if (input.terms_version !== CURRENT_TERMS_VERSION) {
+      return fail('利用規約が改定されました。改定後の利用規約をお読みいただき、あらためて同意してください。');
+    }
     // ログインIDはメールアドレス。空や形式の誤りを受け付けない（要件定義書「ログインIDの定義」(4-1-1)）
-    input = { ...input, email: input.email.trim() };
+    input = { ...input, email: input.email.trim(), guardian_name: (input.guardian_name ?? '').trim() };
     const emailError = validateEmail(input.email);
     if (emailError) return fail(emailError);
-    if (db.accounts.some((a) => a.email === input.email)) return fail('このメールアドレスはすでに登録されています');
+    // ログインIDはロールをまたいで園内で一意（基本設計書 5-2）。大文字・小文字だけの違いは同じ宛先として扱う（GitHub Issue #170）
+    const email = input.email.toLowerCase();
+    if (db.accounts.some((a) => a.email.toLowerCase() === email)) return fail('このメールアドレスはすでに登録されています');
     // 8〜128文字（文字数で数える）。よく使われるパスワードは拒否する（server/password.go と同じ規則。GitHub Issue #159）
     const passwordError = validateNewPassword(input.password);
     if (passwordError) return fail(passwordError);
-    if (!input.guardian_name.trim()) return fail('保護者の氏名を入力してください');
+    // 氏名は前後の空白を落として、50文字以内（基本設計書「入力項目の制約値」(4-9)）
+    if (!input.guardian_name) return fail('保護者の氏名を入力してください');
+    if (tooLong(input.guardian_name, 50)) return fail('保護者の氏名は50文字以内で入力してください');
+    // 続柄は必須で、選択肢のどれか（画面詳細図 2-3 項目11）
+    if (!GUARDIAN_RELATIONSHIPS.includes(input.relationship)) {
+      return fail('続柄は 母・父・祖母・祖父・その他 から選んでください');
+    }
 
     const accountId = nextId();
     db.accounts.push({

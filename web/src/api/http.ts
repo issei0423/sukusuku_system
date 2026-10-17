@@ -246,6 +246,8 @@ const apiAuth = {
 
   async signUpGuardian(input: {
     code: string; email: string; password: string; guardian_name: string; relationship: string;
+    /** 利用規約に同意したかと、画面に出して同意を得た規約の版（GitHub Issue #170） */
+    terms_agreed: boolean; terms_version: string;
   }): Promise<SessionUser> {
     const u = await post<SessionUser>('/api/signup', input);
     await loadReferenceFor(u);

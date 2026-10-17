@@ -19,6 +19,7 @@ import { REACTION } from '../../api/codes';
 import { Loading, ErrorBox, Empty } from '../../components/ui';
 import Reactions from '../../components/Reactions';
 import { formatHM, formatMD } from '../../api/util';
+import { useUnsavedInput } from '../../unsavedInput';
 
 /*
  * メッセージを長押しして操作の一覧を開くまでの時間と、長押しとみなす指のずれの上限。
@@ -76,6 +77,13 @@ export default function GuardianChatScreen() {
   useEffect(() => {
     if (roomId) api.markRead(user!, roomId).then(() => rooms.refresh(), () => {});
   }, [roomId, lastMessageId]);
+
+  /*
+   * 書きかけのメッセージと、保存していない編集は、ログアウトの前に確かめる。
+   * 確かめずにログアウトすると、書いた文が黙って消える（基本設計書「ログアウト」(4-3)。GitHub Issue #170）
+   */
+  const editingOriginal = messages.data?.find((m) => m.chat_message_id === editingId)?.body;
+  useUnsavedInput(text.trim() !== '' || (editingId !== null && draft !== editingOriginal));
 
   // いちばん下を読んでいるときに届いたメッセージは、見える位置まで送る。上へ戻って読んでいるときは動かさない
   const listRef = useRef<HTMLDivElement | null>(null);
