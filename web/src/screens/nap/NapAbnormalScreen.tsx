@@ -12,6 +12,7 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAsync } from '../../hooks';
+import { onLive } from '../../live';
 import { useSession } from '../../session';
 import { api, visibleChildren } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Alert } from '../../components/ui';
@@ -22,7 +23,8 @@ export default function NapAbnormalScreen() {
   const navigate = useNavigate();
   const [tick, setTick] = useState(0);
 
-  const list = useAsync(() => api.abnormals(user!), [user?.account_id, tick]);
+  // ほかの職員の記録・起票があったら、開いたままでも読み直す（live.ts）
+  const list = useAsync(() => api.abnormals(user!), [user?.account_id, tick], { live: onLive('nap') });
   const children = visibleChildren(user!);
 
   /*

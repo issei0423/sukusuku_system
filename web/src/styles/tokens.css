@@ -81,6 +81,10 @@
   --c-returned:       var(--dads-magenta-800);
   --c-approved:       var(--dads-green-800);
 
+  /* 相手の操作がすぐに出る状態か（職員のヘッダ。components/LiveIndicator.tsx）。つながっている／切れて読み直している */
+  --c-live-on:        var(--dads-green-800);
+  --c-live-off:       var(--dads-orange-800);
+
   /* 地の色。何もない地は白。帯や小見出しの地にだけ薄い灰色を敷く */
   --c-bg:             var(--dads-white);
   --c-surface:        var(--dads-white);

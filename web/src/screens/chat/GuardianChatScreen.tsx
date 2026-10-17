@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { MouseEvent, PointerEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useAsync, useFollowLatest, AUTO_REFRESH_MS } from '../../hooks';
+import { onLive, onRoom } from '../../live';
 import { useSession } from '../../session';
 import { api, accountName } from '../../api/client';
 import { REACTION, SENDER_KIND } from '../../api/codes';
@@ -33,11 +34,13 @@ const LONG_PRESS_MOVE_PX = 10;
 export default function GuardianChatScreen() {
   const { user } = useSession();
   /*
-   * 連絡先の一覧（未読の件数）とメッセージは、開いたままでも裏で読み直す。
-   * 園からの返信・リアクションが、数秒で表れるようにするため。
-   * 読み直しでは読み込み中の表示を出さず、入力中の文字・開いている操作の一覧・編集中の本文は残す
+   * 連絡先の一覧（未読の件数）とメッセージは、開いたままでも読み直す。
+   * 園からの返信・リアクションが、すぐに表れるようにするため。知らせ（live.ts）を受けて読み直し、
+   * 知らせが切れている間は数秒ごとに読み直す。一覧はどのチャンネルの知らせでも、メッセージは開いているチャンネルの
+   * 知らせで読み直す。読み直しでは読み込み中の表示を出さず、入力中の文字・開いている操作の一覧・編集中の本文は残す
    */
-  const rooms = useAsync(() => api.rooms(user!), [user?.account_id], { refreshMs: AUTO_REFRESH_MS });
+  const rooms = useAsync(() => api.rooms(user!), [user?.account_id],
+    { refreshMs: AUTO_REFRESH_MS, live: onLive('chat') });
   const [roomId, setRoomId] = useState<number | null>(null);
   /*
    * 書きかけの本文は、チャンネルごとに持つ。きょうだいが在籍する保護者には個人チャットが園児の数だけ並ぶ
@@ -82,7 +85,7 @@ export default function GuardianChatScreen() {
   const suppressClick = useRef(false);
 
   const messages = useAsync(async () => (roomId ? api.messages(user!, roomId) : []), [roomId],
-    { refreshMs: AUTO_REFRESH_MS });
+    { refreshMs: AUTO_REFRESH_MS, live: onRoom(roomId) });
 
   // 開いたチャンネルは既読にする。開いている間に届いたメッセージも、届いたときに既読にする
   const shownRoom = messages.data?.[0]?.chat_room_id ?? null;

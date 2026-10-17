@@ -9,6 +9,7 @@
  */
 import { useEffect, useState } from 'react';
 import { useAsync } from '../../hooks';
+import { onLive } from '../../live';
 import { useSession } from '../../session';
 import { api, selectableClasses, settingNumber, staffName } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Alert, Disclaimer, Modal, Radios } from '../../components/ui';
@@ -25,7 +26,12 @@ export default function PhysicalRecordScreen() {
   const [measuredOn, setMeasuredOn] = useState(today());
   const [tick, setTick] = useState(0);
 
-  const status = useAsync(() => api.classStatus(user!, classId, measuredOn), [classId, measuredOn, tick]);
+  /*
+   * クラスの実施状況は、ほかの職員の登録があったら開いたままでも読み直す（live.ts）。
+   * 園児ごとの記録（records）は入力欄の初期値に使うため、知らせでは読み直さない（入力中の値を動かさない）
+   */
+  const status = useAsync(() => api.classStatus(user!, classId, measuredOn), [classId, measuredOn, tick],
+    { live: onLive('physical') });
   const [childId, setChildId] = useState<string | null>(null);
 
   useEffect(() => {

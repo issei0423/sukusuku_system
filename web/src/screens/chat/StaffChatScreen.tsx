@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAsync, useFollowLatest, AUTO_REFRESH_MS } from '../../hooks';
+import { onLive, onRoom } from '../../live';
 import { useSession } from '../../session';
 import { api, accountName } from '../../api/client';
 import { Loading, ErrorBox, Empty, Alert, Tag } from '../../components/ui';
@@ -26,11 +27,13 @@ export default function StaffChatScreen() {
   // 操作の一覧を開いているメッセージ。同時に開くのは1件だけ
   const [menuId, setMenuId] = useState<number | null>(null);
   /*
-   * チャンネルの一覧（未読の件数・未対応の印）とメッセージは、開いたままでも裏で読み直す。
-   * 保護者からの送信・リアクション・既読が、数秒で表れるようにするため。
-   * 読み直しでは読み込み中の表示を出さず、入力中の文字・開いている操作の一覧・編集中の本文は残す
+   * チャンネルの一覧（未読の件数・未対応の印）とメッセージは、開いたままでも読み直す。
+   * 保護者からの送信・リアクション・既読が、すぐに表れるようにするため。知らせ（live.ts）を受けて読み直し、
+   * 知らせが切れている間は数秒ごとに読み直す。一覧はどのチャンネルの知らせでも、メッセージは開いているチャンネルの
+   * 知らせで読み直す。読み直しでは読み込み中の表示を出さず、入力中の文字・開いている操作の一覧・編集中の本文は残す
    */
-  const rooms = useAsync(() => api.rooms(user!), [user?.account_id], { refreshMs: AUTO_REFRESH_MS });
+  const rooms = useAsync(() => api.rooms(user!), [user?.account_id],
+    { refreshMs: AUTO_REFRESH_MS, live: onLive('chat') });
   const [roomId, setRoomId] = useState<number | null>(null);
   /*
    * 書きかけの本文は、チャンネルごとに持つ。画面全体で1つだけ持つと、チャンネルを切り替えても
@@ -60,7 +63,7 @@ export default function StaffChatScreen() {
   const messages = useAsync(
     async () => (roomId ? api.messages(user!, roomId) : []),
     [roomId],
-    { refreshMs: AUTO_REFRESH_MS },
+    { refreshMs: AUTO_REFRESH_MS, live: onRoom(roomId) },
   );
   /*
    * 外れたチャンネル（left）は閲覧のみ。外れるまでの過去ログだけが返り、投稿・リアクション・編集・取消・

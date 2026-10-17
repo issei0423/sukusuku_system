@@ -9,7 +9,7 @@
 import { startTransition, useEffect, useRef, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useSession } from './session';
-import { api, backend, onProcedureRequired, onSessionEnded } from './api/client';
+import { api, backend, connectLive, onProcedureRequired, onSessionEnded } from './api/client';
 import StaffLayout from './layouts/StaffLayout';
 import GuardianLayout from './layouts/GuardianLayout';
 
@@ -195,6 +195,18 @@ export default function App() {
       });
     });
   }, [accountId, role, setUser, navigate]);
+
+  /*
+   * 相手の操作を、開いている画面へすぐに届ける接続（live.ts。server/events.go）。
+   * ログインして画面を使える間だけ、タブに1本だけつなぎ、開いている画面すべてで共有する。
+   * 一時パスワード中・規約の再同意待ちの間は、ほかの画面へ進めないため、つながない。
+   * 利用者が変わったら（ログアウト・ほかの人のログイン）つなぎ直す
+   */
+  const liveActive = ready && user !== null && !user.is_temp_password && user.terms_agreed;
+  useEffect(() => {
+    if (!liveActive || accountId === undefined) return undefined;
+    return connectLive(accountId);
+  }, [liveActive, accountId]);
 
   /*
    * ページを開き直したときにセッションを復元する。

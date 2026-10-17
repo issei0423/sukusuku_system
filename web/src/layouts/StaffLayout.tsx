@@ -5,8 +5,10 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useSession } from '../session';
 import { useAsync, AUTO_REFRESH_MS } from '../hooks';
+import { onLive } from '../live';
 import { api } from '../api/client';
 import { BellIcon, Alert } from '../components/ui';
+import LiveIndicator from '../components/LiveIndicator';
 import { ToastHost } from '../components/feedback';
 
 const NAV = [
@@ -42,8 +44,13 @@ const ADMIN_NAV = [
 export default function StaffLayout() {
   const { user, logout } = useSession();
   const navigate = useNavigate();
-  // どの画面を開いていても、保護者からのチャットなどが数秒で通知の件数に表れるよう、裏で読み直す
-  const summary = useAsync(() => api.staffSummary(user!), [user?.account_id], { refreshMs: AUTO_REFRESH_MS });
+  /*
+   * どの画面を開いていても、保護者からのチャットなどがすぐに通知の件数に表れるよう、知らせ（live.ts）を受けて
+   * 読み直す。件数はダッシュボードと同じもの（チャット・日誌・午睡・発達チェック）を足している。
+   * 知らせが切れている間は数秒ごとに読み直す
+   */
+  const summary = useAsync(() => api.staffSummary(user!), [user?.account_id],
+    { refreshMs: AUTO_REFRESH_MS, live: onLive('chat', 'diary', 'nap', 'development') });
 
   if (!user) return null;
   const isAdmin = user.role === '1';
@@ -69,6 +76,8 @@ export default function StaffLayout() {
           <img className="header-wordmark" src="/login-wordmark-crayon.png" alt="すくすく" />
         </div>
         <div className="spacer" />
+        {/* 相手の操作がすぐに出る状態か。切れている間は自動で読み直していることを示す（live.ts） */}
+        <LiveIndicator />
         <button className="notify-btn" title="通知" aria-label={`通知 ${pending}件`} onClick={() => navigate('/staff')}>
           <BellIcon />
           {pending > 0 && <span className="notify-badge">{pending}</span>}

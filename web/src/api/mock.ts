@@ -27,6 +27,8 @@ import { BODY_POSITION, BREATHING, COMPLEXION, REACTION, HANDOUT_TYPE, SEX, PHOT
 import {
   ProcedureRequiredError, SESSION_ENDED_MESSAGE, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
 } from './procedure';
+import { emitLive } from '../live';
+import type { LiveEvent } from '../live';
 import type {
   LoginError, ChildInput, DiaryFilter, DiaryInput, DiaryAttachmentInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
   DevDraftView,
@@ -905,6 +907,7 @@ const diaryApi2 = {
       else lock.last_active_at = now();
       log(user.account_id, '1', '2', 't_diary', d.diary_id, d.child_id, before,
         status === '2' ? DIARY_LOG_APPLY : '下書き保存');
+      publishDiary(d);
       return ok(d);
     }
 
@@ -926,6 +929,7 @@ const diaryApi2 = {
     if (photos) replaceDiaryAttachments(row.diary_id, photos);
     log(user.account_id, '1', '1', 't_diary', row.diary_id, row.child_id, null,
       status === '2' ? DIARY_LOG_CREATE_AND_APPLY : '下書き作成');
+    publishDiary(row);
     return ok(row);
   },
 
@@ -977,8 +981,10 @@ const diaryApi2 = {
           body: '日誌を共有しました。', source_type: '2', source_id: d.diary_id, sent_at: now(),
           edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null,
         });
+        publishRoomPost(room.chat_room_id);
       }
     }
+    publishDiary(d);
     return ok(d);
   },
 
@@ -995,6 +1001,7 @@ const diaryApi2 = {
     d.approved_staff_id = user.staff_id;
     d.updated_at = now();
     log(user.account_id, '1', '3', 't_diary', d.diary_id, d.child_id, '申請中', `差し戻し：${reason}`);
+    publishDiary(d);
     return ok(d);
   },
 
@@ -1106,6 +1113,7 @@ export const chatApi = {
         account_id: user.account_id, reaction_type: reactionType,
       });
     }
+    publishMessage(m);
     return ok(undefined);
   },
 
@@ -1126,6 +1134,8 @@ export const chatApi = {
     room.thread_status = status;
     log(user.account_id, '2', '2', 'm_chat_room', roomId, null,
       before === '1' ? '未対応' : before === '2' ? '対応済み' : null, status === '1' ? '未対応' : '対応済み');
+    // 未対応／対応済みは職員の画面にだけ出る
+    publish({ type: 'chat', room_id: roomId }, (u) => isStaffUser(u) && isRoomMember(u, roomId));
     return ok(undefined);
   },
 
@@ -1142,6 +1152,7 @@ export const chatApi = {
     // 既読にするのは読めるメッセージだけ。外れた職員の、外れたあとの投稿は含めない（GitHub Issue #161）。
     // 後から登録した保護者の、登録より前のやりとりも含めない。見えていないものを既読にすると、誤送信のときに
     // 既読が付いていたかの判断を誤らせる（基本設計書「既読確認」(4-6)・「チャット」(5-5)。GitHub Issue #171）
+    let added = 0;
     db.chatMessages
       .filter((m) => m.chat_room_id === roomId && m.sender_account_id !== user.account_id && !m.is_deleted
         && !hiddenAfterLeft(user, m) && !hiddenBeforeJoined(user, m))
@@ -1149,8 +1160,11 @@ export const chatApi = {
         const already = db.chatReads.some((r) => r.chat_message_id === m.chat_message_id && r.account_id === user.account_id);
         if (!already) {
           db.chatReads.push({ chat_read_id: nextId(), chat_message_id: m.chat_message_id, account_id: user.account_id, read_at: now() });
+          added += 1;
         }
       });
+    // 新しく既読にしたものがあれば知らせる。何も増えなかったときは送らない（server/api_chat.go の handleMarkRead）
+    if (added > 0) publishRead(roomId, user);
     return ok(undefined);
   },
 
@@ -1175,6 +1189,7 @@ export const chatApi = {
     // 保護者から新しく受信した個人チャットは、自動で未対応へ戻す（要件定義書「チャットツール」(4-3)）
     if (user.role === '3' && view.room.room_type === '4') view.room.thread_status = '1';
     log(user.account_id, '2', '1', 't_chat_message', msg.chat_message_id, null, null, '送信');
+    publishRoomPost(roomId);
     return ok(msg);
   },
 
@@ -1196,6 +1211,7 @@ export const chatApi = {
     m.deleted_at = now();
     m.deleted_account_id = user.account_id;
     log(user.account_id, '2', '4', 't_chat_message', messageId, null, before, '取消');
+    publishMessage(m);
     return ok(undefined);
   },
 
@@ -1225,6 +1241,7 @@ export const chatApi = {
     m.body = body;
     m.edited_at = now();
     log(user.account_id, '2', '2', 't_chat_message', messageId, null, before, body);
+    publishMessage(m);
     return ok(undefined);
   },
 
@@ -1418,6 +1435,7 @@ const chatApi2 = {
       chat_room_id: room.chat_room_id, account_id, joined_at: now(), left_at: null,
     }));
     log(user.account_id, '2', '1', 'm_chat_room', room.chat_room_id, null, null, `グループ「${name}」を作成`);
+    publish({ type: 'chat', room_id: room.chat_room_id }, (u) => isRoomMember(u, room.chat_room_id));
     return ok(room);
   },
 
@@ -1451,6 +1469,8 @@ const chatApi2 = {
       else if (cur.left_at) { cur.left_at = null; cur.joined_at = now(); }
     });
     log(user.account_id, '2', '2', 't_chat_member', roomId, null, null, 'メンバーを編成');
+    // 加わった人・外れた人の一覧を読み直させる。外れた職員の一覧にも、閲覧のみとして残る
+    publish({ type: 'chat', room_id: roomId }, (u) => isRoomMember(u, roomId));
     return ok(undefined);
   },
 
@@ -1574,6 +1594,7 @@ export const napApi = {
     };
     db.napSessions.push(s);
     log(user.account_id, '3', '1', 't_nap_session', s.nap_session_id, null, null, `午睡チェックを開始（${className(classId)}）`);
+    publishNapSession(classId);
     return ok(s);
   },
 
@@ -1592,6 +1613,7 @@ export const napApi = {
     s.ended_staff_id = user.staff_id;
     s.ended_at = now();
     log(user.account_id, '3', '2', 't_nap_session', sessionId, null, '実施中', '終了');
+    publishNapSession(s.class_id);
     return ok(undefined);
   },
 
@@ -1652,6 +1674,7 @@ export const napApi = {
     db.napRecords.push(r);
     log(user.account_id, '3', '1', 't_nap_record', r.nap_record_id, input.child_id, null,
       `体位=${input.body_position} 呼吸=${input.breathing} 顔色=${input.complexion}`);
+    publishNapChild(session.class_id, input.child_id, true);
     return ok(r);
   },
 
@@ -1690,6 +1713,8 @@ export const napApi = {
     };
     db.napAbnormals.unshift(a);
     log(user.account_id, '3', '1', 't_nap_abnormal', a.nap_abnormal_id, input.child_id, null, '異常時の記録');
+    // 園内の記録のため保護者には送らない
+    publishNapChild(session.class_id, input.child_id, false);
     return ok(a);
   },
 
@@ -1718,6 +1743,8 @@ export const napApi = {
     db.diaries.unshift(d);
     a.diary_id = d.diary_id;
     log(user.account_id, '1', '1', 't_diary', d.diary_id, a.child_id, null, '異常時の記録からヒヤリハットを起票');
+    if (session) publishNapChild(session.class_id, a.child_id, false);
+    publishDiary(d);
     return ok(d);
   },
 
@@ -2022,6 +2049,8 @@ export const devApi = {
       null, status === '2' ? '確定' : '下書き保存');
 
     if (status === '2') advanceDevelopmentSchedule(user, check, childId, checkedOn);
+    // 下書きでも、一覧の未入力の数が変わる
+    publishDevelopment(childId);
     return ok(check);
   },
 };
@@ -2078,6 +2107,7 @@ const devApi2 = {
     }
     log(user.account_id, '4', '2', 't_development_schedule', null, childId, null,
       `次回予定日=${scheduledOn}${manual ? '（手動上書き）' : ''}`);
+    publishDevelopment(childId);
     return ok(undefined);
   },
 
@@ -2199,6 +2229,7 @@ export const physicalApi = {
       existing.updated_at = now();
       log(user.account_id, '5', '2', 't_physical_record', existing.physical_record_id, input.child_id,
         before, `身長=${input.height_cm} 体重=${input.weight_kg}`);
+      publishPhysical(existing);
       return ok(existing);
     }
 
@@ -2210,6 +2241,7 @@ export const physicalApi = {
     db.physicalRecords.push(row);
     log(user.account_id, '5', '1', 't_physical_record', row.physical_record_id, input.child_id,
       null, `身長=${input.height_cm} 体重=${input.weight_kg}`);
+    publishPhysical(row);
     return ok(row);
   },
 
@@ -2244,6 +2276,7 @@ export const physicalApi = {
     r.updated_at = now();
     log(user.account_id, '5', '4', 't_physical_record', recordId, r.child_id,
       `身長=${r.height_cm} 体重=${r.weight_kg}`, '削除');
+    publishPhysical(r);
     return ok(undefined);
   },
 
@@ -3114,6 +3147,9 @@ const handoutApi = {
         edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null,
       });
     }
+    // 見られる人の配布物の一覧と、掲載の知らせを流したチャンネルを読み直させる
+    publish({ type: 'handout', handout_id: h.handout_id }, (u) => canSeeHandout(u, h));
+    if (room) publishRoomPost(room.chat_room_id);
     return ok(h);
   },
 
@@ -3124,13 +3160,117 @@ const handoutApi = {
     if (!h) return fail('配布物が見つかりません');
     h.is_deleted = true;
     // 掲載の知らせも取り消す。知らせだけが残ると、開いても見つからない配布物へ案内し続けることになる
-    db.chatMessages
-      .filter((m) => m.source_type === '4' && m.source_id === handoutId && !m.is_deleted)
-      .forEach((m) => { m.is_deleted = true; m.body = ''; m.deleted_at = now(); m.deleted_account_id = user.account_id; });
+    const notices = db.chatMessages
+      .filter((m) => m.source_type === '4' && m.source_id === handoutId && !m.is_deleted);
+    notices.forEach((m) => { m.is_deleted = true; m.body = ''; m.deleted_at = now(); m.deleted_account_id = user.account_id; });
     log(user.account_id, '2', '4', 't_handout', handoutId, null, h.title, '取り下げ');
+    publish({ type: 'handout', handout_id: handoutId }, (u) => canSeeHandout(u, h));
+    if (notices[0]) publishMessage(notices[0]);
     return ok(undefined);
   },
 };
+
+/* ============ 開いている画面への知らせ（server/events.go） ============
+ *
+ * サーバは、書き込みのあとに、その変化を見てよい人へ「変わった」とだけ知らせる（SSE）。モックはサーバが
+ * 無いため、同じ書き込みのあとに、同じ知らせをブラウザの中で出す（live.ts の emitLive）。開いている画面は
+ * サーバのときと同じように、知らせを受けて読み直す。
+ *
+ * モックは1つのタブの中で動くため、受け取るのは、そのタブでログインしている人（connectLive で渡す）だけである。
+ * 送るかどうかは、サーバ（server/events.go の notify*）と同じ判定で、その人について決める。
+ * 【注意】送る範囲を変えるときは、サーバとモックの両方を直す。
+ */
+
+/** そのタブでログインしている人。知らせを受け取る人 */
+let liveViewer: number | null = null;
+
+/**
+ * 知らせを受け取る人を決める。返す関数で受け取りをやめる。App.tsx がログイン中に1か所で呼ぶ。
+ * サーバへはつながない（接続の状態は「つないでいない」のまま。live.ts）
+ */
+export function connectLive(accountId: number): () => void {
+  liveViewer = accountId;
+  return () => { if (liveViewer === accountId) liveViewer = null; };
+}
+
+/**
+ * see が真を返すとき、そのタブへ知らせを出す。停止中・手続きの途中の人には出さない
+ * （サーバの notify と同じ。その人はほかの API を使えないため）
+ */
+function publish(ev: LiveEvent, see: (u: SessionUser) => boolean): void {
+  if (liveViewer === null) return;
+  const account = findAccount(liveViewer);
+  if (!account || account.status === '2') return;
+  const viewer = buildSessionUser(account);
+  if (pendingProcedure(viewer)) return;
+  if (see(viewer)) emitLive(ev);
+}
+
+const isStaffUser = (u: SessionUser) => u.role === '1' || u.role === '2';
+
+/** そのチャンネルを参照できるか。職員は外れたあとも過去ログを読める。保護者は外れた時点で読めない（server/api_chat.go の isMember） */
+function isRoomMember(u: SessionUser, roomId: number): boolean {
+  const m = db.chatMembers.find((x) => x.chat_room_id === roomId && x.account_id === u.account_id);
+  return !!m && !(m.left_at !== null && u.role === '3');
+}
+
+/** 新しいメッセージは、いまの参加者へ（server/events.go の notifyRoomPost） */
+function publishRoomPost(roomId: number): void {
+  publish({ type: 'chat', room_id: roomId }, (u) => isParticipant(u, roomId));
+}
+
+/** 編集・取消・リアクションは、そのメッセージを見られる人へ（server/events.go の notifyMessage） */
+function publishMessage(m: ChatMessage): void {
+  publish({ type: 'chat', room_id: m.chat_room_id },
+    (u) => isRoomMember(u, m.chat_room_id) && !hiddenBeforeJoined(u, m) && !hiddenAfterLeft(u, m));
+}
+
+/**
+ * 既読は、本人（ほかのタブの未読の件数）と、既読の人数が変わるときはそのチャンネルの職員へ
+ * （server/events.go の notifyRead。数えるロールは readCountOf と同じ）
+ */
+function publishRead(roomId: number, reader: SessionUser): void {
+  const roomType = db.chatRooms.find((r) => r.chat_room_id === roomId)?.room_type ?? '';
+  const guardianRoom = roomType === '1' || roomType === '2' || roomType === '4';
+  const counted = (reader.role === '3') === guardianRoom;
+  publish({ type: 'chat', room_id: roomId },
+    (u) => u.account_id === reader.account_id || (counted && isStaffUser(u) && isRoomMember(u, roomId)));
+}
+
+/** 日誌は、その日誌を参照できる人へ（server/events.go の notifyDiary） */
+function publishDiary(d: Diary): void {
+  publish({ type: 'diary', diary_id: d.diary_id }, (u) => canSeeDiary(u, d));
+}
+
+/**
+ * 午睡チェックの開始・終了は、そのクラスを扱える職員と、そのクラスに自児がいる保護者へ
+ * （server/events.go の notifyNapSession）
+ */
+function publishNapSession(classId: number): void {
+  const children = db.classChildren.filter((cc) => cc.class_id === classId).map((cc) => cc.child_id);
+  publish({ type: 'nap', class_id: classId },
+    (u) => (isStaffUser(u) ? canUseClass(u, classId) : children.some((id) => canSeeChild(u, id))));
+}
+
+/**
+ * 園児1人の午睡の記録は、その園児を参照できる職員と、toGuardians のときは紐づく保護者へ。
+ * 異常時の記録・ヒヤリハットは保護者へ送らない（server/events.go の notifyNapChild）
+ */
+function publishNapChild(classId: number, childId: string, toGuardians: boolean): void {
+  publish({ type: 'nap', class_id: classId, child_id: childId },
+    (u) => (u.role !== '3' || toGuardians) && canSeeChild(u, childId));
+}
+
+/** 発達チェックは、その園児を参照できる職員へ（server/events.go の notifyDevelopment） */
+function publishDevelopment(childId: string): void {
+  publish({ type: 'development', child_id: childId }, (u) => isStaffUser(u) && canSeeChild(u, childId));
+}
+
+/** 身体測定は、その園児を参照できる職員と、共有済みの測定値なら紐づく保護者へ（server/events.go の notifyPhysical） */
+function publishPhysical(r: PhysicalRecord): void {
+  publish({ type: 'physical', child_id: r.child_id },
+    (u) => (u.role !== '3' || r.share_status === '2') && canSeeChild(u, r.child_id));
+}
 
 /* ============ 手続きを終えるまでの拒否（基本設計書「画面遷移」(3-4)） ============
  *
