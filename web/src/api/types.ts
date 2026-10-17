@@ -134,6 +134,8 @@ export interface Child {
   child_id: string;
   child_name: string;
   child_name_kana: string;
+  /** 呼び名。職員の応答だけに入る（保護者の応答には含めない。インタフェース一覧「Child」） */
+  nickname?: string;
   /** 月齢算出の唯一の根拠。未来日不可（5-3） */
   birth_date: string;
   sex: Sex;

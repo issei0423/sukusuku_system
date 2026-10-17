@@ -29,7 +29,8 @@ type ChatRoomView struct {
 	// 園全体は一般には投稿欄を表示しない。保護者は個人チャットのみ送受信できる（画面詳細図 4-1・4-2）
 	CanPost bool `json:"canPost"`
 	// 参加している保護者の人数。投稿が保護者にも届くことを入力欄の近くで示すために使う
-	GuardianCount int `json:"guardianCount"`
+	GuardianCount           int `json:"guardianCount"`
+	GuardianRegisteredCount int `json:"guardianRegisteredCount"`
 	// 外れたチャンネル。職員は、外れるまでの過去ログだけを読める（投稿はできない）
 	// （図/画面詳細図.md「グループ編成画面」(4-3) No.8、基本設計書「チャット」(5-5)）
 	Left bool `json:"left"`
@@ -104,6 +105,9 @@ func (a *app) handleChatRooms(w http.ResponseWriter, r *http.Request) {
 			JOIN m_account ac ON ac.account_id = m.account_id
 			WHERE m.chat_room_id = ? AND m.left_at IS NULL`+activeGuardianWhere,
 			views[i].Room.ChatRoomID).Scan(&views[i].GuardianCount)
+		a.db.QueryRow(`SELECT COUNT(*) FROM t_chat_member m JOIN m_account ac ON ac.account_id = m.account_id
+			WHERE m.chat_room_id = ? AND m.left_at IS NULL AND ac.role = '3'`,
+			views[i].Room.ChatRoomID).Scan(&views[i].GuardianRegisteredCount)
 	}
 	writeJSON(w, http.StatusOK, views)
 }
@@ -122,9 +126,14 @@ const activeGuardianWhere = ` AND ac.role = '3' AND ac.status = '1'`
 /*
 beforeJoinedClause は、保護者に見せないメッセージを除く条件。
 
-後から登録した保護者には、登録より前の個人チャットのやりとりを見せない
-（基本設計書「チャット」(5-5)）。先に登録していた保護者は、自分の書いたものが
+後から登録した保護者には、先に参加していた保護者と園のやりとりを見せない
+（基本設計書 第3.1版「チャット」(5-6)）。先に登録していた保護者は、自分の書いたものが
 後から加わる人に読まれることを知らないため。職員には適用しない。
+
+ただし、その部屋に保護者がまだ1人も参加していなかった間の投稿は、どの保護者にも見せる。
+個人チャットは園児の登録時に作るため、保護者の登録より前から園が書ける（GitHub Issue #140）。
+そのあいだ部屋には職員しかおらず、守るべき保護者の発言が無い。境は、保護者の参加の行
+（抜けた行も含む）のうち最も早い joined_at。最初に参加した保護者には何も隠さない。
 メッセージの表を m として引く問い合わせに足し、引数にアカウントIDを1つ加える。
 
 【仮置き】時刻は秒の単位で持つため、登録と同じ秒に送られたメッセージは、登録の前か後かを
@@ -135,7 +144,14 @@ const beforeJoinedClause = ` AND NOT EXISTS (
 	SELECT 1 FROM t_chat_member gm
 	  JOIN m_chat_room gr ON gr.chat_room_id = gm.chat_room_id
 	 WHERE gm.chat_room_id = m.chat_room_id AND gm.account_id = ?
-	   AND gr.room_type = '4' AND m.sent_at <= gm.joined_at)`
+	   AND gr.room_type = '4' AND m.sent_at <= gm.joined_at
+	   AND m.sent_at >= ` + firstGuardianJoinedAt + `
+	   AND gm.joined_at > ` + firstGuardianJoinedAt + `)`
+
+// firstGuardianJoinedAt は、その部屋に保護者が初めて参加した日時（抜けた行も含む）。beforeJoinedClause の境
+const firstGuardianJoinedAt = `(SELECT MIN(fm.joined_at) FROM t_chat_member fm
+	     JOIN m_account fa ON fa.account_id = fm.account_id
+	     WHERE fm.chat_room_id = m.chat_room_id AND fa.role = '3')`
 
 /*
 afterLeftClause は、チャンネルから外れた人に見せないメッセージを除く条件。

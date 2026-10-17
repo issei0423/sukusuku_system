@@ -27,6 +27,7 @@ export interface ChildInput {
   child_id: string;
   child_name: string;
   child_name_kana: string;
+  nickname?: string;
   birth_date: string;
   sex: Child['sex'];
   normal_temperature: number | null;
@@ -83,6 +84,7 @@ export interface ChatRoomView {
   canPost: boolean;
   /** 参加している保護者の人数。投稿が保護者にも届くことを入力欄の近くで示すために使う */
   guardianCount: number;
+  guardianRegisteredCount: number;
   /**
    * 外れたチャンネル。職員は、外れるまでの過去ログだけを読める（投稿はできない）
    * （図/画面詳細図.md「グループ編成画面」(4-3) No.8、基本設計書「チャット」(5-5)。GitHub Issue #161）

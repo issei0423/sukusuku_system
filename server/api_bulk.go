@@ -264,6 +264,7 @@ func (a *app) handleImportChildCsv(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
+	roomIDs := []int64{}
 
 	for _, row := range rows {
 		v := row.Values
@@ -284,12 +285,24 @@ func (a *app) handleImportChildCsv(w http.ResponseWriter, r *http.Request) {
 		var classID int64
 		if e := tx.QueryRow(`SELECT class_id FROM m_class WHERE fiscal_year = ? AND class_name = ?`,
 			fiscalYear, v[5]).Scan(&classID); e == nil {
-			tx.Exec(`INSERT OR IGNORE INTO t_class_child (class_id, child_id) VALUES (?, ?)`, classID, v[0])
+			if _, e = tx.Exec(`INSERT OR IGNORE INTO t_class_child (class_id, child_id) VALUES (?, ?)`, classID, v[0]); e != nil {
+				writeErr(w, http.StatusInternalServerError, "登録できませんでした。もう一度お試しください。")
+				return
+			}
 		}
+		roomID, e := createPersonalRoom(tx, v[0])
+		if e != nil {
+			writeErr(w, http.StatusInternalServerError, "登録できませんでした。もう一度お試しください。")
+			return
+		}
+		roomIDs = append(roomIDs, roomID)
 	}
 	if err := tx.Commit(); err != nil {
 		writeErr(w, http.StatusInternalServerError, "取り込みに失敗しました")
 		return
+	}
+	for _, id := range roomIDs {
+		a.notifyRoomMembers(id)
 	}
 
 	/*

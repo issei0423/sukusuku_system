@@ -104,7 +104,7 @@ CREATE TABLE m_child (
   enrollment_status   TEXT    NOT NULL CHECK (enrollment_status IN ('1','2','3')),      -- 1:在籍 2:退園 3:卒園
   photo_consent_level TEXT    NOT NULL CHECK (photo_consent_level IN ('1','2','3')),    -- 1:園内記録 2:自児保護者 3:他保護者
   -- 詳細設計書「変える表」(5-3)。既存の DB には db_contact.go の ensureContactSchema が同じ定義で足す
-  nickname             TEXT,                                                              -- 呼び名
+  nickname             TEXT,                                                              -- 呼び名（任意・20文字。園児情報入力で入れ、他児の名前の注意に使う。NULL も '' も「無し」。読むときは IFNULL で '' にそろえる）
   face_photo_path      TEXT,
   withdrawn_on         TEXT,
   nap_interval_minutes INTEGER CHECK (nap_interval_minutes BETWEEN 1 AND 15),
