@@ -23,12 +23,15 @@ const (
 	fnPhysical = "5"
 	fnChild    = "6"
 	fnAccount  = "7"
+	fnContact  = "8"
+	fnSetting  = "9"
 
 	opCreate  = "1"
 	opUpdate  = "2"
 	opApprove = "3"
 	opDelete  = "4"
 	opExport  = "5"
+	opAiDraft = "6"
 )
 
 func (a *app) log(accountID int64, functionType, operationType, table string,

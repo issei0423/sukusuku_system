@@ -49,12 +49,12 @@ export const DEVELOPMENT_RESULT: Record<DevelopmentResult, string> = {
 };
 export const SHARE_STATUS: Record<ShareStatus, string> = { '0': '対象外', '1': '未連携', '2': '連携済' };
 export const MEASURE_TYPE: Record<MeasureType, string> = { '1': '身長', '2': '体重' };
-export const LINK_STATUS: Record<LinkStatus, string> = { '1': '有効', '2': '終了' };
+export const LINK_STATUS: Record<LinkStatus, string> = { '1': '有効', '2': '終了', '3': '猶予中' };
 export const FUNCTION_TYPE: Record<FunctionType, string> = {
-  '1': '日誌', '2': 'チャット', '3': '午睡', '4': '発達', '5': '身体測定', '6': '園児', '7': 'アカウント',
+  '1': '日誌', '2': 'チャット', '3': '午睡', '4': '発達', '5': '身体測定', '6': '園児', '7': 'アカウント', '8': '連絡帳', '9': '設定',
 };
 export const OPERATION_TYPE: Record<OperationType, string> = {
-  '1': '作成', '2': '変更', '3': '承認', '4': '削除', '5': '出力',
+  '1': '作成', '2': '変更', '3': '承認', '4': '削除', '5': '出力', '6': 'AIの下書き',
 };
 
 /*

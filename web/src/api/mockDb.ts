@@ -20,6 +20,8 @@ import type {
   Diary, DiaryLock, DiaryTemplate, DiaryAttachment,
   ChatRoom, ChatMember, ChatMessage, ChatRead, ChatReaction, TermsAgreement, MisdeliveryRecord, Handout,
   NapSession, NapRecord, NapAbnormal,
+  ContactHomeRecord, ContactEventRecord, ContactClassRecord, ContactFacilityRecord, ContactReadRecord,
+  NapSleepRecord, NapExclusionRecord,
   DevelopmentCategory, DevelopmentItem, DevelopmentFrequency, ShareSetting,
   DevelopmentSchedule, DevelopmentCheck, DevelopmentResultRecord,
   PhysicalRecord, GrowthStandard, OperationLog, Setting,
@@ -383,6 +385,95 @@ export const napAbnormals: NapAbnormal[] = [
     response: '別室で休ませ、保護者へ連絡した。', staff_id: 'S003', diary_id: null },
 ];
 
+/* ============ 連絡帳と、ねた・おきた（詳細設計書「デモデータ」(5-5)） ============
+ * Go の server/seed.sql と同じ ID・同じ内容。野原 太郎（C001）の今日は「家庭から」「ねた」「園から」を空けておき、
+ * デモで押して見せる。起動した時刻より後の今日の記録は、下の日付ずらしのあとで外す（詳細設計書「未来の出来事を入れない」(5-5)）
+ */
+function home(id: number, childId: string, date: string, guardianId: string, v: Partial<ContactHomeRecord> & { submitted_at: string }): ContactHomeRecord {
+  return {
+    contact_home_id: id, child_id: childId, contact_date: date, guardian_id: guardianId,
+    temperature: null, night_sleep_from: null, night_sleep_to: null, breakfast: null, mood_label: null,
+    pickup_type: null, pickup_person: null, pickup_time: null, message: null,
+    confirmed_staff_id: null, confirmed_at: null, revised_at: null,
+    created_at: v.submitted_at, updated_at: v.confirmed_at ?? v.submitted_at, ...v,
+  };
+}
+export const contactHomes: ContactHomeRecord[] = [
+  home(1, 'C004', '2026-09-01', 'G004', { temperature: 36.5, night_sleep_from: '20:30', night_sleep_to: '06:30', breakfast: '1', mood_label: 'ごきげん', pickup_type: '1',
+    message: '朝から絵本を読んでほしいと言っていました。', submitted_at: '2026-09-01T07:40:00', confirmed_staff_id: 'S003', confirmed_at: '2026-09-01T08:52:00' }),
+  home(2, 'C005', '2026-09-01', 'G005', { temperature: 36.7, night_sleep_from: '21:00', night_sleep_to: '06:40', breakfast: '2', mood_label: 'ふつう', pickup_type: '2',
+    pickup_person: '祖母', pickup_time: '17:00', message: 'きょうは祖母が迎えに行きます。', submitted_at: '2026-09-01T07:45:00' }),
+  // 7:35 に送り、7:50 に園が確認したあと、8:05 に送り直した（確認が外れて「更新」）
+  home(3, 'C002', '2026-09-01', 'G002', { temperature: 36.9, night_sleep_from: '21:10', night_sleep_to: '06:50', breakfast: '3', mood_label: 'ふつう', pickup_type: '1',
+    message: '少し眠そうです。お昼寝のときによろしくお願いします。', submitted_at: '2026-09-01T08:05:00', revised_at: '2026-09-01T08:05:00',
+    created_at: '2026-09-01T07:35:00', updated_at: '2026-09-01T08:05:00' }),
+  home(4, 'C001', '2026-08-31', 'G001', { temperature: 36.6, breakfast: '1', mood_label: 'ごきげん',
+    submitted_at: '2026-08-31T07:42:00', confirmed_staff_id: 'S003', confirmed_at: '2026-08-31T08:50:00' }),
+];
+
+function contactEvent(id: number, childId: string, at: string, staffId: string, v: Partial<ContactEventRecord> & Pick<ContactEventRecord, 'event_type'>): ContactEventRecord {
+  return {
+    contact_event_id: id, child_id: childId, class_id: 1, contact_date: at.slice(0, 10), recorded_at: at,
+    meal_kind: null, meal_amount: null, toilet_label: null, temperature: null, body: null, contact_photo_id: null,
+    keep_in_growth: false, staff_id: staffId, corrected_at: null, is_deleted: false, created_at: at, updated_at: at, ...v,
+  };
+}
+/** 給食（meal_kind 1）の量 */
+const lunch = (amount: '1' | '2' | '3' | '4') => ({ event_type: '1' as const, meal_kind: '1' as const, meal_amount: amount });
+export const contactEvents: ContactEventRecord[] = [
+  contactEvent(1, 'C001', '2026-09-01T09:40:00', 'S004', { event_type: '2', toilet_label: 'おしっこ' }),
+  contactEvent(2, 'C001', '2026-09-01T10:15:00', 'S003', { event_type: '4', body: '園庭の砂場で、スコップの型抜きを何度もくり返していました。' }),
+  contactEvent(3, 'C001', '2026-09-01T11:40:00', 'S003', lunch('1')),
+  contactEvent(4, 'C002', '2026-09-01T11:40:00', 'S003', lunch('1')),
+  contactEvent(5, 'C004', '2026-09-01T11:40:00', 'S003', lunch('2')),
+  contactEvent(6, 'C005', '2026-09-01T11:40:00', 'S003', lunch('1')),
+  contactEvent(7, 'C006', '2026-09-01T11:40:00', 'S003', lunch('3')),
+  contactEvent(8, 'C007', '2026-09-01T11:40:00', 'S003', lunch('1')),
+  contactEvent(9, 'C009', '2026-09-01T11:40:00', 'S004', lunch('2')),
+  contactEvent(10, 'C010', '2026-09-01T11:40:00', 'S004', lunch('1')),
+  contactEvent(11, 'C001', '2026-08-31T09:30:00', 'S004', { event_type: '2', toilet_label: 'おしっこ' }),
+  contactEvent(12, 'C001', '2026-08-31T11:40:00', 'S003', lunch('1')),
+  contactEvent(13, 'C001', '2026-08-31T15:10:00', 'S003', { event_type: '1', meal_kind: '2', meal_amount: '2' }),
+];
+
+export const contactClasses: ContactClassRecord[] = [
+  { contact_class_id: 1, class_id: 1, contact_date: '2026-09-01', body: '園庭で砂場あそびと、しゃぼん玉をしました。', contact_photo_id: null, source_diary_id: null,
+    staff_id: 'S003', recorded_at: '2026-09-01T10:30:00', corrected_at: null, is_deleted: false, created_at: '2026-09-01T10:30:00', updated_at: '2026-09-01T10:30:00' },
+];
+
+export const contactFacilities: ContactFacilityRecord[] = [
+  { contact_facility_id: 1, child_id: 'C001', class_id: 1, contact_date: '2026-08-31',
+    body: 'しゃぼん玉を追いかけて、園庭をたくさん走っていました。給食はぜんぶ食べて、おひるねは1時間30分でした。',
+    staff_id: 'S003', recorded_at: '2026-08-31T17:05:00', corrected_at: null, is_deleted: false, created_at: '2026-08-31T17:05:00', updated_at: '2026-08-31T17:05:00' },
+];
+
+export const contactReads: ContactReadRecord[] = [
+  { child_id: 'C001', contact_date: '2026-08-31', account_id: 6, read_at: '2026-08-31T20:10:00' },
+];
+
+function sleep(id: number, sessionId: number, childId: string, at: string, staffId: string, woke?: { at: string; staff: string }): NapSleepRecord {
+  return {
+    nap_sleep_id: id, nap_session_id: sessionId, child_id: childId, slept_at: at, woke_at: woke?.at ?? null, sleep_temperature: null,
+    slept_staff_id: staffId, woke_staff_id: woke?.staff ?? null, corrected_at: null, is_deleted: false, created_at: at, updated_at: woke?.at ?? at,
+  };
+}
+/** 今日の実施 1（さくら組）は C001 を空けておく（デモ②）。昨日の実施 2 は C001 が 13:02〜14:35 */
+export const napSleeps: NapSleepRecord[] = [
+  sleep(1, 1, 'C002', '2026-09-01T13:05:00', 'S003'),
+  sleep(2, 1, 'C004', '2026-09-01T13:08:00', 'S003'),
+  sleep(3, 1, 'C005', '2026-09-01T13:10:00', 'S003'),
+  sleep(4, 1, 'C006', '2026-09-01T13:06:00', 'S003'),
+  sleep(5, 1, 'C007', '2026-09-01T13:12:00', 'S004'),
+  sleep(6, 1, 'C009', '2026-09-01T13:05:00', 'S004'),
+  sleep(7, 1, 'C010', '2026-09-01T13:07:00', 'S004'),
+  sleep(8, 2, 'C001', '2026-08-31T13:02:00', 'S003', { at: '2026-08-31T14:35:00', staff: 'S003' }),
+];
+
+/** 今日の実施 1 で C003 は欠席（ダッシュボードの「園から未送信」から外れることを見せる） */
+export const napExclusions: NapExclusionRecord[] = [
+  { nap_exclusion_id: 1, nap_session_id: 1, child_id: 'C003', reason: '1', staff_id: 'S003', is_deleted: false, created_at: '2026-09-01T13:01:00' },
+];
+
 /* ============ 発達チェック（基本設計書 5-7） ============
  * 発達過程区分はマスタ化して指針改定に追従する。区分の粒度は
  * 0歳児~2歳児までの機能発達について.md「発達区分一覧」に合わせた
@@ -639,6 +730,18 @@ export const settings: Setting[] = [
   setting('paging.nap_search_per_page', '50', '午睡記録検索の既定件数'),
   setting('paging.operation_log_per_page', '100', '操作ログの既定件数'),
   setting('paging.physical_history_count', '12', '過去測定値一覧の既定表示件数'),
+  // 連絡帳・通知・AI（基本設計書「設定マスタ」(5-9)、詳細設計書「デモデータ」(5-5)。server/seed.sql と同じ）
+  setting('contact.show_items', 'nap,meal,toilet,temperature,comment,photo,class', '保護者へ出すきょうのようすの項目'),
+  setting('contact.home_items', 'temperature,night_sleep,breakfast,mood,pickup,message', '「家庭から」の入力欄に出す項目'),
+  setting('contact.toilet_choices', 'おしっこ,うんち,おむつ交換,トイレでできた', '排せつの選択肢'),
+  setting('contact.mood_choices', 'ごきげん,ふつう,ごきげんななめ', '「家庭から」のきげんの選択肢'),
+  setting('push.quiet_hours', '21:00-07:00', '通知を送らない時間帯'),
+  setting('ai.enabled', '0', '文章の下書き（AI）を使うか'),
+  setting('ai.daily_limit', '300', 'AI の下書きの1日の上限回数'),
+  setting('scope.guardian_grace_days', '30', '保護者の猶予期間（日）'),
+  setting('nap.temperature_required', '入眠時', '午睡で体温を求める時点'),
+  setting('growth.share_physical', '1', '身体測定を成長の記録に出すか'),
+  setting('retention.contact_years', '5', '連絡帳の保持年数（要決定。決まるまでは記録の保持年数と同じ）'),
 ];
 
 /**
@@ -730,6 +833,13 @@ function shiftRows(rows: Record<string, unknown>[], days: number): void {
       developmentResults as unknown as Record<string, unknown>[],
       physicalRecords as unknown as Record<string, unknown>[],
       operationLogs as unknown as Record<string, unknown>[],
+      contactHomes as unknown as Record<string, unknown>[],
+      contactEvents as unknown as Record<string, unknown>[],
+      contactClasses as unknown as Record<string, unknown>[],
+      contactFacilities as unknown as Record<string, unknown>[],
+      contactReads as unknown as Record<string, unknown>[],
+      napSleeps as unknown as Record<string, unknown>[],
+      napExclusions as unknown as Record<string, unknown>[],
     ];
     for (const rows of recordSets) shiftRows(rows, offset);
 
@@ -751,6 +861,32 @@ function shiftRows(rows: Record<string, unknown>[], days: number): void {
      */
     for (const c of children) c.birth_date = shiftValue(c.birth_date, offset);
   }
+  trimFutureDemoContacts();
+}
+
+/**
+ * 今日のページで、起動した時刻より後の連絡帳の記録を入れない（詳細設計書「未来の出来事を入れない」(5-5)、決めたこと D-8）。
+ * 朝に起動すると、まだ起きていない給食やおひるねが保護者の画面に出るため。Go は server/db_contact.go の trimFutureDemoContacts。
+ * 既存の午睡の実施と5分ごとの確認にはかけない（今までどおり）
+ */
+function trimFutureDemoContacts(): void {
+  const day = today();
+  const at = now();
+  const future = (v: string | null) => v !== null && v.slice(0, 10) === day && v > at;
+  const drop = <T,>(rows: T[], when: (r: T) => boolean) => {
+    for (let i = rows.length - 1; i >= 0; i--) if (when(rows[i])) rows.splice(i, 1);
+  };
+  drop(contactEvents, (r) => r.contact_date === day && future(r.recorded_at));
+  drop(contactClasses, (r) => r.contact_date === day && future(r.recorded_at));
+  drop(contactFacilities, (r) => r.contact_date === day && future(r.recorded_at));
+  drop(contactHomes, (r) => r.contact_date === day && future(r.submitted_at));
+  for (const h of contactHomes) {
+    if (future(h.confirmed_at)) { h.confirmed_at = null; h.confirmed_staff_id = null; }
+    if (future(h.revised_at)) h.revised_at = null;
+  }
+  drop(napSleeps, (r) => future(r.slept_at));
+  for (const s of napSleeps) if (future(s.woke_at)) { s.woke_at = null; s.woke_staff_id = null; }
+  drop(napExclusions, (r) => future(r.created_at));
 }
 
 /* ============ 配布物（t_handout） ============
