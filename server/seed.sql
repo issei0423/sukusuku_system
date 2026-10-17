@@ -249,16 +249,17 @@ INSERT INTO t_diary (diary_id, record_type, child_id, class_id, diary_date, body
 UPDATE t_nap_abnormal SET diary_id = 3 WHERE nap_abnormal_id = 1;
 
 -- ============ チャット ============
-INSERT INTO m_chat_room (chat_room_id, room_type, class_id, room_name, is_archived, thread_status) VALUES
- (1,'1',NULL,'園全体',0,NULL),
- (2,'5',NULL,'職員',0,NULL),
- (3,'2',1,'さくら組',0,NULL),
- (4,'2',2,'ひまわり組',0,NULL),
- (5,'3',NULL,'運動会実行委員',0,NULL),
- (6,'4',1,'野原 太郎の保護者',0,'1'),
- (7,'4',1,'上園 花子の保護者',0,NULL),
- (8,'4',1,'宮城 美咲の保護者',0,NULL),
- (9,'4',1,'金城 陸の保護者',0,NULL);
+-- 個人チャットは園児ID（child_id）で園児と結ぶ。部屋の名前は表示のためのもの（GitHub Issue #163）
+INSERT INTO m_chat_room (chat_room_id, room_type, class_id, room_name, is_archived, thread_status, child_id) VALUES
+ (1,'1',NULL,'園全体',0,NULL,NULL),
+ (2,'5',NULL,'職員',0,NULL,NULL),
+ (3,'2',1,'さくら組',0,NULL,NULL),
+ (4,'2',2,'ひまわり組',0,NULL,NULL),
+ (5,'3',NULL,'運動会実行委員',0,NULL,NULL),
+ (6,'4',1,'野原 太郎の保護者',0,'1','C001'),
+ (7,'4',1,'上園 花子の保護者',0,NULL,'C002'),
+ (8,'4',1,'宮城 美咲の保護者',0,NULL,'C004'),
+ (9,'4',1,'金城 陸の保護者',0,NULL,'C005');
 
 -- left_at で過去の所属期間を保持する（基本設計書 5-5）
 INSERT INTO t_chat_member (chat_room_id, account_id, joined_at, left_at) VALUES

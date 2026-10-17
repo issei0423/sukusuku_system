@@ -19,9 +19,14 @@ import type {
   DevelopmentCheck, DevelopmentResultRecord, DevelopmentItem, ChatRoom, ChatMessage,
   OperationLog, Allergy, FunctionType, OperationType, Paged, Handout,
 } from './types';
-import { ageInMonths, now, today, addDays, plusMinutes, fromNowMinutes, napAutoCloseAt, normalizeInvitationCode, validateEmail } from './util';
+import {
+  ageInMonths, now, today, addDays, plusMinutes, fromNowMinutes, napAutoCloseAt, normalizeInvitationCode, validateEmail,
+  validateNewPassword, isRealDate,
+} from './util';
 import { BODY_POSITION, BREATHING, COMPLEXION, REACTION, HANDOUT_TYPE } from './codes';
-import { ProcedureRequiredError, notifyProcedureRequired, pendingProcedure } from './procedure';
+import {
+  ProcedureRequiredError, SESSION_ENDED_MESSAGE, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
+} from './procedure';
 import type {
   LoginError, ChildInput, DiaryFilter, DiaryInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
 } from './shapes';
@@ -37,6 +42,15 @@ function ok<T>(value: T): Promise<T> {
 }
 function fail<T = never>(message: string): Promise<T> {
   return new Promise((_, reject) => setTimeout(() => reject(new Error(message)), 60));
+}
+
+/**
+ * ログイン中の利用者を、もう通さないときの応答。サーバの 401（server/session.go の requireLogin）にあたる。
+ * 画面（App.tsx）へ知らせて入口へ戻させる（api/procedure.ts の onSessionEnded。GitHub Issue #159）
+ */
+function sessionEnded<T = never>(): Promise<T> {
+  notifySessionEnded();
+  return fail(SESSION_ENDED_MESSAGE);
 }
 
 /* ============ 採番 ============ */
@@ -249,7 +263,6 @@ export const authApi = {
     if (a.locked_until && a.locked_until > now()) {
       return fail(JSON.stringify({ kind: 'locked', until: a.locked_until } satisfies LoginError));
     }
-    if (a.status === '2') return fail(JSON.stringify({ kind: 'suspended' } satisfies LoginError));
 
     if (a.password_hash !== password) {
       a.failed_login_count += 1;
@@ -268,6 +281,10 @@ export const authApi = {
       return fail(JSON.stringify({ kind: 'credential', remaining: max - a.failed_login_count } satisfies LoginError));
     }
 
+    // 停止の判定は、パスワードの照合のあとに行う。照合より前に行うと、パスワードを知らない人にも
+    // 停止中のアカウントがあることを示してしまう（GitHub Issue #159。server/api_auth.go の handleLogin と同じ順）
+    if (a.status === '2') return fail(JSON.stringify({ kind: 'suspended' } satisfies LoginError));
+
     // 系統の判定。職員用トップからは保護者を、保護者用トップからは職員を通さない
     const isStaffAccount = a.role === '1' || a.role === '2';
     if (entrance === 'staff' && !isStaffAccount) {
@@ -275,6 +292,12 @@ export const authApi = {
     }
     if (entrance === 'guardian' && isStaffAccount) {
       return fail(JSON.stringify({ kind: 'wrong_entrance', correct: 'staff' } satisfies LoginError));
+    }
+
+    // 一時パスワードでのログインなら、有効期限内かを判定する。期限切れなら管理者への連絡を案内する
+    // （基本設計書「ログイン」(4-3)、メッセージ一覧 (4-9)。GitHub Issue #159）
+    if (a.is_temp_password && a.temp_password_expires_at && a.temp_password_expires_at < now()) {
+      return fail(JSON.stringify({ kind: 'temp_expired' } satisfies LoginError));
     }
 
     a.failed_login_count = 0;
@@ -288,10 +311,13 @@ export const authApi = {
   async changePassword(accountId: number, current: string, next: string): Promise<void> {
     const a = findAccount(accountId);
     if (!a) return fail('アカウントが見つかりません');
+    if (a.status === '2') return sessionEnded();
     if (a.password_hash !== current) return fail('現在のパスワードが違います');
-    if (next.length < 8) return fail('パスワードは8文字以上で入力してください');
     // 現在と同じパスワードへの変更は認めない（基本設計書「パスワードの要件」(6-3)）
     if (next === current) return fail('現在と同じパスワードは使えません。別のパスワードを入力してください。');
+    // 8〜128文字（文字数で数える）。よく使われるパスワードは拒否する（server/password.go と同じ規則。GitHub Issue #159）
+    const passwordError = validateNewPassword(next);
+    if (passwordError) return fail(passwordError);
     a.password_hash = next;
     a.is_temp_password = false;
     a.temp_password_expires_at = null;
@@ -304,6 +330,7 @@ export const authApi = {
   async agreeTerms(accountId: number): Promise<void> {
     const a = findAccount(accountId);
     if (!a) return fail('アカウントが見つかりません');
+    if (a.status === '2') return sessionEnded();
     a.terms_version = CURRENT_TERMS_VERSION;
     a.terms_agreed_at = now();
     recordTermsAgreement(accountId, a.terms_agreed_at);
@@ -341,7 +368,10 @@ export const authApi = {
   /** ログイン中の利用者を組み直す。パスワード変更・規約同意のあと画面を進めるために使う */
   async reloadSession(accountId: number): Promise<SessionUser> {
     const a = findAccount(accountId);
-    return a ? ok(buildSessionUser(a)) : fail('アカウントが見つかりません');
+    if (!a) return fail('アカウントが見つかりません');
+    // 停止中のアカウントは、ログイン中であっても通さない（server/session.go の requireLogin。GitHub Issue #159）
+    if (a.status === '2') return sessionEnded();
+    return ok(buildSessionUser(a));
   },
 };
 
@@ -690,9 +720,10 @@ const diaryApi2 = {
     log(user.account_id, '1', '3', 't_diary', d.diary_id, d.child_id, '申請中',
       shareToGuardian ? '承認済み・保護者へ共有' : '承認済み・共有しない');
 
-    // 共有する場合、個人チャットへ日誌の共有としてメッセージを流す（基本設計書 5-5 source_type=2）
+    // 共有する場合、個人チャットへ日誌の共有としてメッセージを流す（基本設計書 5-5 source_type=2）。
+    // 個人チャットは園児ID で引く。部屋の名前で探すと、同じ氏名の別の園児の家庭へ流れる（GitHub Issue #163）
     if (shareToGuardian && d.child_id) {
-      const room = db.chatRooms.find((r) => r.room_type === '4' && r.room_name === `${childName(d.child_id)}の保護者`);
+      const room = db.chatRooms.find((r) => r.room_type === '4' && r.child_id === d.child_id);
       if (room) {
         db.chatMessages.push({
           chat_message_id: nextId(), chat_room_id: room.chat_room_id, sender_account_id: user.account_id,
@@ -1929,6 +1960,15 @@ const adminApi2 = {
       const a = findAccount(g.account_id);
       if (a) { a.status = '2'; a.updated_at = now(); }
     }
+    /*
+     * 解除するとその園児の記録を参照できなくなる（画面詳細図 7-8 項目6）。保護者は left_at が入った時点で
+     * 参照できなくなる（基本設計書「チャット」(5-5)）。その園児の個人チャットと、ほかに有効な紐づけのある園児が
+     * 在籍していないクラスのクラスグループに left_at を入れる（GitHub Issue #159。server/api_admin.go の leaveRoomsOfChild）。
+     * サーバはあわせてログイン中のセッションを切る。モックはセッションを持たないため、有効な紐づけがゼロに
+     * なって停止したアカウントを、呼ばれるたびに断る（下の guardProcedure）
+     */
+    if (g) leaveRoomsOfChild(g.account_id, guardianId, childId);
+
     // 紐づけの表は数値の主キーを持たない。相手が分かるよう、保護者のアカウントを対象として残す
     log(user.account_id, '7', '2', 't_guardian_child', g?.account_id ?? null, childId, '有効',
       remaining === 0 ? '終了（有効な紐づけがゼロのためアカウントを停止）' : '終了');
@@ -1954,10 +1994,50 @@ const adminApi2 = {
       a.updated_at = now();
       after = '有効（アカウントを再開）';
     }
+    if (a) rejoinRoomsOfChild(a.account_id, childId);
     log(user.account_id, '7', '2', 't_guardian_child', g?.account_id ?? null, childId, '終了', after);
     return ok(undefined);
   },
 };
+
+/** その園児が在籍するクラス */
+const classIdsOfChild = (childId: string) =>
+  new Set(db.classChildren.filter((cc) => cc.child_id === childId).map((cc) => cc.class_id));
+
+/**
+ * 紐づけを解除した保護者を、その園児の個人チャットと、ほかに有効な紐づけのある園児が在籍していないクラスの
+ * クラスグループから外す（left_at を入れる）。所属していた期間の記録は残す（基本設計書 5-5）。
+ * サーバ側（server/api_admin.go の leaveRoomsOfChild）と同じ規則
+ */
+function leaveRoomsOfChild(accountId: number, guardianId: string, childId: string): void {
+  const classes = classIdsOfChild(childId);
+  const stillLinkedClasses = new Set(db.classChildren
+    .filter((cc) => db.guardianChildren.some((gc) =>
+      gc.guardian_id === guardianId && gc.child_id === cc.child_id && gc.link_status === '1'))
+    .map((cc) => cc.class_id));
+  const leave = new Set(db.chatRooms
+    .filter((r) => (r.room_type === '4' && r.child_id === childId)
+      || (r.room_type === '2' && r.class_id !== null && classes.has(r.class_id) && !stillLinkedClasses.has(r.class_id)))
+    .map((r) => r.chat_room_id));
+  db.chatMembers
+    .filter((m) => m.account_id === accountId && m.left_at === null && leave.has(m.chat_room_id))
+    .forEach((m) => { m.left_at = now(); });
+}
+
+/**
+ * 紐づけを戻した保護者を、その園児の個人チャットとクラスグループへ戻す（left_at を空にする）。
+ * 誤って解除したときの戻し先であり、解除の前の状態へ戻す（GitHub Issue #118・#159。server/api_admin.go の rejoinRoomsOfChild）
+ */
+function rejoinRoomsOfChild(accountId: number, childId: string): void {
+  const classes = classIdsOfChild(childId);
+  const rooms = new Set(db.chatRooms
+    .filter((r) => (r.room_type === '4' && r.child_id === childId)
+      || (r.room_type === '2' && r.class_id !== null && classes.has(r.class_id)))
+    .map((r) => r.chat_room_id));
+  db.chatMembers
+    .filter((m) => m.account_id === accountId && m.left_at !== null && rooms.has(m.chat_room_id))
+    .forEach((m) => { m.left_at = null; });
+}
 
 /** 推測困難な値とする（基本設計書 5-2）。モックのため乱数の強度は本実装で見直す */
 function randomCode(): string {
@@ -1982,6 +2062,11 @@ const adminApi3 = {
   async signUpGuardian(
     input: { code: string; email: string; password: string; guardian_name: string; relationship: string },
   ): Promise<SessionUser> {
+    /*
+     * この関数は、コードが未使用かを確かめてから使用済みにするまで、待たずに（await を挟まずに）進める。
+     * あいだに同じコードでの別の登録が割り込まないようにするため。1枚のコードは1アカウントの登録にのみ使える
+     * （基本設計書 5-2。GitHub Issue #163）。サーバ側は取引の中の条件付きの更新で同じことを守る（server/api_auth.go）
+     */
     const normalized = normalizeInvitationCode(input.code);
     const c = db.invitationCodes.find((x) => normalizeInvitationCode(x.code) === normalized);
     if (!c || c.status !== '1' || c.expires_on < today()) return fail('招待コードが確認できません');
@@ -1990,7 +2075,9 @@ const adminApi3 = {
     const emailError = validateEmail(input.email);
     if (emailError) return fail(emailError);
     if (db.accounts.some((a) => a.email === input.email)) return fail('このメールアドレスはすでに登録されています');
-    if (input.password.length < 8) return fail('パスワードは8文字以上で入力してください');
+    // 8〜128文字（文字数で数える）。よく使われるパスワードは拒否する（server/password.go と同じ規則。GitHub Issue #159）
+    const passwordError = validateNewPassword(input.password);
+    if (passwordError) return fail(passwordError);
     if (!input.guardian_name.trim()) return fail('保護者の氏名を入力してください');
 
     const accountId = nextId();
@@ -2016,8 +2103,9 @@ const adminApi3 = {
     c.used_account_id = accountId;
     c.used_at = now();
 
-    // 自児の個人チャットへ参加させる
-    const room = db.chatRooms.find((r) => r.room_type === '4' && r.room_name === `${childName(c.child_id)}の保護者`);
+    // 自児の個人チャットへ参加させる。個人チャットは園児ID で引く。部屋の名前（園児名＋「の保護者」）で探すと、
+    // 同じ氏名の別の園児がいるとき、別の家庭の個人チャットに入ってしまう（GitHub Issue #163。#140）
+    const room = db.chatRooms.find((r) => r.room_type === '4' && r.child_id === c.child_id);
     if (room) db.chatMembers.push({ chat_room_id: room.chat_room_id, account_id: accountId, joined_at: now(), left_at: null });
     const classId = db.classChildren.find((cc) => cc.child_id === c.child_id)?.class_id ?? null;
     const classRoom = classId ? db.chatRooms.find((r) => r.room_type === '2' && r.class_id === classId) : null;
@@ -2084,11 +2172,34 @@ const adminApi3 = {
 
 /* ============ CSV一括登録・年度更新（基本設計書 4-4） ============ */
 
+const CSV_HEADER = ['園児ID', '氏名', '氏名かな', '生年月日', '性別', 'クラス名', '平熱'];
+const CSV_HEADER_MESSAGE = `見出しの並びが取込の様式と違います。1行目を「${CSV_HEADER.join(',')}」の順にしてください（平熱の列は省けます）`;
+
+/** 見出しの並びが取込の様式と同じか。平熱の列は省いてよい。BOM 付きでも読む（server/api_bulk.go の checkCsvHeader） */
+function isCsvHeader(line: string): boolean {
+  const cols = line.replace(/^﻿/, '').split(',').map((c) => c.trim());
+  if (cols.length < CSV_HEADER.length - 1 || cols.length > CSV_HEADER.length) return false;
+  return cols.every((c, i) => c === CSV_HEADER[i]);
+}
+
+/** 園児IDの上限（基本設計書「入力項目の制約値」(4-9)「園児ID・職員ID｜20文字以内」） */
+const CHILD_ID_MAX_LENGTH = 20;
+
+/**
+ * 平熱として受け取る書き方。小数第1位までの数（基本設計書「入力項目の制約値」(4-9)「体温｜30.0〜43.0℃、
+ * 小数第1位まで」）。平熱が数値でない行は誤りとする（同「CSV一括登録」(4-4)）。範囲の外は誤りとせず確認を促す。
+ * 【仮置き】整数部は3桁まで（web/仮置き値.md）。サーバ側（server/api_bulk.go の temperatureRe）と同じ規則（GitHub Issue #160）
+ */
+const TEMPERATURE_FORMAT = /^\d{1,3}(\.\d)?$/;
+
 const bulkApi = {
   /** 取込内容とエラー行の確認。取り込む前に全行を検証して返す（画面詳細図の様式に合わせる） */
   parseChildCsv(text: string): { header: string[]; rows: CsvRow[] } {
-    const header = ['園児ID', '氏名', '氏名かな', '生年月日', '性別', 'クラス名', '平熱'];
+    const header = CSV_HEADER;
     const lines = text.split(/\r?\n/).filter((l) => l.trim() !== '');
+    // 見出しの並びが違うときは、行を読まずにファイルごと断る。行を読み進めると、別の列の値を
+    // 園児ID や氏名として取り込んでしまうため（GitHub Issue #160。server/api_bulk.go の checkCsvHeader）
+    if (lines[0]?.includes('園児ID') && !isCsvHeader(lines[0])) throw new Error(CSV_HEADER_MESSAGE);
     const body = lines[0]?.includes('園児ID') ? lines.slice(1) : lines;
 
     // 同じ取込の中での重複も弾く。ファイル内で同じ園児IDが2度出ることがある
@@ -2103,19 +2214,22 @@ const bulkApi = {
         errors.push('列が足りません（園児ID,氏名,氏名かな,生年月日,性別,クラス名,平熱）');
       } else {
         if (!values[0]) errors.push('園児IDが空です');
+        else if (tooLong(values[0], CHILD_ID_MAX_LENGTH)) errors.push('園児IDは20文字以内で入力してください');
         else if (seen.has(values[0])) errors.push('同じ園児IDがこのファイル内で重複しています');
         else if (db.children.some((c) => c.child_id === values[0])) errors.push('その園児IDはすでに登録されています');
         if (!values[1]) errors.push('氏名が空です');
         if (!values[2]) errors.push('氏名かなが空です');
         else if (!isKana(values[2])) errors.push('氏名かなは、ひらがなで入力してください');
         if (tooLong(values[1], 50) || tooLong(values[2], 50)) errors.push('氏名と氏名かなは、それぞれ50文字以内で入力してください');
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(values[3])) errors.push('生年月日は YYYY-MM-DD で入力してください');
+        // 実在する日付に限る（2025-02-30 を通さない）。生年月日は月齢算出の唯一の根拠（基本設計書 5-3。GitHub Issue #160）
+        if (!isRealDate(values[3])) errors.push('生年月日の形式が正しくありません。YYYY-MM-DD の形で、実在する日付を入力してください');
         else if (values[3] > today()) errors.push('生年月日に未来日は指定できません');
         if (!['1', '2', '9'].includes(values[4])) errors.push('性別は 1:男 2:女 9:未回答 で入力してください');
         if (!db.classes.some((c) => c.fiscal_year === db.FISCAL_YEAR && c.class_name === values[5])) errors.push('クラス名が見つかりません');
         if (values[6]) {
+          // Number() は Infinity・0x24・1e2 も数にする。数字と小数点だけの書き方に限る（TEMPERATURE_FORMAT）
           const t = Number(values[6]);
-          if (Number.isNaN(t)) errors.push('平熱は数値で入力してください');
+          if (!TEMPERATURE_FORMAT.test(values[6]) || !Number.isFinite(t)) errors.push('平熱は数値（小数第1位まで。例：36.5）で入力してください');
           else if (t < TEMPERATURE_MIN || t > TEMPERATURE_MAX) warning = '平熱が想定の範囲（30.0〜43.0℃）の外です。値を確かめてください';
         }
       }
@@ -2126,11 +2240,21 @@ const bulkApi = {
     return { header, rows };
   },
 
-  /** エラー行があるときは1件も取り込まない。中途半端な状態を作らないため */
-  // 第3引数の原文はサーバ実装（http.ts）が使う。モックでは検証済みの行をそのまま取り込む
-  async importChildCsv(user: SessionUser, rows: CsvRow[], _text?: string): Promise<number> {
+  /**
+   * エラー行があるときは1件も取り込まない。中途半端な状態を作らないため。
+   * 取り込む直前にもう一度検証する。画面が確認したときの原文（text）を、サーバ実装（http.ts）と同じく読み直す
+   * （server/api_bulk.go の handleImportChildCsv と同じ。GitHub Issue #160 の 3）
+   */
+  async importChildCsv(user: SessionUser, confirmed: CsvRow[], text?: string): Promise<number> {
     if (user.role !== '1') return fail('CSV一括登録は管理者のみが行えます');
+    let rows: CsvRow[];
+    try {
+      rows = bulkApi.parseChildCsv(text ?? confirmed.map((r) => r.values.join(',')).join('\n')).rows;
+    } catch (e) {
+      return fail((e as Error).message);
+    }
     if (rows.some((r) => r.error)) return fail('エラー行があるため取り込めません。すべて解消してから実行してください');
+    if (rows.length === 0) return fail('取り込む行がありません');
 
     rows.forEach((r) => {
       const [id, name, kana, birth, sex, clsName, temp] = r.values;
@@ -2211,6 +2335,9 @@ const dashboardApi = {
 
   /** 保護者ホーム。自児の情報とチャットへの導線（基本設計書「画面の一覧」(3-2)） */
   async guardianHome(user: SessionUser) {
+    // 保護者ホームは保護者のためのもの。職員が呼ぶと、参照範囲の園児すべてが「自児」として並ぶ
+    // （GitHub Issue #159 の 3。server/api_dashboard.go の handleGuardianHome と同じ）
+    if (user.role !== '3') return fail('保護者ホームは保護者のみが利用できます');
     const mine = user.guardian_id ? childrenOfGuardian(user.guardian_id) : [];
     const rooms = db.chatMembers.filter((m) => m.account_id === user.account_id && m.left_at === null).map((m) => m.chat_room_id);
     const unread = db.chatMessages.filter((m) =>
@@ -2347,12 +2474,24 @@ function isSessionUser(v: unknown): v is SessionUser {
   return typeof v === 'object' && v !== null && 'account_id' in v && 'is_temp_password' in v && 'terms_agreed' in v;
 }
 
+/*
+ * 停止中のアカウントは、ログイン中であっても通さない（GitHub Issue #159）。
+ * サーバはアカウントの停止・紐づけの解除のときにセッションを切り、要求のたびにアカウントの状態も読む
+ * （server/session.go の requireLogin・destroyAccount）。モックはセッションを持たないため、引数の利用者の
+ * アカウントの状態を、呼ばれるたびに読む。パスワードの変更・一時パスワードの再発行で「ほかの端末」を切る扱いは、
+ * 端末を区別できないため、モックには無い。
+ */
+function sessionAlive(u: SessionUser): boolean {
+  return findAccount(u.account_id)?.status !== '2';
+}
+
 function guardProcedure<T extends Record<string, unknown>>(apis: T): T {
   const out: Record<string, unknown> = {};
   for (const [name, fn] of Object.entries(apis)) {
     if (typeof fn !== 'function' || PROCEDURE_APIS.has(name)) { out[name] = fn; continue; }
     out[name] = (...args: unknown[]) => {
       const caller = args.find(isSessionUser);
+      if (caller && !sessionAlive(caller)) return sessionEnded();
       const kind = caller ? pendingProcedure(caller) : null;
       if (!kind) return fn(...args);
       notifyProcedureRequired(kind);

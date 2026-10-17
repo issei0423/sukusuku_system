@@ -90,6 +90,38 @@ func (s *sessionStore) accountID(r *http.Request) (int64, bool) {
 	return sess.accountID, true
 }
 
+// sessionID は、要求が持つセッションIDを返す。無ければ空文字
+func sessionID(r *http.Request) string {
+	if c, err := r.Cookie(sessionCookie); err == nil {
+		return c.Value
+	}
+	return ""
+}
+
+/*
+destroyAccount は、そのアカウントのセッションを keep 以外すべて無効化する。消した数を返す。
+
+サーバ側にセッションを持つのは、サーバ側で即座に無効化できるためである（基本設計書「認証情報の保持方式」(6-3)）。
+次のときに呼ぶ（GitHub Issue #159）。
+  - パスワードの変更 … 変更した端末以外のセッションをすべて無効化する（同 6-3、画面詳細図 2-4）。keep は変更した端末のセッション
+  - 一時パスワードの再発行 … その時点で旧パスワードを無効化する（基本設計書「一時パスワードの再発行」(4-3)）。
+    旧パスワードで入ったセッションも同じ扱いにする
+  - アカウントの停止 … 停止したアカウントはログインできない（要件定義書、画面詳細図 7-8 項目5）
+  - 紐づけの解除 … その園児の記録を参照できなくなる（画面詳細図 7-8 項目6、基本設計書 5-5）
+*/
+func (s *sessionStore) destroyAccount(accountID int64, keep string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for id, sess := range s.data {
+		if sess.accountID == accountID && id != keep {
+			delete(s.data, id)
+			n++
+		}
+	}
+	return n
+}
+
 // ---- 利用者の組み立て ----
 
 func (a *app) loadSessionUser(accountID int64) (*SessionUser, error) {
@@ -104,7 +136,7 @@ func (a *app) loadSessionUser(accountID int64) (*SessionUser, error) {
 		guardName sql.NullString
 	)
 	err := a.db.QueryRow(`
-		SELECT a.account_id, a.email, a.role, a.is_temp_password, a.terms_version,
+		SELECT a.account_id, a.email, a.role, a.status, a.is_temp_password, a.terms_version,
 		       s.staff_id, s.staff_name, g.guardian_id, g.guardian_name,
 		       c.class_id, c.class_name
 		  FROM m_account a
@@ -113,7 +145,7 @@ func (a *app) loadSessionUser(accountID int64) (*SessionUser, error) {
 		  LEFT JOIN t_class_staff cs ON cs.staff_id = s.staff_id
 		  LEFT JOIN m_class    c ON c.class_id = cs.class_id AND c.fiscal_year = ?
 		 WHERE a.account_id = ?`, fiscalYear, accountID).
-		Scan(&u.AccountID, &u.Email, &u.Role, &u.IsTempPassword, &termsVer,
+		Scan(&u.AccountID, &u.Email, &u.Role, &u.status, &u.IsTempPassword, &termsVer,
 			&staffID, &staffName, &guardID, &guardName, &classID, &className)
 	if err != nil {
 		return nil, err
@@ -159,7 +191,12 @@ const (
 )
 
 // requireLogin はログイン中の利用者を取り出す。未ログインなら 401 を返す。
-// 一時パスワード中・規約の再同意が必要な間も通す。手続きそのものの API だけが使う
+// 一時パスワード中・規約の再同意が必要な間も通す。手続きそのものの API だけが使う。
+//
+// 停止中のアカウントは、セッションが残っていても通さない。状態は要求のたびにデータベースから読む。
+// 停止・紐づけの解除のときにはセッションも消している（destroyAccount）が、状態だけが変わる経路が
+// あっても止まるようにするため（GitHub Issue #159）。停止したアカウントはログインできない（要件定義書、
+// 画面詳細図 7-8 項目5）
 func (a *app) requireLogin(w http.ResponseWriter, r *http.Request) (*SessionUser, bool) {
 	id, ok := a.sessions.accountID(r)
 	if !ok {
@@ -168,6 +205,11 @@ func (a *app) requireLogin(w http.ResponseWriter, r *http.Request) (*SessionUser
 	}
 	u, err := a.loadSessionUser(id)
 	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, apiError{Message: "ログインしていません"})
+		return nil, false
+	}
+	if u.isSuspended() {
+		a.sessions.destroyAccount(u.AccountID, "")
 		writeJSON(w, http.StatusUnauthorized, apiError{Message: "ログインしていません"})
 		return nil, false
 	}

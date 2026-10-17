@@ -37,14 +37,14 @@ describe('招待コード', () => {
   it('1枚のコードは1アカウントの登録にのみ使える', async () => {
     const code = await api.issueOneInvitationCode(admin, 'C005', 30);
     await api.signUpGuardian({
-      code, email: 'test.parent1@example.jp', password: 'password1',
+      code, email: 'test.parent1@example.jp', password: 'kinjo-pass-5678',
       guardian_name: '金城 一郎', relationship: '父',
     });
     // 使用と同時に status を使用済みにする
     expect(db.invitationCodes.find((c) => c.code === code)?.status).toBe('2');
 
     await expect(api.signUpGuardian({
-      code, email: 'test.parent2@example.jp', password: 'password1',
+      code, email: 'test.parent2@example.jp', password: 'kinjo-pass-5678',
       guardian_name: '金城 花子', relationship: '母',
     })).rejects.toThrow('招待コードが確認できません');
   });
@@ -74,7 +74,7 @@ describe('招待コード', () => {
   it('登録したメールアドレスは重複させない（ロールをまたいで園内で一意）', async () => {
     const code = await api.issueOneInvitationCode(admin, 'C006', 30);
     await expect(api.signUpGuardian({
-      code, email: 'takanashi@hoiku.example.jp', password: 'password1',
+      code, email: 'takanashi@hoiku.example.jp', password: 'kinjo-pass-5678',
       guardian_name: '重複 太郎', relationship: '父',
     })).rejects.toThrow('すでに登録されています');
   });
@@ -84,7 +84,7 @@ describe('保護者の紐づけ', () => {
   it('有効な紐づけがゼロになった時点でアカウントを停止する', async () => {
     const code = await api.issueOneInvitationCode(admin, 'C007', 30);
     const u = await api.signUpGuardian({
-      code, email: 'test.parent3@example.jp', password: 'password1',
+      code, email: 'test.parent3@example.jp', password: 'kinjo-pass-5678',
       guardian_name: '中村 二郎', relationship: '父',
     });
     expect(u.guardian_id).toBeTruthy();

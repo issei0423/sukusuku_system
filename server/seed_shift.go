@@ -24,6 +24,8 @@ import (
  * （GitHub Issue #164。モックの web/src/api/mockDb.ts は日付の形の値をすべてずらしている）。
  * 園児の生年月日や年度の開始日は絶対の日付であり、動かしてはならない。
  * それらはマスタ（m_）にあるため、対象から自然に外れる。
+ * ただし一時パスワードの有効期限（m_account.temp_password_expires_at）は、デモの「今日」から
+ * 決めた日時なので、明示的に対象へ入れる（seedShiftMasterColumns）。
  * ただし t_invitation_code.birth_date は記録テーブルにある生年月日なので、
  * 明示的に除外する。
  *
@@ -107,6 +109,16 @@ func shiftDatesBy(db *sql.DB, offset int) error {
 		}
 	}
 
+	// 記録テーブルの外にあって、ずらす必要のある列
+	for _, tc := range seedShiftMasterColumns {
+		q := fmt.Sprintf(`UPDATE %s SET %s = replace(datetime(%s, ?), ' ', 'T') WHERE %s IS NOT NULL`,
+			tc.table, tc.column, tc.column, tc.column)
+		if _, err := db.Exec(q, fmt.Sprintf("%+d days", offset)); err != nil {
+			return fmt.Errorf("%s.%s の日付をずらせませんでした: %w", tc.table, tc.column, err)
+		}
+		shifted++
+	}
+
 	log.Printf("デモデータの日付を %+d 日ずらしました（基準 %s → 起動日 %s、%d 列）",
 		offset, seedBaseDate, addDays(seedBaseDate, offset), shifted)
 	return nil
@@ -169,6 +181,17 @@ var seedShiftIncluded = map[string]bool{
 	// デモデータのコードがすべて期限切れになる（GitHub Issue #129）。
 	// いまは _on で終わる列として対象に入るが、漏れの経緯を残すために書いておく
 	"t_invitation_code.expires_on": true,
+}
+
+/*
+seedShiftMasterColumns は、マスタ（m_）にあるが、デモデータの「今日」に合わせて決めた日時の列。
+
+ずらしの対象は記録テーブル（t_）だけだが、一時パスワードの有効期限は「今日から 48 時間」として入れてある。
+ずらさないと、デモの 宮城 蓮 は起動した日によって期限切れになり、一時パスワードでのログインを見せられない
+（GitHub Issue #159。有効期限をログインで確かめるようにしたため）。日時（YYYY-MM-DDTHH:MM:SS）の列に限る
+*/
+var seedShiftMasterColumns = []struct{ table, column string }{
+	{"m_account", "temp_password_expires_at"},
 }
 
 func hasDateSuffix(name string) bool {

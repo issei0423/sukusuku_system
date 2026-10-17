@@ -218,8 +218,14 @@ CREATE TABLE m_chat_room (
   class_id      INTEGER REFERENCES m_class(class_id),
   room_name     TEXT    NOT NULL,
   is_archived   INTEGER NOT NULL DEFAULT 0,
-  thread_status TEXT                                                        -- 個人チャットのみ 1:未対応 2:対応済み
+  thread_status TEXT,                                                       -- 個人チャットのみ 1:未対応 2:対応済み
+  -- 個人チャットの園児。個人チャットのルームは園児単位で作る（基本設計書 5-5）。
+  -- 【仮置き】設計の列定義（5-5）に無い列。氏名の文字列で部屋を探すと、同じ氏名の別の園児の
+  -- 部屋に入るため、園児ID で結ぶ（GitHub Issue #163。web/仮置き値.md）
+  child_id      TEXT    REFERENCES m_child(child_id)
 );
+-- 1人の園児に個人チャットは1つ
+CREATE UNIQUE INDEX ux_chat_room_child ON m_chat_room (child_id) WHERE room_type = '4';
 
 -- 参加者（t_chat_member）。left_at で過去の所属期間を保持する。
 -- 職員は left_at が入っていても参照できる。保護者は入った時点で参照できなくなる。
