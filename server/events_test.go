@@ -557,32 +557,49 @@ func TestNotifyGrowthAudience(t *testing.T) {
 		to(who("管理者", "ひまわり組の担任"), devHimawari))
 	call(t, h, otherTeacher, "POST", "/api/development/checks",
 		`{"child_id":"C013","results":[],"note":"","status":"2"}`)
-	expect(t, "発達チェックの確定（発達チェックは保護者に見えない）", clients,
+	expect(t, "発達チェックの確定（ひまわり組の子の家庭はつないでいない）", clients,
 		to(who("管理者", "ひまわり組の担任"), devHimawari))
+
+	// 確定は成長の記録に届くため、その家庭の保護者へも送る。下書きは職員だけ（詳細設計書「知らせ」(6-2)）
+	devTaro := liveEvent{Type: evDevelopment, ChildID: childTaro}
+	call(t, h, teacher, "POST", "/api/development/checks",
+		`{"child_id":"C001","checked_on":"`+daysFromToday(-1)+`","results":[],"note":"","status":"1"}`)
+	expect(t, "野原 太郎の発達チェックの下書き", clients, to(who("管理者", "さくら組の担任"), devTaro))
+	call(t, h, teacher, "POST", "/api/development/checks",
+		`{"child_id":"C001","checked_on":"`+daysFromToday(-1)+`","results":[],"note":"","status":"2"}`)
+	expect(t, "野原 太郎の発達チェックの確定（その家庭の保護者にも届く）", clients,
+		to(who("管理者", "さくら組の担任", "野原 太郎の保護者"), devTaro))
 
 	call(t, h, admin, "POST", "/api/development/schedules",
 		`{"child_id":"C001","scheduled_on":"`+daysFromToday(30)+`","manual":true}`)
 	expect(t, "次回の予定日", clients,
 		to(who("管理者", "さくら組の担任"), liveEvent{Type: evDevelopment, ChildID: childTaro}))
 
+	// 身体測定は、共有範囲で「共有する」（growth.share_physical = 1）なら、その家庭の保護者へも届く（詳細設計書 (4-12 (4))）
 	physTaro := liveEvent{Type: evPhysical, ChildID: childTaro}
 	call(t, h, teacher, "POST", "/api/physical/records",
 		`{"child_id":"C001","measured_on":"`+daysFromToday(-1)+`","height_cm":79.0,"weight_kg":10.0,"confirm_same_month":true}`)
-	expect(t, "身体測定の登録（共有していない測定値は保護者に見えない）", clients,
+	expect(t, "身体測定の登録（共有するので保護者にも届く）", clients,
+		to(who("管理者", "さくら組の担任", "野原 太郎の保護者"), physTaro))
+	a.db.Exec(`UPDATE m_setting SET setting_value = '0' WHERE setting_key = 'growth.share_physical'`)
+	call(t, h, teacher, "POST", "/api/physical/records",
+		`{"child_id":"C001","measured_on":"`+daysFromToday(-1)+`","height_cm":79.1,"weight_kg":10.0,"confirm_overwrite":true}`)
+	expect(t, "身体測定を共有しないときの上書き（保護者には届かない）", clients,
 		to(who("管理者", "さくら組の担任"), physTaro))
+	a.db.Exec(`UPDATE m_setting SET setting_value = '1' WHERE setting_key = 'growth.share_physical'`)
 
-	// 測定値 2 は野原 太郎の共有済み（連携済）の測定値
+	// 測定値 2 は野原 太郎の測定値
 	var measured string
 	if err := a.db.QueryRow(`SELECT measured_on FROM t_physical_record WHERE physical_record_id = 2`).Scan(&measured); err != nil {
 		t.Fatal(err)
 	}
 	call(t, h, teacher, "POST", "/api/physical/records",
 		`{"child_id":"C001","measured_on":"`+measured+`","height_cm":77.5,"weight_kg":9.6,"confirm_overwrite":true}`)
-	expect(t, "共有済みの測定値の上書き（その家庭の保護者にだけ届く）", clients,
+	expect(t, "測定値の上書き（その家庭の保護者にだけ届く）", clients,
 		to(who("管理者", "さくら組の担任", "野原 太郎の保護者"), physTaro))
 
 	call(t, h, admin, "DELETE", "/api/physical/records/1", "")
-	expect(t, "共有済みの測定値の削除", clients, to(who("管理者", "さくら組の担任", "野原 太郎の保護者"), physTaro))
+	expect(t, "測定値の削除", clients, to(who("管理者", "さくら組の担任", "野原 太郎の保護者"), physTaro))
 }
 
 // 停止したアカウント・手続きの途中のアカウントがつないだままでも、知らせは送らない（受け取り口が閉じるまでの間）

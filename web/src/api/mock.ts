@@ -2065,8 +2065,8 @@ export const devApi = {
       null, status === '2' ? '確定' : '下書き保存');
 
     if (status === '2') advanceDevelopmentSchedule(user, check, childId, checkedOn);
-    // 下書きでも、一覧の未入力の数が変わる
-    publishDevelopment(childId);
+    // 下書きでも、一覧の未入力の数が変わる。保護者へは確定したときだけ
+    publishDevelopment(childId, status === '2');
     return ok(check);
   },
 };
@@ -2123,7 +2123,7 @@ const devApi2 = {
     }
     log(user.account_id, '4', '2', 't_development_schedule', null, childId, null,
       `次回予定日=${scheduledOn}${manual ? '（手動上書き）' : ''}`);
-    publishDevelopment(childId);
+    publishDevelopment(childId, false);
     return ok(undefined);
   },
 
@@ -2184,14 +2184,14 @@ export const physicalApi = {
   },
 
   /**
-   * 園児の測定値。保護者に見せるのは、共有した（連携済の）測定値だけ（基本設計書 6-1「成長グラフの閲覧｜保護者 ※3」、
-   * 5-7 share_status＝2:連携済。GitHub Issue #157）。サーバ側は server/api_physical.go の handlePhysicalRecords
+   * 園児の測定値。職員だけ。保護者は成長の記録（growthRecord）で、共有する測定値だけを読む
+   * （詳細設計書「身体測定・共有範囲の経路」(4-12 (4))）。サーバ側は server/api_physical.go の handlePhysicalRecords
    */
   async recordsOf(user: SessionUser, childId: string): Promise<PhysicalRecord[]> {
+    if (user.role === '3') return fail(MSG.growthForbidden);
     if (!canSeeChild(user, childId)) return fail('この園児を参照する権限がありません');
     return ok(db.physicalRecords
       .filter((r) => !r.is_deleted && r.child_id === childId)
-      .filter((r) => user.role !== '3' || r.share_status === '2')
       .sort((a, b) => b.measured_on.localeCompare(a.measured_on)));
   },
 
@@ -3794,15 +3794,23 @@ function plusSeconds(at: string, seconds: number): string {
   return `${d}T${p(Math.floor(total / 3600) % 24)}:${p(Math.floor(total / 60) % 60)}:${p(total % 60)}`;
 }
 
-/** 発達チェックは、その園児を参照できる職員へ（server/events.go の notifyDevelopment） */
-function publishDevelopment(childId: string): void {
-  publish({ type: 'development', child_id: childId }, (u) => isStaffUser(u) && canSeeChild(u, childId));
+/**
+ * 発達チェックは、その園児を参照できる職員へ。保護者へは確定したときだけ、成長の記録を読める家庭へ
+ * （server/events.go の notifyDevelopment。詳細設計書「知らせ」(6-2) の development の行）
+ */
+function publishDevelopment(childId: string, finalized: boolean): void {
+  publish({ type: 'development', child_id: childId },
+    (u) => (u.role === '3' ? finalized && contactAccess(u, childId).read : isStaffUser(u) && canSeeChild(u, childId)));
 }
 
-/** 身体測定は、その園児を参照できる職員と、共有済みの測定値なら紐づく保護者へ（server/events.go の notifyPhysical） */
+/**
+ * 身体測定は、その園児を参照できる職員と、身体測定を共有するとき（growth.share_physical）は成長の記録を読める家庭へ
+ * （server/events.go の notifyPhysical。詳細設計書「知らせ」(6-2) の physical の行・(4-12 (4))）
+ */
 function publishPhysical(r: PhysicalRecord): void {
+  const shared = settingText('growth.share_physical', '1') === '1';
   publish({ type: 'physical', child_id: r.child_id },
-    (u) => (u.role !== '3' || r.share_status === '2') && canSeeChild(u, r.child_id));
+    (u) => (u.role === '3' ? shared && contactAccess(u, r.child_id).read : canSeeChild(u, r.child_id)));
 }
 
 /* ============ 成長の記録（詳細設計書「成長の記録」(4-12 (1))・「成長の記録に届くもの」(3-7)） ============

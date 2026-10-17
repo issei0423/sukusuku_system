@@ -103,7 +103,7 @@ func (a *app) growthRecord(u *SessionUser, childID, before string) (*growthRecor
 	day := today()
 
 	// 身長・体重：身体測定を共有するときだけ、未削除の行を全件・測った日の新しい順。before に左右されない
-	out.SharePhysical = a.settingText("growth.share_physical", "1") == "1"
+	out.SharePhysical = a.sharePhysical()
 	if out.SharePhysical {
 		rows, err := a.db.Query(`SELECT physical_record_id, measured_on, height_cm, weight_kg, updated_at FROM t_physical_record
 			WHERE child_id = ? AND is_deleted = 0 ORDER BY measured_on DESC, physical_record_id DESC`, childID)
@@ -170,7 +170,7 @@ growthNew は、成長の記録にきょう届いたものがあるか（保護�
 func (a *app) growthNew(childID string) bool {
 	day := today()
 	var n int
-	if a.settingText("growth.share_physical", "1") == "1" {
+	if a.sharePhysical() {
 		a.db.QueryRow(`SELECT COUNT(*) FROM t_physical_record WHERE child_id = ? AND is_deleted = 0 AND substr(updated_at, 1, 10) = ?`,
 			childID, day).Scan(&n)
 		if n > 0 {

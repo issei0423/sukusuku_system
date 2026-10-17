@@ -158,7 +158,7 @@ func (a *app) handleSaveDevelopmentCheck(w http.ResponseWriter, r *http.Request)
 	}
 	// 発達チェック一覧（未入力の数・最後の実施日）とダッシュボードの「未実施」が変わりうる。
 	// 下書きでも未入力の数が変わる（events.go）
-	a.notifyDevelopment(req.ChildID)
+	a.notifyDevelopment(req.ChildID, req.Status == "2")
 
 	row := a.db.QueryRow(`SELECT `+checkColumns+` FROM t_development_check WHERE development_check_id = ?`, checkID)
 	c, _ := a.scanCheck(row)

@@ -13,6 +13,7 @@ import { subscribeLive } from '../src/live';
 import type { LiveSignal } from '../src/live';
 import type { SessionUser } from '../src/api/types';
 import { today, addDays } from '../src/api/util';
+import * as db from '../src/api/mockDb';
 
 const user = (account_id: number, role: SessionUser['role'], extra: Partial<SessionUser>): SessionUser => ({
   account_id, email: `${account_id}@example.jp`, role, display_name: `アカウント${account_id}`,
@@ -191,16 +192,25 @@ describe('連絡帳（ねた・おきた・家庭から）', () => {
 });
 
 describe('発達チェック・身体測定', () => {
-  it('発達チェックは職員にだけ、身体測定は共有済みの測定値のときだけ保護者へも届く', async () => {
+  it('発達チェックの下書きは職員にだけ、確定は保護者へも。身体測定は共有するとき（設定）だけ保護者へも届く', async () => {
     const taroGot = watch(taroGuardian);
+    const setting = db.settings.find((s) => s.setting_key === 'growth.share_physical')!;
     await api.saveCheck(teacher, 'C001', today(), [], '', '1');
-    await api.save(teacher, {
-      child_id: 'C001', measured_on: addDays(today(), -1), height_cm: 79, weight_kg: 10, confirm_same_month: true,
-    });
+    setting.setting_value = '0';
+    try {
+      await api.save(teacher, {
+        child_id: 'C001', measured_on: addDays(today(), -1), height_cm: 79, weight_kg: 10, confirm_same_month: true,
+      });
+    } finally {
+      setting.setting_value = '1';
+    }
     expect(taroGot).toEqual([]);
-    // 測定値 1 は野原 太郎の共有済みの測定値
+    // 測定値 1 は野原 太郎の測定値。共有するので保護者へも届く
     await api.remove(admin, 1);
     expect(taroGot).toEqual([{ type: 'physical', child_id: 'C001' }]);
+    // 確定は保護者の成長の記録に届くため、保護者へも送る（詳細設計書「知らせ」(6-2)）
+    await api.saveCheck(teacher, 'C001', addDays(today(), -1), [], '', '2');
+    expect(taroGot).toEqual([{ type: 'physical', child_id: 'C001' }, { type: 'development', child_id: 'C001' }]);
     stops.splice(0).forEach((s) => s());
 
     const teacherGot = watch(teacher);
