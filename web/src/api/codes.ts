@@ -31,6 +31,14 @@ export const DIARY_STATUS_CLASS: Record<DiaryStatus, string> = {
 export const CHAT_ROOM_TYPE: Record<ChatRoomType, string> = {
   '1': '園全体', '2': 'クラス', '3': '目的別グループ', '4': '個人', '5': '職員',
 };
+/** 保護者が参加するチャンネル（園全体・クラスグループ・個人チャット。基本設計書「チャット」(5-5)） */
+export const GUARDIAN_ROOM_TYPES: readonly ChatRoomType[] = ['1', '2', '4'];
+/**
+ * 吹き出しに添える、送信者が職員か保護者か。
+ * 【仮置き】職員と保護者に同じ氏名の人がいると、氏名だけでは誰の発言か分からない（GitHub Issue #141。web/仮置き値.md）。
+ * 管理者と一般は分けない。保護者に園の中の権限の区分を見せる必要がないため
+ */
+export const SENDER_KIND: Record<Role, string> = { '1': '職員', '2': '職員', '3': '保護者' };
 export const BODY_POSITION: Record<BodyPosition, string> = {
   '1': '仰向け', '2': 'うつ伏せ', '3': '左向き', '4': '右向き',
 };

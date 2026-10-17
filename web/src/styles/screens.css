@@ -49,6 +49,11 @@
 
 .msg { margin-bottom: var(--sp-4); }
 .msg .meta { font-size: var(--fs-small); color: var(--c-text-sub); margin-bottom: 2px; }
+/* 送信者が職員か保護者か。同じ氏名の職員と保護者を見分ける（GitHub Issue #141） */
+.msg .meta .sender-role {
+  display: inline-block; margin: 0 var(--sp-1); padding: 0 6px;
+  border: 1px solid var(--c-border); border-radius: 4px; background: var(--c-surface);
+}
 .msg .bubble {
   display: inline-block; max-width: 80%;
   padding: var(--sp-2) var(--sp-3);
