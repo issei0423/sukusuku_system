@@ -151,8 +151,8 @@ export default function NapCheckScreen() {
             <button className="btn-primary" onClick={start}>午睡チェックを開始する</button>
           </div>
           <div className="muted" style={{ marginTop: 12 }}>
-            開始すると、この画面は開いたままの運用になります。実施中は自動ログアウトの対象外です
-            （基本設計書「画面遷移」(3-4)）。
+            開始すると、この画面は開いたままの運用になります。実施中は自動ログアウトの対象外です。
+            {/* 実施中は自動ログアウトの対象外（基本設計書「画面遷移」(3-4)） */}
           </div>
         </section>
       )}

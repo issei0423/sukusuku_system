@@ -137,7 +137,8 @@ export default function OperationLogScreen() {
 
       <section className="card card-sub">
         <div className="muted">
-          操作ログは追記のみで、更新・削除の手段を設けていません（基本設計書 5-8）。
+          {/* 追記のみ。更新・削除の手段を設けない（基本設計書「操作ログ（t_operation_log）」(5-8)） */}
+          操作ログは追記のみで、更新・削除の手段を設けていません。
           操作日時にはサーバの時刻を入れます。
           <br />
           CSV 出力は、いま表示しているページの行を出します。出力したことも操作ログに残ります。

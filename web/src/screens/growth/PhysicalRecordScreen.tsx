@@ -337,8 +337,8 @@ export default function PhysicalRecordScreen() {
               onChange={setPurpose} />
           </Field>
           <div className="muted" style={{ marginTop: 8 }}>
-            出力の目的は操作ログに残ります。持ち出しの経緯を後から追えるようにするためです
-            （基本設計書「監査への対応」(6-4)）。
+            出力の目的は操作ログに残ります。持ち出しの経緯を後から追えるようにするためです。
+            {/* 出力の目的を操作ログに残す（基本設計書「監査への対応」(6-4)） */}
           </div>
         </Modal>
       )}

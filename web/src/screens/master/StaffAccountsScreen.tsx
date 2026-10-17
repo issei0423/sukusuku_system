@@ -209,7 +209,8 @@ export default function StaffAccountsScreen() {
 
       <section className="card card-sub">
         <div className="muted">
-          ログインIDのメールアドレスは、ロールをまたいで園内で一意です（基本設計書 5-2）。
+          {/* ログインIDはロールをまたいで園内で一意（基本設計書「アカウント（m_account）」(5-2)） */}
+          ログインIDのメールアドレスは、ロールをまたいで園内で一意です。
           停止したアカウントのログインIDも、別のアカウントには使えません。
           <br />
           氏名・ロール・担当クラスは「変更」から直せます。職員IDとログインIDは変えられません。
