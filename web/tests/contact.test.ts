@@ -267,4 +267,25 @@ describe('きょうは対象外（詳細設計書「午睡の園児」(3-4)）',
     expect(db.operationLogs.filter((l) => l.target_table === 't_nap_exclusion').map((l) => l.operation_type)).toEqual(expect.arrayContaining(['1', '4']));
     await api.endSession(teacher, sessionId);
   });
+
+  // server/api_contact_test.go の TestNapSleepAndExclusionAtOnce と同じ観点。同じ園児に「ねた」と対象外の両方は成り立たず、
+  // 負けた側は順に押したときと同じ文を返す（「ねた」が先なら対象外を、対象外が先なら「ねた」を拒む）
+  it('ねたと対象外を同時に押しても、どちらか1つだけが通る', async () => {
+    const sessionId = await freshSession();
+    const count = (childId: string) => [
+      db.napSleeps.filter((s) => s.nap_session_id === sessionId && s.child_id === childId && !s.is_deleted).length,
+      db.napExclusions.filter((x) => x.nap_session_id === sessionId && x.child_id === childId && !x.is_deleted).length,
+    ];
+
+    const [slept, excluded] = await Promise.allSettled([api.sleep(teacher, sessionId, 'C007'), api.exclude(teacher, sessionId, 'C007', '1')]);
+    expect(count('C007')).toEqual([1, 0]);
+    expect(slept.status).toBe('fulfilled');
+    expect(excluded.status === 'rejected' && (excluded.reason as Error).message).toBe(MSG.excludeAfterSleep);
+
+    const [excluded2, slept2] = await Promise.allSettled([api.exclude(teacher, sessionId, 'C008', '1'), api.sleep(teacher, sessionId, 'C008')]);
+    expect(count('C008')).toEqual([0, 1]);
+    expect(excluded2.status).toBe('fulfilled');
+    expect(slept2.status === 'rejected' && (slept2.reason as Error).message).toBe(MSG.sleepExcluded);
+    await api.endSession(teacher, sessionId);
+  });
 });
