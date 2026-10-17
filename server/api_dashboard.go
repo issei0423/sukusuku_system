@@ -206,7 +206,8 @@ func (a *app) handleGuardianHome(w http.ResponseWriter, r *http.Request) {
 		writeForbidden(w, "保護者ホームは保護者のみが利用できます")
 		return
 	}
-	children, err := a.visibleChildren(u)
+	// 「きょう」は連絡帳を読める自児ごとに1件（猶予中を含む。contact_scope.go の guardianContactChildren）
+	children, err := a.guardianContactChildren(u)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "取得に失敗しました")
 		return
@@ -251,12 +252,16 @@ func (a *app) handleGuardianHome(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// 承認済みかつ共有指定のある個人日誌だけが保護者に見える。ヒヤリハットは共有の対象外
-		// （基本設計書「日誌システム」(4-5)。条件は api_diary.go の visibleDiaryCondition と同じ）
-		diaries, _ := a.queryDiaries(`SELECT `+diaryColumns+` FROM t_diary
-			WHERE is_deleted = 0 AND child_id = ? AND record_type = '1' AND status = '3' AND is_shared_to_guardian = 1
-			ORDER BY diary_date DESC`, childID)
-		if diaries == nil {
-			diaries = []Diary{}
+		// （基本設計書「日誌システム」(4-5)。条件は api_diary.go の visibleDiaryCondition と同じ）。
+		// 日誌は有効な紐づけの自児だけ（canSeeChild）。猶予中の子を並べても、日誌の範囲は広げない
+		diaries := []Diary{}
+		if a.canSeeChild(u, childID) {
+			diaries, _ = a.queryDiaries(`SELECT `+diaryColumns+` FROM t_diary
+				WHERE is_deleted = 0 AND child_id = ? AND record_type = '1' AND status = '3' AND is_shared_to_guardian = 1
+				ORDER BY diary_date DESC`, childID)
+			if diaries == nil {
+				diaries = []Diary{}
+			}
 		}
 		out[i].SharedDiaries = diaries
 		t, err := a.guardianToday(u, childID)

@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -472,5 +474,99 @@ func TestNapExclusion(t *testing.T) {
 	a.db.QueryRow(`SELECT COUNT(*) FROM t_operation_log WHERE function_type = '3' AND target_table = 't_nap_exclusion'`).Scan(&n)
 	if n != 2 {
 		t.Errorf("対象外の操作ログ = %d, want 2（作成・削除）", n)
+	}
+}
+
+// 「ねた」と「きょうは対象外」を同時に押しても、同じ園児に両方は成り立たない（詳細設計書「午睡の園児」(3-4)、
+// 基本設計書「きょうは対象外」(4-8)「『ねた』を記録した園児は、対象外にできない」）。
+// 確かめと書き込みのあいだに、もう片方の書き込みを割り込ませない。負けた側は、順に押したときと同じ応答を返す。
+// モックの同じ観点は web/tests/contact.test.ts の「ねたと対象外を同時に押す」
+func TestNapSleepAndExclusionAtOnce(t *testing.T) {
+	a, h := newTestApp(t)
+	teacher := loginAs(a, accTeacher, "staff")
+	s := startOwnNap(t, h, teacher)
+	base := "/api/nap/session/" + itoa(s.NapSessionID)
+	for i := 0; i < 40; i++ {
+		a.db.Exec(`DELETE FROM t_nap_sleep WHERE nap_session_id = ? AND child_id = 'C002'`, s.NapSessionID)
+		a.db.Exec(`DELETE FROM t_nap_exclusion WHERE nap_session_id = ? AND child_id = 'C002'`, s.NapSessionID)
+		var sleepRec, excludeRec *httptest.ResponseRecorder
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-start
+			sleepRec = request(t, h, teacher, "POST", base+"/sleeps", `{"child_id":"C002"}`)
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			excludeRec = request(t, h, teacher, "POST", base+"/exclusions", `{"child_id":"C002","reason":"1"}`)
+		}()
+		close(start)
+		wg.Wait()
+
+		var sleeps, exclusions int
+		a.db.QueryRow(`SELECT COUNT(*) FROM t_nap_sleep WHERE nap_session_id = ? AND child_id = 'C002' AND is_deleted = 0`, s.NapSessionID).Scan(&sleeps)
+		a.db.QueryRow(`SELECT COUNT(*) FROM t_nap_exclusion WHERE nap_session_id = ? AND child_id = 'C002' AND is_deleted = 0`, s.NapSessionID).Scan(&exclusions)
+		if sleeps+exclusions != 1 {
+			t.Fatalf("%d 回目：ねた %d 件・対象外 %d 件（どちらか1つだけのはず）。ねた %d %s / 対象外 %d %s",
+				i+1, sleeps, exclusions, sleepRec.Code, sleepRec.Body.String(), excludeRec.Code, excludeRec.Body.String())
+		}
+		switch {
+		case sleeps == 1:
+			// 「ねた」が先に通った：対象外は 400「『ねた』を記録した園児は対象外にできません。」（順に押したときと同じ）
+			if sleepRec.Code != http.StatusOK || excludeRec.Code != http.StatusBadRequest || !strings.Contains(excludeRec.Body.String(), msgExcludeAfterSleep) {
+				t.Fatalf("%d 回目（ねたが先）：ねた %d / 対象外 %d %s", i+1, sleepRec.Code, excludeRec.Code, excludeRec.Body.String())
+			}
+		default:
+			// 対象外が先に通った：ねたは 409 already_exists「この園児は対象外になっています。…」
+			if excludeRec.Code != http.StatusOK || sleepRec.Code != http.StatusConflict ||
+				!strings.Contains(sleepRec.Body.String(), msgSleepExcluded) || !strings.Contains(sleepRec.Body.String(), kindAlreadyExists) {
+				t.Fatalf("%d 回目（対象外が先）：対象外 %d / ねた %d %s", i+1, excludeRec.Code, sleepRec.Code, sleepRec.Body.String())
+			}
+		}
+	}
+}
+
+// 卒園・退園して猶予中（3）の自児も、保護者ホームの「きょう」に出す。家庭からは書けず、読める期限を添える
+// （詳細設計書「ダッシュボード」(4-8 (1))「紐づけが 1:有効・3:猶予中の自児ごとに1件」・「保護者ホーム（「きょう」）」(2-5 (2))）。
+// 日誌の共有の範囲は広げない（猶予中の保護者は日誌を読めない）。紐づけを終えた（2）子は出さない。
+// モックの同じ観点は web/tests/contact.test.ts の「猶予中の自児も保護者ホームの「きょう」に出す」
+func TestGuardianTodayGrace(t *testing.T) {
+	a, h := newTestApp(t)
+	guardian := loginAs(a, accGuardian, "guardian")
+	type row struct {
+		Child struct {
+			ChildID string `json:"child_id"`
+		} `json:"child"`
+		SharedDiaries []json.RawMessage `json:"sharedDiaries"`
+		Today         *struct {
+			ChildID      string  `json:"child_id"`
+			CanWriteHome bool    `json:"can_write_home"`
+			GraceEndsOn  *string `json:"grace_ends_on"`
+		} `json:"today"`
+	}
+	read := func() []row {
+		var rows []row
+		decode(t, call(t, h, guardian, "GET", "/api/dashboard/guardian", ""), &rows)
+		return rows
+	}
+	grace := daysFromToday(20)
+	a.db.Exec(`UPDATE m_child SET enrollment_status = '2', withdrawn_on = ? WHERE child_id = 'C001'`, today())
+	a.db.Exec(`UPDATE t_guardian_child SET link_status = '3', grace_ends_on = ? WHERE guardian_id = 'G001' AND child_id = 'C001'`, grace)
+	rows := read()
+	if len(rows) != 1 || rows[0].Child.ChildID != "C001" || rows[0].Today == nil {
+		t.Fatalf("猶予中の自児が保護者ホームに無い: %+v", rows)
+	}
+	if got := rows[0].Today; got.CanWriteHome || got.GraceEndsOn == nil || *got.GraceEndsOn != grace {
+		t.Errorf("猶予中の「きょう」: can_write_home=%v grace_ends_on=%v, want false・%s", got.CanWriteHome, got.GraceEndsOn, grace)
+	}
+	if len(rows[0].SharedDiaries) != 0 {
+		t.Errorf("猶予中の保護者に共有された日誌が出ている: %d 件", len(rows[0].SharedDiaries))
+	}
+	a.db.Exec(`UPDATE t_guardian_child SET link_status = '2' WHERE guardian_id = 'G001' AND child_id = 'C001'`)
+	if rows := read(); len(rows) != 0 {
+		t.Errorf("紐づけを終えた子が保護者ホームに出ている: %+v", rows)
 	}
 }

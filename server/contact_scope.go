@@ -71,6 +71,35 @@ func (a *app) contactAccess(u *SessionUser, childID string) access {
 	return access{}
 }
 
+/*
+guardianContactChildren は、保護者ホームの「きょう」に並べる自児（詳細設計書「ダッシュボード」(4-8 (1))）。
+contactAccess の Read と同じ条件（紐づけが 1:有効 か 3:猶予中、取り消していない園児）で選び、年上の子から並べる。
+卒園・退園して猶予中の子も「〇月〇日まで読むことができます」として出すため（同「保護者ホーム（「きょう」）」(2-5 (2))）、
+在籍中で有効な紐づけだけを返す visibleChildren は使わない。モックは web/src/api/mock.ts の guardianContactChildren
+*/
+func (a *app) guardianContactChildren(u *SessionUser) ([]Child, error) {
+	if !u.isGuardian() || u.GuardianID == nil {
+		return []Child{}, nil
+	}
+	rows, err := a.db.Query(`SELECT `+childColumns+` FROM m_child
+		WHERE is_deleted = 0 AND child_id IN (SELECT child_id FROM t_guardian_child
+		                                      WHERE guardian_id = ? AND link_status IN ('1','3'))
+		ORDER BY birth_date, child_id`, *u.GuardianID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Child{}
+	for rows.Next() {
+		c, err := scanChild(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 // classContactAccess は、そのクラスの連絡帳（クラスの表・クラスのようす）を読めるか・書けるか。職員だけ
 func (a *app) classContactAccess(u *SessionUser, classID int64) access {
 	if !u.isStaff() {

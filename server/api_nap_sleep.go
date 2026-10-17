@@ -72,11 +72,6 @@ func (a *app) handleSleep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var n int
-	a.db.QueryRow(`SELECT COUNT(*) FROM t_nap_exclusion WHERE nap_session_id = ? AND child_id = ? AND is_deleted = 0`, sessionID, in.ChildID).Scan(&n)
-	if n > 0 {
-		writeJSON(w, http.StatusConflict, apiError{Message: msgSleepExcluded, Kind: kindAlreadyExists})
-		return
-	}
 	a.db.QueryRow(`SELECT COUNT(*) FROM t_nap_sleep WHERE nap_session_id = ? AND child_id = ? AND woke_at IS NULL AND is_deleted = 0`,
 		sessionID, in.ChildID).Scan(&n)
 	if n > 0 {
@@ -84,11 +79,22 @@ func (a *app) handleSleep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	at := now()
+	/*
+	   対象外の子には「ねた」を記録しない。対象外かの確かめと書き込みを1つの文（1つのトランザクション）で行い、
+	   同時に押された「きょうは対象外」とのあいだに割り込ませない（別々に確かめると、両方が通って同じ園児に
+	   「ねた」と対象外が並ぶ）。handleExclude も同じ形で「ねた」のある子を止める（詳細設計書「午睡の園児」(3-4)）
+	*/
 	res, err := a.db.Exec(`INSERT INTO t_nap_sleep (nap_session_id, child_id, slept_at, slept_staff_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)`, sessionID, in.ChildID, at, u.staff(), at, at)
+		SELECT ?, ?, ?, ?, ?, ?
+		WHERE NOT EXISTS (SELECT 1 FROM t_nap_exclusion WHERE nap_session_id = ? AND child_id = ? AND is_deleted = 0)`,
+		sessionID, in.ChildID, at, u.staff(), at, at, sessionID, in.ChildID)
 	if err != nil {
 		// 同時に押されたときは部分一意の索引（ux_nap_sleep_open）が止める
 		writeJSON(w, http.StatusConflict, apiError{Message: msgSleepTwice, Kind: kindAlreadyExists})
+		return
+	}
+	if inserted, _ := res.RowsAffected(); inserted == 0 {
+		writeJSON(w, http.StatusConflict, apiError{Message: msgSleepExcluded, Kind: kindAlreadyExists})
 		return
 	}
 	id, _ := res.LastInsertId()
@@ -213,18 +219,19 @@ func (a *app) handleExclude(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var n int
-	a.db.QueryRow(`SELECT COUNT(*) FROM t_nap_sleep WHERE nap_session_id = ? AND child_id = ? AND is_deleted = 0`, sessionID, in.ChildID).Scan(&n)
-	if n > 0 {
-		writeErr(w, http.StatusBadRequest, msgExcludeAfterSleep)
-		return
-	}
 	at := now()
-	res, err := a.db.Exec(`INSERT INTO t_nap_exclusion (nap_session_id, child_id, reason, staff_id, created_at) VALUES (?, ?, ?, ?, ?)`,
-		sessionID, in.ChildID, in.Reason, u.staff(), at)
+	// 「ねた」のある子は対象外にしない。確かめと書き込みを1つの文で行い、同時に押された「ねた」を割り込ませない（handleSleep と同じ）
+	res, err := a.db.Exec(`INSERT INTO t_nap_exclusion (nap_session_id, child_id, reason, staff_id, created_at)
+		SELECT ?, ?, ?, ?, ?
+		WHERE NOT EXISTS (SELECT 1 FROM t_nap_sleep WHERE nap_session_id = ? AND child_id = ? AND is_deleted = 0)`,
+		sessionID, in.ChildID, in.Reason, u.staff(), at, sessionID, in.ChildID)
 	if err != nil {
 		// 取り消していない対象外は1つだけ（部分一意の索引 ux_nap_exclusion_alive）
 		writeJSON(w, http.StatusConflict, apiError{Message: msgExcludedTwice, Kind: kindAlreadyExists})
+		return
+	}
+	if inserted, _ := res.RowsAffected(); inserted == 0 {
+		writeErr(w, http.StatusBadRequest, msgExcludeAfterSleep)
 		return
 	}
 	id, _ := res.LastInsertId()

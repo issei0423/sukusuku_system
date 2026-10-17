@@ -249,6 +249,31 @@ describe('ねた・おきた（詳細設計書「午睡の園児」(3-4)）', ()
   });
 });
 
+describe('保護者ホームの「きょう」（詳細設計書「ダッシュボード」(4-8 (1))）', () => {
+  // server/api_contact_test.go の TestGuardianTodayGrace と同じ観点。紐づけが 1:有効・3:猶予中の自児ごとに1件。
+  // 猶予中は家庭からを書けず、読める期限を添える（同「保護者ホーム（「きょう」）」(2-5 (2))）。日誌の共有の範囲は広げない
+  it('猶予中の自児も保護者ホームの「きょう」に出す。紐づけを終えた子は出さない', async () => {
+    const link = db.guardianChildren.find((g) => g.guardian_id === 'G001' && g.child_id === 'C001')!;
+    const child = db.children.find((c) => c.child_id === 'C001')!;
+    const saved = { link: { ...link }, enrollment: child.enrollment_status };
+    const grace = addDays(today(), 20);
+    try {
+      child.enrollment_status = '2';
+      Object.assign(link, { link_status: '3', grace_ends_on: grace });
+      const rows = await api.guardianHome(taroGuardian);
+      expect(rows.map((r) => r.child.child_id)).toEqual(['C001']);
+      expect([rows[0].today.can_write_home, rows[0].today.grace_ends_on]).toEqual([false, grace]);
+      expect(rows[0].sharedDiaries).toEqual([]);
+
+      link.link_status = '2';
+      expect(await api.guardianHome(taroGuardian)).toEqual([]);
+    } finally {
+      Object.assign(link, saved.link);
+      child.enrollment_status = saved.enrollment;
+    }
+  });
+});
+
 describe('きょうは対象外（詳細設計書「午睡の園児」(3-4)）', () => {
   it('対象外の子は「ねた」を押せず、戻すと押せる。「ねた」のある子は対象外にできない。保護者には出さない', async () => {
     const sessionId = await freshSession();
@@ -265,6 +290,27 @@ describe('きょうは対象外（詳細設計書「午睡の園児」(3-4)）',
     await api.sleep(teacher, sessionId, 'C006');
     await expect(api.exclude(teacher, sessionId, 'C006', '1')).rejects.toThrow(MSG.excludeAfterSleep);
     expect(db.operationLogs.filter((l) => l.target_table === 't_nap_exclusion').map((l) => l.operation_type)).toEqual(expect.arrayContaining(['1', '4']));
+    await api.endSession(teacher, sessionId);
+  });
+
+  // server/api_contact_test.go の TestNapSleepAndExclusionAtOnce と同じ観点。同じ園児に「ねた」と対象外の両方は成り立たず、
+  // 負けた側は順に押したときと同じ文を返す（「ねた」が先なら対象外を、対象外が先なら「ねた」を拒む）
+  it('ねたと対象外を同時に押しても、どちらか1つだけが通る', async () => {
+    const sessionId = await freshSession();
+    const count = (childId: string) => [
+      db.napSleeps.filter((s) => s.nap_session_id === sessionId && s.child_id === childId && !s.is_deleted).length,
+      db.napExclusions.filter((x) => x.nap_session_id === sessionId && x.child_id === childId && !x.is_deleted).length,
+    ];
+
+    const [slept, excluded] = await Promise.allSettled([api.sleep(teacher, sessionId, 'C007'), api.exclude(teacher, sessionId, 'C007', '1')]);
+    expect(count('C007')).toEqual([1, 0]);
+    expect(slept.status).toBe('fulfilled');
+    expect(excluded.status === 'rejected' && (excluded.reason as Error).message).toBe(MSG.excludeAfterSleep);
+
+    const [excluded2, slept2] = await Promise.allSettled([api.exclude(teacher, sessionId, 'C008', '1'), api.sleep(teacher, sessionId, 'C008')]);
+    expect(count('C008')).toEqual([0, 1]);
+    expect(excluded2.status).toBe('fulfilled');
+    expect(slept2.status === 'rejected' && (slept2.reason as Error).message).toBe(MSG.sleepExcluded);
     await api.endSession(teacher, sessionId);
   });
 });
