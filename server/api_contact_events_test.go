@@ -337,6 +337,13 @@ func TestContactEventCorrectCancel(t *testing.T) {
 	if !strings.Contains(logged, `"temperature":36.6`) {
 		t.Errorf("取り消しの操作ログに元の値が無い: %s", logged)
 	}
+	// 時刻を後から付けた記録は、保存した時刻より前に開いた家庭を「読んでいる」に数えない（自動レビューの指摘）
+	back := record(t, h, teacher, `{"child_id":"C001","event_type":"2","toilet_label":"おしっこ","recorded_at":"`+today()+`T00:00:00"}`)
+	a.db.Exec(`UPDATE t_contact_read SET read_at = ? WHERE account_id = ? AND child_id = 'C001'`, today()+"T00:00:01", accGuardian)
+	decode(t, call(t, h, teacher, "GET", path(back.Events[0], "readers"), ""), &readers)
+	if readers.Families != 0 {
+		t.Errorf("後から時刻を付けた記録の読んでいる家庭: %+v", readers)
+	}
 	// 職員のページは書けるかを返す（保護者には返さない）
 	if !strings.Contains(staffBody, `"can_write":true`) {
 		t.Errorf("職員のページに can_write が無い")

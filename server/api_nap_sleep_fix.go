@@ -39,6 +39,13 @@ func (a *app) sleepTarget(w http.ResponseWriter, r *http.Request, u *SessionUser
 	return sleep, sessionDate, classID
 }
 
+// sleepCreatedAt は、その組を保存した時刻（取り消しの確認の「いま読んでいる家庭」の起点。readersOf を参照）
+func (a *app) sleepCreatedAt(id int64) string {
+	var at string
+	a.db.QueryRow(`SELECT created_at FROM t_nap_sleep WHERE nap_sleep_id = ?`, id).Scan(&at)
+	return at
+}
+
 func sleepLogFields(sleptAt string, wokeAt *string) []field {
 	return []field{{"slept_at", sleptAt}, {"woke_at", wokeAt}}
 }
@@ -116,10 +123,15 @@ func (a *app) handleCancelSleep(w http.ResponseWriter, r *http.Request) {
 	if sleep == nil {
 		return
 	}
-	families, _ := a.readersOf([]string{sleep.ChildID}, sessionDate, sleep.SleptAt)
-	if _, err := a.db.Exec(`UPDATE t_nap_sleep SET is_deleted = 1, updated_at = ? WHERE nap_sleep_id = ? AND is_deleted = 0`,
-		now(), sleep.ID); err != nil {
+	families, _ := a.readersOf([]string{sleep.ChildID}, sessionDate, a.sleepCreatedAt(sleep.ID))
+	res, err := a.db.Exec(`UPDATE t_nap_sleep SET is_deleted = 1, updated_at = ? WHERE nap_sleep_id = ? AND is_deleted = 0`, now(), sleep.ID)
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, msgContactSaveFailed)
+		return
+	}
+	// ほかの職員が先に取り消していた（同時に押した）。二重に記録・知らせしない
+	if n, _ := res.RowsAffected(); n == 0 {
+		writeForbidden(w, msgContactForbidden)
 		return
 	}
 	a.log(u.AccountID, fnNap, opDelete, "t_nap_sleep", i64(sleep.ID), &sleep.ChildID,
@@ -148,6 +160,6 @@ func (a *app) handleSleepReaders(w http.ResponseWriter, r *http.Request) {
 		writeForbidden(w, msgContactForbidden)
 		return
 	}
-	families, guardians := a.readersOf([]string{sleep.ChildID}, sessionDate, sleep.SleptAt)
+	families, guardians := a.readersOf([]string{sleep.ChildID}, sessionDate, a.sleepCreatedAt(sleep.ID))
 	writeJSON(w, http.StatusOK, map[string]int{"family_count": families, "guardian_count": guardians})
 }
