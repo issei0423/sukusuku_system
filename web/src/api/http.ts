@@ -19,7 +19,7 @@ import type {
   DevListRow, DevScheduleRow, CsvRow, FiscalClassRow, StaffAccountRow,
   GuardianAccountRow, InvitationCodeRow, OperationLogRow, StaffSummary, GuardianHomeRow,
   DevDraftView,
-  ContactPage, ContactClassView, ContactHome, ContactHomeInput, NapSleep, NapExclusion,
+  ContactPage, ContactClassView, ContactHome, ContactHomeInput, NapSleep, NapExclusion, GrowthRecord,
 } from './shapes';
 import {
   ProcedureRequiredError, isProcedureKind, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
@@ -674,6 +674,9 @@ const contactApi = {
   exclude: (_u: SessionUser, sessionId: number, childId: string, reason: '1' | '2') =>
     post<NapExclusion>(`/api/nap/session/${sessionId}/exclusions`, { child_id: childId, reason }),
   cancelExclusion: (_u: SessionUser, exclusionId: number) => post<{ ok: true }>(`/api/nap/exclusions/${exclusionId}/cancel`),
+  /** 成長の記録（詳細設計書「成長の記録」(4-12 (1))）。before は前の応答の next_before */
+  growthRecord: (_u: SessionUser, childId: string, before?: string | null) =>
+    get<GrowthRecord>(`/api/children/${encodeURIComponent(childId)}/growth${before ? qs({ before }) : ''}`),
 };
 
 export const api = { ...apiAuth, ...apiChatNap, ...apiGrowth, ...apiAdmin, ...apiHandout, ...contactApi };

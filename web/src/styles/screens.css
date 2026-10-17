@@ -361,3 +361,31 @@ button.guardian-record-link {
 .contact-home-cell .contact-home-lines > div { grid-template-columns: 5.5em 1fr; }
 .contact-confirm-button { min-height: 44px; }
 .dashboard-count.is-due { font-weight: 700; color: var(--c-alert); }
+
+/* 保護者：成長の記録画面（幅 360px で1列。詳細設計書「成長の記録画面（保護者）」(2-11 (3))）。
+   判定に見える色（赤・緑など）を測った値と項目に付けない */
+.growth-section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); flex-wrap: wrap; }
+.growth-switch { display: flex; gap: var(--sp-1); }
+.growth-switch button { min-height: 44px; min-width: 64px; }
+.growth-source { margin: 0; }
+.growth-measurements { width: 100%; }
+.growth-today {
+  display: inline-block; margin-left: var(--sp-2); padding: 0 var(--sp-2);
+  border: 1px solid var(--c-border); border-radius: var(--radius); font-size: var(--fs-small); font-weight: 700;
+}
+.growth-timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-3); }
+.growth-entry { display: grid; gap: var(--sp-1); padding-bottom: var(--sp-3); border-bottom: 1px solid var(--c-border-weak); }
+.growth-entry:last-child { border-bottom: 0; padding-bottom: 0; }
+.growth-entry-head { margin: 0; font-weight: 700; }
+.growth-items { margin: 0; padding-left: 1.4em; }
+.growth-message h4 { font-size: var(--fs-small); margin: 0; }
+.growth-message p, .growth-contact { margin: 0; overflow-wrap: anywhere; }
+.growth-photo-mark {
+  display: inline-flex; align-items: center; justify-content: center; width: 56px; height: 56px; margin-right: var(--sp-2);
+  vertical-align: middle; background: var(--c-surface-sub); border: 1px solid var(--c-border); border-radius: var(--radius);
+  font-size: var(--fs-small);
+}
+.guardian-panel-link .growth-new { margin-left: var(--sp-2); }
+/* 「ホームへ」も指で押せる高さにする（44px。基本設計書「画面基本構成」(3-5) のタップ領域） */
+.growth-page .contact-page-head > a { display: inline-flex; align-items: center; min-height: 44px; justify-self: start; }
+.growth-page .contact-page-head > p { margin: 0; }

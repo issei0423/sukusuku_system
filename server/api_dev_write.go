@@ -101,8 +101,9 @@ func (a *app) handleSaveDevelopmentCheck(w http.ResponseWriter, r *http.Request)
 	switch {
 	case isNew:
 		res, e := tx.Exec(`INSERT INTO t_development_check
-			(child_id, checked_on, status, staff_id, share_status, note)
-			VALUES (?, ?, ?, ?, '1', ?)`, req.ChildID, req.CheckedOn, req.Status, u.staff(), note)
+			(child_id, checked_on, status, staff_id, share_status, note, finalized_at)
+			VALUES (?, ?, ?, ?, '1', ?, CASE WHEN ? = '2' THEN ? END)`, req.ChildID, req.CheckedOn, req.Status, u.staff(), note,
+			req.Status, now())
 		if e != nil {
 			writeErr(w, http.StatusInternalServerError, "保存に失敗しました")
 			return
@@ -112,8 +113,11 @@ func (a *app) handleSaveDevelopmentCheck(w http.ResponseWriter, r *http.Request)
 		writeErr(w, http.StatusInternalServerError, "保存に失敗しました")
 		return
 	default:
-		if _, e := tx.Exec(`UPDATE t_development_check SET status = ?, staff_id = ?, note = ?
-			WHERE development_check_id = ?`, req.Status, u.staff(), note, checkID); e != nil {
+		// 確定した日時は初めて確定したときだけ入れ、確定し直しても動かさない（「できたこと」の日付が動かないように。
+		// 詳細設計書「成長の記録に届くもの」(3-7)、決めたこと D-31）
+		if _, e := tx.Exec(`UPDATE t_development_check SET status = ?, staff_id = ?, note = ?,
+			finalized_at = CASE WHEN ? = '2' AND finalized_at IS NULL THEN ? ELSE finalized_at END
+			WHERE development_check_id = ?`, req.Status, u.staff(), note, req.Status, now(), checkID); e != nil {
 			writeErr(w, http.StatusInternalServerError, "保存に失敗しました")
 			return
 		}

@@ -35,6 +35,7 @@ import type {
   DevDraftView,
   ContactHome, ContactHomeInput, ContactPage, ContactClassView, ContactClassRow, ContactEvent, ContactClass, ContactFacility,
   NapSleep, NapExclusion, HomeState, GuardianToday, TodayItem, MealAmount,
+  GrowthRecord, GrowthMeasurement, GrowthEntry,
 } from './shapes';
 import { MSG, MEAL_AMOUNT_TEXT, MEAL_KIND_TEXT } from '../messages';
 
@@ -2034,6 +2035,9 @@ export const devApi = {
       check.status = status;
       check.staff_id = user.staff_id!;
     }
+    // 確定した日時は初めて確定したときだけ入れ、確定し直しても動かさない（「できたこと」の日付が動かないように。
+    // 詳細設計書「成長の記録に届くもの」(3-7)、決めたこと D-31。server/api_dev_write.go と同じ）
+    if (status === '2' && !check.finalized_at) check.finalized_at = now();
     /*
      * 【設計の穴】所見（チェック単位の自由記述）を保持する列が t_development_check にない（GitHub Issue #58）。
      * Go サーバと同じく、チェックの側に note として持つ。設計の決定ではない。
@@ -3525,7 +3529,7 @@ function guardianTodayOf(user: SessionUser, child: Child): GuardianToday {
     home: p.home ? { submitted_at: p.home.submitted_at, confirmed_at: p.home.confirmed_at, revised_at: p.home.revised_at } : null,
     nap, latest: items,
     facility: p.facility ? { recorded_at: p.facility.recorded_at, corrected_at: p.facility.corrected_at, excerpt: excerpt(p.facility.body, 60) } : null,
-    unread_contact: unread, unread_chat: unreadChat, personal_room_id: room?.chat_room_id ?? null, growth_new: false,
+    unread_contact: unread, unread_chat: unreadChat, personal_room_id: room?.chat_room_id ?? null, growth_new: growthNew(child.child_id),
   };
 }
 
@@ -3801,6 +3805,120 @@ function publishPhysical(r: PhysicalRecord): void {
     (u) => (u.role !== '3' || r.share_status === '2') && canSeeChild(u, r.child_id));
 }
 
+/* ============ 成長の記録（詳細設計書「成長の記録」(4-12 (1))・「成長の記録に届くもの」(3-7)） ============
+ * 規則は server/api_growth.go と同じ。表を持たず、開いた時点の元の記録と設定を読んで組み立てる。
+ * 返すのは事実だけで、「一部」「未確認」・所見・比較・記録した職員の名前・判定の言葉は返さない（段3）
+ */
+
+/** 成長グラフの免責（基本設計書「メッセージ一覧」(4-12)。server/api_growth.go の growthDisclaimer） */
+const GROWTH_DISCLAIMER = '本グラフは発育把握の目安であり、発育の判定・診断を行うものではありません。';
+
+type GrowthEntryRow = GrowthEntry & { id: number };
+
+/** 「できたこと」の並び：新しい順。【仮置き】同じ日時なら発達チェックを先に、そのあと ID の大きい順（web/仮置き値.md） */
+function byGrowthEntry(a: GrowthEntryRow, b: GrowthEntryRow): number {
+  return b.at.localeCompare(a.at) || b.kind.localeCompare(a.kind) || b.id - a.id;
+}
+
+/** 確定した発達チェックの、確認できた項目のうち、いま共有するもの（行が無ければ共有する）の名前。区分と項目の並び順 */
+function sharedConfirmedItems(checkId: number): string[] {
+  const rank = (item: DevelopmentItem): number[] => [
+    db.developmentCategories.find((c) => c.development_category_id === item.development_category_id)?.display_order ?? 0,
+    item.display_order, item.development_item_id,
+  ];
+  return db.developmentResults
+    .filter((r) => r.development_check_id === checkId && r.result === '1'
+      && (db.shareSettings.find((s) => s.development_item_id === r.development_item_id)?.is_shareable ?? true))
+    .map((r) => db.developmentItems.find((i) => i.development_item_id === r.development_item_id))
+    .filter((i): i is DevelopmentItem => !!i)
+    .sort((a, b) => {
+      const [x, y] = [rank(a), rank(b)];
+      return x[0] - y[0] || x[1] - y[1] || x[2] - y[2];
+    })
+    .map((i) => i.item_name);
+}
+
+/** 確定した発達チェックに届くもの（共有する「確認できた」項目か保護者へのひとこと）があるか（server/api_growth.go の growthDeliverable） */
+function growthDeliverable(c: DevelopmentCheck): boolean {
+  return !!c.guardian_message?.trim() || sharedConfirmedItems(c.development_check_id).length > 0;
+}
+
+/**
+ * 成長の記録にきょう届いたものがあるか（保護者ホームの「新しい記録があります」。server/api_growth.go の growthNew）。
+ * 身体測定は共有するときだけ、その日に登録・上書きしたもの。発達チェックはその日に初めて確定し、届くものがあるもの
+ */
+function growthNew(childId: string): boolean {
+  const day = today();
+  if (settingText('growth.share_physical', '1') === '1'
+    && db.physicalRecords.some((r) => r.child_id === childId && !r.is_deleted && r.updated_at.slice(0, 10) === day)) return true;
+  return db.developmentChecks.some((c) => c.child_id === childId && c.status === '2' && c.finalized_at?.slice(0, 10) === day && growthDeliverable(c));
+}
+
+const growthApi = {
+  /** 成長の記録（GET /api/children/{childID}/growth?before=）。before は前の応答の next_before */
+  async growthRecord(user: SessionUser, childId: string, before?: string | null): Promise<GrowthRecord> {
+    // 保護者は紐づけが有効か猶予中の自児。linked_at で切らない。職員も同じ関数の read で呼べる。
+    // 権限の外も、園児が無いのも、同じ文言（詳細設計書 (4-12 (1))）
+    if (!contactAccess(user, childId).read) return fail(MSG.growthForbidden);
+    if (before && !isISODateTime(before)) return fail('リクエストの内容を読み取れませんでした');
+    const upper = before || '9999-12-31T23:59:59';
+    const child = findChild(childId)!;
+    const day = today();
+
+    // 身長・体重：身体測定を共有するときだけ、未削除の行を全件・測った日の新しい順。before に左右されない
+    const sharePhysical = settingText('growth.share_physical', '1') === '1';
+    const measurements: GrowthMeasurement[] = !sharePhysical ? [] : db.physicalRecords
+      .filter((r) => r.child_id === childId && !r.is_deleted)
+      .sort((a, b) => b.measured_on.localeCompare(a.measured_on) || b.physical_record_id - a.physical_record_id)
+      .map((r) => ({
+        physical_record_id: r.physical_record_id, measured_on: r.measured_on,
+        age_in_months: ageInMonths(child.birth_date, r.measured_on), height_cm: r.height_cm, weight_kg: r.weight_kg,
+        // 「きょう」の印：その日に登録・上書きしたもの（3-7）
+        is_today: r.updated_at.slice(0, 10) === day,
+      }));
+
+    // できたこと①：確定した発達チェックを1回1件に（決めたこと D-31）。届くものが無い確定は件数に数えない。下書きは読まない
+    const development: GrowthEntryRow[] = [];
+    for (const c of db.developmentChecks) {
+      if (c.child_id !== childId || c.status !== '2' || !c.finalized_at || c.finalized_at >= upper) continue;
+      if (!growthDeliverable(c)) continue;
+      const items = sharedConfirmedItems(c.development_check_id);
+      const message = c.guardian_message?.trim() ? c.guardian_message : null;
+      const date = c.finalized_at.slice(0, 10);
+      const entry: GrowthEntryRow = { id: c.development_check_id, kind: 'development', at: c.finalized_at, date, is_today: date === day, items };
+      if (message) entry.message = message;
+      development.push(entry);
+    }
+
+    // できたこと②：連絡帳で「成長の記録に残す」を付けたひとこと・写真。取り消していないもので、
+    // その種類がいまの contact.show_items にあるものだけ（決めたこと D-30）。「きょう」の印は付けない
+    const types = ['4', '5'].filter((t) => guardianSeesItem(EVENT_ITEM[t]));
+    const contact: GrowthEntryRow[] = db.contactEvents
+      .filter((e) => e.child_id === childId && e.keep_in_growth && !e.is_deleted
+        && types.includes(e.event_type) && e.recorded_at < upper)
+      .map((e) => {
+        const entry: GrowthEntryRow = { id: e.contact_event_id, kind: 'contact', at: e.recorded_at, date: e.contact_date, is_today: false };
+        if (e.body !== null) entry.body = e.body;
+        if (e.contact_photo_id !== null) entry.contact_photo_id = e.contact_photo_id;
+        return entry;
+      });
+
+    // 13件目まで見て、あれば next_before に12件目の日時を入れる
+    const limit = settingNumber('paging.physical_history_count', 12);
+    const all = [...development, ...contact].sort(byGrowthEntry);
+    const page = all.slice(0, limit);
+    const next = all.length > limit ? page[limit - 1].at : null;
+    const grace = user.role === '3'
+      ? db.guardianChildren.find((g) => g.guardian_id === user.guardian_id && g.child_id === childId && g.link_status === '3')?.grace_ends_on ?? null
+      : null;
+    return ok({
+      child_id: childId, child_name: child.child_name, sex: child.sex, birth_date: child.birth_date,
+      grace_ends_on: grace, share_physical: sharePhysical, measurements,
+      achievements: page.map(({ id: _id, ...e }) => e), next_before: next, disclaimer: GROWTH_DISCLAIMER,
+    });
+  },
+};
+
 /* ============ 手続きを終えるまでの拒否（基本設計書「画面遷移」(3-4)） ============
  *
  * 一時パスワード中と規約の再同意が必要な間は、手続きの API 以外を拒否する（api/procedure.ts）。
@@ -3852,7 +3970,7 @@ export const api = guardProcedure({
   ...chatApi, ...chatApi2, ...napApi, ...napApi2,
   ...devApi, ...devApi2, ...physicalApi, ...adminApi, ...adminApi2, ...adminApi3,
   ...bulkApi, ...dashboardApi, ...handoutApi,
-  ...contactApi,
+  ...contactApi, ...growthApi,
 });
 
 /* ============ 入力の検査の補助（Go サーバの httpx.go と同じ規則） ============ */

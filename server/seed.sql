@@ -343,10 +343,12 @@ INSERT INTO t_development_schedule (development_schedule_id, child_id, scheduled
 -- 1 か月ずれることがある。区分の境目（誕生日のちょうど 1 年後など）に置くと隣の区分へ移り、一覧に「未入力」が出るため、
 -- 境目から離して置く。野原 太郎は 0歳11か月（9か月頃〜12か月頃）、上園 花子・宮城 美咲は 1歳1か月（1歳頃〜1歳3か月頃）
 -- （GitHub Issue #143・#164。もとの 2026-06-01 は 1歳0か月ちょうどで、結果の区分と合っていなかった）
-INSERT INTO t_development_check (development_check_id, child_id, development_schedule_id, checked_on, status, staff_id, share_status, note) VALUES
- (1,'C001',NULL,'2026-05-15','2','S003','2',NULL),
- (2,'C002',NULL,'2026-05-10','2','S003','2',NULL),
- (3,'C004',NULL,'2026-06-05','2','S004','1','食事の場面で意欲が見られる');
+-- 成長の記録（詳細設計書「デモデータ」(5-5) の成長の記録の行）：野原 太郎の確定に、確定した日時と保護者へのひとこと
+-- （評価の言葉を入れない）。ほかの確定は「いまのデータの移し方」と同じく実施日の 00:00 を確定した日時とした
+INSERT INTO t_development_check (development_check_id, child_id, development_schedule_id, checked_on, status, staff_id, share_status, note, guardian_message, finalized_at) VALUES
+ (1,'C001',NULL,'2026-05-15','2','S003','2',NULL,'ボールを転がすと、追いかけて両手でつかもうとしていました。','2026-05-15T16:00:00'),
+ (2,'C002',NULL,'2026-05-10','2','S003','2',NULL,NULL,'2026-05-10T00:00:00'),
+ (3,'C004',NULL,'2026-06-05','2','S004','1','食事の場面で意欲が見られる',NULL,'2026-06-05T00:00:00');
 
 -- 「未入力」はレコードが存在しない状態で表す。「未確認」は result='3' として保持する
 INSERT INTO t_development_result (development_result_id, development_check_id, development_item_id, result, note) VALUES
@@ -457,6 +459,9 @@ INSERT INTO t_contact_event (contact_event_id, child_id, class_id, contact_date,
  (11,'C001',1,'2026-08-31','2','2026-08-31T09:30:00',NULL,NULL,'おしっこ',NULL,NULL,'S004','2026-08-31T09:30:00','2026-08-31T09:30:00'),
  (12,'C001',1,'2026-08-31','1','2026-08-31T11:40:00','1','1',NULL,NULL,NULL,'S003','2026-08-31T11:40:00','2026-08-31T11:40:00'),
  (13,'C001',1,'2026-08-31','1','2026-08-31T15:10:00','2','2',NULL,NULL,NULL,'S003','2026-08-31T15:10:00','2026-08-31T15:10:00');
+
+-- 今日の野原 太郎の 10:15 のひとことは「成長の記録に残す」を付けてある（詳細設計書「デモデータ」(5-5) の成長の記録の行）
+UPDATE t_contact_event SET keep_in_growth = 1 WHERE contact_event_id = 2;
 
 INSERT INTO t_contact_class (contact_class_id, class_id, contact_date, body, staff_id, recorded_at, created_at, updated_at) VALUES
  (1,1,'2026-09-01','園庭で砂場あそびと、しゃぼん玉をしました。','S003','2026-09-01T10:30:00','2026-09-01T10:30:00','2026-09-01T10:30:00');

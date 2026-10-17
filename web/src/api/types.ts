@@ -581,6 +581,10 @@ export interface DevelopmentCheck {
   share_status: ShareStatus;
   /** 所見（チェック単位の自由記述）。列は基本設計書 5-7 の定義に無い（GitHub Issue #58） */
   note?: string | null;
+  /** 保護者へのひとこと。確定した時点で成長の記録に届く（詳細設計書「変える表」(5-3)） */
+  guardian_message?: string | null;
+  /** 最初に確定した日時。確定し直しても動かさない（詳細設計書「成長の記録に届くもの」(3-7)、決めたこと D-31） */
+  finalized_at?: string | null;
 }
 
 /**

@@ -422,7 +422,8 @@ function contactEvent(id: number, childId: string, at: string, staffId: string, 
 const lunch = (amount: '1' | '2' | '3' | '4') => ({ event_type: '1' as const, meal_kind: '1' as const, meal_amount: amount });
 export const contactEvents: ContactEventRecord[] = [
   contactEvent(1, 'C001', '2026-09-01T09:40:00', 'S004', { event_type: '2', toilet_label: 'おしっこ' }),
-  contactEvent(2, 'C001', '2026-09-01T10:15:00', 'S003', { event_type: '4', body: '園庭の砂場で、スコップの型抜きを何度もくり返していました。' }),
+  // 「成長の記録に残す」を付けてある（詳細設計書「デモデータ」(5-5) の成長の記録の行。server/seed.sql と同じ）
+  contactEvent(2, 'C001', '2026-09-01T10:15:00', 'S003', { event_type: '4', body: '園庭の砂場で、スコップの型抜きを何度もくり返していました。', keep_in_growth: true }),
   contactEvent(3, 'C001', '2026-09-01T11:40:00', 'S003', lunch('1')),
   contactEvent(4, 'C002', '2026-09-01T11:40:00', 'S003', lunch('1')),
   contactEvent(5, 'C004', '2026-09-01T11:40:00', 'S003', lunch('2')),
@@ -591,9 +592,14 @@ export const developmentSchedules: DevelopmentSchedule[] = [
  * サーバ側（server/seed.sql）も同じ
  */
 export const developmentChecks: DevelopmentCheck[] = [
-  { development_check_id: 1, child_id: 'C001', development_schedule_id: null, checked_on: '2026-05-15', status: '2', staff_id: 'S003', share_status: '2' },
-  { development_check_id: 2, child_id: 'C002', development_schedule_id: null, checked_on: '2026-05-10', status: '2', staff_id: 'S003', share_status: '2' },
-  { development_check_id: 3, child_id: 'C004', development_schedule_id: null, checked_on: '2026-06-05', status: '2', staff_id: 'S004', share_status: '1' },
+  // 成長の記録（詳細設計書「デモデータ」(5-5)）：野原 太郎の確定に、確定した日時と保護者へのひとこと（評価の言葉を入れない）。
+  // ほかの確定は「いまのデータの移し方」と同じく実施日の 00:00 を確定した日時とした（server/seed.sql と同じ）
+  { development_check_id: 1, child_id: 'C001', development_schedule_id: null, checked_on: '2026-05-15', status: '2', staff_id: 'S003', share_status: '2',
+    guardian_message: 'ボールを転がすと、追いかけて両手でつかもうとしていました。', finalized_at: '2026-05-15T16:00:00' },
+  { development_check_id: 2, child_id: 'C002', development_schedule_id: null, checked_on: '2026-05-10', status: '2', staff_id: 'S003', share_status: '2',
+    finalized_at: '2026-05-10T00:00:00' },
+  { development_check_id: 3, child_id: 'C004', development_schedule_id: null, checked_on: '2026-06-05', status: '2', staff_id: 'S004', share_status: '1',
+    finalized_at: '2026-06-05T00:00:00' },
 ];
 
 /**
