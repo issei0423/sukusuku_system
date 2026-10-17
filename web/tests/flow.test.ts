@@ -459,16 +459,29 @@ describe('設計の決定を反映したもの（基本設計書 第2.3版）', 
     const grandma = await api.signUpGuardian({
       code, email: 'sobo@example.jp', password: 'pass12345', guardian_name: '野原 和子', relationship: '祖母',
     });
+    /*
+     * 登録より前か後かは、送った日時と登録した日時で決まる。件数を決め打ちせず、日時で分けて確かめる。
+     * デモデータには「今日の 07:40」のやりとりがあり、時計が 07:40 より前のとき（SUKUSUKU_TEST_CLOCK=03:00 など）は
+     * 登録より後の出来事になるため、後から登録した保護者にも見えてよい（tests/setup-clock.ts、GitHub Issue #152）
+     */
+    const joinedAt = db.chatMembers.find((x) => x.chat_room_id === 6 && x.account_id === grandma.account_id)!.joined_at;
+    const beforeJoined = (ms: { sent_at: string }[]) => ms.filter((m) => m.sent_at <= joinedAt);
+    // 見せないはずのやりとりが、いつ回しても 1 件はある（3 日前のもの）
+    expect(beforeJoined(await api.messages(guardian, 6)).length).toBeGreaterThan(0);
+
     // 登録した直後は、以前のやりとりが見えず、未読にも数えない
-    expect(await api.messages(grandma, 6)).toHaveLength(0);
-    expect((await api.rooms(grandma)).find((r) => r.room.chat_room_id === 6)!.unread).toBe(0);
+    const first = await api.messages(grandma, 6);
+    expect(beforeJoined(first)).toEqual([]);
+    expect((await api.rooms(grandma)).find((r) => r.room.chat_room_id === 6)!.unread)
+      .toBe(first.filter((m) => !m.is_deleted).length);
 
     // 登録したあとのメッセージは見える。時刻は秒の単位のため、時計を 1 秒より先へ進めてから送る
     // （テストの時計は止めてある。tests/setup-clock.ts）
     vi.advanceTimersByTime(1100);
     await api.send(teacher, 6, '明日の持ち物は水筒です。');
     const seen = await api.messages(grandma, 6);
-    expect(seen.map((m) => m.body)).toEqual(['明日の持ち物は水筒です。']);
+    expect(seen.map((m) => m.body)).toContain('明日の持ち物は水筒です。');
+    expect(beforeJoined(seen)).toEqual([]);
 
     // 先に登録していた保護者と職員は、これまでどおり全部読める
     expect((await api.messages(guardian, 6)).length).toBeGreaterThan(before);
