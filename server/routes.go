@@ -41,6 +41,7 @@ func (a *app) routeChild(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/children", a.handleListChildren)
 	mux.HandleFunc("POST /api/children", a.handleSaveChild)
 	mux.HandleFunc("GET /api/children/allergies", a.handleAllAllergies)
+	mux.HandleFunc("GET /api/children/same-name-birth", a.handleSameNameBirthChildren)
 	mux.HandleFunc("GET /api/children/{childID}", a.handleGetChild)
 	mux.HandleFunc("DELETE /api/children/{childID}", a.handleRemoveChild)
 	mux.HandleFunc("GET /api/children/{childID}/allergies", a.handleAllergiesOf)

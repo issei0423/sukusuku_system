@@ -267,6 +267,10 @@ const apiAuth = {
     const r = await get<{ exists: boolean }>(`/api/children/${encodeURIComponent(childId.trim())}/exists`);
     return r.exists;
   },
+
+  /** 氏名と生年月日が同じ園児。登録の確認画面で、重ねて登録していないかを知らせるために使う（GitHub Issue #144 の 2） */
+  sameNameBirthChildren: (_u: SessionUser, childName: string, birthDate: string) =>
+    get<Child[]>('/api/children/same-name-birth' + qs({ child_name: childName, birth_date: birthDate })),
   // 第1引数はモック実装（mock.ts）が権限の判定に使う。サーバはセッションから利用者を引く
   allergiesOf: (_u: SessionUser, childId: string) => get<Allergy[]>(`/api/children/${childId}/allergies`),
   medicalHistoriesOf: (_u: SessionUser, childId: string) =>
