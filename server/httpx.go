@@ -16,6 +16,9 @@ type apiError struct {
 	Kind      string `json:"kind,omitempty"`
 	Remaining int    `json:"remaining,omitempty"`
 	Correct   string `json:"correct,omitempty"`
+	// 他児の名前の注意（409 other_child_names）で、当たった園児の氏名と本文の中の位置（詳細設計書「誤りの応答」(4-1 (3))）
+	Names   []string    `json:"names,omitempty"`
+	Matches []nameMatch `json:"matches,omitempty"`
 }
 
 /*

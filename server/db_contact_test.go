@@ -174,3 +174,45 @@ func TestTrimFutureDemoContacts(t *testing.T) {
 		t.Error("未来の対象外が残った")
 	}
 }
+
+// 定型文の初期の行は、新しい DB（seed.sql）と既存の DB の移し（defaultPhrases）で同じ（詳細設計書「既存の DB の移し方」(5-4) の 5）
+func TestDefaultPhrasesMatchSeed(t *testing.T) {
+	a, _ := newTestApp(t)
+	rows, err := a.db.Query(`SELECT phrase_scope, body FROM m_phrase WHERE is_deleted = 0 ORDER BY phrase_id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := [][2]string{}
+	for rows.Next() {
+		var p [2]string
+		rows.Scan(&p[0], &p[1])
+		got = append(got, p)
+	}
+	rows.Close()
+	if len(got) != len(defaultPhrases) {
+		t.Fatalf("seed.sql の定型文 %d 件、defaultPhrases %d 件", len(got), len(defaultPhrases))
+	}
+	for i := range got {
+		if got[i] != defaultPhrases[i] {
+			t.Errorf("%d 行目: seed %v, defaultPhrases %v", i+1, got[i], defaultPhrases[i])
+		}
+	}
+	// 空の m_phrase には、起動のたびの移しが同じ行を入れる。入っていれば何もしない
+	a.db.Exec(`DELETE FROM m_phrase`)
+	if err := ensureContactSchema(a.db); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureContactSchema(a.db); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	a.db.QueryRow(`SELECT COUNT(*) FROM m_phrase`).Scan(&n)
+	if n != len(defaultPhrases) {
+		t.Errorf("移したあとの定型文 = %d", n)
+	}
+	var nick string
+	a.db.QueryRow(`SELECT IFNULL(nickname, '') FROM m_child WHERE child_id = 'C001'`).Scan(&nick)
+	if nick != "たっくん" {
+		t.Errorf("デモの呼び名 = %q", nick)
+	}
+}

@@ -23,6 +23,7 @@ import type {
 } from './shapes';
 import type {
   ContactEvent, ContactEventInput, RecordEventsResult, ContactEventCorrection, NapSleepCorrection, CancelResult, Readers,
+  ContactFacility, FacilityCorrection, Phrase, NameMatch,
 } from './shapes';
 import {
   ProcedureRequiredError, isProcedureKind, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
@@ -52,11 +53,16 @@ class ApiError extends Error {
   kind?: string;
   remaining?: number;
   correct?: string;
-  constructor(body: { message: string; kind?: string; remaining?: number; correct?: string }) {
+  /** 他児の名前の注意（409 other_child_names）の、当たった園児の氏名と本文の中の位置（詳細設計書「誤りの応答」(4-1 (3))） */
+  names?: string[];
+  matches?: NameMatch[];
+  constructor(body: { message: string; kind?: string; remaining?: number; correct?: string; names?: string[]; matches?: NameMatch[] }) {
     super(body.message);
     this.kind = body.kind;
     this.remaining = body.remaining;
     this.correct = body.correct;
+    this.names = body.names;
+    this.matches = body.matches;
   }
 }
 
@@ -678,7 +684,8 @@ const contactApi = {
     post<NapExclusion>(`/api/nap/session/${sessionId}/exclusions`, { child_id: childId, reason }),
   cancelExclusion: (_u: SessionUser, exclusionId: number) => post<{ ok: true }>(`/api/nap/exclusions/${exclusionId}/cancel`),
   /* きょうのようすの記録と、訂正・取り消し（詳細設計書「経路の一覧」(4-2)） */
-  recordEvents: (_u: SessionUser, items: ContactEventInput[]) => post<RecordEventsResult>('/api/contact/events', { items }),
+  recordEvents: (_u: SessionUser, items: ContactEventInput[], acknowledgedNames?: string[]) =>
+    post<RecordEventsResult>('/api/contact/events', { items, acknowledged_names: acknowledgedNames ?? [] }),
   correctEvent: (_u: SessionUser, eventId: number, input: ContactEventCorrection) =>
     post<ContactEvent>(`/api/contact/events/${eventId}/correct`, input),
   cancelEvent: (_u: SessionUser, eventId: number) => post<CancelResult>(`/api/contact/events/${eventId}/cancel`),
@@ -687,6 +694,16 @@ const contactApi = {
     post<NapSleep>(`/api/nap/sleeps/${sleepId}/correct`, input),
   cancelSleep: (_u: SessionUser, sleepId: number) => post<CancelResult>(`/api/nap/sleeps/${sleepId}/cancel`),
   sleepReaders: (_u: SessionUser, sleepId: number) => get<Readers>(`/api/nap/sleeps/${sleepId}/readers`),
+  /* 園からのひとこと・他児の名前の照合・定型文（詳細設計書「園からのひとことと他児の名前」(4-5)） */
+  sendFacility: (_u: SessionUser, childId: string, body: string, acknowledgedNames?: string[]) =>
+    put<ContactFacility>(`/api/contact/children/${encodeURIComponent(childId)}/facility`, { body, acknowledged_names: acknowledgedNames ?? [] }),
+  correctFacility: (_u: SessionUser, facilityId: number, input: FacilityCorrection) =>
+    post<ContactFacility>(`/api/contact/facility/${facilityId}/correct`, input),
+  cancelFacility: (_u: SessionUser, facilityId: number) => post<CancelResult>(`/api/contact/facility/${facilityId}/cancel`),
+  facilityReaders: (_u: SessionUser, facilityId: number) => get<Readers>(`/api/contact/facility/${facilityId}/readers`),
+  nameCheck: (_u: SessionUser, input: { child_ids?: string[]; class_id?: number; text: string }) =>
+    post<{ names: string[] }>('/api/contact/name-check', input),
+  contactPhrases: (_u: SessionUser, scope: Phrase['phrase_scope']) => get<Phrase[]>(`/api/phrases${qs({ scope })}`),
 };
 
 export const api = { ...apiAuth, ...apiChatNap, ...apiGrowth, ...apiAdmin, ...apiHandout, ...contactApi };

@@ -41,6 +41,13 @@ func (a *app) routeContact(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/nap/sleeps/{id}/correct", a.handleCorrectSleep)
 	mux.HandleFunc("POST /api/nap/sleeps/{id}/cancel", a.handleCancelSleep)
 	mux.HandleFunc("GET /api/nap/sleeps/{id}/readers", a.handleSleepReaders)
+	// 園からのひとこと・他児の名前の照合・定型文（詳細設計書「園からのひとことと他児の名前」(4-5)）
+	mux.HandleFunc("PUT /api/contact/children/{childID}/facility", a.handleSendFacility)
+	mux.HandleFunc("POST /api/contact/facility/{id}/correct", a.handleCorrectFacility)
+	mux.HandleFunc("POST /api/contact/facility/{id}/cancel", a.handleCancelFacility)
+	mux.HandleFunc("GET /api/contact/facility/{id}/readers", a.handleFacilityReaders)
+	mux.HandleFunc("POST /api/contact/name-check", a.handleNameCheck)
+	mux.HandleFunc("GET /api/phrases", a.handlePhrases)
 }
 
 // 共通基盤：ログインとアカウント（基本設計書 4-3）

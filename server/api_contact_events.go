@@ -13,7 +13,7 @@ import (
 食事・排せつ・体温は段1（記録した時点で保護者が読める。承認・確認のダイアログを挟まない）。
 時刻はサーバの今で打つ。排せつ・体温だけは、その日の0時からいままでの時刻を付けられる。
 体温は判定しない（範囲の外も保存する。判定の言葉を付けない。要件定義書「判断を行わないことの担保」(7-1 No.5)）。
-活動のひとこと（種類 4）は段2の守り（他児の名前の注意）を通すため、園からのひとことと同じ段で受け付ける。
+活動のひとこと（種類 4）は段2：文を1〜200文字、他児の名前の照合（namecheck.go）を通し、承諾があれば保存する。
 モックは web/src/api/mock.ts の recordEvents が同じ規則を持つ。
 */
 
@@ -75,8 +75,18 @@ func (a *app) checkEventInput(in contactEventInput, day string) (eventValues, st
 			return v, msgTemperatureFormat
 		}
 		v.Temperature = in.Temperature
+	case "4":
+		// 活動のひとこと（段2）。他児の名前の照合は呼ぶ側で行う
+		body := trimmedOrNil(in.Body)
+		if body == nil {
+			return v, msgBadChoice
+		}
+		if tooLong(*body, 200) {
+			return v, msgCommentTooLong
+		}
+		v.Body = body
 	default:
-		// 活動のひとこと（4）は段2の守りと一緒に受け付ける。写真（5）はこの経路では受け付けない（4-4 (2)）
+		// 写真（5）はこの経路では受け付けない（4-4 (2)）
 		return v, msgBadChoice
 	}
 	// 時刻を後から付けられるのは排せつ・体温だけ。ほかの種類で送られたら無視して今にする
@@ -128,7 +138,8 @@ func (a *app) handleRecordEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Items []contactEventInput `json:"items"`
+		Items             []contactEventInput `json:"items"`
+		AcknowledgedNames []string            `json:"acknowledged_names"`
 	}
 	if !readJSON(w, r, &in) {
 		return
@@ -159,6 +170,36 @@ func (a *app) handleRecordEvents(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		values[i] = v
+	}
+	// 活動のひとことは、宛先の子（その item の園児）以外の在籍園児の名前を照合する（詳細設計書 (4-4 (1))・(4-5 (2))）
+	var other *apiError
+	for i, it := range in.Items {
+		if it.EventType != "4" {
+			continue
+		}
+		e, err := a.checkOtherNames(*values[i].Body, "body", []string{it.ChildID}, false, in.AcknowledgedNames)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, msgContactSaveFailed)
+			return
+		}
+		if e == nil {
+			continue
+		}
+		if other == nil {
+			other = e
+			continue
+		}
+		for _, n := range e.Names {
+			if !inList(other.Names, n) {
+				other.Names = append(other.Names, n)
+			}
+		}
+		other.Matches = append(other.Matches, e.Matches...)
+		other.Message = otherNamesMessage(other.Names)
+	}
+	if other != nil {
+		writeJSON(w, http.StatusConflict, other)
+		return
 	}
 
 	// 全件を1つの処理で保存する。1件でも誤りがあれば何も保存しない（飛ばすのは誤りではない）
@@ -320,16 +361,18 @@ func (a *app) handleCorrectEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		MealAmount  *string  `json:"meal_amount"`
-		ToiletLabel *string  `json:"toilet_label"`
-		Temperature *float64 `json:"temperature"`
-		RecordedAt  *string  `json:"recorded_at"`
-		UpdatedAt   string   `json:"updated_at"`
+		MealAmount        *string  `json:"meal_amount"`
+		ToiletLabel       *string  `json:"toilet_label"`
+		Temperature       *float64 `json:"temperature"`
+		Body              *string  `json:"body"`
+		RecordedAt        *string  `json:"recorded_at"`
+		AcknowledgedNames []string `json:"acknowledged_names"`
+		UpdatedAt         string   `json:"updated_at"`
 	}
 	if !readJSON(w, r, &in) {
 		return
 	}
-	mealAmount, toilet, temperature, recordedAt := e.MealAmount, e.ToiletLabel, e.Temperature, e.RecordedAt
+	mealAmount, toilet, temperature, recordedAt, body := e.MealAmount, e.ToiletLabel, e.Temperature, e.RecordedAt, e.Body
 	changed := false
 	switch e.EventType {
 	case "1":
@@ -357,6 +400,23 @@ func (a *app) handleCorrectEvent(w http.ResponseWriter, r *http.Request) {
 			}
 			temperature, changed = in.Temperature, true
 		}
+	case "4", "5":
+		// 活動のひとことの文・写真に添える文。訂正も他児の名前の照合を通る（詳細設計書 (4-7 (1))）
+		if in.Body != nil {
+			v := trimmedOrNil(in.Body)
+			if v == nil && e.EventType == "4" {
+				writeErr(w, http.StatusBadRequest, msgBadChoice)
+				return
+			}
+			if v != nil && tooLong(*v, 200) {
+				writeErr(w, http.StatusBadRequest, msgCommentTooLong)
+				return
+			}
+			if v != nil && a.writeOtherNames(w, *v, "body", []string{e.ChildID}, false, in.AcknowledgedNames) {
+				return
+			}
+			body, changed = v, true
+		}
 	}
 	// 時刻を直せるのは排せつ・体温だけ（その日の0時からいままで。前の日のページはその日の中）
 	if (e.EventType == "2" || e.EventType == "3") && in.RecordedAt != nil {
@@ -371,9 +431,9 @@ func (a *app) handleCorrectEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	at := now()
-	res, err := a.db.Exec(`UPDATE t_contact_event SET meal_amount = ?, toilet_label = ?, temperature = ?, recorded_at = ?,
+	res, err := a.db.Exec(`UPDATE t_contact_event SET meal_amount = ?, toilet_label = ?, temperature = ?, body = ?, recorded_at = ?,
 		corrected_at = ?, updated_at = ? WHERE contact_event_id = ? AND is_deleted = 0 AND updated_at = ?`,
-		mealAmount, toilet, temperature, recordedAt, at, at, e.ID, in.UpdatedAt)
+		mealAmount, toilet, temperature, body, recordedAt, at, at, e.ID, in.UpdatedAt)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, msgContactSaveFailed)
 		return
@@ -384,7 +444,7 @@ func (a *app) handleCorrectEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	before, after := changedFields(
 		eventLogFields(e.EventType, e.MealKind, e.MealAmount, e.ToiletLabel, e.Body, e.Temperature, e.RecordedAt),
-		eventLogFields(e.EventType, e.MealKind, mealAmount, toilet, e.Body, temperature, recordedAt))
+		eventLogFields(e.EventType, e.MealKind, mealAmount, toilet, body, temperature, recordedAt))
 	a.log(u.AccountID, fnContact, opUpdate, "t_contact_event", i64(e.ID), &e.ChildID, s(before), s(after))
 	a.notifyContactChild(e.ChildID, eventItem(e.EventType))
 	saved, err := a.loadContactEvent(e.ID)

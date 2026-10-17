@@ -21,7 +21,7 @@ import type {
   ChatRoom, ChatMember, ChatMessage, ChatRead, ChatReaction, TermsAgreement, MisdeliveryRecord, Handout,
   NapSession, NapRecord, NapAbnormal,
   ContactHomeRecord, ContactEventRecord, ContactClassRecord, ContactFacilityRecord, ContactReadRecord,
-  NapSleepRecord, NapExclusionRecord,
+  NapSleepRecord, NapExclusionRecord, PhraseRecord,
   DevelopmentCategory, DevelopmentItem, DevelopmentFrequency, ShareSetting,
   DevelopmentSchedule, DevelopmentCheck, DevelopmentResultRecord,
   PhysicalRecord, GrowthStandard, OperationLog, Setting,
@@ -473,6 +473,44 @@ export const napSleeps: NapSleepRecord[] = [
 export const napExclusions: NapExclusionRecord[] = [
   { nap_exclusion_id: 1, nap_session_id: 1, child_id: 'C003', reason: '1', staff_id: 'S003', is_deleted: false, created_at: '2026-09-01T13:01:00' },
 ];
+
+/* ============ 園からのひとことと他児の名前（詳細設計書「デモデータ」(5-5 (2))。server/seed.sql と同じ） ============ */
+
+/**
+ * 呼び名（m_child.nickname）。他児の名前の注意を見せるため。
+ * モックでは画面へ返す園児の形（Child）を変えないよう、列を別に持つ（サーバは園児の応答に呼び名を入れていない）
+ */
+export const childNicknames: { child_id: string; nickname: string }[] = [
+  { child_id: 'C001', nickname: 'たっくん' },
+  { child_id: 'C006', nickname: 'あおちゃん' },
+  { child_id: 'C008', nickname: 'ゆいちゃん' },
+];
+
+/**
+ * 定型文（m_phrase）。server/seed.sql と server/db_contact.go の defaultPhrases と同じ順・同じ文。
+ * 健康や発達の評価の言葉（「元気に」「順調に」など）を入れない（原則1）。4:日誌は server/api_diary.go の fixedPhrases と同じ5つ
+ */
+export const phrases: PhraseRecord[] = ([
+  ['1', '今日も一日ありがとうございました。'],
+  ['1', 'お迎えのときに、くわしくお話しします。'],
+  ['1', 'おうちでも、今日のことを聞いてみてください。'],
+  ['1', '明日もよろしくお願いします。'],
+  ['2', '園庭で遊びました。'],
+  ['2', '絵本を読みました。'],
+  ['2', '手洗いを自分でしようとしていました。'],
+  ['3', '今日は園庭で遊びました。'],
+  ['3', '今日はお散歩に出かけました。'],
+  ['3', '今日は室内で製作をしました。'],
+  ['4', 'よく食べ、おかわりをしていました。'],
+  ['4', '午睡は落ち着いて入眠できました。'],
+  ['4', '園庭で友だちと関わって遊ぶ姿が見られました。'],
+  ['4', '鼻水が出ていたため、こまめに拭き取りました。'],
+  ['4', 'ご家庭でも様子を見ていただけますと幸いです。'],
+] as const).map(([scope, body], i, all) => ({
+  phrase_id: i + 1, phrase_scope: scope, body,
+  display_order: all.slice(0, i + 1).filter(([x]) => x === scope).length,
+  is_deleted: false, updated_staff_id: 'S001', created_at: '2026-04-01T09:00:00', updated_at: '2026-04-01T09:00:00',
+}));
 
 /* ============ 発達チェック（基本設計書 5-7） ============
  * 発達過程区分はマスタ化して指針改定に追従する。区分の粒度は
