@@ -334,8 +334,8 @@ func TestDiaryLockRequiresVisibleDiary(t *testing.T) {
 		for _, id := range []string{"1", "4", "99999"} {
 			expectStatus(t, request(t, h, kinjo, "POST", "/api/diaries/"+id+"/lock", ""), http.StatusForbidden)
 		}
-		// 日誌 2（さくら組のクラス日誌）は宮城 蓮がロックを持っている
-		expectStatus(t, request(t, h, kinjo, "GET", "/api/diaries/2/lock", ""), http.StatusForbidden)
+		// 日誌 3（差し戻しのヒヤリハット）は宮城 蓮がロックを持っている
+		expectStatus(t, request(t, h, kinjo, "GET", "/api/diaries/3/lock", ""), http.StatusForbidden)
 		var n int
 		a.db.QueryRow(`SELECT COUNT(*) FROM t_diary_lock WHERE locked_staff_id = 'S005'`).Scan(&n)
 		if n != 0 {
@@ -347,7 +347,7 @@ func TestDiaryLockRequiresVisibleDiary(t *testing.T) {
 		if !strings.Contains(call(t, h, takanashi, "POST", "/api/diaries/1/lock", "").Body.String(), `"token"`) {
 			t.Fatal("ロックのトークンが返っていません")
 		}
-		if !strings.Contains(call(t, h, takanashi, "GET", "/api/diaries/2/lock", "").Body.String(), "宮城 蓮") {
+		if !strings.Contains(call(t, h, takanashi, "GET", "/api/diaries/3/lock", "").Body.String(), "宮城 蓮") {
 			t.Fatal("編集中の職員が返っていません")
 		}
 	})

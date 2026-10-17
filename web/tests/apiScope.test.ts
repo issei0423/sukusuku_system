@@ -198,13 +198,13 @@ describe('既存の日誌の更新と編集ロック（GitHub Issue #153 の追�
   it('担当外の日誌のロックは取れず、誰が編集中かも見えない', async () => {
     await expect(api.acquireLock(otherTeacher, 1)).rejects.toThrow('この日誌を編集する権限がありません');
     await expect(api.acquireLock(otherTeacher, 4)).rejects.toThrow('この日誌を編集する権限がありません');
-    // 日誌 2（さくら組のクラス日誌）は宮城 蓮がロックを持っている
-    await expect(api.lockOf(otherTeacher, 2)).rejects.toThrow('この日誌を参照する権限がありません');
+    // 日誌 3（差し戻しのヒヤリハット）は宮城 蓮がロックを持っている
+    await expect(api.lockOf(otherTeacher, 3)).rejects.toThrow('この日誌を参照する権限がありません');
     expect(db.diaryLocks.some((l) => l.locked_staff_id === 'S005')).toBe(false);
   });
 
   it('担任はロックを取れ、誰が編集中かも見える', async () => {
     await expect(api.acquireLock(teacher, 1)).resolves.toHaveProperty('token');
-    await expect(api.lockOf(teacher, 2)).resolves.toMatchObject({ staff_name: '宮城 蓮' });
+    await expect(api.lockOf(teacher, 3)).resolves.toMatchObject({ staff_name: '宮城 蓮' });
   });
 });
