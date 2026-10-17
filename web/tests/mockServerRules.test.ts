@@ -175,15 +175,17 @@ describe('一覧の並び順を Go サーバとそろえる（Issue #177 の 7�
     expect(ids).toEqual([3, 4, 7, 5, 1, 2, 6]);
   });
 
-  it('取り消して対応を記録していないメッセージは、送信の新しい順', async () => {
-    // デモデータには対応を記録していない取消が無いため、職員の取消を 2 件足す（古いものをあとに入れる）
+  it('取り消して対応を記録していないメッセージは、送信の新しい順。同じ時刻なら、あとで送ったものを先にする', async () => {
+    // デモデータには対応を記録していない取消が無いため、職員の取消を足す（古いもの・番号の小さいものをあとに入れる）
     const retracted = (id: number, sentAt: string) => ({
       chat_message_id: id, chat_room_id: 1, sender_account_id: 3, body: '並び順の確認', source_type: '1' as const,
       source_id: null, sent_at: sentAt, edited_at: null, is_deleted: true, deleted_at: sentAt, deleted_account_id: 3,
     });
     db.chatMessages.push(retracted(900011, '2026-08-29T10:00:00'), retracted(900010, '2026-08-28T10:00:00'));
     db.chatMessages.push(retracted(900012, '2026-08-30T10:00:00'));
+    db.chatMessages.push(retracted(900014, '2026-08-27T10:00:00'), retracted(900013, '2026-08-27T10:00:00'));
+    db.chatMessages.push(retracted(900015, '2026-08-27T10:00:00'));
     const ids = (await api.retractedWithoutRecord(admin)).map((r) => r.chat_message_id).filter((id) => id >= 900010);
-    expect(ids).toEqual([900012, 900011, 900010]);
+    expect(ids).toEqual([900012, 900011, 900010, 900015, 900014, 900013]);
   });
 });

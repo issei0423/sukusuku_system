@@ -1430,12 +1430,14 @@ const chatApi2 = {
   /**
    * 取消済みで、まだ対応を記録していないメッセージ。誤送信への対応の記録と同じく管理者に限る
    * （基本設計書「権限と利用可能機能」(6-1)「誤送信への対応の記録｜管理者のみ」。GitHub Issue #177 の 3）。
-   * 並びは送信の新しい順（サーバ側の server/api_chat.go の handleRetractedWithoutRecord と同じ。GitHub Issue #177 の 7）
+   * 【仮置き】並びは送信の新しい順、同じ時刻はあとで送ったもの（メッセージの番号の大きいもの）を先にする
+   * （web/仮置き値.md「一覧の並び順」。サーバ側の server/api_chat.go の handleRetractedWithoutRecord と同じ。GitHub Issue #177 の 7）
    */
   async retractedWithoutRecord(user: SessionUser) {
     if (user.role !== '1') return fail('誤送信対応の記録は管理者のみが参照できます');
     const recorded = new Set(db.misdeliveryRecords.map((r) => r.chat_message_id));
-    return ok([...db.chatMessages].sort((a, b) => b.sent_at.localeCompare(a.sent_at))
+    return ok([...db.chatMessages]
+      .sort((a, b) => b.sent_at.localeCompare(a.sent_at) || b.chat_message_id - a.chat_message_id)
       // 配布物の掲載の知らせ（source_type = 4）は対象にしない。取り下げとして操作ログに残る
       // （基本設計書「誤送信への対応」(4-6)。GitHub Issue #98）
       // 【仮置き】保護者が送ったメッセージも対象にしない。誤送信への対応は、園が誤って送ったときのもの（同 (4-6) の

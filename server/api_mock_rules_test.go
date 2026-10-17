@@ -178,10 +178,11 @@ func TestListOrdersMatchMock(t *testing.T) {
 		}
 	})
 
-	t.Run("取り消して対応を記録していないメッセージは、送信の新しい順", func(t *testing.T) {
-		// デモデータには対応を記録していない取消が無いため、職員の取消を 3 件足す（古いものを間に入れる）
-		added := map[int64]bool{}
-		for _, sentAt := range []string{"2026-08-29T10:00:00", "2026-08-28T10:00:00", "2026-08-30T10:00:00"} {
+	t.Run("取り消して対応を記録していないメッセージは、送信の新しい順。同じ時刻なら、あとで送ったものを先にする", func(t *testing.T) {
+		// デモデータには対応を記録していない取消が無いため、職員の取消を足す（古いものを間に入れ、同じ時刻を 3 件）
+		ids := []int64{}
+		for _, sentAt := range []string{"2026-08-29T10:00:00", "2026-08-28T10:00:00", "2026-08-30T10:00:00",
+			"2026-08-27T10:00:00", "2026-08-27T10:00:00", "2026-08-27T10:00:00"} {
 			res, err := a.db.Exec(`INSERT INTO t_chat_message
 				(chat_room_id, sender_account_id, body, source_type, sent_at, is_deleted, deleted_at, deleted_account_id)
 				VALUES (1, 3, '並び順の確認', '1', ?, 1, ?, 3)`, sentAt, sentAt)
@@ -189,22 +190,26 @@ func TestListOrdersMatchMock(t *testing.T) {
 				t.Fatal(err)
 			}
 			id, _ := res.LastInsertId()
+			ids = append(ids, id)
+		}
+		added := map[int64]bool{}
+		for _, id := range ids {
 			added[id] = true
 		}
 		var rows []struct {
-			ChatMessageID int64  `json:"chat_message_id"`
-			SentAt        string `json:"sent_at"`
+			ChatMessageID int64 `json:"chat_message_id"`
 		}
 		if err := json.Unmarshal(call(t, h, admin, "GET", "/api/chat/misdelivery/pending", "").Body.Bytes(), &rows); err != nil {
 			t.Fatal(err)
 		}
-		got := []string{}
+		got := []int64{}
 		for _, r := range rows {
 			if added[r.ChatMessageID] {
-				got = append(got, r.SentAt)
+				got = append(got, r.ChatMessageID)
 			}
 		}
-		if want := []string{"2026-08-30T10:00:00", "2026-08-29T10:00:00", "2026-08-28T10:00:00"}; !reflect.DeepEqual(got, want) {
+		// 08-30 → 08-29 → 08-28 → 08-27 の 3 件（番号の大きい順）
+		if want := []int64{ids[2], ids[0], ids[1], ids[5], ids[4], ids[3]}; !reflect.DeepEqual(got, want) {
 			t.Fatalf("並び = %v, want %v", got, want)
 		}
 	})
