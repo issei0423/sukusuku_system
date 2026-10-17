@@ -31,6 +31,17 @@ type session struct {
 type sessionStore struct {
 	mu   sync.RWMutex
 	data map[string]session
+	// セッションが終わったとき（destroy・destroyAccount）に、終わったセッションIDを受け取る。
+	// 開いている画面への知らせの接続を、その場で閉じるために使う（events.go の closeSessions）。
+	// 鍵を外してから呼ぶ
+	onEnd func(ids []string)
+}
+
+// ended は、終わったセッションを知らせる
+func (s *sessionStore) ended(ids []string) {
+	if s.onEnd != nil && len(ids) > 0 {
+		s.onEnd(ids)
+	}
 }
 
 func newSessionStore() *sessionStore {
@@ -72,6 +83,7 @@ func (s *sessionStore) destroy(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		delete(s.data, c.Value)
 		s.mu.Unlock()
+		s.ended([]string{c.Value})
 	}
 	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true})
 }
@@ -111,15 +123,16 @@ destroyAccount は、そのアカウントのセッションを keep 以外す�
 */
 func (s *sessionStore) destroyAccount(accountID int64, keep string) int {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	n := 0
+	var ids []string
 	for id, sess := range s.data {
 		if sess.accountID == accountID && id != keep {
 			delete(s.data, id)
-			n++
+			ids = append(ids, id)
 		}
 	}
-	return n
+	s.mu.Unlock()
+	s.ended(ids)
+	return len(ids)
 }
 
 // ---- 利用者の組み立て ----

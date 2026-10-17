@@ -182,6 +182,8 @@ func (a *app) handleStartNapSession(w http.ResponseWriter, r *http.Request) {
 	id, _ := res.LastInsertId()
 	a.log(u.AccountID, fnNap, opCreate, "t_nap_session", i64(id), nil, nil,
 		s("午睡チェックを開始（"+a.className(req.ClassID)+"）"))
+	// そのクラスを扱える職員と、そのクラスに自児がいる保護者の画面へ知らせる（events.go）
+	a.notifyNapSession(req.ClassID)
 
 	got, _ := a.napSession(req.ClassID, req.Date)
 	writeJSON(w, http.StatusOK, got)
@@ -228,6 +230,7 @@ func (a *app) handleEndNapSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.log(u.AccountID, fnNap, opUpdate, "t_nap_session", i64(id), nil, s("実施中"), s("終了"))
+	a.notifyNapSession(classID)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -397,6 +400,8 @@ func (a *app) handleNapRecord(w http.ResponseWriter, r *http.Request) {
 	id, _ := res.LastInsertId()
 	a.log(u.AccountID, fnNap, opCreate, "t_nap_record", i64(id), s(req.ChildID), nil,
 		s("体位="+req.BodyPosition+" 呼吸="+req.Breathing+" 顔色="+req.Complexion))
+	// その園児を参照できる職員と、紐づく保護者の画面へ知らせる（events.go）
+	a.notifyNapChild(sessionClass, req.ChildID, true)
 
 	writeJSON(w, http.StatusOK, a.latestNapRecord(sessionID, req.ChildID))
 }
@@ -583,6 +588,9 @@ func (a *app) handleRecordNapAbnormal(w http.ResponseWriter, r *http.Request) {
 	}
 	id, _ := res.LastInsertId()
 	a.log(u.AccountID, fnNap, opCreate, "t_nap_abnormal", i64(id), s(req.ChildID), nil, s("異常時の記録"))
+	// 職員の画面（午睡チェック画面の強調・ダッシュボードの「ヒヤリハット未起票」）へ知らせる。
+	// 園内の記録のため保護者には送らない（events.go）
+	a.notifyNapChild(sessionClass, req.ChildID, false)
 	writeJSON(w, http.StatusOK, map[string]int64{"nap_abnormal_id": id})
 }
 
@@ -680,6 +688,9 @@ func (a *app) handleRaiseIncidentDiary(w http.ResponseWriter, r *http.Request) {
 
 	a.log(u.AccountID, fnDiary, opCreate, "t_diary", i64(newDiaryID), s(childID), nil,
 		s("異常時の記録からヒヤリハットを起票"))
+	// 「ヒヤリハット未起票の異常時の記録」が減り、日誌（下書き）が増える（events.go）
+	a.notifyNapChild(classID.Int64, childID, false)
+	a.notifyDiary(newDiaryID)
 	a.writeDiaryByID(w, newDiaryID)
 }
 
