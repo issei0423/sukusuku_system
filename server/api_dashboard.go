@@ -169,6 +169,12 @@ func (a *app) handleGuardianHome(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// 保護者ホームは保護者のためのもの。職員が呼ぶと、参照範囲の園児すべてが「自児」として並び、
+	// 保護者の画面のまま職員の範囲が見えてしまう（GitHub Issue #159 の 3）
+	if !u.isGuardian() {
+		writeForbidden(w, "保護者ホームは保護者のみが利用できます")
+		return
+	}
 	children, err := a.visibleChildren(u)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "取得に失敗しました")

@@ -6,10 +6,10 @@
  * URL は画面名に対応させ、学校テンプレートが求める n-n-n-n 形式の画面IDは
  * 提出時に対応表で満たす（対応表は未作成）。
  */
-import { useEffect, useRef, useState } from 'react';
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { startTransition, useEffect, useRef, useState } from 'react';
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useSession } from './session';
-import { api, backend, onProcedureRequired } from './api/client';
+import { api, backend, onProcedureRequired, onSessionEnded } from './api/client';
 import StaffLayout from './layouts/StaffLayout';
 import GuardianLayout from './layouts/GuardianLayout';
 
@@ -149,6 +149,26 @@ export default function App() {
       api.reloadSession(accountId).then(setUser, () => {});
     });
   }, [accountId, setUser]);
+
+  /*
+   * サーバにセッションを切られたら、利用者を空にして入口へ戻す（GitHub Issue #159）。
+   * アカウントの停止・紐づけの解除・ほかの端末でのパスワードの変更・一時パスワードの再発行のとき、
+   * サーバはログイン中のセッションを切る（server/session.go の destroyAccount）。開いたままの画面に
+   * 前の内容を残さないため。戻り先はログインしていた系統のトップ（基本設計書「画面遷移」(3-4)）
+   */
+  const navigate = useNavigate();
+  const role = user?.role;
+  useEffect(() => {
+    if (accountId === undefined) return;
+    return onSessionEnded(() => {
+      // 利用者を空にするのと、入口へ移るのを同じ描画で行う。ルータは場所の更新を startTransition で行うため、
+      // 利用者だけを先に空にすると、RequireStaff / RequireGuardian が理由を持たずに入口へ送り直してしまう
+      startTransition(() => {
+        setUser(null);
+        navigate(role === '3' ? '/' : '/staff-top', { replace: true, state: { sessionEnded: true } });
+      });
+    });
+  }, [accountId, role, setUser, navigate]);
 
   /*
    * ページを開き直したときにセッションを復元する。

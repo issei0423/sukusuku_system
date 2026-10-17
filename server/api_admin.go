@@ -125,7 +125,7 @@ func (a *app) handleReissueTempPassword(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	temp := randomPassword()
-	hash, err := bcrypt.GenerateFromPassword([]byte(temp), bcrypt.DefaultCost)
+	hash, err := hashPassword(temp)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "再発行に失敗しました")
 		return
@@ -134,7 +134,7 @@ func (a *app) handleReissueTempPassword(w http.ResponseWriter, r *http.Request) 
 	res, err := a.db.Exec(`UPDATE m_account
 		SET password_hash = ?, is_temp_password = 1, temp_password_expires_at = ?,
 		    failed_login_count = 0, locked_until = NULL, updated_at = ?
-		WHERE account_id = ?`, string(hash), fromNowMinutes(hours*60), now(), id)
+		WHERE account_id = ?`, hash, fromNowMinutes(hours*60), now(), id)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "再発行に失敗しました")
 		return
@@ -143,6 +143,16 @@ func (a *app) handleReissueTempPassword(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusNotFound, "アカウントが見つかりません")
 		return
 	}
+	/*
+	 * 再発行の時点で旧パスワードを無効化する（基本設計書「一時パスワードの再発行」(4-3)）。旧パスワードで入った
+	 * ログイン中のセッションも同じ扱いにして切る（GitHub Issue #159）。管理者が自分のものを再発行したときは、
+	 * 操作した端末だけを残す（パスワードの変更へ進ませるため。session.go の requireUser）
+	 */
+	keep := ""
+	if id == u.AccountID {
+		keep = sessionID(r)
+	}
+	a.sessions.destroyAccount(id, keep)
 	a.log(u.AccountID, fnAccount, opUpdate, "m_account", i64(id), nil, nil, s("一時パスワードを再発行"))
 	writeJSON(w, http.StatusOK, map[string]string{"password": temp})
 }
@@ -204,6 +214,11 @@ func (a *app) handleSetAccountStatus(w http.ResponseWriter, r *http.Request) {
 		req.Status, now(), id); err != nil {
 		writeErr(w, http.StatusInternalServerError, "変更に失敗しました")
 		return
+	}
+	// 停止したアカウントはログインできない（要件定義書、画面詳細図 7-8 項目5）。ログイン中のセッションもその場で切る。
+	// サーバ側にセッションを持つのは、即座に無効化できるためである（基本設計書「認証情報の保持方式」(6-3)。GitHub Issue #159）
+	if req.Status == accountSuspended {
+		a.sessions.destroyAccount(id, "")
 	}
 	label := func(v string) string {
 		if v == "1" {
@@ -769,10 +784,55 @@ func (a *app) handleEndGuardianLink(w http.ResponseWriter, r *http.Request) {
 			now(), req.GuardianID)
 		after = "終了（有効な紐づけがゼロのためアカウントを停止）"
 	}
+
+	/*
+	 * 解除するとその園児の記録を参照できなくなる（画面詳細図 7-8 項目6）。保護者は left_at が入った時点で
+	 * 参照できなくなる（基本設計書「チャット」(5-5)）。その園児の個人チャットと、ほかに有効な紐づけのある園児が
+	 * 在籍していないクラスのクラスグループに left_at を入れる。ログイン中のセッションも切る（GitHub Issue #159）。
+	 * きょうだいの紐づけが残る保護者は、ログインし直せば残る園児の範囲で使える
+	 */
+	accountID := a.guardianAccountID(req.GuardianID)
+	if accountID != nil {
+		a.leaveRoomsOfChild(*accountID, req.GuardianID, req.ChildID)
+		a.sessions.destroyAccount(*accountID, "")
+	}
+
 	// 紐づけの表は数値の主キーを持たない。相手が分かるよう、保護者のアカウントを対象として残す
-	a.log(u.AccountID, fnAccount, opUpdate, "t_guardian_child", a.guardianAccountID(req.GuardianID),
+	a.log(u.AccountID, fnAccount, opUpdate, "t_guardian_child", accountID,
 		s(req.ChildID), s("有効"), s(after))
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// leaveRoomsOfChild は、紐づけを解除した保護者を、その園児の個人チャットと、ほかに有効な紐づけのある園児が
+// 在籍していないクラスのクラスグループから外す（left_at を入れる）。所属していた期間の記録は残す（基本設計書 5-5）
+func (a *app) leaveRoomsOfChild(accountID int64, guardianID, childID string) {
+	a.db.Exec(`UPDATE t_chat_member SET left_at = ?
+		 WHERE account_id = ? AND left_at IS NULL
+		   AND chat_room_id IN (SELECT chat_room_id FROM m_chat_room WHERE room_type = '4' AND child_id = ?)`,
+		now(), accountID, childID)
+	a.db.Exec(`UPDATE t_chat_member SET left_at = ?
+		 WHERE account_id = ? AND left_at IS NULL
+		   AND chat_room_id IN (
+		     SELECT r.chat_room_id FROM m_chat_room r
+		      WHERE r.room_type = '2'
+		        AND r.class_id IN (SELECT class_id FROM t_class_child WHERE child_id = ?)
+		        AND NOT EXISTS (
+		          SELECT 1 FROM t_class_child cc
+		            JOIN t_guardian_child gc ON gc.child_id = cc.child_id
+		           WHERE cc.class_id = r.class_id AND gc.guardian_id = ? AND gc.link_status = '1'))`,
+		now(), accountID, childID, guardianID)
+}
+
+// rejoinRoomsOfChild は、紐づけを戻した保護者を、その園児の個人チャットとクラスグループへ戻す（left_at を空にする）。
+// 誤って解除したときの戻し先であり、解除の前の状態へ戻す（GitHub Issue #118・#159）
+func (a *app) rejoinRoomsOfChild(accountID int64, childID string) {
+	a.db.Exec(`UPDATE t_chat_member SET left_at = NULL
+		 WHERE account_id = ? AND left_at IS NOT NULL
+		   AND chat_room_id IN (
+		     SELECT chat_room_id FROM m_chat_room
+		      WHERE (room_type = '4' AND child_id = ?)
+		         OR (room_type = '2' AND class_id IN (SELECT class_id FROM t_class_child WHERE child_id = ?)))`,
+		accountID, childID, childID)
 }
 
 func (a *app) guardianAccountID(guardianID string) *int64 {
@@ -819,6 +879,7 @@ func (a *app) handleRestoreGuardianLink(w http.ResponseWriter, r *http.Request) 
 			a.db.Exec(`UPDATE m_account SET status = '1', updated_at = ? WHERE account_id = ?`, now(), *accountID)
 			after = "有効（アカウントを再開）"
 		}
+		a.rejoinRoomsOfChild(*accountID, req.ChildID)
 	}
 	a.log(u.AccountID, fnAccount, opUpdate, "t_guardian_child", accountID, s(req.ChildID), s("終了"), s(after))
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

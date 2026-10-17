@@ -6,7 +6,7 @@
  * 新規登録の導線は保護者用トップにのみ置く（職員アカウントは管理者が発行するため）。
  */
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import PublicLayout from '../../layouts/PublicLayout';
 import { Field, Alert } from '../../components/ui';
 import { useSession } from '../../session';
@@ -21,25 +21,15 @@ export default function TopScreen({ entrance }: { entrance: 'staff' | 'guardian'
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState<LoginError | null>(null);
   const [busy, setBusy] = useState(false);
+  // ログイン中にサーバがセッションを切ったため、ここへ戻されたとき（App.tsx。GitHub Issue #159）
+  const sessionEnded = (useLocation().state as { sessionEnded?: boolean } | null)?.sessionEnded === true;
 
   /*
    * ログイン中はログインフォームを表示しない。
    * 系統・アカウントを問わず新しいログインを成立させないため（要件定義書「同時ログインの扱い」(4-1-1)）。
    * 案内にログイン中の氏名・ロールを出さない。共有端末で前の利用者を第三者に示さないため。
    */
-  if (user) {
-    return (
-      <PublicLayout>
-        <h1>ログイン中</h1>
-        <p>すでにログインしています。</p>
-        <p>別のアカウントでログインするには、先にログアウトしてください。</p>
-        <div className="stack">
-          <button className="btn-primary btn-block" onClick={() => void logout()}>ログアウトする</button>
-          <button className="btn-block" onClick={() => navigate(-1)}>前の画面へ戻る</button>
-        </div>
-      </PublicLayout>
-    );
-  }
+  if (user) return <LoggedInNotice />;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -82,7 +72,9 @@ export default function TopScreen({ entrance }: { entrance: 'staff' | 'guardian'
           ログイン状態を保持する
         </label>
 
-        {error && <LoginErrorView error={error} entrance={entrance} />}
+        {sessionEnded && !error && <Alert soft>ログインの状態が切れました。もう一度ログインしてください。</Alert>}
+        {error && <LoginErrorView error={error} entrance={entrance}
+          onLogout={() => { setError(null); void logout(); }} />}
 
         <button className="btn-primary btn-block" type="submit" disabled={busy}>
           {busy ? 'ログインしています…' : 'ログイン'}
@@ -108,8 +100,31 @@ export default function TopScreen({ entrance }: { entrance: 'staff' | 'guardian'
   );
 }
 
+/**
+ * ログイン中に入口・新規登録を開いたときの案内（画面詳細図 2-2）。
+ * 新規登録画面（SignUpScreen）も使う。登録が成立するとセッションが新しい保護者に置き換わり、
+ * 上書きログインと同じことになるため（基本設計書「ログイン」(4-3)。GitHub Issue #159）
+ */
+export function LoggedInNotice({ onLoggedOut }: { onLoggedOut?: () => void }) {
+  const { logout } = useSession();
+  const navigate = useNavigate();
+  return (
+    <PublicLayout>
+      <h1>ログイン中</h1>
+      <p>すでにログインしています。</p>
+      <p>別のアカウントでログインするには、先にログアウトしてください。</p>
+      <div className="stack">
+        <button className="btn-primary btn-block" onClick={() => { void logout().then(onLoggedOut); }}>ログアウトする</button>
+        <button className="btn-block" onClick={() => navigate(-1)}>前の画面へ戻る</button>
+      </div>
+    </PublicLayout>
+  );
+}
+
 /** 誤った系統でのログインは成立させず、正しい入口を案内する（画面詳細図 2-1） */
-function LoginErrorView({ error, entrance }: { error: LoginError; entrance: 'staff' | 'guardian' }) {
+function LoginErrorView({ error, entrance, onLogout }: {
+  error: LoginError; entrance: 'staff' | 'guardian'; onLogout: () => void;
+}) {
   if (error.kind === 'wrong_entrance') {
     return (
       <Alert>
@@ -126,6 +141,24 @@ function LoginErrorView({ error, entrance }: { error: LoginError; entrance: 'sta
   }
   if (error.kind === 'suspended') {
     return <Alert>このアカウントは停止されています。園の管理者へご連絡ください。</Alert>;
+  }
+  // 文言は基本設計書「メッセージ一覧」(4-9)「一時パスワードの期限切れ」による（GitHub Issue #159）
+  if (error.kind === 'temp_expired') {
+    return <Alert>一時パスワードの有効期限が切れています。管理者へご連絡ください。</Alert>;
+  }
+  /*
+   * ログインより前に開いておいた別のタブから送ったとき。サーバは新しいログインを成立させず、
+   * ログイン中のセッションをそのまま残す（基本設計書「ログイン」(4-3)。GitHub Issue #159）。
+   * 上のログイン中の案内と同じく、ログイン中の氏名・ロールは出さない
+   */
+  if (error.kind === 'already_logged_in') {
+    return (
+      <Alert>
+        すでにログインしています。別のアカウントでログインするには、先にログアウトしてください。
+        {' '}
+        <button type="button" className="btn-sm" onClick={onLogout}>ログアウトする</button>
+      </Alert>
+    );
   }
   return <Alert>ログインIDまたはパスワードが違います（残り {error.remaining} 回）</Alert>;
 }

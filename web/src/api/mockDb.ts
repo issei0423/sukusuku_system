@@ -283,16 +283,24 @@ export const diaryAttachments: DiaryAttachment[] = [
 ];
 
 /* ============ チャット（基本設計書 5-5） ============ */
-export const chatRooms: ChatRoom[] = [
+
+/**
+ * チャットルームの行。child_id は個人チャットの園児で、画面へは返さない（server/schema.sql の m_chat_room.child_id）。
+ * 個人チャットのルームは園児単位で作る（基本設計書 5-5）。部屋の名前（園児名＋「の保護者」）で探すと、
+ * 同じ氏名の別の園児がいるとき、別の家庭の個人チャットに入ってしまうため、園児ID で結ぶ（GitHub Issue #163）
+ */
+export type ChatRoomRow = ChatRoom & { child_id?: string | null };
+
+export const chatRooms: ChatRoomRow[] = [
   { chat_room_id: 1, room_type: '1', class_id: null, room_name: '園全体',           is_archived: false, thread_status: null },
   { chat_room_id: 2, room_type: '5', class_id: null, room_name: '職員',             is_archived: false, thread_status: null },
   { chat_room_id: 3, room_type: '2', class_id: 1,    room_name: 'さくら組',         is_archived: false, thread_status: null },
   { chat_room_id: 4, room_type: '2', class_id: 2,    room_name: 'ひまわり組',       is_archived: false, thread_status: null },
   { chat_room_id: 5, room_type: '3', class_id: null, room_name: '運動会実行委員',   is_archived: false, thread_status: null },
-  { chat_room_id: 6, room_type: '4', class_id: 1,    room_name: '野原 太郎の保護者', is_archived: false, thread_status: '1' },
-  { chat_room_id: 7, room_type: '4', class_id: 1,    room_name: '上園 花子の保護者', is_archived: false, thread_status: null },
-  { chat_room_id: 8, room_type: '4', class_id: 1,    room_name: '宮城 美咲の保護者', is_archived: false, thread_status: null },
-  { chat_room_id: 9, room_type: '4', class_id: 1,    room_name: '金城 陸の保護者',   is_archived: false, thread_status: null },
+  { chat_room_id: 6, room_type: '4', class_id: 1,    room_name: '野原 太郎の保護者', is_archived: false, thread_status: '1',  child_id: 'C001' },
+  { chat_room_id: 7, room_type: '4', class_id: 1,    room_name: '上園 花子の保護者', is_archived: false, thread_status: null, child_id: 'C002' },
+  { chat_room_id: 8, room_type: '4', class_id: 1,    room_name: '宮城 美咲の保護者', is_archived: false, thread_status: null, child_id: 'C004' },
+  { chat_room_id: 9, room_type: '4', class_id: 1,    room_name: '金城 陸の保護者',   is_archived: false, thread_status: null, child_id: 'C005' },
 ];
 
 /** 参加者（t_chat_member）。left_at で過去の所属期間を保持する（基本設計書 5-5） */
@@ -710,6 +718,15 @@ function shiftRows(rows: Record<string, unknown>[], days: number): void {
       operationLogs as unknown as Record<string, unknown>[],
     ];
     for (const rows of recordSets) shiftRows(rows, offset);
+
+    /*
+     * 一時パスワードの有効期限はマスタ（accounts）にあるが、デモの「今日」から 48 時間として決めた日時なので、
+     * あわせてずらす。ずらさないと、デモの 宮城 蓮 は起動した日によって期限切れになり、一時パスワードでの
+     * ログインを見せられない（GitHub Issue #159。サーバ側は server/seed_shift.go の seedShiftMasterColumns）
+     */
+    for (const a of accounts) {
+      if (a.temp_password_expires_at) a.temp_password_expires_at = shiftValue(a.temp_password_expires_at, offset);
+    }
   }
 }
 

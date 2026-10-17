@@ -105,11 +105,14 @@ func TestTempPasswordBlocksOtherAPIs(t *testing.T) {
 		expectStatus(t, request(t, h, temp, "GET", "/api/me", ""), http.StatusUnauthorized)
 	})
 
-	t.Run("ログイン中に一時パスワードを発行し直されたら、その時点から拒否する", func(t *testing.T) {
-		admin := loginAs(a, 1, "staff")
+	t.Run("ログイン中に一時パスワードの状態になったら、その時点から拒否する", func(t *testing.T) {
 		teacher := loginAs(a, 3, "staff")
 		call(t, h, teacher, "GET", "/api/children", "")
-		call(t, h, admin, "POST", "/api/admin/accounts/3/temp-password", "")
+		// 管理者の再発行（POST /api/admin/accounts/{id}/temp-password）は、ログイン中のセッションそのものを切る
+		// （GitHub Issue #159。api_account_session_test.go）。ここでは、状態を要求のたびに読むことを確かめる
+		if _, err := a.db.Exec(`UPDATE m_account SET is_temp_password = 1 WHERE account_id = 3`); err != nil {
+			t.Fatal(err)
+		}
 		expectProcedure(t, request(t, h, teacher, "GET", "/api/children", ""), procedurePassword)
 	})
 }

@@ -247,11 +247,12 @@ func (a *app) handleApproveDiary(w http.ResponseWriter, r *http.Request) {
 	a.writeDiaryByID(w, id)
 }
 
-// shareDiaryToGuardian は個人チャットへ日誌の共有として流す（t_chat_message.source_type = 2）
+// shareDiaryToGuardian は個人チャットへ日誌の共有として流す（t_chat_message.source_type = 2）。
+// 個人チャットは園児ID で引く。部屋の名前で探すと、同じ氏名の別の園児の家庭へ流れる（GitHub Issue #163）
 func (a *app) shareDiaryToGuardian(u *SessionUser, diaryID int64, childID string) {
 	var roomID int64
 	err := a.db.QueryRow(`SELECT chat_room_id FROM m_chat_room
-		WHERE room_type = '4' AND room_name = ?`, a.childName(childID)+"の保護者").Scan(&roomID)
+		WHERE room_type = '4' AND child_id = ?`, childID).Scan(&roomID)
 	if err != nil {
 		// 【要確認】個人チャットが無い場合の共有先が定義されていない（GitHub Issue #61 と同じ論点）
 		return

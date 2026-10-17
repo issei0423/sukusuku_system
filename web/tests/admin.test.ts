@@ -194,7 +194,7 @@ describe('CSV一括登録', () => {
     const { rows } = await api.parseChildCsv('C801,,,2025/13/40,3,ばら組,36.5');
     expect(rows[0].error).toContain('氏名が空です');
     expect(rows[0].error).toContain('氏名かなが空です');
-    expect(rows[0].error).toContain('生年月日は YYYY-MM-DD で入力してください');
+    expect(rows[0].error).toContain('生年月日の形式が正しくありません');
     expect(rows[0].error).toContain('性別は');
     expect(rows[0].error).toContain('クラス名が見つかりません');
   });
@@ -211,7 +211,7 @@ describe('CSV一括登録', () => {
       'C804,西村 凛,にしむら りん,2025-08-08,2,もも組,36.4',
       'C804,西村 蓮,にしむら れん,2025-08-08,1,もも組,36.4',
     ].join('\n'));
-    expect(rows[0].error).toBe('平熱は数値で入力してください');
+    expect(rows[0].error).toBe('平熱は数値（小数第1位まで。例：36.5）で入力してください');
     expect(rows[1].error).toBeNull();
     expect(rows[2].error).toBe('同じ園児IDがこのファイル内で重複しています');
   });

@@ -4,6 +4,10 @@
  *      基本設計書.md「CSV一括登録」(4-4)
  *
  * エラー行があるときは1件も取り込まない。中途半端な状態を作らないため。
+ *
+ * 確認した内容と件数を登録する（要件定義書「取込前に内容と件数を確認でき」、画面詳細図 7-3「検証と登録を
+ * 2段階に分ける」）。確認したあとに貼り付けの欄を書き換えたら、確認の結果を捨て、確認し直すまで登録させない。
+ * 登録には、確認したときの原文を送る（GitHub Issue #160 の 3）。
  */
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -23,31 +27,40 @@ export default function ChildCsvScreen() {
   const { user } = useSession();
   const navigate = useNavigate();
   const [text, setText] = useState('');
-  const [parsed, setParsed] = useState<{ header: string[]; rows: CsvRow[] } | null>(null);
+  // 確認の結果と、確認したときの原文（text）。登録はこの原文で行う
+  const [parsed, setParsed] = useState<{ header: string[]; rows: CsvRow[]; text: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // 取込内容の検証はサーバ側でも行う。画面の判定だけに頼らない
+  const checkText = async (content: string) => {
+    setError(null);
+    setParsed(null);
+    try {
+      setParsed({ ...(await api.parseChildCsv(content)), text: content });
+    } catch (e) {
+      // 見出しの並びが違うファイルなど（GitHub Issue #160 の 2）
+      setError((e as Error).message);
+    }
+  };
 
   const readFile = async (file: File) => {
     const content = await file.text();
     setText(content);
-    setParsed(await api.parseChildCsv(content));
+    await checkText(content);
   };
 
-  // 取込内容の検証はサーバ側でも行う。画面の判定だけに頼らない
-  const check = async () => {
-    setError(null);
-    try {
-      setParsed(await api.parseChildCsv(text));
-    } catch (e) {
-      setError((e as Error).message);
-    }
+  // 書き換えたら確認の結果を捨てる。確認していない行を登録させないため
+  const changeText = (v: string) => {
+    setText(v);
+    setParsed(null);
   };
 
   const doImport = async () => {
     if (!parsed) return;
     setBusy(true); setError(null);
     try {
-      const n = await api.importChildCsv(user!, parsed.rows, text);
+      const n = await api.importChildCsv(user!, parsed.rows, parsed.text);
       notify(`${n} 件を登録しました`);
       navigate('/staff/children');
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
@@ -71,12 +84,12 @@ export default function ChildCsvScreen() {
               onChange={(e) => { const f = e.target.files?.[0]; if (f) readFile(f); }} />
           </Field>
           <Field label="または内容を貼り付ける">
-            <textarea value={text} onChange={(e) => setText(e.target.value)}
+            <textarea value={text} onChange={(e) => changeText(e.target.value)}
               placeholder={SAMPLE} style={{ fontFamily: 'monospace', minHeight: 140 }} />
           </Field>
           <div className="row">
-            <button onClick={check} disabled={!text.trim()}>取込内容を確認する</button>
-            <button className="btn-quiet btn-sm" onClick={() => { setText(SAMPLE); setParsed(null); }}>
+            <button onClick={() => void checkText(text)} disabled={!text.trim()}>取込内容を確認する</button>
+            <button className="btn-quiet btn-sm" onClick={() => changeText(SAMPLE)}>
               サンプルを入れる
             </button>
           </div>

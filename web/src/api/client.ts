@@ -35,6 +35,9 @@ export const findAccount = impl.findAccount;
 /** 手続き（パスワードの変更・規約への同意）を終えるまで拒否されたことの知らせ。どちらの実装も同じものを使う */
 export { onProcedureRequired } from './procedure';
 
+/** ログイン中のセッションがサーバに切られたことの知らせ（停止・紐づけの解除など。GitHub Issue #159） */
+export { onSessionEnded } from './procedure';
+
 /** いまどちらの実装で動いているか。画面の注記に使う */
 export const backend: 'http' | 'mock' = useMock ? 'mock' : 'http';
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -16,15 +17,28 @@ type apiError struct {
 	Correct   string `json:"correct,omitempty"`
 }
 
+/*
+writeJSON は値を JSON にして返す。
+
+JSON にしてから状態を書く。先に 200 を書いてから JSON にできない値（+Inf など）に当たると、
+200 の空の本文が返り、画面は中身が null のまま描こうとして真っ白になる（GitHub Issue #160）。
+JSON にできないときは 500 と文言を返し、画面にはエラーとして出させる。
+*/
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
 	if v == nil {
+		w.WriteHeader(status)
 		return
 	}
-	if err := json.NewEncoder(w).Encode(v); err != nil {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(v); err != nil {
 		log.Printf("JSON の書き出しに失敗しました: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(apiError{Message: "データを返せませんでした。管理者へご連絡ください"})
+		return
 	}
+	w.WriteHeader(status)
+	w.Write(buf.Bytes())
 }
 
 func writeErr(w http.ResponseWriter, status int, message string) {

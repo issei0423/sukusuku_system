@@ -16,7 +16,7 @@ import { api, selectableClasses } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Alert, Modal } from '../../components/ui';
 import { ConfirmDialog } from '../../components/feedback';
 import { BODY_POSITION, BREATHING, COMPLEXION } from '../../api/codes';
-import { formatHM, today, now, napTimerBase, plusMinutes } from '../../api/util';
+import { formatHM, formatTemperature, today, now, napTimerBase, plusMinutes } from '../../api/util';
 import type { BodyPosition, Breathing, Complexion } from '../../api/types';
 import type { NapChildState } from '../../api/shapes';
 
@@ -287,7 +287,7 @@ function NapRecordRow({ row, sessionId, due, onSaved }: {
           {justSaved ? '保存しました' : !row.latest ? '未記録' : due ? 'チェック時刻を過ぎています' : '確認済み'}
         </span>
         <span className="last">{row.latest ? `前回 ${formatHM(row.latest.checked_at)} ${BODY_POSITION[row.latest.body_position]}` : '前回の記録なし'}</span>
-        <span className="last">平熱 {row.child.normal_temperature ?? '―'}℃</span>
+        <span className="last">平熱 {formatTemperature(row.child.normal_temperature)}℃</span>
       </div>
 
       <div className="nap-inline-fields">

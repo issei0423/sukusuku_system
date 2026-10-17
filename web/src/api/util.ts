@@ -185,6 +185,52 @@ export function validateEmail(email: string): string | null {
   return null;
 }
 
+/**
+ * よく使われるため拒否するパスワード。大文字・小文字を区別せずに照らす
+ * （基本設計書「パスワードの要件」(6-3)「password などは拒否する」）。
+ * 【仮置き】設計は一覧を定めていない（web/仮置き値.md）。サーバ側（server/password.go の commonPasswords）と同じ一覧
+ */
+export const COMMON_PASSWORDS: ReadonlySet<string> = new Set([
+  'password', 'password1', 'password12', 'password123', 'passw0rd',
+  '12345678', '123456789', '1234567890', '87654321', '11111111',
+  '00000000', '88888888', 'qwertyui', 'qwertyuiop', 'asdfghjk',
+  'abcd1234', 'abcdefgh', 'iloveyou', '1q2w3e4r', '1qaz2wsx',
+  'zaq12wsx', 'sunshine', 'princess', 'football', 'baseball',
+]);
+
+/**
+ * 新しく設定するパスワードを検査する。問題が無ければ null を返す
+ * （基本設計書「入力項目の制約値」(4-9)「パスワード｜8〜128文字。文字種の組み合わせは求めない」）。
+ * 長さは文字数（符号位置の数）で数える。サーバ側（server/password.go の validateNewPassword）と同じ規則（GitHub Issue #159）
+ */
+export function validateNewPassword(p: string): string | null {
+  const n = [...p].length;
+  if (n < 8) return 'パスワードは8文字以上で入力してください';
+  if (n > 128) return 'パスワードは128文字以内で入力してください';
+  if (COMMON_PASSWORDS.has(p.toLowerCase())) return 'よく使われるパスワードは使えません。別のパスワードを入力してください';
+  return null;
+}
+
+/**
+ * 'YYYY-MM-DD' の形で、実在する日付か（2025-02-30 や 2025-13-45 を通さない）。
+ * 生年月日は月齢算出の唯一の根拠である（基本設計書 5-3）。サーバ側（server/api_bulk.go の validBirthDate）と同じ規則
+ * （GitHub Issue #160）
+ */
+export function isRealDate(v: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const [y, m, d] = parts(v);
+  return m >= 1 && m <= 12 && d >= 1 && d <= lastDayOfMonth(y, m);
+}
+
+/**
+ * 平熱・体温を表示する形にする。値が無いときと、数でない値（Infinity・NaN）のときは「―」。
+ * サーバは数でない値を返さない（server/model.go の nullFloat）が、表示の側でも崩れないようにしておく
+ * （GitHub Issue #160。直す前の CSV 一括登録で平熱に inf が入ったデータベースがありうる）
+ */
+export function formatTemperature(t: number | null | undefined): string {
+  return t != null && Number.isFinite(t) ? String(t) : '―';
+}
+
 /** 'YYYY-MM' を '2026年10月' の形に整える */
 export function formatMonth(yyyymm: string): string {
   const [y, m] = yyyymm.split('-').map(Number);

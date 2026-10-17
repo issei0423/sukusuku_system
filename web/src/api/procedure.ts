@@ -64,3 +64,25 @@ export function onProcedureRequired(listener: Listener): () => void {
 export function notifyProcedureRequired(kind: ProcedureKind): void {
   listeners.forEach((l) => l(kind));
 }
+
+/*
+ * セッションが終わったことの知らせ（GitHub Issue #159）
+ *
+ * アカウントの停止・紐づけの解除・ほかの端末でのパスワードの変更・一時パスワードの再発行のとき、
+ * サーバはログイン中のセッションを切る（server/session.go の destroyAccount）。以後の要求は 401 になる。
+ * 知らせを受けた画面（App.tsx）は利用者を空にし、入口へ戻す。開いたままの画面に古い内容を残さないため。
+ * ログインそのものの失敗（401）は知らせない（まだログインしていないため。api/http.ts）。
+ */
+export const SESSION_ENDED_MESSAGE = 'ログインしていません';
+
+const sessionEndedListeners = new Set<() => void>();
+
+/** 知らせを受け取る。戻り値を呼ぶと受け取りをやめる */
+export function onSessionEnded(listener: () => void): () => void {
+  sessionEndedListeners.add(listener);
+  return () => { sessionEndedListeners.delete(listener); };
+}
+
+export function notifySessionEnded(): void {
+  sessionEndedListeners.forEach((l) => l());
+}

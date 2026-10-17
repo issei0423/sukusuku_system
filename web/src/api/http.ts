@@ -19,7 +19,9 @@ import type {
   DevListRow, DevScheduleRow, CsvRow, FiscalClassRow, StaffAccountRow,
   GuardianAccountRow, InvitationCodeRow, OperationLogRow, StaffSummary, GuardianHomeRow,
 } from './shapes';
-import { ProcedureRequiredError, isProcedureKind, notifyProcedureRequired, pendingProcedure } from './procedure';
+import {
+  ProcedureRequiredError, isProcedureKind, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
+} from './procedure';
 
 // 画面はこれまでどおり client 経由で型を参照する。定義の実体は shapes.ts が持つ
 export type {
@@ -63,6 +65,15 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     if (res.status === 403 && isProcedureKind(err.kind)) {
       notifyProcedureRequired(err.kind);
       throw new ProcedureRequiredError(err.kind, err.message);
+    }
+    /*
+     * セッションが無い・切られた（停止・紐づけの解除・ほかの端末でのパスワードの変更など。GitHub Issue #159）。
+     * 参照表（園児名・職員名）を捨て、画面（App.tsx）へ知らせて入口へ戻させる。
+     * ログインそのものの失敗は、まだログインしていないため知らせない
+     */
+    if (res.status === 401 && path !== '/api/login') {
+      clearReference();
+      notifySessionEnded();
     }
     // ログインの失敗理由は画面が分岐に使う。mock 実装と同じ形（JSON 文字列）で投げる
     if (err.kind) {
@@ -109,7 +120,14 @@ let ref: Reference = empty;
 
 /** ログイン直後と、ページを開き直したときに呼ぶ */
 export async function loadReference(): Promise<void> {
-  ref = await get<Reference>('/api/reference');
+  /*
+   * 本文が空（null）のまま参照表にすると、どの画面も ref.classes を読めずに真っ白になる（GitHub Issue #160）。
+   * サーバは JSON にできない値のとき空の 200 ではなく 500 を返す（server/httpx.go の writeJSON）が、
+   * 画面の側でも、空のときは前の参照表を残して失敗として扱う
+   */
+  const r = await get<Reference | null>('/api/reference');
+  if (!r) throw new Error('参照する情報を読み込めませんでした。もう一度お試しください');
+  ref = r;
 }
 
 export function clearReference(): void {
