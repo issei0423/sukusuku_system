@@ -1,0 +1,84 @@
+name: Claude 自動実装（ラベル claude）
+
+# Issue に「claude」ラベルを付けると、Claude が mockup-go-react から作業ブランチ（claude/issue-番号-…）を作り、
+# コードを書いてそのブランチに push する。終わると Issue に「PR を作る」リンクが出るので、
+# あなたが PR を作る（→ claude-review.yml の自動レビューが付く）→ 確かめてマージする。
+#
+# Claude が push できるのはこのワークフローだけ。@claude の返事と PR レビューは読み取り専用のまま。
+# push は action の git-push.sh を通るので「origin <ブランチ名>」の形しか通らず、
+# Claude は作業ブランチ以外に自分の commit を載せられない（git checkout も使えない）。
+# ただし GitHub 側の鍵（ブランチ保護）ではないので、マージ前に必ず中身を見ること。
+#
+# Issue の issues イベントはデフォルトブランチ（mockup-go-react）のワークフローで動くので、このファイルはデフォルトブランチに置く。
+#
+# Claude が push の前にテストを回せるよう、Go と Node.js と依存を先に入れておく。
+# Claude に足す Bash は、テスト・型検査・lint の 5 つ（引数まで固定）と git status・git diff だけ（下の --allowedTools）。
+# cd は許していないので、go -C server … と npm --prefix web … の形で回させる。
+# ただしテストを回すことは、Claude が書いたコード（テストや package.json）を動かすことでもある。
+# 許可の形は取り違えを減らすためのもので、守りの仕組みではない。守りはブランチ保護とマージ前の確認。
+
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  implement:
+    if: github.event.label.name == 'claude'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30     # 止まらなくなっても 30 分で打ち切る（使用枠の守り）
+    concurrency:            # 同じ Issue で二重に走らせない
+      group: claude-implement-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    permissions:
+      contents: write       # 作業ブランチに push するため
+      issues: write         # 進み具合を Issue に書くため
+      pull-requests: read
+    steps:
+      # 作業の元（base_branch）と同じブランチを取り出し、その server/go.mod・web/package-lock.json で依存を入れる
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          ref: mockup-go-react
+
+      # push の権限を持つジョブなので、Actions のキャッシュは使わない（キャッシュの汚染を避ける）
+      - name: Go を入れる（server/go.mod の版）
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: server/go.mod
+          cache: false
+
+      - name: Go の依存を取ってくる
+        working-directory: server
+        run: go mod download
+
+      - name: Node.js を入れる
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      # 依存のインストールスクリプトは動かさない（このジョブは push できるトークンを持つため）。
+      # いまの依存でスクリプトを持つのは macOS 向けの fsevents だけで、Linux では入らない
+      - name: 画面（web）の依存を入れる
+        working-directory: web
+        run: npm ci --ignore-scripts
+
+      - name: Implement with Claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          label_trigger: claude
+          # 作業ブランチは開発の本線から切る（上の Checkout と同じブランチ）
+          base_branch: mockup-go-react
+          # --allowedTools は action が既定で許す道具（編集・git add/commit/push など）に足される
+          claude_args: |
+            --allowedTools "Bash(go -C server vet ./...),Bash(go -C server test -count=1 ./...),Bash(npm --prefix web run build),Bash(npm --prefix web run lint),Bash(npm --prefix web test),Bash(git status:*),Bash(git diff:*)"
+            --append-system-prompt "Issue に書かれたことを実装する。
+            最初に AGENTS.md（無ければ MOCKUP.md と セットアップ手順.md）を読んで、このリポジトリの作りに合わせる。業務の規則を変えるときは server と web/src/api/mock.ts の両方を直す。
+            変更は今いる作業ブランチにだけ commit して push する。mockup・mockup-go-react・main には push しない。.github/ の中は変えない。
+            push する前に、変えたところに合わせてテストを回す。server を変えたら go -C server vet ./... と go -C server test -count=1 ./... を、web を変えたら npm --prefix web run build と npm --prefix web run lint と npm --prefix web test を回す。許されているのはこの 5 つの形だけなので、引数を足さず、cd やパイプやリダイレクトも付けず、1 回に 1 つのコマンドだけを実行する。
+            落ちたら直して回し直す。直せないまま push するときは、報告の最初にそう書く。
+            Issue の内容があいまいで決められないときは、実装せずに Issue へ質問を書いて終わる。
+            報告は日本語で、何を変えたか・回したテストのコマンドと結果（通った件数と落ちたテストの名前）・確かめていないことを短く書く。回さなかったテストは回していないと書く。"

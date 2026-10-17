@@ -11,5 +11,7 @@ export default defineConfig({
     environment: 'node',
     globals: true,
     include: ['tests/**/*.test.{ts,tsx}'],
+    // 回した時刻で結果が変わらないよう、時計を日本時間の今日の 18:00 で止める（GitHub Issue #152）
+    setupFiles: ['tests/setup-clock.ts'],
   },
 });

@@ -129,6 +129,14 @@ cd web && npm test
 | `tests/apiScope.test.ts` | API を直接呼んだときの権限（GitHub Issue #153）。一時パスワード中・規約の再同意が要る間の拒否、日誌の添付・編集ロック・更新の参照範囲、クラス日誌のクラス、園児の所属クラス。Go 側は `server/api_scope_test.go` |
 | `tests/csv.test.ts` | CSV 出力のセルの無害化（先頭の `=` `+` `-` `@` など） |
 
+**テストの時計は、日本時間の今日の 18:00 で止めてある**（`tests/setup-clock.ts`）。
+デモデータは「今日」の出来事を 17:20 までに置いているため、本物の時計のまま夜中や朝に回すと、
+それらが未来の出来事になって落ちていた（GitHub Issue #152）。
+別の時刻で回すときは `SUKUSUKU_TEST_CLOCK=03:00 npx vitest run` のように渡す。
+
+`mockup-go-react` への PR と push では、GitHub Actions（`.github/workflows/ci.yml`）が
+Go のテスト・画面のテスト・下の結合テストを自動で回す。
+
 ### Go サーバとの結合テスト
 
 12件。サーバを起動したうえで実行する（`npm test` では自動的に飛ばされる）。
