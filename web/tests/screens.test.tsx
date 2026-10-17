@@ -316,6 +316,9 @@ describe('チャット画面の表示', () => {
     // 0.8秒押し続けると、リアクション・編集・取消の3つが出る
     fireEvent.pointerDown(mine, { button: 0, clientX: 10, clientY: 10 });
     await waitFor(() => { expect(screen.getByRole('group', { name: 'メッセージの操作' })).toBeTruthy(); }, { timeout: 2000 });
+    // 一覧の外を押したときに閉じる仕組みは、開いたあとの effect で付く。最初の操作へフォーカスが移ったら付いている。
+    // 長押しはタイマーで開くため、待たずに続けると、負荷の高い CI では付く前に外を押してしまうことがある
+    await waitFor(() => { expect(document.activeElement?.getAttribute('aria-label')).toBe('了解'); });
     expect(screen.getByRole('button', { name: '了解' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '編集' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '取消' })).toBeTruthy();
