@@ -78,12 +78,14 @@ func ensureContactSchema(db *sql.DB) error {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM m_phrase`).Scan(&phrases); err != nil {
 		return fmt.Errorf("定型文を確かめられません: %w", err)
 	}
-	if phrases == 0 {
+	// 更新者には、いる職員の先頭を入れる（外部キー）。職員がいなければ入れない（園が設定画面で登録する）
+	var staffID string
+	if phrases == 0 && db.QueryRow(`SELECT staff_id FROM m_staff ORDER BY staff_id LIMIT 1`).Scan(&staffID) == nil {
 		order := map[string]int{}
 		for _, p := range defaultPhrases {
 			order[p[0]]++
 			if _, err := db.Exec(`INSERT INTO m_phrase (phrase_scope, body, display_order, updated_staff_id, created_at, updated_at)
-				VALUES (?, ?, ?, 'S001', '2026-04-01T09:00:00', '2026-04-01T09:00:00')`, p[0], p[1], order[p[0]]); err != nil {
+				VALUES (?, ?, ?, ?, '2026-04-01T09:00:00', '2026-04-01T09:00:00')`, p[0], p[1], order[p[0]], staffID); err != nil {
 				return fmt.Errorf("定型文を入れられません: %w", err)
 			}
 		}

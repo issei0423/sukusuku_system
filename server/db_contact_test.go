@@ -37,6 +37,8 @@ func TestEnsureContactSchemaUpgradesOldDB(t *testing.T) {
 		  operation_type TEXT NOT NULL CHECK (operation_type IN ('1','2','3','4','5')),
 		  target_table TEXT NOT NULL, target_id INTEGER, target_child_id TEXT, before_value TEXT, after_value TEXT)`,
 		`CREATE TABLE m_setting (setting_key TEXT PRIMARY KEY, setting_value TEXT NOT NULL, description TEXT, updated_staff_id TEXT NOT NULL, updated_at TEXT NOT NULL)`,
+		`CREATE TABLE m_staff (staff_id TEXT PRIMARY KEY, staff_name TEXT NOT NULL)`,
+		`INSERT INTO m_staff VALUES ('S001','野原 一誠')`,
 		`INSERT INTO t_guardian_child VALUES ('G001','C001','父','1','2025-06-10T10:00:00',NULL)`,
 		`INSERT INTO m_terms (terms_version, document_type, body, published_on) VALUES ('1.0','1','規約','2025-04-01')`,
 		`INSERT INTO t_operation_log (account_id, operated_at, function_type, operation_type, target_table) VALUES (3,'2026-09-01T09:00:00','1','1','t_diary')`,
@@ -74,6 +76,11 @@ func TestEnsureContactSchemaUpgradesOldDB(t *testing.T) {
 		if err := db.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&n); err != nil {
 			t.Errorf("%s が無い: %v", table, err)
 		}
+	}
+	// 定型文は空のときだけ初期の行を入れる（2回呼んでも増えない）
+	db.QueryRow(`SELECT COUNT(*) FROM m_phrase`).Scan(&n)
+	if n != len(defaultPhrases) {
+		t.Errorf("定型文 = %d, want %d", n, len(defaultPhrases))
 	}
 	// 設定は足りないものだけを入れる。園が変えた値は書き換えない。AI は使わないが既定
 	var mood, ai string
