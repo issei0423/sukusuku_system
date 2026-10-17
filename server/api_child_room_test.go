@@ -183,3 +183,32 @@ func TestPersonalRoomMessagesBeforeFirstGuardianJoin(t *testing.T) {
 		t.Fatalf("既読後の未読 = %d", got)
 	}
 }
+
+// 呼び名は職員にだけ返し、保護者へ返す園児の一覧には入れない（インタフェース一覧「Child」）。
+func TestGuardianChildrenOmitNickname(t *testing.T) {
+	a, _ := newTestApp(t)
+	if _, err := a.db.Exec(`UPDATE m_child SET nickname = 'しんちゃん' WHERE child_id = 'C001'`); err != nil {
+		t.Fatal(err)
+	}
+	gid := "G001"
+	guardian, err := a.visibleChildren(&SessionUser{AccountID: 6, Role: "3", GuardianID: &gid})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range guardian {
+		if c.Nickname != "" {
+			t.Fatalf("保護者の一覧に呼び名 %q が入った（%s）", c.Nickname, c.ChildID)
+		}
+	}
+	staff, err := a.visibleChildren(&SessionUser{AccountID: 1, Role: "1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, c := range staff {
+		found = found || (c.ChildID == "C001" && c.Nickname == "しんちゃん")
+	}
+	if !found {
+		t.Fatal("管理者の一覧に呼び名が入っていない")
+	}
+}

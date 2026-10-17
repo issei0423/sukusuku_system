@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import { api } from '../src/api/client';
 import * as db from '../src/api/mockDb';
+import { visibleChildren } from '../src/api/mock';
 import type { SessionUser } from '../src/api/types';
 
 const admin: SessionUser = { account_id: 1, email: '', role: '1', display_name: '', staff_id: 'S001', guardian_id: null, class_id: null, class_name: null, is_temp_password: false, terms_agreed: true };
@@ -29,4 +30,12 @@ it('存在しないクラスを指定した登録は園児を残さない', asyn
     birth_date: '2025-01-01', sex: '1', normal_temperature: null, photo_consent_level: '2',
     class_id: 999, allergies: [], medical_histories: [] }, 'create')).rejects.toThrow('登録できませんでした');
   expect(db.children.some((c) => c.child_id === 'C903')).toBe(false);
+});
+
+it('呼び名は職員にだけ返し、保護者へ返す園児の一覧には入れない', () => {
+  db.children.find((c) => c.child_id === 'C001')!.nickname = 'しんちゃん';
+  const guardian = { account_id: 6, email: '', role: '3', display_name: '', staff_id: null, guardian_id: 'G001', class_id: null, class_name: null, is_temp_password: false, terms_agreed: true } as SessionUser;
+  const admin = { account_id: 1, email: '', role: '1', display_name: '', staff_id: 'S001', guardian_id: null, class_id: null, class_name: null, is_temp_password: false, terms_agreed: true } as SessionUser;
+  expect(visibleChildren(guardian).every((c) => c.nickname === undefined)).toBe(true);
+  expect(visibleChildren(admin).find((c) => c.child_id === 'C001')?.nickname).toBe('しんちゃん');
 });

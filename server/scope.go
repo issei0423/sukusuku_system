@@ -19,7 +19,8 @@ type Child struct {
 	ChildID           string   `json:"child_id"`
 	ChildName         string   `json:"child_name"`
 	ChildNameKana     string   `json:"child_name_kana"`
-	Nickname          string   `json:"nickname"`
+	// 呼び名は職員にだけ返す（図/インタフェース一覧.md「Child」：保護者の応答には含めない）
+	Nickname          string   `json:"nickname,omitempty"`
 	BirthDate         string   `json:"birth_date"`
 	Sex               string   `json:"sex"`
 	NormalTemperature *float64 `json:"normal_temperature"`
@@ -106,6 +107,9 @@ func (a *app) visibleChildren(u *SessionUser) ([]Child, error) {
 	out := []Child{}
 	for rows.Next() {
 		c, err := scanChild(rows)
+		if u.Role == "3" {
+			c.Nickname = ""
+		}
 		if err != nil {
 			return nil, err
 		}

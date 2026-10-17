@@ -265,7 +265,8 @@ export function visibleChildren(user: SessionUser): Child[] {
     const ids = new Set(db.classChildren.filter((cc) => cc.class_id === user.class_id).map((cc) => cc.child_id));
     return alive.filter((c) => ids.has(c.child_id));
   }
-  return user.guardian_id ? childrenOfGuardian(user.guardian_id) : [];
+  // 呼び名は職員にだけ返す（server/scope.go と同じ。図/インタフェース一覧.md「Child」：保護者の応答には含めない）
+  return user.guardian_id ? childrenOfGuardian(user.guardian_id).map((c) => ({ ...c, nickname: undefined })) : [];
 }
 
 /** 職員が選べるクラス。一般は自クラスのみ（画面詳細図 3-1） */
