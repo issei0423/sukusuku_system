@@ -109,10 +109,13 @@ func TestConfirmedCheckCannotBeDraftedAgain(t *testing.T) {
 
 type devListRow struct {
 	Child struct {
-		ChildID string `json:"child_id"`
+		ChildID   string `json:"child_id"`
+		ChildName string `json:"child_name"`
 	} `json:"child"`
-	ScheduledOn *string `json:"scheduledOn"`
-	Overdue     bool    `json:"overdue"`
+	ScheduledOn   *string `json:"scheduledOn"`
+	LastCheckedOn *string `json:"lastCheckedOn"`
+	Overdue       bool    `json:"overdue"`
+	Unfilled      int     `json:"unfilled"`
 }
 
 func devListOf(t *testing.T, h http.Handler, c *http.Cookie, classID string) []devListRow {
@@ -168,7 +171,8 @@ func TestDevelopmentOverdueRule(t *testing.T) {
 	})
 }
 
-// デモデータの日付ずらしは、日付だけの列（_on）も対象にする。モック（mockDb.ts）と同じ
+// デモデータの日付ずらしは、日付だけの列（_on）も対象にする。モック（mockDb.ts）と同じ。
+// 園児の生年月日も同じ日数だけずらし、デモの園児の月齢を起動日に合わせて保つ（GitHub Issue #164）
 func TestSeedShiftMovesOnColumns(t *testing.T) {
 	a, _ := newTestApp(t)
 	offset, err := daysFromSeedBase()
@@ -181,7 +185,9 @@ func TestSeedShiftMovesOnColumns(t *testing.T) {
 		{`SELECT measured_on FROM t_physical_record WHERE physical_record_id = 7`, "2026-09-01"},
 		{`SELECT measured_on FROM t_physical_record WHERE physical_record_id = 1`, "2026-03-02"},
 		{`SELECT scheduled_on FROM t_development_schedule WHERE development_schedule_id = 2`, "2026-08-20"},
-		{`SELECT checked_on FROM t_development_check WHERE development_check_id = 1`, "2026-06-01"},
+		{`SELECT checked_on FROM t_development_check WHERE development_check_id = 1`, "2026-05-15"},
+		{`SELECT birth_date FROM m_child WHERE child_id = 'C001'`, "2025-06-01"},
+		{`SELECT birth_date FROM m_child WHERE child_id = 'C008'`, "2025-01-31"},
 	} {
 		var got string
 		if err := a.db.QueryRow(tc.query).Scan(&got); err != nil {
@@ -191,11 +197,168 @@ func TestSeedShiftMovesOnColumns(t *testing.T) {
 			t.Errorf("%s = %s, want %s", tc.query, got, want)
 		}
 	}
-	// 生年月日はずらさない
+}
+
+// devBody は、発達チェックの保存の本文を作る。results は項目ID → 結果（"1"〜"3"）
+func devBody(t *testing.T, childID, checkedOn, status string, results map[int64]string) string {
+	t.Helper()
+	type result struct {
+		DevelopmentItemID int64  `json:"development_item_id"`
+		Result            string `json:"result"`
+	}
+	body := struct {
+		ChildID   string   `json:"child_id"`
+		CheckedOn string   `json:"checked_on"`
+		Status    string   `json:"status"`
+		Results   []result `json:"results"`
+		Note      string   `json:"note"`
+	}{ChildID: childID, CheckedOn: checkedOn, Status: status, Results: []result{}}
+	for id, r := range results {
+		body.Results = append(body.Results, result{id, r})
+	}
+	b, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+// itemsAt は、園児の、その日の月齢の区分のチェック項目のIDを返す（入力画面に出る項目と同じ）
+func itemsAt(t *testing.T, a *app, childID, on string) []int64 {
+	t.Helper()
 	var birth string
-	a.db.QueryRow(`SELECT birth_date FROM m_child WHERE child_id = 'C001'`).Scan(&birth)
-	if birth != "2025-06-01" {
-		t.Errorf("生年月日がずれています: %s", birth)
+	if err := a.db.QueryRow(`SELECT birth_date FROM m_child WHERE child_id = ?`, childID).Scan(&birth); err != nil {
+		t.Fatal(err)
+	}
+	cat := a.categoryFor(ageInMonths(birth, on))
+	if cat == nil {
+		t.Fatalf("%s の %s の区分がありません", childID, on)
+	}
+	rows, err := a.db.Query(`SELECT development_item_id FROM m_development_item
+		WHERE development_category_id = ? ORDER BY display_order`, cat.DevelopmentCategoryID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	ids := []int64{}
+	for rows.Next() {
+		var id int64
+		rows.Scan(&id)
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func devRowOf(t *testing.T, h http.Handler, c *http.Cookie, childID string) devListRow {
+	t.Helper()
+	for _, r := range devListOf(t, h, c, "1") {
+		if r.Child.ChildID == childID {
+			return r
+		}
+	}
+	t.Fatalf("一覧に %s がいません", childID)
+	return devListRow{}
+}
+
+/*
+一覧の「未入力 n 件」は、下書きも含めた最新の記録で数える。入力画面の「未入力の項目」と食い違わない（GitHub Issue #143 の 1）。
+典拠：要件定義書「チェック漏れの強調」(4-5-2)「下書き保存された記録は、保存されていない項目を未入力として扱う」
+*/
+func TestDevListCountsDraftUnfilled(t *testing.T) {
+	a, h := newTestApp(t)
+	teacher := loginAs(a, 3, "staff")
+	items := itemsAt(t, a, "C001", today()) // 野原 太郎。前回の確定した記録がある
+
+	// 1 項目だけ「未確認」を選んで下書き保存すると、残りが未入力（未確認は入力済み）
+	call(t, h, teacher, "POST", "/api/development/checks",
+		devBody(t, "C001", today(), "1", map[int64]string{items[0]: "3"}))
+	if got, want := devRowOf(t, h, teacher, "C001").Unfilled, len(items)-1; got != want {
+		t.Fatalf("1 項目を入れた下書きのあと、一覧の未入力 = %d, want %d", got, want)
+	}
+
+	// すべて選んで下書き保存すると、未入力は 0（#143 の再現：入力画面は 0 件、一覧は 3 件と出ていた）
+	all := map[int64]string{}
+	for _, id := range items {
+		all[id] = "1"
+	}
+	call(t, h, teacher, "POST", "/api/development/checks", devBody(t, "C001", today(), "1", all))
+	row := devRowOf(t, h, teacher, "C001")
+	if row.Unfilled != 0 {
+		t.Fatalf("すべて入れた下書きのあと、一覧の未入力 = %d, want 0", row.Unfilled)
+	}
+	// 下書きは実施にならない。前回の実施日は、確定した記録のまま
+	if row.LastCheckedOn == nil || *row.LastCheckedOn == today() {
+		t.Fatalf("下書きで前回の実施日が変わっています: %v", row.LastCheckedOn)
+	}
+}
+
+/*
+デモデータの確定した発達チェックは、実施日の月齢の区分の項目で記録してある。
+日付ずらしで何日ずらしても、生年月日も同じだけずれるため区分が変わらず、一覧に「未入力」が出ない
+（GitHub Issue #143 の 1・#164 の追記「月齢の区分がずれる」）
+*/
+func TestDevSeedChecksKeepCategoryAcrossShift(t *testing.T) {
+	// 0 は起動日のまま。ほかは、さらに先の起動日を想定する（2028-02-29 をまたぐ日を含む）
+	for _, extra := range []int{0, 30, 91, 200, 365, 700} {
+		a, h := newTestApp(t)
+		if extra != 0 {
+			if err := shiftDatesBy(a.db, extra); err != nil {
+				t.Fatal(err)
+			}
+		}
+		teacher := loginAs(a, 3, "staff")
+		checked := 0
+		for _, r := range devListOf(t, h, teacher, "1") {
+			if r.LastCheckedOn == nil {
+				continue
+			}
+			checked++
+			if r.Unfilled != 0 {
+				t.Errorf("さらに %d 日ずらした日：%s（%s）の未入力 = %d, want 0", extra, r.Child.ChildName, *r.LastCheckedOn, r.Unfilled)
+			}
+		}
+		if checked != 3 {
+			t.Fatalf("前回の実施日のある園児が %d 名。デモデータでは 3 名のはず", checked)
+		}
+	}
+}
+
+/*
+確定した記録を開き直したとき、いつ確定したかを返す（GitHub Issue #143 の 2）。
+日時は操作ログの「確定」から引く。下書きのあいだは返さない
+*/
+func TestDraftCheckReturnsConfirmedAt(t *testing.T) {
+	a, h := newTestApp(t)
+	teacher := loginAs(a, 3, "staff")
+	path := "/api/children/C010/development/draft?checked_on=" + today()
+
+	type draftView struct {
+		Check struct {
+			Status  string `json:"status"`
+			StaffID string `json:"staff_id"`
+		} `json:"check"`
+		ConfirmedAt *string `json:"confirmedAt"`
+	}
+	get := func() draftView {
+		t.Helper()
+		var v draftView
+		if err := json.Unmarshal(call(t, h, teacher, "GET", path, "").Body.Bytes(), &v); err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+
+	call(t, h, teacher, "POST", "/api/development/checks", devCheckBody("C010", today(), "1"))
+	if v := get(); v.ConfirmedAt != nil {
+		t.Fatalf("下書きなのに確定した日時が返っています: %s", *v.ConfirmedAt)
+	}
+	call(t, h, teacher, "POST", "/api/development/checks", devCheckBody("C010", today(), "2"))
+	v := get()
+	if v.Check.Status != "2" || v.Check.StaffID != "S003" {
+		t.Fatalf("check = %+v", v.Check)
+	}
+	if v.ConfirmedAt == nil || len(*v.ConfirmedAt) < 16 || (*v.ConfirmedAt)[:10] != today() {
+		t.Fatalf("確定した日時 = %v, want 今日の日時", v.ConfirmedAt)
 	}
 }
 

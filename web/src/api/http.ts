@@ -18,6 +18,7 @@ import type {
   MisdeliveryRow, RetractedRow, NapChildState, NapAbnormalRow, NapSearchRow,
   DevListRow, DevScheduleRow, CsvRow, FiscalClassRow, StaffAccountRow,
   GuardianAccountRow, InvitationCodeRow, OperationLogRow, StaffSummary, GuardianHomeRow,
+  DevDraftView,
 } from './shapes';
 import {
   ProcedureRequiredError, isProcedureKind, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
@@ -425,7 +426,7 @@ const apiGrowth = {
       `/api/children/${childId}/development/previous` + qs({ before: beforeDate })),
 
   draftFor: (childId: string, checkedOn: string) =>
-    get<{ check: DevelopmentCheck; results: DevelopmentResultRecord[] } | null>(
+    get<DevDraftView | null>(
       `/api/children/${childId}/development/draft` + qs({ checked_on: checkedOn })),
 
   saveCheck: (

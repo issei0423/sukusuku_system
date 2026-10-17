@@ -29,6 +29,7 @@ import {
 } from './procedure';
 import type {
   LoginError, ChildInput, DiaryFilter, DiaryInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
+  DevDraftView,
 } from './shapes';
 
 // 画面はこれまでどおり client 経由で型を参照する。定義の実体は shapes.ts が持つ
@@ -1506,6 +1507,31 @@ function lastConfirmedCheck(childId: string) {
     .sort((a, b) => b.checked_on.localeCompare(a.checked_on))[0] ?? null;
 }
 
+/** 園児の、いちばん新しい記録（下書きを含む） */
+function latestCheck(childId: string) {
+  return db.developmentChecks
+    .filter((c) => c.child_id === childId)
+    .sort((a, b) => b.checked_on.localeCompare(a.checked_on))[0] ?? null;
+}
+
+/**
+ * 確定した記録を最後に確定した日時。下書きのときは null。
+ *
+ * 確定したあとに開き直したとき、確定済みであることと、いつ・誰が確定したかを入力画面に出すために使う
+ * （GitHub Issue #143）。誰が確定したかは記録の staff_id（確定した記録は確定でしか保存できないため、最後に確定した職員）。
+ * 【仮置き】確定の日時を持つ列は基本設計書「発達チェック・身体測定」(5-7) の定義に無いため、
+ * 操作ログ（基本設計書「操作ログ」(5-8)）の「確定」から引く（web/仮置き値.md）。操作ログの無い記録（デモデータ）は null。
+ * サーバ側は server/api_dev.go の confirmedAt
+ */
+function confirmedAt(check: DevelopmentCheck): string | null {
+  if (check.status !== '2') return null;
+  const logs = db.operationLogs
+    .filter((l) => l.target_table === 't_development_check' && l.target_id === check.development_check_id
+      && l.after_value === '確定')
+    .sort((a, b) => b.operated_at.localeCompare(a.operated_at) || b.operation_log_id - a.operation_log_id);
+  return logs[0]?.operated_at ?? null;
+}
+
 /**
  * 発達チェックが「未実施」か。園児の最新の予定日を過ぎていて、その予定日以降に確定した実施が無ければ未実施とする。
  * 予定日の当日は、まだ未実施にしない（基本設計書「発達チェックの実施」(4-8)「実施予定日を過ぎて」。GitHub Issue #164）。
@@ -1539,18 +1565,26 @@ export const devApi = {
       .sort((a, b) => a.child_name_kana.localeCompare(b.child_name_kana, 'ja'))
       .map((child) => {
         const sch = latestSchedule(child.child_id);
+        // 前回の実施日と「未実施」の判定は、確定した記録で見る。下書きは実施にならない
         const last = lastConfirmedCheck(child.child_id);
         const scheduledOn = sch?.scheduled_on ?? null;
         const overdue = isDevOverdue(scheduledOn, last?.checked_on ?? null);
-        // 未入力は、その実施日の月齢に対応する項目のうち、結果のレコードが無いものを数える
+        /*
+         * 未入力は、いちばん新しい記録（下書きを含む）について、その実施日の月齢に対応する項目のうち、
+         * 結果のレコードが無いものを数える。入力画面の「未入力の項目」と同じ数になる。
+         * 典拠：要件定義書「チェック漏れの強調」(4-5-2)「下書き保存された記録は、保存されていない項目を未入力として扱う」。
+         * 確定した記録だけで数えていたため、下書きを保存しても一覧の件数が変わらず、入力画面と食い違っていた（GitHub Issue #143）。
+         * サーバ側は server/api_dev.go の handleDevelopmentList
+         */
+        const latest = latestCheck(child.child_id);
         let unfilled = 0;
-        if (last) {
-          const cat = devApi.categoryFor(ageInMonths(child.birth_date, last.checked_on));
+        if (latest) {
+          const cat = devApi.categoryFor(ageInMonths(child.birth_date, latest.checked_on));
           const itemIds = db.developmentItems
             .filter((i) => i.development_category_id === cat?.development_category_id)
             .map((i) => i.development_item_id);
           const filled = db.developmentResults.filter((r) =>
-            r.development_check_id === last.development_check_id && itemIds.includes(r.development_item_id)).length;
+            r.development_check_id === latest.development_check_id && itemIds.includes(r.development_item_id)).length;
           unfilled = Math.max(0, itemIds.length - filled);
         }
         return {
@@ -1577,11 +1611,15 @@ export const devApi = {
     });
   },
 
-  /** 当日の下書き。あれば読み直す */
-  async draftFor(childId: string, checkedOn: string) {
+  /** 当日の下書き。あれば読み直す。確定した記録なら、いつ確定したか（confirmedAt）も返す */
+  async draftFor(childId: string, checkedOn: string): Promise<DevDraftView | null> {
     const c = db.developmentChecks.find((x) => x.child_id === childId && x.checked_on === checkedOn);
     if (!c) return ok(null);
-    return ok({ check: c, results: db.developmentResults.filter((r) => r.development_check_id === c.development_check_id) });
+    return ok({
+      check: c,
+      results: db.developmentResults.filter((r) => r.development_check_id === c.development_check_id),
+      confirmedAt: confirmedAt(c),
+    });
   },
 
   /**

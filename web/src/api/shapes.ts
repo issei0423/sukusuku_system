@@ -8,6 +8,7 @@
 import type {
   Account, Child, ChatRoom, Diary, DevelopmentItem, GuardianChild, NapRecord, NapSession,
   DiaryRecordType, DiaryStatus, InvitationStatus, Role, FunctionType, OperationType,
+  DevelopmentCheck, DevelopmentResultRecord,
 } from './types';
 
 /** ログインの失敗理由。画面が分岐に使う（図/画面詳細図.md「職員用トップ／保護者用トップ」(2-1)） */
@@ -128,8 +129,19 @@ export interface DevListRow {
   scheduledOn: string | null;
   lastCheckedOn: string | null;
   overdue: boolean;
-  /** 前回の確定した記録に残っている未入力の項目数。未入力はチェック漏れの対象（基本設計書 5-7） */
+  /**
+   * いちばん新しい記録（下書きを含む）に残っている未入力の項目数。未入力はチェック漏れの対象（基本設計書 5-7）。
+   * 下書きの保存していない項目も未入力として数える（要件定義書「チェック漏れの強調」(4-5-2)。GitHub Issue #143）
+   */
   unfilled: number;
+}
+
+/** 発達チェック入力画面が読み直す、その日の記録 */
+export interface DevDraftView {
+  check: DevelopmentCheck;
+  results: DevelopmentResultRecord[];
+  /** 最後に確定した日時（操作ログの「確定」から引く）。下書きと、操作ログの無い記録は null（GitHub Issue #143） */
+  confirmedAt: string | null;
 }
 
 export interface DevScheduleRow {
