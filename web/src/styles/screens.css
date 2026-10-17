@@ -95,6 +95,8 @@
 .nap-record-row { gap: var(--sp-3); padding: var(--sp-4); }
 /* 確認の時刻を過ぎた行は、警告色の枠と左の太い線で示す（文言でも示している） */
 .nap-record-row.unrecorded { background: var(--c-surface); border-color: var(--c-alert); border-left: 6px solid var(--c-alert); }
+/* この実施で異常時の記録がある園児。記録済みでも強調を外さない（基本設計書「異常時の記録」(4-7)「強調表示する」） */
+.nap-record-row.has-abnormal { border-color: var(--c-returned); border-left: 6px solid var(--c-returned); }
 .nap-row-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); }
 .nap-row-head .name { font-size: 20px; line-height: 1.5; }
 .nap-row-head .last { white-space: nowrap; }

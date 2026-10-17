@@ -458,7 +458,11 @@ const apiGrowth = {
 
   recordsOf: (_u: SessionUser, childId: string) => get<PhysicalRecord[]>(`/api/children/${childId}/physical`),
 
-  save: (_u: SessionUser, input: { child_id: string; measured_on: string; height_cm: number; weight_kg: number }) =>
+  /** 上書き・同じ月の別の記録は、画面で確かめた承諾を添えて送る（server/api_physical.go の handleSavePhysical） */
+  save: (_u: SessionUser, input: {
+    child_id: string; measured_on: string; height_cm: number; weight_kg: number;
+    confirm_overwrite?: boolean; confirm_same_month?: boolean;
+  }) =>
     post<PhysicalRecord>('/api/physical/records', input),
 
   growthBand: (sex: Sex, measureType: '1' | '2') =>

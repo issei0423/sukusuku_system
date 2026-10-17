@@ -10,7 +10,7 @@
  * 【仮置き】実施中の午睡チェックが無いときは記録できない（web/仮置き値.md）。
  */
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api, visibleChildren } from '../../api/client';
@@ -25,7 +25,15 @@ export default function NapAbnormalScreen() {
   const list = useAsync(() => api.abnormals(user!), [user?.account_id, tick]);
   const children = visibleChildren(user!);
 
-  const [childId, setChildId] = useState('');
+  /*
+   * 午睡チェック画面の園児カードから移ったときは、その園児を選んだ状態で開く（画面詳細図 5-2 項目2
+   * 「初期値：午睡チェック画面で選んでいた園児」。GitHub Issue #142）。状況の初期値は空のまま（同 項目5）。
+   * 午睡チェックで記録した内容は、書くときの手がかりとして添えるだけにする
+   */
+  const from = (useLocation().state ?? null) as { childId?: string; observed?: string } | null;
+  const [childId, setChildId] = useState(
+    from?.childId && children.some((c) => c.child_id === from.childId) ? from.childId : '');
+  const [observed, setObserved] = useState(from?.observed ?? null);
   const [foundAt, setFoundAt] = useState(now().slice(0, 16));
   const [situation, setSituation] = useState('');
   const [response, setResponse] = useState('');
@@ -45,7 +53,7 @@ export default function NapAbnormalScreen() {
       await api.recordAbnormal(user!, session.nap_session_id, {
         child_id: childId, found_at: `${foundAt}:00`, situation, response,
       });
-      setChildId(''); setSituation(''); setResponse('');
+      setChildId(''); setSituation(''); setResponse(''); setObserved(null);
       setTick((n) => n + 1);
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
@@ -71,7 +79,7 @@ export default function NapAbnormalScreen() {
         <div className="stack">
           <div className="row">
             <Field label="園児" required style={{ flex: 1 }}>
-              <select value={childId} onChange={(e) => setChildId(e.target.value)}>
+              <select value={childId} onChange={(e) => { setChildId(e.target.value); setObserved(null); }}>
                 <option value="">選んでください</option>
                 {children.map((c) => <option key={c.child_id} value={c.child_id}>{c.child_name}</option>)}
               </select>
@@ -82,6 +90,7 @@ export default function NapAbnormalScreen() {
                 onChange={(e) => setFoundAt(e.target.value)} />
             </Field>
           </div>
+          {observed && <div className="muted">{observed}</div>}
           <Field label="発見時の状況" required>
             <textarea value={situation} onChange={(e) => setSituation(e.target.value)} maxLength={1000}
               placeholder="体位・呼吸・顔色・体温など、見たままを書いてください" />

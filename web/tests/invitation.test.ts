@@ -102,9 +102,14 @@ describe('身体測定', () => {
     is_temp_password: false, terms_agreed: true,
   };
 
-  it('同じ園児・同じ測定日は上書きになる（部分一意インデックス）', async () => {
+  it('同じ園児・同じ測定日は、上書きを承諾したときに上書きになる（部分一意インデックス）', async () => {
     const first = await api.save(teacher, { child_id: 'C009', measured_on: '2026-09-01', height_cm: 77.0, weight_kg: 9.2 });
-    const second = await api.save(teacher, { child_id: 'C009', measured_on: '2026-09-01', height_cm: 77.5, weight_kg: 9.3 });
+    // 確かめずに送ると書き換えない（基本設計書「身体測定の記録」(4-8)「上書き確認を表示する」。GitHub Issue #165）
+    await expect(api.save(teacher, { child_id: 'C009', measured_on: '2026-09-01', height_cm: 77.5, weight_kg: 9.3 }))
+      .rejects.toThrow('この測定日の記録は登録済みです');
+    const second = await api.save(teacher, {
+      child_id: 'C009', measured_on: '2026-09-01', height_cm: 77.5, weight_kg: 9.3, confirm_overwrite: true,
+    });
     expect(second.physical_record_id).toBe(first.physical_record_id);
     expect(second.height_cm).toBe(77.5);
   });
