@@ -21,6 +21,9 @@ import type {
   DevDraftView,
   ContactPage, ContactClassView, ContactHome, ContactHomeInput, NapSleep, NapExclusion,
 } from './shapes';
+import type {
+  ContactEvent, ContactEventInput, RecordEventsResult, ContactEventCorrection, NapSleepCorrection, CancelResult, Readers,
+} from './shapes';
 import {
   ProcedureRequiredError, isProcedureKind, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
 } from './procedure';
@@ -674,6 +677,16 @@ const contactApi = {
   exclude: (_u: SessionUser, sessionId: number, childId: string, reason: '1' | '2') =>
     post<NapExclusion>(`/api/nap/session/${sessionId}/exclusions`, { child_id: childId, reason }),
   cancelExclusion: (_u: SessionUser, exclusionId: number) => post<{ ok: true }>(`/api/nap/exclusions/${exclusionId}/cancel`),
+  /* きょうのようすの記録と、訂正・取り消し（詳細設計書「経路の一覧」(4-2)） */
+  recordEvents: (_u: SessionUser, items: ContactEventInput[]) => post<RecordEventsResult>('/api/contact/events', { items }),
+  correctEvent: (_u: SessionUser, eventId: number, input: ContactEventCorrection) =>
+    post<ContactEvent>(`/api/contact/events/${eventId}/correct`, input),
+  cancelEvent: (_u: SessionUser, eventId: number) => post<CancelResult>(`/api/contact/events/${eventId}/cancel`),
+  eventReaders: (_u: SessionUser, eventId: number) => get<Readers>(`/api/contact/events/${eventId}/readers`),
+  correctSleep: (_u: SessionUser, sleepId: number, input: NapSleepCorrection) =>
+    post<NapSleep>(`/api/nap/sleeps/${sleepId}/correct`, input),
+  cancelSleep: (_u: SessionUser, sleepId: number) => post<CancelResult>(`/api/nap/sleeps/${sleepId}/cancel`),
+  sleepReaders: (_u: SessionUser, sleepId: number) => get<Readers>(`/api/nap/sleeps/${sleepId}/readers`),
 };
 
 export const api = { ...apiAuth, ...apiChatNap, ...apiGrowth, ...apiAdmin, ...apiHandout, ...contactApi };

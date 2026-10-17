@@ -57,6 +57,8 @@ type contactEventOut struct {
 	StaffName      string   `json:"staff_name,omitempty"` // 職員の応答だけ
 	CorrectedAt    *string  `json:"corrected_at"`
 	IsDeleted      bool     `json:"is_deleted"`
+	// 職員の応答だけ。訂正のときに読んだ版として送り返す（詳細設計書「訂正・取り消し」(4-7 (1))）
+	UpdatedAt string `json:"updated_at,omitempty"`
 }
 
 type contactClassOut struct {
@@ -94,6 +96,8 @@ type napSleepOut struct {
 	// その実施が終わったか（自動の解除を含む）。おきたが無いまま終わった組を「おひるね中」でなく「ねた」と出すため
 	// （詳細設計書「午睡の園児」(3-4) の「ねた（おきた時刻なし）」。図/インタフェース一覧の NapSleep に足した）
 	SessionEnded bool `json:"session_ended"`
+	// 職員の応答だけ。訂正のときに読んだ版として送り返す（詳細設計書「訂正・取り消し」(4-7)・「午睡」(4-6 (4))）
+	UpdatedAt string `json:"updated_at,omitempty"`
 }
 
 type napExclusionOut struct {
@@ -116,6 +120,9 @@ type contactPageOut struct {
 	ClassNotes   []contactClassOut   `json:"class_notes"`
 	Facility     *contactFacilityOut `json:"facility"`
 	CanWriteHome bool                `json:"can_write_home"`
+	// 職員の応答だけ。その園児の記録を書けるか（contactAccess の Write）。画面が記録・直す部品を出すかに使う。
+	// 前の日のページに記録を足せないこと・翌日以降は管理者だけが直せることは、画面とサーバがそれぞれ日付で決める
+	CanWrite *bool `json:"can_write,omitempty"`
 	// 保護者の応答だけ。そのページを前に開いた時刻（無ければ null）。画面が「新」の印に使う
 	LastReadAt any `json:"last_read_at,omitempty"`
 }
@@ -166,7 +173,7 @@ func (a *app) homeView(h *contactHomeRow, staff bool) *contactHomeOut {
 
 func (a *app) loadContactEvents(childID, date string, staff bool) ([]contactEventOut, error) {
 	rows, err := a.db.Query(`SELECT contact_event_id, child_id, contact_date, event_type, recorded_at, meal_kind, meal_amount,
-		toilet_label, temperature, body, contact_photo_id, keep_in_growth, staff_id, corrected_at, is_deleted
+		toilet_label, temperature, body, contact_photo_id, keep_in_growth, staff_id, corrected_at, is_deleted, updated_at
 		FROM t_contact_event WHERE child_id = ? AND contact_date = ? AND is_deleted = 0
 		ORDER BY recorded_at, contact_event_id`, childID, date)
 	if err != nil {
@@ -179,7 +186,7 @@ func (a *app) loadContactEvents(childID, date string, staff bool) ([]contactEven
 		var e contactEventOut
 		var staffID string
 		if err := rows.Scan(&e.ID, &e.ChildID, &e.ContactDate, &e.EventType, &e.RecordedAt, &e.MealKind, &e.MealAmount,
-			&e.ToiletLabel, &e.Temperature, &e.Body, &e.ContactPhotoID, &e.KeepInGrowth, &staffID, &e.CorrectedAt, &e.IsDeleted); err != nil {
+			&e.ToiletLabel, &e.Temperature, &e.Body, &e.ContactPhotoID, &e.KeepInGrowth, &staffID, &e.CorrectedAt, &e.IsDeleted, &e.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, e)
@@ -190,9 +197,11 @@ func (a *app) loadContactEvents(childID, date string, staff bool) ([]contactEven
 	}
 	rows.Close()
 	// 名前はカーソルを閉じたあとに引く（接続は1本）
-	if staff {
-		for i := range out {
+	for i := range out {
+		if staff {
 			out[i].StaffName = a.staffName(staffIDs[i])
+		} else {
+			out[i].UpdatedAt = ""
 		}
 	}
 	return out, nil
@@ -201,7 +210,7 @@ func (a *app) loadContactEvents(childID, date string, staff bool) ([]contactEven
 // loadNapSleeps は、その日の実施の、取り消していない「ねた・おきた」。t_nap_record・t_nap_exclusion は読まない（段3）
 func (a *app) loadNapSleeps(childID, date string, staff bool) ([]napSleepOut, error) {
 	rows, err := a.db.Query(`SELECT s.nap_sleep_id, s.child_id, s.slept_at, s.woke_at, s.sleep_temperature, s.nap_session_id,
-		s.corrected_at, s.is_deleted, n.ended_at IS NOT NULL
+		s.corrected_at, s.is_deleted, n.ended_at IS NOT NULL, s.updated_at
 		FROM t_nap_sleep s JOIN t_nap_session n ON n.nap_session_id = s.nap_session_id
 		WHERE s.child_id = ? AND n.session_date = ? AND s.is_deleted = 0
 		ORDER BY s.slept_at, s.nap_sleep_id`, childID, date)
@@ -212,11 +221,11 @@ func (a *app) loadNapSleeps(childID, date string, staff bool) ([]napSleepOut, er
 	out := []napSleepOut{}
 	for rows.Next() {
 		var v napSleepOut
-		if err := rows.Scan(&v.ID, &v.ChildID, &v.SleptAt, &v.WokeAt, &v.SleepTemperature, &v.NapSessionID, &v.CorrectedAt, &v.IsDeleted, &v.SessionEnded); err != nil {
+		if err := rows.Scan(&v.ID, &v.ChildID, &v.SleptAt, &v.WokeAt, &v.SleepTemperature, &v.NapSessionID, &v.CorrectedAt, &v.IsDeleted, &v.SessionEnded, &v.UpdatedAt); err != nil {
 			return nil, err
 		}
 		if !staff {
-			v.SleepTemperature, v.NapSessionID = nil, 0
+			v.SleepTemperature, v.NapSessionID, v.UpdatedAt = nil, 0, ""
 		}
 		out = append(out, v)
 	}
@@ -293,6 +302,10 @@ func (a *app) contactPage(u *SessionUser, childID, date string) (*contactPageOut
 	}
 	if p.Facility, err = a.loadFacility(childID, date, staff); err != nil {
 		return nil, err
+	}
+	if staff {
+		canWrite := a.contactAccess(u, childID).Write
+		p.CanWrite = &canWrite
 	}
 	if !staff {
 		// 保護者に出さない種類は、開いた時点の設定で落とす（基本設計書「出す項目と選択肢の設定」(4-5)）
