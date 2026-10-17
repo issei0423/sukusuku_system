@@ -16,8 +16,21 @@ func (a *app) routes(mux *http.ServeMux) {
 	a.routeDiary(mux)
 	a.routeChat(mux)
 	a.routeNap(mux)
+	a.routeContact(mux)
 	a.routeGrowth(mux)
 	a.routeAdmin(mux)
+}
+
+// 連絡帳の読み書きと、ねた・おきた（詳細設計書「経路の一覧」(4-2)）
+func (a *app) routeContact(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/contact/children/{childID}", a.handleContactPage)
+	mux.HandleFunc("POST /api/contact/children/{childID}/read", a.handleContactRead)
+	mux.HandleFunc("PUT /api/contact/children/{childID}/home", a.handleSaveHome)
+	mux.HandleFunc("GET /api/contact/classes", a.handleContactClasses)
+	mux.HandleFunc("GET /api/contact/classes/{classID}", a.handleContactClass)
+	mux.HandleFunc("POST /api/contact/home/{id}/confirm", a.handleConfirmHome)
+	mux.HandleFunc("POST /api/nap/session/{id}/sleeps", a.handleSleep)
+	mux.HandleFunc("POST /api/nap/sleeps/{id}/wake", a.handleWake)
 }
 
 // 共通基盤：ログインとアカウント（基本設計書 4-3）
