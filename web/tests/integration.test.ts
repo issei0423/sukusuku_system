@@ -410,6 +410,22 @@ run('Go サーバとの結合', () => {
     }
   });
 
+  it('同じ氏名・生年月日の園児を引ける。CSV 一括登録の取込内容でも確認を促す（GitHub Issue #144 の 2）', async () => {
+    await switchTo('nohara@hoiku.example.jp', 'pass1234', 'staff');
+    try {
+      const c001 = await http.api.getChild(dummy, 'C001');
+      expect((await http.api.sameNameBirthChildren(dummy, '野原　太郎', c001.birth_date)).map((c) => c.child_id))
+        .toEqual(['C001']);
+      expect(await http.api.sameNameBirthChildren(dummy, '野原 次郎', c001.birth_date)).toEqual([]);
+      const { rows } = await http.api.parseChildCsv(
+        `園児ID,氏名,氏名かな,生年月日,性別,クラス名,平熱\nC501,野原 太郎,のはら たろう,${c001.birth_date},1,さくら組,36.5`);
+      expect(rows[0].error).toBeNull();
+      expect(rows[0].warning).toContain('C001');
+    } finally {
+      await http.api.logout();
+    }
+  });
+
   it('ログイン中は、別のアカウントのログインを成立させず、前のセッションを残す（GitHub Issue #159）', async () => {
     await switchTo('kinjo@hoiku.example.jp', 'pass1234', 'staff');
     await expect(http.api.login('nohara@hoiku.example.jp', 'pass1234', 'staff')).rejects.toThrow(/already_logged_in/);
