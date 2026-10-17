@@ -13,6 +13,7 @@ import { settingText } from '../../api/client';
 import { useUnsavedInput } from '../../unsavedInput';
 import { MEAL_AMOUNT_TEXT, TEXT } from '../../messages';
 import { useReachable } from '../../api/reachability';
+import TemperaturePicker from '../../components/TemperaturePicker';
 
 /** 基本設計書「設定マスタ」(5-9) の既定（サーバの defaultHomeItems と同じ） */
 const DEFAULT_HOME_ITEMS = 'temperature,night_sleep,breakfast,mood,pickup,message';
@@ -32,8 +33,6 @@ function times(fromHour: number, toHour: number): string[] {
   }
   return out;
 }
-/** 体温の一覧 35.0〜39.9℃（詳細設計書 (2-6 (3))） */
-const TEMPERATURES = Array.from({ length: 50 }, (_, i) => (350 + i) / 10);
 
 function list(key: string, fallback: string): string[] {
   return settingText(key, fallback).split(',').map((v) => v.trim()).filter(Boolean);
@@ -69,6 +68,7 @@ export default function HomeForm({ home, busy, error, onSubmit, onCancel }: {
   const items = list('contact.home_items', DEFAULT_HOME_ITEMS);
   const moods = list('contact.mood_choices', '');
   const [temperature, setTemperature] = useState<number | null>(home?.temperature ?? null);
+  const [temperatureOpen, setTemperatureOpen] = useState(false);
   const [sleepFrom, setSleepFrom] = useState(home?.night_sleep_from ?? '');
   const [sleepTo, setSleepTo] = useState(home?.night_sleep_to ?? '');
   const [breakfast, setBreakfast] = useState<MealAmount | null>(home?.breakfast ?? null);
@@ -103,13 +103,21 @@ export default function HomeForm({ home, busy, error, onSubmit, onCancel }: {
     <form className="contact-home-form" onSubmit={(e) => { e.preventDefault(); submit(); }} aria-busy={busy}>
       {home?.confirmed_at && <p className="muted">{TEXT.homeResendNote}</p>}
       {items.includes('temperature') && (
-        <label className="contact-field">
+        <div className="contact-field">
           <span>体温</span>
-          <select value={temperature ?? ''} onChange={(e) => touch(setTemperature)(e.target.value === '' ? null : Number(e.target.value))}>
-            <option value="">入れない</option>
-            {TEMPERATURES.map((t) => <option key={t} value={t}>{t.toFixed(1)}℃</option>)}
-          </select>
-        </label>
+          {/* 一覧（35.0〜39.9℃）を 36.5 の位置から開き、値を押す（2タップ）。判定はしない（詳細設計書 (2-6 (3))） */}
+          <div className="contact-temp-row">
+            {temperature !== null && <strong className="contact-temp-value">{temperature.toFixed(1)}℃</strong>}
+            <button type="button" className="contact-pick" onClick={() => setTemperatureOpen(true)}>
+              {temperature === null ? '体温を入れる' : '入れ直す'}
+            </button>
+            {temperature !== null && <button type="button" className="btn-quiet" onClick={() => touch(setTemperature)(null)}>体温を消す</button>}
+          </div>
+          {temperatureOpen && (
+            <TemperaturePicker title="体温" start={null} onClose={() => setTemperatureOpen(false)}
+              onSelect={(v) => { touch(setTemperature)(v); setTemperatureOpen(false); }} />
+          )}
+        </div>
       )}
       {items.includes('night_sleep') && (
         <div className="contact-field-row">

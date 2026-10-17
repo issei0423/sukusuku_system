@@ -361,3 +361,71 @@ button.guardian-record-link {
 .contact-home-cell .contact-home-lines > div { grid-template-columns: 5.5em 1fr; }
 .contact-confirm-button { min-height: 44px; }
 .dashboard-count.is-due { font-weight: 700; color: var(--c-alert); }
+
+/*
+ * 連絡帳：きょうのようすの記録（食事・排せつ・体温）と、直す・取り消す、連絡帳（園児）画面
+ * 典拠：詳細設計書「タッチの条件」(2-0 (4))（押せるものは 44×44px 以上、隣り合うボタンの間は 8px 以上）・
+ *      「連絡帳（クラス）画面」(2-2)・「連絡帳（園児）画面」(2-3)・「食事の列の画面の中の状態」(3-2)（仮は点線の枠）
+ * 選んだものは、テーマカラーの塗りに加えて枠を太く黒くする（色だけに頼らない）。体温に判定の色を付けない。
+ */
+.pre-wrap { white-space: pre-wrap; }
+.contact-picks { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+.contact-pick { min-height: 44px; min-width: 44px; padding: 0 var(--sp-2); font-weight: 700; }
+.contact-pick[aria-pressed="true"] {
+  background: var(--c-primary); border-color: var(--c-primary-ink); color: var(--c-primary-ink);
+  box-shadow: inset 0 0 0 2px var(--c-primary-ink);
+}
+.contact-pick.is-tentative { border: 2px dashed var(--c-primary-ink); background: var(--c-surface); box-shadow: none; }
+.contact-pick-note { flex-basis: 100%; font-size: var(--fs-small); }
+.contact-picks.is-meal .contact-pick, .contact-picks.is-toilet .contact-pick { flex: 1 1 calc(50% - var(--sp-2)); }
+.contact-class-table .contact-col-meal { width: 220px; min-width: 220px; }
+.contact-class-table .contact-col-toilet { width: 240px; min-width: 240px; }
+.contact-class-table .contact-col-temp { width: 120px; min-width: 120px; }
+.contact-last { min-height: 44px; margin-top: var(--sp-1); text-align: left; white-space: normal; }
+.contact-temp-add { margin-top: var(--sp-1); }
+.contact-meal-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3);
+  margin: var(--sp-2) 0 var(--sp-3); padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--c-border); border-radius: var(--radius); background: var(--c-surface);
+}
+.contact-meal-bar > button { min-height: 44px; }
+.contact-meal-tentative { margin: 0; font-weight: 700; flex: 1 1 320px; }
+.contact-meal-confirm {
+  flex-basis: 100%; display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center;
+  padding: var(--sp-2); background: var(--c-alert-soft); border-radius: var(--radius);
+}
+.contact-meal-confirm button { min-height: 44px; }
+.temperature-picker { display: grid; gap: var(--sp-3); }
+.temperature-grid {
+  display: grid; grid-template-columns: repeat(5, minmax(56px, 1fr)); gap: var(--sp-2);
+  max-height: 50vh; overflow-y: auto; padding: 2px;
+}
+.temperature-grid button { min-height: 48px; font-variant-numeric: tabular-nums; font-weight: 700; }
+.temperature-grid button.is-origin { outline: 2px dashed var(--c-border-strong); outline-offset: -4px; }
+.temperature-manual { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+.temperature-manual input { min-height: 44px; width: 8em; }
+.temperature-manual button { min-height: 44px; }
+.fix-dialog { display: grid; gap: var(--sp-3); }
+.contact-fix-button { min-height: 44px; flex: none; }
+.contact-hidden { margin-left: var(--sp-2); }
+.nap-fix-button { min-height: 52px; }
+.child-avatar {
+  display: inline-flex; align-items: center; justify-content: center; flex: none; width: 40px; height: 40px; border-radius: 50%;
+  background: var(--c-primary-soft); border: 2px solid var(--c-primary-deep); font-weight: 700; color: var(--c-primary-ink);
+}
+.child-avatar.is-lg { width: 56px; height: 56px; font-size: 24px; }
+.contact-temp-row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.contact-temp-value { font-size: 1.1rem; }
+/* 連絡帳（園児）画面：左に1日のページ（約 60%）、右に書く欄（約 40%）。縦向きでも並びを変えず幅だけを詰める */
+.contact-child-head { flex-wrap: wrap; gap: var(--sp-3); align-items: center; }
+.contact-back { min-height: 44px; display: inline-flex; align-items: center; }
+.contact-child-name { display: flex; align-items: center; gap: var(--sp-2); }
+.contact-child-name h1 { margin: 0; font-size: 24px; }
+.contact-child-body { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--sp-4); align-items: start; }
+.contact-child-page { display: grid; gap: var(--sp-4); min-width: 0; }
+.contact-child-record { display: grid; gap: var(--sp-3); position: sticky; top: var(--sp-2); }
+.contact-child-record h2 { font-size: 18px; margin: 0; }
+@media (max-width: 760px) {
+  .contact-child-body { grid-template-columns: 1fr; }
+  .contact-child-record { position: static; }
+}

@@ -22,6 +22,9 @@ import { useReachable } from '../../api/reachability';
 import { TEXT } from '../../messages';
 import { durationText } from '../contact/contactText';
 import ExclusionDialog from './ExclusionDialog';
+import FixDialog, { cancelAction } from '../contact/FixDialog';
+import type { FixTarget } from '../contact/FixDialog';
+import { today } from '../../api/util';
 
 const EXCLUSION_REASON: Record<'1' | '2', string> = { '1': '欠席', '2': '午睡なし' };
 
@@ -33,6 +36,8 @@ export default function SleepControls({ row, sessionId, onSaved }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [excluding, setExcluding] = useState(false);
+  // 押し間違いを直す・取り消す（その日はその園児のクラスの担任、管理者はいつでも。詳細設計書「行の状態ごとの表示」(2-4 (2))）
+  const [fixing, setFixing] = useState<FixTarget | null>(null);
   const name = row.child.child_name;
   const open = row.sleeps.find((s) => !s.woke_at) ?? null;
   const last = row.sleeps.at(-1) ?? null;
@@ -41,12 +46,15 @@ export default function SleepControls({ row, sessionId, onSaved }: {
     if (busy) return;
     setBusy(true); setError(null);
     try {
+      // 結果の表示に「取り消す」を添える（図/画面詳細図「午睡チェック画面」(5-1) 項目22・27）
       if (open) {
         const s = await api.wake(user!, open.nap_sleep_id);
-        notify(`${name}さんの「おきた」（${formatHM(s.woke_at ?? s.slept_at)}）を記録しました。保護者が見られる状態です。`);
+        notify(`${name}さんの「おきた」（${formatHM(s.woke_at ?? s.slept_at)}）を記録しました。保護者が見られる状態です。`,
+          cancelAction(user!, { kind: 'sleep', sleep: s, childName: name, date: today() }));
       } else {
         const s = await api.sleep(user!, sessionId, row.child.child_id);
-        notify(`${name}さんの「ねた」（${formatHM(s.slept_at)}）を記録しました。保護者が見られる状態です。`);
+        notify(`${name}さんの「ねた」（${formatHM(s.slept_at)}）を記録しました。保護者が見られる状態です。`,
+          cancelAction(user!, { kind: 'sleep', sleep: s, childName: name, date: today() }));
       }
     } catch (e) {
       setError((e as Error).message);
@@ -106,7 +114,18 @@ export default function SleepControls({ row, sessionId, onSaved }: {
           {busy ? TEXT.sending : '戻す'}
         </button>
       )}
+      {last && !row.exclusion && (
+        <button type="button" className="btn-quiet nap-fix-button" disabled={busy}
+          onClick={() => setFixing({ kind: 'sleep', sleep: last, childName: name, date: today() })}
+          aria-label={`${name}のねた・おきたを直す・取り消す`}>
+          直す・取り消す
+        </button>
+      )}
       {error && <span className="nap-sleep-error" role="alert">{error}</span>}
+      {fixing && (
+        <FixDialog target={fixing} onClose={() => setFixing(null)}
+          onDone={(message) => { setFixing(null); notify(message); onSaved(); }} />
+      )}
       {excluding && <ExclusionDialog name={name} busy={busy} onSelect={(r) => exclude(r)} onClose={() => setExcluding(false)} />}
     </div>
   );
