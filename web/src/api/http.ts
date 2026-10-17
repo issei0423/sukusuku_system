@@ -491,9 +491,9 @@ const apiGrowth = {
   saveCheck: (
     _u: SessionUser, childId: string, checkedOn: string,
     results: { development_item_id: number; result: string | null }[],
-    note: string, status: '1' | '2',
+    note: string, status: '1' | '2', guardianMessage: string | null = null,
   ) => post<DevelopmentCheck>('/api/development/checks', {
-    child_id: childId, checked_on: checkedOn, results, note, status,
+    child_id: childId, checked_on: checkedOn, results, note, status, guardian_message: guardianMessage,
   }),
 
   schedules: (_u: SessionUser, classId: number) =>

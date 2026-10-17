@@ -423,3 +423,46 @@ func TestKeepInGrowth(t *testing.T) {
 		t.Errorf("保護者の応答に出来事の版が入っている: %s", b)
 	}
 }
+
+// 発達チェックの保護者へのひとこと（詳細設計書「発達チェックの保存」(4-12 (2))・「成長の記録に届くもの」(3-7)）
+func TestDevelopmentGuardianMessage(t *testing.T) {
+	a, h := newTestApp(t)
+	teacher := loginAs(a, accTeacher, "staff")
+	otherTeacher := loginAs(a, accOtherTeacher, "staff")
+	guardian := loginAs(a, accGuardian, "guardian")
+	day := daysFromToday(-1)
+	req := func(status, message string) string {
+		return `{"child_id":"C001","checked_on":"` + day + `","results":[],"note":"","status":"` + status + `","guardian_message":` + message + `}`
+	}
+	var c struct {
+		GuardianMessage *string `json:"guardian_message"`
+		FinalizedAt     *string `json:"finalized_at"`
+	}
+	// 下書きでは保存するが、保護者には届かない
+	json.Unmarshal(call(t, h, teacher, "POST", "/api/development/checks", req("1", `"  積み木を3つ積みました  "`)).Body.Bytes(), &c)
+	if c.GuardianMessage == nil || *c.GuardianMessage != "積み木を3つ積みました" || c.FinalizedAt != nil {
+		t.Fatalf("下書きの応答: %+v", c)
+	}
+	if _, b := readGrowth(t, h, guardian, "/api/children/C001/growth"); strings.Contains(b, "積み木を3つ積みました") {
+		t.Errorf("下書きのひとことが届いている: %s", b)
+	}
+	// 確定すると、確認できた項目が無くてもひとことだけで届く
+	call(t, h, teacher, "POST", "/api/development/checks", req("2", `"積み木を3つ積みました"`))
+	if _, b := readGrowth(t, h, guardian, "/api/children/C001/growth"); !strings.Contains(b, "積み木を3つ積みました") {
+		t.Errorf("確定したひとことが届かない: %s", b)
+	}
+	// 501文字は 400。空白だけなら null で保存する
+	long := `"` + strings.Repeat("あ", 501) + `"`
+	if b := expectStatus(t, request(t, h, teacher, "POST", "/api/development/checks", req("2", long)), http.StatusBadRequest); !strings.Contains(b, msgGuardianMessageTooLong) {
+		t.Errorf("長すぎるひとこと: %s", b)
+	}
+	json.Unmarshal(call(t, h, teacher, "POST", "/api/development/checks", req("2", `"   "`)).Body.Bytes(), &c)
+	if c.GuardianMessage != nil {
+		t.Errorf("空白だけのひとことが残った: %s", *c.GuardianMessage)
+	}
+	// 書けない職員（ほかのクラスの担任・フリー）は 403
+	expectStatus(t, request(t, h, otherTeacher, "POST", "/api/development/checks", req("1", `null`)), http.StatusForbidden)
+	a.db.Exec(`DELETE FROM t_class_staff WHERE staff_id = 'S005'`)
+	free := loginAs(a, accOtherTeacher, "staff")
+	expectStatus(t, request(t, h, free, "POST", "/api/development/checks", req("1", `null`)), http.StatusForbidden)
+}

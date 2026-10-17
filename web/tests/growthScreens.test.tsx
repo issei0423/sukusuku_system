@@ -184,3 +184,21 @@ describe('「成長の記録に残す」（職員のきょうのようすの行�
     }
   });
 });
+
+describe('発達チェック入力画面の保護者へのひとこと（詳細設計書 (2-12 (2))）', () => {
+  it('所見とは別の欄に書け、残りの文字数と届くものの案内を出し、確定すると成長の記録に届く', async () => {
+    open('/staff/growth/dev/C002', teacher);
+    const box = await screen.findByRole('textbox', { name: '保護者へのひとこと（成長の記録に届きます）' }, { timeout: 3000 });
+    expect(screen.getByText(/所見・『一部』『未確認』は届きません/)).toBeTruthy();
+    // AI のボタンは置かない（発達の記録は外部の AI へ送らない）
+    expect(screen.queryByRole('button', { name: /AI/ })).toBeNull();
+    fireEvent.change(box, { target: { value: 'お友だちに手を振っていました' } });
+    expect(screen.getByText('残り 486 文字')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '確定する' }));
+    const confirm = await screen.findByRole('button', { name: 'このまま確定する' }, { timeout: 3000 }).catch(() => null);
+    if (confirm) fireEvent.click(confirm);
+    await screen.findByText('確定しました。保護者が見られる状態です。', undefined, { timeout: 3000 });
+    const uezono: SessionUser = { ...guardian, account_id: 7, guardian_id: 'G002', email: 'uezono.k@example.jp' };
+    expect(JSON.stringify(await api.growthRecord(uezono, 'C002'))).toContain('お友だちに手を振っていました');
+  });
+});

@@ -50,6 +50,9 @@ type DevelopmentCheck struct {
 	// 【設計の穴】所見の列は基本設計書 5-7 の定義に無い（GitHub Issue #58）。
 	// ここでは t_development_check に note 列を足して保持している。設計の決定ではない。
 	Note *string `json:"note"`
+	// 保護者へのひとことと、最初に確定した日時（詳細設計書「発達チェックの保存」(4-12 (2))）。職員の経路だけが返す
+	GuardianMessage *string `json:"guardian_message"`
+	FinalizedAt     *string `json:"finalized_at"`
 }
 
 // categoryFor は月齢から発達過程区分を引く。区分はマスタから読む（画面詳細図 6-1）
@@ -123,14 +126,14 @@ func (a *app) scanCheck(row interface{ Scan(...any) error }) (DevelopmentCheck, 
 		note     sql.NullString
 	)
 	err := row.Scan(&c.DevelopmentCheckID, &c.ChildID, &schedule, &c.CheckedOn,
-		&c.Status, &c.StaffID, &c.ShareStatus, &note)
+		&c.Status, &c.StaffID, &c.ShareStatus, &note, &c.GuardianMessage, &c.FinalizedAt)
 	c.DevelopmentScheduleID = nullInt(schedule)
 	c.Note = nullStr(note)
 	return c, err
 }
 
 const checkColumns = `development_check_id, child_id, development_schedule_id, checked_on,
-	status, staff_id, share_status, note`
+	status, staff_id, share_status, note, guardian_message, finalized_at`
 
 // handlePreviousCheck は前回の確定済みの記録を返す。並べて表示するために使う（画面詳細図 6-1）
 func (a *app) handlePreviousCheck(w http.ResponseWriter, r *http.Request) {

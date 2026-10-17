@@ -250,3 +250,26 @@ describe('「成長の記録に残す」の付け外し（詳細設計書 (4-12 
     expect(staffPage.events.every((e) => typeof e.updated_at === 'string')).toBe(true);
   });
 });
+
+describe('発達チェックの保護者へのひとこと（詳細設計書 (4-12 (2))、server/api_growth_test.go の TestDevelopmentGuardianMessage と同じ観点）', () => {
+  it('下書きでは届かず、確定で届く。500文字を超えると断り、空白だけなら残さない。書けない職員は断る', async () => {
+    const checkedOn = day(-1);
+    const save = (status: '1' | '2', message: string | null, who: SessionUser = teacher) =>
+      api.saveCheck(who, 'C001', checkedOn, [], '', status, message);
+    const draft = await save('1', '  積み木を3つ積みました  ');
+    expect(draft.guardian_message).toBe('積み木を3つ積みました');
+    expect(draft.finalized_at ?? null).toBeNull();
+    expect(JSON.stringify(await api.growthRecord(taroGuardian, 'C001'))).not.toContain('積み木を3つ積みました');
+    await save('2', '積み木を3つ積みました');
+    expect(JSON.stringify(await api.growthRecord(taroGuardian, 'C001'))).toContain('積み木を3つ積みました');
+    await expect(save('2', 'あ'.repeat(501))).rejects.toThrow(MSG.guardianMessageTooLong);
+    expect((await save('2', '   ')).guardian_message).toBeNull();
+    await expect(save('1', null, otherTeacher)).rejects.toThrow('この園児を記録する権限がありません');
+    const staff = db.classStaff.splice(db.classStaff.findIndex((s) => s.staff_id === 'S005'), 1);
+    try {
+      await expect(save('1', null, user(5, '2', { staff_id: 'S005', class_id: null }))).rejects.toThrow('この園児を記録する権限がありません');
+    } finally {
+      db.classStaff.push(...staff);
+    }
+  });
+});

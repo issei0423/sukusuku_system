@@ -2006,14 +2006,21 @@ export const devApi = {
     user: SessionUser, childId: string, checkedOn: string,
     results: { development_item_id: number; result: DevelopmentResultRecord['result'] | null }[],
     note: string, status: DevelopmentCheck['status'],
+    /** 保護者へのひとこと（詳細設計書「発達チェックの保存」(4-12 (2))）。空なら null で保存する */
+    guardianMessage: string | null = null,
   ): Promise<DevelopmentCheck> {
     if (user.role === '3') return fail('発達チェックの入力は職員のみが行えます');
-    if (!canSeeChild(user, childId)) return fail('この園児を記録する権限がありません');
+    // その園児を書ける職員（contactAccess の write）。フリーの職員は書けない（server/api_dev_write.go と同じ）
+    if (!contactAccess(user, childId).write) return fail('この園児を記録する権限がありません');
     if (tooLong(note, 1000)) return fail('所見は1,000文字以内で入力してください');
     // 実施日は、形の崩れた値と未来日を断る（基本設計書「入力項目の制約値」(4-9)「記録日・測定日 未来日は認めない」、
     // 画面詳細図 6-2 項目3。GitHub Issue #164）。サーバ側は server/api_dev_write.go の handleSaveDevelopmentCheck
     if (!isISODate(checkedOn)) return fail('実施日の形式が正しくありません');
     if (checkedOn > today()) return fail('実施日に未来日は指定できません');
+    // 保護者へのひとことは前後の空白を除いて500文字以内。空なら null。
+    // 他児の名前の照合（409 other_child_names）は PR #201 の照合と合わせるときに足す
+    const message = guardianMessage?.trim() || null;
+    if (message && tooLong(message, 500)) return fail(MSG.guardianMessageTooLong);
 
     let check = db.developmentChecks.find((c) => c.child_id === childId && c.checked_on === checkedOn);
     // 初めての保存か。操作ログの操作区分（1:作成 2:変更）に使う（基本設計書「操作ログ（t_operation_log）」(5-8)）。
@@ -2043,6 +2050,7 @@ export const devApi = {
      * Go サーバと同じく、チェックの側に note として持つ。設計の決定ではない。
      */
     check.note = note.trim() ? note : null;
+    check.guardian_message = message;
 
     // 既存の結果を入れ替える
     for (let i = db.developmentResults.length - 1; i >= 0; i--) {
