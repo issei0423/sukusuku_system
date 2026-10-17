@@ -19,10 +19,13 @@ func (a *app) handleStaffSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 自分が書いて差し戻された日誌
+	// 自分が書いて差し戻された日誌。開いた先の日誌一覧（状態＝差し戻し・自分が書いたもの）と同じ範囲を数えるため、
+	// 参照範囲の外へ出たもの（担当を外れたクラスの日誌）は数えない（GitHub Issue #174）
 	var returned int
+	cond, condArgs := a.visibleDiaryCondition(u)
 	a.db.QueryRow(`SELECT COUNT(*) FROM t_diary
-		WHERE is_deleted = 0 AND status = '4' AND created_staff_id = ?`, u.staff()).Scan(&returned)
+		WHERE is_deleted = 0 AND status = '4' AND created_staff_id = ? AND `+cond,
+		append([]any{u.staff()}, condArgs...)...).Scan(&returned)
 
 	// 未読のチャット。外れたチャンネルの、外れたあとの投稿は数えない（読めないため。api_chat.go の afterLeftClause）
 	var unreadChat int

@@ -218,6 +218,23 @@ function canSeeDiary(user: SessionUser, d: Diary): boolean {
     && !!d.child_id && canSeeChild(user, d.child_id);
 }
 
+/*
+ * 申請したことを残す操作ログの「変更後」の文言。最後に申請した職員は、これで操作ログから引く（diaryApplicant）。
+ * 申請と差し戻しの往復の経緯は操作ログで追うと定めているため（基本設計書「日誌（t_diary）」(5-4)）。
+ * サーバ側（server/api_diary_write.go の diaryLogApply・diaryLogCreateAndApply）と同じ文言
+ */
+const DIARY_LOG_APPLY = '申請';
+const DIARY_LOG_CREATE_AND_APPLY = '作成して申請';
+
+/** その日誌を最後に申請した職員の職員ID。申請の記録が無ければ null（サーバ側は diaryApplicant） */
+function diaryApplicant(diaryId: number): string | null {
+  // 操作ログは新しいものが先頭（log が unshift する）
+  const l = db.operationLogs.find((x) => x.function_type === '1' && x.target_table === 't_diary'
+    && x.target_id === diaryId && (x.after_value === DIARY_LOG_APPLY || x.after_value === DIARY_LOG_CREATE_AND_APPLY));
+  if (!l) return null;
+  return db.staff.find((st) => st.account_id === l.account_id)?.staff_id ?? null;
+}
+
 /**
  * 保護者が見られない日誌を開いたときの文言。自児の共有されていない日誌・他児の日誌・無い日誌を同じ文言にし、
  * あるかどうかを推測させない（図/画面詳細図.md「共有日誌閲覧画面」(2-8)）。
@@ -521,20 +538,25 @@ export const childApi = {
 export const diaryApi = {
   async listDiaries(user: SessionUser, f: DiaryFilter = {}): Promise<Paged<Diary>> {
     const perPage = settingNumber('paging.diary_per_page', 50);
-    const visible = new Set(visibleChildren(user).map((c) => c.child_id));
-    const myClasses = new Set(selectableClasses(user).map((c) => c.class_id));
 
-    let rows = db.diaries.filter((d) => !d.is_deleted).filter((d) => {
-      // 保護者は、承認済みかつ共有した自児の個人日誌だけ（サーバ側の visibleDiaryCondition と同じ。GitHub Issue #157）
-      if (user.role === '3') return canSeeDiary(user, d);
-      // 個人日誌・ヒヤリハットは対象園児で、クラス日誌・週案は対象クラスで参照範囲を判定する
-      if (d.child_id) return visible.has(d.child_id);
-      return d.class_id != null && myClasses.has(d.class_id);
-    });
+    // 個人日誌・ヒヤリハットは対象園児で、クラス日誌・週案は対象クラスで参照範囲を判定する。
+    // 保護者は、承認済みかつ共有した自児の個人日誌だけ（サーバ側の visibleDiaryCondition と同じ。GitHub Issue #157）
+    let rows = db.diaries.filter((d) => canSeeDiary(user, d));
 
     if (f.recordType) rows = rows.filter((d) => d.record_type === f.recordType);
-    if (f.classId) rows = rows.filter((d) => d.class_id === f.classId);
+    // 個人日誌・ヒヤリハットは対象園児の在籍クラスで、クラス日誌・週案は対象クラスで絞る。参照範囲と同じ考え方にする。
+    // 対象のクラスで絞ると、以前の版でクラスを空けて保存した個人日誌が、見られるのに一覧に出なかった
+    // （GitHub Issue #174。サーバ側は server/api_diary.go の handleListDiaries）
+    if (f.classId) {
+      const classId = f.classId;
+      rows = rows.filter((d) => (d.child_id
+        ? db.classChildren.some((cc) => cc.class_id === classId && cc.child_id === d.child_id)
+        : d.class_id === classId));
+    }
     if (f.status) rows = rows.filter((d) => d.status === f.status);
+    // 【仮置き】自分が書いた日誌に絞る。職員ダッシュボードの「差し戻された日誌」（自分が書いたものを数える）から
+    // 開いた一覧を、数えた日誌と一致させるため（図/画面詳細図.md「職員ダッシュボード」(2-6) 項目2。GitHub Issue #174）
+    if (f.mine && user.staff_id) rows = rows.filter((d) => d.created_staff_id === user.staff_id);
     if (f.from) rows = rows.filter((d) => d.diary_date >= f.from!);
     if (f.to) rows = rows.filter((d) => d.diary_date <= f.to!);
 
@@ -550,10 +572,13 @@ export const diaryApi = {
     if (!d) return fail('日誌が見つかりません');
     if (!canSeeDiary(user, d)) return fail('この日誌を参照する権限がありません');
     // 記入した職員・確認した職員の氏名を載せる。Go サーバ（server/api_diary.go の enrich）と同じ
+    // 最後に申請した職員は、職員にだけ返す（承認画面が使う。サーバ側の handleGetDiary と同じ）
+    const applied = user.role === '3' ? null : diaryApplicant(d.diary_id);
     return ok({
       ...d,
       staff_name: staffName(d.created_staff_id),
       approved_staff_name: d.approved_staff_id ? staffName(d.approved_staff_id) : null,
+      ...(applied ? { applied_staff_id: applied } : {}),
     });
   },
 
@@ -628,16 +653,24 @@ const diaryApi2 = {
   async saveDiary(user: SessionUser, input: DiaryInput, status: '1' | '2'): Promise<Diary> {
     if (!input.body.trim()) return fail('本文を入力してください');
     if (tooLong(input.body, 2000)) return fail('本文は2,000文字以内で入力してください');
-    if (input.record_type === '1' || input.record_type === '4') {
+    // 記録日は当日まで。形の崩れた値も断る（基本設計書「入力項目の制約値」(4-9)、
+    // 図/画面詳細図.md「日誌作成・編集画面」(3-2) 項目6。GitHub Issue #174）
+    if (!isISODate(input.diary_date)) return fail('記録日の形式が正しくありません');
+    if (input.diary_date > today()) return fail('記録日に未来日は指定できません');
+    const needsChild = input.record_type === '1' || input.record_type === '4';
+    if (needsChild) {
       if (!input.child_id) return fail('対象の園児を選んでください');
       if (!canSeeChild(user, input.child_id)) return fail('この園児の日誌を作成する権限がありません');
-    } else {
-      // クラス日誌・週案は対象クラスで参照範囲を判定する。一般が扱えるのは自クラスに限る
-      // （要件定義書「参照範囲の全体規定」(4-1-5)）。サーバ側は server/api_diary_write.go の handleSaveDiary
-      if (input.class_id == null && user.role !== '1') return fail('対象のクラスを選んでください');
-      if (input.class_id != null && !canUseClass(user, input.class_id)) {
-        return fail('このクラスの日誌を作成する権限がありません');
-      }
+    }
+    // 対象のクラスは、記録種別によらず必須とする（図/画面詳細図.md「日誌作成・編集画面」(3-2) 項目5。GitHub Issue #174）。
+    // クラス日誌・週案は対象クラスで参照範囲を判定する。一般が扱えるのは自クラスに限る
+    // （要件定義書「参照範囲の全体規定」(4-1-5)）。サーバ側は server/api_diary_write.go の handleSaveDiary
+    if (input.class_id == null) return fail('対象のクラスを選んでください');
+    if (!canUseClass(user, input.class_id)) return fail('このクラスの日誌を作成する権限がありません');
+    // 【仮置き】個人日誌・ヒヤリハットの対象のクラスは、対象の園児が在籍するクラスに限る（web/仮置き値.md）
+    const classId = input.class_id;
+    if (needsChild && !db.classChildren.some((cc) => cc.class_id === classId && cc.child_id === input.child_id)) {
+      return fail('対象のクラスは、対象の園児が在籍するクラスを選んでください');
     }
 
     if (input.diary_id) {
@@ -645,6 +678,8 @@ const diaryApi2 = {
       if (!d) return fail('日誌が見つかりません');
       // 書き換える日誌そのものも参照範囲の内に限る。他クラスの日誌を日誌IDで指定して書き換えさせない
       if (!canSeeDiary(user, d)) return fail('この日誌を編集する権限がありません');
+      // 申請中・承認済みは編集できない（サーバ側の updateDiary と同じ。GitHub Issue #174 の「確かめていないこと」）
+      if (d.status === '2' || d.status === '3') return fail('申請中または承認済みの日誌は編集できません');
       // 保存時にロックのトークンを照合する（基本設計書 5-4）
       const lock = db.diaryLocks.find((l) => l.diary_id === d.diary_id);
       if (lock && lock.lock_token !== input.lock_token) {
@@ -657,10 +692,11 @@ const diaryApi2 = {
       d.diary_date = input.diary_date;
       d.body = input.body;
       d.status = status;
-      // 再申請したら差し戻し理由を消す
-      if (status === '2') d.returned_reason = null;
+      // 差し戻す理由は、再申請しても消さない。承認されるまで残し、次に差し戻されたときに上書きする
+      // （基本設計書「日誌（t_diary）」(5-4)。GitHub Issue #174）
       d.updated_at = now();
-      log(user.account_id, '1', '2', 't_diary', d.diary_id, d.child_id, before, status === '2' ? '申請' : '下書き保存');
+      log(user.account_id, '1', '2', 't_diary', d.diary_id, d.child_id, before,
+        status === '2' ? DIARY_LOG_APPLY : '下書き保存');
       return ok(d);
     }
 
@@ -679,7 +715,8 @@ const diaryApi2 = {
       is_deleted: false, created_at: now(), updated_at: now(),
     };
     db.diaries.unshift(row);
-    log(user.account_id, '1', '1', 't_diary', row.diary_id, row.child_id, null, status === '2' ? '作成して申請' : '下書き作成');
+    log(user.account_id, '1', '1', 't_diary', row.diary_id, row.child_id, null,
+      status === '2' ? DIARY_LOG_CREATE_AND_APPLY : '下書き作成');
     return ok(row);
   },
 
@@ -704,9 +741,10 @@ const diaryApi2 = {
     if (shareToGuardian && d.record_type !== '1') {
       return fail('保護者へ共有できるのは個人日誌だけです。共有しないで承認してください');
     }
-    // 【仮置き】承認は、作成者とは別の管理者による確認として扱う（GitHub Issue #106）。
-    // 申請者と承認者が同じでよいかは設計に定めが無い（web/仮置き値.md）
-    if (d.created_staff_id === user.staff_id) {
+    // 自分が申請した日誌は承認できない（基本設計書「日誌の作成から保護者への共有」(4-5)。演習上の想定。GitHub Issue #106）。
+    // 作成者だけでなく、最後に申請した職員も見る。担任の下書きを書き直して申請した管理者が、
+    // 自分で承認して保護者へ共有できていた（GitHub Issue #174）。サーバ側は server/api_diary_write.go の handleApproveDiary
+    if (d.created_staff_id === user.staff_id || diaryApplicant(d.diary_id) === user.staff_id) {
       return fail('自分が申請した日誌は承認できません。ほかの管理者に承認を依頼してください');
     }
 
@@ -2431,7 +2469,9 @@ const dashboardApi = {
     const visible = new Set(visibleChildren(user).map((c) => c.child_id));
     const myClasses = new Set(selectableClasses(user).map((c) => c.class_id));
 
-    const returned = db.diaries.filter((d) => !d.is_deleted && d.status === '4'
+    // 自分が書いて差し戻された日誌。開いた先の日誌一覧（状態＝差し戻し・自分が書いたもの）と同じ範囲を数える
+    // （GitHub Issue #174。サーバ側は server/api_dashboard.go）
+    const returned = db.diaries.filter((d) => canSeeDiary(user, d) && d.status === '4'
       && d.created_staff_id === user.staff_id).length;
 
     const rooms = db.chatMembers.filter((m) => m.account_id === user.account_id).map((m) => m.chat_room_id);

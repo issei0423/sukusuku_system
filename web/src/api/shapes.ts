@@ -42,6 +42,8 @@ export interface DiaryFilter {
   from?: string;
   to?: string;
   page?: number;
+  /** 【仮置き】自分が書いた日誌に絞る。職員ダッシュボードの「差し戻された日誌」から開いたとき（GitHub Issue #174） */
+  mine?: boolean;
 }
 
 export interface DiaryInput {

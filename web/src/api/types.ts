@@ -213,6 +213,11 @@ export interface Diary {
    */
   staff_name?: string;
   approved_staff_name?: string | null;
+  /**
+   * 最後に申請した職員。日誌を1件開いたときに、職員へだけ返す導出値。
+   * 承認画面が「自分が申請した日誌」を見分けて、承認のボタンを押せなくするため（GitHub Issue #174）
+   */
+  applied_staff_id?: string | null;
 }
 
 /** 編集ロック（t_diary_lock）。1件の日誌に1つ（5-4） */

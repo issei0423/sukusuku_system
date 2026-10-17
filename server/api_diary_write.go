@@ -46,8 +46,23 @@ func (a *app) handleSaveDiary(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "保存する状態の指定が正しくありません")
 		return
 	}
+	/*
+	 * 記録日は当日まで。形の崩れた値も断る（基本設計書「入力項目の制約値」(4-9)「記録日・測定日 未来日は認めない
+	 * （当日まで）」、図/画面詳細図.md「日誌作成・編集画面」(3-2) 項目6）。先の日付で申請できると、
+	 * 日誌一覧の期間の既定（当日まで）から外れて、書いた本人の一覧に出なくなっていた（GitHub Issue #174）。
+	 * 画面側のモック（web/src/api/mock.ts の saveDiary）と同じ規則
+	 */
+	if !isISODate(in.DiaryDate) {
+		writeErr(w, http.StatusBadRequest, "記録日の形式が正しくありません")
+		return
+	}
+	if in.DiaryDate > today() {
+		writeErr(w, http.StatusBadRequest, "記録日に未来日は指定できません")
+		return
+	}
 	// 個人日誌・ヒヤリハットは対象園児が要る
-	if in.RecordType == "1" || in.RecordType == "4" {
+	needsChild := in.RecordType == "1" || in.RecordType == "4"
+	if needsChild {
 		if in.ChildID == nil || *in.ChildID == "" {
 			writeErr(w, http.StatusBadRequest, "対象の園児を選んでください")
 			return
@@ -58,21 +73,30 @@ func (a *app) handleSaveDiary(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		in.ChildID = nil
-		/*
-		 * クラス日誌・週案は、対象クラスで参照範囲を判定する（api_diary.go の visibleDiaryCondition）。
-		 * 一般（保育士）が扱えるのは、閲覧・入力・編集のいずれも自クラスに限る
-		 * （要件定義書「参照範囲の全体規定」(4-1-5)）。他クラスを対象に作ると、作った本人には見えず、
-		 * そのクラスの担任には見える日誌ができてしまう（GitHub Issue #153）。
-		 * クラスを指定しないものは管理者にしか見えないため、一般には作らせない
-		 */
-		if in.ClassID == nil && !u.isAdmin() {
-			writeErr(w, http.StatusBadRequest, "対象のクラスを選んでください")
-			return
-		}
-		if in.ClassID != nil && !a.canUseClass(u, *in.ClassID) {
-			writeForbidden(w, "このクラスの日誌を作成する権限がありません")
-			return
-		}
+	}
+	/*
+	 * 対象のクラスは、記録種別によらず必須とする（図/画面詳細図.md「日誌作成・編集画面」(3-2) 項目5「入力：必須」
+	 * 「『対象のクラス』は常に出し、初期値は自分の担当クラス」）。
+	 * クラス日誌・週案は、対象クラスで参照範囲を判定する（api_diary.go の visibleDiaryCondition）。
+	 * クラスの空いたクラス日誌は管理者にしか見えず、一般が作ると、保存した直後から書いた本人にも開けなくなる。
+	 * クラスの空いた個人日誌は、日誌一覧をクラスで絞ると出なくなる（GitHub Issue #174）。
+	 * 一般（保育士）が扱えるのは、閲覧・入力・編集のいずれも自クラスに限る
+	 * （要件定義書「参照範囲の全体規定」(4-1-5)）。他クラスを対象に作ると、作った本人には見えず、
+	 * そのクラスの担任には見える日誌ができてしまう（GitHub Issue #153）
+	 */
+	if in.ClassID == nil {
+		writeErr(w, http.StatusBadRequest, "対象のクラスを選んでください")
+		return
+	}
+	if !a.canUseClass(u, *in.ClassID) {
+		writeForbidden(w, "このクラスの日誌を作成する権限がありません")
+		return
+	}
+	// 【仮置き】個人日誌・ヒヤリハットの対象のクラスは、対象の園児が在籍するクラスに限る（web/仮置き値.md）。
+	// ほかのクラスにすると、園児の担任が日誌一覧を自クラスで絞ったときに出ない（GitHub Issue #174）
+	if needsChild && !a.childInClass(*in.ChildID, *in.ClassID) {
+		writeErr(w, http.StatusBadRequest, "対象のクラスは、対象の園児が在籍するクラスを選んでください")
+		return
 	}
 
 	if in.DiaryID != nil {
@@ -93,7 +117,7 @@ func (a *app) handleSaveDiary(w http.ResponseWriter, r *http.Request) {
 
 	after := "下書き作成"
 	if in.Status == "2" {
-		after = "作成して申請"
+		after = diaryLogCreateAndApply
 	}
 	a.log(u.AccountID, fnDiary, opCreate, "t_diary", i64(id), in.ChildID, nil, s(after))
 
@@ -126,14 +150,10 @@ func (a *app) updateDiary(w http.ResponseWriter, u *SessionUser, in diaryInput) 
 		return
 	}
 
-	// 再申請したら差し戻し理由を消す
-	reasonExpr := "returned_reason"
-	if in.Status == "2" {
-		reasonExpr = "NULL"
-	}
+	// 差し戻す理由は、再申請しても消さない。承認されるまで残し、次に差し戻されたときに上書きする。
+	// 承認者が前回の指摘を見ながら確かめられるようにするため（基本設計書「日誌（t_diary）」(5-4)。GitHub Issue #174）
 	_, err := a.db.Exec(`UPDATE t_diary
-		SET record_type = ?, child_id = ?, class_id = ?, diary_date = ?, body = ?, status = ?,
-		    returned_reason = `+reasonExpr+`, updated_at = ?
+		SET record_type = ?, child_id = ?, class_id = ?, diary_date = ?, body = ?, status = ?, updated_at = ?
 		WHERE diary_id = ?`,
 		in.RecordType, in.ChildID, in.ClassID, in.DiaryDate, in.Body, in.Status, now(), *in.DiaryID)
 	if err != nil {
@@ -143,11 +163,41 @@ func (a *app) updateDiary(w http.ResponseWriter, u *SessionUser, in diaryInput) 
 
 	after := "下書き保存"
 	if in.Status == "2" {
-		after = "申請"
+		after = diaryLogApply
 	}
 	a.log(u.AccountID, fnDiary, opUpdate, "t_diary", in.DiaryID, in.ChildID, s(status), s(after))
 
 	a.writeDiaryByID(w, *in.DiaryID)
+}
+
+/*
+ * 申請したことを残す操作ログの「変更後」の文言。最後に申請した職員は、これで操作ログから引く（diaryApplicant）。
+ * 申請した人は日誌（t_diary）の列に無い。申請と差し戻しの往復の経緯は操作ログで追うと定めているため
+ * （基本設計書「日誌（t_diary）」(5-4)）。文言を変えるときは、画面側のモック（web/src/api/mock.ts）も合わせる
+ */
+const (
+	diaryLogApply          = "申請"
+	diaryLogCreateAndApply = "作成して申請"
+)
+
+// diaryApplicant は、その日誌を最後に申請した職員の職員IDを返す。申請の記録が無ければ空を返す
+func (a *app) diaryApplicant(diaryID int64) string {
+	var staffID string
+	a.db.QueryRow(`SELECT s.staff_id FROM t_operation_log l
+		JOIN m_staff s ON s.account_id = l.account_id
+		WHERE l.function_type = ? AND l.target_table = 't_diary' AND l.target_id = ?
+		  AND l.after_value IN (?, ?)
+		ORDER BY l.operation_log_id DESC LIMIT 1`,
+		fnDiary, diaryID, diaryLogApply, diaryLogCreateAndApply).Scan(&staffID)
+	return staffID
+}
+
+// childInClass は、その園児がそのクラスに在籍している（いた）かを返す
+func (a *app) childInClass(childID string, classID int64) bool {
+	var n int
+	err := a.db.QueryRow(`SELECT COUNT(*) FROM t_class_child WHERE class_id = ? AND child_id = ?`,
+		classID, childID).Scan(&n)
+	return err == nil && n > 0
 }
 
 func (a *app) writeDiaryByID(w http.ResponseWriter, id int64) {
@@ -222,9 +272,13 @@ func (a *app) handleApproveDiary(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "保護者へ共有できるのは個人日誌だけです。共有しないで承認してください")
 		return
 	}
-	// 【仮置き】承認は、作成者とは別の管理者による確認として扱う（GitHub Issue #106）。
-	// 申請者と承認者が同じでよいかは設計に定めが無い（web/仮置き値.md）。
-	if creator == u.staff() {
+	/*
+	 * 自分が申請した日誌は承認できない。承認を「作成者とは別の人による確認」として扱うため
+	 * （基本設計書「日誌の作成から保護者への共有」(4-5)。演習上の想定。GitHub Issue #106）。
+	 * 作成者だけでなく、最後に申請した職員も見る。担任の下書きを書き直して申請した管理者が、
+	 * 自分で承認して保護者へ共有できていた（GitHub Issue #174）。画面側のモック（approveDiary）と同じ規則
+	 */
+	if creator == u.staff() || a.diaryApplicant(id) == u.staff() {
 		writeErr(w, http.StatusBadRequest, "自分が申請した日誌は承認できません。ほかの管理者に承認を依頼してください")
 		return
 	}
