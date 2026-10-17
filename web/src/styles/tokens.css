@@ -2,44 +2,111 @@
  * デザイントークン
  * 典拠：基本設計書.md「画面基本構成」(3-5)／図/画面詳細図.md「全画面に共通する規定」(0-2)
  *
- * 色の具体値・寸法は基本設計書が定めていないため、本ファイルの値は仮置きである。
- * 仮置きの一覧と根拠は web/仮置き値.md を参照。
+ * 色・文字・余白・角・影は、デジタル庁デザインシステム（DADS）の決まりに沿って置く。
+ *   - 色・影の値：@digital-go-jp/design-tokens v2.0.1（MIT License）から写した
+ *   - セレクトボックスの印の形・フォーカスの印：DADS の HTML 実装例（design-system-example-components-html、MIT License）に合わせた
+ *   - ライセンスの表示は web/THIRD_PARTY_NOTICES.md
+ *   - 使い方の決まり：https://design.digital.go.jp/dads/ の「基本デザイン」「コンポーネント」
+ *
+ * 基本設計書は色の具体値を定めていない。DADS の色の段階のうち、どれをどの役割に当てるかは
+ * 仮置きである（web/仮置き値.md「1 画面の見た目」）。
  */
 
 :root {
-  /* テーマカラー：優しい黄色（基本設計書 3-5） */
-  --c-primary:        #f6c445;
-  --c-primary-soft:   #fdf2cf;
-  --c-primary-deep:   #d9a012;
-  --c-focus:          #8a6000;
-  --c-primary-ink:    #4a3708;
+  /*
+   * ---- DADS の色（プリミティブカラー）。画面からは直接使わず、下の「役割の色」へ割り当てる ----
+   * 値は @digital-go-jp/design-tokens v2.0.1 の --color-primitive-*・--color-neutral-white/black・
+   * --color-neutral-solid-gray-* と同じ（v2.0.1 の dist/tokens.css と突き合わせて確かめた）
+   */
+  --dads-yellow-50:   #fbf5e0;
+  --dads-yellow-100:  #fff0b3;
+  --dads-yellow-200:  #ffe380;
+  --dads-yellow-300:  #ffd43d;
+  --dads-yellow-400:  #ffc700;
+  --dads-yellow-500:  #ebb700;
+  --dads-yellow-600:  #d2a400;
+  --dads-yellow-700:  #b78f00;
+  --dads-red-50:      #fdeeee;
+  --dads-red-900:     #ce0000;
+  --dads-red-1000:    #a90000;
+  --dads-blue-50:     #e8f1fe;
+  --dads-blue-700:    #264af4;
+  --dads-blue-800:    #0031d8;
+  --dads-blue-900:    #0017c1;
+  --dads-blue-1000:   #00118f;
+  --dads-magenta-800: #aa00aa;
+  --dads-green-50:    #e6f5ec;
+  --dads-green-800:   #197a4b;
+  --dads-green-900:   #115a36;
+  --dads-orange-800:  #c74700;
+  --dads-white:       #ffffff;
+  --dads-black:       #000000;
+  --dads-gray-50:     #f2f2f2;
+  --dads-gray-100:    #e6e6e6;
+  --dads-gray-200:    #cccccc;
+  --dads-gray-300:    #b3b3b3;
+  --dads-gray-420:    #949494;
+  --dads-gray-536:    #767676;
+  --dads-gray-600:    #666666;
+  --dads-gray-700:    #4d4d4d;
+  --dads-gray-900:    #1a1a1a;
 
-  /* 警告色：黄色と対比の付く色（基本設計書 3-5）。午睡チェックの異常・範囲外の入力値に使う */
-  --c-alert:          #c62828;
-  --c-alert-soft:     #fdecea;
+  /*
+   * ---- 役割の色 ----
+   * テーマカラー：優しい黄色（基本設計書 3-5）。DADS の「キーカラー」の考え方に沿って、
+   * 黄色の色相の段階から選ぶ。黄色は白地の文字に使えない（コントラスト 4.5:1 に届かない）ため、
+   * 塗り・地・枠にだけ使い、文字はすべて黒に近い灰色にする
+   */
+  --c-primary:        var(--dads-yellow-400); /* 主ボタン・選んだ選択肢の塗り */
+  --c-primary-hover:  var(--dads-yellow-500);
+  --c-primary-active: var(--dads-yellow-600);
+  --c-primary-band:   var(--dads-yellow-200); /* ヘッダの帯 */
+  --c-primary-soft:   var(--dads-yellow-100); /* 現在地・選んでいる行の地 */
+  --c-primary-faint:  var(--dads-yellow-50);  /* 表の行を指したときの地 */
+  --c-primary-deep:   var(--dads-yellow-700); /* 黄色の塗りの枠・現在地の印・成長グラフの帯。白地に対して 3:1 */
+  --c-primary-ink:    var(--dads-gray-900);   /* 黄色の上の文字 */
 
-  /* 状態色。日誌の差し戻しは他と区別できる色にする（画面詳細図 3-1） */
-  --c-draft:          #5e6572;
-  --c-applied:        #1565c0;
-  --c-returned:       #ad1457;
-  --c-approved:       #2e7d32;
+  /* フォーカスの印。DADS は「黒の線＋黄色の縁」の2重にし、変えないことを求めている */
+  --c-focus:          var(--dads-black);
+  --c-focus-ring:     var(--dads-yellow-300);
 
-  /* 地の色 */
-  --c-bg:             #fffdf6;
-  --c-surface:        #ffffff;
-  --c-surface-sub:    #faf7ef;
-  --c-border:         #e3ddcd;
-  --c-border-strong:  #c9c1ab;
+  /* 警告色：黄色と対比の付く色（基本設計書 3-5）。DADS のエラーの色（赤）。午睡チェックの異常・範囲外の入力値に使う */
+  --c-alert:          var(--dads-red-900);
+  --c-alert-deep:     var(--dads-red-1000);
+  --c-alert-soft:     var(--dads-red-50);
+
+  /* 日誌の状態色。差し戻しは他と区別できる色にする（画面詳細図 3-1）。DADS のチップラベルの色の組を使う */
+  --c-draft:          var(--dads-gray-700);
+  --c-applied:        var(--dads-blue-700);
+  --c-returned:       var(--dads-magenta-800);
+  --c-approved:       var(--dads-green-800);
+
+  /* 地の色。何もない地は白。帯や小見出しの地にだけ薄い灰色を敷く */
+  --c-bg:             var(--dads-white);
+  --c-surface:        var(--dads-white);
+  --c-surface-sub:    var(--dads-gray-50);
+  --c-surface-head:   var(--dads-gray-100);   /* 表の見出し行 */
+
+  /* 線。部品の境目は白地に対して 3:1 の灰色（DADS のディバイダー・カードと同じ）、入力欄とボタンは一段濃く */
+  --c-border:         var(--dads-gray-420);
+  --c-border-weak:    var(--dads-gray-200);   /* 同じまとまりの中の区切り */
+  --c-border-strong:  var(--dads-gray-600);
 
   /* 文字 */
-  --c-text:           #2c2822;
-  --c-text-sub:       #6d665a;
-  --c-text-weak:      #696256;
-  --c-link:           #1565c0;
+  --c-text:           var(--dads-gray-900);
+  --c-text-sub:       var(--dads-gray-700);
+  --c-text-weak:      var(--dads-gray-600);
+  --c-disabled:       var(--dads-gray-300);
+  --c-link:           var(--dads-blue-1000);
+  --c-link-hover:     var(--dads-blue-900);
+  --c-link-active:    var(--dads-orange-800);
 
   /* タップ領域：44×44px 以上を確保する（基本設計書 3-5） */
   --tap-min:          44px;
+  /* ボタンと入力欄の高さ。DADS のボタン M・インプットテキスト M の 48px */
+  --control-h:        48px;
 
+  /* 余白。DADS は 8px を基準単位とする。4px は部品の中の詰めにだけ使う */
   --sp-1: 4px;
   --sp-2: 8px;
   --sp-3: 12px;
@@ -47,11 +114,13 @@
   --sp-5: 24px;
   --sp-6: 32px;
 
-  --radius:    10px;
+  /* 角。DADS の「角丸スモール」8px を基本にし、小さいボタンは 6px。丸く膨らませない */
+  --radius:    8px;
   --radius-sm: 6px;
 
-  --shadow:    0 1px 3px rgba(60, 50, 20, .12);
-  --shadow-up: 0 -2px 8px rgba(60, 50, 20, .10);
+  /* 影。DADS は置いてあるだけの要素には影を付けない（高さレベル0）。重ねて出すものにだけ使う */
+  --elevation-2: 0 2px 12px 2px rgba(0, 0, 0, .1), 0 1px 6px 0 rgba(0, 0, 0, .3);
+  --elevation-3: 0 4px 16px 3px rgba(0, 0, 0, .1), 0 1px 6px 0 rgba(0, 0, 0, .3);
 
   --header-h:  56px;
   --sidenav-w: 200px;
@@ -63,7 +132,20 @@
   --staff-base-w: 1180px;
   --staff-ratio:  1.44;
 
-  --font: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", system-ui, sans-serif;
+  /*
+   * 文字。DADS の基本書体は Noto Sans JP。フォントのファイルは配らず、端末に入っていれば使う。
+   * 職員の iPad・保護者の iPhone ではヒラギノ角ゴシックで表示される（web/THIRD_PARTY_NOTICES.md）
+   */
+  --font: "Noto Sans JP", -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN",
+          "Yu Gothic UI", "Meiryo", sans-serif;
+  --font-mono: "Noto Sans Mono", ui-monospace, Menlo, Consolas, monospace;
+
+  /*
+   * 文字の大きさ。DADS は本文と操作部品を 16px 以上とし、14px は補足や表など場所の限られる所にだけ使う。
+   * 14px より小さい文字は使わない
+   */
+  --fs-small: 14px;
+  --fs-body:  16px;
 
   /* グリッド：職員（タブレット／PC）＝12カラム（基本設計書 3-5） */
   --grid-cols: 12;
@@ -73,97 +155,212 @@
 
 html, body, #root { height: 100%; }
 
+/* 本文：DADS の Std-16N-170（16px・行間 1.7・字間 0.02em） */
 body {
   margin: 0;
   font-family: var(--font);
-  font-size: 15px;
-  line-height: 1.65;
+  font-size: var(--fs-body);
+  line-height: 1.7;
+  letter-spacing: .02em;
   color: var(--c-text);
   background: var(--c-bg);
   -webkit-text-size-adjust: 100%;
 }
 
-h1, h2, h3, h4 { margin: 0; font-weight: 700; line-height: 1.4; }
-h1 { font-size: 20px; }
-h2 { font-size: 17px; }
-h3 { font-size: 15px; }
+/* 見出し：DADS の Std-24B-150／Std-18B-160／Std-17B-170。太字は見出し・ラベル・ボタンに限る */
+h1, h2, h3, h4 { margin: 0; font-weight: 700; }
+h1 { font-size: 24px; line-height: 1.5; }
+h2 { font-size: 18px; line-height: 1.6; }
+h3 { font-size: 17px; line-height: 1.7; }
 p  { margin: 0 0 var(--sp-3); }
 
-/* ---- 押せるもの。タップ領域 44×44px 以上（基本設計書 3-5） ---- */
+/*
+ * ---- 押せるもの。タップ領域 44×44px 以上（基本設計書 3-5） ----
+ * 形は DADS のボタン。ふだんのボタンは「アウトラインボタン」、主ボタンは「塗りボタン」、
+ * 目立たせないボタンは「テキストボタン」。指したときに下線を引く。影や押し込みの動きは付けない。
+ *
+ * 指したときの見た目は、DADS と同じく (hover: hover) の端末にだけ付ける。
+ * iPad・iPhone では、タップしたあとも :hover が残り、押していないボタンに下線と灰色の地が付いて見えるため
+ */
 button, .btn {
-  min-height: var(--tap-min);
+  min-height: var(--control-h);
   min-width: var(--tap-min);
-  padding: 0 var(--sp-4);
+  padding: var(--sp-2) var(--sp-4);
   border: 1px solid var(--c-border-strong);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   background: var(--c-surface);
   color: var(--c-text);
   font: inherit;
-  font-size: 14px;
+  font-size: var(--fs-body);
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: .02em;
+  text-align: center;
+  text-decoration: none;
+  text-underline-offset: 3px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--sp-2);
-  font-weight: 600;
-  box-shadow: 0 1px 0 rgba(74, 55, 8, .08);
-  transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease, transform .15s ease;
 }
-button:hover:not(:disabled), .btn:hover {
-  background: var(--c-surface-sub);
-  border-color: #a99e87;
-  box-shadow: 0 2px 5px rgba(74, 55, 8, .10);
+@media (hover: hover) {
+  button:hover:not(:disabled), .btn:hover {
+    background: var(--c-surface-sub);
+    border-color: var(--c-text);
+    text-decoration: underline;
+  }
 }
-button:active:not(:disabled), .btn:active { transform: translateY(1px); box-shadow: none; }
-button:disabled { opacity: .45; cursor: not-allowed; }
+button:active:not(:disabled), .btn:active { background: var(--c-surface-head); }
+button:disabled {
+  background: var(--c-surface);
+  border-color: var(--c-disabled);
+  color: var(--c-disabled);
+  cursor: not-allowed;
+}
+
+/* フォーカスの印：DADS の「4px の黒い線＋2px の黄色の縁」 */
+:focus-visible,
 button:focus-visible, a:focus-visible, input:focus-visible,
-select:focus-visible, textarea:focus-visible {
-  outline: 3px solid var(--c-focus);
-  outline-offset: 1px;
+select:focus-visible, textarea:focus-visible, summary:focus-visible {
+  outline: 4px solid var(--c-focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--c-focus-ring);
 }
 
 .btn-primary {
   background: var(--c-primary);
   border-color: var(--c-primary-deep);
   color: var(--c-primary-ink);
-  font-weight: 700;
 }
-.btn-primary:hover:not(:disabled) { background: #ebba38; border-color: #bc8810; }
+@media (hover: hover) {
+  .btn-primary:hover:not(:disabled) { background: var(--c-primary-hover); border-color: var(--c-primary-ink); }
+}
+.btn-primary:active:not(:disabled) { background: var(--c-primary-active); }
+.btn-primary:disabled { background: var(--c-disabled); border-color: var(--c-disabled); color: var(--c-surface-sub); }
 
 .btn-danger {
   background: var(--c-alert);
   border-color: var(--c-alert);
-  color: #fff;
-  font-weight: 700;
+  color: var(--dads-white);
 }
-.btn-danger:hover:not(:disabled) { background: #a31f1f; }
-
-.btn-quiet { border-color: transparent; background: transparent; text-decoration: underline; box-shadow: none; }
-.btn-quiet:hover:not(:disabled) { border-color: transparent; box-shadow: none; }
-.btn-sm    { min-height: var(--tap-min); padding: 0 var(--sp-3); font-size: 13px; }
-.btn-block { width: 100%; }
-
-@media (prefers-reduced-motion: reduce) {
-  button, .btn { transition: none; }
+@media (hover: hover) {
+  .btn-danger:hover:not(:disabled) { background: var(--c-alert-deep); border-color: var(--c-alert-deep); }
 }
+.btn-danger:disabled { background: var(--c-disabled); border-color: var(--c-disabled); color: var(--c-surface-sub); }
 
-/* ---- 入力欄 ---- */
+/* テキストボタン。リンクと同じ色と下線で、押せることを示す */
+.btn-quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--c-link);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+}
+@media (hover: hover) {
+  .btn-quiet:hover:not(:disabled), .btn.btn-quiet:hover {
+    border-color: transparent;
+    background: var(--c-surface-sub);
+    color: var(--c-link-hover);
+    text-decoration-thickness: 3px;
+  }
+}
+.btn-quiet:disabled { border-color: transparent; background: transparent; }
+
+/* 「日付と種別｜開く」のように2つに分けて書いたボタンは、後ろの短い語を1行に保ち、前の語の側で折り返す */
+.btn > span:last-child:not(:first-child) { flex: none; white-space: nowrap; }
+.btn > span:first-child:not(:last-child) { text-align: left; }
+
+/* 小さいボタン（DADS のボタン S の見た目）。押せる大きさは 44px を保つ */
+.btn-sm    { min-height: var(--tap-min); padding: var(--sp-1) var(--sp-3); border-radius: var(--radius-sm); }
+/*
+ * 幅いっぱいのボタン。文字は中央に置くため、左右の余白は 8px に詰め、字間は付けない。
+ * iPad 横向き（1024px）の職員ダッシュボードで「午睡チェックが実施中です（開く）」を1行に収め、
+ * 「（開」と「く）」のあいだで折り返さないようにするため
+ */
+.btn-block { width: 100%; padding-left: var(--sp-2); padding-right: var(--sp-2); letter-spacing: 0; }
+
+/* ---- 入力欄：DADS のインプットテキスト・セレクトボックス（M） ---- */
 input[type="text"], input[type="password"], input[type="email"],
 input[type="date"], input[type="datetime-local"], input[type="number"], input[type="search"], input[type="file"],
 select, textarea {
-  min-height: var(--tap-min);
+  min-height: var(--control-h);
   padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--c-border-strong);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   background: var(--c-surface);
   color: var(--c-text);
   font: inherit;
-  font-size: 15px;
+  /* 16px より小さいと、iPhone・iPad の Safari が入力のたびに画面を拡大する */
+  font-size: var(--fs-body);
+  letter-spacing: .02em;
   width: 100%;
 }
+@media (hover: hover) {
+  input:not(:disabled):not([readonly]):hover, select:not(:disabled):hover, textarea:not(:disabled):not([readonly]):hover {
+    border-color: var(--c-text);
+  }
+}
+input[readonly], textarea[readonly] { border-style: dashed; }
+input:disabled, select:disabled, textarea:disabled {
+  border-color: var(--c-disabled); background-color: var(--c-surface-sub); color: var(--dads-gray-536);
+}
+input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--c-alert); }
+/*
+ * 下向きの印は、DADS のセレクトボックスの実装例（design-system-example-components-html、MIT License）と同じ形。
+ * 選べないときも印は残し、灰色にする（DADS と同じ）
+ */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 36px;
+  background: var(--c-surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24'%3E%3Cpath d='M12 17L3 8L4 7L12 15L20 7L21 8L12 17Z' fill='%231a1a1a'/%3E%3C/svg%3E") no-repeat right 12px center / 16px 16px;
+}
+select:disabled {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24'%3E%3Cpath d='M12 17L3 8L4 7L12 15L20 7L21 8L12 17Z' fill='%23949494'/%3E%3C/svg%3E");
+}
 textarea { min-height: 120px; resize: vertical; line-height: 1.7; }
-input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; accent-color: var(--c-primary-deep); }
+/*
+ * チェックボックス・ラジオボタン：DADS の形。枠は白地に対して 3:1 以上の灰色（端末の既定の枠は薄すぎる）。
+ * 選んだときは黒で塗る
+ */
+input[type="checkbox"], input[type="radio"] {
+  appearance: none; -webkit-appearance: none;
+  flex: none; width: 24px; height: 24px; margin: 0;
+  border: 2px solid var(--c-border-strong); background: var(--c-surface);
+  cursor: pointer;
+}
+input[type="checkbox"] { border-radius: 4px; }
+input[type="radio"]    { border-radius: 50%; }
+@media (hover: hover) {
+  input[type="checkbox"]:not(:disabled):hover, input[type="radio"]:not(:disabled):hover { border-color: var(--c-text); }
+}
+input[type="checkbox"]:checked {
+  border-color: var(--c-text);
+  background: var(--c-text) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M4 10.5l4 4 8-9' fill='none' stroke='%23fff' stroke-width='2.6'/%3E%3C/svg%3E") center / 18px 18px no-repeat;
+}
+input[type="radio"]:checked {
+  border-color: var(--c-text);
+  background: radial-gradient(circle, var(--c-text) 0 5px, var(--c-surface) 5.5px);
+}
+input[type="checkbox"]:disabled, input[type="radio"]:disabled { border-color: var(--c-disabled); background-color: var(--c-surface-sub); cursor: not-allowed; }
+@media (forced-colors: active) {
+  input[type="checkbox"], input[type="radio"] { appearance: auto; -webkit-appearance: auto; }
+}
 
 label { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: var(--tap-min); cursor: pointer; }
 
-a { color: var(--c-link); }
+/* リンク：DADS のリンクテキスト。下線を常に引き、指したときは太くする */
+a {
+  color: var(--c-link);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+@media (hover: hover) {
+  a:hover { color: var(--c-link-hover); text-decoration-thickness: 3px; }
+}
+a:active { color: var(--c-link-active); }
+a.btn, a.btn:hover, a.btn:active { color: var(--c-text); text-decoration-thickness: 1px; }
+a.btn-quiet, a.btn-quiet:hover { color: var(--c-link); }
+a.btn-quiet:hover { color: var(--c-link-hover); text-decoration-thickness: 3px; }
+a.btn-primary, a.btn-primary:hover { color: var(--c-primary-ink); }

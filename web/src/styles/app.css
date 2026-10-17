@@ -1,11 +1,13 @@
 /*
  * 共通レイアウトと共通部品
  * 典拠：図/画面詳細図.md「共通レイアウト」(1)
+ * 部品の形は、デジタル庁デザインシステム（DADS）の同じ役割のコンポーネントに合わせる（tokens.css の冒頭を参照）
  */
 
 /* ============ 職員レイアウト（画面詳細図 1-1） ============ */
 .staff-shell { display: flex; flex-direction: column; height: 100%; }
 
+/* ヘッダ。テーマカラーの帯にする（基本設計書 3-5） */
 .app-header {
   height: var(--header-h);
   flex: 0 0 var(--header-h);
@@ -13,7 +15,7 @@
   align-items: center;
   gap: var(--sp-4);
   padding: 0 var(--sp-4) 0 0;
-  background: var(--c-primary);
+  background: var(--c-primary-band);
   border-bottom: 1px solid var(--c-primary-deep);
   color: var(--c-primary-ink);
 }
@@ -24,54 +26,60 @@
   align-items: center;
   gap: 0;
   padding: 0 12px;
-  background: var(--c-surface-sub);
+  background: var(--c-surface);
   border-right: 1px solid var(--c-border);
 }
-.app-header .header-mark { width: 52px; height: 42px; object-fit: contain; }
-.app-header .header-wordmark { width: 112px; height: auto; }
+.app-header .header-mark { width: 48px; height: 40px; object-fit: contain; }
+.app-header .header-wordmark { width: 108px; height: auto; }
 .app-header .spacer { flex: 1; }
 
 /* ログイン中の利用者名を常時表示する。職員は所属クラスも（基本設計書 3-5） */
-.app-header .who { font-size: 14px; font-weight: 700; white-space: nowrap; }
+.app-header .who { font-size: var(--fs-body); font-weight: 700; white-space: nowrap; }
 .app-header .who .cls { font-weight: 400; margin-right: var(--sp-2); }
-.app-header button { background: rgba(255,255,255,.75); border-color: var(--c-primary-deep); }
+.app-header button { min-height: var(--tap-min); background: var(--c-surface); }
 
 /* 通知と未対応件数 */
-.notify-btn { position: relative; }
+/* 件数の札がベルの絵に重ならないよう、右側を空けておく */
+.notify-btn { position: relative; padding: var(--sp-2) 26px var(--sp-2) var(--sp-3); }
 .notify-badge {
   position: absolute; top: 2px; right: 2px;
-  min-width: 20px; height: 20px; padding: 0 5px;
-  border-radius: 10px; background: var(--c-alert); color: #fff;
-  font-size: 11px; font-weight: 700; line-height: 20px; text-align: center;
+  min-width: 22px; height: 22px; padding: 0 6px;
+  border-radius: 11px; background: var(--c-alert); color: var(--dads-white);
+  font-size: var(--fs-small); font-weight: 700; line-height: 22px; letter-spacing: 0; text-align: center;
 }
 
-.staff-body { flex: 1; display: flex; min-height: 0; }
+.staff-body { flex: 1; display: flex; min-height: 0; position: relative; }
 
-/* サイドナビ。保護者向け画面は持たない（基本設計書 3-5） */
+/*
+ * サイドナビ。保護者向け画面は持たない（基本設計書 3-5）。
+ * 形は DADS のメニューリスト。現在地は地の色と太字に加え、左の線でも示す（色だけに頼らない）
+ */
 .sidenav {
   flex: 0 0 var(--sidenav-w);
-  background: var(--c-surface-sub);
+  background: var(--c-surface);
   border-right: 1px solid var(--c-border);
-  padding: var(--sp-3) 0;
+  padding: var(--sp-2) 0;
   overflow-y: auto;
 }
 .sidenav a {
   display: flex; align-items: center; gap: var(--sp-3);
-  min-height: var(--tap-min);
+  min-height: var(--control-h);
   padding: 0 var(--sp-4);
-  color: var(--c-text); text-decoration: none; font-size: 14px;
+  color: var(--c-text); text-decoration: none; font-size: var(--fs-body); line-height: 1.3;
   border-left: 4px solid transparent;
 }
-.sidenav a:hover { background: var(--c-primary-soft); }
+@media (hover: hover) {
+  .sidenav a:hover { background: var(--c-surface-sub); color: var(--c-text); text-decoration: underline; text-decoration-thickness: 1px; }
+}
 .sidenav a.current {
   background: var(--c-primary-soft);
   border-left-color: var(--c-primary-deep);
   font-weight: 700;
 }
 .sidenav hr { margin: var(--sp-3) var(--sp-4); border: 0; border-top: 1px solid var(--c-border); }
-.sidenav .group-label { padding: 0 var(--sp-4); font-size: 12px; color: var(--c-text-weak); }
+.sidenav .group-label { padding: var(--sp-1) var(--sp-4); font-size: var(--fs-small); font-weight: 700; color: var(--c-text-sub); }
 
-.main { flex: 1; min-width: 0; overflow-y: auto; padding: var(--main-pad); }
+.main { flex: 1; min-width: 0; overflow-y: auto; padding: var(--main-pad); background: var(--c-bg); }
 
 /*
  * 想定する端末と向き（基本設計書 3-5）。職員画面はタブレット横向きを基準に組む
@@ -81,10 +89,11 @@
 @media (max-width: 900px) {
   :root { --sidenav-w: var(--sidenav-w-portrait); --main-pad: var(--sp-4); }
   .app-header .header-brand { padding: 0 8px; }
-  .app-header .header-mark { width: 40px; height: 36px; }
-  .app-header .header-wordmark { width: 92px; }
-  .sidenav a { padding: 0 var(--sp-3); }
-  .sidenav .group-label { padding: 0 var(--sp-3); }
+  .app-header .header-mark { width: 36px; height: 32px; }
+  .app-header .header-wordmark { width: 88px; }
+  /* 文字の大きさは横向きと同じまま、右の余白と字間だけを詰めて「保護者アカウント」を1行に収める */
+  .sidenav a { padding: 0 var(--sp-1) 0 var(--sp-3); letter-spacing: 0; }
+  .sidenav .group-label { padding: var(--sp-1) var(--sp-3); }
   .sidenav hr { margin: var(--sp-3); }
 }
 @media (min-width: 1400px) {
@@ -101,6 +110,7 @@
 
 /* 12カラムグリッド（基本設計書 3-5） */
 .grid12 { display: grid; grid-template-columns: repeat(var(--grid-cols), 1fr); gap: var(--sp-4); }
+.grid12 > .card { margin-bottom: 0; }
 .col-3  { grid-column: span 3; }
 .col-4  { grid-column: span 4; }
 .col-5  { grid-column: span 5; }
@@ -115,223 +125,312 @@
   display: flex; flex-direction: column; height: 100%;
   max-width: 480px; margin: 0 auto;
   background: var(--c-surface);
-  border-left: 1px solid var(--c-border);
-  border-right: 1px solid var(--c-border);
+  border-left: 1px solid var(--c-border-weak);
+  border-right: 1px solid var(--c-border-weak);
 }
 .guardian-header {
-  min-height: 68px; flex: 0 0 68px; display: flex; align-items: center; gap: 10px;
-  padding: 0 14px; background: #fff8e6; border-bottom: 1px solid #e9d8aa;
+  min-height: 64px; flex: 0 0 64px; display: flex; align-items: center; gap: var(--sp-2);
+  padding: 0 var(--sp-3); background: var(--c-primary-band); border-bottom: 1px solid var(--c-primary-deep);
 }
 .guardian-header .spacer { flex: 1; }
-.guardian-header button { background: #fffdf8; border-color: #e5d5aa; }
-.guardian-menu-button { display: flex; flex-direction: column; gap: 0; width: 58px; padding: 3px; font-size: 12px; line-height: 1.2; }
+.guardian-header button { background: var(--c-surface); }
+/* DADS のハンバーガーメニューボタン（ラベル付き）と同じく、印の下に「メニュー」と書く */
+.guardian-menu-button {
+  display: flex; flex-direction: column; gap: 0;
+  min-height: 52px; min-width: 64px; padding: 2px 6px;
+  font-size: var(--fs-small); line-height: 1.2; letter-spacing: 0; white-space: nowrap;
+}
 .guardian-menu-button span:first-child { font-size: 20px; line-height: 24px; }
 .guardian-brand { display: inline-flex; align-items: center; gap: 2px; min-height: 48px; text-decoration: none; }
-.guardian-brand-mark { width: 47px; height: 42px; object-fit: contain; }
-.guardian-brand-wordmark { width: 105px; height: auto; }
-.guardian-main { flex: 1; min-height: 0; overflow-y: auto; padding: 22px 18px 32px; }
+.guardian-brand-mark { width: 44px; height: 40px; object-fit: contain; }
+.guardian-brand-wordmark { width: 100px; height: auto; }
+.guardian-main { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-5) var(--sp-4) var(--sp-6); background: var(--c-bg); }
 
-/* ログイン後の本文だけに布目を敷く。カード・ヘッダー・サイドナビは読みやすい無地のままにする。 */
-.main, .guardian-main {
-  background: var(--c-bg) url('/body-linen.png') center top / cover no-repeat;
-}
-.guardian-home { display: flex; flex-direction: column; gap: 19px; }
-.guardian-home-intro { padding: 2px 2px 0; }
-.guardian-eyebrow { display: block; color: #8b6b31; font-size: 12px; font-weight: 700; letter-spacing: .1em; }
-.guardian-home-intro h1 { margin: 4px 0 3px; font-size: 24px; letter-spacing: .04em; }
-.guardian-home-intro p { margin: 0; color: var(--c-text-sub); font-size: 13px; }
-.guardian-child-section { display: flex; flex-direction: column; gap: 14px; }
-.guardian-child-section + .guardian-child-section { padding-top: 20px; border-top: 1px solid #dacba8; }
+/*
+ * ページの頭。小見出し（DADS の見出しの「ショルダー」）と見出しと説明文。
+ * 小見出しは見出しに付く札であり、色や字間で飾らない
+ */
+.guardian-home { display: flex; flex-direction: column; gap: var(--sp-5); }
+.guardian-home-intro, .guardian-page-intro { padding: 0; }
+.guardian-page-intro { padding-bottom: var(--sp-4); }
+.guardian-eyebrow { display: block; color: var(--c-text-sub); font-size: var(--fs-body); font-weight: 700; line-height: 1.7; }
+.guardian-home-intro h1, .guardian-page-intro h1 { margin: 0 0 var(--sp-2); font-size: 24px; }
+.guardian-home-intro p, .guardian-page-intro p { margin: 0; color: var(--c-text-sub); font-size: var(--fs-body); }
+
+.guardian-child-section { display: flex; flex-direction: column; gap: var(--sp-4); }
+.guardian-child-section + .guardian-child-section { padding-top: var(--sp-5); border-top: 1px solid var(--c-border); }
 .guardian-child-card {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  min-height: 116px; padding: 18px 18px 16px 20px;
-  background: #fff5d9; border: 1px solid #e9d69b; border-radius: 14px;
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
+  padding: var(--sp-4);
+  background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius);
 }
-.guardian-child-card h2 { margin: 4px 0; font-size: 23px; }
-.guardian-child-card p { margin: 0; color: #695b45; font-size: 13px; }
-.guardian-child-card img { flex: none; width: 83px; height: 73px; object-fit: contain; }
+.guardian-child-card h2 { margin: 0; font-size: 24px; }
+.guardian-child-card p { margin: 0; color: var(--c-text-sub); }
+.guardian-child-card img { flex: none; width: 64px; height: 56px; object-fit: contain; }
+
 .guardian-home-panel {
-  padding: 18px 18px 17px; background: #fffefb;
-  border: 1px solid #e7ddc7; border-radius: 12px;
-  box-shadow: 0 2px 5px rgba(75, 58, 24, .035);
+  padding: var(--sp-4);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border); border-radius: var(--radius);
 }
-.guardian-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.guardian-panel-heading h2 { margin-top: 3px; font-size: 18px; }
-.guardian-home-panel p { margin: 11px 0 15px; color: var(--c-text-sub); font-size: 13px; }
-.guardian-unread { flex: none; padding: 3px 9px; border-radius: 999px; background: #ac442b; color: white; font-size: 12px; font-weight: 700; }
+.guardian-panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
+.guardian-panel-heading h2 { font-size: 20px; }
+.guardian-home-panel p { margin: var(--sp-2) 0 var(--sp-4); color: var(--c-text-sub); }
+/* 件数の札。DADS のチップラベル（塗り）と同じ形 */
+.guardian-unread {
+  flex: none; margin-top: 2px; padding: 3px 8px; border-radius: var(--radius);
+  background: var(--c-alert); color: var(--dads-white);
+  font-size: var(--fs-small); font-weight: 700; line-height: 1.3;
+}
+/* 主な導線は、DADS の塗りボタンと同じ見た目にする */
 .guardian-panel-link {
-  display: flex; align-items: center; justify-content: space-between; min-height: 48px;
-  padding: 0 15px; border-radius: 8px; background: #eebd4b; color: #3c2e13;
-  text-decoration: none; font-size: 14px; font-weight: 700;
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2);
+  min-height: var(--control-h); padding: 0 var(--sp-4);
+  border: 1px solid var(--c-primary-deep); border-radius: var(--radius);
+  background: var(--c-primary); color: var(--c-primary-ink);
+  text-decoration: none; font-weight: 700;
 }
-.guardian-panel-link:hover { background: #e6b13b; }
-.guardian-record-list { margin-top: 10px; border-top: 1px solid #ece3d2; }
+@media (hover: hover) {
+  .guardian-panel-link:hover { background: var(--c-primary-hover); color: var(--c-primary-ink); text-decoration: underline; text-decoration-thickness: 1px; }
+}
+.guardian-panel-link:active { background: var(--c-primary-active); color: var(--c-primary-ink); }
+/* 記録・配布物の並び。DADS のメニューリスト（ボックス型）と同じく、行の全体を押せるようにする */
+.guardian-record-list { margin-top: var(--sp-2); border-top: 1px solid var(--c-border); }
 .guardian-record-link {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  min-height: 51px; border-bottom: 1px solid #ece3d2; color: var(--c-text);
-  text-decoration: none; font-size: 14px;
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
+  min-height: var(--control-h); padding: var(--sp-1) 0; border-bottom: 1px solid var(--c-border);
+  color: var(--c-text); text-decoration: none;
 }
-.guardian-record-link span:last-child { color: #9e741a; font-size: 19px; }
-.guardian-record-link:hover { color: #765414; }
-.guardian-contact-note { padding: 2px 5px 10px; color: var(--c-text-sub); font-size: 12px; line-height: 1.7; }
-.guardian-drawer { background: #fffaf0; }
-.guardian-drawer a { border-radius: 7px; }
-.guardian-page-intro { padding: 2px 2px 12px; }
-.guardian-page-intro h1 { margin: 4px 0 3px; font-size: 24px; }
-.guardian-page-intro p { margin: 0; color: var(--c-text-sub); font-size: 13px; }
-.guardian-room-list { overflow: hidden; background: #fffefb; border: 1px solid #e7ddc7; border-radius: 12px; }
+.guardian-record-link > span:last-child { color: var(--c-text); }
+@media (hover: hover) {
+  .guardian-record-link:hover { color: var(--c-text); text-decoration: underline; text-decoration-thickness: 1px; background: var(--c-surface-sub); }
+}
+.guardian-contact-note { padding: 0; color: var(--c-text-sub); font-size: var(--fs-small); line-height: 1.7; }
+.guardian-drawer { background: var(--c-surface); }
+.guardian-room-list { overflow: hidden; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius); }
 .guardian-room-link {
-  width: 100%; min-height: 64px; display: flex; justify-content: space-between; gap: 10px;
-  padding: 12px 17px; border: 0; border-bottom: 1px solid #ece3d2; border-radius: 0;
-  background: transparent; text-align: left; font-size: 15px; font-weight: 700;
+  width: 100%; min-height: 56px; display: flex; justify-content: space-between; gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4); border: 0; border-bottom: 1px solid var(--c-border); border-radius: 0;
+  background: transparent; text-align: left; font-weight: 400;
 }
 .guardian-room-link:last-child { border-bottom: 0; }
-.guardian-room-link:hover { background: #fff7e6; }
-.guardian-room-trailing { display: inline-flex; align-items: center; gap: 9px; color: #9e741a; }
-.guardian-chat-list .guardian-contact-note { padding-top: 15px; }
+@media (hover: hover) {
+  .guardian-room-link:hover:not(:disabled) { border-color: var(--c-border); background: var(--c-surface-sub); }
+}
+.guardian-room-trailing { display: inline-flex; align-items: center; gap: var(--sp-2); color: var(--c-text); }
+.guardian-chat-list .guardian-contact-note { padding-top: var(--sp-4); }
 .guardian-chat-thread { display: flex; flex-direction: column; min-height: 100%; }
-.guardian-thread-heading { padding: 0 0 13px; border-bottom: 1px solid #e6dac3; }
-.guardian-thread-heading h1 { font-size: 18px; }
-.guardian-message-list { flex: 1; padding-top: 15px; }
+.guardian-thread-heading { padding: 0 0 var(--sp-3); border-bottom: 1px solid var(--c-border); }
+.guardian-thread-heading h1 { font-size: 20px; }
+.guardian-message-list { flex: 1; padding-top: var(--sp-4); }
 .guardian-message-compose {
-  position: sticky; bottom: -32px; padding: 12px 0 10px;
-  background: #fffdf7; border-top: 1px solid #e6dac3;
+  position: sticky; bottom: calc(var(--sp-6) * -1); padding: var(--sp-3) 0;
+  background: var(--c-surface); border-top: 1px solid var(--c-border);
 }
 .guardian-message-compose input { min-width: 0; }
-.guardian-diary-card { padding: 22px 20px; border-color: #e7ddc7; border-radius: 12px; line-height: 1.8; }
-.guardian-diary-card h2 { font-size: 21px; }
-.guardian-diary-note { border-color: #e7ddc7; }
+.guardian-diary-card { padding: var(--sp-5) var(--sp-4); }
+.guardian-diary-card h2 { font-size: 20px; }
 
-.drawer-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 40; }
+.drawer-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .5); z-index: 40; }
+/* DADS のドロワー。幅 288px */
 .drawer {
-  position: fixed; top: 0; left: 0; bottom: 0; width: 260px; z-index: 41;
+  position: fixed; top: 0; left: 0; bottom: 0; width: min(288px, 85vw); z-index: 41;
   background: var(--c-surface); border-right: 1px solid var(--c-border);
-  padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-1);
+  padding: var(--sp-4); display: flex; flex-direction: column; gap: 0;
 }
 .drawer .who { font-weight: 700; padding-bottom: var(--sp-3); border-bottom: 1px solid var(--c-border); margin-bottom: var(--sp-2); }
-.drawer-head { display: flex; align-items: flex-start; gap: 8px; border-bottom: 1px solid var(--c-border); margin-bottom: 8px; }
+.drawer-head { display: flex; align-items: flex-start; gap: var(--sp-2); border-bottom: 1px solid var(--c-border); margin-bottom: var(--sp-2); padding-bottom: var(--sp-2); }
 .drawer-head .who { flex: 1; min-width: 0; margin: 0; padding-top: 10px; border: 0; }
-.drawer-close { flex: none; padding: 0 10px; white-space: nowrap; }
+.drawer-close { flex: none; padding: 0 var(--sp-3); white-space: nowrap; }
 .drawer a {
-  display: flex; align-items: center; min-height: var(--tap-min);
+  display: flex; align-items: center; min-height: var(--control-h);
   padding: 0 var(--sp-2); color: var(--c-text); text-decoration: none;
+  border-bottom: 1px solid var(--c-border-weak);
 }
-.drawer a:hover { background: var(--c-primary-soft); }
-.guardian-footer {
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 10px;
-  min-height: 48px; padding: 6px 14px; border-top: 1px solid #e9d8aa;
-  background: #fff8e6; color: #584b38; font-size: 12px;
+@media (hover: hover) {
+  .drawer a:hover { background: var(--c-surface-sub); color: var(--c-text); text-decoration: underline; text-decoration-thickness: 1px; }
 }
-.guardian-footer a { color: #69450c; font-size: 14px; font-weight: 700; }
+/* 移る先の並びと、ログアウトのあいだを空ける。並びの続きに見えないようにする */
+.drawer .spacer { flex: none; height: var(--sp-5); }
 
 /* ============ 未ログインの入口 ============ */
 .public-shell {
   min-height: 100%; display: flex; align-items: center; justify-content: center;
-  padding: var(--sp-5);
-  background: var(--c-primary-soft) url('/login-paper.png') center / cover no-repeat;
+  padding: var(--sp-5) var(--sp-4);
+  background: var(--c-surface-sub);
 }
 .public-card {
-  width: 100%; max-width: 420px; background: var(--c-surface);
+  width: 100%; max-width: 440px; background: var(--c-surface);
   border: 1px solid var(--c-border); border-radius: var(--radius);
-  box-shadow: var(--shadow); padding: var(--sp-5);
+  padding: var(--sp-6) var(--sp-5);
 }
 .public-card.wide { max-width: 560px; }
 .public-card .brand { text-align: center; margin-bottom: var(--sp-5); }
 .public-card .brand .name img {
   display: block;
-  width: 230px;
+  width: 200px;
   max-width: 100%;
   height: auto;
-  margin: -11px auto 0;
+  margin: -8px auto 0;
 }
-.public-card .brand .sub  { font-size: 13px; color: var(--c-text-sub); }
+.public-card .brand .sub  { font-size: var(--fs-small); color: var(--c-text-sub); }
+@media (max-width: 480px) {
+  .public-card { padding: var(--sp-5) var(--sp-4); }
+}
 
 /* ============ 共通部品 ============ */
-.page-head { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; margin-bottom: var(--sp-4); }
+.page-head { display: flex; align-items: center; gap: var(--sp-3) var(--sp-4); flex-wrap: wrap; margin-bottom: var(--sp-5); }
 .page-head .spacer { flex: 1; }
 
+/* 区切りの箱。DADS は置いてあるだけのものに影を付けないため、線だけで囲む */
 .card {
   background: var(--c-surface); border: 1px solid var(--c-border);
-  border-radius: var(--radius); padding: var(--sp-4); margin-bottom: var(--sp-4);
+  border-radius: var(--radius); padding: var(--sp-4); margin-bottom: var(--sp-5);
 }
 .card > h2, .card > h3 { margin-bottom: var(--sp-3); }
+.card .page-head { margin-bottom: var(--sp-3); }
 .card-sub { background: var(--c-surface-sub); }
+/* 幅に余裕のある PC では、箱の内側も広げる。タブレットでは中身の幅を優先する */
+@media (min-width: 1200px) {
+  .card { padding: var(--sp-5); }
+}
 
-.filterbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-3); }
-.field { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
-.field > .lbl { font-size: 12px; color: var(--c-text-sub); font-weight: 700; }
+.filterbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-4); }
+/* ラベルと入力欄。DADS のラベル（S：16px 太字）を入力欄の 8px 上に置く */
+.field { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.field > .lbl { font-size: var(--fs-body); color: var(--c-text); font-weight: 700; line-height: 1.5; }
 .field > label.lbl { display: block; min-height: 0; }
-.field.req > .lbl::after { content: " 必須"; color: var(--c-alert); }
+/*
+ * 必須の印。DADS の必須ラベルと同じく、赤の細字で項目名の後ろに置く。
+ * 欄の幅が狭いときは「必」と「須」のあいだで割らず、印ごと次の行へ送る
+ */
+.field.req > .lbl::after {
+  content: " 必須"; display: inline-block; margin-left: var(--sp-1); white-space: nowrap;
+  color: var(--c-alert); font-weight: 400;
+}
 
-table.list { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+/*
+ * 表：DADS のテーブル。見出し行は灰色の地と太字にし、その下をひと段濃い線で区切る。行は灰色の線で区切る。
+ * 縞模様は付けない（DADS では付けるかどうかを選べる）。
+ * 行の上下の余白は、DADS のテーブルの「Dense」と同じ 12px に詰める。
+ * 文字は 14px にする。DADS のタイポグラフィは本文を 16px 以上とし、14px は「16px を使いにくい領域の
+ * 制約がある場合」に限って認めている。16px にすると、iPad 縦向きで日誌一覧などの列が収まらず、
+ * 表を横に送らないと「開く」に届かなくなるため、表はこれに当たるとした
+ */
+table.list { width: 100%; border-collapse: collapse; font-size: var(--fs-small); line-height: 1.5; letter-spacing: 0; font-variant-numeric: tabular-nums; }
 table.list th, table.list td {
-  padding: 10px var(--sp-3);
+  padding: var(--sp-3) var(--sp-2);
   border-bottom: 1px solid var(--c-border);
   text-align: left; vertical-align: middle;
 }
 table.list th {
-  background: var(--c-surface-sub);
-  border-bottom: 2px solid var(--c-border-strong);
-  font-size: 13px; color: var(--c-text-sub); font-weight: 700; white-space: nowrap;
+  background: var(--c-surface-head);
+  border-bottom: 1px solid var(--dads-gray-536);
+  color: var(--c-text); font-weight: 700; white-space: nowrap;
 }
-table.list tbody tr:nth-child(even) td { background: #fdfbf6; }
-table.list tbody tr:hover td, table.list tbody tr:focus-within td { background: var(--c-primary-soft); }
+table.list tbody tr:focus-within td { background: var(--c-primary-faint); }
+@media (hover: hover) {
+  table.list tbody tr:hover td { background: var(--c-primary-faint); }
+}
+table.list tr > :first-child { padding-left: var(--sp-3); }
 table.list tbody tr:last-child td { border-bottom: 0; }
 table.list td.num { text-align: right; font-variant-numeric: tabular-nums; }
-table.list td .btn-sm:not(.btn-primary):not(.btn-danger):not(.btn-quiet) {
-  background: #fffdf8;
-  border-color: var(--c-border);
+
+.pager { display: flex; align-items: center; gap: var(--sp-3); justify-content: flex-end; margin-top: var(--sp-3); font-size: var(--fs-small); color: var(--c-text-sub); }
+
+/*
+ * 状態の札。DADS のチップラベル。角は 8px で、丸い錠剤の形にはしない。
+ * 差し戻しだけを塗りつぶす（画面詳細図 3-1）
+ */
+.tag {
+  display: inline-block; padding: 2px 7px; border: 1px solid; border-radius: var(--radius);
+  font-size: var(--fs-small); font-weight: 400; line-height: 1.5; letter-spacing: .02em; white-space: nowrap;
 }
-table.list td .btn-sm:not(.btn-primary):not(.btn-danger):not(.btn-quiet):hover {
-  background: var(--c-primary-soft);
-  border-color: var(--c-primary-deep);
-}
+.tag-draft    { color: var(--c-draft);    border-color: var(--c-draft);    background: var(--c-surface-sub); }
+.tag-applied  { color: var(--dads-blue-800); border-color: var(--c-applied); background: var(--dads-blue-50); }
+.tag-returned { color: var(--dads-white); border-color: var(--c-returned); background: var(--c-returned); font-weight: 700; }
+.tag-approved { color: var(--dads-green-900); border-color: var(--c-approved); background: var(--dads-green-50); }
+.tag-plain    { color: var(--c-text-sub); border-color: var(--c-border); background: var(--c-surface); }
 
-.pager { display: flex; align-items: center; gap: var(--sp-3); justify-content: flex-end; margin-top: var(--sp-3); font-size: 13px; color: var(--c-text-sub); }
-
-.tag { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; border: 1px solid; }
-.tag-draft    { color: var(--c-draft);    border-color: var(--c-draft);    background: #f3f4f6; }
-.tag-applied  { color: var(--c-applied);  border-color: var(--c-applied);  background: #e8f0fb; }
-.tag-returned { color: #fff; border-color: var(--c-returned); background: var(--c-returned); }
-.tag-approved { color: var(--c-approved); border-color: var(--c-approved); background: #e8f5e9; }
-.tag-plain    { color: var(--c-text-sub); border-color: var(--c-border-strong); background: var(--c-surface-sub); }
-
-/* 警告・注意喚起。判定ではない */
+/*
+ * 警告・注意喚起。判定ではない。
+ * DADS のノティフィケーションバナー：白地を色の付いた枠で囲み、印に色を付け、文は黒で書く
+ */
 .alert {
-  display: flex; gap: var(--sp-2); padding: var(--sp-3); border-radius: var(--radius-sm);
-  background: var(--c-alert-soft); border: 1px solid var(--c-alert);
-  color: var(--c-alert); font-size: 14px; font-weight: 700;
+  display: flex; align-items: flex-start; gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4); border-radius: var(--radius);
+  background: var(--c-surface); border: 2px solid var(--c-alert);
+  color: var(--c-text); font-size: var(--fs-body); font-weight: 400; line-height: 1.7;
 }
-.alert-soft { background: var(--c-primary-soft); border-color: var(--c-primary-deep); color: var(--c-primary-ink); }
+.alert > span:first-child { flex: none; color: var(--c-alert); font-weight: 700; }
+/* 知らせるだけのもの（DADS のインフォメーション2：灰色） */
+.alert-soft { border-color: var(--dads-gray-536); }
+.alert-soft > span:first-child { color: var(--c-text); }
+/*
+ * 箱の中身が警告ひとつだけのときは、箱の枠を消して警告の枠だけを見せる。
+ * 赤い枠が二重になると、強さが増すのではなく、どちらが本体か分かりにくくなるため（発達チェック一覧など）
+ */
+.card:has(> .alert:only-child) { padding: 0; border-width: 0; background: transparent; }
 
 /*
  * 免責表示。成長グラフ・発達チェックの比較に常時表示し、スクロールしても視界から外さない
- * （基本設計書 3-5／画面詳細図 6-1・6-2）
+ * （基本設計書 3-5／画面詳細図 6-1・6-2）。
+ * 誤りではないため警告色を使わず、DADS のインフォメーション2（灰色）の形にする
  */
 .disclaimer {
   position: sticky; bottom: 0; z-index: 5;
   display: flex; align-items: center; gap: var(--sp-2);
-  margin-top: var(--sp-3); padding: var(--sp-3);
-  background: var(--c-alert-soft); border: 1px solid var(--c-alert);
-  border-radius: var(--radius-sm); color: var(--c-alert);
-  font-size: 13px; font-weight: 700; box-shadow: var(--shadow-up);
+  margin-top: var(--sp-4); padding: var(--sp-2) var(--sp-4);
+  background: var(--c-surface-sub); border: 1px solid var(--dads-gray-536);
+  border-radius: var(--radius); color: var(--c-text);
+  /* 重ねて置く帯なので、DADS が場所の限られる所に許す 14px にして、重なる範囲を小さくする（GitHub Issue #154） */
+  font-size: var(--fs-small); font-weight: 700; line-height: 1.5;
+}
+.disclaimer > span:first-child { flex: none; }
+
+/*
+ * 発達チェック入力では、免責表示を保存操作の直上に固定する（画面詳細図 6-1）。
+ * 帯を本文に重ねると、その下の選択肢が隠れて押せない（GitHub Issue #154）。
+ * そこで、免責表示と保存操作を本文の流れから外して画面の下端の帯に置き、本文の表示域をそのぶん縮める。
+ * 帯の位置はメインコンテンツの外（.staff-body）を基準に決めるため、本文をスクロールしても動かず、重ならない
+ */
+.staff-body { --save-bar-h: 72px; --save-note-h: 48px; }
+.main:has(.disclaimer + .row-end) { margin-bottom: calc(var(--save-bar-h) + var(--save-note-h)); }
+.disclaimer:has(+ .row-end), .disclaimer + .row-end {
+  position: absolute; left: var(--sidenav-w); right: 0; z-index: 5;
+  margin: 0; padding: 0 var(--main-pad);
+}
+.disclaimer:has(+ .row-end) {
+  bottom: var(--save-bar-h); height: var(--save-note-h);
+  border: 0; border-top: 1px solid var(--c-border); border-radius: 0;
+}
+.disclaimer + .row-end {
+  bottom: 0; height: var(--save-bar-h);
+  background: var(--c-surface); border-top: 1px solid var(--c-border-weak);
 }
 
-.muted { color: var(--c-text-sub); font-size: 13px; }
+.muted { color: var(--c-text-sub); font-size: var(--fs-small); line-height: 1.6; }
 .weak  { color: var(--c-text-weak); }
 .row   { display: flex; gap: var(--sp-3); align-items: center; flex-wrap: wrap; }
 .row-end { display: flex; gap: var(--sp-3); align-items: center; justify-content: flex-end; flex-wrap: wrap; }
 .stack { display: flex; flex-direction: column; gap: var(--sp-3); }
 .nowrap { white-space: nowrap; }
 .empty { padding: var(--sp-6); text-align: center; color: var(--c-text-weak); }
-.choices { display: flex; flex-wrap: wrap; gap: var(--sp-4); }
+.choices { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); }
 
-/* ダイアログ。画面として起こさないもの（基本設計書 3-1 基準3） */
-.modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 50; padding: var(--sp-4); }
-.modal { background: var(--c-surface); border-radius: var(--radius); box-shadow: 0 8px 30px rgba(0,0,0,.25); width: 100%; max-width: 560px; max-height: 90vh; overflow-y: auto; }
-.modal-head { padding: var(--sp-4); border-bottom: 1px solid var(--c-border); font-weight: 700; }
-.modal-body { padding: var(--sp-4); }
-.modal-foot { padding: var(--sp-4); border-top: 1px solid var(--c-border); display: flex; justify-content: flex-end; gap: var(--sp-3); }
+/* 開閉するまとまり。押せる大きさを 44px にする */
+summary { min-height: var(--tap-min); padding: 10px 0; cursor: pointer; }
+
+/* ダイアログ。画面として起こさないもの（基本設計書 3-1 基準3）。DADS のモーダルダイアログ */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .6); display: flex; align-items: center; justify-content: center; z-index: 50; padding: var(--sp-4); }
+.modal {
+  background: var(--c-surface); border: 1px solid var(--c-text); border-radius: var(--radius);
+  box-shadow: var(--elevation-3);
+  width: 100%; max-width: 560px; max-height: 90vh; overflow-y: auto;
+}
+.modal-head { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--c-border); }
+.modal-body { padding: var(--sp-5); }
+.modal-foot { padding: var(--sp-4) var(--sp-5); border-top: 1px solid var(--c-border); display: flex; justify-content: flex-end; gap: var(--sp-3); }
 /* ダイアログの中で起きた誤りは、ダイアログの中に出す。後ろに出すと隠れて読めない */
 .modal-body .alert { margin-bottom: var(--sp-3); }
 
@@ -340,33 +439,39 @@ table.list td .btn-sm:not(.btn-primary):not(.btn-danger):not(.btn-quiet):hover {
   position: fixed; left: 50%; bottom: var(--sp-4); transform: translateX(-50%); z-index: 60;
   display: flex; align-items: center; gap: var(--sp-3);
   max-width: min(640px, calc(100vw - 2 * var(--sp-4)));
-  padding: var(--sp-3) var(--sp-4);
+  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4);
   background: var(--c-text); color: var(--c-surface);
-  border-radius: var(--radius); box-shadow: 0 8px 30px rgba(0,0,0,.25);
+  border-radius: var(--radius); box-shadow: var(--elevation-2);
 }
 .toast .btn-sm { color: inherit; border-color: currentColor; background: transparent; }
+@media (hover: hover) {
+  .toast .btn-sm:hover:not(:disabled) { color: inherit; border-color: currentColor; background: rgba(255, 255, 255, .15); }
+}
 
 /* 段階を上から順に踏ませる（画面詳細図 2-3 新規登録画面） */
 .step { border: 1px solid var(--c-border); border-radius: var(--radius); padding: var(--sp-4); margin-bottom: var(--sp-4); }
-.step.locked { opacity: .7; }
+.step.locked { background: var(--c-surface-sub); color: var(--c-text-sub); }
 .step fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .step.locked fieldset:disabled { cursor: not-allowed; }
-.step .step-title { font-weight: 700; margin-bottom: var(--sp-3); }
+.step .step-title { font-size: 17px; font-weight: 700; margin-bottom: var(--sp-3); }
 
-.terms-box { max-height: 220px; overflow-y: auto; border: 1px solid var(--c-border); border-radius: var(--radius-sm); padding: var(--sp-3); background: var(--c-surface-sub); font-size: 13px; white-space: pre-wrap; }
-.terms-box:focus-visible { outline: 3px solid var(--c-focus); outline-offset: 2px; }
-.skip-link { position: absolute; left: 8px; top: -100px; z-index: 100; background: #fff; padding: 8px 16px; }
+.terms-box { max-height: 220px; overflow-y: auto; border: 1px solid var(--c-border); border-radius: var(--radius); padding: var(--sp-3) var(--sp-4); background: var(--c-surface-sub); white-space: pre-wrap; }
+.skip-link { position: absolute; left: 8px; top: -100px; z-index: 100; background: var(--c-surface); padding: 8px 16px; }
 .skip-link:focus { top: 8px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
-/* 保護者向けの緊急連絡の案内。全画面の下端に常時置く */
+/*
+ * 保護者向けの緊急連絡の案内。全画面の下端に常時置く（基本設計書 3-5）。
+ * 常に画面の一部を占めるため、幅 390px ほどのスマートフォンでは案内と番号を1行に収め、
+ * 本文の見える範囲を減らしすぎない。収まらない幅では番号を次の行へ送る
+ */
 .guardian-footer {
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--sp-2);
-  padding: var(--sp-2) var(--sp-4);
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0 var(--sp-2);
+  min-height: 52px; padding: var(--sp-1) var(--sp-2);
   border-top: 1px solid var(--c-border); background: var(--c-surface-sub);
-  font-size: 13px; color: var(--c-text-sub);
+  font-size: var(--fs-small); letter-spacing: 0; color: var(--c-text);
 }
 .guardian-footer a {
-  display: inline-flex; align-items: center; min-height: 44px; padding: 0 var(--sp-2);
-  font-size: 16px; font-weight: 700; color: var(--c-link);
+  display: inline-flex; align-items: center; min-height: var(--tap-min); padding: 0 var(--sp-1);
+  font-size: var(--fs-body); font-weight: 700; letter-spacing: 0;
 }
