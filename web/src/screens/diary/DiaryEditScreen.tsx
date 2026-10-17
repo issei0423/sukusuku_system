@@ -157,6 +157,31 @@ export default function DiaryEditScreen() {
   const d = existing.data;
   const readOnly = !!d && (d.status === '2' || d.status === '3');
 
+  /*
+   * 園児を選んだら、その園児の在籍クラスを対象のクラスに入れる。個人日誌・ヒヤリハットの対象のクラスは、
+   * 対象の園児が在籍するクラスに限る（サーバが確かめる。web/仮置き値.md。GitHub Issue #174）。
+   * 担当クラスを持たない管理者が、園児ごとにクラスを選び直さなくて済むようにする。
+   * 引けなかったときは何もしない（クラスは手で選べ、保存のときにサーバが確かめる）
+   */
+  const chooseChild = (id: string) => {
+    setChildId(id);
+    if (!id) return;
+    api.classOf(user!, id).then((c) => { if (c != null) setClassId(c); }, () => {});
+  };
+
+  /*
+   * 確認へ進む前に、記録日を確かめる。記録日は当日まで（図/画面詳細図.md「日誌作成・編集画面」(3-2) 項目6）。
+   * 欄の max だけでは、打ち込んだ先の日付を止められない（GitHub Issue #174）。サーバとモックも同じ規則で断る
+   */
+  const goConfirm = () => {
+    if (!date) { setError('記録日を入力してください'); return; }
+    if (date > today()) { setError('記録日に未来日は指定できません（当日まで）'); return; }
+    navigate('/staff/diary/confirm', {
+      state: { recordType, childId: needsChild ? childId : null, classId: classId === '' ? null : classId,
+               date, body, diaryId, lockToken, photos },
+    });
+  };
+
   if (existing.loading) return <Loading />;
   if (existing.error) return <ErrorBox text={existing.error} />;
 
@@ -226,16 +251,21 @@ export default function DiaryEditScreen() {
             <div className="row">
               {needsChild && (
                 <Field label="対象の園児" required style={{ flex: 1 }}>
-                  <select value={childId} onChange={(e) => setChildId(e.target.value)} disabled={readOnly}>
+                  <select value={childId} onChange={(e) => chooseChild(e.target.value)} disabled={readOnly}>
                     <option value="">選んでください</option>
                     {children.map((c) => <option key={c.child_id} value={c.child_id}>{c.child_name}</option>)}
                   </select>
                 </Field>
               )}
-              <Field label="対象のクラス" style={{ flex: 1 }}>
+              {/*
+                * 対象のクラスは必須。「指定しない」は置かない（図/画面詳細図.md「日誌作成・編集画面」(3-2) 項目5
+                * 「入力：必須」）。クラスの空いた日誌は、書いた本人が開けなくなったり、日誌一覧から漏れたりしていた
+                * （GitHub Issue #174）。担当クラスを持たない管理者は、選ぶまで空のまま
+                */}
+              <Field label="対象のクラス" required style={{ flex: 1 }}>
                 <select value={classId} onChange={(e) => setClassId(e.target.value ? Number(e.target.value) : '')}
                   disabled={readOnly}>
-                  <option value="">指定しない</option>
+                  {classId === '' && <option value="">選んでください</option>}
                   {classesForUser.map((c) => <option key={c.class_id} value={c.class_id}>{c.class_name}</option>)}
                 </select>
               </Field>
@@ -287,13 +317,14 @@ export default function DiaryEditScreen() {
             {needsChild && !childId && !readOnly && (
               <div className="muted">対象の園児を選ぶと、確認へ進めます。</div>
             )}
+            {classId === '' && !readOnly && (
+              <div className="muted">対象のクラスを選ぶと、確認へ進めます。</div>
+            )}
 
             <div className="row-end">
               <button onClick={() => save('1')} disabled={busy || readOnly || !!heldBy}>下書き保存</button>
-              <button className="btn-primary" onClick={() => navigate('/staff/diary/confirm', {
-                state: { recordType, childId: needsChild ? childId : null, classId: classId === '' ? null : classId,
-                         date, body, diaryId, lockToken, photos },
-              })} disabled={busy || readOnly || !!heldBy || !body.trim() || (needsChild && !childId)}>
+              <button className="btn-primary" onClick={goConfirm}
+                disabled={busy || readOnly || !!heldBy || !body.trim() || (needsChild && !childId) || classId === ''}>
                 確認へ進む
               </button>
             </div>
