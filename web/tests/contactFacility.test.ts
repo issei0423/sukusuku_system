@@ -124,6 +124,7 @@ describe('定型文・宛先・照合の経路・ダッシュボード', () => {
     expect((await api.nameCheck(teacher, { class_id: 1, text: 'たっくんとあおちゃん' })).names).toHaveLength(2);
     await expect(api.nameCheck(otherTeacher, { child_ids: ['C001'], text: 'たっくん' })).rejects.toThrow(MSG.contactForbidden);
     await expect(api.nameCheck(otherTeacher, { class_id: 1, text: 'たっくん' })).rejects.toThrow();
+    await expect(api.nameCheck(teacher, { child_ids: ['C001'], text: 'あ'.repeat(1001) })).rejects.toThrow(MSG.badRequest);
   });
 
   it('ダッシュボードの園から未送信：送ると減り、今日の午睡で欠席にした子は数えない', async () => {

@@ -277,6 +277,11 @@ func (a *app) handleNameCheck(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &in) {
 		return
 	}
+	// 照合する文の上限。送る経路の上限（500・200文字）より長い文は照合しない（自動レビューの指摘。重い処理を起こさせない）
+	if tooLong(in.Text, nameCheckMaxRunes) {
+		writeErr(w, http.StatusBadRequest, msgBadRequest)
+		return
+	}
 	everyone := in.ClassID != nil
 	if everyone && !a.classContactAccess(u, *in.ClassID).Write {
 		writeForbidden(w, msgContactClassForbidden)
@@ -302,6 +307,9 @@ func (a *app) handleNameCheck(w http.ResponseWriter, r *http.Request) {
 	names, _ := findOtherNames(in.Text, "text", recipients, all)
 	writeJSON(w, http.StatusOK, map[string][]string{"names": names})
 }
+
+// 【仮置き】照合の経路で受け付ける文の長さ（チャットの本文の上限 1,000 文字にそろえた。web/仮置き値.md）
+const nameCheckMaxRunes = 1000
 
 // phraseOut は定型文（図/インタフェース一覧の Phrase）
 type phraseOut struct {

@@ -16,6 +16,7 @@ const children: NameChild[] = [
   { id: 'E', name: '前田 詩', kana: 'まえだ うた', nickname: '' },
   { id: 'F', name: '林 悠真', kana: 'はやし ゆうま', nickname: '' },
   { id: 'G', name: '山田 ゆい', kana: 'やまだ ゆい', nickname: '' },
+  { id: 'H', name: '野原 あい', kana: 'のはら あい', nickname: '' },
 ];
 
 /** server/namecheck_test.go の nameCheckCases と同じ行（宛先が空ならクラスあて） */
@@ -36,6 +37,8 @@ const nameCheckCases: [name: string, recipient: string, text: string, names: str
   ['同じ名の子が2人いれば両方に当たる', 'A', 'ゆいちゃんと遊びました。', ['小林 結衣', '山田 ゆい'], [[0, 5]]],
   ['クラスあては在籍園児の全員が相手', '', 'たっくんとあおちゃんが遊びました。', ['野原 太郎', '伊藤 葵'], [[0, 4], [5, 10]]],
   ['名前が無ければ当たらない', 'A', '園庭で砂場あそびをしました。', [], []],
+  ['同じ姓のきょうだいの氏名は、宛先の姓に重なっても当たる', 'A', '野原あいに伝えました。', ['野原 あい'], [[0, 4]]],
+  ['宛先の姓だけなら、同じ姓のきょうだいに当てない', 'A', '野原さんに伝えました。', [], []],
 ];
 
 describe('他児の名前の照合（server/namecheck.go と同じ表）', () => {

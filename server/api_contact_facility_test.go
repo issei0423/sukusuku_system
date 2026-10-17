@@ -240,6 +240,7 @@ func TestRecipientAndNameCheckRoute(t *testing.T) {
 	}
 	expectStatus(t, request(t, h, otherTeacher, "POST", "/api/contact/name-check", `{"child_ids":["C001"],"text":"たっくん"}`), http.StatusForbidden)
 	expectStatus(t, request(t, h, otherTeacher, "POST", "/api/contact/name-check", `{"class_id":1,"text":"たっくん"}`), http.StatusForbidden)
+	expectStatus(t, request(t, h, teacher, "POST", "/api/contact/name-check", `{"child_ids":["C001"],"text":"`+strings.Repeat("あ", 1001)+`"}`), http.StatusBadRequest)
 }
 
 // ダッシュボードの「園からのひとことを送っていない園児」。送ると減り、今日の午睡で欠席にした子は数えない

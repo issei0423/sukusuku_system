@@ -4260,7 +4260,8 @@ function occurrences(text: string[], v: NameVariant): [number, number][] {
 }
 
 /**
- * 他児の名前の照合（server/namecheck.go の findOtherNames と同じ規則）。宛先の子の名前に当たった部分を先に除き（D-17）、
+ * 他児の名前の照合（server/namecheck.go の findOtherNames と同じ規則）。宛先の子の名前に当たった部分を先に除き（D-17。
+ * ほかの子の当たりが、その部分にすべて入るときだけ除く）、
  * 宛先以外の候補の名前を探す。names は当たった園児の氏名（候補の並び順）、matches は当たった位置（強調の表示に使う）
  */
 export function findOtherNames(text: string, field: string, recipients: NameChild[], all: NameChild[]): OtherNames {
@@ -4269,7 +4270,13 @@ export function findOtherNames(text: string, field: string, recipients: NameChil
   const recipientIds = new Set(recipients.map((r) => r.id));
   for (const r of recipients) {
     const vs = nameVariants(r).sort((a, b) => b.text.length - a.text.length);
-    for (const v of vs) for (const [s, e] of occurrences(runes, v)) for (let k = s; k < e; k++) masked[k] = true;
+    for (const v of vs) {
+      for (const [s, e] of occurrences(runes, v)) {
+        // すぐ後ろの敬称も宛先の子の名前の部分に含める（server/namecheck.go と同じ）
+        const h = HONORIFICS.find((x) => runes.slice(e).join('').startsWith(x));
+        for (let k = s; k < e + (h ? [...h].length : 0); k++) masked[k] = true;
+      }
+    }
   }
   const names: string[] = [];
   let matches: NameMatch[] = [];
@@ -4278,9 +4285,10 @@ export function findOtherNames(text: string, field: string, recipients: NameChil
     const found: [number, number][] = [];
     for (const v of nameVariants(c)) {
       for (const o of occurrences(runes, v)) {
-        let free = true;
-        for (let k = o[0]; k < o[1]; k++) if (masked[k]) { free = false; break; }
-        if (free) found.push(o);
+        // 除くのは、印（宛先の子の名前の部分）の中にすべて入るときだけ。同じ姓のきょうだいの氏名は当てる
+        let inside = true;
+        for (let k = o[0]; k < o[1]; k++) if (!masked[k]) { inside = false; break; }
+        if (!inside) found.push(o);
       }
     }
     if (found.length === 0) continue;
@@ -4412,6 +4420,8 @@ const contactFacilityApi = {
    */
   async nameCheck(user: SessionUser, input: { child_ids?: string[]; class_id?: number; text: string }): Promise<{ names: string[] }> {
     if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    // 照合する文の上限（server/api_contact_facility.go の nameCheckMaxRunes と同じ）
+    if (typeof input.text !== 'string' || tooLong(input.text, 1000)) return fail(MSG.badRequest);
     const everyone = input.class_id !== undefined && input.class_id !== null;
     if (everyone && !classContactAccess(user, input.class_id!).write) return fail(MSG.contactClassForbidden);
     for (const id of input.child_ids ?? []) if (!contactAccess(user, id).write) return fail(MSG.contactForbidden);

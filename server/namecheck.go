@@ -19,7 +19,9 @@ import (
    氏名とよみは姓と名の間に空白なし・半角の空白・全角の空白の3つ（本文の位置をそのまま返すため。AI へ送る前の置き換えと同じ関数）
 ③ 短い名前：1文字の名前と2文字以下の仮名の名前は、すぐ後ろに敬称（ちゃん・くん・さん・君）が続くときだけ当てる
 ④ 相手：宛先以外の在籍園児（enrollment_status = '1'、取り消していない）全員。宛先がクラスなら在籍園児全員。
-   宛先の子の名前に当たった部分は、先に印を付けて除いてから探す（同じ名の子を取り違えない。D-17）
+   宛先の子の名前に当たった部分は、先に印を付けて除いてから探す（同じ名の子を取り違えない。D-17）。
+   除くのは、ほかの子の当たりが印の中に**すべて入る**ときだけにする。宛先の姓の印に一部が重なる、同じ姓のきょうだいの
+   氏名（宛先「野原 太郎」で本文「野原あいに伝えました」）は当てる（自動レビューの指摘。一部でも重なれば除くと、きょうだいの名前を見落とす）
 ⑤ 返すもの：当たった園児ごとに氏名を1つ（names）と、本文の中の当たった位置（matches。符号位置で数える）
 */
 
@@ -172,7 +174,16 @@ func findOtherNames(text, field string, recipients []nameChild, all []nameChild)
 		sort.SliceStable(vs, func(i, j int) bool { return len(vs[i].text) > len(vs[j].text) })
 		for _, v := range vs {
 			for _, o := range occurrences(runes, v) {
-				for k := o[0]; k < o[1]; k++ {
+				// すぐ後ろの敬称も宛先の子の名前の部分に含める（宛先「山田 ゆい」の「ゆいちゃん」を、ほかの子の呼び名「ゆいちゃん」と数えない）
+				end := o[1]
+				rest := string(runes[end:])
+				for _, h := range honorifics {
+					if strings.HasPrefix(rest, h) {
+						end += utf8.RuneCountInString(h)
+						break
+					}
+				}
+				for k := o[0]; k < end; k++ {
 					masked[k] = true
 				}
 			}
@@ -187,14 +198,14 @@ func findOtherNames(text, field string, recipients []nameChild, all []nameChild)
 		found := [][2]int{}
 		for _, v := range nameVariants(c) {
 			for _, o := range occurrences(runes, v) {
-				free := true
+				inside := true
 				for k := o[0]; k < o[1]; k++ {
-					if masked[k] {
-						free = false
+					if !masked[k] {
+						inside = false
 						break
 					}
 				}
-				if free {
+				if !inside {
 					found = append(found, o)
 				}
 			}
