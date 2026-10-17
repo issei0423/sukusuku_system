@@ -280,10 +280,20 @@ func (a *app) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 外れた職員には、外れたあとの投稿を返さない（GitHub Issue #161）
+	// 既読の人数に数える人は、チャンネルの種別で決まる（readCountRoles）。読めなければ数え方を決められない
+	var roomType string
+	if err := a.db.QueryRow(`SELECT room_type FROM m_chat_room WHERE chat_room_id = ?`, roomID).
+		Scan(&roomType); err != nil {
+		writeErr(w, http.StatusInternalServerError, "メッセージを取得できませんでした")
+		return
+	}
+
+	// 外れた職員には、外れたあとの投稿を返さない（GitHub Issue #161）。送信者のロールも一緒に引く
 	q := `SELECT m.chat_message_id, m.chat_room_id, m.sender_account_id, m.body,
-		m.source_type, m.source_id, m.sent_at, m.edited_at, m.is_deleted, m.deleted_at, m.deleted_account_id
-		FROM t_chat_message m WHERE m.chat_room_id = ?` + afterLeftClause
+		m.source_type, m.source_id, m.sent_at, m.edited_at, m.is_deleted, m.deleted_at, m.deleted_account_id,
+		IFNULL(sa.role, '')
+		FROM t_chat_message m LEFT JOIN m_account sa ON sa.account_id = m.sender_account_id
+		WHERE m.chat_room_id = ?` + afterLeftClause
 	args := []any{roomID, u.AccountID}
 	// 保護者には、自分が参加するより前の個人チャットのやりとりを返さない
 	if u.isGuardian() {
@@ -305,7 +315,7 @@ func (a *app) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 			delAcc    sql.NullInt64
 		)
 		if rows.Scan(&m.ChatMessageID, &m.ChatRoomID, &m.SenderAccountID, &m.Body,
-			&m.SourceType, &sourceID, &m.SentAt, &editedAt, &m.IsDeleted, &deletedAt, &delAcc) != nil {
+			&m.SourceType, &sourceID, &m.SentAt, &editedAt, &m.IsDeleted, &deletedAt, &delAcc, &m.SenderRole) != nil {
 			continue
 		}
 		m.SourceID = nullInt(sourceID)
@@ -317,12 +327,9 @@ func (a *app) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 	rows.Close()
 
 	// 送信者名と既読の数え上げはカーソルを閉じたあとに行う
-	var roomType string
-	a.db.QueryRow(`SELECT room_type FROM m_chat_room WHERE chat_room_id = ?`, roomID).Scan(&roomType)
 	readers := readCountRoles(roomType)
 	for i := range out {
 		out[i].SenderName = a.accountName(out[i].SenderAccountID)
-		a.db.QueryRow(`SELECT role FROM m_account WHERE account_id = ?`, out[i].SenderAccountID).Scan(&out[i].SenderRole)
 		// 既読は保護者側には表示しない。そもそも返さない（基本設計書 5-5）
 		if u.isStaff() {
 			var n int

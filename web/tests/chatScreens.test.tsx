@@ -211,6 +211,20 @@ describe('管理者は、他者の誤送信メッセージをチャット画面�
     await waitFor(() => expect(isRetracted(sent.chat_message_id)).toBe(true));
   });
 
+  it('保護者の発言の削除は誤送信への対応として扱わず、既読や記録の案内を出さない', async () => {
+    const sent = await api.send(miyagi, 8, 'B3 保護者の発言');
+    open('/staff/chat?room=8', admin);
+    await settled();
+    openMenu(await findRow('B3 保護者の発言'));
+    fireEvent.click(screen.getByRole('button', { name: '削除' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog.textContent).toContain('保護者のメッセージを削除します');
+    expect(dialog.textContent).not.toContain('誤送信');
+    expect(dialog.textContent).not.toContain('既読');
+    fireEvent.click(screen.getByRole('button', { name: '削除する' }));
+    await waitFor(() => expect(isRetracted(sent.chat_message_id)).toBe(true));
+  });
+
   it('一般の職員には、他者のメッセージの削除を出さない', async () => {
     await api.send(admin, 7, 'B2 園長からの連絡です');
     open('/staff/chat?room=7', teacher);

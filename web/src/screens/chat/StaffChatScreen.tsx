@@ -328,21 +328,28 @@ function RetractDialog({ message, mine, isAdmin, guardianRoom, busy, onConfirm, 
   onConfirm: () => void; onCancel: () => void;
 }) {
   const readCount = message.read_count ?? 0;
-  // 保護者が自分で送ったものは、誤送信対応の対象にしない（server/api_chat.go の handleRetractedWithoutRecord）
-  const needsRecord = message.sender_role !== '3';
+  /*
+   * 保護者が送ったものは、誤送信対応の対象にしない（server/api_chat.go の handleRetractedWithoutRecord）。
+   * 管理者が保護者の発言を消すときは誤送信への対応ではなく、既読（保護者が開いたか）も判断の材料にならないため出さない
+   */
+  const fromGuardian = message.sender_role === '3';
+  const title = mine ? 'メッセージを取り消します'
+    : fromGuardian ? '保護者のメッセージを削除します' : 'メッセージを削除します（誤送信への対応）';
   return (
-    <ConfirmDialog title={mine ? 'メッセージを取り消します' : 'メッセージを削除します（誤送信への対応）'}
+    <ConfirmDialog title={title}
       confirmLabel={mine ? '取り消す' : '削除する'} danger busy={busy} onConfirm={onConfirm} onCancel={onCancel}>
       <div className="stack">
         <p>
           {formatMD(message.sent_at.slice(0, 10))} {formatHM(message.sent_at)} のメッセージを{mine ? '取り消します' : '削除します'}。
           元に戻せません。相手の画面には「このメッセージは取り消されました」と出ます。
         </p>
-        <p>
-          <strong>{guardianRoom ? `既読（保護者）：${readCount} 名` : `既読：${readCount} 名`}</strong>
-          {readCount > 0 && '。すでに読まれているため、内容が伝わったことは取り消せません'}
-        </p>
-        {needsRecord && (isAdmin ? (
+        {!fromGuardian && (
+          <p>
+            <strong>{guardianRoom ? `既読（保護者）：${readCount} 名` : `既読：${readCount} 名`}</strong>
+            {readCount > 0 && '。すでに読まれているため、内容が伝わったことは取り消せません'}
+          </p>
+        )}
+        {!fromGuardian && (isAdmin ? (
           <p>削除したあと、<Link to="/staff/admin/misdelivery">誤送信対応の記録</Link>で、既読の有無ととった対応を記録してください。</p>
         ) : (
           <p>誤って別の家庭やチャンネルへ送ったときは、管理者へ知らせてください。誤送信対応の記録は管理者が残します。</p>
