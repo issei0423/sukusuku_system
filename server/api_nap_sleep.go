@@ -181,3 +181,82 @@ func (a *app) napSessionExclusion(sessionID int64, childID string) *napExclusion
 	}
 	return &x
 }
+
+/*
+きょうは対象外（詳細設計書「午睡（ねた・おきた・対象外）」(4-6 (5))）。監査の層であり、保護者へは返さない。
+知らせは nap だけ（職員だけ）。対象外の子はタイマーと未記録の数から外す（画面）。
+*/
+
+// POST /api/nap/session/{id}/exclusions。要求 { child_id, reason: '1' | '2' }（1:欠席 2:午睡なし）
+func (a *app) handleExclude(w http.ResponseWriter, r *http.Request) {
+	u, ok := a.requireStaff(w, r)
+	if !ok {
+		return
+	}
+	sessionID, valid := pathInt64(r, "id")
+	if !valid {
+		writeErr(w, http.StatusBadRequest, msgNapNotStarted)
+		return
+	}
+	var in struct {
+		ChildID string `json:"child_id"`
+		Reason  string `json:"reason"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	if in.Reason != "1" && in.Reason != "2" {
+		writeErr(w, http.StatusBadRequest, msgBadChoice)
+		return
+	}
+	classID, ok := a.napSleepTarget(w, u, sessionID, in.ChildID)
+	if !ok {
+		return
+	}
+	var n int
+	a.db.QueryRow(`SELECT COUNT(*) FROM t_nap_sleep WHERE nap_session_id = ? AND child_id = ? AND is_deleted = 0`, sessionID, in.ChildID).Scan(&n)
+	if n > 0 {
+		writeErr(w, http.StatusBadRequest, msgExcludeAfterSleep)
+		return
+	}
+	at := now()
+	res, err := a.db.Exec(`INSERT INTO t_nap_exclusion (nap_session_id, child_id, reason, staff_id, created_at) VALUES (?, ?, ?, ?, ?)`,
+		sessionID, in.ChildID, in.Reason, u.staff(), at)
+	if err != nil {
+		// 取り消していない対象外は1つだけ（部分一意の索引 ux_nap_exclusion_alive）
+		writeJSON(w, http.StatusConflict, apiError{Message: msgExcludedTwice, Kind: kindAlreadyExists})
+		return
+	}
+	id, _ := res.LastInsertId()
+	a.log(u.AccountID, fnNap, opCreate, "t_nap_exclusion", i64(id), &in.ChildID, nil, s(jsonText(map[string]string{"reason": in.Reason})))
+	a.notifyNapChild(classID, in.ChildID)
+	x := a.napSessionExclusion(sessionID, in.ChildID)
+	writeJSON(w, http.StatusOK, x)
+}
+
+// POST /api/nap/exclusions/{id}/cancel（戻す）。実施中だけ
+func (a *app) handleCancelExclusion(w http.ResponseWriter, r *http.Request) {
+	u, ok := a.requireStaff(w, r)
+	if !ok {
+		return
+	}
+	id, valid := pathInt64(r, "id")
+	var sessionID int64
+	var childID, reason string
+	if !valid || a.db.QueryRow(`SELECT nap_session_id, child_id, reason FROM t_nap_exclusion WHERE nap_exclusion_id = ? AND is_deleted = 0`, id).
+		Scan(&sessionID, &childID, &reason) != nil {
+		writeForbidden(w, msgContactForbidden)
+		return
+	}
+	classID, ok := a.napSleepTarget(w, u, sessionID, childID)
+	if !ok {
+		return
+	}
+	if _, err := a.db.Exec(`UPDATE t_nap_exclusion SET is_deleted = 1 WHERE nap_exclusion_id = ? AND is_deleted = 0`, id); err != nil {
+		writeErr(w, http.StatusInternalServerError, msgContactSaveFailed)
+		return
+	}
+	a.log(u.AccountID, fnNap, opDelete, "t_nap_exclusion", i64(id), &childID, s(jsonText(map[string]string{"reason": reason})), nil)
+	a.notifyNapChild(classID, childID)
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}

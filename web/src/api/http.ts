@@ -19,7 +19,7 @@ import type {
   DevListRow, DevScheduleRow, CsvRow, FiscalClassRow, StaffAccountRow,
   GuardianAccountRow, InvitationCodeRow, OperationLogRow, StaffSummary, GuardianHomeRow,
   DevDraftView,
-  ContactPage, ContactClassView, ContactHome, ContactHomeInput, NapSleep,
+  ContactPage, ContactClassView, ContactHome, ContactHomeInput, NapSleep, NapExclusion,
 } from './shapes';
 import {
   ProcedureRequiredError, isProcedureKind, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
@@ -671,6 +671,9 @@ const contactApi = {
   sleep: (_u: SessionUser, sessionId: number, childId: string) =>
     post<NapSleep>(`/api/nap/session/${sessionId}/sleeps`, { child_id: childId }),
   wake: (_u: SessionUser, sleepId: number) => post<NapSleep>(`/api/nap/sleeps/${sleepId}/wake`),
+  exclude: (_u: SessionUser, sessionId: number, childId: string, reason: '1' | '2') =>
+    post<NapExclusion>(`/api/nap/session/${sessionId}/exclusions`, { child_id: childId, reason }),
+  cancelExclusion: (_u: SessionUser, exclusionId: number) => post<{ ok: true }>(`/api/nap/exclusions/${exclusionId}/cancel`),
 };
 
 export const api = { ...apiAuth, ...apiChatNap, ...apiGrowth, ...apiAdmin, ...apiHandout, ...contactApi };

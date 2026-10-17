@@ -31,6 +31,8 @@ func (a *app) routeContact(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/contact/home/{id}/confirm", a.handleConfirmHome)
 	mux.HandleFunc("POST /api/nap/session/{id}/sleeps", a.handleSleep)
 	mux.HandleFunc("POST /api/nap/sleeps/{id}/wake", a.handleWake)
+	mux.HandleFunc("POST /api/nap/session/{id}/exclusions", a.handleExclude)
+	mux.HandleFunc("POST /api/nap/exclusions/{id}/cancel", a.handleCancelExclusion)
 }
 
 // 共通基盤：ログインとアカウント（基本設計書 4-3）

@@ -135,4 +135,21 @@ describe('午睡チェック画面：ねた・おきた', () => {
     const page = await api.contactPage(guardian, 'C001');
     expect(page.sleeps.at(-1)?.woke_at).toBeTruthy();
   });
+
+  it('「対象外」→ 理由（欠席）の2タップで対象外になり、「戻す」で戻る', async () => {
+    const active = await api.activeSession(1, today(), admin);
+    if (active) await api.endSession(admin, active.nap_session_id);
+    await api.startSession(teacher, 1, today());
+    open('/staff/nap', teacher);
+    const button = await screen.findByRole('button', { name: '加藤 大和をきょうは対象外にする' }, { timeout: 3000 });
+    const row = button.closest('.nap-record-row') as HTMLElement;
+    fireEvent.click(button); // 1
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '欠席' })); // 2
+    await within(row).findByRole('button', { name: '加藤 大和の対象外を戻す' }, { timeout: 3000 });
+    expect(row.textContent).toContain('対象外（欠席）');
+    expect(row.classList.contains('is-excluded')).toBe(true);
+    fireEvent.click(within(row).getByRole('button', { name: '加藤 大和の対象外を戻す' }));
+    await within(row).findByRole('button', { name: '加藤 大和のねた' }, { timeout: 3000 });
+  });
 });
+

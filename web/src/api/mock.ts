@@ -3736,6 +3736,35 @@ const contactApi = {
     publishContactChild(row.child_id, 'nap');
     return ok(sleepView(row, true));
   },
+
+  /** きょうは対象外（POST /api/nap/session/{id}/exclusions）。監査の層で、知らせは nap だけ（保護者へは送らない） */
+  async exclude(user: SessionUser, sessionId: number, childId: string, reason: '1' | '2'): Promise<NapExclusion> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    if (reason !== '1' && reason !== '2') return fail(MSG.badChoice);
+    const target = napSleepTarget(user, sessionId, childId);
+    if (!target.session) return fail(target.error ?? MSG.contactForbidden);
+    if (db.napSleeps.some((s) => s.nap_session_id === sessionId && s.child_id === childId && !s.is_deleted)) return fail(MSG.excludeAfterSleep);
+    if (db.napExclusions.some((x) => x.nap_session_id === sessionId && x.child_id === childId && !x.is_deleted)) return fail(MSG.excludedTwice);
+    const row: NapExclusionRecord = { nap_exclusion_id: nextId(), nap_session_id: sessionId, child_id: childId, reason,
+      staff_id: user.staff_id ?? '', is_deleted: false, created_at: now() };
+    db.napExclusions.push(row);
+    log(user.account_id, '3', '1', 't_nap_exclusion', row.nap_exclusion_id, childId, null, JSON.stringify({ reason }));
+    publishNapChild(target.session.class_id, childId);
+    return ok(exclusionView(row)!);
+  },
+
+  /** 戻す（POST /api/nap/exclusions/{id}/cancel）。実施中だけ */
+  async cancelExclusion(user: SessionUser, exclusionId: number): Promise<{ ok: true }> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    const row = db.napExclusions.find((x) => x.nap_exclusion_id === exclusionId && !x.is_deleted);
+    if (!row) return fail(MSG.contactForbidden);
+    const target = napSleepTarget(user, row.nap_session_id, row.child_id);
+    if (!target.session) return fail(target.error ?? MSG.contactForbidden);
+    row.is_deleted = true;
+    log(user.account_id, '3', '4', 't_nap_exclusion', row.nap_exclusion_id, row.child_id, JSON.stringify({ reason: row.reason }), null);
+    publishNapChild(target.session.class_id, row.child_id);
+    return ok({ ok: true });
+  },
 };
 
 /** 'YYYY-MM-DDTHH:MM:SS' に秒を足す */

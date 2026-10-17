@@ -421,3 +421,56 @@ func TestGuardianToday(t *testing.T) {
 		t.Fatalf("ねたのあと: %+v", after.Today)
 	}
 }
+
+// きょうは対象外（詳細設計書「午睡の園児」(3-4)）。「ねた」のある子は対象外にできず、対象外の子は「ねた」を押せない。
+// 戻すと「まだ」に戻る。知らせは nap だけ（保護者へは送らない。監査の層）
+func TestNapExclusion(t *testing.T) {
+	a, h := newTestApp(t)
+	teacher := loginAs(a, accTeacher, "staff")
+	otherTeacher := loginAs(a, accOtherTeacher, "staff")
+	guardian := loginAs(a, accGuardian, "guardian")
+	s := startOwnNap(t, h, teacher)
+	base := "/api/nap/session/" + itoa(s.NapSessionID)
+	clients := map[string]*liveClient{
+		"さくら組の担任":   listen(a, accTeacher),
+		"野原 太郎の保護者": listen(a, accGuardian),
+	}
+	drainAll(clients)
+
+	expectStatus(t, request(t, h, otherTeacher, "POST", base+"/exclusions", `{"child_id":"C001","reason":"1"}`), http.StatusForbidden)
+	expectStatus(t, request(t, h, guardian, "POST", base+"/exclusions", `{"child_id":"C001","reason":"1"}`), http.StatusForbidden)
+	expectStatus(t, request(t, h, teacher, "POST", base+"/exclusions", `{"child_id":"C001","reason":"3"}`), http.StatusBadRequest)
+
+	var x napExclusionOut
+	decode(t, call(t, h, teacher, "POST", base+"/exclusions", `{"child_id":"C001","reason":"1"}`), &x)
+	if x.Reason != "1" || x.ChildID != "C001" {
+		t.Fatalf("対象外: %+v", x)
+	}
+	expect(t, "対象外（保護者へは送らない）", clients,
+		to(who("さくら組の担任"), liveEvent{Type: evNap, ClassID: classSakura, ChildID: childTaro}))
+	b := expectStatus(t, request(t, h, teacher, "POST", base+"/exclusions", `{"child_id":"C001","reason":"2"}`), http.StatusConflict)
+	if !strings.Contains(b, kindAlreadyExists) {
+		t.Errorf("二重の対象外: %s", b)
+	}
+	b = expectStatus(t, request(t, h, teacher, "POST", base+"/sleeps", `{"child_id":"C001"}`), http.StatusConflict)
+	if !strings.Contains(b, msgSleepExcluded) {
+		t.Errorf("対象外のねた: %s", b)
+	}
+	// 保護者の連絡帳には対象外を出さない（監査の層）
+	if body := call(t, h, guardian, "GET", "/api/contact/children/C001", "").Body.String(); strings.Contains(body, "exclusion") || strings.Contains(body, "欠席") {
+		t.Errorf("保護者の応答に対象外が入っている: %s", body)
+	}
+
+	call(t, h, teacher, "POST", "/api/nap/exclusions/"+itoa(x.ID)+"/cancel", "")
+	drainAll(clients)
+	call(t, h, teacher, "POST", base+"/sleeps", `{"child_id":"C001"}`)
+	b = expectStatus(t, request(t, h, teacher, "POST", base+"/exclusions", `{"child_id":"C001","reason":"1"}`), http.StatusBadRequest)
+	if !strings.Contains(b, msgExcludeAfterSleep) {
+		t.Errorf("ねたのある子の対象外: %s", b)
+	}
+	var n int
+	a.db.QueryRow(`SELECT COUNT(*) FROM t_operation_log WHERE function_type = '3' AND target_table = 't_nap_exclusion'`).Scan(&n)
+	if n != 2 {
+		t.Errorf("対象外の操作ログ = %d, want 2（作成・削除）", n)
+	}
+}

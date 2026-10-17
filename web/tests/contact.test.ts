@@ -248,3 +248,23 @@ describe('ねた・おきた（詳細設計書「午睡の園児」(3-4)）', ()
     expect(db.operationLogs.filter((l) => l.target_table === 't_nap_sleep').length).toBeGreaterThanOrEqual(3);
   });
 });
+
+describe('きょうは対象外（詳細設計書「午睡の園児」(3-4)）', () => {
+  it('対象外の子は「ねた」を押せず、戻すと押せる。「ねた」のある子は対象外にできない。保護者には出さない', async () => {
+    const sessionId = await freshSession();
+    await expect(api.exclude(otherTeacher, sessionId, 'C006', '1')).rejects.toThrow(MSG.contactForbidden);
+    await expect(api.exclude(teacher, sessionId, 'C006', '3' as never)).rejects.toThrow(MSG.badChoice);
+    const x = await api.exclude(teacher, sessionId, 'C006', '1');
+    expect(x.reason).toBe('1');
+    await expect(api.exclude(teacher, sessionId, 'C006', '2')).rejects.toThrow(MSG.excludedTwice);
+    await expect(api.sleep(teacher, sessionId, 'C006')).rejects.toThrow(MSG.sleepExcluded);
+    const state = await api.classState(teacher, 1, sessionId);
+    expect(state.find((r) => r.child.child_id === 'C006')?.exclusion?.reason).toBe('1');
+
+    await api.cancelExclusion(teacher, x.nap_exclusion_id);
+    await api.sleep(teacher, sessionId, 'C006');
+    await expect(api.exclude(teacher, sessionId, 'C006', '1')).rejects.toThrow(MSG.excludeAfterSleep);
+    expect(db.operationLogs.filter((l) => l.target_table === 't_nap_exclusion').map((l) => l.operation_type)).toEqual(expect.arrayContaining(['1', '4']));
+    await api.endSession(teacher, sessionId);
+  });
+});
