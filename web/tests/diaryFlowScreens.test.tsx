@@ -9,13 +9,14 @@
  * ここでは画面の出し分けと操作を確かめる。時計は tests/setup-clock.ts の 18:00 のまま使う。
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor, fireEvent, within } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, fireEvent, within, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import App from '../src/App';
 import { SessionProvider } from '../src/session';
 import { api } from '../src/api/client';
+import * as db from '../src/api/mockDb';
 import type { SessionUser } from '../src/api/types';
-import { addDays, today } from '../src/api/util';
+import { addDays, now, today } from '../src/api/util';
 
 const admin: SessionUser = {
   account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
@@ -126,6 +127,25 @@ describe('日誌作成・編集画面（#174 の 2・5）', () => {
     fireEvent.change(screen.getByLabelText('対象の園児'), { target: { value: 'C013' } }); // ひまわり組
     await waitFor(() => expect(classSelect().value).toBe('2'));
     expect((screen.getByText('確認へ進む') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('書いたあとに園児のクラスが変わった下書きは、開くと園児のいまのクラスが入り、そのまま保存できる', async () => {
+    // C004 はさくら組（1）。ひまわり組（2）にいたころに書いた下書き、という形を作る
+    const id = 99_101;
+    db.diaries.unshift({
+      diary_id: id, record_type: '1', child_id: 'C004', class_id: 2, diary_date: today(), body: '前のクラスで書いた下書き',
+      status: '1', created_staff_id: 'S005', approved_staff_id: null, approved_at: null,
+      is_shared_to_guardian: false, shared_at: null, nap_abnormal_id: null, returned_reason: null,
+      is_deleted: false, created_at: now(), updated_at: now(),
+    });
+    open(`/staff/diary/${id}`, teacher);
+    await settled();
+    // 選択肢に無い値（ひまわり組）のままでも欄にはさくら組が見えるため、欄の値では待てない。
+    // 園児のクラスを引く問い合わせ（モックは 60ms で返る）が済むまで待つ
+    await act(async () => { await new Promise((r) => setTimeout(r, 300)); });
+    fireEvent.click(screen.getByText('下書き保存'));
+    await screen.findByText('下書きを保存しました');
+    expect(db.diaries.find((d) => d.diary_id === id)?.class_id).toBe(1);
   });
 
   it('記録日に未来の日付を打ち込むと、確認へ進まずに理由を出す', async () => {

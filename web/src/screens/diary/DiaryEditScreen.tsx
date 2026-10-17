@@ -73,6 +73,14 @@ export default function DiaryEditScreen() {
       setRecordType(d.record_type);
       setChildId(d.child_id ?? '');
       setClassId(d.class_id ?? '');
+      /*
+       * 書いたあとに園児のクラスが変わった、またはクラスの空いた（以前の版の）個人日誌は、直せるうちは
+       * 園児のいまの在籍クラスを入れる。担当外のクラスのままでは保存を断られ、一般はクラスを選び直せない（GitHub Issue #174）
+       */
+      if (d.child_id && d.status !== '2' && d.status !== '3'
+        && (d.class_id == null || !classesForUser.some((c) => c.class_id === d.class_id))) {
+        api.classOf(user!, d.child_id).then((c) => { if (c != null) setClassId(c); }, () => {});
+      }
       setDate(d.diary_date);
       setBody(d.body);
       api.attachmentsOf(user!, d.diary_id).then((a) => setPhotos(a.map((x) => x.file_path)));
