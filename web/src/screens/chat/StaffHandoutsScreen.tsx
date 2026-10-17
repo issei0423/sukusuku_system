@@ -13,6 +13,7 @@ import { useSession } from '../../session';
 import { api, selectableClasses, settingNumber, settingText } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Alert, Modal, Tag } from '../../components/ui';
 import HandoutViewer from '../../components/HandoutViewer';
+import { notify } from '../../components/feedback';
 import { HANDOUT_TYPE } from '../../api/codes';
 import { formatFileSize, formatMonth, formatMDHM, today } from '../../api/util';
 import type { Handout } from '../../api/types';
@@ -59,14 +60,20 @@ export default function StaffHandoutsScreen() {
       });
       setFormOpen(false);
       setTick((n) => n + 1);
+      // 操作が通ったことを画面の下端に出す（図/画面詳細図.md「全画面に共通する規定」(0-2)「完了の表示」。GitHub Issue #175 の 5）
+      notify(`「${fTitle.trim()}」を掲載しました`);
     } catch (e) { setFormError((e as Error).message); } finally { setBusy(false); }
   };
 
   const withdraw = async () => {
     if (!withdrawing) return;
     setError(null);
-    try { await api.withdrawHandout(user!, withdrawing.handout_id); setWithdrawing(null); setTick((n) => n + 1); }
-    catch (e) { setError((e as Error).message); setWithdrawing(null); }
+    try {
+      await api.withdrawHandout(user!, withdrawing.handout_id);
+      setWithdrawing(null);
+      setTick((n) => n + 1);
+      notify(`「${withdrawing.title}」を取り下げました`);
+    } catch (e) { setError((e as Error).message); setWithdrawing(null); }
   };
 
   return (
