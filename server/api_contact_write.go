@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"net/http"
 	"strings"
 )
@@ -168,24 +169,42 @@ func (a *app) handleSaveHome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	at := now()
+	// 検査と書き込みのあいだに、ほかのご家族の送信が入ったら書き込まない（同時編集の検出。基本設計書 (4-2)）。
+	// 初めての行は一意の制約（園児×日）が、送り直しは読んだ版（updated_at）の条件が止める
+	conflict := false
 	if old == nil {
 		_, err = a.db.Exec(`INSERT INTO t_contact_home (child_id, contact_date, guardian_id, temperature, night_sleep_from, night_sleep_to,
 			breakfast, mood_label, pickup_type, pickup_person, pickup_time, message, submitted_at, created_at, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			childID, day, u.guardian(), v.Temperature, v.NightSleepFrom, v.NightSleepTo, v.Breakfast, v.MoodLabel,
 			v.PickupType, v.PickupPerson, v.PickupTime, v.Message, at, at, at)
+		if err != nil {
+			if again, _ := a.loadContactHome(childID, day); again != nil {
+				conflict, err = true, nil
+			}
+		}
 	} else {
 		// 確認済み・更新の行を送り直すと「更新」（確認を外し、revised_at に今）。未確認のままなら未確認（詳細設計書 (3-1)）
 		revised := old.RevisedAt
 		if old.ConfirmedAt != nil || old.RevisedAt != nil {
 			revised = &at
 		}
-		_, err = a.db.Exec(`UPDATE t_contact_home SET guardian_id = ?, temperature = ?, night_sleep_from = ?, night_sleep_to = ?,
+		var res sql.Result
+		res, err = a.db.Exec(`UPDATE t_contact_home SET guardian_id = ?, temperature = ?, night_sleep_from = ?, night_sleep_to = ?,
 			breakfast = ?, mood_label = ?, pickup_type = ?, pickup_person = ?, pickup_time = ?, message = ?, submitted_at = ?,
 			confirmed_staff_id = NULL, confirmed_at = NULL, revised_at = ?, updated_at = ?
-			WHERE contact_home_id = ?`,
+			WHERE contact_home_id = ? AND updated_at = ?`,
 			u.guardian(), v.Temperature, v.NightSleepFrom, v.NightSleepTo, v.Breakfast, v.MoodLabel,
-			v.PickupType, v.PickupPerson, v.PickupTime, v.Message, at, revised, at, old.ID)
+			v.PickupType, v.PickupPerson, v.PickupTime, v.Message, at, revised, at, old.ID, old.UpdatedAt)
+		if err == nil {
+			if n, _ := res.RowsAffected(); n == 0 {
+				conflict = true
+			}
+		}
+	}
+	if conflict {
+		writeJSON(w, http.StatusConflict, apiError{Message: msgHomeConflict, Kind: kindVersionConflict})
+		return
 	}
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, msgContactSaveFailed)
@@ -252,9 +271,19 @@ func (a *app) handleConfirmHome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	at := now()
-	if _, err := a.db.Exec(`UPDATE t_contact_home SET confirmed_staff_id = ?, confirmed_at = ?, updated_at = ?
-		WHERE contact_home_id = ? AND confirmed_at IS NULL`, u.staff(), at, at, id); err != nil {
+	// 読んだ版のまま、まだ確認されていないときだけ書く（あいだに保護者が直していたら 409）
+	res, err := a.db.Exec(`UPDATE t_contact_home SET confirmed_staff_id = ?, confirmed_at = ?, updated_at = ?
+		WHERE contact_home_id = ? AND confirmed_at IS NULL AND updated_at = ?`, u.staff(), at, at, id, in.UpdatedAt)
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, msgContactSaveFailed)
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		if cur, _ := a.loadContactHome(childID, date); cur != nil && cur.ConfirmedAt != nil {
+			writeJSON(w, http.StatusOK, a.homeView(cur, true))
+			return
+		}
+		writeJSON(w, http.StatusConflict, apiError{Message: msgConfirmConflict, Kind: kindVersionConflict})
 		return
 	}
 	a.log(u.AccountID, fnContact, opUpdate, "t_contact_home", i64(id), &childID, nil, s(jsonText(map[string]string{"確認": "確認しました"})))

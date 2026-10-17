@@ -562,6 +562,11 @@ run('Go サーバとの結合', () => {
       expect(await otherStream.waitFor('"child_id":"C001"', 500)).toBe(false);
     } finally {
       controller.abort();
+      // 後のテストと手での確かめのために、「おきた」にして戻しておく
+      const after = await (await send('/api/contact/children/C001', {}, staff)).json() as { sleeps: { nap_sleep_id: number; woke_at: string | null }[] };
+      for (const sl of after.sleeps.filter((x) => !x.woke_at)) {
+        await send(`/api/nap/sleeps/${sl.nap_sleep_id}/wake`, { method: 'POST', body: '{}' }, staff);
+      }
       for (const jar of [staff, guardian, other]) await send('/api/logout', { method: 'POST', body: '{}' }, jar);
     }
   });
