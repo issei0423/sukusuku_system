@@ -57,6 +57,29 @@ func (a *app) handleStaffSummary(w http.ResponseWriter, r *http.Request) {
 	for _, c := range children {
 		visible[c.ChildID] = true
 	}
+	// 家庭からの「未確認」「更新」と、おひるね中の園児（詳細設計書「ダッシュボード」(4-8 (2))）。今日のページだけを数える。
+	// 一般は自クラス、管理者は全クラス（visibleChildren の範囲）
+	homeUnconfirmed, homeRevised, napSleeping := 0, 0, 0
+	for _, c := range children {
+		h, err := a.loadContactHome(c.ChildID, today())
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "集計に失敗しました")
+			return
+		}
+		switch homeState(h) {
+		case "unconfirmed":
+			homeUnconfirmed++
+		case "revised":
+			homeRevised++
+		}
+		var sleeping int
+		a.db.QueryRow(`SELECT COUNT(*) FROM t_nap_sleep s JOIN t_nap_session n ON n.nap_session_id = s.nap_session_id
+			WHERE s.child_id = ? AND s.woke_at IS NULL AND s.is_deleted = 0 AND n.ended_at IS NULL AND n.session_date = ?`,
+			c.ChildID, today()).Scan(&sleeping)
+		if sleeping > 0 {
+			napSleeping++
+		}
+	}
 
 	// 発達チェックの未実施。園児ごとに最新の予定日で判定し、発達チェック一覧の「未実施」と同じ数にする
 	// （判定は api_dev.go の devOverdue。過去の予定をすべて数えると一覧と食い違う。GitHub Issue #164）
@@ -117,6 +140,9 @@ func (a *app) handleStaffSummary(w http.ResponseWriter, r *http.Request) {
 		"pending":              pending,
 		"abnormalWithoutDiary": abnormalWithoutDiary,
 		"activeNap":            activeNap,
+		"homeUnconfirmed":      homeUnconfirmed,
+		"homeRevised":          homeRevised,
+		"napSleeping":          napSleeping,
 	})
 }
 
@@ -180,7 +206,8 @@ func (a *app) handleGuardianHome(w http.ResponseWriter, r *http.Request) {
 		writeForbidden(w, "保護者ホームは保護者のみが利用できます")
 		return
 	}
-	children, err := a.visibleChildren(u)
+	// 「きょう」は連絡帳を読める自児ごとに1件（猶予中を含む。contact_scope.go の guardianContactChildren）
+	children, err := a.guardianContactChildren(u)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "取得に失敗しました")
 		return
@@ -203,6 +230,8 @@ func (a *app) handleGuardianHome(w http.ResponseWriter, r *http.Request) {
 		ClassName     string  `json:"className"`
 		SharedDiaries []Diary `json:"sharedDiaries"`
 		Unread        int     `json:"unread"`
+		// 園児1人の「きょう」（詳細設計書「ダッシュボード」(4-8 (1)) の GuardianToday）
+		Today *guardianTodayOut `json:"today"`
 	}
 	out := []homeRow{}
 	for _, c := range children {
@@ -223,14 +252,24 @@ func (a *app) handleGuardianHome(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// 承認済みかつ共有指定のある個人日誌だけが保護者に見える。ヒヤリハットは共有の対象外
-		// （基本設計書「日誌システム」(4-5)。条件は api_diary.go の visibleDiaryCondition と同じ）
-		diaries, _ := a.queryDiaries(`SELECT `+diaryColumns+` FROM t_diary
-			WHERE is_deleted = 0 AND child_id = ? AND record_type = '1' AND status = '3' AND is_shared_to_guardian = 1
-			ORDER BY diary_date DESC`, childID)
-		if diaries == nil {
-			diaries = []Diary{}
+		// （基本設計書「日誌システム」(4-5)。条件は api_diary.go の visibleDiaryCondition と同じ）。
+		// 日誌は有効な紐づけの自児だけ（canSeeChild）。猶予中の子を並べても、日誌の範囲は広げない
+		diaries := []Diary{}
+		if a.canSeeChild(u, childID) {
+			diaries, _ = a.queryDiaries(`SELECT `+diaryColumns+` FROM t_diary
+				WHERE is_deleted = 0 AND child_id = ? AND record_type = '1' AND status = '3' AND is_shared_to_guardian = 1
+				ORDER BY diary_date DESC`, childID)
+			if diaries == nil {
+				diaries = []Diary{}
+			}
 		}
 		out[i].SharedDiaries = diaries
+		t, err := a.guardianToday(u, childID)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "取得に失敗しました")
+			return
+		}
+		out[i].Today = t
 	}
 	writeJSON(w, http.StatusOK, out)
 }

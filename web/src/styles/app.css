@@ -66,6 +66,15 @@
   }
 }
 
+/*
+ * 画面の上端の帯（components/ConnectionBanner.tsx。詳細設計書「つながっているかの表示」(2-8)）。
+ * サーバに届かないときは警告色、保護者の「自動で読み直しています」は細い帯。午睡チェック画面では大きく出す
+ */
+.connection-banner { margin: 0 0 var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: 8px; font-weight: 700; }
+.connection-banner.is-unreachable { background: var(--c-alert); color: var(--dads-white); }
+.connection-banner.is-unreachable.is-large { min-height: 64px; display: flex; align-items: center; font-size: 20px; }
+.connection-banner.is-fallback { padding: var(--sp-1) var(--sp-3); background: var(--c-alert-soft); color: var(--c-primary-ink); font-weight: 400; font-size: var(--fs-small); }
+
 .staff-body { flex: 1; display: flex; min-height: 0; position: relative; }
 
 /*

@@ -52,6 +52,9 @@ func openDB(path string) (*sql.DB, error) {
 		if err := shiftSeedDates(db); err != nil {
 			return nil, err
 		}
+		if err := trimFutureDemoContacts(db); err != nil {
+			return nil, err
+		}
 		log.Printf("デモデータを投入しました")
 	}
 	if err := upgradeGrowthStandards(db); err != nil {
@@ -70,6 +73,9 @@ func openDB(path string) (*sql.DB, error) {
 		return nil, err
 	}
 	if err := ensureNapAbnormalRecordedAt(db); err != nil {
+		return nil, err
+	}
+	if err := ensureContactSchema(db); err != nil {
 		return nil, err
 	}
 	return db, nil

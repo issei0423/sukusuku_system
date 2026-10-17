@@ -62,6 +62,8 @@ const (
 	evDevelopment = "development"
 	// 身体測定の記録が登録・上書き・削除された
 	evPhysical = "physical"
+	// 連絡帳（家庭から・確認しました・きょうのようす・ねた・おきた・園から）が変わった（詳細設計書「知らせの種類と送り先」(6-2)）
+	evContact = "contact"
 )
 
 /*
@@ -261,7 +263,7 @@ func (a *app) handleEvents(w http.ResponseWriter, r *http.Request) {
 			if !a.liveSessionAlive(r, u.AccountID) {
 				return
 			}
-			fmt.Fprint(w, ": ping\n\n")
+			fmt.Fprint(w, "event: ping\ndata:\n\n")
 			if rc.Flush() != nil {
 				return
 			}
@@ -362,11 +364,11 @@ func (a *app) notifyRead(roomID int64, reader *SessionUser) {
 
 // ---- 誰に送るか（日誌システム。基本設計書「日誌システム」(4-5)） ----
 
-// notifyDiary は、その日誌を参照できる人へ送る（handleGetDiary と同じ判定。canSeeDiary）。
-// 保護者には、承認済みで共有した自児の個人日誌だけが届く
+// notifyDiary は、その日誌を参照できる職員へ送る（handleGetDiary と同じ判定。canSeeDiary）。
+// 保護者へは送らない（詳細設計書「PR #196 からの変更」(6-1)。日誌の共有の道そのものは日誌の作り直しで外す）
 func (a *app) notifyDiary(diaryID int64) {
 	a.notify(liveEvent{Type: evDiary, DiaryID: diaryID}, func(u *SessionUser) bool {
-		return a.canSeeDiary(u, diaryID)
+		return u.isStaff() && a.canSeeDiary(u, diaryID)
 	})
 }
 
@@ -397,36 +399,43 @@ func (a *app) notifyHandout(handoutID int64, classID *int64) {
 notifyNapSession は、午睡チェックの開始・終了を送る。
 
 職員は、そのクラスを扱える人（午睡チェック画面・ダッシュボードの「実施中の午睡チェック」と同じ。canUseClass）。
-保護者は、そのクラスに自児がいる人（canSeeChild）。午睡の「ねた・おきた」は保護者へ届けるものになるため
-（設計方針（作り直しの案）「きょうのようす」(3-1)・「開いている画面：SSE」(5-1)）、知らせの道を先に通しておく。
+保護者へは送らない（詳細設計書「PR #196 からの変更」(6-1)）。保護者に届ける「ねた・おきた」は contact で送る（notifyContactChild）。
 */
 func (a *app) notifyNapSession(classID int64) {
-	children, _ := a.classChildIDs(classID)
 	a.notify(liveEvent{Type: evNap, ClassID: classID}, func(u *SessionUser) bool {
-		if u.isStaff() {
-			return a.canUseClass(u, classID)
-		}
-		for _, id := range children {
-			if a.canSeeChild(u, id) {
-				return true
-			}
-		}
-		return false
+		return u.isStaff() && a.canUseClass(u, classID)
 	})
 }
 
 /*
 notifyNapChild は、園児1人の午睡の記録を送る。
 
-職員は、その園児を参照できる人（canSeeChild）。保護者へは toGuardians のときだけ、その園児と紐づく人へ送る。
-異常時の記録・ヒヤリハットは園内の記録で、保護者が読む API が無いため送らない（基本設計書「異常時の記録」(4-7)）。
+職員は、その園児を参照できる人（canSeeChild）。保護者へは送らない（詳細設計書「PR #196 からの変更」(6-1)）。
+5分ごとの確認・入眠時の体温・対象外・異常時の記録は監査の層で、保護者へは届けない。
+「ねた」「おきた」は、あわせて notifyContactChild で保護者へも届ける。
 */
-func (a *app) notifyNapChild(classID int64, childID string, toGuardians bool) {
+func (a *app) notifyNapChild(classID int64, childID string) {
 	a.notify(liveEvent{Type: evNap, ClassID: classID, ChildID: childID}, func(u *SessionUser) bool {
-		if u.isGuardian() && !toGuardians {
+		return u.isStaff() && a.canSeeChild(u, childID)
+	})
+}
+
+/*
+notifyContactChild は、園児1人の連絡帳が変わったことを送る（詳細設計書「知らせの種類と送り先」(6-2)）。
+
+送る相手は、読み直す経路と同じ判定（contactAccess の Read）で決める。職員は担任のクラス・管理者・フリー、
+保護者は紐づけが有効か猶予中の家庭だけ。保護者には、その記録の種類が contact.show_items で外されていれば送らない
+（知らせが届くこと自体が情報になるため。基本設計書「SSE の知らせの範囲の判定」(6-2)）。
+item は home・nap・meal・toilet・temperature・comment・photo・facility。
+「ねた」「おきた」は notifyNapChild（職員だけ）とあわせて呼ぶ。モックは web/src/api/mock.ts の publishContactChild。
+*/
+func (a *app) notifyContactChild(childID, item string) {
+	guardianSees := a.guardianSeesItem(item)
+	a.notify(liveEvent{Type: evContact, ChildID: childID}, func(u *SessionUser) bool {
+		if !a.contactAccess(u, childID).Read {
 			return false
 		}
-		return a.canSeeChild(u, childID)
+		return u.isStaff() || guardianSees
 	})
 }
 

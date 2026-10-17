@@ -18,7 +18,7 @@ export default function StaffDashboard() {
   // 開いたままでも、保護者からのチャットや承認の結果がすぐに件数に表れるよう、知らせ（live.ts）を受けて読み直す
   // （知らせが切れている間は数秒ごとに読み直す）
   const { data, error, loading } = useAsync(() => api.staffSummary(user!), [user?.account_id],
-    { refreshMs: AUTO_REFRESH_MS, live: onLive('chat', 'diary', 'nap', 'development') });
+    { refreshMs: AUTO_REFRESH_MS, live: onLive('chat', 'diary', 'nap', 'development', 'contact') });
   // 管理者に限る画面を開こうとして戻されたとき（App.tsx の RequireAdmin）
   const denied = (useLocation().state as { denied?: string } | null)?.denied === 'admin';
 
@@ -68,6 +68,37 @@ export default function StaffDashboard() {
       )}
 
       <div className="grid12">
+        {/*
+          届ける（詳細設計書「職員ダッシュボード（「届ける」の項目）」(2-1)）。デモの道に要る項目を先頭に置く。
+          一般は自クラス、管理者は全クラスの数。0 のときも項目を消さず「ありません」と出す。
+          園からのひとことを送っていない園児の数は、園からを送る画面を作る段で足す
+        */}
+        <section className="card col-12 dashboard-deliver" aria-labelledby="dashboard-deliver-title">
+          <h2 id="dashboard-deliver-title">届ける</h2>
+          <table className="list">
+            <tbody>
+              <tr>
+                <td>家庭からの連絡</td>
+                <td className="nowrap">
+                  {data.homeUnconfirmed + data.homeRevised === 0 ? 'ありません' : (
+                    <>
+                      <span className={data.homeUnconfirmed > 0 ? 'dashboard-count is-due' : 'dashboard-count'}>未確認 {data.homeUnconfirmed}</span>
+                      {'　'}
+                      <span className={data.homeRevised > 0 ? 'dashboard-count is-due' : 'dashboard-count'}>更新 {data.homeRevised}</span>
+                    </>
+                  )}
+                </td>
+                <td className="nowrap"><Link className="btn btn-sm" to="/staff/contact?sort=home">開く</Link></td>
+              </tr>
+              <tr>
+                <td>午睡中の園児</td>
+                <td className="nowrap">{data.napSleeping === 0 ? 'ありません' : `${data.napSleeping} 名`}</td>
+                <td className="nowrap"><Link className="btn btn-sm" to="/staff/nap">開く</Link></td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
         {/* 未対応 */}
         <section className="card col-7">
           <h2>未対応</h2>
