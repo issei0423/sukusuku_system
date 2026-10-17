@@ -68,8 +68,16 @@ func (a *app) handleListChildren(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rows)
 }
 
+/*
+ * 園児情報・アレルギー・既往歴は、保護者には返さない
+ * （基本設計書「権限と利用可能機能」(6-1)「園児情報の参照｜保護者 ×」「既往歴の参照｜保護者 ×」
+ * 「アレルギー一覧の参照｜保護者 ×」）。保護者の画面はどれも使っていない。
+ * 自児であっても、平熱・写真の利用同意の段階・既往歴は園内で扱う情報である（GitHub Issue #157）。
+ * 画面側のモック（web/src/api/mock.ts の getChild・allergiesOf・medicalHistoriesOf）と同じ規則
+ */
+
 func (a *app) handleGetChild(w http.ResponseWriter, r *http.Request) {
-	u, ok := a.requireUser(w, r)
+	u, ok := a.requireStaff(w, r)
 	if !ok {
 		return
 	}
@@ -105,7 +113,7 @@ func (a *app) allergiesOf(childID string) []Allergy {
 }
 
 func (a *app) handleAllergiesOf(w http.ResponseWriter, r *http.Request) {
-	u, ok := a.requireUser(w, r)
+	u, ok := a.requireStaff(w, r)
 	if !ok {
 		return
 	}
@@ -118,7 +126,7 @@ func (a *app) handleAllergiesOf(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *app) handleMedicalHistoriesOf(w http.ResponseWriter, r *http.Request) {
-	u, ok := a.requireUser(w, r)
+	u, ok := a.requireStaff(w, r)
 	if !ok {
 		return
 	}
@@ -194,14 +202,23 @@ func (a *app) handleAllAllergies(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// handleClassOfChild は園児の所属クラスを返す。
+// その園児を参照できる人に限る。クラス番号だけでも、園児IDがあるかどうかと所属が分かるため
+// （基本設計書「権限チェックの実装方針」(6-2)「園児IDを直接指定した不正な取得を許さない」。GitHub Issue #153）
 func (a *app) handleClassOfChild(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.requireUser(w, r); !ok {
+	u, ok := a.requireUser(w, r)
+	if !ok {
+		return
+	}
+	childID := r.PathValue("childID")
+	if !a.canSeeChild(u, childID) {
+		writeForbidden(w, "この園児を参照する権限がありません")
 		return
 	}
 	var id sql.NullInt64
 	a.db.QueryRow(`SELECT cc.class_id FROM t_class_child cc
 	                JOIN m_class c ON c.class_id = cc.class_id AND c.fiscal_year = ?
-	               WHERE cc.child_id = ?`, fiscalYear, r.PathValue("childID")).Scan(&id)
+	               WHERE cc.child_id = ?`, fiscalYear, childID).Scan(&id)
 	writeJSON(w, http.StatusOK, nullInt(id))
 }
 

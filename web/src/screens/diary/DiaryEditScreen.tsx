@@ -75,12 +75,12 @@ export default function DiaryEditScreen() {
       setClassId(d.class_id ?? '');
       setDate(d.diary_date);
       setBody(d.body);
-      api.attachmentsOf(d.diary_id).then((a) => setPhotos(a.map((x) => x.file_path)));
+      api.attachmentsOf(user!, d.diary_id).then((a) => setPhotos(a.map((x) => x.file_path)));
     }
     // 申請中・承認済みは編集できない。読むだけの人にロックを取らせない（GitHub Issue #110）
     // ロックは取らないが、ほかの職員が開いていればその旨は出す（画面詳細図 3-2）
     if (d.status === '2' || d.status === '3') {
-      api.lockOf(d.diary_id).then((l) => {
+      api.lockOf(user!, d.diary_id).then((l) => {
         const idle = settingNumber('ui.diary_lock_minutes', 15);
         if (l && l.locked_staff_id !== user!.staff_id && plusMinutes(l.last_active_at, idle) > now()) {
           setHeldBy(l.staff_name);
@@ -117,7 +117,7 @@ export default function DiaryEditScreen() {
   };
 
   const past = useAsync(
-    async () => (childId ? api.pastDiariesOf(childId, diaryId ?? undefined) : []),
+    async () => (childId ? api.pastDiariesOf(user!, childId, diaryId ?? undefined) : []),
     [childId, diaryId],
   );
 

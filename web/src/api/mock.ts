@@ -19,8 +19,14 @@ import type {
   DevelopmentCheck, DevelopmentResultRecord, DevelopmentItem, ChatRoom, ChatMessage,
   OperationLog, Allergy, FunctionType, OperationType, Paged, Handout,
 } from './types';
-import { ageInMonths, now, today, addDays, plusMinutes, fromNowMinutes, napAutoCloseAt, normalizeInvitationCode, validateEmail } from './util';
+import {
+  ageInMonths, now, today, addDays, plusMinutes, fromNowMinutes, napAutoCloseAt, normalizeInvitationCode, validateEmail,
+  validateNewPassword, isRealDate,
+} from './util';
 import { BODY_POSITION, BREATHING, COMPLEXION, REACTION, HANDOUT_TYPE } from './codes';
+import {
+  ProcedureRequiredError, SESSION_ENDED_MESSAGE, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
+} from './procedure';
 import type {
   LoginError, ChildInput, DiaryFilter, DiaryInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
 } from './shapes';
@@ -36,6 +42,15 @@ function ok<T>(value: T): Promise<T> {
 }
 function fail<T = never>(message: string): Promise<T> {
   return new Promise((_, reject) => setTimeout(() => reject(new Error(message)), 60));
+}
+
+/**
+ * ログイン中の利用者を、もう通さないときの応答。サーバの 401（server/session.go の requireLogin）にあたる。
+ * 画面（App.tsx）へ知らせて入口へ戻させる（api/procedure.ts の onSessionEnded。GitHub Issue #159）
+ */
+function sessionEnded<T = never>(): Promise<T> {
+  notifySessionEnded();
+  return fail(SESSION_ENDED_MESSAGE);
 }
 
 /* ============ 採番 ============ */
@@ -185,6 +200,34 @@ export function selectableClasses(user: SessionUser): ClassRoom[] {
   return current.filter((c) => c.class_id === user.class_id);
 }
 
+/**
+ * その日誌を参照できるか。個人日誌・ヒヤリハットは対象園児で、クラス日誌・週案は対象クラスで判定する。
+ * 保護者に見えるのは、承認済みかつ保護者へ共有した自児の個人日誌のみ。承認済みであっても参照範囲は広がらない
+ * （基本設計書「日誌の作成から保護者への共有」(4-5)）。クラス日誌・週案月案・ヒヤリハットは保護者への共有の
+ * 対象外であり、共有の印が付いてしまったものがあっても見せない（同 (4-5)。GitHub Issue #157）。
+ * サーバ側（server/api_diary.go の visibleDiaryCondition・canSeeDiary）と同じ規則
+ */
+function canSeeDiary(user: SessionUser, d: Diary): boolean {
+  if (d.is_deleted) return false;
+  if (user.role === '1') return true;
+  if (user.role === '2') {
+    if (d.child_id) return canSeeChild(user, d.child_id);
+    return user.class_id != null && d.class_id === user.class_id;
+  }
+  return d.record_type === '1' && d.status === '3' && d.is_shared_to_guardian
+    && !!d.child_id && canSeeChild(user, d.child_id);
+}
+
+/**
+ * 保護者が見られない日誌を開いたときの文言。自児の共有されていない日誌・他児の日誌・無い日誌を同じ文言にし、
+ * あるかどうかを推測させない（図/画面詳細図.md「共有日誌閲覧画面」(2-8)）。
+ * サーバ側（server/api_diary.go の unsharedDiaryMessage）と同じ文言
+ */
+const UNSHARED_DIARY_MESSAGE = 'この記録は共有されていません';
+
+/** 職員に限る操作を、保護者が呼んだときの文言。サーバ側（server/session.go の requireStaff）と同じ */
+const STAFF_ONLY_MESSAGE = '職員のみが行えます';
+
 /* ============ 認証（基本設計書「共通基盤：ログインとアカウント」(4-3)） ============ */
 
 function buildSessionUser(a: Account): SessionUser {
@@ -220,7 +263,6 @@ export const authApi = {
     if (a.locked_until && a.locked_until > now()) {
       return fail(JSON.stringify({ kind: 'locked', until: a.locked_until } satisfies LoginError));
     }
-    if (a.status === '2') return fail(JSON.stringify({ kind: 'suspended' } satisfies LoginError));
 
     if (a.password_hash !== password) {
       a.failed_login_count += 1;
@@ -239,6 +281,10 @@ export const authApi = {
       return fail(JSON.stringify({ kind: 'credential', remaining: max - a.failed_login_count } satisfies LoginError));
     }
 
+    // 停止の判定は、パスワードの照合のあとに行う。照合より前に行うと、パスワードを知らない人にも
+    // 停止中のアカウントがあることを示してしまう（GitHub Issue #159。server/api_auth.go の handleLogin と同じ順）
+    if (a.status === '2') return fail(JSON.stringify({ kind: 'suspended' } satisfies LoginError));
+
     // 系統の判定。職員用トップからは保護者を、保護者用トップからは職員を通さない
     const isStaffAccount = a.role === '1' || a.role === '2';
     if (entrance === 'staff' && !isStaffAccount) {
@@ -246,6 +292,12 @@ export const authApi = {
     }
     if (entrance === 'guardian' && isStaffAccount) {
       return fail(JSON.stringify({ kind: 'wrong_entrance', correct: 'staff' } satisfies LoginError));
+    }
+
+    // 一時パスワードでのログインなら、有効期限内かを判定する。期限切れなら管理者への連絡を案内する
+    // （基本設計書「ログイン」(4-3)、メッセージ一覧 (4-9)。GitHub Issue #159）
+    if (a.is_temp_password && a.temp_password_expires_at && a.temp_password_expires_at < now()) {
+      return fail(JSON.stringify({ kind: 'temp_expired' } satisfies LoginError));
     }
 
     a.failed_login_count = 0;
@@ -259,10 +311,13 @@ export const authApi = {
   async changePassword(accountId: number, current: string, next: string): Promise<void> {
     const a = findAccount(accountId);
     if (!a) return fail('アカウントが見つかりません');
+    if (a.status === '2') return sessionEnded();
     if (a.password_hash !== current) return fail('現在のパスワードが違います');
-    if (next.length < 8) return fail('パスワードは8文字以上で入力してください');
     // 現在と同じパスワードへの変更は認めない（基本設計書「パスワードの要件」(6-3)）
     if (next === current) return fail('現在と同じパスワードは使えません。別のパスワードを入力してください。');
+    // 8〜128文字（文字数で数える）。よく使われるパスワードは拒否する（server/password.go と同じ規則。GitHub Issue #159）
+    const passwordError = validateNewPassword(next);
+    if (passwordError) return fail(passwordError);
     a.password_hash = next;
     a.is_temp_password = false;
     a.temp_password_expires_at = null;
@@ -275,6 +330,7 @@ export const authApi = {
   async agreeTerms(accountId: number): Promise<void> {
     const a = findAccount(accountId);
     if (!a) return fail('アカウントが見つかりません');
+    if (a.status === '2') return sessionEnded();
     a.terms_version = CURRENT_TERMS_VERSION;
     a.terms_agreed_at = now();
     recordTermsAgreement(accountId, a.terms_agreed_at);
@@ -312,7 +368,10 @@ export const authApi = {
   /** ログイン中の利用者を組み直す。パスワード変更・規約同意のあと画面を進めるために使う */
   async reloadSession(accountId: number): Promise<SessionUser> {
     const a = findAccount(accountId);
-    return a ? ok(buildSessionUser(a)) : fail('アカウントが見つかりません');
+    if (!a) return fail('アカウントが見つかりません');
+    // 停止中のアカウントは、ログイン中であっても通さない（server/session.go の requireLogin。GitHub Issue #159）
+    if (a.status === '2') return sessionEnded();
+    return ok(buildSessionUser(a));
   },
 };
 
@@ -332,13 +391,21 @@ export const childApi = {
     return ok([...rows].sort((a, b) => a.child_name_kana.localeCompare(b.child_name_kana, 'ja')));
   },
 
+  /*
+   * 園児情報・アレルギー・既往歴は、保護者には返さない（基本設計書「権限と利用可能機能」(6-1)「園児情報の参照｜保護者 ×」
+   * 「既往歴の参照｜保護者 ×」「アレルギー一覧の参照｜保護者 ×」。GitHub Issue #157）。保護者の画面はどれも使っていない。
+   * サーバ側は server/api_child.go の handleGetChild・handleAllergiesOf・handleMedicalHistoriesOf（requireStaff）
+   */
   async getChild(user: SessionUser, childId: string): Promise<Child> {
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
     if (!canSeeChild(user, childId)) return fail('この園児を参照する権限がありません');
     const c = findChild(childId);
     return c ? ok(c) : fail('園児が見つかりません');
   },
 
-  async allergiesOf(childId: string): Promise<Allergy[]> {
+  async allergiesOf(user: SessionUser, childId: string): Promise<Allergy[]> {
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
+    if (!canSeeChild(user, childId)) return fail('この園児を参照する権限がありません');
     return ok(db.allergies.filter((a) => a.child_id === childId));
   },
 
@@ -355,11 +422,18 @@ export const childApi = {
     return ok(rows);
   },
 
-  async medicalHistoriesOf(childId: string) {
+  async medicalHistoriesOf(user: SessionUser, childId: string) {
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
+    if (!canSeeChild(user, childId)) return fail('この園児を参照する権限がありません');
     return ok(db.medicalHistories.filter((m) => m.child_id === childId));
   },
 
-  async classOf(childId: string): Promise<number | null> {
+  /**
+   * 園児の所属クラス。その園児を参照できる人に限る。クラス番号だけでも、園児IDがあるかどうかと
+   * 所属が分かるため（基本設計書「権限チェックの実装方針」(6-2)。サーバ側は server/api_child.go の handleClassOfChild）
+   */
+  async classOf(user: SessionUser, childId: string): Promise<number | null> {
+    if (!canSeeChild(user, childId)) return fail('この園児を参照する権限がありません');
     return ok(db.classChildren.find((cc) => cc.child_id === childId)?.class_id ?? null);
   },
 
@@ -451,6 +525,8 @@ export const diaryApi = {
     const myClasses = new Set(selectableClasses(user).map((c) => c.class_id));
 
     let rows = db.diaries.filter((d) => !d.is_deleted).filter((d) => {
+      // 保護者は、承認済みかつ共有した自児の個人日誌だけ（サーバ側の visibleDiaryCondition と同じ。GitHub Issue #157）
+      if (user.role === '3') return canSeeDiary(user, d);
       // 個人日誌・ヒヤリハットは対象園児で、クラス日誌・週案は対象クラスで参照範囲を判定する
       if (d.child_id) return visible.has(d.child_id);
       return d.class_id != null && myClasses.has(d.class_id);
@@ -469,8 +545,10 @@ export const diaryApi = {
 
   async getDiary(user: SessionUser, diaryId: number): Promise<Diary> {
     const d = db.diaries.find((x) => x.diary_id === diaryId && !x.is_deleted);
+    // 保護者には、見られない日誌を「この記録は共有されていません」と示す（画面詳細図 2-8。GitHub Issue #157）
+    if (user.role === '3' && (!d || !canSeeDiary(user, d))) return fail(UNSHARED_DIARY_MESSAGE);
     if (!d) return fail('日誌が見つかりません');
-    if (d.child_id && !canSeeChild(user, d.child_id)) return fail('この日誌を参照する権限がありません');
+    if (!canSeeDiary(user, d)) return fail('この日誌を参照する権限がありません');
     // 記入した職員・確認した職員の氏名を載せる。Go サーバ（server/api_diary.go の enrich）と同じ
     return ok({
       ...d,
@@ -481,10 +559,25 @@ export const diaryApi = {
 
   async templates(): Promise<typeof db.diaryTemplates> { return ok(db.diaryTemplates); },
   async phrases(): Promise<string[]> { return ok(db.fixedPhrases); },
-  async attachmentsOf(diaryId: number) { return ok(db.diaryAttachments.filter((a) => a.diary_id === diaryId)); },
+  /**
+   * 日誌の添付。日誌本体と同じ参照範囲に従う（基本設計書「日誌の作成から保護者への共有」(4-5)・
+   * 「添付ファイルの実体の保存先」(5-5)）。サーバ側は server/api_diary.go の handleDiaryAttachments
+   */
+  async attachmentsOf(user: SessionUser, diaryId: number) {
+    const d = db.diaries.find((x) => x.diary_id === diaryId);
+    if (!d || !canSeeDiary(user, d)) return fail('この日誌を参照する権限がありません');
+    return ok(db.diaryAttachments.filter((a) => a.diary_id === diaryId));
+  },
 
-  /** その園児の過去の記録。前回の記述を見ながら書けるようにする（画面詳細図 3-2） */
-  async pastDiariesOf(childId: string, excludeDiaryId?: number): Promise<Diary[]> {
+  /**
+   * その園児の過去の記録。前回の記述を見ながら書けるようにする（画面詳細図 3-2）
+   * 職員の編集画面のための経路であり、保護者には使わせない。下書き・申請中・差し戻し（理由を含む）・ヒヤリハットまで、
+   * 共有していない日誌がすべて返るため（基本設計書 6-1 ※3「自児のみ、かつ共有されたものに限る」。GitHub Issue #157）。
+   * サーバ側は server/api_diary.go の handlePastDiaries
+   */
+  async pastDiariesOf(user: SessionUser, childId: string, excludeDiaryId?: number): Promise<Diary[]> {
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
+    if (!canSeeChild(user, childId)) return fail('この園児を参照する権限がありません');
     return ok(db.diaries
       .filter((d) => !d.is_deleted && d.child_id === childId && d.diary_id !== excludeDiaryId)
       .sort((a, b) => b.diary_date.localeCompare(a.diary_date)));
@@ -495,6 +588,9 @@ export const diaryApi = {
    * すでに他者が保持していれば、その職員名を返して画面に出す
    */
   async acquireLock(user: SessionUser, diaryId: number): Promise<{ token: string } | { heldBy: string }> {
+    // ロックを取れるのは、その日誌を参照できる職員に限る（サーバ側は server/api_diary_write.go の handleAcquireLock）
+    const d = db.diaries.find((x) => x.diary_id === diaryId);
+    if (!d || !canSeeDiary(user, d)) return fail('この日誌を編集する権限がありません');
     const idle = settingNumber('ui.diary_lock_minutes', 15);
     const held = db.diaryLocks.find((l) => l.diary_id === diaryId);
     if (held && held.locked_staff_id !== user.staff_id) {
@@ -518,7 +614,10 @@ export const diaryApi = {
     return ok(undefined);
   },
 
-  async lockOf(diaryId: number) {
+  /** 編集ロックの状態。誰が編集中かは日誌の中身と同じ範囲で見せる（サーバ側は handleLockOf） */
+  async lockOf(user: SessionUser, diaryId: number) {
+    const d = db.diaries.find((x) => x.diary_id === diaryId);
+    if (!d || !canSeeDiary(user, d)) return fail('この日誌を参照する権限がありません');
     const l = db.diaryLocks.find((x) => x.diary_id === diaryId);
     return ok(l ? { ...l, staff_name: staffName(l.locked_staff_id) } : null);
   },
@@ -532,11 +631,20 @@ const diaryApi2 = {
     if (input.record_type === '1' || input.record_type === '4') {
       if (!input.child_id) return fail('対象の園児を選んでください');
       if (!canSeeChild(user, input.child_id)) return fail('この園児の日誌を作成する権限がありません');
+    } else {
+      // クラス日誌・週案は対象クラスで参照範囲を判定する。一般が扱えるのは自クラスに限る
+      // （要件定義書「参照範囲の全体規定」(4-1-5)）。サーバ側は server/api_diary_write.go の handleSaveDiary
+      if (input.class_id == null && user.role !== '1') return fail('対象のクラスを選んでください');
+      if (input.class_id != null && !canUseClass(user, input.class_id)) {
+        return fail('このクラスの日誌を作成する権限がありません');
+      }
     }
 
     if (input.diary_id) {
       const d = db.diaries.find((x) => x.diary_id === input.diary_id);
       if (!d) return fail('日誌が見つかりません');
+      // 書き換える日誌そのものも参照範囲の内に限る。他クラスの日誌を日誌IDで指定して書き換えさせない
+      if (!canSeeDiary(user, d)) return fail('この日誌を編集する権限がありません');
       // 保存時にロックのトークンを照合する（基本設計書 5-4）
       const lock = db.diaryLocks.find((l) => l.diary_id === d.diary_id);
       if (lock && lock.lock_token !== input.lock_token) {
@@ -591,6 +699,11 @@ const diaryApi2 = {
     const d = db.diaries.find((x) => x.diary_id === diaryId);
     if (!d) return fail('日誌が見つかりません');
     if (d.status !== '2') return fail('申請中の日誌のみ承認できます');
+    // 共有を選べるのは個人日誌だけ。クラス日誌・週案月案・ヒヤリハットは保護者への共有の対象外とする
+    // （基本設計書「日誌システム」(4-5)。GitHub Issue #61・#157）。サーバ側は server/api_diary_write.go の handleApproveDiary
+    if (shareToGuardian && d.record_type !== '1') {
+      return fail('保護者へ共有できるのは個人日誌だけです。共有しないで承認してください');
+    }
     // 【仮置き】承認は、作成者とは別の管理者による確認として扱う（GitHub Issue #106）。
     // 申請者と承認者が同じでよいかは設計に定めが無い（web/仮置き値.md）
     if (d.created_staff_id === user.staff_id) {
@@ -607,9 +720,10 @@ const diaryApi2 = {
     log(user.account_id, '1', '3', 't_diary', d.diary_id, d.child_id, '申請中',
       shareToGuardian ? '承認済み・保護者へ共有' : '承認済み・共有しない');
 
-    // 共有する場合、個人チャットへ日誌の共有としてメッセージを流す（基本設計書 5-5 source_type=2）
+    // 共有する場合、個人チャットへ日誌の共有としてメッセージを流す（基本設計書 5-5 source_type=2）。
+    // 個人チャットは園児ID で引く。部屋の名前で探すと、同じ氏名の別の園児の家庭へ流れる（GitHub Issue #163）
     if (shareToGuardian && d.child_id) {
-      const room = db.chatRooms.find((r) => r.room_type === '4' && r.room_name === `${childName(d.child_id)}の保護者`);
+      const room = db.chatRooms.find((r) => r.room_type === '4' && r.child_id === d.child_id);
       if (room) {
         db.chatMessages.push({
           chat_message_id: nextId(), chat_room_id: room.chat_room_id, sender_account_id: user.account_id,
@@ -637,8 +751,12 @@ const diaryApi2 = {
     return ok(d);
   },
 
-  /** 園児タイムライン。承認済みの記録を時系列で並べる */
+  /**
+   * 園児タイムライン。記録を時系列で並べる。職員の画面のための経路であり、保護者には使わせない
+   * （pastDiariesOf と同じ。サーバ側は server/api_diary.go の handleTimeline。GitHub Issue #157）
+   */
   async timelineOf(user: SessionUser, childId: string): Promise<Diary[]> {
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
     if (!canSeeChild(user, childId)) return fail('この園児を参照する権限がありません');
     return ok(db.diaries
       .filter((d) => !d.is_deleted && d.child_id === childId)
@@ -1155,9 +1273,18 @@ export const napApi = {
     return ok(s);
   },
 
+  /**
+   * 終了。そのクラスを扱える職員が、実施中の実施を終了するときに限る（基本設計書「午睡チェックの実施」(4-7)
+   * 「午睡チェックの開始・参照・記録は、一般（保育士）は自クラスに限る」。GitHub Issue #158）。
+   * 終了した実施（自動で解除されたものを含む）は、終了時刻と終了した職員を書き換えない。
+   * サーバ側は server/api_nap.go の handleEndNapSession
+   */
   async endSession(user: SessionUser, sessionId: number): Promise<void> {
+    autoCloseNapSessions();
     const s = db.napSessions.find((x) => x.nap_session_id === sessionId);
-    if (!s) return fail('実施中の午睡チェックが見つかりません');
+    if (!s) return fail('午睡チェックが見つかりません');
+    if (!canUseClass(user, s.class_id)) return fail('このクラスの午睡チェックを終了する権限がありません');
+    if (s.ended_at !== null) return fail('この午睡チェックはすでに終了しています。画面を読み込み直してください');
     s.ended_staff_id = user.staff_id;
     s.ended_at = now();
     log(user.account_id, '3', '2', 't_nap_session', sessionId, null, '実施中', '終了');
@@ -1217,7 +1344,14 @@ export const napApi = {
     return ok(r);
   },
 
-  /** 異常時の記録。ヒヤリハットの起票は別操作（基本設計書「異常時の記録」(4-7)） */
+  /**
+   * 異常時の記録。ヒヤリハットの起票は別操作（基本設計書「異常時の記録」(4-7)）
+   *
+   * 記録は、その園児のクラスの、実施中の午睡チェックにつなぐ（GitHub Issue #158）。起票するヒヤリハットの
+   * 「対象のクラス」は実施のクラスから引くため。終了した実施へは記録しない（午睡の記録と同じ）。
+   * 【仮置き】実施中の午睡チェックが無いときは記録できない。記録の操作で午睡チェックを開始しない（web/仮置き値.md）。
+   * サーバ側は server/api_nap.go の handleRecordNapAbnormal
+   */
   async recordAbnormal(
     user: SessionUser, sessionId: number,
     input: { child_id: string; found_at: string; situation: string; response: string },
@@ -1227,9 +1361,21 @@ export const napApi = {
     if (tooLong(input.situation, 1000) || tooLong(input.response, 1000)) {
       return fail('発見時の状況と、とった対応は、それぞれ1,000文字以内で入力してください');
     }
+    const foundAt = input.found_at || now();
+    const problem = foundAtProblem(foundAt);
+    if (problem) return fail(problem);
+    if (!canSeeChild(user, input.child_id)) return fail('この園児を記録する権限がありません');
+    autoCloseNapSessions();
+    const session = db.napSessions.find((x) => x.nap_session_id === sessionId);
+    if (!session) return fail('午睡チェックが見つかりません');
+    if (!canUseClass(user, session.class_id)) return fail('このクラスの午睡チェックへ記録する権限がありません');
+    if (!db.classChildren.some((cc) => cc.class_id === session.class_id && cc.child_id === input.child_id)) {
+      return fail('この園児のクラスの午睡チェックではありません。園児のクラスの午睡チェックへ記録してください');
+    }
+    if (session.ended_at !== null) return fail('この午睡チェックは終了しています。画面を読み込み直してください');
     const a: NapAbnormal = {
       nap_abnormal_id: nextId(), nap_session_id: sessionId, staff_id: user.staff_id!,
-      diary_id: null, ...input,
+      diary_id: null, ...input, found_at: foundAt,
     };
     db.napAbnormals.unshift(a);
     log(user.account_id, '3', '1', 't_nap_abnormal', a.nap_abnormal_id, input.child_id, null, '異常時の記録');
@@ -1238,13 +1384,21 @@ export const napApi = {
 
   /** 異常時の記録からヒヤリハットを起票し、相互に参照させる（基本設計書 5-6） */
   async raiseIncidentDiary(user: SessionUser, abnormalId: number): Promise<Diary> {
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
     const a = db.napAbnormals.find((x) => x.nap_abnormal_id === abnormalId);
     if (!a) return fail('異常時の記録が見つかりません');
+    // 起票できるのは、その園児を参照できる職員に限る。拒否するときは中身も起票済みかどうかも返さない
+    // （基本設計書 6-1「異常時の記録 一般 ※1」。GitHub Issue #158。サーバ側は handleRaiseIncidentDiary）
+    if (!canSeeChild(user, a.child_id)) return fail('この園児の記録からヒヤリハットを起票する権限がありません');
     if (a.diary_id) return fail('この記録からはすでにヒヤリハットを起票しています');
     const session = db.napSessions.find((s) => s.nap_session_id === a.nap_session_id);
+    // 記録日は発見時刻の日付。検査を入れる前の崩れた値では、その実施の日にする（サーバ側と同じ）
+    const head = a.found_at.slice(0, 10);
+    const diaryDate = isISODate(head) ? head
+      : session && isISODate(session.session_date) ? session.session_date : today();
     const d: Diary = {
       diary_id: nextId(), record_type: '4', child_id: a.child_id,
-      class_id: session?.class_id ?? null, diary_date: a.found_at.slice(0, 10),
+      class_id: session?.class_id ?? null, diary_date: diaryDate,
       body: `【発生日時】\n${a.found_at.replace('T', ' ')}\n\n【状況】\n${a.situation}\n\n【とった対応】\n${a.response}\n\n【今後の対策】\n`,
       status: '1', created_staff_id: user.staff_id!, approved_staff_id: null, approved_at: null,
       is_shared_to_guardian: false, shared_at: null, nap_abnormal_id: abnormalId,
@@ -1338,6 +1492,31 @@ function advanceDevelopmentSchedule(user: SessionUser, check: DevelopmentCheck, 
   log(user.account_id, '4', '1', 't_development_schedule', null, childId, null, `次回予定日=${next}（実施日から算出）`);
 }
 
+/** 園児の最新の予定 */
+function latestSchedule(childId: string) {
+  return db.developmentSchedules
+    .filter((s) => s.child_id === childId)
+    .sort((a, b) => b.scheduled_on.localeCompare(a.scheduled_on))[0] ?? null;
+}
+
+/** 園児の、いちばん新しい確定した実施 */
+function lastConfirmedCheck(childId: string) {
+  return db.developmentChecks
+    .filter((c) => c.child_id === childId && c.status === '2')
+    .sort((a, b) => b.checked_on.localeCompare(a.checked_on))[0] ?? null;
+}
+
+/**
+ * 発達チェックが「未実施」か。園児の最新の予定日を過ぎていて、その予定日以降に確定した実施が無ければ未実施とする。
+ * 予定日の当日は、まだ未実施にしない（基本設計書「発達チェックの実施」(4-8)「実施予定日を過ぎて」。GitHub Issue #164）。
+ * 発達チェック一覧（list）と職員ダッシュボード（staffSummary）が同じ判定を使い、件数を食い違わせない。
+ * サーバ側は server/api_dev.go の devOverdue
+ */
+function isDevOverdue(scheduledOn: string | null, lastCheckedOn: string | null): boolean {
+  if (!scheduledOn || scheduledOn >= today()) return false;
+  return !lastCheckedOn || lastCheckedOn < scheduledOn;
+}
+
 export const devApi = {
   /** 月齢から発達過程区分を引く。区分はマスタから読む（画面詳細図 6-1） */
   categoryFor(ageMonths: number) {
@@ -1359,15 +1538,10 @@ export const devApi = {
       .filter((c) => ids.has(c.child_id))
       .sort((a, b) => a.child_name_kana.localeCompare(b.child_name_kana, 'ja'))
       .map((child) => {
-        const sch = db.developmentSchedules
-          .filter((s) => s.child_id === child.child_id)
-          .sort((a, b) => b.scheduled_on.localeCompare(a.scheduled_on))[0] ?? null;
-        const last = db.developmentChecks
-          .filter((c) => c.child_id === child.child_id && c.status === '2')
-          .sort((a, b) => b.checked_on.localeCompare(a.checked_on))[0] ?? null;
+        const sch = latestSchedule(child.child_id);
+        const last = lastConfirmedCheck(child.child_id);
         const scheduledOn = sch?.scheduled_on ?? null;
-        const overdue = !!scheduledOn && scheduledOn <= today()
-          && (!last || last.checked_on < scheduledOn);
+        const overdue = isDevOverdue(scheduledOn, last?.checked_on ?? null);
         // 未入力は、その実施日の月齢に対応する項目のうち、結果のレコードが無いものを数える
         let unfilled = 0;
         if (last) {
@@ -1422,8 +1596,17 @@ export const devApi = {
     if (user.role === '3') return fail('発達チェックの入力は職員のみが行えます');
     if (!canSeeChild(user, childId)) return fail('この園児を記録する権限がありません');
     if (tooLong(note, 1000)) return fail('所見は1,000文字以内で入力してください');
+    // 実施日は、形の崩れた値と未来日を断る（基本設計書「入力項目の制約値」(4-9)「記録日・測定日 未来日は認めない」、
+    // 画面詳細図 6-2 項目3。GitHub Issue #164）。サーバ側は server/api_dev_write.go の handleSaveDevelopmentCheck
+    if (!isISODate(checkedOn)) return fail('実施日の形式が正しくありません');
+    if (checkedOn > today()) return fail('実施日に未来日は指定できません');
 
     let check = db.developmentChecks.find((c) => c.child_id === childId && c.checked_on === checkedOn);
+    // 確定した記録は、下書きに戻さない。確定のまま直すことはできる。下書きに戻すと、確定で作った次回の予定日だけが残り、
+    // 一覧とダッシュボードの「未実施」が食い違うため（GitHub Issue #164）。【仮置き】確定を取り消す操作は設けない
+    if (check && check.status === '2' && status === '1') {
+      return fail('確定した発達チェックは下書きに戻せません。直すときは「確定する」で保存してください');
+    }
     if (!check) {
       check = {
         development_check_id: nextId(), child_id: childId, development_schedule_id: null,
@@ -1492,6 +1675,8 @@ const devApi2 = {
 
   async setSchedule(user: SessionUser, childId: string, scheduledOn: string, manual: boolean): Promise<void> {
     if (user.role !== '1') return fail('スケジュールの設定は管理者のみが行えます');
+    // 予定日は 'YYYY-MM-DD' の形の、実在する日付に限る（GitHub Issue #164。サーバ側は handleSetSchedule）
+    if (!isISODate(scheduledOn)) return fail('次回の予定日の形式が正しくありません');
     // 手で決める予定日に、過ぎた日は入れさせない。「提案に戻す」は、予定日を過ぎた園児では
     // 提案そのものが過去の日になるため、対象にしない
     if (manual && scheduledOn < today()) return fail('次回の予定日に、過ぎた日は指定できません');
@@ -1557,10 +1742,15 @@ export const physicalApi = {
     return ok({ target, done, pending });
   },
 
+  /**
+   * 園児の測定値。保護者に見せるのは、共有した（連携済の）測定値だけ（基本設計書 6-1「成長グラフの閲覧｜保護者 ※3」、
+   * 5-7 share_status＝2:連携済。GitHub Issue #157）。サーバ側は server/api_physical.go の handlePhysicalRecords
+   */
   async recordsOf(user: SessionUser, childId: string): Promise<PhysicalRecord[]> {
     if (!canSeeChild(user, childId)) return fail('この園児を参照する権限がありません');
     return ok(db.physicalRecords
       .filter((r) => !r.is_deleted && r.child_id === childId)
+      .filter((r) => user.role !== '3' || r.share_status === '2')
       .sort((a, b) => b.measured_on.localeCompare(a.measured_on)));
   },
 
@@ -1904,6 +2094,15 @@ const adminApi2 = {
       const a = findAccount(g.account_id);
       if (a) { a.status = '2'; a.updated_at = now(); }
     }
+    /*
+     * 解除するとその園児の記録を参照できなくなる（画面詳細図 7-8 項目6）。保護者は left_at が入った時点で
+     * 参照できなくなる（基本設計書「チャット」(5-5)）。その園児の個人チャットと、ほかに有効な紐づけのある園児が
+     * 在籍していないクラスのクラスグループに left_at を入れる（GitHub Issue #159。server/api_admin.go の leaveRoomsOfChild）。
+     * サーバはあわせてログイン中のセッションを切る。モックはセッションを持たないため、有効な紐づけがゼロに
+     * なって停止したアカウントを、呼ばれるたびに断る（下の guardProcedure）
+     */
+    if (g) leaveRoomsOfChild(g.account_id, guardianId, childId);
+
     // 紐づけの表は数値の主キーを持たない。相手が分かるよう、保護者のアカウントを対象として残す
     log(user.account_id, '7', '2', 't_guardian_child', g?.account_id ?? null, childId, '有効',
       remaining === 0 ? '終了（有効な紐づけがゼロのためアカウントを停止）' : '終了');
@@ -1929,10 +2128,50 @@ const adminApi2 = {
       a.updated_at = now();
       after = '有効（アカウントを再開）';
     }
+    if (a) rejoinRoomsOfChild(a.account_id, childId);
     log(user.account_id, '7', '2', 't_guardian_child', g?.account_id ?? null, childId, '終了', after);
     return ok(undefined);
   },
 };
+
+/** その園児が在籍するクラス */
+const classIdsOfChild = (childId: string) =>
+  new Set(db.classChildren.filter((cc) => cc.child_id === childId).map((cc) => cc.class_id));
+
+/**
+ * 紐づけを解除した保護者を、その園児の個人チャットと、ほかに有効な紐づけのある園児が在籍していないクラスの
+ * クラスグループから外す（left_at を入れる）。所属していた期間の記録は残す（基本設計書 5-5）。
+ * サーバ側（server/api_admin.go の leaveRoomsOfChild）と同じ規則
+ */
+function leaveRoomsOfChild(accountId: number, guardianId: string, childId: string): void {
+  const classes = classIdsOfChild(childId);
+  const stillLinkedClasses = new Set(db.classChildren
+    .filter((cc) => db.guardianChildren.some((gc) =>
+      gc.guardian_id === guardianId && gc.child_id === cc.child_id && gc.link_status === '1'))
+    .map((cc) => cc.class_id));
+  const leave = new Set(db.chatRooms
+    .filter((r) => (r.room_type === '4' && r.child_id === childId)
+      || (r.room_type === '2' && r.class_id !== null && classes.has(r.class_id) && !stillLinkedClasses.has(r.class_id)))
+    .map((r) => r.chat_room_id));
+  db.chatMembers
+    .filter((m) => m.account_id === accountId && m.left_at === null && leave.has(m.chat_room_id))
+    .forEach((m) => { m.left_at = now(); });
+}
+
+/**
+ * 紐づけを戻した保護者を、その園児の個人チャットとクラスグループへ戻す（left_at を空にする）。
+ * 誤って解除したときの戻し先であり、解除の前の状態へ戻す（GitHub Issue #118・#159。server/api_admin.go の rejoinRoomsOfChild）
+ */
+function rejoinRoomsOfChild(accountId: number, childId: string): void {
+  const classes = classIdsOfChild(childId);
+  const rooms = new Set(db.chatRooms
+    .filter((r) => (r.room_type === '4' && r.child_id === childId)
+      || (r.room_type === '2' && r.class_id !== null && classes.has(r.class_id)))
+    .map((r) => r.chat_room_id));
+  db.chatMembers
+    .filter((m) => m.account_id === accountId && m.left_at !== null && rooms.has(m.chat_room_id))
+    .forEach((m) => { m.left_at = null; });
+}
 
 /** 推測困難な値とする（基本設計書 5-2）。モックのため乱数の強度は本実装で見直す */
 function randomCode(): string {
@@ -1957,6 +2196,11 @@ const adminApi3 = {
   async signUpGuardian(
     input: { code: string; email: string; password: string; guardian_name: string; relationship: string },
   ): Promise<SessionUser> {
+    /*
+     * この関数は、コードが未使用かを確かめてから使用済みにするまで、待たずに（await を挟まずに）進める。
+     * あいだに同じコードでの別の登録が割り込まないようにするため。1枚のコードは1アカウントの登録にのみ使える
+     * （基本設計書 5-2。GitHub Issue #163）。サーバ側は取引の中の条件付きの更新で同じことを守る（server/api_auth.go）
+     */
     const normalized = normalizeInvitationCode(input.code);
     const c = db.invitationCodes.find((x) => normalizeInvitationCode(x.code) === normalized);
     if (!c || c.status !== '1' || c.expires_on < today()) return fail('招待コードが確認できません');
@@ -1965,7 +2209,9 @@ const adminApi3 = {
     const emailError = validateEmail(input.email);
     if (emailError) return fail(emailError);
     if (db.accounts.some((a) => a.email === input.email)) return fail('このメールアドレスはすでに登録されています');
-    if (input.password.length < 8) return fail('パスワードは8文字以上で入力してください');
+    // 8〜128文字（文字数で数える）。よく使われるパスワードは拒否する（server/password.go と同じ規則。GitHub Issue #159）
+    const passwordError = validateNewPassword(input.password);
+    if (passwordError) return fail(passwordError);
     if (!input.guardian_name.trim()) return fail('保護者の氏名を入力してください');
 
     const accountId = nextId();
@@ -1991,8 +2237,9 @@ const adminApi3 = {
     c.used_account_id = accountId;
     c.used_at = now();
 
-    // 自児の個人チャットへ参加させる
-    const room = db.chatRooms.find((r) => r.room_type === '4' && r.room_name === `${childName(c.child_id)}の保護者`);
+    // 自児の個人チャットへ参加させる。個人チャットは園児ID で引く。部屋の名前（園児名＋「の保護者」）で探すと、
+    // 同じ氏名の別の園児がいるとき、別の家庭の個人チャットに入ってしまう（GitHub Issue #163。#140）
+    const room = db.chatRooms.find((r) => r.room_type === '4' && r.child_id === c.child_id);
     if (room) db.chatMembers.push({ chat_room_id: room.chat_room_id, account_id: accountId, joined_at: now(), left_at: null });
     const classId = db.classChildren.find((cc) => cc.child_id === c.child_id)?.class_id ?? null;
     const classRoom = classId ? db.chatRooms.find((r) => r.room_type === '2' && r.class_id === classId) : null;
@@ -2059,11 +2306,34 @@ const adminApi3 = {
 
 /* ============ CSV一括登録・年度更新（基本設計書 4-4） ============ */
 
+const CSV_HEADER = ['園児ID', '氏名', '氏名かな', '生年月日', '性別', 'クラス名', '平熱'];
+const CSV_HEADER_MESSAGE = `見出しの並びが取込の様式と違います。1行目を「${CSV_HEADER.join(',')}」の順にしてください（平熱の列は省けます）`;
+
+/** 見出しの並びが取込の様式と同じか。平熱の列は省いてよい。BOM 付きでも読む（server/api_bulk.go の checkCsvHeader） */
+function isCsvHeader(line: string): boolean {
+  const cols = line.replace(/^﻿/, '').split(',').map((c) => c.trim());
+  if (cols.length < CSV_HEADER.length - 1 || cols.length > CSV_HEADER.length) return false;
+  return cols.every((c, i) => c === CSV_HEADER[i]);
+}
+
+/** 園児IDの上限（基本設計書「入力項目の制約値」(4-9)「園児ID・職員ID｜20文字以内」） */
+const CHILD_ID_MAX_LENGTH = 20;
+
+/**
+ * 平熱として受け取る書き方。小数第1位までの数（基本設計書「入力項目の制約値」(4-9)「体温｜30.0〜43.0℃、
+ * 小数第1位まで」）。平熱が数値でない行は誤りとする（同「CSV一括登録」(4-4)）。範囲の外は誤りとせず確認を促す。
+ * 【仮置き】整数部は3桁まで（web/仮置き値.md）。サーバ側（server/api_bulk.go の temperatureRe）と同じ規則（GitHub Issue #160）
+ */
+const TEMPERATURE_FORMAT = /^\d{1,3}(\.\d)?$/;
+
 const bulkApi = {
   /** 取込内容とエラー行の確認。取り込む前に全行を検証して返す（画面詳細図の様式に合わせる） */
   parseChildCsv(text: string): { header: string[]; rows: CsvRow[] } {
-    const header = ['園児ID', '氏名', '氏名かな', '生年月日', '性別', 'クラス名', '平熱'];
+    const header = CSV_HEADER;
     const lines = text.split(/\r?\n/).filter((l) => l.trim() !== '');
+    // 見出しの並びが違うときは、行を読まずにファイルごと断る。行を読み進めると、別の列の値を
+    // 園児ID や氏名として取り込んでしまうため（GitHub Issue #160。server/api_bulk.go の checkCsvHeader）
+    if (lines[0]?.includes('園児ID') && !isCsvHeader(lines[0])) throw new Error(CSV_HEADER_MESSAGE);
     const body = lines[0]?.includes('園児ID') ? lines.slice(1) : lines;
 
     // 同じ取込の中での重複も弾く。ファイル内で同じ園児IDが2度出ることがある
@@ -2078,19 +2348,22 @@ const bulkApi = {
         errors.push('列が足りません（園児ID,氏名,氏名かな,生年月日,性別,クラス名,平熱）');
       } else {
         if (!values[0]) errors.push('園児IDが空です');
+        else if (tooLong(values[0], CHILD_ID_MAX_LENGTH)) errors.push('園児IDは20文字以内で入力してください');
         else if (seen.has(values[0])) errors.push('同じ園児IDがこのファイル内で重複しています');
         else if (db.children.some((c) => c.child_id === values[0])) errors.push('その園児IDはすでに登録されています');
         if (!values[1]) errors.push('氏名が空です');
         if (!values[2]) errors.push('氏名かなが空です');
         else if (!isKana(values[2])) errors.push('氏名かなは、ひらがなで入力してください');
         if (tooLong(values[1], 50) || tooLong(values[2], 50)) errors.push('氏名と氏名かなは、それぞれ50文字以内で入力してください');
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(values[3])) errors.push('生年月日は YYYY-MM-DD で入力してください');
+        // 実在する日付に限る（2025-02-30 を通さない）。生年月日は月齢算出の唯一の根拠（基本設計書 5-3。GitHub Issue #160）
+        if (!isRealDate(values[3])) errors.push('生年月日の形式が正しくありません。YYYY-MM-DD の形で、実在する日付を入力してください');
         else if (values[3] > today()) errors.push('生年月日に未来日は指定できません');
         if (!['1', '2', '9'].includes(values[4])) errors.push('性別は 1:男 2:女 9:未回答 で入力してください');
         if (!db.classes.some((c) => c.fiscal_year === db.FISCAL_YEAR && c.class_name === values[5])) errors.push('クラス名が見つかりません');
         if (values[6]) {
+          // Number() は Infinity・0x24・1e2 も数にする。数字と小数点だけの書き方に限る（TEMPERATURE_FORMAT）
           const t = Number(values[6]);
-          if (Number.isNaN(t)) errors.push('平熱は数値で入力してください');
+          if (!TEMPERATURE_FORMAT.test(values[6]) || !Number.isFinite(t)) errors.push('平熱は数値（小数第1位まで。例：36.5）で入力してください');
           else if (t < TEMPERATURE_MIN || t > TEMPERATURE_MAX) warning = '平熱が想定の範囲（30.0〜43.0℃）の外です。値を確かめてください';
         }
       }
@@ -2101,11 +2374,21 @@ const bulkApi = {
     return { header, rows };
   },
 
-  /** エラー行があるときは1件も取り込まない。中途半端な状態を作らないため */
-  // 第3引数の原文はサーバ実装（http.ts）が使う。モックでは検証済みの行をそのまま取り込む
-  async importChildCsv(user: SessionUser, rows: CsvRow[], _text?: string): Promise<number> {
+  /**
+   * エラー行があるときは1件も取り込まない。中途半端な状態を作らないため。
+   * 取り込む直前にもう一度検証する。画面が確認したときの原文（text）を、サーバ実装（http.ts）と同じく読み直す
+   * （server/api_bulk.go の handleImportChildCsv と同じ。GitHub Issue #160 の 3）
+   */
+  async importChildCsv(user: SessionUser, confirmed: CsvRow[], text?: string): Promise<number> {
     if (user.role !== '1') return fail('CSV一括登録は管理者のみが行えます');
+    let rows: CsvRow[];
+    try {
+      rows = bulkApi.parseChildCsv(text ?? confirmed.map((r) => r.values.join(',')).join('\n')).rows;
+    } catch (e) {
+      return fail((e as Error).message);
+    }
     if (rows.some((r) => r.error)) return fail('エラー行があるため取り込めません。すべて解消してから実行してください');
+    if (rows.length === 0) return fail('取り込む行がありません');
 
     rows.forEach((r) => {
       const [id, name, kana, birth, sex, clsName, temp] = r.values;
@@ -2169,14 +2452,10 @@ const dashboardApi = {
       ? { chat_room_id: unhandledRooms[0].chat_room_id, room_name: unhandledRooms[0].room_name }
       : null;
 
-    const devOverdue = db.developmentSchedules.filter((s) => {
-      if (!visible.has(s.child_id)) return false;
-      if (s.scheduled_on > today()) return false;
-      const last = db.developmentChecks
-        .filter((c) => c.child_id === s.child_id && c.status === '2')
-        .sort((a, b) => b.checked_on.localeCompare(a.checked_on))[0];
-      return !last || last.checked_on < s.scheduled_on;
-    }).length;
+    // 発達チェックの未実施。園児ごとに最新の予定日で判定し、発達チェック一覧の「未実施」と同じ数にする
+    // （過去の予定をすべて数えると一覧と食い違う。GitHub Issue #164。サーバ側は server/api_dashboard.go）
+    const devOverdue = [...visible].filter((childId) =>
+      isDevOverdue(latestSchedule(childId)?.scheduled_on ?? null, lastConfirmedCheck(childId)?.checked_on ?? null)).length;
 
     // 承認待ちの区画は管理者にのみ表示する
     const pending = user.role === '1' ? db.diaries.filter((d) => !d.is_deleted && d.status === '2').length : 0;
@@ -2193,6 +2472,9 @@ const dashboardApi = {
 
   /** 保護者ホーム。自児の情報とチャットへの導線（基本設計書「画面の一覧」(3-2)） */
   async guardianHome(user: SessionUser) {
+    // 保護者ホームは保護者のためのもの。職員が呼ぶと、参照範囲の園児すべてが「自児」として並ぶ
+    // （GitHub Issue #159 の 3。server/api_dashboard.go の handleGuardianHome と同じ）
+    if (user.role !== '3') return fail('保護者ホームは保護者のみが利用できます');
     const mine = user.guardian_id ? childrenOfGuardian(user.guardian_id) : [];
     const rooms = db.chatMembers.filter((m) => m.account_id === user.account_id && m.left_at === null).map((m) => m.chat_room_id);
     const unread = db.chatMessages.filter((m) =>
@@ -2204,9 +2486,9 @@ const dashboardApi = {
       child,
       ageMonths: ageInMonths(child.birth_date, today()),
       className: className(db.classChildren.find((cc) => cc.child_id === child.child_id)?.class_id ?? null),
-      // 共有された日誌のみ。承認と共有の指定が済んだものだけが保護者に見える
+      // 共有された個人日誌のみ。承認と共有の指定が済んだものだけが保護者に見える（canSeeDiary と同じ条件）
       sharedDiaries: db.diaries
-        .filter((d) => !d.is_deleted && d.child_id === child.child_id && d.status === '3' && d.is_shared_to_guardian)
+        .filter((d) => d.child_id === child.child_id && canSeeDiary(user, d))
         .sort((a, b) => b.diary_date.localeCompare(a.diary_date)),
       unread,
     })));
@@ -2311,13 +2593,58 @@ const handoutApi = {
   },
 };
 
+/* ============ 手続きを終えるまでの拒否（基本設計書「画面遷移」(3-4)） ============
+ *
+ * 一時パスワード中と規約の再同意が必要な間は、手続きの API 以外を拒否する（api/procedure.ts）。
+ * サーバ側は server/session.go の requireUser。サーバはセッションから利用者を引いて判定するが、
+ * モックでは引数に渡された利用者がセッションの代わりのため、その利用者の状態で判定する。
+ * 利用者を受け取らない関数（allergiesOf など）は、モックでは判定できない（参照範囲の判定も同じ）。
+ */
+
+/** 手続きの途中でも呼べるもの。手続きの画面（TopScreen・PasswordChangeScreen・TermsAgreeScreen）と新規登録が呼ぶ */
+const PROCEDURE_APIS = new Set([
+  'login', 'logout', 'bootstrap', 'reloadSession', 'changePassword', 'agreeTerms', 'currentTerms',
+  'verifyInvitationCode', 'signUpGuardian',
+]);
+
+function isSessionUser(v: unknown): v is SessionUser {
+  return typeof v === 'object' && v !== null && 'account_id' in v && 'is_temp_password' in v && 'terms_agreed' in v;
+}
+
+/*
+ * 停止中のアカウントは、ログイン中であっても通さない（GitHub Issue #159）。
+ * サーバはアカウントの停止・紐づけの解除のときにセッションを切り、要求のたびにアカウントの状態も読む
+ * （server/session.go の requireLogin・destroyAccount）。モックはセッションを持たないため、引数の利用者の
+ * アカウントの状態を、呼ばれるたびに読む。パスワードの変更・一時パスワードの再発行で「ほかの端末」を切る扱いは、
+ * 端末を区別できないため、モックには無い。
+ */
+function sessionAlive(u: SessionUser): boolean {
+  return findAccount(u.account_id)?.status !== '2';
+}
+
+function guardProcedure<T extends Record<string, unknown>>(apis: T): T {
+  const out: Record<string, unknown> = {};
+  for (const [name, fn] of Object.entries(apis)) {
+    if (typeof fn !== 'function' || PROCEDURE_APIS.has(name)) { out[name] = fn; continue; }
+    out[name] = (...args: unknown[]) => {
+      const caller = args.find(isSessionUser);
+      if (caller && !sessionAlive(caller)) return sessionEnded();
+      const kind = caller ? pendingProcedure(caller) : null;
+      if (!kind) return fn(...args);
+      notifyProcedureRequired(kind);
+      return new Promise((_, reject) => setTimeout(() => reject(new ProcedureRequiredError(kind)), 60));
+    };
+  }
+  return out as T;
+}
+
 /* ============ 画面が使う入口 ============ */
-export const api = {
+export const api = guardProcedure({
   ...authApi, ...childApi, ...diaryApi, ...diaryApi2,
   ...chatApi, ...chatApi2, ...napApi, ...napApi2,
   ...devApi, ...devApi2, ...physicalApi, ...adminApi, ...adminApi2, ...adminApi3,
   ...bulkApi, ...dashboardApi, ...handoutApi,
-};
+});
 
 /* ============ 入力の検査の補助（Go サーバの httpx.go と同じ規則） ============ */
 
@@ -2327,6 +2654,35 @@ export type ExportKind = 'operation_log' | 'nap_record' | 'allergy_list' | 'invi
 /** 文字数（符号位置の数）が上限を超えているか。上限の正は基本設計書「入力項目の制約値」(4-9) */
 function tooLong(v: string, max: number): boolean {
   return [...v].length > max;
+}
+
+/**
+ * 'YYYY-MM-DD' の形で、実在する日付か。月日を1桁で書いた値（2026-10-1）や 2月30日は受け取らない
+ * （GitHub Issue #164。server/httpx.go の isISODate と同じ）
+ */
+function isISODate(v: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const [y, m, d] = v.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d));
+  return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d;
+}
+
+/** 'YYYY-MM-DDTHH:MM:SS' の形で、実在する日時か（server/httpx.go の isISODateTime と同じ） */
+function isISODateTime(v: string): boolean {
+  const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})$/.exec(v);
+  if (!m || !isISODate(m[1])) return false;
+  return Number(m[2]) < 24 && Number(m[3]) < 60 && Number(m[4]) < 60;
+}
+
+/**
+ * 発見時刻を確かめ、受け付けられないときは利用者に見せる文言を返す（GitHub Issue #158）。
+ * 未来の日時は認めない（基本設計書「入力項目の制約値」(4-9)）。
+ * 【仮置き】未来かどうかは分の単位で比べる（web/仮置き値.md）。サーバ側は server/api_nap.go の foundAtProblem
+ */
+function foundAtProblem(v: string): string | null {
+  if (!isISODateTime(v)) return '発見時刻の形式が正しくありません';
+  if (v.slice(0, 16) > now().slice(0, 16)) return '発見時刻に未来の日時は指定できません';
+  return null;
 }
 
 /** よみとして受け取れる文字だけで出来ているか。ひらがな・長音・姓と名のあいだの空白を受け取る */

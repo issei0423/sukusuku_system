@@ -58,6 +58,21 @@ func (a *app) handleSaveDiary(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		in.ChildID = nil
+		/*
+		 * クラス日誌・週案は、対象クラスで参照範囲を判定する（api_diary.go の visibleDiaryCondition）。
+		 * 一般（保育士）が扱えるのは、閲覧・入力・編集のいずれも自クラスに限る
+		 * （要件定義書「参照範囲の全体規定」(4-1-5)）。他クラスを対象に作ると、作った本人には見えず、
+		 * そのクラスの担任には見える日誌ができてしまう（GitHub Issue #153）。
+		 * クラスを指定しないものは管理者にしか見えないため、一般には作らせない
+		 */
+		if in.ClassID == nil && !u.isAdmin() {
+			writeErr(w, http.StatusBadRequest, "対象のクラスを選んでください")
+			return
+		}
+		if in.ClassID != nil && !a.canUseClass(u, *in.ClassID) {
+			writeForbidden(w, "このクラスの日誌を作成する権限がありません")
+			return
+		}
 	}
 
 	if in.DiaryID != nil {
@@ -90,6 +105,12 @@ func (a *app) updateDiary(w http.ResponseWriter, u *SessionUser, in diaryInput) 
 	if err := a.db.QueryRow(`SELECT status FROM t_diary WHERE diary_id = ? AND is_deleted = 0`,
 		*in.DiaryID).Scan(&status); err != nil {
 		writeErr(w, http.StatusNotFound, "日誌が見つかりません")
+		return
+	}
+	// 書き換える日誌そのものも、参照範囲の内にあるものに限る。入力の園児・クラスを確かめるだけでは、
+	// 他クラスの日誌を日誌IDで指定して自クラスへ書き換えられてしまう（GitHub Issue #153）
+	if !a.canSeeDiary(u, *in.DiaryID) {
+		writeForbidden(w, "この日誌を編集する権限がありません")
 		return
 	}
 	if status == "2" || status == "3" {
@@ -180,17 +201,25 @@ func (a *app) handleApproveDiary(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var (
-		status  string
-		childID sql.NullString
-		creator string
+		status     string
+		childID    sql.NullString
+		creator    string
+		recordType string
 	)
-	if err := a.db.QueryRow(`SELECT status, child_id, created_staff_id FROM t_diary
-		WHERE diary_id = ? AND is_deleted = 0`, id).Scan(&status, &childID, &creator); err != nil {
+	if err := a.db.QueryRow(`SELECT status, child_id, created_staff_id, record_type FROM t_diary
+		WHERE diary_id = ? AND is_deleted = 0`, id).Scan(&status, &childID, &creator, &recordType); err != nil {
 		writeErr(w, http.StatusNotFound, "日誌が見つかりません")
 		return
 	}
 	if status != "2" {
 		writeErr(w, http.StatusBadRequest, "申請中の日誌のみ承認できます")
+		return
+	}
+	// 共有を選べるのは個人日誌だけ。クラス日誌・週案月案・ヒヤリハットは保護者への共有の対象外とする
+	// （基本設計書「日誌システム」(4-5)）。画面（DiaryApproveScreen）は選ばせないが、API でも断る
+	// （GitHub Issue #61・#157）。画面側のモック（web/src/api/mock.ts の approveDiary）と同じ規則
+	if req.ShareToGuardian && recordType != "1" {
+		writeErr(w, http.StatusBadRequest, "保護者へ共有できるのは個人日誌だけです。共有しないで承認してください")
 		return
 	}
 	// 【仮置き】承認は、作成者とは別の管理者による確認として扱う（GitHub Issue #106）。
@@ -226,11 +255,12 @@ func (a *app) handleApproveDiary(w http.ResponseWriter, r *http.Request) {
 	a.writeDiaryByID(w, id)
 }
 
-// shareDiaryToGuardian は個人チャットへ日誌の共有として流す（t_chat_message.source_type = 2）
+// shareDiaryToGuardian は個人チャットへ日誌の共有として流す（t_chat_message.source_type = 2）。
+// 個人チャットは園児ID で引く。部屋の名前で探すと、同じ氏名の別の園児の家庭へ流れる（GitHub Issue #163）
 func (a *app) shareDiaryToGuardian(u *SessionUser, diaryID int64, childID string) {
 	var roomID int64
 	err := a.db.QueryRow(`SELECT chat_room_id FROM m_chat_room
-		WHERE room_type = '4' AND room_name = ?`, a.childName(childID)+"の保護者").Scan(&roomID)
+		WHERE room_type = '4' AND child_id = ?`, childID).Scan(&roomID)
 	if err != nil {
 		// 【要確認】個人チャットが無い場合の共有先が定義されていない（GitHub Issue #61 と同じ論点）
 		return
@@ -311,6 +341,12 @@ func (a *app) handleAcquireLock(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "日誌の指定が正しくありません")
 		return
 	}
+	// ロックを取れるのは、その日誌を参照できる職員に限る。担当外の日誌のロックを取られると、
+	// 担任が無操作の経過まで保存できなくなる（GitHub Issue #153）
+	if !a.canSeeDiary(u, id) {
+		writeForbidden(w, "この日誌を編集する権限がありません")
+		return
+	}
 	idleMinutes := a.settingInt("ui.diary_lock_minutes", 15)
 
 	var (
@@ -379,11 +415,21 @@ func (a *app) handleReleaseLock(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+// handleLockOf は編集ロックの状態を返す。誰が編集中かは日誌の中身と同じ範囲で見せる（GitHub Issue #153）
 func (a *app) handleLockOf(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.requireStaff(w, r); !ok {
+	u, ok := a.requireStaff(w, r)
+	if !ok {
 		return
 	}
-	id, _ := pathInt64(r, "id")
+	id, valid := pathInt64(r, "id")
+	if !valid {
+		writeErr(w, http.StatusBadRequest, "日誌の指定が正しくありません")
+		return
+	}
+	if !a.canSeeDiary(u, id) {
+		writeForbidden(w, "この日誌を参照する権限がありません")
+		return
+	}
 	var token, staffID, lockedAt, lastActive string
 	err := a.db.QueryRow(`SELECT lock_token, locked_staff_id, locked_at, last_active_at
 	                        FROM t_diary_lock WHERE diary_id = ?`, id).

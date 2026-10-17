@@ -29,9 +29,9 @@ export default function ChildInputScreen() {
   const classesForUser = selectableClasses(user!);
 
   const existing = useAsync(async () => (childId ? api.getChild(user!, childId) : null), [childId]);
-  const existingAllergies = useAsync(async () => (childId ? api.allergiesOf(childId) : []), [childId]);
-  const existingHistories = useAsync(async () => (childId ? api.medicalHistoriesOf(childId) : []), [childId]);
-  const existingClass = useAsync(async () => (childId ? api.classOf(childId) : null), [childId]);
+  const existingAllergies = useAsync(async () => (childId ? api.allergiesOf(user!, childId) : []), [childId]);
+  const existingHistories = useAsync(async () => (childId ? api.medicalHistoriesOf(user!, childId) : []), [childId]);
+  const existingClass = useAsync(async () => (childId ? api.classOf(user!, childId) : null), [childId]);
 
   // 確認画面から戻ってきたときは、入力していた内容を引き継ぐ。戻るたびに打ち直させない（GitHub Issue #120）
   const restored = (useLocation().state as { form?: ChildInput } | null)?.form;

@@ -90,6 +90,38 @@ func (s *sessionStore) accountID(r *http.Request) (int64, bool) {
 	return sess.accountID, true
 }
 
+// sessionID は、要求が持つセッションIDを返す。無ければ空文字
+func sessionID(r *http.Request) string {
+	if c, err := r.Cookie(sessionCookie); err == nil {
+		return c.Value
+	}
+	return ""
+}
+
+/*
+destroyAccount は、そのアカウントのセッションを keep 以外すべて無効化する。消した数を返す。
+
+サーバ側にセッションを持つのは、サーバ側で即座に無効化できるためである（基本設計書「認証情報の保持方式」(6-3)）。
+次のときに呼ぶ（GitHub Issue #159）。
+  - パスワードの変更 … 変更した端末以外のセッションをすべて無効化する（同 6-3、画面詳細図 2-4）。keep は変更した端末のセッション
+  - 一時パスワードの再発行 … その時点で旧パスワードを無効化する（基本設計書「一時パスワードの再発行」(4-3)）。
+    旧パスワードで入ったセッションも同じ扱いにする
+  - アカウントの停止 … 停止したアカウントはログインできない（要件定義書、画面詳細図 7-8 項目5）
+  - 紐づけの解除 … その園児の記録を参照できなくなる（画面詳細図 7-8 項目6、基本設計書 5-5）
+*/
+func (s *sessionStore) destroyAccount(accountID int64, keep string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for id, sess := range s.data {
+		if sess.accountID == accountID && id != keep {
+			delete(s.data, id)
+			n++
+		}
+	}
+	return n
+}
+
 // ---- 利用者の組み立て ----
 
 func (a *app) loadSessionUser(accountID int64) (*SessionUser, error) {
@@ -104,7 +136,7 @@ func (a *app) loadSessionUser(accountID int64) (*SessionUser, error) {
 		guardName sql.NullString
 	)
 	err := a.db.QueryRow(`
-		SELECT a.account_id, a.email, a.role, a.is_temp_password, a.terms_version,
+		SELECT a.account_id, a.email, a.role, a.status, a.is_temp_password, a.terms_version,
 		       s.staff_id, s.staff_name, g.guardian_id, g.guardian_name,
 		       c.class_id, c.class_name
 		  FROM m_account a
@@ -113,7 +145,7 @@ func (a *app) loadSessionUser(accountID int64) (*SessionUser, error) {
 		  LEFT JOIN t_class_staff cs ON cs.staff_id = s.staff_id
 		  LEFT JOIN m_class    c ON c.class_id = cs.class_id AND c.fiscal_year = ?
 		 WHERE a.account_id = ?`, fiscalYear, accountID).
-		Scan(&u.AccountID, &u.Email, &u.Role, &u.IsTempPassword, &termsVer,
+		Scan(&u.AccountID, &u.Email, &u.Role, &u.status, &u.IsTempPassword, &termsVer,
 			&staffID, &staffName, &guardID, &guardName, &classID, &className)
 	if err != nil {
 		return nil, err
@@ -135,8 +167,37 @@ func (a *app) loadSessionUser(accountID int64) (*SessionUser, error) {
 	return &u, nil
 }
 
-// requireUser はログイン中の利用者を取り出す。未ログインなら 401 を返す。
-func (a *app) requireUser(w http.ResponseWriter, r *http.Request) (*SessionUser, bool) {
+/*
+ * 手続きを終えるまで、ほかの機能を使わせない
+ *
+ * 一時パスワードでのログイン時と規約の改定後の初回ログイン時は、変更・同意を完了するまで
+ * 他の画面へ進めない（基本設計書「画面遷移」(3-4)）。is_temp_password が真の間は他機能を使わせない
+ * （同「アカウント（m_account）」(5-2)）。画面の出し分けだけでは API を直接呼ぶと通るため、
+ * ここで拒否する（同「権限チェックの実装方針」(6-2)。GitHub Issue #153）。
+ *
+ * 拒否は 403 とし、理由を kind で返す。画面はこれを見て、パスワードの変更・規約への同意の画面へ案内する
+ * （web/src/api/procedure.ts）。文言は画面側のモック（同ファイルの procedureMessages）と同じにしてある。
+ *
+ * 手続きの途中でも通すのは、手続きの画面が呼ぶ API だけである（requireLogin を使うもの）。
+ *   - GET  /api/me           … 自分の情報。ページを開き直したとき・手続きのあとに画面を進めるため
+ *   - POST /api/password     … パスワードの変更
+ *   - POST /api/terms/agree  … 規約への同意
+ * ログイン・ログアウト・規約の本文（GET /api/terms）はセッションを問わない。
+ * 参照表（GET /api/reference）は園児名・職員名を載せるため通さない。画面は手続きを終えてから読み込む。
+ */
+const (
+	kindPasswordChangeRequired = "password_change_required"
+	kindTermsAgreementRequired = "terms_agreement_required"
+)
+
+// requireLogin はログイン中の利用者を取り出す。未ログインなら 401 を返す。
+// 一時パスワード中・規約の再同意が必要な間も通す。手続きそのものの API だけが使う。
+//
+// 停止中のアカウントは、セッションが残っていても通さない。状態は要求のたびにデータベースから読む。
+// 停止・紐づけの解除のときにはセッションも消している（destroyAccount）が、状態だけが変わる経路が
+// あっても止まるようにするため（GitHub Issue #159）。停止したアカウントはログインできない（要件定義書、
+// 画面詳細図 7-8 項目5）
+func (a *app) requireLogin(w http.ResponseWriter, r *http.Request) (*SessionUser, bool) {
 	id, ok := a.sessions.accountID(r)
 	if !ok {
 		writeJSON(w, http.StatusUnauthorized, apiError{Message: "ログインしていません"})
@@ -145,6 +206,37 @@ func (a *app) requireUser(w http.ResponseWriter, r *http.Request) (*SessionUser,
 	u, err := a.loadSessionUser(id)
 	if err != nil {
 		writeJSON(w, http.StatusUnauthorized, apiError{Message: "ログインしていません"})
+		return nil, false
+	}
+	if u.isSuspended() {
+		a.sessions.destroyAccount(u.AccountID, "")
+		writeJSON(w, http.StatusUnauthorized, apiError{Message: "ログインしていません"})
+		return nil, false
+	}
+	return u, true
+}
+
+// requireUser はログイン中の利用者を取り出す。未ログインなら 401 を返す。
+// 一時パスワード中・規約の再同意が必要な間は、手続きを終えるまで 403 を返す。
+// 状態は毎回データベースから読む。ログイン中に一時パスワードを発行し直されたときも、その時点から止めるため
+func (a *app) requireUser(w http.ResponseWriter, r *http.Request) (*SessionUser, bool) {
+	u, ok := a.requireLogin(w, r)
+	if !ok {
+		return nil, false
+	}
+	// 両方が要るときはパスワードの変更を先に求める。画面（TopScreen）が案内する順と同じ
+	switch {
+	case u.IsTempPassword:
+		writeJSON(w, http.StatusForbidden, apiError{
+			Kind:    kindPasswordChangeRequired,
+			Message: "一時パスワードのままでは、ほかの機能は利用できません。パスワードを変更してください",
+		})
+		return nil, false
+	case !u.TermsAgreed:
+		writeJSON(w, http.StatusForbidden, apiError{
+			Kind:    kindTermsAgreementRequired,
+			Message: "利用規約に同意するまで、ほかの機能は利用できません。利用規約をご確認ください",
+		})
 		return nil, false
 	}
 	return u, true

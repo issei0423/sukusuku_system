@@ -1,10 +1,12 @@
 package main
 
 import (
+	"errors"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 /*
@@ -14,6 +16,52 @@ import (
 
 var csvHeader = []string{"園児ID", "氏名", "氏名かな", "生年月日", "性別", "クラス名", "平熱"}
 var dateRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+
+/*
+temperatureRe は、平熱として受け取る書き方。小数第1位までの数（基本設計書「入力項目の制約値」(4-9)
+「体温｜30.0〜43.0℃、小数第1位まで」。平熱は体温と同じ）。
+
+平熱が数値でない行は誤りとする（同「CSV一括登録」(4-4)）。strconv.ParseFloat は inf・infinity・nan・
+1e2 のような書き方も数として受け取り、+Inf が保存されると、園児を返す API が JSON を書けずに空の本文になって
+画面が真っ白になった（GitHub Issue #160）。そのため、数字と小数点だけの書き方に限る。
+範囲（30.0〜43.0℃）の外は誤りとせず、確認を促す（同 4-4）。
+
+【仮置き】整数部は3桁までとした。範囲の外でも取り込む設計のため、打ち間違い（365 など）は通して確認を促し、
+それより大きな桁は書き方の誤りとして止める（web/仮置き値.md）。画面側（web/src/api/mock.ts）と同じ規則
+*/
+var temperatureRe = regexp.MustCompile(`^\d{1,3}(\.\d)?$`)
+
+// childIDMaxLength は園児IDの上限（基本設計書「入力項目の制約値」(4-9)「園児ID・職員ID｜20文字以内」）
+const childIDMaxLength = 20
+
+// errCsvHeader は、見出しの並びが取込の様式と違うこと。行を読み進めると、別の列の値を園児ID や氏名として
+// 取り込んでしまうため、ファイルごと断る（GitHub Issue #160）
+var errCsvHeader = errors.New("見出しの並びが取込の様式と違います。1行目を「" +
+	strings.Join(csvHeader, ",") + "」の順にしてください（平熱の列は省けます）")
+
+// validBirthDate は、YYYY-MM-DD の形で、実在する日付かを返す（2025-02-30 や 2025-13-45 を通さない）。
+// 生年月日は月齢算出の唯一の根拠である（基本設計書 5-3）
+func validBirthDate(v string) bool {
+	if !dateRe.MatchString(v) {
+		return false
+	}
+	_, err := time.ParseInLocation("2006-01-02", v, jst)
+	return err == nil
+}
+
+// checkCsvHeader は、見出しの並びが取込の様式と同じかを確かめる。平熱の列は省いてよい。BOM 付きでも読む
+func checkCsvHeader(line string) error {
+	cols := strings.Split(strings.TrimPrefix(line, string(rune(0xFEFF))), ",")
+	if len(cols) < len(csvHeader)-1 || len(cols) > len(csvHeader) {
+		return errCsvHeader
+	}
+	for i, c := range cols {
+		if strings.TrimSpace(c) != csvHeader[i] {
+			return errCsvHeader
+		}
+	}
+	return nil
+}
 
 // CsvRow は1行ぶんの取込内容と判定
 type CsvRow struct {
@@ -32,7 +80,8 @@ const (
 )
 
 // parseChildCsv は取込内容を検証する。取り込む前に全行を検証して返す。
-func (a *app) parseChildCsv(text string) ([]string, []CsvRow) {
+// 見出しの並びが違うときは、行を読まずに errCsvHeader を返す
+func (a *app) parseChildCsv(text string) ([]string, []CsvRow, error) {
 	lines := []string{}
 	for _, l := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
 		if strings.TrimSpace(l) != "" {
@@ -40,6 +89,9 @@ func (a *app) parseChildCsv(text string) ([]string, []CsvRow) {
 		}
 	}
 	if len(lines) > 0 && strings.Contains(lines[0], "園児ID") {
+		if err := checkCsvHeader(lines[0]); err != nil {
+			return csvHeader, nil, err
+		}
 		lines = lines[1:]
 	}
 
@@ -62,6 +114,8 @@ func (a *app) parseChildCsv(text string) ([]string, []CsvRow) {
 			switch {
 			case values[0] == "":
 				errs = append(errs, "園児IDが空です")
+			case tooLong(values[0], childIDMaxLength):
+				errs = append(errs, "園児IDは20文字以内で入力してください")
 			case seen[values[0]]:
 				errs = append(errs, "同じ園児IDがこのファイル内で重複しています")
 			case a.childExists(values[0]):
@@ -79,8 +133,8 @@ func (a *app) parseChildCsv(text string) ([]string, []CsvRow) {
 				errs = append(errs, "氏名と氏名かなは、それぞれ50文字以内で入力してください")
 			}
 			switch {
-			case !dateRe.MatchString(values[3]):
-				errs = append(errs, "生年月日は YYYY-MM-DD で入力してください")
+			case !validBirthDate(values[3]):
+				errs = append(errs, "生年月日の形式が正しくありません。YYYY-MM-DD の形で、実在する日付を入力してください")
 			case values[3] > today():
 				errs = append(errs, "生年月日に未来日は指定できません")
 			}
@@ -93,8 +147,8 @@ func (a *app) parseChildCsv(text string) ([]string, []CsvRow) {
 			if len(values) > 6 && values[6] != "" {
 				f, e := strconv.ParseFloat(values[6], 64)
 				switch {
-				case e != nil:
-					errs = append(errs, "平熱は数値で入力してください")
+				case !temperatureRe.MatchString(values[6]) || e != nil:
+					errs = append(errs, "平熱は数値（小数第1位まで。例：36.5）で入力してください")
 				case f < temperatureMin || f > temperatureMax:
 					row.Warning = s("平熱が想定の範囲（30.0〜43.0℃）の外です。値を確かめてください")
 				}
@@ -108,7 +162,7 @@ func (a *app) parseChildCsv(text string) ([]string, []CsvRow) {
 		}
 		rows = append(rows, row)
 	}
-	return csvHeader, rows
+	return csvHeader, rows, nil
 }
 
 func (a *app) childExists(childID string) bool {
@@ -134,7 +188,11 @@ func (a *app) handleParseChildCsv(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	header, rows := a.parseChildCsv(req.Text)
+	header, rows, err := a.parseChildCsv(req.Text)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"header": header, "rows": rows})
 }
 
@@ -151,7 +209,11 @@ func (a *app) handleImportChildCsv(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	_, rows := a.parseChildCsv(req.Text)
+	_, rows, err := a.parseChildCsv(req.Text)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	for _, row := range rows {
 		if row.Error != nil {
 			writeErr(w, http.StatusBadRequest,

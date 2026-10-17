@@ -1,6 +1,7 @@
 /*
  * 画面ごとのレイアウト
  * 典拠：図/画面詳細図.md 各画面のワイヤーフレーム
+ * 色・文字・角は tokens.css の値（デジタル庁デザインシステムに沿ったもの）だけを使う
  */
 
 /* ---- チャット画面（職員）：チャンネル／メッセージ／メンバーの3ペイン（画面詳細図 4-1） ---- */
@@ -16,57 +17,69 @@
   border: 1px solid var(--c-border);
   border-radius: var(--radius);
   display: flex; flex-direction: column; min-height: 0;
+  overflow: hidden;
 }
-.chat-pane > h2 { padding: var(--sp-3); border-bottom: 1px solid var(--c-border); font-size: 14px; }
+.chat-pane > h2 { padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--c-border); background: var(--c-surface-sub); font-size: var(--fs-body); }
 .chat-scroll { flex: 1; overflow-y: auto; padding: var(--sp-3); }
 .chat-compose { border-top: 1px solid var(--c-border); padding: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2); }
 
+/* チャンネルの並び。DADS のメニューリスト（ボックス型）。現在地は地の色・太字・左の線で示す */
 .channel {
   display: flex; align-items: center; gap: var(--sp-2);
-  width: 100%; min-height: var(--tap-min);
-  padding: 0 var(--sp-3);
-  border: 0; border-left: 4px solid transparent; background: transparent;
-  text-align: left; cursor: pointer; font-size: 14px;
+  width: 100%; min-height: var(--control-h);
+  padding: var(--sp-1) var(--sp-3);
+  border: 0; border-left: 4px solid transparent; border-bottom: 1px solid var(--c-border-weak); background: transparent;
+  text-align: left; cursor: pointer; font-weight: 400; line-height: 1.3;
   border-radius: 0;
   justify-content: flex-start;
 }
-.channel:hover { background: var(--c-primary-soft); }
+@media (hover: hover) {
+  .channel:hover:not(:disabled) { background: var(--c-surface-sub); border-color: transparent; border-bottom-color: var(--c-border-weak); }
+}
 .channel.current { background: var(--c-primary-soft); border-left-color: var(--c-primary-deep); font-weight: 700; }
-.channel .unread { margin-left: auto; background: var(--c-alert); color: #fff; border-radius: 999px; font-size: 11px; padding: 1px 7px; }
-.channel-group { padding: var(--sp-2) var(--sp-3) 0; font-size: 12px; color: var(--c-text-weak); }
+@media (hover: hover) {
+  .channel.current:hover:not(:disabled) { background: var(--c-primary-soft); border-left-color: var(--c-primary-deep); }
+}
+.channel .unread {
+  margin-left: auto; flex: none; min-width: 22px; padding: 0 6px; border-radius: 11px;
+  background: var(--c-alert); color: var(--dads-white);
+  font-size: var(--fs-small); font-weight: 700; line-height: 22px; letter-spacing: 0; text-align: center;
+}
+.channel-group { padding: var(--sp-3) var(--sp-3) var(--sp-1); font-size: var(--fs-small); font-weight: 700; color: var(--c-text-sub); }
 
 .msg { margin-bottom: var(--sp-4); }
-.msg .meta { font-size: 12px; color: var(--c-text-sub); margin-bottom: 2px; }
+.msg .meta { font-size: var(--fs-small); color: var(--c-text-sub); margin-bottom: 2px; }
 .msg .bubble {
   display: inline-block; max-width: 80%;
   padding: var(--sp-2) var(--sp-3);
   background: var(--c-surface-sub);
-  border: 1px solid var(--c-border);
+  border: 1px solid var(--c-border-weak);
   border-radius: var(--radius);
   white-space: pre-wrap; word-break: break-word;
 }
 .msg.mine { text-align: right; }
 .msg.mine .bubble { background: var(--c-primary-soft); border-color: var(--c-primary-deep); text-align: left; }
-.msg .read { font-size: 11px; color: var(--c-text-weak); margin-top: 2px; }
-.msg .retracted { color: var(--c-text-weak); font-style: italic; }
+.msg .read { font-size: var(--fs-small); color: var(--c-text-weak); margin-top: 2px; }
+/* 取り消したメッセージ。日本語の斜体は読みにくいため（DADS タイポグラフィ）、色だけを変える */
+.msg .retracted { color: var(--c-text-weak); font-style: normal; }
 .msg .shared-card {
   display: block; min-height: var(--tap-min); margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3);
-  border: 1px dashed var(--c-border-strong); border-radius: var(--radius-sm);
-  background: var(--c-surface); text-decoration: none; color: var(--c-text);
+  border: 1px dashed var(--c-border-strong); border-radius: var(--radius);
+  background: var(--c-surface); color: var(--c-text);
 }
 
 /* ---- 午睡チェック画面（画面詳細図 5-1） ---- */
 /* タイマーを画面の上部に固定する。スクロールしても視界から外さない */
 .nap-timer {
   position: sticky; top: calc(var(--main-pad) * -1); z-index: 6;
-  margin: calc(var(--main-pad) * -1) calc(var(--main-pad) * -1) var(--sp-4);
+  margin: calc(var(--main-pad) * -1) calc(var(--main-pad) * -1) var(--sp-5);
   padding: var(--sp-3) var(--main-pad);
   background: var(--c-primary-soft);
   border-bottom: 1px solid var(--c-primary-deep);
   display: flex; align-items: center; gap: var(--sp-5); flex-wrap: wrap;
 }
-.nap-timer .big { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.nap-timer.over { background: var(--c-alert-soft); border-bottom-color: var(--c-alert); color: var(--c-alert); }
+.nap-timer .big { font-size: 32px; font-weight: 700; line-height: 1.3; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.nap-timer.over { background: var(--c-alert-soft); border-bottom: 2px solid var(--c-alert); color: var(--c-alert); }
 
 .nap-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); }
 .nap-card {
@@ -76,30 +89,38 @@
 }
 .nap-card.unrecorded { border-color: var(--c-alert); background: var(--c-alert-soft); }
 .nap-card .name { font-weight: 700; }
-.nap-card .last { font-size: 13px; color: var(--c-text-sub); }
+.nap-card .last { font-size: var(--fs-small); color: var(--c-text-sub); }
 
 /* iPadを持って巡回しながら、園児の行で直接選んで記録する。 */
 .nap-record-row { gap: var(--sp-3); padding: var(--sp-4); }
-.nap-record-row.unrecorded { background: var(--c-surface); border-left: 5px solid var(--c-alert); }
-.nap-row-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px var(--sp-3); }
-.nap-row-head .name { font-size: 18px; }
+/* 確認の時刻を過ぎた行は、警告色の枠と左の太い線で示す（文言でも示している） */
+.nap-record-row.unrecorded { background: var(--c-surface); border-color: var(--c-alert); border-left: 6px solid var(--c-alert); }
+.nap-row-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); }
+.nap-row-head .name { font-size: 20px; line-height: 1.5; }
 .nap-row-head .last { white-space: nowrap; }
-.nap-row-status { color: var(--c-approved); font-size: 13px; font-weight: 700; }
+.nap-row-status { color: var(--c-approved); font-size: var(--fs-small); font-weight: 700; }
 .nap-row-status.due { color: var(--c-alert); }
-.nap-inline-fields { display: grid; grid-template-columns: minmax(255px, 1.4fr) minmax(160px, .8fr) minmax(255px, 1.2fr); gap: var(--sp-3); }
+.nap-inline-fields { display: grid; grid-template-columns: minmax(255px, 1.4fr) minmax(160px, .8fr) minmax(255px, 1.2fr); gap: var(--sp-3) var(--sp-4); }
 .nap-choice-field { min-width: 0; margin: 0; padding: 0; border: 0; }
-.nap-choice-field legend { margin-bottom: 4px; font-size: 13px; font-weight: 700; }
-.nap-choice-options { display: flex; gap: 5px; }
+.nap-choice-field legend { margin-bottom: var(--sp-1); font-size: var(--fs-small); font-weight: 700; }
+.nap-choice-options { display: flex; gap: var(--sp-1); }
 .nap-choice { flex: 1; min-width: 0; min-height: 52px; margin: 0; padding: 0; position: relative; }
 .nap-choice input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .nap-choice span {
   display: flex; align-items: center; justify-content: center;
-  width: 100%; min-height: 52px; padding: 5px 3px;
-  border: 1px solid var(--c-border-strong); border-radius: var(--radius-sm);
-  background: var(--c-surface); font-size: 13px; font-weight: 700; text-align: center; line-height: 1.25;
+  width: 100%; min-height: 52px; padding: var(--sp-1) 2px;
+  border: 1px solid var(--c-border-strong); border-radius: var(--radius);
+  background: var(--c-surface); font-weight: 700; text-align: center; line-height: 1.3; letter-spacing: 0;
 }
-.nap-choice input:checked + span { background: var(--c-primary); border-color: var(--c-primary-deep); color: var(--c-primary-ink); }
-.nap-choice input:focus-visible + span { outline: 3px solid var(--c-focus); outline-offset: 2px; }
+@media (hover: hover) {
+  .nap-choice:hover span { background: var(--c-surface-sub); text-decoration: underline; text-underline-offset: 3px; }
+}
+/* 選んだものは、テーマカラーの塗りに加えて枠を太く黒くする（色だけに頼らない） */
+.nap-choice input:checked + span {
+  background: var(--c-primary); border-color: var(--c-primary-ink); color: var(--c-primary-ink);
+  box-shadow: inset 0 0 0 2px var(--c-primary-ink);
+}
+.nap-choice input:focus-visible + span { outline: 4px solid var(--c-focus); outline-offset: 2px; box-shadow: 0 0 0 2px var(--c-focus-ring); }
 .nap-row-actions { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .nap-row-actions .spacer { flex: 1; }
 .nap-row-actions > button { min-height: 52px; }
@@ -107,14 +128,14 @@
 
 /* 体温は実測したときだけ選ぶ。選択パネルは画面の下側に置く。 */
 .modal-backdrop:has(.nap-temperature-picker) { align-items: flex-end; }
-.modal:has(.nap-temperature-picker) { max-width: 600px; border-radius: 12px 12px 0 0; }
+.modal:has(.nap-temperature-picker) { max-width: 600px; border-radius: var(--radius) var(--radius) 0 0; }
 .nap-temperature-picker .muted { margin-bottom: var(--sp-3); }
 .nap-temp-heading { margin-bottom: var(--sp-2); font-weight: 700; }
 .nap-temp-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--sp-2); margin-bottom: var(--sp-3); }
 .nap-temp-grid.whole { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.nap-temp-grid button { min-height: 58px; padding: 0 var(--sp-2); font-size: 20px; font-weight: 700; }
+.nap-temp-grid button { min-height: 58px; padding: 0 var(--sp-2); font-size: 20px; font-weight: 700; letter-spacing: 0; }
 .nap-temp-manual { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); padding-top: var(--sp-3); border-top: 1px solid var(--c-border); }
-.nap-temp-manual label { font-size: 13px; font-weight: 700; }
+.nap-temp-manual label { font-size: var(--fs-small); font-weight: 700; }
 .nap-temp-manual input { width: 125px; }
 
 @media (max-width: 1300px) {
@@ -129,22 +150,27 @@
 }
 
 /* ---- 身体記録画面：園児を選ぶと右側だけが入れ替わる（画面詳細図 6-2） ---- */
-.split { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: var(--sp-4); align-items: start; }
+.split { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: var(--sp-5); align-items: start; }
 .picker { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius); overflow: hidden; }
 .picker button {
   width: 100%; justify-content: flex-start; border: 0; border-radius: 0;
-  border-bottom: 1px solid var(--c-border); border-left: 4px solid transparent;
-  background: transparent; text-align: left;
+  border-bottom: 1px solid var(--c-border-weak); border-left: 4px solid transparent;
+  background: transparent; text-align: left; font-weight: 400;
 }
-.picker button.current { background: var(--c-primary-soft); border-left-color: var(--c-primary-deep); font-weight: 700; }
-.picker button .done { margin-left: auto; color: var(--c-approved); font-size: 12px; }
+.picker button:last-child { border-bottom: 0; }
+@media (hover: hover) {
+  .picker button:hover:not(:disabled) { border-color: transparent; border-bottom-color: var(--c-border-weak); }
+}
+.picker button.current,
+.picker button.current:hover:not(:disabled) { background: var(--c-primary-soft); border-left-color: var(--c-primary-deep); font-weight: 700; }
+.picker button .done { margin-left: auto; color: var(--c-approved); font-size: var(--fs-small); }
 
 .growth-chart { width: 100%; height: auto; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius); }
 
 /* ---- 発達チェック入力（画面詳細図 6-1） ---- */
-.dev-item { display: grid; grid-template-columns: minmax(180px, 1fr) auto; gap: var(--sp-3); align-items: center; padding: var(--sp-2) 0; border-bottom: 1px solid var(--c-border); }
+.dev-item { display: grid; grid-template-columns: minmax(180px, 1fr) auto; gap: var(--sp-3); align-items: center; padding: var(--sp-2) 0; border-bottom: 1px solid var(--c-border-weak); }
 .dev-item:last-child { border-bottom: 0; }
-.dev-diff { font-size: 13px; color: var(--c-text-sub); }
+.dev-diff { font-size: var(--fs-small); color: var(--c-text-sub); }
 .dev-diff .to { font-weight: 700; color: var(--c-text); }
 
 /*
@@ -154,7 +180,9 @@
 @media (max-width: 900px) {
   .chat3 { grid-template-columns: 172px minmax(0, 1fr) 128px; gap: var(--sp-2); }
   .split { grid-template-columns: 176px minmax(0, 1fr); gap: var(--sp-3); }
-  .channel { padding: 0 var(--sp-2); }
+  .channel { padding: var(--sp-1) var(--sp-2); }
+  /* 「保護者との個人チャット」の見出しが「ト」だけ次の行に落ちないよう、余白と字間だけを詰める（文字の大きさは変えない） */
+  .channel-group { padding-left: var(--sp-2); padding-right: var(--sp-1); letter-spacing: 0; }
   .msg .bubble { max-width: 92%; }
 }
 
@@ -163,34 +191,35 @@
 .msg.mine .reactions { justify-content: flex-end; }
 .reaction {
   min-height: 44px; min-width: 44px; padding: 0 var(--sp-2);
-  border: 1px solid var(--c-border); border-radius: 999px; background: var(--c-surface);
-  font-size: 14px;
+  border: 1px solid var(--c-border); border-radius: var(--radius); background: var(--c-surface);
+  font-weight: 400;
 }
 .reaction.mine { border-color: var(--c-primary-deep); background: var(--c-primary-soft); font-weight: 700; }
-.reaction.add { color: var(--c-text-sub); font-size: 13px; }
+.reaction.add { color: var(--c-text-sub); font-size: var(--fs-small); }
 
 /*
  * 保護者のチャット：メッセージを長押しして開く操作の一覧（リアクション・編集・取消）。
  * 長押しの間に端末が文字の選択や既定のメニューを出さないよう、吹き出しの選択を止める
  */
-.guardian-message-hint { margin: 0 0 var(--sp-3); font-size: 12px; color: var(--c-text-sub); }
+.guardian-message-hint { margin: 0 0 var(--sp-3); font-size: var(--fs-small); color: var(--c-text-sub); }
 .msg .bubble.pressable {
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: filter .15s;
 }
-.msg .bubble.pressable:active { filter: brightness(.94); }
-.msg .bubble.pressable:focus-visible { outline: 3px solid var(--c-focus); outline-offset: 2px; }
-.message-actions-trigger { min-width: 44px; min-height: 44px; margin-left: var(--sp-2); font-size: 12px; vertical-align: bottom; }
+.msg .bubble.pressable:active { background: var(--c-surface-head); }
+.msg.mine .bubble.pressable:active { background: var(--c-primary); }
+.msg .bubble.pressable:focus-visible { outline: 4px solid var(--c-focus); outline-offset: 2px; box-shadow: 0 0 0 2px var(--c-focus-ring); }
+.message-actions-trigger { min-width: 44px; min-height: 44px; margin-left: var(--sp-2); vertical-align: bottom; }
 /* 一覧はメッセージの並びを押し広げず、重ねて出す。上下の位置は画面側で決める（GuardianChatScreen.tsx） */
 .guardian-message-list .msg { position: relative; }
 .msg-menu-wrap { position: absolute; left: 0; z-index: 5; max-width: 100%; }
 .msg.mine .msg-menu-wrap { left: auto; right: 0; }
+/* 重ねて出すものだけに影を付ける（DADS のエレベーション） */
 .msg-menu {
   display: inline-flex; flex-direction: column; gap: var(--sp-2);
   max-width: 100%; padding: var(--sp-2);
-  background: var(--c-surface); border: 1px solid var(--c-border-strong); border-radius: var(--radius);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, .14);
+  background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius);
+  box-shadow: var(--elevation-2);
   text-align: left;
 }
 .msg-menu-row { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
@@ -201,27 +230,28 @@
  * PC では本文を選んでコピーできるよう、文字の選択は止めない。指で操作する端末でだけ、
  * 長押しの間に文字の選択や既定のメニューが出ないようにする
  */
-.message-hint { margin: 0 0 var(--sp-3); font-size: 12px; color: var(--c-text-sub); }
+.message-hint { margin: 0 0 var(--sp-3); font-size: var(--fs-small); color: var(--c-text-sub); }
 .chat3 .msg { position: relative; }
 @media (pointer: coarse) {
   .msg .bubble.has-menu { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 }
 
 /* チャンネル一覧の印 */
-.channel .mark { font-size: 11px; color: var(--c-text-sub); margin-left: var(--sp-1); }
-.member-group { font-size: 12px; color: var(--c-text-sub); margin: var(--sp-2) 0 var(--sp-1); }
+.channel .mark { font-size: var(--fs-small); font-weight: 400; color: var(--c-text-sub); margin-left: var(--sp-1); }
+.member-group { font-size: var(--fs-small); font-weight: 700; color: var(--c-text-sub); margin: var(--sp-3) 0 var(--sp-1); }
 
 /* 園からの配布物 */
 .handout-row { justify-content: space-between; text-align: left; gap: var(--sp-2); }
 /* 保護者の画面では、共有された記録と同じ行の見た目にそろえる。ボタンでもリンクでも同じに見せる */
 button.guardian-record-link {
-  width: 100%; padding: 6px 0; background: none; border: 0; border-bottom: 1px solid #ece3d2;
-  border-radius: 0; font: inherit; font-size: 14px; cursor: pointer;
+  width: 100%; padding: var(--sp-1) 0; background: none; border: 0; border-bottom: 1px solid var(--c-border);
+  border-radius: 0; font: inherit; font-weight: 400; cursor: pointer;
 }
-.guardian-record-link .handout-title { padding: 6px 0; }
-/* 行の右端の矢印だけを大きく色付きにする規則が、題名にも当たるのを打ち消す */
-.guardian-record-link .handout-title span:last-child { color: var(--c-text); font-size: 14px; }
-.guardian-handout-all { margin-top: 15px; }
+@media (hover: hover) {
+  button.guardian-record-link:hover:not(:disabled) { border-color: var(--c-border); background: var(--c-surface-sub); }
+}
+.guardian-record-link .handout-title { padding: var(--sp-1) 0; }
+.guardian-handout-all { margin-top: var(--sp-4); }
 .handout-title { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; flex: 1; flex-wrap: wrap; }
 /* 題名が長くて折り返しても、「開く」は1行のまま右に置く */
 .handout-row > .muted { flex: none; white-space: nowrap; }

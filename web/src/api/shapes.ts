@@ -15,7 +15,11 @@ export type LoginError =
   | { kind: 'credential'; remaining: number }
   | { kind: 'locked'; until?: string }
   | { kind: 'suspended' }
-  | { kind: 'wrong_entrance'; correct: 'staff' | 'guardian' };
+  | { kind: 'wrong_entrance'; correct: 'staff' | 'guardian' }
+  /** 一時パスワードの有効期限切れ（基本設計書「ログイン」(4-3)、メッセージ一覧 (4-9)。GitHub Issue #159） */
+  | { kind: 'temp_expired' }
+  /** ログイン中の新しいログイン・新規登録。上書きログインは設けない（基本設計書「ログイン」(4-3)。GitHub Issue #159） */
+  | { kind: 'already_logged_in' };
 
 /** 園児情報の登録・編集の入力（図/画面詳細図.md 7-2） */
 export interface ChildInput {

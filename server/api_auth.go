@@ -9,8 +9,6 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
-
-	"golang.org/x/crypto/bcrypt"
 )
 
 /*
@@ -28,23 +26,43 @@ type loginRequest struct {
 }
 
 func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
+	/*
+	 * ログイン中のセッションがある場合は認証を成立させず、既存のセッションを維持したまま、
+	 * ログアウトを促して終了する。新しいセッションは作らない。上書きログインは設けない
+	 * （基本設計書「ログイン」(4-3)、要件定義書「同時ログインの扱い」(4-1-1)）。
+	 * 画面（TopScreen）もログイン中は入力欄を出さないが、ログインより前に開いておいた別のタブからは
+	 * 送れてしまうため、サーバで止める（GitHub Issue #159）。案内にログイン中の氏名・ロールは出さない
+	 */
+	if _, ok := a.sessions.accountID(r); ok {
+		writeAlreadyLoggedIn(w)
+		return
+	}
 	var req loginRequest
 	if !readJSON(w, r, &req) {
+		return
+	}
+	// アカウントのロールが、使われた入口の系統と一致するかを判定する（基本設計書「ログイン」(4-3)）。
+	// 入口が職員用・保護者用のどちらでもない要求は、判定ができないため受け付けない
+	if req.Entrance != "staff" && req.Entrance != "guardian" {
+		writeErr(w, http.StatusBadRequest, "入口の指定が正しくありません。職員用または保護者用のトップからログインしてください")
 		return
 	}
 	maxFailed := a.settingInt("auth.max_failed_login", 5)
 
 	var (
-		accountID   int64
-		hash        string
-		role        string
-		status      string
-		failedCount int
-		lockedUntil sql.NullString
+		accountID     int64
+		hash          string
+		role          string
+		status        string
+		failedCount   int
+		lockedUntil   sql.NullString
+		isTemp        bool
+		tempExpiresAt sql.NullString
 	)
-	err := a.db.QueryRow(`SELECT account_id, password_hash, role, status, failed_login_count, locked_until
+	err := a.db.QueryRow(`SELECT account_id, password_hash, role, status, failed_login_count, locked_until,
+	                             is_temp_password, temp_password_expires_at
 	                        FROM m_account WHERE email = ?`, req.Email).
-		Scan(&accountID, &hash, &role, &status, &failedCount, &lockedUntil)
+		Scan(&accountID, &hash, &role, &status, &failedCount, &lockedUntil, &isTemp, &tempExpiresAt)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		// 存在しないアカウントでも、あるかどうかを推測させない文言に揃える
@@ -66,14 +84,8 @@ func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	if status == "2" {
-		writeJSON(w, http.StatusUnauthorized, apiError{
-			Kind: "suspended", Message: "このアカウントは停止されています。園の管理者へご連絡ください",
-		})
-		return
-	}
 
-	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(req.Password)) != nil {
+	if !checkPassword(hash, req.Password) {
 		failedCount++
 		/*
 		 * ログインの失敗と、失敗が続いたことによるロックを操作ログに残す（GitHub Issue #115）。
@@ -105,6 +117,18 @@ func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	/*
+	 * 停止の判定は、パスワードの照合のあとに行う。照合より前に行うと、パスワードを知らない人にも
+	 * 「停止中のアカウントがある」ことを示してしまう（上の「あるかどうかを推測させない」と同じ考え方。
+	 * GitHub Issue #159）
+	 */
+	if status == accountSuspended {
+		writeJSON(w, http.StatusUnauthorized, apiError{
+			Kind: "suspended", Message: "このアカウントは停止されています。園の管理者へご連絡ください",
+		})
+		return
+	}
+
 	// 誤った系統でのログインは成立させず、正しい入口を案内する（画面詳細図 2-1）
 	isStaffAccount := role == roleAdmin || role == roleGeneralStaff
 	if req.Entrance == "staff" && !isStaffAccount {
@@ -118,6 +142,18 @@ func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, apiError{
 			Kind: "wrong_entrance", Correct: "staff",
 			Message: "このアカウントは職員用の入口からログインしてください",
+		})
+		return
+	}
+
+	/*
+	 * 一時パスワードでのログインなら、有効期限内かを判定する。期限切れなら管理者への連絡を案内する
+	 * （基本設計書「ログイン」(4-3)、メッセージ一覧 (4-9)「一時パスワードの期限切れ」）。
+	 * 期限切れはロックとは区別し、待機時間の経過では解消しない。管理者が再発行する
+	 */
+	if isTemp && tempExpiresAt.Valid && tempExpiresAt.String < now() {
+		writeJSON(w, http.StatusUnauthorized, apiError{
+			Kind: "temp_expired", Message: "一時パスワードの有効期限が切れています。管理者へご連絡ください。",
 		})
 		return
 	}
@@ -151,8 +187,9 @@ func (a *app) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleMe はログイン中の利用者を返す。パスワード変更・規約同意のあと画面を進めるためにも使う。
+// 手続きの途中でも返す。画面はこの値で、どの手続きの画面へ進めるかを決める（session.go の requireUser）
 func (a *app) handleMe(w http.ResponseWriter, r *http.Request) {
-	u, ok := a.requireUser(w, r)
+	u, ok := a.requireLogin(w, r)
 	if !ok {
 		return
 	}
@@ -164,8 +201,9 @@ type changePasswordRequest struct {
 	Next    string `json:"next"`
 }
 
+// handleChangePassword はパスワードを変更する。一時パスワード中に使う手続きのため、requireLogin で通す
 func (a *app) handleChangePassword(w http.ResponseWriter, r *http.Request) {
-	u, ok := a.requireUser(w, r)
+	u, ok := a.requireLogin(w, r)
 	if !ok {
 		return
 	}
@@ -179,12 +217,8 @@ func (a *app) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "アカウントが見つかりません")
 		return
 	}
-	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(req.Current)) != nil {
+	if !checkPassword(hash, req.Current) {
 		writeErr(w, http.StatusBadRequest, "現在のパスワードが違います")
-		return
-	}
-	if len(req.Next) < 8 {
-		writeErr(w, http.StatusBadRequest, "パスワードは8文字以上で入力してください")
 		return
 	}
 	// 現在と同じパスワードへの変更は認めない。一時パスワードを同じ値のまま使い続けられると、
@@ -193,18 +227,29 @@ func (a *app) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "現在と同じパスワードは使えません。別のパスワードを入力してください。")
 		return
 	}
+	// 8〜128文字（文字数で数える）。よく使われるパスワードは拒否する（password.go）
+	if msg := validateNewPassword(req.Next); msg != "" {
+		writeErr(w, http.StatusBadRequest, msg)
+		return
+	}
 
-	next, err := bcrypt.GenerateFromPassword([]byte(req.Next), bcrypt.DefaultCost)
+	next, err := hashPassword(req.Next)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "パスワードの変更に失敗しました")
 		return
 	}
 	if _, err := a.db.Exec(`UPDATE m_account
 		SET password_hash = ?, is_temp_password = 0, temp_password_expires_at = NULL, updated_at = ?
-		WHERE account_id = ?`, string(next), now(), u.AccountID); err != nil {
+		WHERE account_id = ?`, next, now(), u.AccountID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "パスワードの変更に失敗しました")
 		return
 	}
+	/*
+	 * パスワードを変更したときは、変更した端末以外のセッションをすべて無効化する
+	 * （基本設計書「ログイン」(4-3)・「認証情報の保持方式」(6-3)、画面詳細図 2-4）。
+	 * 変更する動機の多くは「他人に知られたかもしれない」であり、他の端末のログインが生き続けるのは目的に反する
+	 */
+	a.sessions.destroyAccount(u.AccountID, sessionID(r))
 	a.log(u.AccountID, fnAccount, opUpdate, "m_account", i64(u.AccountID), nil, nil, s("パスワードを変更"))
 
 	updated, _ := a.loadSessionUser(u.AccountID)
@@ -232,8 +277,9 @@ func (a *app) handleCurrentTerms(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, t)
 }
 
+// handleAgreeTerms は規約への同意を記録する。再同意が要る間に使う手続きのため、requireLogin で通す
 func (a *app) handleAgreeTerms(w http.ResponseWriter, r *http.Request) {
-	u, ok := a.requireUser(w, r)
+	u, ok := a.requireLogin(w, r)
 	if !ok {
 		return
 	}
@@ -364,6 +410,12 @@ type signUpRequest struct {
 }
 
 func (a *app) handleSignUpGuardian(w http.ResponseWriter, r *http.Request) {
+	// ログイン中は新しいアカウントを作らせない。登録が成立するとセッションが新しい保護者に置き換わり、
+	// 上書きログインと同じことになる（基本設計書「ログイン」(4-3)。GitHub Issue #159）
+	if _, ok := a.sessions.accountID(r); ok {
+		writeAlreadyLoggedIn(w)
+		return
+	}
 	var req signUpRequest
 	if !readJSON(w, r, &req) {
 		return
@@ -387,8 +439,9 @@ func (a *app) handleSignUpGuardian(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "このメールアドレスはすでに登録されています")
 		return
 	}
-	if len(req.Password) < 8 {
-		writeErr(w, http.StatusBadRequest, "パスワードは8文字以上で入力してください")
+	// 8〜128文字（文字数で数える）。よく使われるパスワードは拒否する（password.go）
+	if msg := validateNewPassword(req.Password); msg != "" {
+		writeErr(w, http.StatusBadRequest, msg)
 		return
 	}
 	if strings.TrimSpace(req.GuardianName) == "" {
@@ -396,19 +449,16 @@ func (a *app) handleSignUpGuardian(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	hash, err := hashPassword(req.Password)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "登録に失敗しました")
 		return
 	}
 
 	/*
-	 * 個人チャットのルーム名は、取引を始める前に引いておく。
-	 * 接続は1本に絞っている（db.go）ため、取引の途中で a.db へ問い合わせると、
-	 * 取引が握っている接続を待ち続けて、サーバ全体が応答しなくなる
+	 * 取引の中では a.db へ問い合わせない。接続は1本に絞っている（db.go）ため、取引の途中で a.db へ
+	 * 問い合わせると、取引が握っている接続を待ち続けて、サーバ全体が応答しなくなる。tx を使う
 	 */
-	personalRoomName := a.childName(code.ChildID) + "の保護者"
-
 	tx, err := a.db.Begin()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "登録に失敗しました")
@@ -416,11 +466,31 @@ func (a *app) handleSignUpGuardian(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	res, err := tx.Exec(`INSERT INTO m_account
+	/*
+	 * 招待コードは、取引の中で「未使用なら使用済みにする」条件付きの更新で押さえる。
+	 * 1枚のコードは1アカウントの登録にのみ使える。使用と同時に status を使用済みにする（基本設計書 5-2）。
+	 *
+	 * 上の lookupUsableCode は取引の外で読むため、同じコードを同時に送ると、どれも「未使用」と読める。
+	 * 更新できた（1行）ものだけが登録へ進み、ほかは取引ごと取り消す（GitHub Issue #163）。
+	 * SQLite は書き込みを1つずつ行うため、2つ目以降の更新は、1つ目の確定後の状態（使用済み）を見る
+	 */
+	res, err := tx.Exec(`UPDATE t_invitation_code SET status = '2', used_at = ?
+		WHERE invitation_code_id = ? AND status = '1' AND expires_on >= ?`, now(), code.ID, today())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "登録に失敗しました")
+		return
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		// 文言は基本設計書「メッセージ一覧」(4-9)「招待コードが使用済み」による
+		writeErr(w, http.StatusBadRequest, "この招待コードは既に使用されています。")
+		return
+	}
+
+	res, err = tx.Exec(`INSERT INTO m_account
 		(email, password_hash, role, status, is_temp_password, failed_login_count,
 		 terms_version, terms_agreed_at, created_at, updated_at)
 		VALUES (?, ?, '3', '1', 0, 0, ?, ?, ?, ?)`,
-		req.Email, string(hash), a.currentTermsVersion, now(), now(), now())
+		req.Email, hash, a.currentTermsVersion, now(), now(), now())
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "登録に失敗しました")
 		return
@@ -448,23 +518,21 @@ func (a *app) handleSignUpGuardian(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "登録に失敗しました")
 		return
 	}
-
-	// 使用と同時に status を使用済みにする。1枚のコードは1アカウントの登録にのみ使える（基本設計書 5-2）
-	if _, err := tx.Exec(`UPDATE t_invitation_code SET status = '2', used_account_id = ?, used_at = ?
-		WHERE invitation_code_id = ? AND status = '1'`, accountID, now(), code.ID); err != nil {
+	if _, err := tx.Exec(`UPDATE t_invitation_code SET used_account_id = ? WHERE invitation_code_id = ?`,
+		accountID, code.ID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "登録に失敗しました")
 		return
 	}
 
-	// 自児の個人チャット・クラス・園全体へ参加させる
-	joinRooms := []string{}
-	var personal int64
-	if err := tx.QueryRow(`SELECT chat_room_id FROM m_chat_room
-		WHERE room_type = '4' AND room_name = ?`, personalRoomName).Scan(&personal); err == nil {
-		joinRooms = append(joinRooms, "")
-		tx.Exec(`INSERT OR IGNORE INTO t_chat_member (chat_room_id, account_id, joined_at) VALUES (?, ?, ?)`,
-			personal, accountID, now())
-	}
+	/*
+	 * 自児の個人チャット・クラス・園全体へ参加させる。
+	 * 個人チャットは園児ID（m_chat_room.child_id）で引く。個人チャットのルームは園児単位で作る
+	 * （基本設計書「チャット」(5-5)）。部屋の名前（園児名＋「の保護者」）で探すと、同じ氏名の別の園児がいるとき、
+	 * 別の家庭の個人チャットに入ってしまう（GitHub Issue #163。#140 の「あわせて気になる点」）
+	 */
+	tx.Exec(`INSERT OR IGNORE INTO t_chat_member (chat_room_id, account_id, joined_at)
+		SELECT chat_room_id, ?, ? FROM m_chat_room WHERE room_type = '4' AND child_id = ?`,
+		accountID, now(), code.ChildID)
 	tx.Exec(`INSERT OR IGNORE INTO t_chat_member (chat_room_id, account_id, joined_at)
 		SELECT r.chat_room_id, ?, ? FROM m_chat_room r
 		 WHERE r.room_type = '2'
@@ -472,7 +540,6 @@ func (a *app) handleSignUpGuardian(w http.ResponseWriter, r *http.Request) {
 		accountID, now(), code.ChildID)
 	tx.Exec(`INSERT OR IGNORE INTO t_chat_member (chat_room_id, account_id, joined_at)
 		SELECT chat_room_id, ?, ? FROM m_chat_room WHERE room_type = '1'`, accountID, now())
-	_ = joinRooms
 
 	if err := tx.Commit(); err != nil {
 		writeErr(w, http.StatusInternalServerError, "登録に失敗しました")
@@ -485,6 +552,16 @@ func (a *app) handleSignUpGuardian(w http.ResponseWriter, r *http.Request) {
 	a.sessions.create(w, accountID, "guardian", a.settingInt("ui.auto_logout_minutes", 30))
 	u, _ := a.loadSessionUser(accountID)
 	writeJSON(w, http.StatusOK, u)
+}
+
+// writeAlreadyLoggedIn は、ログイン中に新しいログイン・新規登録を受けたときの応答。
+// ログイン中の氏名・ロールは出さない。共有端末で前の利用者が誰であったかを第三者に示さないため
+// （基本設計書「ログイン」(4-3)）
+func writeAlreadyLoggedIn(w http.ResponseWriter) {
+	writeJSON(w, http.StatusConflict, apiError{
+		Kind:    "already_logged_in",
+		Message: "すでにログインしています。別のアカウントでログインするには、先にログアウトしてください",
+	})
 }
 
 func pad3(n int) string {

@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 )
 
 // apiError は画面へ返すエラー。本文はそのまま利用者に見せる文言とする。
@@ -16,15 +18,28 @@ type apiError struct {
 	Correct   string `json:"correct,omitempty"`
 }
 
+/*
+writeJSON は値を JSON にして返す。
+
+JSON にしてから状態を書く。先に 200 を書いてから JSON にできない値（+Inf など）に当たると、
+200 の空の本文が返り、画面は中身が null のまま描こうとして真っ白になる（GitHub Issue #160）。
+JSON にできないときは 500 と文言を返し、画面にはエラーとして出させる。
+*/
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
 	if v == nil {
+		w.WriteHeader(status)
 		return
 	}
-	if err := json.NewEncoder(w).Encode(v); err != nil {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(v); err != nil {
 		log.Printf("JSON の書き出しに失敗しました: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(apiError{Message: "データを返せませんでした。管理者へご連絡ください"})
+		return
 	}
+	w.WriteHeader(status)
+	w.Write(buf.Bytes())
 }
 
 func writeErr(w http.ResponseWriter, status int, message string) {
@@ -62,6 +77,20 @@ func isKana(v string) bool {
 		}
 	}
 	return true
+}
+
+// isISODate は、'YYYY-MM-DD' の形で、実在する日付かを返す。
+// 月日を1桁で書いた値（2026-10-1）や、2月30日のような値は受け取らない。
+// 崩れた日付を保存すると、月齢の計算や日付の並べ替えが狂うため（GitHub Issue #164）
+func isISODate(v string) bool {
+	t, err := time.ParseInLocation("2006-01-02", v, jst)
+	return err == nil && t.Format("2006-01-02") == v
+}
+
+// isISODateTime は、'YYYY-MM-DDTHH:MM:SS' の形で、実在する日時かを返す
+func isISODateTime(v string) bool {
+	t, err := time.ParseInLocation("2006-01-02T15:04:05", v, jst)
+	return err == nil && t.Format("2006-01-02T15:04:05") == v
 }
 
 func queryInt(r *http.Request, key string, def int) int {

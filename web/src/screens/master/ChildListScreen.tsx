@@ -95,12 +95,14 @@ export default function ChildListScreen() {
 }
 
 function ClassCell({ childId }: { childId: string }) {
-  const c = useAsync(() => api.classOf(childId), [childId]);
+  const { user } = useSession();
+  const c = useAsync(() => api.classOf(user!, childId), [childId]);
   return <>{c.data ? className(c.data) : '―'}</>;
 }
 
 function AllergyCell({ childId }: { childId: string }) {
-  const a = useAsync(() => api.allergiesOf(childId), [childId]);
+  const { user } = useSession();
+  const a = useAsync(() => api.allergiesOf(user!, childId), [childId]);
   if (!a.data || a.data.length === 0) return <span className="muted">―</span>;
   return (
     <>

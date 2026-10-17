@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -30,6 +31,9 @@ type SessionUser struct {
 	IsTempPassword bool `json:"is_temp_password"`
 	// 最新版の規約に同意済みか
 	TermsAgreed bool `json:"terms_agreed"`
+	// アカウントの状態（m_account.status。1:有効 2:停止）。画面へは返さない。
+	// 停止中のアカウントのセッションを通さないために使う（session.go の requireLogin）
+	status string
 }
 
 // SessionUser.Role に入る値（m_account.role）。DB には "1" 〜 "3" の文字列で
@@ -54,6 +58,15 @@ func (u *SessionUser) isStaff() bool { return u.Role == roleAdmin || u.Role == r
 
 // isGuardian : ログイン中の利用者が保護者か
 func (u *SessionUser) isGuardian() bool { return u.Role == roleGuardian }
+
+// m_account.status に入る値（基本設計書「アカウント（m_account）」(5-2)）
+const (
+	accountActive    = "1" // 有効
+	accountSuspended = "2" // 停止
+)
+
+// isSuspended : アカウントが停止されているか
+func (u *SessionUser) isSuspended() bool { return u.status == accountSuspended }
 
 func (u *SessionUser) staff() string {
 	if u.StaffID == nil {
@@ -159,15 +172,28 @@ func ageInMonths(birthDate, baseDate string) int {
 	return months
 }
 
+// splitDate は 'YYYY-MM-DD'（後ろに時刻が続いてもよい）を年月日に分ける。
+//
+// 形の崩れた値でも落ちない。読めなければ ok を偽で返し、月齢は 0 になる。
+// 保存の API で検査を入れる前に入ってしまった値（2026-10-1 など）があっても、
+// 一覧やダッシュボードが開けなくならないようにするため（GitHub Issue #164）。
+// 1桁の月日は、そのまま数として読む
 func splitDate(iso string) (y, m, d int, ok bool) {
-	parts := strings.Split(iso, "-")
+	parts := strings.SplitN(iso, "-", 3)
 	if len(parts) < 3 {
 		return 0, 0, 0, false
 	}
+	day := parts[2]
+	if i := strings.IndexAny(day, "T "); i >= 0 {
+		day = day[:i]
+	}
 	y, e1 := strconv.Atoi(parts[0])
 	m, e2 := strconv.Atoi(parts[1])
-	d, e3 := strconv.Atoi(parts[2][:2])
-	return y, m, d, e1 == nil && e2 == nil && e3 == nil
+	d, e3 := strconv.Atoi(day)
+	if e1 != nil || e2 != nil || e3 != nil || m < 1 || m > 12 || d < 1 || d > 31 {
+		return 0, 0, 0, false
+	}
+	return y, m, d, true
 }
 
 func lastDayOfMonth(year, month int) int {
@@ -198,8 +224,11 @@ func nullInt(n sql.NullInt64) *int64 {
 	return &v
 }
 
+// nullFloat は、空の値を nil にする。数でない値（+Inf・NaN）も nil にする。
+// JSON にできず、園児を返す API がまとめて失敗するため。直す前の CSV 一括登録で平熱に inf が
+// 入ったデータベースでも、一覧や午睡チェックを開けるようにする（GitHub Issue #160）
 func nullFloat(f sql.NullFloat64) *float64 {
-	if !f.Valid {
+	if !f.Valid || math.IsInf(f.Float64, 0) || math.IsNaN(f.Float64) {
 		return nil
 	}
 	v := f.Float64

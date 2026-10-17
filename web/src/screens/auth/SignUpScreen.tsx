@@ -12,12 +12,15 @@ import { Field, Alert } from '../../components/ui';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api } from '../../api/client';
-import { validateEmail } from '../../api/util';
+import { validateEmail, validateNewPassword } from '../../api/util';
+import { LoggedInNotice } from './TopScreen';
 
 export default function SignUpScreen() {
   const navigate = useNavigate();
-  const { setUser, setEntrance } = useSession();
+  const { user, setUser, setEntrance } = useSession();
   const terms = useAsync(() => api.currentTerms(), []);
+  // ログインより前に開いておいたタブから送り、サーバに断られたとき（下の submit）
+  const [loggedInElsewhere, setLoggedInElsewhere] = useState(false);
 
   const [code, setCode] = useState('');
   const [codeOk, setCodeOk] = useState(false);
@@ -49,7 +52,9 @@ export default function SignUpScreen() {
     if (!name.trim()) { setError('保護者の氏名を入力してください'); return; }
     const emailError = validateEmail(email);
     if (emailError) { setError(emailError); return; }
-    if (password.length < 8) { setError('パスワードは8文字以上で入力してください'); return; }
+    // 8〜128文字（文字数で数える）。よく使われるパスワードは使えない（基本設計書 4-9・6-3。GitHub Issue #159）
+    const passwordError = validateNewPassword(password);
+    if (passwordError) { setError(passwordError); return; }
     if (password !== password2) { setError('パスワードが一致しません'); return; }
     setBusy(true);
     try {
@@ -58,11 +63,20 @@ export default function SignUpScreen() {
       setUser(u);
       navigate('/guardian');
     } catch (err) {
-      setError((err as Error).message);
+      const message = (err as Error).message;
+      if (message.includes('"already_logged_in"')) setLoggedInElsewhere(true);
+      else setError(message);
     } finally {
       setBusy(false);
     }
   };
+
+  /*
+   * ログイン中は登録の入力欄を出さない。登録が成立するとセッションが新しい保護者に置き換わり、
+   * 上書きログインと同じことになる（基本設計書「ログイン」(4-3)、画面詳細図 2-2。GitHub Issue #159）。
+   * 担保はサーバ側（server/api_auth.go の handleSignUpGuardian）が行う
+   */
+  if (user || loggedInElsewhere) return <LoggedInNotice onLoggedOut={() => setLoggedInElsewhere(false)} />;
 
   return (
     <PublicLayout wide>

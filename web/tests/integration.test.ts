@@ -9,7 +9,10 @@
  *
  * ふだんの npm test はブラウザ内のモックだけで完結させる（サーバに依存させない）。
  */
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
+
+// 相手は本物の時計で動くサーバなので、tests/setup-clock.ts で止めた時計を本物に戻す
+vi.useRealTimers();
 
 const BASE = process.env.SUKUSUKU_API ?? '';
 const run = BASE ? describe : describe.skip;
@@ -45,6 +48,15 @@ run('Go サーバとの結合', () => {
   });
 
   const dummy = { account_id: 0 } as never;
+
+  /*
+   * 別の端末でログインし直す。ログイン中は、系統・アカウントを問わず新しいログインを成立させない
+   * （基本設計書「ログイン」(4-3)。GitHub Issue #159）ため、持っている Cookie を捨ててから入る
+   */
+  const switchTo = (email: string, password: string, entrance: 'staff' | 'guardian') => {
+    cookie = '';
+    return http.api.login(email, password, entrance);
+  };
 
   it('誤った系統の入口ではログインできない', async () => {
     await expect(http.api.login('nohara.i@example.jp', 'pass1234', 'staff'))
@@ -208,21 +220,27 @@ run('Go サーバとの結合', () => {
     // 使用済みのコードをハイフンなし・小文字で入れる。「確認できません」ではなく「使われています」と返る
     await expect(http.api.verifyInvitationCode('ijkl5678mnop')).rejects.toThrow(/すでに使われています/);
 
-    await http.api.login('nohara@hoiku.example.jp', 'pass1234', 'staff');
+    await switchTo('nohara@hoiku.example.jp', 'pass1234', 'staff');
     const code = await http.api.issueOneInvitationCode(dummy, 'C001', 30);
+    const adminCookie = cookie;
     try {
       await expect(http.api.verifyInvitationCode(code.replace(/-/g, '').toLowerCase())).resolves.toBeTruthy();
       const base = { code, password: 'pass12345', guardian_name: '検査 太郎', relationship: '父' };
+      // ログイン中は新規登録を受け付けない（GitHub Issue #159）
+      await expect(http.api.signUpGuardian({ ...base, email: 'taro@example.jp' })).rejects.toThrow(/already_logged_in/);
+      // 登録は、ログインしていない端末から行う
+      cookie = '';
       await expect(http.api.signUpGuardian({ ...base, email: '' })).rejects.toThrow(/メールアドレスを入力/);
       await expect(http.api.signUpGuardian({ ...base, email: 'taro.example.jp' })).rejects.toThrow(/形式/);
     } finally {
+      cookie = adminCookie;
       const row = (await http.api.invitationCodes(dummy)).find((c) => c.code === code)!;
       await http.api.revokeInvitationCode(dummy, row.invitation_code_id);
     }
   });
 
   it('配布物を掲載すると保護者の一覧に出て、取り下げると消える', async () => {
-    await http.api.login('nohara@hoiku.example.jp', 'pass1234', 'staff');
+    await switchTo('nohara@hoiku.example.jp', 'pass1234', 'staff');
     const month = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 7);
     const before = await http.api.handouts(dummy);
     expect(before.length).toBeGreaterThan(0);
@@ -236,21 +254,21 @@ run('Go サーバとの結合', () => {
         file_name: 'a.docx', file_type: 'application/msword', file_size: 100,
       })).rejects.toThrow(/PDF・JPEG・PNG/);
 
-      await http.api.login('nohara.i@example.jp', 'pass1234', 'guardian');
+      await switchTo('nohara.i@example.jp', 'pass1234', 'guardian');
       expect((await http.api.handouts(dummy)).some((h) => h.handout_id === handout_id)).toBe(true);
       await expect(http.api.postHandout(dummy, {
         handout_type: '3', title: '保護者からは掲載できない', target_month: month, class_id: null,
         file_name: 'x.pdf', file_type: 'application/pdf', file_size: 100,
       })).rejects.toThrow(/管理者のみ/);
     } finally {
-      await http.api.login('nohara@hoiku.example.jp', 'pass1234', 'staff');
+      await switchTo('nohara@hoiku.example.jp', 'pass1234', 'staff');
       await http.api.withdrawHandout(dummy, handout_id);
     }
     expect((await http.api.handouts(dummy)).some((h) => h.handout_id === handout_id)).toBe(false);
   });
 
   it('保護者が開く共有日誌には、記入者の氏名が載る（職員IDではない）', async () => {
-    await http.api.login('nohara.i@example.jp', 'pass1234', 'guardian');
+    await switchTo('nohara.i@example.jp', 'pass1234', 'guardian');
     const home = await http.api.guardianHome(dummy);
     const shared = home.flatMap((h) => h.sharedDiaries)[0];
     expect(shared).toBeTruthy();
@@ -268,7 +286,7 @@ run('Go サーバとの結合', () => {
    * （基本設計書「画面基本構成」(3-5)）。
    */
   it('ログアウトするとサーバ側のセッションも捨てられる', async () => {
-    await http.api.login('nohara@hoiku.example.jp', 'pass1234', 'staff');
+    await switchTo('nohara@hoiku.example.jp', 'pass1234', 'staff');
     expect(await http.api.bootstrap()).not.toBeNull();
 
     await http.api.logout();
@@ -277,5 +295,74 @@ run('Go サーバとの結合', () => {
     expect(await http.api.bootstrap()).toBeNull();
     // 参照表も捨てられている
     expect(http.visibleChildren(dummy)).toHaveLength(0);
+  });
+
+  /*
+   * 一時パスワード中は、手続き以外の API を理由つきで拒否する（GitHub Issue #153）。
+   * 参照表（/api/reference）も拒否されるため、ログインと開き直しが失敗しないことも確かめる。
+   * パスワードは変えない。デモアカウントの一時パスワードを残すため。
+   * ログアウトもしない。宮城 蓮が持っているデモの編集ロック（日誌2）が、ログアウトで外れるため
+   */
+  it('一時パスワード中でもログインでき、手続き以外の API は理由つきで拒否される', async () => {
+    const procedure = await import('../src/api/procedure');
+    const seen: string[] = [];
+    const stop = procedure.onProcedureRequired((kind) => seen.push(kind));
+    try {
+      const u = await switchTo('miyagi@hoiku.example.jp', 'temp0901', 'staff');
+      expect(u.is_temp_password).toBe(true);
+      // 手続きを終えるまで、園児名などの参照表は持たない
+      expect(http.visibleChildren(dummy)).toHaveLength(0);
+      await expect(http.api.listChildren(dummy)).rejects.toMatchObject({ kind: 'password_change_required' });
+      await expect(http.api.listChildren(dummy)).rejects.toThrow('パスワードを変更してください');
+      expect(seen).toContain('password_change_required');
+      // 開き直しても、手続きの途中として復元される（画面がパスワードの変更へ案内できる）
+      expect((await http.api.bootstrap())?.is_temp_password).toBe(true);
+    } finally {
+      stop();
+    }
+  });
+
+  it('担当外の日誌の添付・編集ロック、園児の所属クラスは拒否される（GitHub Issue #153）', async () => {
+    await switchTo('kinjo@hoiku.example.jp', 'pass1234', 'staff');
+    try {
+      await expect(http.api.attachmentsOf(dummy, 4)).rejects.toThrow(/権限がありません/);
+      await expect(http.api.acquireLock(dummy, 1)).rejects.toThrow(/権限がありません/);
+      await expect(http.api.lockOf(dummy, 2)).rejects.toThrow(/権限がありません/);
+      await expect(http.api.classOf(dummy, 'C001')).rejects.toThrow(/権限がありません/);
+      await expect(http.api.classOf(dummy, 'C013')).resolves.toBe(2);
+    } finally {
+      await http.api.logout();
+    }
+  });
+
+  it('ログイン中は、別のアカウントのログインを成立させず、前のセッションを残す（GitHub Issue #159）', async () => {
+    await switchTo('kinjo@hoiku.example.jp', 'pass1234', 'staff');
+    await expect(http.api.login('nohara@hoiku.example.jp', 'pass1234', 'staff')).rejects.toThrow(/already_logged_in/);
+    expect((await http.api.bootstrap())?.email).toBe('kinjo@hoiku.example.jp');
+  });
+
+  it('停止したアカウントのセッションは、その場で切れて画面へ知らせる（GitHub Issue #159）', async () => {
+    const procedure = await import('../src/api/procedure');
+    const kinjo = await switchTo('kinjo@hoiku.example.jp', 'pass1234', 'staff');
+    const kinjoCookie = cookie;
+    await switchTo('nohara@hoiku.example.jp', 'pass1234', 'staff');
+    const adminCookie = cookie;
+    await http.api.setAccountStatus(dummy, kinjo.account_id, '2');
+    try {
+      cookie = kinjoCookie;
+      let ended = 0;
+      const stop = procedure.onSessionEnded(() => { ended += 1; });
+      try {
+        await expect(http.api.listChildren(dummy)).rejects.toThrow('ログインしていません');
+        expect(ended).toBe(1);
+        expect(http.visibleChildren(dummy)).toHaveLength(0);
+      } finally {
+        stop();
+      }
+    } finally {
+      cookie = adminCookie;
+      await http.api.setAccountStatus(dummy, kinjo.account_id, '1');
+      await http.api.logout();
+    }
   });
 });

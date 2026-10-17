@@ -19,6 +19,9 @@ import type {
   DevListRow, DevScheduleRow, CsvRow, FiscalClassRow, StaffAccountRow,
   GuardianAccountRow, InvitationCodeRow, OperationLogRow, StaffSummary, GuardianHomeRow,
 } from './shapes';
+import {
+  ProcedureRequiredError, isProcedureKind, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
+} from './procedure';
 
 // 画面はこれまでどおり client 経由で型を参照する。定義の実体は shapes.ts が持つ
 export type {
@@ -55,6 +58,23 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
   if (!res.ok) {
     const err = new ApiError(data ?? { message: '通信に失敗しました' });
+    /*
+     * 手続き（パスワードの変更・規約への同意）を終えるまで拒否された（server/session.go の requireUser）。
+     * 文言はそのまま見せられる形で投げ、画面（App.tsx）へ知らせて手続きの画面へ案内させる（api/procedure.ts）
+     */
+    if (res.status === 403 && isProcedureKind(err.kind)) {
+      notifyProcedureRequired(err.kind);
+      throw new ProcedureRequiredError(err.kind, err.message);
+    }
+    /*
+     * セッションが無い・切られた（停止・紐づけの解除・ほかの端末でのパスワードの変更など。GitHub Issue #159）。
+     * 参照表（園児名・職員名）を捨て、画面（App.tsx）へ知らせて入口へ戻させる。
+     * ログインそのものの失敗は、まだログインしていないため知らせない
+     */
+    if (res.status === 401 && path !== '/api/login') {
+      clearReference();
+      notifySessionEnded();
+    }
     // ログインの失敗理由は画面が分岐に使う。mock 実装と同じ形（JSON 文字列）で投げる
     if (err.kind) {
       throw new Error(JSON.stringify({ kind: err.kind, remaining: err.remaining, correct: err.correct }));
@@ -100,11 +120,31 @@ let ref: Reference = empty;
 
 /** ログイン直後と、ページを開き直したときに呼ぶ */
 export async function loadReference(): Promise<void> {
-  ref = await get<Reference>('/api/reference');
+  /*
+   * 本文が空（null）のまま参照表にすると、どの画面も ref.classes を読めずに真っ白になる（GitHub Issue #160）。
+   * サーバは JSON にできない値のとき空の 200 ではなく 500 を返す（server/httpx.go の writeJSON）が、
+   * 画面の側でも、空のときは前の参照表を残して失敗として扱う
+   */
+  const r = await get<Reference | null>('/api/reference');
+  if (!r) throw new Error('参照する情報を読み込めませんでした。もう一度お試しください');
+  ref = r;
 }
 
 export function clearReference(): void {
   ref = empty;
+}
+
+/**
+ * 利用者に合わせて参照表を読み込む。手続き（パスワードの変更・規約への同意）の途中は読み込まず、空にしておく。
+ * 参照表には園児名・職員名が載るため、サーバは手続きを終えるまで渡さない（server/session.go の requireUser）。
+ * 手続きを終えたあとの reloadSession で読み込む
+ */
+async function loadReferenceFor(u: SessionUser): Promise<void> {
+  if (pendingProcedure(u)) {
+    clearReference();
+    return;
+  }
+  await loadReference();
 }
 
 /* ============ 同期の補助関数 ============ */
@@ -166,7 +206,7 @@ const apiAuth = {
   /* ---- 認証 ---- */
   async login(email: string, password: string, entrance: 'staff' | 'guardian'): Promise<SessionUser> {
     const u = await post<SessionUser>('/api/login', { email, password, entrance });
-    await loadReference();
+    await loadReferenceFor(u);
     return u;
   },
 
@@ -179,7 +219,7 @@ const apiAuth = {
   async bootstrap(): Promise<SessionUser | null> {
     try {
       const u = await get<SessionUser>('/api/me');
-      await loadReference();
+      await loadReferenceFor(u);
       return u;
     } catch {
       return null;
@@ -188,7 +228,7 @@ const apiAuth = {
 
   async reloadSession(_accountId: number): Promise<SessionUser> {
     const u = await get<SessionUser>('/api/me');
-    await loadReference();
+    await loadReferenceFor(u);
     return u;
   },
 
@@ -208,7 +248,7 @@ const apiAuth = {
     code: string; email: string; password: string; guardian_name: string; relationship: string;
   }): Promise<SessionUser> {
     const u = await post<SessionUser>('/api/signup', input);
-    await loadReference();
+    await loadReferenceFor(u);
     return u;
   },
 
@@ -223,11 +263,12 @@ const apiAuth = {
     const r = await get<{ exists: boolean }>(`/api/children/${encodeURIComponent(childId.trim())}/exists`);
     return r.exists;
   },
-  allergiesOf: (childId: string) => get<Allergy[]>(`/api/children/${childId}/allergies`),
-  medicalHistoriesOf: (childId: string) =>
+  // 第1引数はモック実装（mock.ts）が権限の判定に使う。サーバはセッションから利用者を引く
+  allergiesOf: (_u: SessionUser, childId: string) => get<Allergy[]>(`/api/children/${childId}/allergies`),
+  medicalHistoriesOf: (_u: SessionUser, childId: string) =>
     get<{ medical_history_id: number; child_id: string; content: string }[]>(
       `/api/children/${childId}/medical-histories`),
-  classOf: (childId: string) => get<number | null>(`/api/children/${childId}/class`),
+  classOf: (_u: SessionUser, childId: string) => get<number | null>(`/api/children/${childId}/class`),
   allAllergies: () =>
     get<{ child: Child; className: string; allergies: Allergy[] }[]>('/api/children/allergies'),
 
@@ -252,10 +293,10 @@ const apiAuth = {
   getDiary: (_u: SessionUser, diaryId: number) => get<Diary>(`/api/diaries/${diaryId}`),
   templates: () => get<DiaryTemplate[]>('/api/diaries/templates'),
   phrases: () => get<string[]>('/api/diaries/phrases'),
-  attachmentsOf: (diaryId: number) =>
+  attachmentsOf: (_u: SessionUser, diaryId: number) =>
     get<{ diary_attachment_id: number; diary_id: number; file_path: string; file_type: string }[]>(
       `/api/diaries/${diaryId}/attachments`),
-  pastDiariesOf: (childId: string, _exclude?: number) => get<Diary[]>(`/api/children/${childId}/diaries`),
+  pastDiariesOf: (_u: SessionUser, childId: string, _exclude?: number) => get<Diary[]>(`/api/children/${childId}/diaries`),
   timelineOf: (_u: SessionUser, childId: string) => get<Diary[]>(`/api/children/${childId}/timeline`),
   pendingDiaries: (_u: SessionUser) => get<Diary[]>('/api/diaries/pending'),
 
@@ -276,7 +317,7 @@ const apiAuth = {
   releaseLock: (_u: SessionUser, diaryId: number, force = false) =>
     del<void>(`/api/diaries/${diaryId}/lock${force ? '?force=true' : ''}`),
 
-  lockOf: (diaryId: number) =>
+  lockOf: (_u: SessionUser, diaryId: number) =>
     get<{ diary_id: number; lock_token: string; locked_staff_id: string; last_active_at: string; staff_name: string } | null>(
       `/api/diaries/${diaryId}/lock`),
 };

@@ -66,7 +66,70 @@ func openDB(path string) (*sql.DB, error) {
 	if err := ensureHandouts(db); err != nil {
 		return nil, err
 	}
+	if err := ensurePersonalRoomChild(db); err != nil {
+		return nil, err
+	}
 	return db, nil
+}
+
+/*
+ensurePersonalRoomChild は、個人チャットと園児を結ぶ列（m_chat_room.child_id）を、以前に作られた
+データベースへ足す（GitHub Issue #163）。
+
+個人チャットのルームは園児単位で作る（基本設計書「チャット」(5-5)）。以前は部屋の名前（園児名＋「の保護者」）で
+探していたため、同じ氏名の別の園児がいると、その家庭の個人チャットに入ってしまった。
+
+列を足すときに一度だけ、次を行う。
+
+  - 名前から園児を引いて埋める。同じ氏名の園児が2人以上いる部屋は、どちらの部屋か決められないため空のままにし、
+    ログに残す（その部屋には新しい保護者が入らない）
+  - 保護者の参加のうち、その部屋の園児と有効な紐づけが無いものに left_at を入れる。名前で探していたときに
+    別の家庭の個人チャットへ入った保護者を外すため。保護者は left_at が入った時点で参照できなくなる（5-5）
+
+新規作成のときは schema.sql と seed.sql がすでに持っているため、何も変わらない。
+*/
+func ensurePersonalRoomChild(db *sql.DB) error {
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('m_chat_room') WHERE name = 'child_id'`).
+		Scan(&n); err != nil {
+		return fmt.Errorf("チャットルームの列を確かめられません: %w", err)
+	}
+	if n == 0 {
+		if _, err := db.Exec(`ALTER TABLE m_chat_room ADD COLUMN child_id TEXT REFERENCES m_child(child_id)`); err != nil {
+			return fmt.Errorf("チャットルームに園児の列を足せません: %w", err)
+		}
+		if _, err := db.Exec(`UPDATE m_chat_room SET child_id = (
+				SELECT c.child_id FROM m_child c WHERE c.child_name || 'の保護者' = m_chat_room.room_name)
+			 WHERE room_type = '4' AND child_id IS NULL
+			   AND (SELECT COUNT(*) FROM m_child c WHERE c.child_name || 'の保護者' = m_chat_room.room_name) = 1
+			   AND (SELECT COUNT(*) FROM m_chat_room x
+			         WHERE x.room_type = '4' AND x.room_name = m_chat_room.room_name) = 1`); err != nil {
+			return fmt.Errorf("個人チャットの園児を埋められません: %w", err)
+		}
+		res, err := db.Exec(`UPDATE t_chat_member SET left_at = ?
+			 WHERE left_at IS NULL
+			   AND account_id IN (SELECT account_id FROM m_account WHERE role = '3')
+			   AND chat_room_id IN (SELECT chat_room_id FROM m_chat_room WHERE room_type = '4')
+			   AND NOT EXISTS (
+			     SELECT 1 FROM m_chat_room r
+			       JOIN t_guardian_child gc ON gc.child_id = r.child_id AND gc.link_status = '1'
+			       JOIN m_guardian g ON g.guardian_id = gc.guardian_id
+			      WHERE r.chat_room_id = t_chat_member.chat_room_id AND g.account_id = t_chat_member.account_id)`,
+			now())
+		if err != nil {
+			return fmt.Errorf("個人チャットの参加者を確かめられません: %w", err)
+		}
+		left, _ := res.RowsAffected()
+		var unresolved int
+		db.QueryRow(`SELECT COUNT(*) FROM m_chat_room WHERE room_type = '4' AND child_id IS NULL`).Scan(&unresolved)
+		log.Printf("個人チャットに園児の列（child_id）を足しました。園児を決められなかった部屋 %d、外した保護者の参加 %d",
+			unresolved, left)
+	}
+	if _, err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS ux_chat_room_child
+		ON m_chat_room (child_id) WHERE room_type = '4'`); err != nil {
+		return fmt.Errorf("個人チャットの一意制約を作れません: %w", err)
+	}
+	return nil
 }
 
 /*
