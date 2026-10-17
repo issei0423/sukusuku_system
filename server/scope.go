@@ -19,6 +19,7 @@ type Child struct {
 	ChildID           string   `json:"child_id"`
 	ChildName         string   `json:"child_name"`
 	ChildNameKana     string   `json:"child_name_kana"`
+	Nickname          string   `json:"nickname"`
 	BirthDate         string   `json:"birth_date"`
 	Sex               string   `json:"sex"`
 	NormalTemperature *float64 `json:"normal_temperature"`
@@ -29,13 +30,13 @@ type Child struct {
 	UpdatedAt         string   `json:"updated_at"`
 }
 
-const childColumns = `child_id, child_name, IFNULL(child_name_kana,''), birth_date, sex,
+const childColumns = `child_id, child_name, IFNULL(child_name_kana,''), nickname, birth_date, sex,
 	normal_temperature, enrollment_status, photo_consent_level, is_deleted, created_at, updated_at`
 
 func scanChild(rows interface{ Scan(...any) error }) (Child, error) {
 	var c Child
 	var temp sql.NullFloat64
-	err := rows.Scan(&c.ChildID, &c.ChildName, &c.ChildNameKana, &c.BirthDate, &c.Sex,
+	err := rows.Scan(&c.ChildID, &c.ChildName, &c.ChildNameKana, &c.Nickname, &c.BirthDate, &c.Sex,
 		&temp, &c.EnrollmentStatus, &c.PhotoConsentLevel, &c.IsDeleted, &c.CreatedAt, &c.UpdatedAt)
 	c.NormalTemperature = nullFloat(temp)
 	return c, err

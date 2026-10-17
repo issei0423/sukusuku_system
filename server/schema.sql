@@ -95,6 +95,7 @@ CREATE TABLE m_child (
   child_id            TEXT    PRIMARY KEY,
   child_name          TEXT    NOT NULL,
   child_name_kana     TEXT,
+  nickname            TEXT NOT NULL DEFAULT '',
   -- 月齢算出の唯一の根拠。未来日不可
   birth_date          TEXT    NOT NULL,
   sex                 TEXT    NOT NULL CHECK (sex IN ('1','2','9')),                    -- 1:男 2:女 9:未回答

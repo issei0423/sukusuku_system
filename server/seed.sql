@@ -250,6 +250,9 @@ INSERT INTO t_diary (diary_id, record_type, child_id, class_id, diary_date, body
 UPDATE t_nap_abnormal SET diary_id = 3 WHERE nap_abnormal_id = 1;
 
 -- ============ チャット ============
+-- 詳細設計書「デモデータ」(5-5) の呼び名。
+UPDATE m_child SET nickname = CASE child_id WHEN 'C001' THEN 'たっくん' WHEN 'C006' THEN 'あおちゃん' WHEN 'C008' THEN 'ゆいちゃん' ELSE nickname END
+WHERE child_id IN ('C001','C006','C008');
 -- 個人チャットは園児ID（child_id）で園児と結ぶ。部屋の名前は表示のためのもの（GitHub Issue #163）
 INSERT INTO m_chat_room (chat_room_id, room_type, class_id, room_name, is_archived, thread_status, child_id) VALUES
  (1,'1',NULL,'園全体',0,NULL,NULL),
@@ -279,6 +282,22 @@ INSERT INTO t_chat_member (chat_room_id, account_id, joined_at, left_at) VALUES
  (7,1,'2025-04-05T10:00:00',NULL),(7,2,'2025-04-05T10:00:00',NULL),(7,3,'2025-04-05T10:00:00',NULL),(7,4,'2025-04-05T10:00:00',NULL),(7,7,'2025-04-05T10:00:00',NULL),
  (8,1,'2025-07-01T10:00:00',NULL),(8,2,'2025-07-01T10:00:00',NULL),(8,3,'2025-07-01T10:00:00',NULL),(8,4,'2025-07-01T10:00:00',NULL),(8,9,'2025-07-01T10:00:00',NULL),
  (9,1,'2025-07-05T10:00:00',NULL),(9,2,'2025-07-05T10:00:00',NULL),(9,3,'2025-07-05T10:00:00',NULL),(9,4,'2025-07-05T10:00:00',NULL),(9,10,'2025-07-05T10:00:00',NULL);
+
+-- 詳細設計書「デモデータ」(5-5)：保護者未登録の在籍園児にも個人チャットを用意する。
+INSERT INTO m_chat_room (room_type, class_id, room_name, is_archived, thread_status, child_id)
+SELECT '4', cc.class_id, c.child_name || 'の保護者', 0, '2', c.child_id
+FROM m_child c JOIN t_class_child cc ON cc.child_id = c.child_id
+JOIN m_class cl ON cl.class_id = cc.class_id AND cl.fiscal_year = 2026
+WHERE c.enrollment_status = '1' AND c.is_deleted = 0
+  AND NOT EXISTS (SELECT 1 FROM m_chat_room r WHERE r.room_type = '4' AND r.child_id = c.child_id)
+ORDER BY c.child_id;
+INSERT INTO t_chat_member (chat_room_id, account_id, joined_at, left_at)
+SELECT r.chat_room_id, a.account_id, '2026-09-01T09:00:00', NULL
+FROM m_chat_room r CROSS JOIN m_account a
+WHERE r.room_type = '4' AND r.chat_room_id >= 10 AND a.status = '1'
+  AND (a.role = '1' OR (a.role = '2' AND EXISTS (
+    SELECT 1 FROM m_staff s JOIN t_class_staff cs ON cs.staff_id = s.staff_id
+    WHERE s.account_id = a.account_id AND cs.class_id = r.class_id)));
 
 INSERT INTO t_chat_message (chat_message_id, chat_room_id, sender_account_id, body, source_type, source_id, sent_at, edited_at, is_deleted, deleted_at, deleted_account_id) VALUES
  (1,1,1,'9月の献立表を掲示しました。ご確認ください。','1',NULL,'2026-09-01T08:30:00',NULL,0,NULL,NULL),

@@ -63,10 +63,14 @@ func openDB(path string) (*sql.DB, error) {
 	if err := ensureDesignColumns(db); err != nil {
 		return nil, err
 	}
+	if err := ensureChildNickname(db); err != nil { return nil, err }
 	if err := ensureHandouts(db); err != nil {
 		return nil, err
 	}
 	if err := ensurePersonalRoomChild(db); err != nil {
+		return nil, err
+	}
+	if err := ensureMissingPersonalRooms(db); err != nil {
 		return nil, err
 	}
 	if err := ensureNapAbnormalRecordedAt(db); err != nil {

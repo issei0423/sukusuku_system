@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 )
 
 /*
@@ -18,6 +19,7 @@ type childInput struct {
 	ChildID           string   `json:"child_id"`
 	ChildName         string   `json:"child_name"`
 	ChildNameKana     string   `json:"child_name_kana"`
+	Nickname          string   `json:"nickname"`
 	BirthDate         string   `json:"birth_date"`
 	Sex               string   `json:"sex"`
 	NormalTemperature *float64 `json:"normal_temperature"`
@@ -57,6 +59,10 @@ func (a *app) handleSaveChild(w http.ResponseWriter, r *http.Request) {
 	}
 	if tooLong(in.ChildName, 50) || tooLong(in.ChildNameKana, 50) {
 		writeErr(w, http.StatusBadRequest, "氏名とよみは、それぞれ50文字以内で入力してください")
+		return
+	}
+	if utf8.RuneCountInString(in.Nickname) > 20 {
+		writeErr(w, http.StatusBadRequest, "呼び名は20文字以内で入力してください。")
 		return
 	}
 	if !isKana(in.ChildNameKana) {
@@ -106,16 +112,16 @@ func (a *app) handleSaveChild(w http.ResponseWriter, r *http.Request) {
 
 	if existing > 0 {
 		_, err = tx.Exec(`UPDATE m_child SET child_name = ?, child_name_kana = ?, birth_date = ?, sex = ?,
-			normal_temperature = ?, photo_consent_level = ?, updated_at = ? WHERE child_id = ?`,
+			normal_temperature = ?, photo_consent_level = ?, nickname = ?, updated_at = ? WHERE child_id = ?`,
 			in.ChildName, in.ChildNameKana, in.BirthDate, in.Sex,
-			in.NormalTemperature, in.PhotoConsentLevel, now(), in.ChildID)
+			in.NormalTemperature, in.PhotoConsentLevel, in.Nickname, now(), in.ChildID)
 	} else {
 		_, err = tx.Exec(`INSERT INTO m_child
 			(child_id, child_name, child_name_kana, birth_date, sex, normal_temperature,
-			 enrollment_status, photo_consent_level, is_deleted, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, '1', ?, 0, ?, ?)`,
+			 enrollment_status, photo_consent_level, nickname, is_deleted, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, '1', ?, ?, 0, ?, ?)`,
 			in.ChildID, in.ChildName, in.ChildNameKana, in.BirthDate, in.Sex,
-			in.NormalTemperature, in.PhotoConsentLevel, now(), now())
+			in.NormalTemperature, in.PhotoConsentLevel, in.Nickname, now(), now())
 	}
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "登録に失敗しました")
@@ -127,6 +133,20 @@ func (a *app) handleSaveChild(w http.ResponseWriter, r *http.Request) {
 	          AND class_id IN (SELECT class_id FROM m_class WHERE fiscal_year = ?)`, in.ChildID, fiscalYear)
 	if _, err := tx.Exec(`INSERT INTO t_class_child (class_id, child_id) VALUES (?, ?)`, in.ClassID, in.ChildID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "クラスの割り当てに失敗しました")
+		return
+	}
+	var roomID int64
+	if existing == 0 {
+		roomID, err = createPersonalRoom(tx, in.ChildID)
+	} else {
+		_, err = tx.Exec(`UPDATE m_chat_room SET room_name = ?, class_id = ? WHERE room_type = '4' AND child_id = ?`,
+			in.ChildName+"の保護者", in.ClassID, in.ChildID)
+		if err == nil {
+			err = syncPersonalRoomStaff(tx, 0)
+		}
+	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "登録できませんでした。もう一度お試しください。")
 		return
 	}
 
@@ -150,6 +170,9 @@ func (a *app) handleSaveChild(w http.ResponseWriter, r *http.Request) {
 	if err := tx.Commit(); err != nil {
 		writeErr(w, http.StatusInternalServerError, "登録に失敗しました")
 		return
+	}
+	if roomID != 0 {
+		a.notifyRoomMembers(roomID)
 	}
 
 	/*
@@ -247,12 +270,12 @@ childFieldsOf は、操作ログに残す園児の項目を、いま保存され
 */
 func (a *app) childFieldsOf(childID string) []field {
 	var (
-		name, kana, birth, sex, consent string
-		temp                            sql.NullFloat64
-		className                       sql.NullString
+		name, kana, nickname, birth, sex, consent string
+		temp                                      sql.NullFloat64
+		className                                 sql.NullString
 	)
-	a.db.QueryRow(`SELECT child_name, child_name_kana, birth_date, sex, normal_temperature, photo_consent_level
-		FROM m_child WHERE child_id = ?`, childID).Scan(&name, &kana, &birth, &sex, &temp, &consent)
+	a.db.QueryRow(`SELECT child_name, child_name_kana, nickname, birth_date, sex, normal_temperature, photo_consent_level
+		FROM m_child WHERE child_id = ?`, childID).Scan(&name, &kana, &nickname, &birth, &sex, &temp, &consent)
 	a.db.QueryRow(`SELECT c.class_name FROM t_class_child cc
 		JOIN m_class c ON c.class_id = cc.class_id AND c.fiscal_year = ?
 		WHERE cc.child_id = ? LIMIT 1`, fiscalYear, childID).Scan(&className)
@@ -291,6 +314,7 @@ func (a *app) childFieldsOf(childID string) []field {
 	return []field{
 		{"氏名", name},
 		{"よみ", kana},
+		{"呼び名", nickname},
 		{"生年月日", birth},
 		{"性別", sexLabels[sex]},
 		{"平熱", tempValue},
@@ -344,7 +368,21 @@ func (a *app) handleRemoveChild(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "記録が登録されている園児は取り消せません。在籍状態を変更してください。")
 		return
 	}
-	if _, err := a.db.Exec(`UPDATE m_child SET is_deleted = 1, updated_at = ? WHERE child_id = ?`, now(), childID); err != nil {
+	tx, err := a.db.Begin()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "取消に失敗しました")
+		return
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`UPDATE m_child SET is_deleted = 1, updated_at = ? WHERE child_id = ?`, now(), childID); err != nil {
+		writeErr(w, http.StatusInternalServerError, "取消に失敗しました")
+		return
+	}
+	if _, err := tx.Exec(`UPDATE m_chat_room SET is_archived = 1 WHERE room_type = '4' AND child_id = ?`, childID); err != nil {
+		writeErr(w, http.StatusInternalServerError, "取消に失敗しました")
+		return
+	}
+	if err := tx.Commit(); err != nil {
 		writeErr(w, http.StatusInternalServerError, "取消に失敗しました")
 		return
 	}

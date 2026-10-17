@@ -29,7 +29,8 @@ type ChatRoomView struct {
 	// 園全体は一般には投稿欄を表示しない。保護者は個人チャットのみ送受信できる（画面詳細図 4-1・4-2）
 	CanPost bool `json:"canPost"`
 	// 参加している保護者の人数。投稿が保護者にも届くことを入力欄の近くで示すために使う
-	GuardianCount int `json:"guardianCount"`
+	GuardianCount           int `json:"guardianCount"`
+	GuardianRegisteredCount int `json:"guardianRegisteredCount"`
 	// 外れたチャンネル。職員は、外れるまでの過去ログだけを読める（投稿はできない）
 	// （図/画面詳細図.md「グループ編成画面」(4-3) No.8、基本設計書「チャット」(5-5)）
 	Left bool `json:"left"`
@@ -104,6 +105,9 @@ func (a *app) handleChatRooms(w http.ResponseWriter, r *http.Request) {
 			JOIN m_account ac ON ac.account_id = m.account_id
 			WHERE m.chat_room_id = ? AND m.left_at IS NULL`+activeGuardianWhere,
 			views[i].Room.ChatRoomID).Scan(&views[i].GuardianCount)
+		a.db.QueryRow(`SELECT COUNT(*) FROM t_chat_member m JOIN m_account ac ON ac.account_id = m.account_id
+			WHERE m.chat_room_id = ? AND m.left_at IS NULL AND ac.role = '3'`,
+			views[i].Room.ChatRoomID).Scan(&views[i].GuardianRegisteredCount)
 	}
 	writeJSON(w, http.StatusOK, views)
 }
