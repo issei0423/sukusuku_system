@@ -372,8 +372,11 @@ func (a *app) handleNapRecord(w http.ResponseWriter, r *http.Request) {
 	// 記録は、その園児のクラスの実施に付ける。管理者でも、ほかのクラスの園児を付けさせない
 	// （異常時の記録と同じ。GitHub Issue #158・#165）
 	var inClass int
-	a.db.QueryRow(`SELECT COUNT(*) FROM t_class_child WHERE class_id = ? AND child_id = ?`,
-		sessionClass, req.ChildID).Scan(&inClass)
+	if err := a.db.QueryRow(`SELECT COUNT(*) FROM t_class_child WHERE class_id = ? AND child_id = ?`,
+		sessionClass, req.ChildID).Scan(&inClass); err != nil {
+		writeErr(w, http.StatusInternalServerError, "記録に失敗しました")
+		return
+	}
 	if inClass == 0 {
 		writeErr(w, http.StatusBadRequest, "この園児のクラスの午睡チェックではありません。園児のクラスの午睡チェックへ記録してください")
 		return
