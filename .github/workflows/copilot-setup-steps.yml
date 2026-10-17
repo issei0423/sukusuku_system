@@ -1,0 +1,67 @@
+name: Copilot Setup Steps
+
+# GitHub Copilot cloud agent（Issue を任せると PR を作る Copilot）が作業を始める前に、
+# 開発の道具をそろえておく。Copilot の作業中はネットワークが絞られるので、依存は先に入れる。
+#
+# Copilot が読むのはデフォルトブランチ（mockup-go-react）にあるこのファイルだけなので、デフォルトブランチに置く。
+# 開発の本線は mockup-go-react（server/ に Go、web/ に React）。Copilot に Issue を任せるときは、
+# 「Assign to Copilot」の画面で開始ブランチに mockup-go-react を選ぶ。
+# 取り出されるのが mockup（旧 Flask 版。server/ も web/ も無い）のときは、Go と Node の手順を飛ばす。
+#
+# 決まり（GitHub の説明による）：
+# - ジョブ名は copilot-setup-steps でなければ Copilot に拾われない
+# - 変えられるのは steps / permissions / runs-on / services / snapshot / timeout-minutes だけ
+# - timeout-minutes の上限は 59
+# - 手順が 1 つでも失敗すると、Copilot は残りの手順を飛ばしてそのまま作業を始める
+# https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/customize-cloud-agent/customize-the-agent-environment
+#
+# このファイルを変えたときは、ふつうのワークフローとしても走る（下の push / pull_request）。
+# Actions の画面から手で走らせることもできる（workflow_dispatch）。
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+  pull_request:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+
+jobs:
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15     # ふだんは数分で終わる。止まったときの打ち切り
+    permissions:
+      contents: read        # ソースを取り出すだけ
+    steps:
+      - name: ソースを取り出す
+        uses: actions/checkout@v7
+
+      # Go の版は server/go.mod に合わせる（go 1.27.0）
+      - name: Go を入れる
+        if: hashFiles('server/go.mod') != ''
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      # ビルドまではしない。作業ブランチのコードが壊れていてビルドが落ちると、
+      # 後ろの Node の手順まで飛ばされるため。依存を取ってくるだけにする
+      - name: Go の依存を取ってくる
+        if: hashFiles('server/go.mod') != ''
+        working-directory: server
+        run: go mod download
+
+      # セットアップ手順.md は Node 20 以上としている。Vite 8 が求める版（20.19 以上か 22.12 以上）を満たす LTS
+      - name: Node.js を入れる
+        if: hashFiles('web/package-lock.json') != ''
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: 画面（web）の依存を入れる
+        if: hashFiles('web/package-lock.json') != ''
+        working-directory: web
+        run: npm ci

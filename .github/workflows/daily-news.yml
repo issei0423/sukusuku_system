@@ -1,0 +1,121 @@
+name: すくすくニュース（Discord に毎朝投稿）
+
+# 前の日（日本時間）の PR・Issue・コミットを集めて Claude にまとめてもらい、
+# Discord のニュースチャンネルに投稿する。
+#
+# 読み取り専用: このジョブのトークンは読むだけ（contents/issues/pull-requests: read）。
+# Claude には道具を一切持たせず（--tools ""）、渡したデータから文章を書くだけにしている。
+# Discord の Webhook の URL は投稿の手順にだけ渡し、Claude には渡さない。
+#
+# schedule はデフォルトブランチ（mockup-go-react）のワークフローで動くので、このファイルはデフォルトブランチに置く。
+# 動きがなかった日は Claude を呼ばず、「動きなし」とだけ投稿する（使用枠の節約）。
+
+on:
+  schedule:
+    - cron: '0 23 * * *'   # 毎日 23:00 UTC = 日本時間 8:00（GitHub が混んでいると遅れることがある）
+  workflow_dispatch:        # Actions の画面や gh workflow run で手動でも動かせる（試し打ち用）
+
+jobs:
+  news:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10     # 止まらなくなっても 10 分で打ち切る（使用枠の守り）
+    permissions:
+      contents: read        # ブランチとコミットを読む
+      issues: read
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: 前の日の動きを集める
+        id: collect
+        run: |
+          set -euo pipefail
+          # 日本時間の「昨日」。タイムゾーンのデータに頼らず、UTC に 9 時間足して 1 日引く
+          DAY=$(date -u -d "@$(( $(date +%s) + 9 * 3600 - 86400 ))" +%Y-%m-%d)
+          SINCE=$(date -u -d "${DAY}T00:00:00+09:00" +%Y-%m-%dT%H:%M:%SZ)
+          UNTIL=$(date -u -d "${DAY}T23:59:59+09:00" +%Y-%m-%dT%H:%M:%SZ)
+          W=(日 月 火 水 木 金 土)
+          echo "📰 すくすくニュース $(date -d "$DAY" +%-m/%-d)（${W[$(date -d "$DAY" +%w)]}）" > title.txt
+
+          gh pr list -R "$REPO" --state all --search "updated:${SINCE}..${UNTIL}" --limit 100 \
+            --json number,title,state,isDraft,author,baseRefName,createdAt,mergedAt,closedAt,url \
+            --jq '[.[] | {number, title, state, isDraft, author: .author.login, base: .baseRefName, createdAt, mergedAt, closedAt, url}]' \
+            > prs.json
+          gh issue list -R "$REPO" --state all --search "updated:${SINCE}..${UNTIL}" --limit 100 \
+            --json number,title,state,author,labels,createdAt,closedAt,url \
+            --jq '[.[] | {number, title, state, author: .author.login, labels: [.labels[].name], createdAt, closedAt, url}]' \
+            > issues.json
+
+          # 全ブランチのコミットを集め、同じコミットが複数のブランチにあるときは 1 件にまとめる（マージコミットは除く）
+          : > commits.ndjson
+          gh api "repos/$REPO/branches" --paginate --jq '.[].name' | while IFS= read -r BR; do
+            gh api -X GET "repos/$REPO/commits" -f sha="$BR" -f since="$SINCE" -f until="$UNTIL" -f per_page=100 \
+              | jq -c --arg br "$BR" '.[] | select((.parents | length) < 2)
+                  | {sha: .sha[0:7], message: (.commit.message | split("\n")[0]),
+                     author: (.author.login // .commit.author.name), date: .commit.author.date, branch: $br}' \
+              >> commits.ndjson
+          done
+          jq -s 'group_by(.sha) | map(.[0] + {branches: map(.branch)} | del(.branch)) | sort_by(.date)' \
+            commits.ndjson > commits.json
+
+          jq -n --arg day "$DAY" --arg since "$SINCE" --arg until "$UNTIL" \
+            --slurpfile prs prs.json --slurpfile issues issues.json --slurpfile commits commits.json \
+            '{day_jst: $day, range_utc: {since: $since, until: $until},
+              pull_requests: $prs[0], issues: $issues[0], commits: $commits[0]}' > activity.json
+
+          TOTAL=$(jq '(.pull_requests | length) + (.issues | length) + (.commits | length)' activity.json)
+          echo "PR・Issue・コミット: $TOTAL 件（$DAY）"
+          echo "total=$TOTAL" >> "$GITHUB_OUTPUT"
+          if [ "$TOTAL" = "0" ]; then
+            { cat title.txt; echo "昨日は PR・Issue・コミットの動きはありませんでした。"; } > news.md
+          fi
+
+      - name: Claude にまとめてもらう
+        if: steps.collect.outputs.total != '0'
+        env:
+          # サブスクのトークン（claude setup-token で作ったもの）
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          PROMPT: |
+            標準入力の JSON は、GitHub リポジトリ「すくすく」の day_jst の日（日本時間）1日分の動きです。
+            これを Discord のニュースチャンネルに流す日本語のまとめにしてください。
+            見出しの行（日付）はこちらで付けるので、本文だけを書いてください。
+
+            データの見方:
+            - pull_requests と issues は、その日に何かしら更新があったもの。
+              createdAt・mergedAt・closedAt（UTC）が range_utc の範囲に入っているかで、
+              作られた・マージされた・閉じられたを決める。どれにも入らないものは「更新のみ」。
+            - 1件は1か所にだけ書く。その日に作られてその日にマージされた（閉じられた）ものは、
+              「マージされた PR」（「閉じた Issue」）のほうにだけ書く。
+            - commits はその日のコミット（マージコミットは除いてある）。branches はそのコミットが載っているブランチ。
+
+            書き方:
+            - 次の順に、あるものだけ見出しを太字で立てる。中身がないものは見出しごと書かない。
+              **✅ マージされた PR** / **🆕 新しい PR** / **🔒 閉じた Issue** / **🆕 新しい Issue** / **💬 更新のみ** / **🧱 コミット**
+            - PR と Issue は1件1行で「[#番号](url) タイトル（作った人）」。下書きの PR には「（下書き）」を付ける。
+            - 「更新のみ」は番号のリンクだけを1行に並べる。
+            - コミットは全部並べず、ブランチごとに件数と主な内容を1〜2行で要約する。
+            - 最後に空行をはさんで、「ひとこと: 」で始まる1文でその日の動きをまとめる。
+            - 全体で1500文字以内。前置き（「以下が〜です」など）や締めのあいさつは書かない。
+            - データにないことは書かない。推測で補わない。
+        run: |
+          set -euo pipefail
+          npm install -g @anthropic-ai/claude-code
+          # 道具なし（--tools ""）。--tools は後ろの引数も取り込むので最後に置く
+          claude -p "$PROMPT" --model sonnet --output-format text --tools "" < activity.json > body.md
+          { cat title.txt; echo; cat body.md; } > news.md
+
+      - name: Discord に投稿
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          cat news.md >> "$GITHUB_STEP_SUMMARY"   # Actions の画面でも中身を見られるように
+          if [ -z "${DISCORD_WEBHOOK_URL:-}" ]; then
+            echo "::error::シークレット DISCORD_WEBHOOK_URL が登録されていません"
+            exit 1
+          fi
+          # allowed_mentions を空にして @everyone などで通知を鳴らさない。flags: 4 はリンクのプレビューを出さない設定
+          jq -n --rawfile c news.md \
+            '{username: "すくすくニュース", content: ($c | .[0:1990]), allowed_mentions: {parse: []}, flags: 4}' \
+            | curl -fsS -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK_URL"
