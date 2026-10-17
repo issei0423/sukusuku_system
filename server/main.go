@@ -45,7 +45,8 @@ func main() {
 	addr := flag.String("addr", ":8080", "待ち受けるアドレス")
 	dbPath := flag.String("db", "sukusuku.db", "SQLite のファイル")
 	webDir := flag.String("web", "../web/dist", "配信する静的ファイルのディレクトリ")
-	// AI の下書きに使うモデル（基本設計書「文章の下書き（AI）」(4-11) の claude-haiku-5-5）。環境変数 SUKUSUKU_AI_MODEL でも変えられる
+	// AI の下書きに使うモデル（基本設計書「文章の下書き（AI）」(4-11) の claude-haiku-5-5）。
+	// 【仮置き】変える口（-ai-model・環境変数 SUKUSUKU_AI_MODEL）は設計に無い（web/仮置き値.md）
 	aiModel := flag.String("ai-model", envOr("SUKUSUKU_AI_MODEL", defaultAiModel), "AI の下書きに使うモデル")
 	flag.Parse()
 

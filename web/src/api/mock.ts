@@ -4663,7 +4663,7 @@ function facilityFacts(childId: string, date: string, anon: (s: string) => strin
 }
 
 /**
- * モックの AI が返す文（外部へつながない。8-11）。渡された事実から決まった文を作る。
+ * 【仮置き】モックの AI が返す文（外部へつながない。8-11。web/仮置き値.md）。渡された事実から決まった文を作る。
  * 名前は渡していないので「〇〇ちゃん」「おともだち」だけを使う。評価・推測の言葉を入れない
  */
 function mockAiReply(purpose: AiPurpose, user: { きょうの記録?: AiRecord[]; 先生のメモ?: string; 先生の文?: string }, room: number): string[] {
@@ -4722,7 +4722,7 @@ const aiApi = {
     const all = enrolledNameChildren();
     const recipientChild = isClass ? undefined : findChild(input.child_id!);
     const recipients = recipientChild ? [nameChildOf(recipientChild)] : [];
-    // ⑤ その場で職員が書いた文に、AI を使えない園児の名前があれば呼ばない（決めたこと D-12）
+    // ⑤ その場で職員が書いた文に、AI を使えない園児の名前があれば呼ばない（決めたこと D-12。【仮置き】言い換える文にも当てる）
     const excluded = all.filter((c) => !aiChildConsented(c.id));
     if ([memo, text].some((w) => findOtherNames(w, 'memo', recipients, excluded).names.length > 0)) {
       return failKind(MSG.aiExcludedName, 'ai_excluded_name');

@@ -719,4 +719,36 @@ run('結合：きょうのようすの記録・訂正・取り消しが3秒以�
       for (const jar of [staff, guardian, other]) await send('/api/logout', { method: 'POST', body: '{}' }, jar);
     }
   });
+
+  /*
+   * AI 無しで動く（詳細設計書「テストでの差し替え」(8-11) の結合テスト、「キーが無い・無効・有効にしていないときの画面」(8-8)）。
+   * 本物の AI は呼ばない。CI はキーを置かずにサーバを立てる。キーを置いて立てたサーバでは、キーが無いときの確かめを飛ばす
+   */
+  it('API キーが無いサーバでは、園が AI を有効にしてもボタンを出さず（status が偽）、下書きは 403。キーそのものは返さない', async () => {
+    const admin = await loginAs('nohara@hoiku.example.jp', 'staff');
+    const staff = await loginAs('takanashi@hoiku.example.jp', 'staff');
+    type View = { read_at: string; ai_key_present: boolean; ai_key_rejected: boolean; settings: { setting_key: string; setting_value: string }[] };
+    try {
+      const forbidden = await send('/api/settings', {}, staff);
+      expect(forbidden.status).toBe(403);
+      const view = (await (await send('/api/settings', {}, admin)).json()) as View;
+      expect(view.settings.map((x) => x.setting_key)).toEqual(['ai.daily_limit', 'ai.enabled']);
+      expect(JSON.stringify(view)).not.toMatch(/sk-ant/);
+      if (view.ai_key_present) {
+        console.log('API キーを置いたサーバのため、キーが無いときの確かめを飛ばした');
+        return;
+      }
+      const saved = await send('/api/settings', { method: 'POST', body: JSON.stringify({ changes: { 'ai.enabled': '1' }, read_at: view.read_at }) }, admin);
+      expect(saved.status).toBe(200);
+      expect(await (await send('/api/ai/status?child_id=C001', {}, staff)).json()).toEqual({ available: false });
+      const { today } = await import('../src/api/util');
+      const draft = await send('/api/ai/drafts', { method: 'POST', body: JSON.stringify({ purpose: 'facility_note', child_id: 'C001', date: today() }) }, staff);
+      expect(draft.status).toBe(403);
+      expect(((await draft.json()) as { message: string }).message).toBe('AI の下書きは使えません。そのまま書いて送れます。');
+    } finally {
+      const v = (await (await send('/api/settings', {}, admin)).json()) as View;
+      await send('/api/settings', { method: 'POST', body: JSON.stringify({ changes: { 'ai.enabled': '0' }, read_at: v.read_at }) }, admin);
+      for (const jar of [admin, staff]) await send('/api/logout', { method: 'POST', body: '{}' }, jar);
+    }
+  });
 });

@@ -156,7 +156,8 @@ type aiDraftResult struct {
 	ReplacedOtherNames bool     `json:"replaced_other_names"`
 }
 
-// aiField は、下書きを入れる欄の上限（基本設計書「入力項目の制約値」(4-12)）と、操作ログの target_table
+// aiField は、下書きを入れる欄の上限（基本設計書「入力項目の制約値」(4-12)）と、操作ログの target_table。
+// 【仮置き】要求の field で欄を選ぶ（詳細設計書 (8-2) は field を日誌だけに置いている。web/仮置き値.md）
 type aiField struct {
 	max   int
 	table string
@@ -225,7 +226,8 @@ func (a *app) handleAiDrafts(w http.ResponseWriter, r *http.Request) {
 	if !t.isClass() {
 		recipients = append(recipients, a.nameChildOf(t.ChildID))
 	}
-	// ⑤ その場で職員が書いた文（メモ・言い換える文）に、AI を使えない園児の名前があれば呼ばない（決めたこと D-12）
+	// ⑤ その場で職員が書いた文（メモ・言い換える文）に、AI を使えない園児の名前があれば呼ばない（決めたこと D-12）。
+	// 【仮置き】言い換える文（text）にも当てる（設計はメモだけを挙げる。web/仮置き値.md）
 	excluded := a.aiExcludedChildren(all)
 	for _, written := range []string{memo, text} {
 		if names, _ := findOtherNames(written, "memo", recipients, excluded); len(names) > 0 {
