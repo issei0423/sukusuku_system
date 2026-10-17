@@ -7,7 +7,7 @@
  * 免責はグラフの直下に固定する。
  * PDF出力は管理者のみ。出力種別に既定値を置かず、毎回選ばせる。
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api, selectableClasses, settingNumber, staffName } from '../../api/client';
@@ -58,20 +58,23 @@ export default function PhysicalRecordScreen() {
 
   /*
    * 園児・測定日を切り替えたら、その日の記録があれば読み込む。
-   * 読み直し（保存に失敗したあとなど）では、打ちかけの値を消さない
+   * 読み直し（保存に失敗したあとなど）では、打ちかけの値を消さない。
+   *
+   * 入力欄は、その園児の記録（「この月は〜に記録済みです」など）を出すのと同じ描画の中で入れ替える。
+   * useEffect で描画のあとに入れ替えると、記録は新しい園児・測定日のものを出しているのに、
+   * 入力欄だけが前の値のまま、という描画が一度画面に出る。その間に打った値は、あとから走る
+   * effect に消される（負荷の高いときに、身体記録の画面のテストで身長だけが空に戻って落ちた）
    */
-  const formFor = useRef<string | null>(null);
-  useEffect(() => {
-    if (!childId || records.loading || records.data?.childId !== childId) return;
-    const key = `${childId}|${measuredOn}`;
-    if (formFor.current === key) return;
-    formFor.current = key;
+  const formKey = childId ? `${childId}|${measuredOn}` : null;
+  const [formFor, setFormFor] = useState<string | null>(null);
+  if (formKey !== null && formFor !== formKey && !records.loading && records.data?.childId === childId) {
+    setFormFor(formKey);
     const existing = records.data.rows.find((r) => r.measured_on === measuredOn);
     setHeight(existing ? String(existing.height_cm) : '');
     setWeight(existing ? String(existing.weight_kg) : '');
     setWarned(false);
     setError(null);
-  }, [childId, measuredOn, records.data, records.loading]);
+  }
 
   const previous = recordRows.filter((r) => r.measured_on < measuredOn)[0] ?? null;
   const warning = api.rangeWarning(Number(height), Number(weight));
