@@ -1,6 +1,7 @@
 package main
 
 import (
+	"regexp"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -314,4 +315,163 @@ func (a *app) checkOtherNames(text, field string, recipientIDs []string, everyon
 // otherNamesMessage は、基本設計書「メッセージ一覧」(4-12) の「他児の名前の注意」の文
 func otherNamesMessage(names []string) string {
 	return "ほかのお子さんの名前（" + strings.Join(names, "・") + "）が入っています。このまま送りますか。"
+}
+
+/*
+外部の AI へ送る前の置き換え（詳細設計書「置き換えの手順」(8-5)、基本設計書「送る項目と置き換え」(4-11)・「外部の AI へ送る情報」(6-3)）。
+
+他児の名前の照合と同じ関数（nameVariants・occurrences）で当て、同じ短い名前の規則を使う。
+モックは web/src/api/mock.ts の anonymize・restoreName が同じ規則を持つ。表（anonymizeCases）は同じ行にする（9-2）。
+
+① 宛先の園児の名前（後ろに続く敬称を含む）を「〇〇ちゃん」にする
+② 宛先以外の在籍園児の名前（敬称を含む）を「おともだち」にする。宛先の名前の部分にすべて入る当たりは数えない（D-17 と同じ）
+③ 電話番号の形（数字と区切りで10〜11桁、0 で始まる）とメールアドレスの形を「（伏せました）」にする
+④ 宛先がクラスのときは①を行わず、在籍園児の全員を②で置き換える（呼ぶ側が recipients を空にして渡す）
+重なった当たりは長いほうを選ぶ（同じ姓のきょうだいの氏名「野原あい」は、宛先の姓「野原」より長いので「おともだち」になる）。
+*/
+const (
+	anonRecipient     = "〇〇ちゃん"
+	anonRecipientBare = "〇〇"
+	anonOther         = "おともだち"
+	anonContact       = "（伏せました）"
+)
+
+var (
+	// 【仮置き】電話番号の区切りとして認める文字（web/仮置き値.md）。全角の数字も数える
+	anonPhonePattern = regexp.MustCompile(`[0０](?:[-‐‑–—―−ー－ 　()（）]*[0-9０-９]){9,10}`)
+	anonEmailPattern = regexp.MustCompile(`[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}`)
+)
+
+func isDigitRune(r rune) bool { return (r >= '0' && r <= '9') || (r >= '０' && r <= '９') }
+
+// maskContacts は、電話番号とメールアドレスの形の文字列を「（伏せました）」にする（③）。
+// 電話番号は、前後に数字が続くもの（12桁以上の数の一部）を当てない
+func maskContacts(text string) string {
+	text = anonEmailPattern.ReplaceAllString(text, anonContact)
+	var b strings.Builder
+	last := 0
+	for _, m := range anonPhonePattern.FindAllStringIndex(text, -1) {
+		before, _ := utf8.DecodeLastRuneInString(text[:m[0]])
+		after, _ := utf8.DecodeRuneInString(text[m[1]:])
+		if isDigitRune(before) || isDigitRune(after) {
+			continue
+		}
+		b.WriteString(text[last:m[0]])
+		b.WriteString(anonContact)
+		last = m[1]
+	}
+	b.WriteString(text[last:])
+	return b.String()
+}
+
+// withHonorific は、名前の当たりの終わり（end）のすぐ後ろに敬称が続けば、敬称の後ろまで広げる
+func withHonorific(runes []rune, end int) int {
+	rest := string(runes[end:])
+	for _, h := range honorifics {
+		if strings.HasPrefix(rest, h) {
+			return end + utf8.RuneCountInString(h)
+		}
+	}
+	return end
+}
+
+/*
+anonymize は、外部の AI へ送る文を置き換える。recipients は宛先の園児（クラスあては空）、all は在籍園児の全員。
+replacedOthers は、宛先以外の園児の名前を「おともだち」に置き換えたか（画面に「置き換えて送りました」を出すため）。
+*/
+func anonymize(text string, recipients []nameChild, all []nameChild) (out string, replacedOthers bool) {
+	runes := []rune(maskContacts(text))
+	type span struct {
+		s, e int
+		repl string
+	}
+	spans := []span{}
+	masked := make([]bool, len(runes))
+	isRecipient := map[string]bool{}
+	for _, r := range recipients {
+		isRecipient[r.ID] = true
+		for _, v := range nameVariants(r) {
+			for _, o := range occurrences(runes, v) {
+				e := withHonorific(runes, o[1])
+				spans = append(spans, span{o[0], e, anonRecipient})
+				for k := o[0]; k < e; k++ {
+					masked[k] = true
+				}
+			}
+		}
+	}
+	for _, c := range all {
+		if isRecipient[c.ID] {
+			continue
+		}
+		for _, v := range nameVariants(c) {
+			for _, o := range occurrences(runes, v) {
+				inside := true
+				for k := o[0]; k < o[1]; k++ {
+					if !masked[k] {
+						inside = false
+						break
+					}
+				}
+				if !inside {
+					spans = append(spans, span{o[0], withHonorific(runes, o[1]), anonOther})
+				}
+			}
+		}
+	}
+	// 長い当たりから選び、すでに選んだ当たりに重なるものは捨てる。同じ長さなら先に足したもの（宛先）を残す
+	sort.SliceStable(spans, func(i, j int) bool { return spans[i].e-spans[i].s > spans[j].e-spans[j].s })
+	taken := make([]bool, len(runes))
+	chosen := []span{}
+	for _, sp := range spans {
+		free := true
+		for k := sp.s; k < sp.e; k++ {
+			if taken[k] {
+				free = false
+				break
+			}
+		}
+		if !free {
+			continue
+		}
+		for k := sp.s; k < sp.e; k++ {
+			taken[k] = true
+		}
+		chosen = append(chosen, sp)
+	}
+	sort.Slice(chosen, func(i, j int) bool { return chosen[i].s < chosen[j].s })
+	var b strings.Builder
+	pos := 0
+	for _, sp := range chosen {
+		b.WriteString(string(runes[pos:sp.s]))
+		b.WriteString(sp.repl)
+		pos = sp.e
+		if sp.repl == anonOther {
+			replacedOthers = true
+		}
+	}
+	b.WriteString(string(runes[pos:]))
+	return b.String(), replacedOthers
+}
+
+/*
+callName は、下書きの「〇〇ちゃん」を戻す名前（詳細設計書「置き換えの手順」(8-5) の戻し方、決めたこと D-14）。
+呼び名があれば呼び名、無ければ名（氏名の空白の後ろ）に「ちゃん」を付けたもの。くん・ちゃんの使い分けはシステムが決めない
+*/
+func callName(c nameChild) string {
+	if nick := strings.TrimSpace(c.Nickname); nick != "" {
+		return nick
+	}
+	parts := splitName(c.Name)
+	if len(parts) == 0 {
+		return c.Name + "ちゃん"
+	}
+	return parts[len(parts)-1] + "ちゃん"
+}
+
+// restoreName は、下書きの「〇〇ちゃん」と、残った「〇〇」を宛先の園児の名前に戻す。「おともだち」は戻さない
+func restoreName(text string, c nameChild) string {
+	name := callName(c)
+	text = strings.ReplaceAll(text, anonRecipient, name)
+	return strings.ReplaceAll(text, anonRecipientBare, name)
 }

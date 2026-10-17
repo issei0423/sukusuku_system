@@ -44,6 +44,38 @@ export const MSG = {
   facilityTooLong: '園からのひとことは500文字以内で入力してください。',
   facilitySent: 'この日の園からは、もう送られています。直すときは送られた文の「直す」から行ってください。',
   commentTooLong: 'ひとことは200文字以内で入力してください。',
+  /* 文章の下書き（AI）と設定（server/messages.go と同じ。詳細設計書「経路」(8-2)・「設定」(4-10 (2))・「本書で足す文言」(4-1 (6))） */
+  aiUnavailableForTarget: 'AI の下書きは使えません。そのまま書いて送れます。',
+  aiMemoTooLong: 'メモは500文字以内で入力してください。',
+  aiExcludedName: 'AI を使わないお子さんの名前が入っています。このまま書いて送ってください。',
+  aiLimit: 'きょうの AI の下書きの回数を使い切りました。そのまま書いて送れます。',
+  aiFailed: 'いまは下書きを作れません。そのまま書いて送れます。',
+  settingNotEditable: 'この設定は画面から変えられません。',
+  settingConflict: 'ほかの管理者が設定を変えました。読み直してから変えてください。',
+  settingAiDailyLimit: '1日の上限回数は1〜10000の整数で入力してください。',
+} as const;
+
+/** 欄の文が上限を超える（server/messages.go の aiTextTooLong。詳細設計書「経路」(8-2)） */
+export const aiTextTooLong = (max: number) => `文は${max}文字以内で入力してください。`;
+
+/* ---- 文章の下書き（AI）の画面の文言（詳細設計書「画面」(8-9)・「キーが無い・無効・有効にしていないときの画面」(8-8)、基本設計書「処理の流れ」(4-11)） ---- */
+export const AI_TEXT = {
+  draftButton: 'AI で下書き',
+  rephraseButton: '言い換え',
+  continueButton: '続き',
+  /** メモの近くに示す（基本設計書「送る項目と置き換え」(4-11)） */
+  memoNote: '体温や体の具合は書かずに、その日のようすを書いてください',
+  makeDraft: '下書きを作る',
+  making: '下書きを作っています（10秒ほどかかることがあります）',
+  useThis: 'この文を使う',
+  /** 下書きに必ず添える */
+  checkBeforeSend: 'AI の下書きです。事実と違うところがないか確かめてから送ってください。',
+  replacedOthers: 'ほかのお子さんの名前は『おともだち』に置き換えて送りました。',
+  /** 設定画面の AI の区画 */
+  noKey: 'サーバに API キーがありません。AI の下書きは使えません。',
+  keyRejected: 'API キーが使えませんでした。サーバの設定を確かめて起動し直してください。',
+  enableConfirm: 'プライバシーポリシーに外部の AI へ送ることを書いた版を施行してから有効にしてください',
+  saved: '保存しました。',
 } as const;
 
 /** 他児の名前の注意（基本設計書「メッセージ一覧」(4-12)。server/namecheck.go の otherNamesMessage と同じ） */

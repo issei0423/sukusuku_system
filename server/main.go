@@ -8,9 +8,19 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
+
+// envOr は、環境変数があればその値、無ければ fallback
+func envOr(key, fallback string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return fallback
+}
 
 type app struct {
 	db       *sql.DB
@@ -20,12 +30,23 @@ type app struct {
 	currentTermsVersion string
 	// 最新版の規約のID。同意履歴（t_terms_agreement）へ記録するときに使う
 	currentTermsID int64
+	/*
+		外部の AI を呼ぶ口（ai.go）。起動したときに環境変数 ANTHROPIC_API_KEY があれば本物（ai_claude.go）、無ければ nil で AI を使わない
+		（詳細設計書「呼び出しの作り（差し替えられる形）」(8-7 (1))）。テストは偽物に差し替える
+	*/
+	ai draftWriter
+	// キーが無効（401・403）と分かった。サーバを起動し直すまで AI を使えない扱いにする（決めたこと D-11）
+	aiKeyRejected atomic.Bool
+	// テストで AI の時間の上限を短くするとき（0 なら aiTimeout）
+	aiTimeoutForTest time.Duration
 }
 
 func main() {
 	addr := flag.String("addr", ":8080", "待ち受けるアドレス")
 	dbPath := flag.String("db", "sukusuku.db", "SQLite のファイル")
 	webDir := flag.String("web", "../web/dist", "配信する静的ファイルのディレクトリ")
+	// AI の下書きに使うモデル（基本設計書「文章の下書き（AI）」(4-11) の claude-haiku-5-5）。環境変数 SUKUSUKU_AI_MODEL でも変えられる
+	aiModel := flag.String("ai-model", envOr("SUKUSUKU_AI_MODEL", defaultAiModel), "AI の下書きに使うモデル")
 	flag.Parse()
 
 	db, err := openDB(*dbPath)
@@ -37,6 +58,16 @@ func main() {
 	a := &app{db: db, sessions: newSessionStore()}
 	if err := a.init(); err != nil {
 		log.Fatal(err)
+	}
+	/*
+		API キーはサーバの環境変数 ANTHROPIC_API_KEY だけに置く（基本設計書「API キーの置き場所」(6-3)）。
+		キーそのものはログ・画面・データベースに出さない。無ければ AI のボタンを出さず、ほかはすべて動く（8-8）
+	*/
+	if key := strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")); key != "" {
+		a.ai = newClaudeWriter(key, *aiModel)
+		log.Printf("AI の下書き：API キーがあります（モデル %s）。使うかは設定画面の AI の区画で決めます", *aiModel)
+	} else {
+		log.Printf("AI の下書き：API キーが無いため使いません（環境変数 ANTHROPIC_API_KEY）")
 	}
 
 	mux := http.NewServeMux()
@@ -57,9 +88,10 @@ func (a *app) init() error {
 		a.live = newLiveHub()
 	}
 	a.sessions.onEnd = a.live.closeSessions
-	// 最新版の規約。これと異なる terms_version のアカウントには再同意を求める（基本設計書 5-2）
+	// 最新版の規約。これと異なる terms_version のアカウントには再同意を求める（基本設計書 5-2）。
+	// 施行日が同じ版（デモの 1.0 と 1.1）は、あとから入れた版を新しいとする
 	if err := a.db.QueryRow(`SELECT terms_version, terms_id FROM m_terms
-		WHERE document_type = '1' ORDER BY published_on DESC LIMIT 1`).
+		WHERE document_type = '1' ORDER BY published_on DESC, terms_id DESC LIMIT 1`).
 		Scan(&a.currentTermsVersion, &a.currentTermsID); err != nil {
 		return err
 	}
