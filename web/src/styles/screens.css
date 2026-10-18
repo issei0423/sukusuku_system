@@ -283,8 +283,14 @@ button.guardian-record-link {
 .nap-exclude-button { min-height: 52px; min-width: 88px; }
 .nap-exclusion-choices { display: flex; gap: var(--sp-3); margin-top: var(--sp-3); }
 .nap-exclusion-choices button { flex: 1; min-height: 56px; }
+/*
+ * 対象外の子の行は、5分ごとの確認の欄を薄くする。入力と保存は残す（詳細設計書「午睡チェック画面」(2-4 (2))、決めたこと D-41）。
+ * 押せる部品の文字なので、薄くしても白地に 4.5:1（WCAG 1.4.3）、枠に 3:1（1.4.11）を残す。0.45 では文字が 2.9:1 だった。
+ * 対象外であることは、行の「きょうは対象外」の文字でも示している（薄さだけに頼らない。WCAG 1.4.1）。
+ * 【仮置き】薄さ 0.75（web/仮置き値.md）
+ */
 .nap-card.is-excluded .nap-inline-fields,
-.nap-card.is-excluded .nap-row-actions { opacity: .45; }
+.nap-card.is-excluded .nap-row-actions { opacity: .75; }
 
 /* 保護者：連絡帳画面（幅 360px で1列） */
 .contact-page { max-width: 720px; margin: 0 auto; display: grid; gap: var(--sp-4); }
