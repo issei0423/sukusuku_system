@@ -9,7 +9,7 @@
  * 押したらサーバの応答を待つ（楽観的更新をしない）。送れなかったら入力を残し、近くに何が違うかを出す。
  * 書きかけは保存しない。書きかけのままログアウトしようとしたら、消えることを確かめる。
  */
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import type { ContactRecipient, NameMatch, Phrase } from '../../api/shapes';
 import { useReachable } from '../../api/reachability';
 import { useUnsavedInput } from '../../unsavedInput';
@@ -38,6 +38,7 @@ export default function Composer({ label, max, scope, recipient, className, init
   const [error, setError] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [check, setCheck] = useState<{ names: string[]; matches: NameMatch[]; text: string } | null>(null);
+  const sendButton = useRef<HTMLButtonElement>(null);
   const reachable = useReachable();
   useUnsavedInput(text.trim() !== '' && text !== initial);
   const left = max - [...text].length;
@@ -75,14 +76,19 @@ export default function Composer({ label, max, scope, recipient, className, init
       {recipient && <RecipientBadge recipient={recipient} className={className} />}
       {error && <p className="contact-error" role="alert">{error}</p>}
       <div className="contact-composer-actions">
-        <button type="button" className="btn-primary" onClick={() => send([])} disabled={busy || text.trim() === ''} aria-busy={busy}>
+        <button ref={sendButton} type="button" className="btn-primary" onClick={() => send([])} disabled={busy || text.trim() === ''} aria-busy={busy}>
           {busy ? TEXT.sending : failed && !reachable ? TEXT.resend : submitLabel}
         </button>
         {onCancel && <button type="button" onClick={onCancel} disabled={busy}>やめる</button>}
       </div>
       {check && (
+        /*
+         * 「直す」（Esc も同じ）で閉じたら、開いた元の「送る」へフォーカスを戻す。
+         * 注意の窓は送ったあとの応答で開くため、開いた時点では送っている間に押せなくなった「送る」から
+         * フォーカスが外れており、窓の部品（Modal）が覚える戻り先が無い（GitHub Issue #105 のモーダルのフォーカス、WCAG 2.4.3）
+         */
         <NameCheckDialog names={check.names} matches={check.matches} text={check.text} busy={busy}
-          onFix={() => setCheck(null)} onSend={() => send(check.names)} />
+          onFix={() => { setCheck(null); sendButton.current?.focus(); }} onSend={() => send(check.names)} />
       )}
     </div>
   );
