@@ -1,0 +1,42 @@
+/*
+ * 連絡帳の写真（写真を送る・写っている子を選ぶ・写真の表示）
+ * 典拠：詳細設計書「写真を送る」(2-2 (7))・「保護者ホーム」(2-5 (2))（写真は 56px の小さな絵）・「連絡帳画面（保護者）」(2-6 (5))、
+ *      「タッチの条件」(2-0 (4))（押せるものは 44×44px 以上、隣どうしは 8px 以上あける）
+ * 部品のファイルが読み込む（styles/screens.css には足さない）。【仮置き】連絡帳のページの 160×120px・表の 44px（web/仮置き値.md）
+ */
+.photo-send { display: grid; gap: var(--sp-4); }
+.photo-send-step { display: grid; gap: var(--sp-2); }
+.photo-send-step h3 { margin: 0; font-size: 16px; }
+.photo-send-file input[type="file"] { min-height: 44px; }
+.photo-send-preview { max-width: 100%; max-height: 240px; object-fit: contain; border: 1px solid var(--c-border); border-radius: var(--radius); }
+.photo-send-subjects { margin: 0; font-weight: 700; }
+.photo-send-step textarea { display: block; width: 100%; min-height: 80px; }
+.photo-send-badges { display: grid; gap: var(--sp-2); }
+.photo-send-step > button, .subject-picker-none { min-height: 48px; }
+
+/* 写っている子を選ぶ：顔写真（無ければ名前の1文字目の丸）と名前の格子 */
+.subject-picker { display: grid; gap: var(--sp-3); }
+.subject-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: var(--sp-2); }
+.subject-cell {
+  display: grid; justify-items: center; gap: var(--sp-1); min-height: 96px; padding: var(--sp-2);
+  white-space: normal; text-align: center;
+}
+.subject-cell[aria-pressed="true"] { background: var(--c-primary-soft); border: 2px solid var(--c-primary-deep); }
+.subject-cell-name { font-weight: 700; }
+.subject-consent { font-size: var(--fs-small); font-weight: 700; color: var(--c-alert); }
+
+/* 写真の表示。押すと画面いっぱいに出す */
+.contact-photo-button { padding: 0; border: 1px solid var(--c-border); background: var(--c-surface); line-height: 0; min-height: 44px; min-width: 44px; }
+.contact-photo { display: block; object-fit: cover; }
+.contact-photo.is-timeline { width: 160px; height: 120px; }
+.contact-photo.is-thumb { width: 56px; height: 56px; }
+.contact-photo.is-cell { width: 44px; height: 44px; }
+.contact-photo-placeholder { display: inline-block; background: var(--c-surface-sub); }
+.contact-photo-placeholder.is-timeline { width: 160px; height: 120px; }
+.contact-photo-placeholder.is-thumb { width: 56px; height: 56px; }
+.contact-photo-placeholder.is-cell { width: 44px; height: 44px; }
+.contact-photo-missing { font-size: var(--fs-small); }
+.contact-timeline-photo { display: block; margin-top: var(--sp-1); }
+.contact-latest-photo { display: inline-block; vertical-align: middle; margin-left: var(--sp-2); }
+.photo-viewer .modal { max-width: min(960px, 100%); }
+.photo-viewer-image { display: block; max-width: 100%; max-height: 70vh; margin: 0 auto; object-fit: contain; }
