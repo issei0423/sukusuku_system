@@ -337,6 +337,28 @@ test.describe('[staff] contact キーボードだけで通す', () => {
     expect(errors, 'ブラウザ実行エラー').toEqual([]);
   });
 
+  test('結果の表示の「取り消す」→ 確認の窓で「取り消す」を押して取り消したあと、結果の表示へ入る前にいた部品へ戻る', async ({ page }) => {
+    // 取り消すと知らせが結果の文に差し替わり、知らせの「取り消す」が消える。直す前は窓の部品が戻す先を失い、body に落ちていた（GitHub Issue #213）
+    const errors = await open(page, 'contact-child');
+    const add = page.getByRole('button', { name: '体温を記録する', exact: true });
+    await tabTo(page, add);
+    await key(page, 'Enter');
+    await expectFocusInside(page, page.getByRole('dialog', { name: '野原 太郎の体温' }));
+    await pressAndExpectFocus(page, 'Enter', add);
+    const toast = page.locator('.toast');
+    const before = await tabIntoToast(page);
+    await expect(toast.getByRole('button', { name: '取り消す' })).toBeFocused();
+    await key(page, 'Enter');
+    const confirm = page.getByRole('dialog', { name: 'この記録を取り消しますか' });
+    await expectFocusInside(page, confirm);
+    await expect(confirm).toContainText('読んでいます');
+    await tabTo(page, confirm.getByRole('button', { name: '取り消す' }), { max: 3 });
+    await pressAndExpectFocus(page, 'Enter', before);
+    await expect(confirm).toHaveCount(0);
+    await expect(toast).toContainText('取り消しました');
+    expect(errors, 'ブラウザ実行エラー').toEqual([]);
+  });
+
   test.describe('表が横に送られる幅（iPad の横向き 1024×768）', () => {
     test.use({ viewport: { width: 1024, height: 768 } });
 

@@ -74,13 +74,33 @@ export function ToastHost() {
       .then((text) => setConfirming((c) => (c && c.action === action ? { ...c, text } : c)))
       .catch((e: Error) => setConfirming((c) => (c && c.action === action ? { ...c, text: '', error: e.message } : c)));
   };
+  /*
+   * 「閉じる」を押したとき・確認の窓で取り消したときは、知らせ（と知らせの「取り消す」）が消え、押したボタンからフォーカスが外れて
+   * body に落ちていた。知らせへフォーカスが入る前にいた部品（cameFrom）へ戻す。消えた・押せなくなったなどで戻せなければ、本文（main）へ移す
+   * （WCAG 2.4.3 フォーカス順序、GitHub Issue #213。共通の決まりは src/focusAfter.ts。押したときにフォーカスが無ければ動かさない）
+   */
+  const cameFrom = useRef<HTMLElement | null>(null);
+  const backTo = (back: HTMLElement | null) => () =>
+    (back?.isConnected && !back.matches(':disabled') ? back : document.querySelector<HTMLElement>('main'));
+  const close = () => {
+    const pressed = focusedNow();
+    const back = cameFrom.current;
+    publish(null);
+    focusAfter(pressed, backTo(back));
+  };
+  /*
+   * 確認の窓の「取り消す」。取り消せると知らせが結果の文に差し替わって知らせの「取り消す」が消え、窓の部品（Modal）が戻す先を失う。
+   * 「閉じる」と同じ先へ移す。取り消せなかったときは窓が残るので、押した「取り消す」へ戻す
+   */
   const runConfirmed = () => {
     if (!confirming || confirming.busy) return;
     const { action } = confirming;
+    const pressed = focusedNow();
+    const back = cameFrom.current;
     setConfirming({ ...confirming, busy: true, error: null });
     action.run()
-      .then((message) => { setConfirming(null); notify(message); })
-      .catch((e: Error) => setConfirming((c) => (c ? { ...c, busy: false, error: e.message } : c)));
+      .then((message) => { setConfirming(null); notify(message); focusAfter(pressed, backTo(back)); })
+      .catch((e: Error) => { setConfirming((c) => (c ? { ...c, busy: false, error: e.message } : c)); focusAfter(pressed); });
   };
 
   /*
@@ -103,19 +123,6 @@ export function ToastHost() {
     const release = cover(el);
     return () => { box.current = null; release?.(); };
   }, [cover]);
-
-  /*
-   * 「閉じる」を押すと知らせごと消え、押したボタンからフォーカスが外れて body に落ちていた。
-   * 知らせへフォーカスが入る前にいた部品（cameFrom）へ戻す。消えた・押せなくなったなどで戻せなければ、本文（main）へ移す
-   * （WCAG 2.4.3 フォーカス順序、GitHub Issue #213。共通の決まりは src/focusAfter.ts。押したときにフォーカスが無ければ動かさない）
-   */
-  const cameFrom = useRef<HTMLElement | null>(null);
-  const close = () => {
-    const pressed = focusedNow();
-    const back = cameFrom.current;
-    publish(null);
-    focusAfter(pressed, () => (back?.isConnected && !back.matches(':disabled') ? back : document.querySelector<HTMLElement>('main')));
-  };
 
   useEffect(() => {
     // 知らせが消えたら、止めていたことも忘れる（消えた表示からは、離れた知らせが届かないため）
