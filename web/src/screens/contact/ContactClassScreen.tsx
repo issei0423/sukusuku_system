@@ -33,7 +33,7 @@ import { dayLabel, eventText, homeLines, latestSleepText } from './contactText';
 import FixDialog, { cancelAction, toiletChoices } from './FixDialog';
 import type { FixTarget } from './FixDialog';
 import PhotoSendDialog from './PhotoSendDialog';
-import ContactPhotoImage from './ContactPhotoImage';
+import ClassPhotoStrip from './ClassPhotoStrip';
 
 const HOME_STATE_TEXT: Record<HomeState, string> = { none: 'まだ', unconfirmed: '未確認', revised: '更新', confirmed: '確認済み' };
 /** sort=home の並び：「更新」「未確認」「まだ」「確認済み」（詳細設計書 (2-2 (2))） */
@@ -132,7 +132,7 @@ export default function ContactClassScreen() {
   const [failed, setFailed] = useState(false);
   const [fix, setFix] = useState<{ target: FixTarget; normal: number | null } | null>(null);
   const [tempFor, setTempFor] = useState<ContactClassRow | null>(null);
-  // 写真を送る（詳細設計書「写真を送る」(2-2 (7))。中身は PhotoSendDialog.tsx）
+  // 写真を送る（詳細設計書「写真を送る」(2-2 (7))。中身は PhotoSendDialog.tsx。送った写真は ClassPhotoStrip.tsx で表の上に出す）
   const [photoOpen, setPhotoOpen] = useState(false);
   const reachable = useReachable();
   // 仮に入れた食事は保存していない。ログアウトの前に、破棄されることを確かめさせる
@@ -293,6 +293,7 @@ export default function ContactClassScreen() {
             {data.unregistered_count > 0 && `（まだ登録していない ${data.unregistered_count} 家庭は、登録すると読めます）`}
             {!data.can_write && '。このクラスは読むだけです'}
           </p>
+          <ClassPhotoStrip rows={rows} />
           {canRecord && rows.length > 0 && (
             <section className="contact-meal-bar" aria-label="食事を記録する">
               <div className="contact-picks" role="group" aria-label="食事の区分">
@@ -404,8 +405,7 @@ export default function ContactClassScreen() {
                           {row.child.normal_temperature !== null && <div className="muted">平熱 {row.child.normal_temperature.toFixed(1)}</div>}
                         </td>
                         <td>{nap ? <Link to="/staff/nap">{nap}</Link> : <span className="muted">―</span>}</td>
-                        <td className="num"><Link to={childPath} aria-label={`${name}のひとこと・写真`}>{comments > 0 ? `${comments} 件` : '―'}</Link>
-                          <LatestPhoto row={row} /></td>
+                        <td className="num"><Link to={childPath} aria-label={`${name}のひとこと・写真`}>{comments > 0 ? `${comments} 件` : '―'}</Link></td>
                         {/* 園から：未送信・送った（時刻）。午睡で欠席にした子は「欠席」（未送信に数えない）。押すと連絡帳（園児）画面の園から */}
                         <td>
                           <Link to={`${childPath}#facility`} aria-label={`${name}の園から`}>
@@ -441,14 +441,4 @@ export default function ContactClassScreen() {
       )}
     </div>
   );
-}
-
-/**
- * ひとこと・写真の列に、その日のいちばん新しい写真を小さく出す（詳細設計書「午睡・ひとこと・園からの列」(2-2 (6))）。
- * 【仮置き】出すのは新しい1枚だけ（web/仮置き値.md）。ほかは件数から連絡帳（園児）画面で見る
- */
-function LatestPhoto({ row }: { row: ContactClassRow }) {
-  const last = row.events.filter((e) => e.event_type === '5' && e.contact_photo_id !== null).at(-1);
-  if (!last || last.contact_photo_id === null) return null;
-  return <ContactPhotoImage photoId={last.contact_photo_id} label={`${row.child.child_name}の写真（${formatHM(last.recorded_at)}）`} size="cell" />;
 }

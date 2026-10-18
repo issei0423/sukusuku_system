@@ -38,5 +38,8 @@
 .contact-photo-missing { font-size: var(--fs-small); }
 .contact-timeline-photo { display: block; margin-top: var(--sp-1); }
 .contact-latest-photo { display: inline-block; vertical-align: middle; margin-left: var(--sp-2); }
+.class-photo-strip { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; margin: var(--sp-2) 0; }
+.class-photo-strip h2 { margin: 0; font-size: 16px; }
+.class-photo-strip ul { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin: 0; padding: 0; list-style: none; }
 .photo-viewer .modal { max-width: min(960px, 100%); }
 .photo-viewer-image { display: block; max-width: 100%; max-height: 70vh; margin: 0 auto; object-fit: contain; }
