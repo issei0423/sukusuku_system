@@ -249,8 +249,15 @@ export const diaries: Diary[] = [
     body: '【ねらい】\n身近な友だちと関わる楽しさを味わう。\n\n【活動内容】\n園庭でしゃぼん玉遊び。',
     created_staff_id: 'S003', approved_staff_id: null, approved_at: null, applied_staff_id: 'S003', applied_at: '2026-08-31T17:20:00',
     nap_abnormal_id: null, returned_reason: null, is_deleted: false, created_at: '2026-08-31T17:20:00', updated_at: '2026-08-31T17:20:00' },
+  /*
+   * ヒヤリハット。発生日時・場所・保護者へ伝えたことは列に、状況・とった対応・今後の対策は本文に見出しを付けて持つ
+   * （詳細設計書「日誌の画面（作り直し）」(2-13 (8))・「日誌」(4-13 (1))、決めたこと D-33）。
+   * 発生日時は異常時の記録（nap_abnormal_id 1）の発見時刻。場所・伝えた日時・相手はデモの値。server/seed.sql の diary_id 3 とそろえる
+   */
   { diary_id: 3, record_type: '4', child_id: 'C003', class_id: 1, diary_date: '2026-08-30', status: '4',
-    body: '【発生日時】\n午睡中の13時40分ごろ\n\n【状況】\n午睡中にうつ伏せの体位を確認した。\n\n【とった対応】\n仰向けに直し、呼吸と顔色を確認した。',
+    body: '【状況】\n午睡中にうつ伏せの体位を確認した。\n\n【とった対応】\n仰向けに直し、呼吸と顔色を確認した。\n\n【今後の対策】\n午睡の確認のたびに、呼吸とあわせて体位も見る。うつ伏せを見つけて仰向けに直したときは、直したあとの向きも記録する。',
+    occurred_at: '2026-08-30T13:40:00', place: '保育室（さくら組）',
+    guardian_notice: '1', guardian_noticed_at: '2026-08-30T17:10:00', guardian_notice_method: '2', guardian_notice_person: '父（お迎え）',
     created_staff_id: 'S004', approved_staff_id: null, approved_at: null, applied_staff_id: null, applied_at: null,
     nap_abnormal_id: 1, returned_reason: '発生時の呼吸・顔色の記録が本文にありません。異常時の記録と同じ内容を転記してください。',
     is_deleted: false, created_at: '2026-08-30T18:00:00', updated_at: '2026-08-31T09:10:00' },

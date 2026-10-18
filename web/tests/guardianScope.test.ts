@@ -81,8 +81,10 @@ describe('日誌は保護者に見せない', () => {
     const personal = await api.saveDiary(teacher, {
       record_type: '1', child_id: 'C001', class_id: 1, diary_date: today(), body: '園内で確かめる個人日誌',
     }, '2');
+    // ヒヤリハットは本文の代わりに欄で送る（詳細設計書「日誌」(4-13 (1))。server/api_guardian_test.go と同じ入力）
     const incident = await api.saveDiary(teacher, {
-      record_type: '4', child_id: 'C001', class_id: 1, diary_date: today(), body: '【状況】園内限定の記録',
+      record_type: '4', child_id: 'C001', class_id: 1, diary_date: today(), body: '',
+      incident: { occurred_at: `${today()}T00:00:00`, place: '保育室', situation: '園内限定の記録', response: 'その場で確かめた' },
     }, '2');
     for (const id of [personal.diary_id, incident.diary_id, 2]) { // 2 はさくら組のクラス日誌（申請中）
       expect((await api.approveDiary(admin, id)).status).toBe('3');

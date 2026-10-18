@@ -60,6 +60,26 @@ export interface DiaryInput {
    * 空の並びはすべて外す（【仮置き】web/仮置き値.md「日誌作成・編集画面の動き」。GitHub Issue #175 の 2）
    */
   attachments?: DiaryAttachmentInput[];
+  /**
+   * ヒヤリハットの欄（詳細設計書「日誌」(4-13 (1))）。ヒヤリハットのときは本文の代わりにこれを送り、
+   * 状況・とった対応・今後の対策を見出しでつないだ本文をサーバ（モック）が作る（決めたこと D-33）
+   */
+  incident?: DiaryIncidentInput;
+}
+
+/** 保存のときに送るヒヤリハットの欄。任意の欄は空の文字列で「無し」とする（サーバ側は diaryIncidentInput） */
+export interface DiaryIncidentInput {
+  /** 'YYYY-MM-DDTHH:MM:SS' */
+  occurred_at: string;
+  place: string;
+  situation: string;
+  response: string;
+  countermeasure?: string;
+  /** '1' 伝えた / '2' 伝えていない / '' 未記入 */
+  guardian_notice?: '' | '1' | '2';
+  guardian_noticed_at?: string;
+  guardian_notice_method?: '' | '1' | '2' | '3' | '9';
+  guardian_notice_person?: string;
 }
 
 /** 日誌に付ける写真 1 枚。実体は持たず、ファイルの名前と形式だけを持つ（web/仮置き値.md 7「添付ファイルの実体」） */

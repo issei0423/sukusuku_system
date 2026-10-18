@@ -16,6 +16,9 @@ import { clearNotice, notify } from '../../components/feedback';
 import { DIARY_RECORD_TYPE } from '../../api/codes';
 import { formatYMD } from '../../api/util';
 import type { DiaryRecordType } from '../../api/types';
+import { IncidentSummary } from './IncidentFields';
+import { incidentInputOf } from './incidentForm';
+import type { IncidentForm } from './incidentForm';
 
 interface ConfirmState {
   recordType: DiaryRecordType;
@@ -26,6 +29,8 @@ interface ConfirmState {
   diaryId: number | null;
   lockToken?: string;
   photos: DiaryAttachmentInput[];
+  /** ヒヤリハットの欄（記録種別がヒヤリハットのときだけ。本文の代わりに送る） */
+  incident?: IncidentForm;
 }
 
 export default function DiaryConfirmScreen() {
@@ -94,6 +99,8 @@ export default function DiaryConfirmScreen() {
         class_id: state.classId,
         diary_date: state.date,
         body: state.body,
+        // ヒヤリハットは本文の代わりに欄を送る。本文はサーバ（モック）が欄から作る（詳細設計書「日誌」(4-13 (1))）
+        incident: state.recordType === '4' && state.incident ? incidentInputOf(state.incident) : undefined,
         lock_token: activeToken ?? undefined,
         // ここで示した写真を、そのまま日誌に付ける（画面詳細図「日誌確認画面」(3-3) 項目3。GitHub Issue #175 の 2）
         attachments: state.photos,
@@ -121,10 +128,20 @@ export default function DiaryConfirmScreen() {
             <tr><th scope="col">写真</th><td>{state.photos.length} 枚</td></tr>
           </tbody>
         </table>
-        <h3 style={{ marginTop: 16 }}>本文</h3>
-        <div style={{ whiteSpace: 'pre-wrap', border: '1px solid var(--c-border)', borderRadius: 6, padding: 12 }}>
-          {state.body}
-        </div>
+        {/* ヒヤリハットは本文の代わりに欄を示す（図/画面詳細図.md「日誌承認画面（管理者）」(3-5) 項目3 と同じ並び） */}
+        {state.recordType === '4' && state.incident ? (
+          <>
+            <h3 style={{ marginTop: 16 }}>ヒヤリハットの内容</h3>
+            <IncidentSummary incident={incidentInputOf(state.incident)} />
+          </>
+        ) : (
+          <>
+            <h3 style={{ marginTop: 16 }}>本文</h3>
+            <div style={{ whiteSpace: 'pre-wrap', border: '1px solid var(--c-border)', borderRadius: 6, padding: 12 }}>
+              {state.body}
+            </div>
+          </>
+        )}
       </section>
 
       <section className="card card-sub">
