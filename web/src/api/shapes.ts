@@ -132,13 +132,6 @@ export interface NapAbnormalRow {
   diary_id: number | null;
   child_name: string;
   staff_name: string;
-  /**
-   * 起票したヒヤリハットの側の「状況」「とった対応」。起票していない記録・日誌が見つからない記録では null。
-   * 帳票では、起票した記録はこちらを出し、起票済みの印を付けて二重に数えない（基本設計書「帳票の出力」(4-8)、
-   * 要件定義書「日誌システム」(4-3) の「集計・監査時はヒヤリハット側を正」）。situation・response は記録そのもの
-   */
-  incident_situation: string | null;
-  incident_response: string | null;
 }
 
 /**

@@ -22,6 +22,12 @@ const teacher: SessionUser = {
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
+// 午睡記録の CSV（帳票）は管理者だけが出せる（画面詳細図「午睡記録検索画面」(5-3) の項目9・10）
+const admin: SessionUser = {
+  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
+  is_temp_password: false, terms_agreed: true,
+};
 
 function open(path: string, user: SessionUser) {
   return render(
@@ -143,7 +149,7 @@ describe('午睡記録検索画面の CSV 出力（GitHub Issue #165 の 3）', 
     URL.createObjectURL = vi.fn(() => 'blob:test');
     URL.revokeObjectURL = vi.fn();
 
-    open('/staff/nap/search', teacher);
+    open('/staff/nap/search', admin);
     await settled();
     await waitFor(() => expect(document.querySelector('table.list tbody tr')).toBeTruthy(), { timeout: 3000 });
     const applied = `${addDays(today(), -7)}〜${today()}`;
@@ -154,8 +160,9 @@ describe('午睡記録検索画面の CSV 出力（GitHub Issue #165 の 3）', 
 
     await waitFor(() => expect(fileName).not.toBe(''));
     expect(fileName).toBe(`午睡記録_${addDays(today(), -7)}_${today()}.csv`);
+    // 操作ログは新しいものを先頭に持つ。期間はサーバ（モック）が帳票を作った期間を書く
     const logged = db.operationLogs.filter((l) => (l.after_value ?? '').startsWith('午睡記録をCSV出力'));
-    expect(logged[logged.length - 1]?.after_value).toContain(`期間 ${applied}`);
+    expect(logged[0]?.after_value).toContain(`期間 ${applied}`);
   });
 });
 

@@ -14,10 +14,10 @@ import { useSession } from '../../session';
 import { api, selectableClasses } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Pager } from '../../components/ui';
 import { notify } from '../../components/feedback';
-import { downloadCsv } from '../../csv';
+import { downloadCsvText } from '../../csv';
 import { BODY_POSITION, BREATHING, COMPLEXION } from '../../api/codes';
 import type { NapSearchRow } from '../../api/shapes';
-import { NAP_REPORT_HEADER, SLEEP_ROW_LABEL, napReportRows, rowTemperature } from './napReport';
+import { SLEEP_ROW_LABEL, rowTemperature } from './napReport';
 import { formatMD, formatHM, formatMDHM, today, addDays } from '../../api/util';
 
 export default function NapSearchScreen() {
@@ -63,23 +63,28 @@ export default function NapSearchScreen() {
       .sort((a, b) => b.found_at.localeCompare(a.found_at));
   }, [user?.account_id, applied]);
 
+  /*
+   * 帳票（CSV）は管理者だけが出せる。一般（保育士）にはボタンを出さない（画面詳細図「午睡記録検索画面」(5-3) の
+   * 項目9・10「出力できるのは管理者のみ」）。権限の担保はサーバ（GET /api/nap/report の requireAdmin）で行う。
+   * 帳票はサーバで作る。「絞り込む」を押した時点の期間・クラスで、その期間の全件を出す（いまのページの行だけではない）。
+   * 出力したことと、期間・件数はサーバが操作ログへ記録する（基本設計書「帳票の出力」(4-8)）
+   */
+  const canExport = user!.role === '1';
   const [exportError, setExportError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
   const exportCsv = async () => {
-    // 異常時の記録も帳票に含める（画面詳細図 5-3 の項目9）。読めていないうちは出力しない（抜けた帳票を作らない）
-    if (!data || !abnormals.data) return;
-    const { from: outFrom, to: outTo } = applied;
-    const abnormalRows = abnormals.data;
-    // 出力したことを先に操作ログへ残す。残せなかったときは出力しない。件数は一覧の行と異常時の記録の合計
+    const { from: outFrom, to: outTo, classId: outClass } = applied;
+    setExporting(true);
     try {
-      await api.recordExport(user!, 'nap_record', outFrom, outTo, data.rows.length + abnormalRows.length);
+      const text = await api.napReport(user!, { from: outFrom, to: outTo, classId: outClass, format: 'csv' });
+      setExportError(null);
+      downloadCsvText(`午睡記録_${outFrom}_${outTo}.csv`, text);
+      notify('午睡記録を CSV で出力しました。出力したことは操作ログに残ります');
     } catch (e) {
       setExportError((e as Error).message);
-      return;
+    } finally {
+      setExporting(false);
     }
-    setExportError(null);
-    // 園児名・職員名などを式として開かせないよう csv.ts を通す（GitHub Issue #153）
-    downloadCsv(`午睡記録_${outFrom}_${outTo}.csv`, NAP_REPORT_HEADER, napReportRows(data.rows, abnormalRows));
-    notify('午睡記録を CSV で出力しました。出力したことは操作ログに残ります');
   };
 
   return (
@@ -88,7 +93,7 @@ export default function NapSearchScreen() {
         <Link className="btn btn-quiet btn-sm" to="/staff/nap">&lt; 午睡チェックへ</Link>
         <h1>午睡記録の検索</h1>
         <div className="spacer" />
-        <button onClick={exportCsv} disabled={!data || data.rows.length === 0 || !abnormals.data}>CSV出力</button>
+        {canExport && <button onClick={exportCsv} disabled={exporting}>CSV出力</button>}
       </div>
 
       {exportError && <section className="card"><ErrorBox text={exportError} /></section>}
@@ -166,10 +171,15 @@ export default function NapSearchScreen() {
 
       <section className="card card-sub">
         <div className="muted">
-          {/* 【仮置き】異常時の記録を CSV に含めることと、起票したものの出し方の説明（web/仮置き値.md） */}
-          CSV 出力は、いま表示しているページの行と、同じ期間の異常時の記録を出します。
-          ヒヤリハットを起票した記録は、ヒヤリハットに書いた状況・対応を出します。出力したことは操作ログに残ります。
-          <br />
+          {/* 【仮置き】帳票の範囲と、起票したものの出し方の説明（web/仮置き値.md「午睡の帳票」）。一般には出さない */}
+          {canExport && (
+            <>
+              CSV 出力は、絞り込んだ期間とクラスの記録（ねた・おきた・きょうは対象外を含む）と、同じ期間の異常時の記録を、
+              ページに分けずにすべて出します。園児名では絞りません。
+              ヒヤリハットを起票した記録は、ヒヤリハットに書いた状況・対応を出します。出力したことは操作ログに残ります。
+              <br />
+            </>
+          )}
           {/* 記録は削除させず、誤りは修正の履歴で残す（基本設計書「記録の修正と改ざん防止」(4-7)） */}
           午睡の記録は削除できません。誤りは修正の履歴として残ります。
           チェック時刻と保存時刻が離れている行は、後からまとめて入力された記録です。

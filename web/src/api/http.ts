@@ -27,6 +27,7 @@ import {
 import { startLive } from '../live';
 import { setReachable } from './reachability';
 import { TEXT } from '../messages';
+import type { NapReportFilter } from './napReport';
 
 // 画面はこれまでどおり client 経由で型を参照する。定義の実体は shapes.ts が持つ
 export type {
@@ -124,6 +125,42 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     throw err;
   }
   return data as T;
+}
+
+/**
+ * 本文を文字列のまま受け取る（サーバで作るファイル。GET /api/nap/report）。失敗の扱いは request と同じにする：
+ * 届かない・時間切れは「サーバに届かない」、401 は入口へ戻す、手続きの途中の 403 は手続きの画面へ案内する、
+ * ほかの失敗はサーバの文言を投げる。fetch の text() は先頭の BOM を外す。残っていても外す（保存する画面が付け直す）
+ */
+async function requestText(path: string): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch(path, { credentials: 'same-origin', signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+  } catch {
+    setReachable(false);
+    throw new ApiError({ message: UNREACHABLE_MESSAGE, kind: 'unreachable' });
+  }
+  if (res.status === 502 || res.status === 503 || res.status === 504) {
+    setReachable(false);
+    throw new ApiError({ message: UNREACHABLE_MESSAGE, kind: 'unreachable' });
+  }
+  setReachable(true);
+  const text = await res.text();
+  if (!res.ok) {
+    let body: { message: string; kind?: string } | null = null;
+    try { body = JSON.parse(text); } catch { body = null; }
+    const err = new ApiError(body ?? { message: '通信に失敗しました' });
+    if (res.status === 403 && isProcedureKind(err.kind)) {
+      notifyProcedureRequired(err.kind);
+      throw new ProcedureRequiredError(err.kind, err.message);
+    }
+    if (res.status === 401) {
+      clearReference();
+      notifySessionEnded();
+    }
+    throw err;
+  }
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
 }
 
 const get = <T>(path: string) => request<T>('GET', path);
@@ -445,6 +482,13 @@ const apiChatNap = {
   ) => get<Paged<NapSearchRow>>('/api/nap/records' + qs({
     from: f.from ?? '', to: f.to ?? '', class_id: f.classId ?? '',
     child_name: f.childName ?? '', page: f.page ?? 1,
+  })),
+  /**
+   * 午睡チェック表（帳票）をサーバで作って受け取る（GET /api/nap/report。管理者だけ）。返すのは CSV の本文（BOM を外す）。
+   * 出力したことと期間・件数は、サーバが操作ログへ記録する（基本設計書「帳票の出力」(4-8)）
+   */
+  napReport: (_u: SessionUser, f: NapReportFilter) => requestText('/api/nap/report' + qs({
+    from: f.from, to: f.to, class_id: f.classId ?? '', format: f.format,
   })),
 
   /**

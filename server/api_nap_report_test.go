@@ -1,17 +1,21 @@
 package main
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"net/http"
+	"strconv"
+	"strings"
 	"testing"
 )
 
 /*
  * 午睡記録検索と帳票に、ねた・おきたと入眠時の体温を出す。ヒヤリハットを起票した異常時の記録は、
  * ヒヤリハット側の状況・とった対応を出して二重に数えない
- * 典拠：図/画面詳細図.md「午睡記録検索画面」(5-3) の項目6・9・11、基本設計書.md「帳票の出力」(4-8)、
+ * 典拠：図/画面詳細図.md「午睡記録検索画面」(5-3) の項目6・9・10・11、基本設計書.md「帳票の出力」(4-8)、
  *      要件定義書.md「日誌システム」(4-3) の「午睡チェックの異常時の記録との関係」
  *
+ * 帳票（GET /api/nap/report）はサーバで作り、管理者だけが出せる。期間と件数はサーバが操作ログへ書く。
  * 画面側のモック（web/src/api/mock.ts）と同じ規則であることを、web/tests/napReport.test.ts と同じ観点で確かめる。
  */
 
@@ -128,67 +132,364 @@ func TestNapSearchSleepRowsFollowFiltersAndScope(t *testing.T) {
 	}
 }
 
-type napAbnormalJSON struct {
-	NapAbnormalID     int64   `json:"nap_abnormal_id"`
-	Situation         string  `json:"situation"`
-	Response          string  `json:"response"`
-	DiaryID           *int64  `json:"diary_id"`
-	IncidentSituation *string `json:"incident_situation"`
-	IncidentResponse  *string `json:"incident_response"`
+// ---- 帳票（GET /api/nap/report） ----
+
+// demoNapDates は、デモの実施 1（今日）・2（昨日）・3（2日前）の日付を返す。デモの日付は起動日へずれる（seed_shift.go）
+func demoNapDates(t *testing.T, a *app) (today, yesterday, twoDaysAgo string) {
+	t.Helper()
+	dateOf := func(id int) string {
+		var d string
+		if err := a.db.QueryRow(`SELECT session_date FROM t_nap_session WHERE nap_session_id = ?`, id).Scan(&d); err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+	return dateOf(1), dateOf(2), dateOf(3)
 }
 
-func napAbnormalByID(t *testing.T, h http.Handler, c *http.Cookie, id int64) napAbnormalJSON {
+// napReportCSVFile は、帳票を CSV として読んだもの
+type napReportCSVFile struct {
+	raw       string
+	header    []string
+	rows      [][]string // 一覧の行
+	abnormals [][]string // 同じ期間の異常時の記録の行
+	hasTitle  bool
+}
+
+// napReportOf は帳票を取り、BOM を外して CSV の行に分ける。200 でなければ止める
+func napReportOf(t *testing.T, h http.Handler, c *http.Cookie, query string) napReportCSVFile {
 	t.Helper()
-	var all []napAbnormalJSON
-	if err := json.Unmarshal(call(t, h, c, "GET", "/api/nap/abnormals", "").Body.Bytes(), &all); err != nil {
+	rec := request(t, h, c, "GET", "/api/nap/report"+query, "")
+	expectStatus(t, rec, http.StatusOK)
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/csv") {
+		t.Fatalf("Content-Type = %q", ct)
+	}
+	body := rec.Body.String()
+	if !strings.HasPrefix(body, utf8BOM) {
+		t.Fatal("先頭に BOM がありません（Excel で文字化けする）")
+	}
+	r := csv.NewReader(strings.NewReader(strings.TrimPrefix(body, utf8BOM)))
+	r.FieldsPerRecord = -1
+	records, err := r.ReadAll()
+	if err != nil {
+		t.Fatalf("CSV として読めません: %v\n%s", err, body)
+	}
+	f := napReportCSVFile{raw: body, header: records[0]}
+	section := &f.rows
+	for i := 1; i < len(records); i++ {
+		if len(records[i]) == 1 && records[i][0] == napReportAbnormalTitle {
+			f.hasTitle = true
+			if i+1 >= len(records) || strings.Join(records[i+1], ",") != strings.Join(napReportAbnormalHeader, ",") {
+				t.Fatalf("異常時の記録の見出しが正しくありません: %v", records[i:])
+			}
+			section = &f.abnormals
+			i++
+			continue
+		}
+		*section = append(*section, records[i])
+	}
+	return f
+}
+
+func countNapExportLogs(t *testing.T, a *app) int {
+	t.Helper()
+	var n int
+	if err := a.db.QueryRow(`SELECT COUNT(*) FROM t_operation_log
+		WHERE function_type = '3' AND operation_type = '5'`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	for _, x := range all {
-		if x.NapAbnormalID == id {
-			return x
-		}
-	}
-	t.Fatalf("異常時の記録 %d がありません", id)
-	return napAbnormalJSON{}
+	return n
 }
 
-func TestNapAbnormalsReturnIncidentSideForRaisedRecords(t *testing.T) {
+func TestNapReportIsAdminOnly(t *testing.T) {
+	a, h := newTestApp(t)
+	today, _, twoDaysAgo := demoNapDates(t, a)
+	q := "?from=" + twoDaysAgo + "&to=" + today + "&format=csv"
+
+	// 一般（保育士。さくら組の担任）と保護者は 403。操作ログにも残さない
+	for _, c := range []struct {
+		name   string
+		cookie *http.Cookie
+	}{
+		{"一般（保育士）", loginAs(a, 3, "staff")},
+		{"保護者", loginAs(a, 6, "guardian")},
+	} {
+		rec := request(t, h, c.cookie, "GET", "/api/nap/report"+q, "")
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("%sが帳票を出せています: %d %s", c.name, rec.Code, rec.Body.String())
+		}
+		if strings.Contains(rec.Body.String(), "野原 太郎") {
+			t.Fatalf("%sへの拒否の応答に、帳票の中身が入っています", c.name)
+		}
+	}
+	if n := countNapExportLogs(t, a); n != 0 {
+		t.Fatalf("拒否した出力が操作ログに %d 件残っています", n)
+	}
+
+	// 管理者は出せる
+	f := napReportOf(t, h, loginAs(a, 1, "staff"), q)
+	if strings.Join(f.header, ",") != "日付,チェック時刻,園児,クラス,体位,呼吸,顔色,体温,記録者,保存時刻,修正あり" {
+		t.Fatalf("見出しが正しくありません: %v", f.header)
+	}
+	if len(f.rows) == 0 {
+		t.Fatal("帳票に行がありません")
+	}
+}
+
+func TestNapReportContents(t *testing.T) {
 	a, h := newTestApp(t)
 	admin := loginAs(a, 1, "staff")
-
-	// デモの記録 1 はヒヤリハット（日誌 3）を起票済み。日誌の側の状況・とった対応を返し、記録そのものは書き換えない
-	raised := napAbnormalByID(t, h, admin, 1)
-	if raised.IncidentSituation == nil || *raised.IncidentSituation != "午睡中にうつ伏せの体位を確認した。" ||
-		raised.IncidentResponse == nil || *raised.IncidentResponse != "仰向けに直し、呼吸と顔色を確認した。" {
-		t.Fatalf("ヒヤリハット側の状況・とった対応が返っていません: %+v", raised)
+	today, yesterday, twoDaysAgo := demoNapDates(t, a)
+	/*
+	 * きょうは対象外は、昨日の実施 2 に足して確かめる。デモの今日の対象外（13:01）は、テストを夜中に回すと
+	 * 起動した時刻より後になって外れる（db_contact.go の trimFutureDemoContacts）。取り消したものは出さない
+	 */
+	if _, err := a.db.Exec(`INSERT INTO t_nap_exclusion (nap_session_id, child_id, reason, staff_id, is_deleted, created_at) VALUES
+		(2, 'C002', '2', 'S003', 0, ?), (2, 'C004', '1', 'S003', 1, ?)`,
+		yesterday+"T13:00:00", yesterday+"T13:00:00"); err != nil {
+		t.Fatal(err)
 	}
-	if raised.Situation != "うつ伏せの体位で寝ているのを発見。呼吸あり、顔色は通常。" {
-		t.Fatalf("異常時の記録そのものの状況が書き換わっています: %+v", raised)
+	f := napReportOf(t, h, admin, "?from="+twoDaysAgo+"&to="+today+"&format=csv")
+
+	find := func(pred func(r []string) bool) [][]string {
+		out := [][]string{}
+		for _, r := range f.rows {
+			if pred(r) {
+				out = append(out, r)
+			}
+		}
+		return out
 	}
 
-	// 起票していない記録 2 は null
-	notRaised := napAbnormalByID(t, h, admin, 2)
-	if notRaised.DiaryID != nil || notRaised.IncidentSituation != nil || notRaised.IncidentResponse != nil {
-		t.Fatalf("起票していない記録に、ヒヤリハット側の値が付いています: %+v", notRaised)
+	// 確認の行：チェックした時刻と保存時刻の両方を出す（デモの記録 1。今日の野原 太郎 13:20:00、保存 13:20:30）
+	checks := find(func(r []string) bool { return r[2] == "野原 太郎" && strings.HasSuffix(r[1], "T13:20:00") })
+	if len(checks) != 1 {
+		t.Fatalf("確認の行が1行ではありません: %v", checks)
+	}
+	if c := checks[0]; c[0] != today || c[3] != "さくら組" || c[4] != "仰向け" || c[5] != "あり" || c[6] != "通常" ||
+		c[7] != "36.6" || c[8] != "高梨 倫太朗" || !strings.HasSuffix(c[9], "T13:20:30") {
+		t.Fatalf("確認の行の値が正しくありません: %v", c)
 	}
 
-	// ヒヤリハットの本文を直したら、直したあとの日誌の側を返す（集計・監査はヒヤリハット側を正とする）
+	// ねたの行：体温の列に入眠時の体温（デモの昨日の野原 太郎 36.5）。おきたの行は体温を出さない
+	sleeps := find(func(r []string) bool { return r[2] == "野原 太郎" && r[4] == "入眠（ねた）" })
+	if len(sleeps) != 1 || sleeps[0][0] != yesterday || sleeps[0][7] != "36.5" || sleeps[0][9] != "" {
+		t.Fatalf("ねたの行が、入眠時の体温つきの1行になっていません: %v", sleeps)
+	}
+	wakes := find(func(r []string) bool { return r[2] == "野原 太郎" && r[4] == "起床（おきた）" })
+	if len(wakes) != 1 || wakes[0][7] != "" {
+		t.Fatalf("おきたの行が正しくありません: %v", wakes)
+	}
+
+	// きょうは対象外と理由。1行で出す（昨日の上園 花子は午睡なし）。取り消した対象外（昨日の宮城 美咲）は出さない
+	excluded := find(func(r []string) bool { return r[2] == "上園 花子" && r[0] == yesterday })
+	if len(excluded) != 1 || excluded[0][1] != yesterday+"T13:00:00" || excluded[0][4] != "きょうは対象外（午睡なし）" ||
+		excluded[0][5] != "" || excluded[0][7] != "" || excluded[0][8] != "高梨 倫太朗" {
+		t.Fatalf("対象外が理由つきの1行で出ていません: %v", excluded)
+	}
+	if cancelled := find(func(r []string) bool { return r[2] == "宮城 美咲" && r[0] == yesterday }); len(cancelled) != 0 {
+		t.Fatalf("取り消した対象外が出ています: %v", cancelled)
+	}
+
+	// 「修正あり」の列は置き、修正の機能が無いあいだは空
+	for _, r := range f.rows {
+		if len(r) != len(napReportHeader) || r[10] != "" {
+			t.Fatalf("「修正あり」の列が無いか、空ではありません: %v", r)
+		}
+	}
+	// 時刻の新しい順
+	for i := 1; i < len(f.rows); i++ {
+		if f.rows[i-1][1] < f.rows[i][1] {
+			t.Fatalf("時刻の新しい順になっていません: %v のあとに %v", f.rows[i-1], f.rows[i])
+		}
+	}
+
+	// 異常時の記録：起票済み（記録 1。高梨 健、日誌 3）はヒヤリハット側の状況・とった対応に印を付けて1行。
+	// 記録そのものの文は出さない（二重に数えない）
+	if !f.hasTitle || len(f.abnormals) != 2 {
+		t.Fatalf("異常時の記録が2行ではありません: %v", f.abnormals)
+	}
+	raised := [][]string{}
+	for _, r := range f.abnormals {
+		if r[1] == "高梨 健" {
+			raised = append(raised, r)
+		}
+	}
+	if len(raised) != 1 || raised[0][2] != "午睡中にうつ伏せの体位を確認した。" ||
+		raised[0][3] != "仰向けに直し、呼吸と顔色を確認した。" || raised[0][5] != "起票済み" {
+		t.Fatalf("起票済みの記録が、ヒヤリハット側の文の1行になっていません: %v", raised)
+	}
+	if strings.Contains(f.raw, "うつ伏せの体位で寝ているのを発見") {
+		t.Fatal("起票済みの記録が、記録そのものの文でも出ています（二重に数えている）")
+	}
+	// 起票していない記録 2（金城 陸）は、記録そのものの文に「未起票」。発見時刻の新しい順で先頭
+	notRaised := f.abnormals[0]
+	if notRaised[1] != "金城 陸" || notRaised[2] != "顔色がやや紅潮していた。体温37.4度。" || notRaised[5] != "未起票" {
+		t.Fatalf("起票していない記録が正しくありません: %v", f.abnormals)
+	}
+}
+
+func TestNapReportFollowsPeriodAndClass(t *testing.T) {
+	a, h := newTestApp(t)
+	admin := loginAs(a, 1, "staff")
+	today, yesterday, _ := demoNapDates(t, a)
+
+	// 昨日だけ：昨日のねた・おきたと異常時の記録 2 は出し、今日の対象外と2日前の異常時の記録 1 は出さない
+	f := napReportOf(t, h, admin, "?from="+yesterday+"&to="+yesterday)
+	if len(f.rows) == 0 {
+		t.Fatal("昨日の行がありません")
+	}
+	for _, r := range f.rows {
+		if r[0] != yesterday {
+			t.Fatalf("期間の外の行が出ています: %v", r)
+		}
+	}
+	if len(f.abnormals) != 1 || f.abnormals[0][1] != "金城 陸" {
+		t.Fatalf("期間の異常時の記録だけになっていません: %v", f.abnormals)
+	}
+
+	// ひまわり組だけ：さくら組の園児の行と異常時の記録は出さない
+	g := napReportOf(t, h, admin, "?from="+yesterday+"&to="+today+"&class_id=2")
+	for _, r := range g.rows {
+		if r[3] != "ひまわり組" {
+			t.Fatalf("ほかのクラスの行が出ています: %v", r)
+		}
+	}
+	if g.hasTitle || len(g.abnormals) != 0 {
+		t.Fatalf("ほかのクラスの異常時の記録が出ています: %v", g.abnormals)
+	}
+}
+
+func TestNapReportLogsPeriodAndCountCountedByServer(t *testing.T) {
+	a, h := newTestApp(t)
+	admin := loginAs(a, 1, "staff")
+	today, _, twoDaysAgo := demoNapDates(t, a)
+
+	latest := func() (accountID int64, table, after string) {
+		t.Helper()
+		if err := a.db.QueryRow(`SELECT account_id, target_table, after_value FROM t_operation_log
+			WHERE function_type = '3' AND operation_type = '5' ORDER BY operation_log_id DESC LIMIT 1`).
+			Scan(&accountID, &table, &after); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+
+	// 画面から件数を送っても使わない。件数は帳票に出した行（一覧の行と異常時の記録）をサーバが数える
+	f := napReportOf(t, h, admin, "?from="+twoDaysAgo+"&to="+today+"&count=1")
+	count := len(f.rows) + len(f.abnormals)
+	if count < 10 {
+		t.Fatalf("デモの期間の行が少なすぎます（%d 件）", count)
+	}
+	accountID, table, after := latest()
+	want := "午睡記録をCSV出力（期間 " + twoDaysAgo + "〜" + today + "・すべてのクラス・" + strconv.Itoa(count) + " 件）"
+	if accountID != 1 || table != "t_nap_record" || after != want {
+		t.Fatalf("操作ログ = (%d, %s, %q)、want (1, t_nap_record, %q)", accountID, table, after, want)
+	}
+
+	g := napReportOf(t, h, admin, "?from="+today+"&to="+today+"&class_id=1")
+	want = "午睡記録をCSV出力（期間 " + today + "〜" + today + "・さくら組・" + strconv.Itoa(len(g.rows)+len(g.abnormals)) + " 件）"
+	if _, _, after := latest(); after != want {
+		t.Fatalf("クラスを指定した出力の操作ログ = %q、want %q", after, want)
+	}
+}
+
+func TestNapReportRejectsPdfAndBadInput(t *testing.T) {
+	a, h := newTestApp(t)
+	admin := loginAs(a, 1, "staff")
+	today, _, twoDaysAgo := demoNapDates(t, a)
+	period := "from=" + twoDaysAgo + "&to=" + today
+
+	cases := []struct{ name, query, message string }{
+		// 【仮置き】PDF は作らない（PDF のライブラリと日本語の字体を入れるかを持ち主が決める）
+		{"PDF", "?" + period + "&format=pdf", msgNapReportPdf},
+		{"知らない形式", "?" + period + "&format=xlsx", msgNapReportFormat},
+		{"期間が無い", "?format=csv", msgNapReportPeriod},
+		{"崩れた日付", "?from=2026-9-1&to=" + today, msgNapReportPeriod},
+		{"開始が終了より後", "?from=" + today + "&to=" + twoDaysAgo, msgNapReportRange},
+		{"崩れたクラス", "?" + period + "&class_id=abc", msgNapReportClass},
+	}
+	for _, c := range cases {
+		rec := request(t, h, admin, "GET", "/api/nap/report"+c.query, "")
+		expectStatus(t, rec, http.StatusBadRequest)
+		var e apiError
+		if err := json.Unmarshal(rec.Body.Bytes(), &e); err != nil || e.Message != c.message {
+			t.Fatalf("%s: 文言 = %q（%v）、want %q", c.name, e.Message, err, c.message)
+		}
+	}
+	if n := countNapExportLogs(t, a); n != 0 {
+		t.Fatalf("出力しなかった要求が操作ログに %d 件残っています", n)
+	}
+}
+
+func TestNapReportUsesIncidentSideAndEscapesFormula(t *testing.T) {
+	a, h := newTestApp(t)
+	admin := loginAs(a, 1, "staff")
+	today, _, twoDaysAgo := demoNapDates(t, a)
+	q := "?from=" + twoDaysAgo + "&to=" + today
+	raisedRow := func(f napReportCSVFile) []string {
+		t.Helper()
+		for _, r := range f.abnormals {
+			if r[1] == "高梨 健" {
+				return r
+			}
+		}
+		t.Fatalf("起票済みの記録がありません: %v", f.abnormals)
+		return nil
+	}
+
+	// ヒヤリハットの本文を直したら、直したあとの日誌の側を出す（集計・監査はヒヤリハット側を正とする）
 	if _, err := a.db.Exec(`UPDATE t_diary SET body = ? WHERE diary_id = 3`,
 		"【発生日時】\r\n13時40分\r\n\r\n【発生場所】\r\nさくら組の午睡室\r\n\r\n【状況】\r\n直した状況。\r\n2行目。\r\n\r\n【とった対応】\r\n直した対応。\r\n\r\n【今後の対策】\r\n5分ごとに確かめる。"); err != nil {
 		t.Fatal(err)
 	}
-	edited := napAbnormalByID(t, h, admin, 1)
-	if edited.IncidentSituation == nil || *edited.IncidentSituation != "直した状況。\n2行目。" ||
-		edited.IncidentResponse == nil || *edited.IncidentResponse != "直した対応。" {
-		t.Fatalf("直したあとのヒヤリハットの状況・とった対応が返っていません: %+v", edited)
+	if r := raisedRow(napReportOf(t, h, admin, q)); r[2] != "直した状況。\n2行目。" || r[3] != "直した対応。" || r[5] != "起票済み" {
+		t.Fatalf("直したあとのヒヤリハットの文が出ていません: %v", r)
 	}
 
-	// 日誌が削除されていれば、日誌の側の値は返さない
+	// 日誌が削除されていれば、記録そのものの文を出す（印は起票済みのまま）
 	if _, err := a.db.Exec(`UPDATE t_diary SET is_deleted = 1 WHERE diary_id = 3`); err != nil {
 		t.Fatal(err)
 	}
-	if gone := napAbnormalByID(t, h, admin, 1); gone.IncidentSituation != nil || gone.IncidentResponse != nil {
-		t.Fatalf("削除した日誌の値が返っています: %+v", gone)
+	if r := raisedRow(napReportOf(t, h, admin, q)); r[2] != "うつ伏せの体位で寝ているのを発見。呼吸あり、顔色は通常。" || r[5] != "起票済み" {
+		t.Fatalf("日誌が無いときに記録そのものの文が出ていません: %v", r)
+	}
+
+	// 式の始まりになる文字で始まるセルは ' を付けて文字列として開かせる。" は二重にする（GitHub Issue #153 と同じ）
+	if _, err := a.db.Exec(`UPDATE t_nap_abnormal SET situation = ?, response = ? WHERE nap_abnormal_id = 2`,
+		`=HYPERLINK("http://example.invalid")`, `@SUM(1+1)`); err != nil {
+		t.Fatal(err)
+	}
+	f := napReportOf(t, h, admin, q)
+	if !strings.Contains(f.raw, `"'=HYPERLINK(""http://example.invalid"")","'@SUM(1+1)"`) {
+		t.Fatalf("式として開かれうるセルを逃がしていません:\n%s", f.raw)
+	}
+}
+
+// 異常時の記録の一覧は、起票したヒヤリハットの文を返さない。一般（保育士）もこの一覧を読めるため、
+// 日誌を開けるかどうかと関わりなく日誌の本文が読めてしまう。ヒヤリハット側の文は帳票（管理者だけ）が出す
+func TestNapAbnormalsDoNotReturnIncidentText(t *testing.T) {
+	a, h := newTestApp(t)
+	for _, c := range []*http.Cookie{loginAs(a, 1, "staff"), loginAs(a, 3, "staff")} {
+		rec := call(t, h, c, "GET", "/api/nap/abnormals", "")
+		var all []map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &all); err != nil {
+			t.Fatal(err)
+		}
+		if len(all) == 0 {
+			t.Fatal("異常時の記録がありません")
+		}
+		for _, x := range all {
+			if _, has := x["incident_situation"]; has {
+				t.Fatalf("incident_situation を返しています: %v", x)
+			}
+			if _, has := x["incident_response"]; has {
+				t.Fatalf("incident_response を返しています: %v", x)
+			}
+		}
+		if body := rec.Body.String(); strings.Contains(body, "午睡中にうつ伏せの体位を確認した。") {
+			t.Fatalf("ヒヤリハットの本文を返しています: %s", body)
+		}
 	}
 }
 
