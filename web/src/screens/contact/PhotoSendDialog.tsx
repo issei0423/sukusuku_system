@@ -8,6 +8,10 @@
  * → ③ 添える文（任意・200文字）と宛先（RecipientBadge）を見て「送る」（POST /api/contact/photos）。
  * 添える文に他児の名前があれば、サーバの 409 で「他児の名前の注意」を開き、「このまま送る」で承諾を付けて送り直す（決めたこと D-4）。
  * 押したらサーバの応答を待つ（楽観的更新をしない。決めたこと D-3）。送れなかったら入力を残し、近くに何が違うかを出す。
+ * ③の添える文の欄の下に「成長の記録に残す」のチェックボックス（初期値オフ）を置き、keep_in_growth として送る。
+ * 典拠：詳細設計書「職員の画面から成長の記録へ届けるもの」(2-12 (1)) の「写真を送るとき」、画面詳細図「連絡帳（園児）画面」(8-2) の項目8。
+ * 付けると写っている子の全員の出来事に付く（2人以上で付ける子を選ばせるかは【要決定】。要決定事項「決めてもらうこと」(1-3)）。
+ * 【仮置き】③の中の位置は設計が決めていないので、ひとことの欄の下（同じ表の「ひとことを書いて送るとき」）に倣う（web/仮置き値.md）。
  *
  * 【仮置き】窓の題・段の見出し・欄の名前・途中の文（web/仮置き値.md）。
  * 窓は1つずつ出す（写っている子を選ぶ・他児の名前の注意を開く間は、この窓を閉じて入れ替える。Esc で両方が閉じないため）。
@@ -58,6 +62,8 @@ export default function PhotoSendDialog({ classId, date, initialSubjects = [], o
   const [preparing, setPreparing] = useState(false);
   const [selection, setSelection] = useState<SubjectSelection>({ subjects: initialSubjects, noChildren: false, target: null });
   const [body, setBody] = useState('');
+  // 成長の記録に残す（詳細設計書 (2-12 (1))）。初期値はオフ。窓は開くたびに作り直すので、開けばオフへ戻る
+  const [keepInGrowth, setKeepInGrowth] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -110,7 +116,8 @@ export default function PhotoSendDialog({ classId, date, initialSubjects = [], o
     try {
       const res = await api.sendPhoto(user!, {
         file: photo, subject_child_ids: selection.noChildren ? [] : selection.subjects,
-        target_child_id: selection.noChildren ? selection.target : null, body: body.trim() || null, acknowledged_names: acknowledged,
+        target_child_id: selection.noChildren ? selection.target : null, body: body.trim() || null,
+        keep_in_growth: keepInGrowth, acknowledged_names: acknowledged,
       });
       const names = recipientRows.map((r) => r.child.child_name);
       // 送ったあとの文（基本設計書「メッセージ一覧」(4-12)）。届く家庭がまだ1つも登録していなければ「登録すると読めます」。
@@ -193,6 +200,11 @@ export default function PhotoSendDialog({ classId, date, initialSubjects = [], o
             <label className="contact-field" htmlFor={bodyId}><span>添える文（なくても送れます）</span></label>
             <textarea ref={bodyBox} id={bodyId} value={body} maxLength={BODY_MAX} disabled={busy} onChange={(e) => setBody(e.target.value)} />
             <span className="muted contact-count" aria-live="polite">残り {BODY_MAX - [...body].length} 文字</span>
+            {/* 成長の記録に残す（詳細設計書「職員の画面から成長の記録へ届けるもの」(2-12 (1))、画面詳細図「連絡帳（園児）画面」(8-2) の項目8） */}
+            <label className="photo-send-keep">
+              <input type="checkbox" checked={keepInGrowth} disabled={busy} onChange={(e) => setKeepInGrowth(e.target.checked)} />
+              成長の記録に残す
+            </label>
             {recipientRows.length > 0 && (
               <div className="photo-send-badges">
                 {recipientRows.map((r) => <RecipientBadge key={r.child.child_id} recipient={r.recipient} className={view.data!.class_name} />)}

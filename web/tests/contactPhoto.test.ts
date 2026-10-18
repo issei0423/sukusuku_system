@@ -1,7 +1,7 @@
 /*
  * 連絡帳の写真（モック）
- * 典拠：詳細設計書「きょうのようす」(4-4 (2))・(4-4 (3))・「写真」(3-3)・「テストの観点」(9-1) の「写真の同意」、
- *      基本設計書「写真の同意で止める規則」(4-2)
+ * 典拠：詳細設計書「きょうのようす」(4-4 (2))・(4-4 (3))・「写真」(3-3)・「テストの観点」(9-1) の「写真の同意」・
+ *      「職員の画面から成長の記録へ届けるもの」(2-12 (1))、基本設計書「写真の同意で止める規則」(4-2)
  *
  * Go の同じ観点は server/api_contact_photo_test.go にある。実体の無いモックでは、同意と配信の判定だけを確かめる
  * （描き直して付帯情報を落とすのは画面とサーバ。決めたこと D-6）。文言は server/messages.go と同じ。
@@ -160,6 +160,24 @@ describe('添える文の他児の名前は、届く家庭ごとに照合する�
       expect(db.contactPhotos.length).toBe(before);
       const { events } = await api.sendPhoto(teacher, { file: jpeg(), subject_child_ids: ['C001', 'C006'], body, acknowledged_names: ['野原 太郎'] });
       expect(events.map((x) => x.body)).toEqual([body, body]);
+    });
+  });
+});
+
+describe('成長の記録に残す（詳細設計書「職員の画面から成長の記録へ届けるもの」(2-12 (1)) の「写真を送るとき」）', () => {
+  // 付ける子を選ばせるかは【要決定】（要決定事項「決めてもらうこと」(1-3)）。Go の同じ観点は TestContactPhotoKeepInGrowthAllSubjects
+  it('2人が写った写真に keep_in_growth を付けると、写っている子の全員の出来事に付く。付けなければどちらにも付かない', async () => {
+    await withConsent({ C001: '3', C006: '3' }, async () => {
+      const { photo, events } = await api.sendPhoto(teacher, { file: jpeg(), subject_child_ids: ['C001', 'C006'], keep_in_growth: true });
+      expect(events.map((e) => [e.child_id, e.keep_in_growth])).toEqual([['C001', true], ['C006', true]]);
+      const rows = db.contactEvents.filter((e) => e.contact_photo_id === photo.contact_photo_id);
+      expect(rows.map((e) => [e.child_id, e.keep_in_growth])).toEqual([['C001', true], ['C006', true]]);
+      const logs = db.operationLogs.filter((l) => l.target_table === 't_contact_event' && l.operation_type === '1'
+        && rows.some((e) => e.contact_event_id === l.target_id));
+      expect(logs.map((l) => l.after_value?.includes('"keep_in_growth":true'))).toEqual([true, true]);
+
+      const plain = await api.sendPhoto(teacher, { file: jpeg(), subject_child_ids: ['C001', 'C006'] });
+      expect(plain.events.map((e) => e.keep_in_growth)).toEqual([false, false]);
     });
   });
 });

@@ -373,6 +373,43 @@ func TestContactPhotoNameCheckPerFamily(t *testing.T) {
 	}
 }
 
+// 「成長の記録に残す」を付けた写真は、写っている子の全員の出来事に付く
+// （詳細設計書「職員の画面から成長の記録へ届けるもの」(2-12 (1)) の「写真を送るとき」・(4-4 (2))。
+// 付ける子を選ばせるかは【要決定】（要決定事項「決めてもらうこと」(1-3)）。モックの同じ観点は web/tests/contactPhoto.test.ts）
+func TestContactPhotoKeepInGrowthAllSubjects(t *testing.T) {
+	a, h := newPhotoApp(t)
+	teacher := loginAs(a, accTeacher, "staff")
+	jpg := jpegWithExif(t)
+	setConsent(t, a, childTaro, "3")
+	setConsent(t, a, "C006", "3")
+
+	got := decodePhoto(t, sendPhoto(t, h, teacher, map[string]string{"subject_child_ids": "C001,C006", "keep_in_growth": "1"}, jpg))
+	children := []string{}
+	for _, e := range got.Events {
+		if !e.KeepInGrowth {
+			t.Errorf("%s の出来事に成長の記録に残すが付いていない", e.ChildID)
+		}
+		children = append(children, e.ChildID)
+	}
+	if strings.Join(children, ",") != "C001,C006" {
+		t.Fatalf("届く先: %v", children)
+	}
+	if n := countRows(t, a, `SELECT COUNT(*) FROM t_contact_event WHERE contact_photo_id = ? AND keep_in_growth = 1`, got.Photo.ID); n != 2 {
+		t.Errorf("成長の記録に残すが付いた出来事が %d 行（2 行のはず）", n)
+	}
+	if n := countRows(t, a, `SELECT COUNT(*) FROM t_operation_log WHERE function_type = '8' AND operation_type = '1'
+		AND target_table = 't_contact_event' AND after_value LIKE '%"keep_in_growth":true%'
+		AND target_id IN (SELECT contact_event_id FROM t_contact_event WHERE contact_photo_id = ?)`, got.Photo.ID); n != 2 {
+		t.Errorf("操作ログの keep_in_growth が true の行が %d 行（2 行のはず）", n)
+	}
+
+	// 付けなければ、どちらの出来事にも付かない
+	plain := decodePhoto(t, sendPhoto(t, h, teacher, map[string]string{"subject_child_ids": "C001,C006"}, jpg))
+	if n := countRows(t, a, `SELECT COUNT(*) FROM t_contact_event WHERE contact_photo_id = ? AND keep_in_growth = 0`, plain.Photo.ID); n != 2 {
+		t.Errorf("付けずに送った写真で、成長の記録に残すが付いていない出来事が %d 行（2 行のはず）", n)
+	}
+}
+
 // 保存（描き直して付帯情報を落とす・-files の下）、届く先、知らせ、実体の配信（4-4 (3)）
 func TestContactPhotoSaveAndServe(t *testing.T) {
 	a, h := newPhotoApp(t)

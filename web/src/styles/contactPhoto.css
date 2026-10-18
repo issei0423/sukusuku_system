@@ -13,6 +13,8 @@
 .photo-send-step textarea { display: block; width: 100%; min-height: 80px; }
 .photo-send-badges { display: grid; gap: var(--sp-2); }
 .photo-send-step > button, .subject-picker-none { min-height: 48px; }
+/* 成長の記録に残す（詳細設計書 (2-12 (1))）。押せる範囲は箱と文字だけにする（行の幅いっぱいに広げない） */
+.photo-send-keep { justify-self: start; }
 
 /* 写っている子を選ぶ：顔写真（無ければ名前の1文字目の丸）と名前の格子 */
 .subject-picker { display: grid; gap: var(--sp-3); }

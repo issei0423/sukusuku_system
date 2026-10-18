@@ -2,7 +2,8 @@
 /*
  * 写真を送る画面と、写真の表示（モック）
  * 典拠：詳細設計書「写真を送る」(2-2 (7))・「写真」(3-3)・「きょうのようすを足す・直す」(2-3 (4))・「保護者ホーム」(2-5 (2))・
- *      「連絡帳画面（保護者）」(2-6 (5))、基本設計書「写真の同意で止める規則」(4-2)、GitHub Issue #213（フォーカス）
+ *      「連絡帳画面（保護者）」(2-6 (5))・「職員の画面から成長の記録へ届けるもの」(2-12 (1))、
+ *      基本設計書「写真の同意で止める規則」(4-2)、GitHub Issue #213（フォーカス）
  *
  * jsdom には画像を描く仕組み（createImageBitmap・canvas）が無いので、偽物に差し替えて「向きを直して 1600px・JPEG 0.85 に描き直す」を確かめる。
  * 画面はモック（api/mock.ts）が相手。時計は今日の 18:00。mockDb はこのファイルのテストで使い回す（同意を変えたら戻す）。
@@ -210,6 +211,87 @@ describe('写真を送る（連絡帳（クラス）画面の「写真を送る�
       { target: { files: [new File(['GIF89a'], 'a.gif', { type: 'image/gif' })] } });
     expect((await within(dialog).findByRole('alert')).textContent).toBe(MSG.photoFormat);
     expect(sendButton().disabled).toBe(true);
+  });
+});
+
+describe('成長の記録に残す（詳細設計書「職員の画面から成長の記録へ届けるもの」(2-12 (1)) の「写真を送るとき」）', () => {
+  const keepBox = () => within(sendDialog()).getByRole('checkbox', { name: '成長の記録に残す' }) as HTMLInputElement;
+  /** 写っている子を選び、「送る」が押せるまで待つ */
+  async function pick(...names: string[]): Promise<void> {
+    fireEvent.click(within(sendDialog()).getByRole('button', { name: '写っている子を選ぶ' }));
+    for (const name of names) fireEvent.click(within(pickerDialog()).getByRole('button', { name }));
+    fireEvent.click(within(pickerDialog()).getByRole('button', { name: '決める' }));
+    await waitFor(() => expect(sendButton().disabled).toBe(false));
+  }
+  /** 閉じた窓を「写真を送る」から開き直し、写真を選ぶ */
+  async function reopen(): Promise<void> {
+    fireEvent.click(screen.getByRole('button', { name: '写真を送る' }));
+    const dialog = await screen.findByRole('dialog', { name: '写真を送る' }, { timeout: 3000 });
+    fireEvent.change(await within(dialog).findByLabelText('写真を撮る・選ぶ（1枚）', undefined, { timeout: 3000 }), { target: { files: [photoFile()] } });
+    await within(dialog).findByRole('img', { name: '選んだ写真' }, { timeout: 3000 });
+  }
+  /** いちばん新しい写真の、届く先ごとの出来事（園児と「成長の記録に残す」） */
+  const latestEvents = () => {
+    const id = db.contactPhotos.at(-1)!.contact_photo_id;
+    return db.contactEvents.filter((e) => e.contact_photo_id === id).map((e) => [e.child_id, e.keep_in_growth]);
+  };
+  // ここで送った写真は、終わったら取り消しておく（mockDb は使い回す。あとのテストが見る保護者ホームの「きょう」は
+  // 新しい3件だけで、時計が止まっていて時刻が並ぶため、ここで足した写真が後の写真を押し出す）
+  let sentFrom = 0;
+  beforeEach(() => { sentFrom = db.contactPhotos.length; });
+  afterEach(async () => {
+    for (const p of db.contactPhotos.slice(sentFrom)) {
+      const e = db.contactEvents.find((x) => x.contact_photo_id === p.contact_photo_id && !x.is_deleted);
+      if (e) await api.cancelEvent(teacher, e.contact_event_id);
+    }
+  });
+
+  it('初期値はオフ。触らずに送ると、出来事に付かない', async () => {
+    await openSendFromClass();
+    await pick('野原 太郎');
+    expect(keepBox().checked).toBe(false);
+    fireEvent.click(sendButton());
+    await waitFor(() => expect(toast()?.textContent).toContain('野原 太郎さんへの写真：送りました。'), { timeout: 3000 });
+    expect(latestEvents()).toEqual([['C001', false]]);
+  });
+
+  it('付けて送ると出来事に付く。窓を開き直すとオフに戻り、送っている間は押せない', async () => {
+    await openSendFromClass();
+    fireEvent.click(keepBox());
+    expect(keepBox().checked).toBe(true);
+    fireEvent.click(within(sendDialog()).getByRole('button', { name: 'やめる' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '写真を送る' })).toBeNull());
+    await reopen();
+    expect(keepBox().checked).toBe(false);
+
+    await pick('野原 太郎');
+    fireEvent.click(keepBox());
+    // 送っている間（サーバの応答を待つ間）は押せない
+    const original = api.sendPhoto;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const spy = vi.spyOn(api, 'sendPhoto').mockImplementation(async (u, input) => { await gate; return original.call(api, u, input); });
+    fireEvent.click(sendButton());
+    await waitFor(() => expect(keepBox().disabled).toBe(true));
+    release();
+    await waitFor(() => expect(toast()?.textContent).toContain('野原 太郎さんへの写真：送りました。'), { timeout: 3000 });
+    expect(spy.mock.calls.map(([, input]) => input.keep_in_growth)).toEqual([true]);
+    expect(latestEvents()).toEqual([['C001', true]]);
+  });
+
+  it('写っている子が2人なら、2人の出来事にどちらも付く。他児の名前を承諾して送り直すときも付けたまま送る', async () => {
+    await withConsent({ C001: '3', C006: '3' }, async () => {
+      const spy = vi.spyOn(api, 'sendPhoto');
+      await openSendFromClass();
+      await pick('野原 太郎', '伊藤 葵');
+      fireEvent.click(keepBox());
+      fireEvent.change(within(sendDialog()).getByLabelText('添える文（なくても送れます）'), { target: { value: 'たっくんがスコップで砂を運んでいました。' } });
+      fireEvent.click(sendButton());
+      fireEvent.click(within(await screen.findByRole('dialog', { name: 'ほかのお子さんの名前の注意' }, { timeout: 3000 })).getByRole('button', { name: 'このまま送る' }));
+      await waitFor(() => expect(toast()?.textContent).toContain('野原 太郎さん・伊藤 葵さんへの写真：送りました。'), { timeout: 3000 });
+      expect(spy.mock.calls.map(([, input]) => [input.keep_in_growth, input.acknowledged_names])).toEqual([[true, []], [true, ['野原 太郎']]]);
+      expect(latestEvents()).toEqual([['C001', true], ['C006', true]]);
+    });
   });
 });
 
