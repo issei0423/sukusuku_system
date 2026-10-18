@@ -226,13 +226,20 @@ export const diaryTemplates: DiaryTemplate[] = [
     body: '【発生日時】\n\n【発生場所】\n\n【状況】\n\n【とった対応】\n\n【今後の対策】\n' },
 ];
 
-/** 定型文。雛形とは別に、本文へ挿し込む短文（画面詳細図 3-2） */
+/**
+ * 定型文。雛形とは別に、本文へ挿し込む短文（画面詳細図 3-2）
+ *
+ * 日誌は園内の保育日誌であり、保護者へは連絡帳で届ける。保護者に向けた文
+ * （「ご家庭でも様子を見ていただけますと幸いです。」）は置かない
+ * （ナレッジ/決定事項.md 2026-10-18「『日誌』は園内の保育日誌として連絡帳とは別に持ち、保護者へは連絡帳で届ける」、
+ * 詳細設計書「デモデータ」(5-5) の m_phrase。PR #216 で設計を直した）。
+ * server/api_diary.go の fixedPhrases と同じ並びにそろえる
+ */
 export const fixedPhrases: string[] = [
   'よく食べ、おかわりをしていました。',
   '午睡は落ち着いて入眠できました。',
   '園庭で友だちと関わって遊ぶ姿が見られました。',
   '鼻水が出ていたため、こまめに拭き取りました。',
-  'ご家庭でも様子を見ていただけますと幸いです。',
 ];
 
 /* ============ 日誌（t_diary） ============ */
@@ -245,8 +252,10 @@ export const diaries: Diary[] = [
     body: '【ねらい】\n身近な友だちと関わる楽しさを味わう。\n\n【活動内容】\n園庭でしゃぼん玉遊び。',
     created_staff_id: 'S003', approved_staff_id: null, approved_at: null, is_shared_to_guardian: false, shared_at: null,
     nap_abnormal_id: null, returned_reason: null, is_deleted: false, created_at: '2026-08-31T17:20:00', updated_at: '2026-08-31T17:20:00' },
+  // ヒヤリハットの本文は雛形（diaryTemplates の 4）と同じく【今後の対策】の見出しで今後の対策を持つ
+  // （基本設計書「ヒヤリハットの記録」(4-6)、詳細設計書の決めたこと D-33。PR #216 で設計を直した）。server/seed.sql の diary_id 3 とそろえる
   { diary_id: 3, record_type: '4', child_id: 'C003', class_id: 1, diary_date: '2026-08-30', status: '4',
-    body: '【発生日時】\n午睡中の13時40分ごろ\n\n【状況】\n午睡中にうつ伏せの体位を確認した。\n\n【とった対応】\n仰向けに直し、呼吸と顔色を確認した。',
+    body: '【発生日時】\n午睡中の13時40分ごろ\n\n【状況】\n午睡中にうつ伏せの体位を確認した。\n\n【とった対応】\n仰向けに直し、呼吸と顔色を確認した。\n\n【今後の対策】\n午睡の確認のたびに、呼吸とあわせて体位も見る。うつ伏せを見つけて仰向けに直したときは、直したあとの向きも記録する。',
     created_staff_id: 'S004', approved_staff_id: 'S001', approved_at: null, is_shared_to_guardian: false, shared_at: null,
     nap_abnormal_id: 1, returned_reason: '発生時の呼吸・顔色の記録が本文にありません。異常時の記録と同じ内容を転記してください。',
     is_deleted: false, created_at: '2026-08-30T18:00:00', updated_at: '2026-08-31T09:10:00' },
