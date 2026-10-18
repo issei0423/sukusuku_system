@@ -421,6 +421,9 @@ CREATE TABLE t_development_check (
   -- （詳細設計書「変える表」(5-3)・「成長の記録に届くもの」(3-7)、決めたこと D-31）
   guardian_message        TEXT,
   finalized_at            TEXT,
+  -- 確定したあとで保護者へのひとことを別の文に書き換えた時刻。空なら書き換えていない。保護者の成長の記録に
+  -- 「訂正しました（日付）」を出す（詳細設計書「変える表」(5-3)、決めたこと D-51。PR #216 で決まった設計）
+  guardian_message_corrected_at TEXT,
   UNIQUE (child_id, checked_on)
 );
 

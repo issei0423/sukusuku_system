@@ -17,7 +17,7 @@ import { DEVELOPMENT_RESULT } from '../../api/codes';
 import { ageInMonths, formatAge, formatHM, formatYMD, today } from '../../api/util';
 import type { DevelopmentResult } from '../../api/types';
 import { notify } from '../../components/feedback';
-import { TEXT } from '../../messages';
+import { MSG, TEXT } from '../../messages';
 
 const DISCLAIMER = '本機能は発達の判定・診断を行うものではありません。';
 
@@ -95,6 +95,13 @@ export default function DevInputScreen() {
   const unfilled = (items.data ?? []).filter((it) => !results[it.development_item_id]).length;
   // 確定した記録は下書きに戻さない。直すときは「確定する」で保存する（GitHub Issue #164。web/仮置き値.md）
   const confirmed = draft.data?.check.status === '2';
+  /*
+   * 確定済みの保護者へのひとことを直せるのは、確定した日（finalized_at の日付）はその園児のクラスの担任、翌日以降は管理者だけ
+   * （詳細設計書 (2-12 (2))、決めたこと D-51）。権限の担保はサーバ（server/api_dev_write.go）。
+   * 【仮置き】直せない職員には欄を読むだけにして、断る文言を添える（web/仮置き値.md）
+   */
+  const finalizedDay = draft.data?.check.finalized_at?.slice(0, 10) ?? draft.data?.check.checked_on;
+  const messageLocked = confirmed && user!.role !== '1' && finalizedDay !== today();
 
   return (
     <div style={{ maxWidth: 860 }}>
@@ -191,8 +198,13 @@ export default function DevInputScreen() {
       <section className="card">
         <label htmlFor={messageId} style={{ fontWeight: 700 }}>{TEXT.guardianMessageLabel}</label>
         <textarea id={messageId} value={guardianMessage} onChange={(e) => setGuardianMessage(e.target.value)} maxLength={500}
-          aria-describedby={`${messageId}-rest`} />
+          readOnly={messageLocked} aria-describedby={confirmed ? `${messageId}-rest ${messageId}-fix` : `${messageId}-rest`} />
         <div className="muted" id={`${messageId}-rest`} style={{ marginTop: 4 }}>残り {500 - [...guardianMessage].length} 文字</div>
+        {confirmed && (
+          <div className="muted" id={`${messageId}-fix`} style={{ marginTop: 4 }}>
+            {messageLocked ? MSG.guardianMessageFixForbidden : TEXT.guardianMessageCorrectionNote}
+          </div>
+        )}
       </section>
 
       <section className="card card-sub">

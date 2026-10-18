@@ -16,6 +16,8 @@ func ensureGrowthSchema(db *sql.DB) error {
 	for _, c := range []struct{ name, definition string }{
 		{"guardian_message", "TEXT"},
 		{"finalized_at", "TEXT"},
+		// ひとことを書き換えた時刻（決めたこと D-51）。既存の行は書き換えていないので空のまま
+		{"guardian_message_corrected_at", "TEXT"},
 	} {
 		var n int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('t_development_check') WHERE name = ?`, c.name).Scan(&n); err != nil {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -34,14 +35,15 @@ type growthResp struct {
 		IsToday     bool    `json:"is_today"`
 	} `json:"measurements"`
 	Achievements []struct {
-		Kind           string   `json:"kind"`
-		At             string   `json:"at"`
-		Date           string   `json:"date"`
-		IsToday        bool     `json:"is_today"`
-		Items          []string `json:"items"`
-		Message        *string  `json:"message"`
-		Body           *string  `json:"body"`
-		ContactPhotoID *int64   `json:"contact_photo_id"`
+		Kind               string   `json:"kind"`
+		At                 string   `json:"at"`
+		Date               string   `json:"date"`
+		IsToday            bool     `json:"is_today"`
+		Items              []string `json:"items"`
+		Message            *string  `json:"message"`
+		MessageCorrectedAt *string  `json:"message_corrected_at"`
+		Body               *string  `json:"body"`
+		ContactPhotoID     *int64   `json:"contact_photo_id"`
 	} `json:"achievements"`
 	NextBefore *string `json:"next_before"`
 	Disclaimer string  `json:"disclaimer"`
@@ -331,6 +333,14 @@ func TestEnsureGrowthSchemaUpgradesOldDB(t *testing.T) {
 			t.Errorf("check %d: finalized_at = %v, want %v", id, got, w)
 		}
 	}
+	// ひとことを書き換えた時刻の列も足し、既存の行は書き換えていないので空のまま（決めたこと D-51）
+	var corrected int
+	db.QueryRow(`SELECT COUNT(*) FROM t_development_check WHERE guardian_message_corrected_at IS NOT NULL`).Scan(&corrected)
+	var cols int
+	db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('t_development_check') WHERE name = 'guardian_message_corrected_at'`).Scan(&cols)
+	if cols != 1 || corrected != 0 {
+		t.Errorf("guardian_message_corrected_at: 列 %d、印のある行 %d", cols, corrected)
+	}
 }
 
 // 「成長の記録に残す」の付け外し（詳細設計書 (4-12 (3))・「成長の記録に届くもの」(3-7)）
@@ -465,4 +475,104 @@ func TestDevelopmentGuardianMessage(t *testing.T) {
 	a.db.Exec(`DELETE FROM t_class_staff WHERE staff_id = 'S005'`)
 	free := loginAs(a, accOtherTeacher, "staff")
 	expectStatus(t, request(t, h, free, "POST", "/api/development/checks", req("1", `null`)), http.StatusForbidden)
+}
+
+/*
+確定した保護者へのひとことの訂正（要件定義書「保護者へ届けるときの関所」(4-1-6) の (2)、詳細設計書 (2-12 (2))・(4-12 (2))、
+決めたこと D-51。PR #216 で決まった設計）。直せるのは、確定した日（finalized_at の日付）はその園児のクラスの担任、
+翌日以降は管理者だけ。空でないひとことを書き換えたときだけ「訂正しました」の印を付け、空にしたら印ごと消し、空から書き足しても
+印は付けない。web/tests/growth.test.ts の同じ名前の観点と同じ流れ
+*/
+func TestDevelopmentGuardianMessageCorrection(t *testing.T) {
+	a, h := newTestApp(t)
+	teacher := loginAs(a, accTeacher, "staff")
+	admin := loginAs(a, accAdmin, "staff")
+	guardian := loginAs(a, accGuardian, "guardian")
+	// 実施日は前の日。確定した日（今日）で担任が直せるかが決まり、実施日では決まらないことも見る
+	day := daysFromToday(-2)
+	save := func(c *http.Cookie, message, note string) *httptest.ResponseRecorder {
+		msg := "null"
+		if message != "" {
+			msg = `"` + message + `"`
+		}
+		return request(t, h, c, "POST", "/api/development/checks",
+			`{"child_id":"C001","checked_on":"`+day+`","results":[],"note":"`+note+`","status":"2","guardian_message":`+msg+`}`)
+	}
+	row := func() (message, corrected *string) {
+		a.db.QueryRow(`SELECT guardian_message, guardian_message_corrected_at FROM t_development_check
+			WHERE child_id = 'C001' AND checked_on = ?`, day).Scan(&message, &corrected)
+		return
+	}
+	entry := func() (found bool, message, corrected *string) {
+		g, _ := readGrowth(t, h, guardian, "/api/children/C001/growth")
+		for _, e := range g.Achievements {
+			if e.Kind == "development" && e.Message != nil && strings.HasPrefix(*e.Message, "ひとこと") {
+				return true, e.Message, e.MessageCorrectedAt
+			}
+		}
+		return false, nil, nil
+	}
+
+	// 確定した日：担任が書き換えると印が付き、成長の記録に「訂正しました」の時刻が出る
+	expectStatus(t, save(teacher, "ひとこと1", ""), http.StatusOK)
+	if _, c := row(); c != nil {
+		t.Fatalf("初めての確定で印が付いた: %s", *c)
+	}
+	if found, _, c := entry(); !found || c != nil {
+		t.Fatalf("初めての確定の成長の記録: found=%v corrected=%v", found, c)
+	}
+	expectStatus(t, save(teacher, "ひとこと2", ""), http.StatusOK)
+	m, c := row()
+	if m == nil || *m != "ひとこと2" || c == nil {
+		t.Fatalf("その日の担任の書き換え: message=%v corrected=%v", m, c)
+	}
+	if found, em, ec := entry(); !found || *em != "ひとこと2" || ec == nil || *ec != *c {
+		t.Errorf("成長の記録に訂正の時刻が出ない: found=%v message=%v corrected=%v", found, em, ec)
+	}
+	var before, after string
+	a.db.QueryRow(`SELECT before_value, after_value FROM t_operation_log WHERE target_table = 't_development_check'
+		AND before_value IS NOT NULL ORDER BY operation_log_id DESC LIMIT 1`).Scan(&before, &after)
+	if before != `{"保護者へのひとこと":"ひとこと1"}` || after != `{"保護者へのひとこと":"ひとこと2"}` {
+		t.Errorf("操作ログの直す前・直したあと: %s → %s", before, after)
+	}
+	// 所見だけを直しても印は動かない
+	a.db.Exec(`UPDATE t_development_check SET guardian_message_corrected_at = '2026-01-01T00:00:00' WHERE child_id = 'C001' AND checked_on = ?`, day)
+	expectStatus(t, save(teacher, "ひとこと2", "所見だけ"), http.StatusOK)
+	if _, c := row(); c == nil || *c != "2026-01-01T00:00:00" {
+		t.Errorf("所見だけの直しで印が動いた: %v", c)
+	}
+
+	// 翌日以降：担任はひとことを変えられない（書き換え・空にする）。結果・所見だけなら直せる
+	a.db.Exec(`UPDATE t_development_check SET finalized_at = ? WHERE child_id = 'C001' AND checked_on = ?`, day+"T16:00:00", day)
+	for _, m := range []string{"ひとこと3", ""} {
+		if b := expectStatus(t, save(teacher, m, ""), http.StatusForbidden); !strings.Contains(b, msgGuardianMessageFixForbidden) {
+			t.Errorf("翌日の担任の %q: %s", m, b)
+		}
+	}
+	expectStatus(t, save(teacher, "ひとこと2", "翌日に所見を直す"), http.StatusOK)
+	if m, _ := row(); m == nil || *m != "ひとこと2" {
+		t.Errorf("断ったひとことが変わった: %v", m)
+	}
+	// 管理者は翌日以降も書き換えられ、印が付く
+	expectStatus(t, save(admin, "ひとこと4", ""), http.StatusOK)
+	if m, c := row(); m == nil || *m != "ひとこと4" || c == nil || *c == "2026-01-01T00:00:00" {
+		t.Errorf("翌日の管理者の書き換え: message=%v corrected=%v", m, c)
+	}
+	// 空にすると取り消し：ひとことは成長の記録から消え、印も消す
+	expectStatus(t, save(admin, "", ""), http.StatusOK)
+	if m, c := row(); m != nil || c != nil {
+		t.Errorf("空にしたあと: message=%v corrected=%v", m, c)
+	}
+	if found, _, _ := entry(); found {
+		t.Error("空にしたひとことが成長の記録に残った")
+	}
+	// 空から書き足すのも翌日以降は管理者だけ。書き足しは初めて届くため印を付けない
+	expectStatus(t, save(teacher, "ひとこと5", ""), http.StatusForbidden)
+	expectStatus(t, save(admin, "ひとこと5", ""), http.StatusOK)
+	if m, c := row(); m == nil || *m != "ひとこと5" || c != nil {
+		t.Errorf("空からの書き足し: message=%v corrected=%v", m, c)
+	}
+	if found, _, c := entry(); !found || c != nil {
+		t.Errorf("書き足したひとことの成長の記録: found=%v corrected=%v", found, c)
+	}
 }

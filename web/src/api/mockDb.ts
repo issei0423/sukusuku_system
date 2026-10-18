@@ -594,8 +594,11 @@ export const developmentSchedules: DevelopmentSchedule[] = [
 export const developmentChecks: DevelopmentCheck[] = [
   // 成長の記録（詳細設計書「デモデータ」(5-5)）：野原 太郎の確定に、確定した日時と保護者へのひとこと（評価の言葉を入れない）。
   // ほかの確定は「いまのデータの移し方」と同じく実施日の 00:00 を確定した日時とした（server/seed.sql と同じ）
+  // 【仮置き】野原 太郎のひとことは、確定した日のうちに担任が書き換えたものとして「訂正しました（日付）」の印を置く
+  // （決めたこと D-51。PR #216 で決まった設計。web/仮置き値.md。server/seed.sql と同じ）
   { development_check_id: 1, child_id: 'C001', development_schedule_id: null, checked_on: '2026-05-15', status: '2', staff_id: 'S003', share_status: '2',
-    guardian_message: 'ボールを転がすと、追いかけて両手でつかもうとしていました。', finalized_at: '2026-05-15T16:00:00' },
+    guardian_message: 'ボールを転がすと、追いかけて両手でつかもうとしていました。', finalized_at: '2026-05-15T16:00:00',
+    guardian_message_corrected_at: '2026-05-15T17:30:00' },
   { development_check_id: 2, child_id: 'C002', development_schedule_id: null, checked_on: '2026-05-10', status: '2', staff_id: 'S003', share_status: '2',
     finalized_at: '2026-05-10T00:00:00' },
   { development_check_id: 3, child_id: 'C004', development_schedule_id: null, checked_on: '2026-06-05', status: '2', staff_id: 'S004', share_status: '1',

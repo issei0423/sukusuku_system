@@ -585,6 +585,11 @@ export interface DevelopmentCheck {
   guardian_message?: string | null;
   /** 最初に確定した日時。確定し直しても動かさない（詳細設計書「成長の記録に届くもの」(3-7)、決めたこと D-31） */
   finalized_at?: string | null;
+  /**
+   * 確定したあとで保護者へのひとことを別の文に書き換えた時刻。空なら書き換えていない。保護者の成長の記録に
+   * 「訂正しました（日付）」を出す（詳細設計書「変える表」(5-3)、決めたこと D-51。PR #216 で決まった設計）
+   */
+  guardian_message_corrected_at?: string | null;
 }
 
 /**

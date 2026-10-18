@@ -40,6 +40,9 @@ type growthEntryOut struct {
 	// development：確認できた項目の名前（区分と項目の並び順）と、保護者へのひとこと
 	Items   []string `json:"items,omitempty"`
 	Message *string  `json:"message,omitempty"`
+	// development：ひとことを書き換えた時刻。画面は「訂正しました（日付）」を出す（詳細設計書「成長の記録」(4-12) の
+	// GrowthEntry、決めたこと D-51）。ひとことが無いときは入れない
+	MessageCorrectedAt *string `json:"message_corrected_at,omitempty"`
 	// contact：ひとこと・写真に添えた文と写真
 	Body           *string `json:"body,omitempty"`
 	ContactPhotoID *int64  `json:"contact_photo_id,omitempty"`
@@ -188,7 +191,8 @@ items は「確認できた」かつ項目がいま共有するもの（m_share_
 items が空でひとことも空の確定は、SQL の条件で落として件数に数えない。下書きは読まない。
 */
 func (a *app) growthDevelopmentEntries(childID, before string, limit int, day string) ([]growthEntryOut, error) {
-	rows, err := a.db.Query(`SELECT c.development_check_id, c.finalized_at, c.guardian_message FROM t_development_check c
+	rows, err := a.db.Query(`SELECT c.development_check_id, c.finalized_at, c.guardian_message, c.guardian_message_corrected_at
+		FROM t_development_check c
 		WHERE c.child_id = ? AND c.status = '2' AND c.finalized_at IS NOT NULL AND c.finalized_at < ?
 		  AND `+growthDeliverable+`
 		ORDER BY c.finalized_at DESC, c.development_check_id DESC LIMIT ?`, childID, before, limit)
@@ -198,8 +202,8 @@ func (a *app) growthDevelopmentEntries(childID, before string, limit int, day st
 	out := []growthEntryOut{}
 	for rows.Next() {
 		var e growthEntryOut
-		var message *string
-		if err := rows.Scan(&e.id, &e.At, &message); err != nil {
+		var message, corrected *string
+		if err := rows.Scan(&e.id, &e.At, &message, &corrected); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -208,6 +212,7 @@ func (a *app) growthDevelopmentEntries(childID, before string, limit int, day st
 		e.IsToday = e.Date == day
 		if message != nil && strings.TrimSpace(*message) != "" {
 			e.Message = message
+			e.MessageCorrectedAt = corrected
 		}
 		out = append(out, e)
 	}
