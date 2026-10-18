@@ -8,9 +8,10 @@
  * 確認ダイアログ（ConfirmDialog）：1回押すだけで確定させない（GitHub Issue #107）。
  *   何が起きるかは呼び出し側が文章で書く。
  */
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Modal } from './ui';
+import { useOverlayInset } from '../stickyInset';
 
 // 表示する時間。読み上げに拾わせるため、すぐには消さない
 const SHOW_MS = 6000;
@@ -87,8 +88,20 @@ export function ToastHost() {
    * フォーカスと取り消す機会を失わないようにする（WCAG 2.2.1 タイミング調整可能、GitHub Issue #210 の 2）
    */
   const [hold, setHold] = useState({ focus: false, pointer: false });
-  const box = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLDivElement | null>(null);
   const left = useRef<{ seq: number; ms: number } | null>(null);
+  /*
+   * 表示は画面の下端に重ねて固定する。出ている間、スクロールする枠（職員は .main、保護者は .guardian-main）の下端を
+   * 覆う高さを --toast-cover として渡し、枠はそのぶんを scroll-padding-bottom に取る（styles/app.css）。
+   * 下のほうでフォーカスした部品（「確認しました」のあとの「園が確認しました」など）が、表示の下に隠れないようにする
+   * （WCAG 2.4.11 フォーカスの非隠蔽、GitHub Issue #212）
+   */
+  const cover = useOverlayInset('.main, .guardian-main', '--toast-cover');
+  const toastRef = useCallback((el: HTMLDivElement | null) => {
+    box.current = el;
+    const release = cover(el);
+    return () => { box.current = null; release?.(); };
+  }, [cover]);
 
   useEffect(() => {
     // 知らせが消えたら、止めていたことも忘れる（消えた表示からは、離れた知らせが届かないため）
@@ -119,7 +132,7 @@ export function ToastHost() {
   return (
     <>
       {toast && (
-        <div ref={box} className="toast" role="status" aria-live="polite"
+        <div ref={toastRef} className="toast" role="status" aria-live="polite"
           onFocus={() => setHold((h) => ({ ...h, focus: true }))}
           onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setHold((h) => ({ ...h, focus: false })); }}
           onPointerEnter={() => setHold((h) => ({ ...h, pointer: true }))}

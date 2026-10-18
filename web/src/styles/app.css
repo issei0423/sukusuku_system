@@ -474,6 +474,15 @@ summary { min-height: var(--tap-min); padding: 10px 0; cursor: pointer; }
   background: var(--c-text); color: var(--c-surface);
   border-radius: var(--radius); box-shadow: var(--elevation-2);
 }
+/*
+ * 表示が出ている間、スクロールする枠の下端のうち表示が覆う高さ（ToastHost が測って --toast-cover に入れる。src/stickyInset.ts）を
+ * scroll-padding-bottom に取り、下のほうでフォーカスした部品が表示の下に隠れないようにする（GitHub Issue #212）。
+ * 保護者の連絡帳画面の下に止めた送る帯（--contact-actions-h）と同じ場所を覆うので、大きいほうを取る。フォーカスの枠の幅（6px）を足す
+ */
+.staff-body:has(> .toast) > .main,
+.guardian-shell:has(> .toast) > .guardian-main {
+  scroll-padding-bottom: calc(max(var(--toast-cover, 0px), var(--contact-actions-h, 0px)) + 6px);
+}
 .toast .btn-sm { color: inherit; border-color: currentColor; background: transparent; }
 @media (hover: hover) {
   .toast .btn-sm:hover:not(:disabled) { color: inherit; border-color: currentColor; background: rgba(255, 255, 255, .15); }

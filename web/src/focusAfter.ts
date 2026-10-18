@@ -43,7 +43,13 @@ export function focusAfter(from: HTMLElement | null, to?: () => HTMLElement | nu
     const target = find();
     if (!target || !target.isConnected || target.matches(':disabled')) return;
     stop();
-    if (target !== active) target.focus();
+    if (target === active) return;
+    /*
+     * 移した先が、止めた部品や結果の表示（トースト）の下にあっても見えるよう、枠の scroll-padding の内側まで送る（GitHub Issue #212）。
+     * focus() だけでは、枠の中にすでに入っている部品は、止めた部品に覆われていても送られない（Chromium）
+     */
+    target.focus({ preventScroll: true });
+    target.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
   }
   // 利用者の次の操作か、ほかの要素へフォーカスが入ったら（窓が開いてその中へ入ったなど）、待つのをやめる
   for (const type of ['focusin', 'keydown', 'pointerdown'] as const) document.addEventListener(type, stop, true);

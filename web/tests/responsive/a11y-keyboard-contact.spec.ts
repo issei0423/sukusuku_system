@@ -298,6 +298,18 @@ test.describe('[staff] contact キーボードだけで通す', () => {
       expect(errors, 'ブラウザ実行エラー').toEqual([]);
     });
 
+    test('画面の下のほうで「確認しました」を押したあと、移った先の「園が確認しました」が結果の表示の下に隠れない', async ({ page }) => {
+      // 結果の表示（トースト）は画面の下端に重ねて固定する。出ている間はその高さぶんを送る先からずらす（WCAG 2.4.11、GitHub Issue #212）。
+      // 直す前は、Tab で画面の下端まで送られた「確認しました」を押すと、移った先が表示の下にすっかり隠れた
+      const errors = await open(page, 'contact-class');
+      const confirm = page.getByRole('button', { name: '金城 陸の家庭からを確認しました' });
+      await tabTo(page, confirm);
+      const row = page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: '金城 陸' }) });
+      await pressAndExpectFocus(page, 'Enter', row.locator('.contact-confirmed'));
+      await expect(page.locator('.toast'), '結果の表示が出ている間に確かめた').toContainText('金城 陸さんの家庭からを確認しました');
+      expect(errors, 'ブラウザ実行エラー').toEqual([]);
+    });
+
     test('連絡帳（クラス）・連絡帳（園児）画面の押せるものは 44×44px 以上で、隣との間は 8px 以上', async ({ page }) => {
       // 「タッチの条件」(2-0 (4))。GitHub Issue #215（直す前は表のリンクの高さが 20px、排せつのボタンと「（時刻）を直す」の間が 4px、
       // 連絡帳（園児）画面の食事の区分と量の間が 4px）

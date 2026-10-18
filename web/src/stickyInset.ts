@@ -16,11 +16,45 @@ export function useStickyInset(scroller: string, name: string, side: 'height' | 
   return useCallback((el: HTMLElement | null) => {
     const box = el?.closest<HTMLElement>(scroller);
     if (!el || !box || typeof ResizeObserver === 'undefined') return undefined;
-    const observer = new ResizeObserver(() => {
+    const measure = () => {
       const rect = el.getBoundingClientRect();
       box.style.setProperty(name, `${side === 'width' ? rect.width : rect.height}px`);
-    });
+    };
+    // 出たときにすぐ測る（ResizeObserver の最初の知らせは次の描画の前まで来ない。その前にフォーカスを移すことがある）
+    measure();
+    const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => { observer.disconnect(); box.style.removeProperty(name); };
   }, [scroller, name, side]);
+}
+
+/**
+ * 画面に重ねて固定した部品（結果の表示など。position: fixed）に付ける ref を返す。部品と同じ親にあるスクロールする枠
+ * （scroller、CSS のセレクタ）の下端を、部品がどれだけ覆うかを測り、親の要素に name の変数として入れる（枠が受け継ぐ）。
+ * 部品が枠の中に無いとき（結果の表示は components/feedback.tsx の ToastHost が枠の隣に置く）に使う。部品が消えたら変数を外す。
+ * 出たときにフォーカスのある部品を覆ったら、その部品を枠の余白の内側まで送る
+ */
+export function useOverlayInset(scroller: string, name: string) {
+  return useCallback((el: HTMLElement | null) => {
+    const parent = el?.parentElement;
+    const box = parent?.querySelector<HTMLElement>(`:scope > :is(${scroller})`);
+    if (!el || !parent || !box || typeof ResizeObserver === 'undefined') return undefined;
+    const measure = () => {
+      const edge = el.getBoundingClientRect().top;
+      const covered = Math.max(0, box.getBoundingClientRect().bottom - edge);
+      parent.style.setProperty(name, `${covered}px`);
+      // 出たとき・大きさが変わったときに、いまフォーカスのある部品を覆ったら、枠の余白の内側まで送る
+      // （押したあとに移したフォーカスの上に、少し遅れて結果の表示が出ることがある）
+      const active = document.activeElement;
+      if (covered > 0 && active instanceof HTMLElement && box.contains(active) && active.getBoundingClientRect().bottom > edge) {
+        active.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+      }
+    };
+    // 出たときにすぐ測る（ResizeObserver の最初の知らせは次の描画の前まで来ない）
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    observer.observe(box);
+    return () => { observer.disconnect(); parent.style.removeProperty(name); };
+  }, [scroller, name]);
 }
