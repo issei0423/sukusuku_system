@@ -158,3 +158,112 @@ func TestGuardianUnsharedDiaryMessage(t *testing.T) {
 	// 共有された自児の日誌は開ける
 	call(t, h, guardian, "GET", "/api/diaries/5", "")
 }
+
+/*
+ * 保護者には自児だけを返し、園児情報入力画面の項目（既往歴・アレルギー・写真の利用同意・平熱）は返さない
+ * （図/インタフェース一覧.md「経路の一覧」(1) の GET /api/children・/api/children/{childID}・/class・
+ * /allergies・/medical-histories。設計の直しは PR #216（直-30）、基本設計書「権限と利用可能機能」(6-1)
+ * 「園児情報の参照｜保護者 ×」「既往歴の参照｜保護者 ×」「アレルギー一覧の参照｜保護者 ×」）。
+ * 画面側のモックは web/tests/guardianScope.test.ts で同じ観点を確かめる。
+ */
+func TestGuardianChildIntakeItemsAreNotReturned(t *testing.T) {
+	a, h := newTestApp(t)
+	nohara := loginAs(a, 6, "guardian") // 野原 太郎（C001・さくら組）の保護者。C001 には卵のアレルギーがある
+	teacher := loginAs(a, 3, "staff")   // さくら組
+	admin := loginAs(a, 1, "staff")
+
+	intakeKeys := []string{"normal_temperature", "photo_consent_level"}
+	// 園内の情報の本文。アレルギー（C001 の卵・C013 の落花生）と既往歴（C005・C013）
+	intakeTexts := []string{"除去食", "落花生", "エピペン", "熱性けいれん", "ぜんそく"}
+	noIntake := func(t *testing.T, where, body string) {
+		t.Helper()
+		for _, k := range intakeKeys {
+			if strings.Contains(body, `"`+k+`"`) {
+				t.Fatalf("%s: 保護者に %s が返っています: %s", where, k, body)
+			}
+		}
+		for _, s := range intakeTexts {
+			if strings.Contains(body, s) {
+				t.Fatalf("%s: 保護者に園内の情報（%s）が返っています: %s", where, s, body)
+			}
+		}
+	}
+
+	t.Run("自児・他児とも、園児の詳細・アレルギー・既往歴・アレルギー一覧は 403", func(t *testing.T) {
+		for _, child := range []string{"C001", "C013", "C999"} {
+			for _, sub := range []string{"", "/allergies", "/medical-histories"} {
+				path := "/api/children/" + child + sub
+				noIntake(t, path, expectStatus(t, request(t, h, nohara, "GET", path, ""), http.StatusForbidden))
+			}
+		}
+		noIntake(t, "/api/children/allergies",
+			expectStatus(t, request(t, h, nohara, "GET", "/api/children/allergies", ""), http.StatusForbidden))
+	})
+
+	t.Run("園児の一覧は自児だけで、入力画面の項目を返さない。クラスを指定しても広がらない", func(t *testing.T) {
+		for _, path := range []string{"/api/children", "/api/children?class_id=1", "/api/children?class_id=2", "/api/children?name=%E5%AE%AE%E5%9F%8E"} {
+			body := call(t, h, nohara, "GET", path, "").Body.String()
+			noIntake(t, path, body)
+			var got []map[string]any
+			if err := json.Unmarshal([]byte(body), &got); err != nil {
+				t.Fatal(err)
+			}
+			for _, c := range got {
+				if c["child_id"] != "C001" {
+					t.Fatalf("%s: 自児でない園児が返っています: %v", path, c)
+				}
+			}
+		}
+		var mine []map[string]any
+		if err := json.Unmarshal(call(t, h, nohara, "GET", "/api/children", "").Body.Bytes(), &mine); err != nil {
+			t.Fatal(err)
+		}
+		if len(mine) != 1 || mine[0]["child_name"] != "野原 太郎" || mine[0]["birth_date"] == nil {
+			t.Fatalf("自児の氏名・生年月日が返っていません: %v", mine)
+		}
+	})
+
+	t.Run("参照データと保護者ホームの園児にも、入力画面の項目を載せない", func(t *testing.T) {
+		ref := call(t, h, nohara, "GET", "/api/reference", "").Body.String()
+		noIntake(t, "/api/reference", ref)
+		if !strings.Contains(ref, "野原 太郎") || strings.Contains(ref, "金城 陸") {
+			t.Fatalf("/api/reference の園児が自児だけになっていません: %s", ref)
+		}
+		home := call(t, h, nohara, "GET", "/api/dashboard/guardian", "").Body.String()
+		noIntake(t, "/api/dashboard/guardian", home)
+	})
+
+	t.Run("所属クラスは自児だけ", func(t *testing.T) {
+		call(t, h, nohara, "GET", "/api/children/C001/class", "")
+		expectStatus(t, request(t, h, nohara, "GET", "/api/children/C013/class", ""), http.StatusForbidden)
+	})
+
+	t.Run("紐づけが終わった保護者には、元の自児も返さない", func(t *testing.T) {
+		if _, err := a.db.Exec(`UPDATE t_guardian_child SET link_status = '2', ended_at = ? WHERE guardian_id = 'G001'`, now()); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			a.db.Exec(`UPDATE t_guardian_child SET link_status = '1', ended_at = NULL WHERE guardian_id = 'G001'`)
+		})
+		if body := strings.TrimSpace(call(t, h, nohara, "GET", "/api/children", "").Body.String()); body != "[]" {
+			t.Fatalf("紐づけの終わった園児が返っています: %s", body)
+		}
+		expectStatus(t, request(t, h, nohara, "GET", "/api/children/C001/class", ""), http.StatusForbidden)
+	})
+
+	t.Run("職員には、これまでどおり入力画面の項目を返す", func(t *testing.T) {
+		for _, c := range []*http.Cookie{teacher, admin} {
+			for _, path := range []string{"/api/children", "/api/children/C001", "/api/reference"} {
+				body := call(t, h, c, "GET", path, "").Body.String()
+				for _, k := range intakeKeys {
+					if !strings.Contains(body, `"`+k+`"`) {
+						t.Fatalf("%s: 職員に %s が返っていません: %s", path, k, body)
+					}
+				}
+			}
+			if !strings.Contains(call(t, h, c, "GET", "/api/children/C001/allergies", "").Body.String(), "除去食") {
+				t.Fatal("職員に自クラスの園児のアレルギーが返っていません")
+			}
+		}
+	})
+}

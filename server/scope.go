@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"log"
 	"strconv"
 )
@@ -14,7 +15,8 @@ import (
  * 画面側の出し分けは操作性のためであって、権限の担保ではない。担保はここで行う。
  */
 
-// Child は園児（m_child）
+// Child は園児（m_child）。
+// 保護者へ返すときは forGuardian を通し、園児情報入力画面の項目を応答から落とす（下の MarshalJSON）
 type Child struct {
 	ChildID           string   `json:"child_id"`
 	ChildName         string   `json:"child_name"`
@@ -27,6 +29,43 @@ type Child struct {
 	IsDeleted         bool     `json:"is_deleted"`
 	CreatedAt         string   `json:"created_at"`
 	UpdatedAt         string   `json:"updated_at"`
+
+	// guardianView は保護者へ返す形かどうか。JSON には出さない
+	guardianView bool
+}
+
+// guardianHiddenChildKeys は、保護者へ返す園児の応答から落とす項目。
+// 園児情報入力画面の項目（既往歴・アレルギー・写真の利用同意・平熱）は保護者に返さない
+// （図/インタフェース一覧.md「経路の一覧」(1) の GET /api/children・/api/children/{childID}・/class。
+// 基本設計書「権限と利用可能機能」(6-1)「園児情報の参照｜保護者 ×」。設計の直しは PR #216 の直-30）。
+// 既往歴・アレルギーは Child に載らず、別の経路（職員だけ）で返す。
+// モックは web/src/api/mock.ts の childForGuardian
+var guardianHiddenChildKeys = []string{"normal_temperature", "photo_consent_level"}
+
+// forGuardian は、保護者へ返す園児の形にする。値も消しておき、JSON 以外の使い道からも漏らさない
+func (c Child) forGuardian() Child {
+	c.NormalTemperature = nil
+	c.PhotoConsentLevel = ""
+	c.guardianView = true
+	return c
+}
+
+// MarshalJSON は、保護者へ返す形のときだけ guardianHiddenChildKeys を項目ごと落とす。
+// 職員への応答の形は変えない（平熱が無い園児は null のまま返す）
+func (c Child) MarshalJSON() ([]byte, error) {
+	type plain Child // MarshalJSON を持たない型に移して、呼び返しを避ける
+	b, err := json.Marshal(plain(c))
+	if err != nil || !c.guardianView {
+		return b, err
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, err
+	}
+	for _, k := range guardianHiddenChildKeys {
+		delete(m, k)
+	}
+	return json.Marshal(m)
 }
 
 const childColumns = `child_id, child_name, IFNULL(child_name_kana,''), birth_date, sex,
@@ -71,6 +110,7 @@ func (a *app) canSeeChild(u *SessionUser, childID string) bool {
 }
 
 // visibleChildren はその利用者が参照できる在籍中の園児を、かな順で返す。
+// 保護者には自児だけを、園児情報入力画面の項目を落とした形（forGuardian）で返す
 func (a *app) visibleChildren(u *SessionUser) ([]Child, error) {
 	base := `SELECT ` + childColumns + ` FROM m_child
 	          WHERE is_deleted = 0 AND enrollment_status = '1'`
@@ -107,6 +147,9 @@ func (a *app) visibleChildren(u *SessionUser) ([]Child, error) {
 		c, err := scanChild(rows)
 		if err != nil {
 			return nil, err
+		}
+		if u.isGuardian() {
+			c = c.forGuardian()
 		}
 		out = append(out, c)
 	}

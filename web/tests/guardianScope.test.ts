@@ -8,7 +8,7 @@
  * 業務の規則を2か所に持っているため、片方だけを直すと食い違う（MOCKUP.md）。
  */
 import { describe, it, expect } from 'vitest';
-import { api } from '../src/api/client';
+import { api, childrenOfGuardian, visibleChildren } from '../src/api/client';
 import * as db from '../src/api/mockDb';
 import { today } from '../src/api/util';
 import type { SessionUser } from '../src/api/types';
@@ -109,6 +109,72 @@ describe('園児情報・既往歴・アレルギーは保護者に見せない�
     expect(mine).toHaveLength(2);
     expect(mine.every((r) => r.share_status === '2')).toBe(true);
     expect(await api.recordsOf(teacher, 'C001')).toHaveLength(3);
+  });
+});
+
+/*
+ * 保護者には自児だけを返し、園児情報入力画面の項目（既往歴・アレルギー・写真の利用同意・平熱）は返さない
+ * （図/インタフェース一覧.md「経路の一覧」(1)。設計の直しは PR #216 の直-30）。
+ * サーバ側は server/api_guardian_test.go の TestGuardianChildIntakeItemsAreNotReturned
+ */
+describe('保護者に返す園児は自児だけで、園児情報入力画面の項目を載せない', () => {
+  const INTAKE_KEYS = ['normal_temperature', 'photo_consent_level'];
+  const noIntake = (where: string, value: unknown) => {
+    const body = JSON.stringify(value);
+    for (const k of INTAKE_KEYS) expect(body, `${where}: ${k}`).not.toContain(`"${k}"`);
+    for (const s of ['除去食', '落花生', 'エピペン', '熱性けいれん', 'ぜんそく']) {
+      expect(body, `${where}: ${s}`).not.toContain(s);
+    }
+  };
+
+  it('自児・他児とも、園児の詳細・アレルギー・既往歴は返さない', async () => {
+    for (const child of ['C001', 'C013', 'C999']) {
+      await expect(api.getChild(guardian, child)).rejects.toThrow();
+      await expect(api.allergiesOf(guardian, child)).rejects.toThrow();
+      await expect(api.medicalHistoriesOf(guardian, child)).rejects.toThrow();
+    }
+  });
+
+  it('園児の一覧は自児だけで、入力画面の項目を返さない。クラスや名前で絞っても広がらない', async () => {
+    for (const filter of [{}, { classId: 1 }, { classId: 2 }, { name: '宮城' }]) {
+      const rows = await api.listChildren(guardian, filter);
+      noIntake(`listChildren ${JSON.stringify(filter)}`, rows);
+      expect(rows.every((c) => c.child_id === 'C001')).toBe(true);
+    }
+    const [mine] = await api.listChildren(guardian);
+    expect(mine.child_name).toBe('野原 太郎');
+    expect(mine.birth_date).toBeTruthy();
+    // 画面が同期的に引く自児（http.ts では /api/reference の children）にも載せない
+    noIntake('visibleChildren', visibleChildren(guardian));
+    noIntake('childrenOfGuardian', childrenOfGuardian('G001'));
+  });
+
+  it('保護者ホームの園児にも載せない', async () => {
+    const home = await api.guardianHome(guardian);
+    expect(home.map((h) => h.child.child_id)).toEqual(['C001']);
+    noIntake('guardianHome', home.map((h) => h.child));
+  });
+
+  it('所属クラスは自児だけ', async () => {
+    expect(await api.classOf(guardian, 'C001')).toBe(1);
+    await expect(api.classOf(guardian, 'C013')).rejects.toThrow('権限がありません');
+  });
+
+  it('紐づけが終わった保護者には、元の自児も返さない', () => {
+    // G003（高梨 倫太朗）は C003 との紐づけが終わっている。アカウントも停止中なので、API ではなく範囲の判定を見る
+    const ended: SessionUser = { ...guardian, account_id: 8, guardian_id: 'G003', display_name: '高梨 倫太朗' };
+    expect(visibleChildren(ended)).toEqual([]);
+    expect(childrenOfGuardian('G003')).toEqual([]);
+  });
+
+  it('職員には、これまでどおり入力画面の項目を返す。モックのデータも書き換えない', async () => {
+    for (const staff of [teacher, admin]) {
+      const c = (await api.listChildren(staff)).find((x) => x.child_id === 'C001')!;
+      expect(c).toHaveProperty('normal_temperature');
+      expect(c).toHaveProperty('photo_consent_level');
+      expect(await api.getChild(staff, 'C001')).toHaveProperty('photo_consent_level');
+    }
+    expect(db.children.find((c) => c.child_id === 'C001')).toHaveProperty('normal_temperature');
   });
 });
 

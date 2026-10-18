@@ -173,12 +173,27 @@ export function canSeeChild(user: SessionUser, childId: string): boolean {
   );
 }
 
-/** 保護者の自児一覧。紐づけが終了したものは含めない */
+/**
+ * 保護者へ返す園児の形。園児情報入力画面の項目（既往歴・アレルギー・写真の利用同意・平熱）は保護者に返さない
+ * （図/インタフェース一覧.md「経路の一覧」(1) の GET /api/children・/api/children/{childID}・/class。
+ * 基本設計書「権限と利用可能機能」(6-1)「園児情報の参照｜保護者 ×」。設計の直しは PR #216 の直-30）。
+ * 既往歴・アレルギーは Child に載らず、別の経路（職員だけ）で返す。平熱・写真の利用同意は項目ごと落とす。
+ * 型は Child のままにしている（保護者の画面はこの2つを読まない）。サーバ側は server/scope.go の forGuardian
+ */
+export function childForGuardian(c: Child): Child {
+  const out: Partial<Child> = { ...c };
+  delete out.normal_temperature;
+  delete out.photo_consent_level;
+  return out as Child;
+}
+
+/** 保護者の自児一覧。紐づけが終了したものは含めない。園児情報入力画面の項目は落とす（childForGuardian） */
 export function childrenOfGuardian(guardianId: string): Child[] {
   return db.guardianChildren
     .filter((gc) => gc.guardian_id === guardianId && gc.link_status === '1')
     .map((gc) => findChild(gc.child_id))
-    .filter((c): c is Child => !!c);
+    .filter((c): c is Child => !!c)
+    .map(childForGuardian);
 }
 
 /** 職員が参照できる園児の一覧 */
