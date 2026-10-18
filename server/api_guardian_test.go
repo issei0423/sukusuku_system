@@ -242,8 +242,11 @@ func TestGuardianChildIntakeItemsAreNotReturned(t *testing.T) {
 		if _, err := a.db.Exec(`UPDATE t_guardian_child SET link_status = '2', ended_at = ? WHERE guardian_id = 'G001'`, now()); err != nil {
 			t.Fatal(err)
 		}
+		// 後に続くテストのために紐づけを戻す。戻せなかったら知らせる（状態が残ったまま進めない）
 		t.Cleanup(func() {
-			a.db.Exec(`UPDATE t_guardian_child SET link_status = '1', ended_at = NULL WHERE guardian_id = 'G001'`)
+			if _, err := a.db.Exec(`UPDATE t_guardian_child SET link_status = '1', ended_at = NULL WHERE guardian_id = 'G001'`); err != nil {
+				t.Errorf("紐づけを戻せませんでした: %v", err)
+			}
 		})
 		if body := strings.TrimSpace(call(t, h, nohara, "GET", "/api/children", "").Body.String()); body != "[]" {
 			t.Fatalf("紐づけの終わった園児が返っています: %s", body)
