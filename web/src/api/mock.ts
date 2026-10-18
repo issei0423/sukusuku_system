@@ -3539,6 +3539,8 @@ function guardianTodayOf(user: SessionUser, child: Child): GuardianToday {
     nap, latest: items,
     facility: p.facility ? { recorded_at: p.facility.recorded_at, corrected_at: p.facility.corrected_at, excerpt: excerpt(p.facility.body, 60) } : null,
     unread_contact: unread, unread_chat: unreadChat, personal_room_id: room?.chat_room_id ?? null, growth_new: false,
+    // 自分の紐づけの値だけ（ほかの家族の値は入れない。server/api_guardian.go の guardianAiOptOut）
+    ai_opt_out: !!db.guardianChildren.find((g) => g.guardian_id === user.guardian_id && g.child_id === child.child_id)?.ai_opt_out,
   };
 }
 
@@ -4847,6 +4849,39 @@ const settingsApi = {
   },
 };
 
+/* ============ 保護者のメニュー（詳細設計書「保護者のメニュー」(4-15)。server/api_guardian.go と同じ規則） ============
+ * どれも保護者だけ。本版は「AI の下書きの利用」(4-15 (3)) だけを置く
+ */
+
+/** 操作ログの変更前後に入れる項目の名前（server/api_guardian.go の aiOptOutLogField） */
+const AI_OPT_OUT_LOG_FIELD = 'AI の下書きを使わない';
+const aiOptOutLogValue = (optOut: boolean) => (optOut ? '使わない' : '使う');
+
+const guardianApi = {
+  /**
+   * AI の下書きを使わない・使う（POST /api/guardian/children/{childID}/ai-opt-out）。検査の順は server/api_guardian.go の handleAiOptOut と同じ。
+   * 紐づけが有効（1）な自児だけ。無い・終了は「この園児の連絡帳は開けません。」、猶予中は「卒園・退園したお子さまの設定は変えられません。」。
+   * 自分の紐づけの値だけを変え、ほかの家族の値は変えない・返さない（決めたこと D-49）。変わったときだけ操作ログ（7・2）に残す
+   */
+  async aiOptOut(user: SessionUser, childId: string, optOut: boolean): Promise<{ ok: true }> {
+    if (user.role !== '3' || !user.guardian_id) return fail(MSG.guardianOnly);
+    const link = db.guardianChildren.find((g) => g.guardian_id === user.guardian_id && g.child_id === childId);
+    const child = findChild(childId);
+    if (!link || !child || child.is_deleted || (link.link_status !== '1' && link.link_status !== '3')) return fail(MSG.contactForbidden);
+    if (link.link_status === '3') return fail(MSG.guardianSettingGrace);
+    if (settingText('ai.enabled', '0') !== '1') return fail(MSG.aiNotEnabled);
+    if (typeof optOut !== 'boolean') return fail(MSG.badRequest);
+    const before = !!link.ai_opt_out;
+    link.ai_opt_out = optOut;
+    // 【仮置き】変わったときだけ操作ログに残す（web/仮置き値.md。server/api_guardian.go と同じ）
+    if (before !== optOut) {
+      log(user.account_id, '7', '2', 't_guardian_child', user.account_id, childId,
+        fieldsJSON([[AI_OPT_OUT_LOG_FIELD, aiOptOutLogValue(before)]]), fieldsJSON([[AI_OPT_OUT_LOG_FIELD, aiOptOutLogValue(optOut)]]));
+    }
+    return ok({ ok: true });
+  },
+};
+
 /* ============ 画面が使う入口 ============ */
 export const api = guardProcedure({
   ...authApi, ...childApi, ...diaryApi, ...diaryApi2,
@@ -4858,6 +4893,7 @@ export const api = guardProcedure({
   ...contactFacilityApi,
   ...aiApi,
   ...settingsApi,
+  ...guardianApi,
 });
 
 /* ============ 入力の検査の補助（Go サーバの httpx.go と同じ規則） ============ */

@@ -720,4 +720,11 @@ const contactApi = {
     post<SettingsView>('/api/settings', { changes, read_at: readAt }),
 };
 
-export const api = { ...apiAuth, ...apiChatNap, ...apiGrowth, ...apiAdmin, ...apiHandout, ...contactApi };
+/* 保護者のメニュー（詳細設計書「保護者のメニュー」(4-15)。名前はモック（api/mock.ts の guardianApi）と同じ） */
+const guardianApi = {
+  /** AI の下書きを使わない・使う（4-15 (3)）。自分の紐づけの値だけを変える */
+  aiOptOut: (_u: SessionUser, childId: string, optOut: boolean) =>
+    post<{ ok: true }>(`/api/guardian/children/${encodeURIComponent(childId)}/ai-opt-out`, { opt_out: optOut }),
+};
+
+export const api = { ...apiAuth, ...apiChatNap, ...apiGrowth, ...apiAdmin, ...apiHandout, ...contactApi, ...guardianApi };

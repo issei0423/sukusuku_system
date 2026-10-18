@@ -93,6 +93,9 @@ const (
 	msgSettingNotEditable  = "この設定は画面から変えられません。"
 	msgSettingConflict     = "ほかの管理者が設定を変えました。読み直してから変えてください。"
 	msgSettingAiDailyLimit = "1日の上限回数は1〜10000の整数で入力してください。"
+	// 保護者のメニューの「AI の下書きの利用」（詳細設計書「AI の下書きの利用」(4-15 (3))。本書で足す文言）
+	msgGuardianSettingGrace = "卒園・退園したお子さまの設定は変えられません。"
+	msgAiNotEnabled         = "いまは AI の下書きを使っていません。"
 )
 
 // aiTextTooLong は「文は〇〇文字以内で入力してください。」（詳細設計書「経路」(8-2)）

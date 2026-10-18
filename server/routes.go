@@ -19,6 +19,12 @@ func (a *app) routes(mux *http.ServeMux) {
 	a.routeContact(mux)
 	a.routeGrowth(mux)
 	a.routeAdmin(mux)
+	a.routeGuardian(mux)
+}
+
+// 保護者のメニュー（詳細設計書「保護者のメニュー」(4-15)。api_guardian.go）。本版は AI の下書きの利用だけ
+func (a *app) routeGuardian(mux *http.ServeMux) {
+	mux.HandleFunc("POST /api/guardian/children/{childID}/ai-opt-out", a.handleAiOptOut)
 }
 
 // 連絡帳の読み書きと、ねた・おきた（詳細設計書「経路の一覧」(4-2)）
