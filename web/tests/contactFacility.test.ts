@@ -107,7 +107,10 @@ describe('定型文・宛先・照合の経路・ダッシュボード', () => {
     const list = await api.contactPhrases(teacher, '1');
     expect(list.map((p) => p.body)).toEqual(['今日も一日ありがとうございました。', 'お迎えのときに、くわしくお話しします。',
       'おうちでも、今日のことを聞いてみてください。', '明日もよろしくお願いします。']);
-    expect((await api.contactPhrases(teacher, '4')).length).toBe(5);
+    // 4:日誌は4つ。保護者に向けた文を入れない（日誌は園内の記録。詳細設計書「デモデータ」(5-5) 第1.3版）
+    const diary = await api.contactPhrases(teacher, '4');
+    expect(diary).toHaveLength(4);
+    expect(diary.map((p) => p.body)).not.toContain('ご家庭でも様子を見ていただけますと幸いです。');
     await expect(api.contactPhrases(taroGuardian, '1')).rejects.toThrow();
     for (const p of db.phrases) expect(p.body).not.toMatch(/元気|順調|問題|異常|健康/);
   });
