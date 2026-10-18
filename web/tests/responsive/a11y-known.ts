@@ -31,11 +31,11 @@ export const knownA11yViolations: KnownA11yViolation[] = [
   {
     // 午睡チェックの行の体温のボタン。見えている文字「体温 未測定」が、読み上げの名前「（氏名）の体温を選ぶ」に入っていない（WCAG 2.5.3）。
     // 直すには名前を変える。PR #186 のテスト（napPhysicalScreens.test.tsx）が名前「（氏名）の体温を選ぶ」をそのまま引くので、
-    // #186 が入ってから名前と、名前で探しているテストを一緒に直す
+    // #186 が入ってから名前と、名前で探しているテストを一緒に直す。直すことは Issue #207 で追う
     rule: 'label-content-name-mismatch',
     scenes: ['nap', 'nap-temperature', 'nap-temperature-decimal', 'nap-warning', 'nap-save'],
-    issue: 186,
-    note: '午睡チェックの体温のボタン。PR #186 のテストが名前をそのまま引くため、#186 の後に直す',
+    issue: 207,
+    note: '午睡チェックの体温のボタン。PR #186 のテストが名前をそのまま引くため、#186 の後に名前とテストを一緒に直す（#207）',
   },
 ];
 
