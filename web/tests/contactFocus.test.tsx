@@ -10,6 +10,8 @@ import { MemoryRouter } from 'react-router-dom';
 import App from '../src/App';
 import { SessionProvider } from '../src/session';
 import type { SessionUser } from '../src/api/types';
+import { api } from '../src/api/client';
+import { today } from '../src/api/util';
 import { clearNotice } from '../src/components/feedback';
 import { focusAfter, focusedNow } from '../src/focusAfter';
 import TemperaturePicker from '../src/components/TemperaturePicker';
@@ -19,6 +21,7 @@ const teacher: SessionUser = {
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
+const admin: SessionUser = { ...teacher, account_id: 1, role: '1', staff_id: 'S001', class_id: null, class_name: null, display_name: '野原 一誠' };
 
 function open(path: string, user: SessionUser) {
   return render(
@@ -34,6 +37,16 @@ function open(path: string, user: SessionUser) {
 function press(el: HTMLElement) {
   act(() => el.focus());
   fireEvent.click(el);
+}
+
+/**
+ * ブラウザ（Chromium）は、送っている間に押せなくなった（disabled）ボタンからフォーカスを外して body に落とす。
+ * jsdom は外さず、押せないボタンの blur() も効かないので、いったん押せるようにして外す
+ */
+function dropFocus(el: HTMLButtonElement) {
+  expect(el.disabled, '送っている間は押せない').toBe(true);
+  act(() => { el.disabled = false; el.blur(); el.disabled = true; });
+  expect(document.activeElement).toBe(document.body);
 }
 
 afterEach(() => {
@@ -147,5 +160,58 @@ describe('体温の一覧の窓（GitHub Issue #213）', () => {
     fireEvent.click(value);
     await waitFor(() => expect(document.querySelector('.toast')?.textContent).toMatch(/野原 太郎さんの「\d{2}\.\d℃」（\d{2}:\d{2}）を記録しました。/), { timeout: 3000 });
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: '体温を記録する' })), { timeout: 3000 });
+  });
+});
+
+describe('午睡チェック画面の「対象外」の窓（GitHub Issue #213）', () => {
+  /** デモの実施（13:00 開始）は 18:00 には自動で終わっている。新しく始める */
+  async function startNap() {
+    const active = await api.activeSession(1, today(), admin);
+    if (active) await api.endSession(admin, active.nap_session_id);
+    return api.startSession(teacher, 1, today());
+  }
+
+  it('開くと最初の理由「欠席」にフォーカスが入り、「やめる」で閉じると開いた元の「対象外」へ戻る', async () => {
+    await startNap();
+    open('/staff/nap', teacher);
+    const opener = await screen.findByRole('button', { name: '加藤 大和をきょうは対象外にする' }, { timeout: 3000 });
+    press(opener);
+    const dialog = screen.getByRole('dialog', { name: '加藤 大和をきょうは対象外にする' });
+    expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: '欠席' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'やめる' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(opener);
+  });
+
+  /*
+   * 理由を押すとそのまま送り、窓が閉じる。窓の部品は開いた元の「対象外」へフォーカスを戻すが、「対象外」は読み直すと消える。
+   * 応答のあと、同じ行に現れる「戻す」へ移す（「ねた」が同じ場所の「おきた」に替わるのと同じ）
+   */
+  it('理由を選んで対象外にしたら、窓が閉じたあと、同じ行の「戻す」へフォーカスが移る', async () => {
+    await startNap();
+    open('/staff/nap', teacher);
+    const opener = await screen.findByRole('button', { name: '加藤 大和をきょうは対象外にする' }, { timeout: 3000 });
+    const row = opener.closest('.nap-record-row') as HTMLElement;
+    press(opener);
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '欠席' }));
+    const restore = await within(row).findByRole('button', { name: '加藤 大和の対象外を戻す' }, { timeout: 3000 });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(restore), { timeout: 3000 });
+  });
+
+  it('理由を選んで送れなかったときは、窓を開いたまま、押した理由のボタンへフォーカスを戻す', async () => {
+    const session = await startNap();
+    open('/staff/nap', teacher);
+    const opener = await screen.findByRole('button', { name: '野原 太郎をきょうは対象外にする' }, { timeout: 3000 });
+    press(opener);
+    const dialog = screen.getByRole('dialog', { name: '野原 太郎をきょうは対象外にする' });
+    // 窓を開いている間に、ほかの職員が「ねた」を記録した（ねたあとは対象外にできない）
+    await api.sleep(teacher, session.nap_session_id, 'C001');
+    const noNap = within(dialog).getByRole('button', { name: '午睡なし' }) as HTMLButtonElement;
+    press(noNap);
+    dropFocus(noNap);
+    await waitFor(() => expect(document.querySelector('.nap-sleep-error')?.textContent).toBeTruthy(), { timeout: 3000 });
+    expect(screen.getByRole('dialog', { name: '野原 太郎をきょうは対象外にする' })).toBe(dialog);
+    await waitFor(() => expect(document.activeElement).toBe(noNap), { timeout: 3000 });
   });
 });

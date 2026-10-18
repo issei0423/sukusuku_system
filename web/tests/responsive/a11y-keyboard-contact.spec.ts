@@ -356,6 +356,26 @@ test.describe('[staff] contact キーボードだけで通す', () => {
     expect(errors, 'ブラウザ実行エラー').toEqual([]);
   });
 
+  test('午睡チェック画面の「対象外」の窓：開くと「欠席」へ入り、Esc で「対象外」へ戻り、理由を選ぶと同じ行の「戻す」へ移る', async ({ page }) => {
+    // 理由を押すとそのまま送り、窓が閉じる。開いた元の「対象外」は読み直すと消えるので、同じ行の「戻す」へ移す（GitHub Issue #213）
+    const errors = await open(page, 'nap');
+    const row = page.getByRole('region', { name: '野原 太郎の午睡チェック' });
+    const opener = row.getByRole('button', { name: '野原 太郎をきょうは対象外にする' });
+    await tabTo(page, opener);
+    await key(page, 'Enter');
+    const dialog = page.getByRole('dialog', { name: '野原 太郎をきょうは対象外にする' });
+    await expectFocusInside(page, dialog);
+    await expect(dialog.getByRole('button', { name: '欠席' })).toBeFocused();
+    await key(page, 'Escape');
+    await expectFocusBack(page, opener);
+    await key(page, 'Enter');
+    await expectFocusInside(page, dialog);
+    await pressAndExpectFocus(page, 'Enter', row.getByRole('button', { name: '野原 太郎の対象外を戻す' }));
+    await expect(dialog).toHaveCount(0);
+    await expect(row.locator('.nap-sleep-state')).toHaveText('対象外（欠席）');
+    expect(errors, 'ブラウザ実行エラー').toEqual([]);
+  });
+
   test('③ 職員が連絡帳（園児）画面の園からで、定型文を選び、宛先を確かめ、他児の名前の注意を経て送る', async ({ page }) => {
     const errors = await open(page, 'contact-child');
     const facility = page.getByRole('region', { name: '園から' });

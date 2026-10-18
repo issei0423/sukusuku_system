@@ -12,7 +12,7 @@
  * 時刻はサーバが打つ（画面は端末の時計で記録の時刻を作らない）。押したら応答を待ち、結果を出す（楽観的更新をしない）。
  * 5分ごとの確認（この子を記録）は今までどおりで、ここは監査の記録を弱めない。
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { NapChildState } from '../../api/shapes';
 import { api } from '../../api/client';
 import { useSession } from '../../session';
@@ -72,14 +72,33 @@ export default function SleepControls({ row, sessionId, onSaved }: {
     }
   };
 
+  /*
+   * 「対象外」の窓のフォーカス（WCAG 2.4.3、GitHub Issue #213。共通の決まりは src/focusAfter.ts）
+   *   - 開く：窓の部品（Modal）が最初の理由「欠席」へ入れる。やめる・Esc：開いた元の「対象外」へ戻す（窓の部品のまま）
+   *   - 理由を押して対象外にした：窓が閉じ、窓の部品が「対象外」へ戻すが、「対象外」は読み直すと消える。
+   *     窓を片付けたあと（下の useEffect）に、同じ行に現れる「戻す」へ移す（「ねた」が同じ場所の「おきた」に替わるのと同じ）
+   *   - 送れなかった：窓は開いたまま。送っている間に外れたフォーカスを、押した理由のボタンへ戻す
+   */
+  const restoreButton = useRef<HTMLButtonElement>(null);
+  const excludedFrom = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    // 窓の部品が閉じるときの後片付け（開いた元へ戻す）は、この effect より先に済んでいる
+    if (excluding || !excludedFrom.current) return;
+    const from = excludedFrom.current;
+    excludedFrom.current = null;
+    focusAfter(focusedNow() ?? from, () => restoreButton.current);
+  }, [excluding]);
+
   /** 対象外にする・戻す（監査の層。保護者へは届かない） */
   const exclude = async (reason: '1' | '2' | null) => {
     if (busy) return;
+    const pressed = focusedNow();
     setBusy(true); setError(null);
     try {
       if (reason) {
         await api.exclude(user!, sessionId, row.child.child_id, reason);
         notify(`${name}さんを、きょうは対象外（${EXCLUSION_REASON[reason]}）にしました。`);
+        excludedFrom.current = pressed;
       } else if (row.exclusion) {
         await api.cancelExclusion(user!, row.exclusion.nap_exclusion_id);
         notify(`${name}さんの対象外を戻しました。`);
@@ -87,6 +106,7 @@ export default function SleepControls({ row, sessionId, onSaved }: {
       setExcluding(false);
     } catch (e) {
       setError((e as Error).message);
+      if (reason) focusAfter(pressed);
     } finally {
       setBusy(false);
       onSaved();
@@ -116,7 +136,7 @@ export default function SleepControls({ row, sessionId, onSaved }: {
         </button>
       )}
       {row.exclusion && (
-        <button type="button" className="nap-exclude-button" onClick={() => exclude(null)} disabled={busy} aria-busy={busy}
+        <button ref={restoreButton} type="button" className="nap-exclude-button" onClick={() => exclude(null)} disabled={busy} aria-busy={busy}
           aria-label={`${name}の対象外を戻す`}>
           {busy ? TEXT.sending : '戻す'}
         </button>
