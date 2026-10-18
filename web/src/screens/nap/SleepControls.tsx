@@ -19,6 +19,7 @@ import { useSession } from '../../session';
 import { notify } from '../../components/feedback';
 import { formatHM } from '../../api/util';
 import { useReachable } from '../../api/reachability';
+import { focusAfter, focusedNow } from '../../focusAfter';
 import { TEXT } from '../../messages';
 import { durationText } from '../contact/contactText';
 import ExclusionDialog from './ExclusionDialog';
@@ -44,6 +45,11 @@ export default function SleepControls({ row, sessionId, onSaved }: {
 
   const press = async () => {
     if (busy) return;
+    /*
+     * 送っている間はボタンが押せなくなり、フォーカスが外れる。応答のあと、同じボタンへ戻す。
+     * 「ねた」は記録すると同じボタンが「おきた」に、「おきた」は「もう一度ねた」に替わる（WCAG 2.4.3、GitHub Issue #213）
+     */
+    const pressed = focusedNow();
     setBusy(true); setError(null);
     try {
       // 結果の表示に「取り消す」を添える（図/画面詳細図「午睡チェック画面」(5-1) 項目22・27）
@@ -62,6 +68,7 @@ export default function SleepControls({ row, sessionId, onSaved }: {
       setBusy(false);
       // 成功でも 409（ほかの職員が先に押した・終了した）でも、今の状態を読み直す
       onSaved();
+      focusAfter(pressed);
     }
   };
 

@@ -13,6 +13,7 @@ import { useId, useRef, useState } from 'react';
 import type { ContactRecipient, NameMatch, Phrase } from '../../api/shapes';
 import { useReachable } from '../../api/reachability';
 import { useUnsavedInput } from '../../unsavedInput';
+import { focusAfter, focusedNow } from '../../focusAfter';
 import { TEXT } from '../../messages';
 import RecipientBadge from '../../components/RecipientBadge';
 import NameCheckDialog from '../../components/NameCheckDialog';
@@ -20,7 +21,7 @@ import PhraseMenu from '../../components/PhraseMenu';
 
 type SendError = Error & { kind?: string; names?: string[]; matches?: NameMatch[] };
 
-export default function Composer({ label, max, scope, recipient, className, initial = '', submitLabel, onSend, onCancel }: {
+export default function Composer({ label, max, scope, recipient, className, initial = '', submitLabel, onSend, onCancel, focusAfterSend }: {
   label: string;
   max: number;
   scope: Phrase['phrase_scope'];
@@ -31,6 +32,11 @@ export default function Composer({ label, max, scope, recipient, className, init
   /** 送る。承諾した名前を受け取る。送れなかったら投げる（入力は残る） */
   onSend: (body: string, acknowledged: string[]) => Promise<void>;
   onCancel?: () => void;
+  /**
+   * 送ったあとのフォーカスの移し先。送ったあとにこの欄ごと消えるとき（園から）に、呼んだ側が決める（送った文の「直す」など）。
+   * 渡さなければ、空になった入力欄へ戻す（活動のひとこと）
+   */
+  focusAfterSend?: () => HTMLElement | null;
 }) {
   const id = useId();
   const [text, setText] = useState(initial);
@@ -39,16 +45,25 @@ export default function Composer({ label, max, scope, recipient, className, init
   const [failed, setFailed] = useState(false);
   const [check, setCheck] = useState<{ names: string[]; matches: NameMatch[]; text: string } | null>(null);
   const sendButton = useRef<HTMLButtonElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
   const reachable = useReachable();
   useUnsavedInput(text.trim() !== '' && text !== initial);
   const left = max - [...text].length;
 
+  /*
+   * 「送る」「このまま送る」は送っている間に押せなくなり、押したボタンからフォーカスが外れる（「このまま送る」は窓ごと消える）。
+   * 応答のあとに決めた場所へ移す（src/focusAfter.ts、WCAG 2.4.3、GitHub Issue #213）：
+   * 送れた → focusAfterSend の場所か、空になった入力欄。送れなかった → 入力が残るので「送る」。
+   * 他児の名前の注意が開くときは、注意の窓がフォーカスを受け取るので動かさない
+   */
   const send = async (acknowledged: string[]) => {
     if (busy) return;
+    const pressed = focusedNow();
     setBusy(true); setError(null);
     try {
       await onSend(text.trim(), acknowledged);
       setText(''); setCheck(null); setFailed(false);
+      focusAfter(pressed, focusAfterSend ?? (() => input.current));
     } catch (e) {
       const err = e as SendError;
       if (err.kind === 'other_child_names' && err.names) {
@@ -57,6 +72,7 @@ export default function Composer({ label, max, scope, recipient, className, init
         setCheck(null);
         setError(err.message);
         setFailed(true);
+        focusAfter(pressed, () => sendButton.current);
       }
     } finally {
       setBusy(false);
@@ -68,7 +84,7 @@ export default function Composer({ label, max, scope, recipient, className, init
       <label className="contact-field" htmlFor={id}>
         <span>{label}</span>
       </label>
-      <textarea id={id} value={text} maxLength={max} onChange={(e) => setText(e.target.value)} disabled={busy} />
+      <textarea ref={input} id={id} value={text} maxLength={max} onChange={(e) => setText(e.target.value)} disabled={busy} />
       <div className="contact-composer-tools">
         <PhraseMenu scope={scope} disabled={busy} onPick={(body) => setText((t) => (t ? `${t}${body}` : body).slice(0, max))} />
         <span className="muted contact-count" aria-live="polite">残り {left} 文字</span>

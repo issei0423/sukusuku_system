@@ -28,6 +28,7 @@ import { notify } from '../../components/feedback';
 import { useReachable } from '../../api/reachability';
 import { useUnsavedInput } from '../../unsavedInput';
 import { useStickyInset } from '../../stickyInset';
+import { focusAfter, focusedNow } from '../../focusAfter';
 import TemperaturePicker from '../../components/TemperaturePicker';
 import { MEAL_AMOUNT_STAFF_TEXT, MEAL_KIND_TEXT, TEXT } from '../../messages';
 import { dayLabel, eventText, homeLines, latestSleepText } from './contactText';
@@ -69,7 +70,8 @@ function HomeCell({ row, canConfirm, busy, onConfirm }: {
         ))}
       </dl>
       {h.confirmed_at
-        ? <p className="contact-confirmed">園が確認しました {formatHM(h.confirmed_at)} {h.confirmed_staff_name}</p>
+        // 「確認しました」を押したあとのフォーカスの移し先（tabIndex -1。Tab では止まらない。GitHub Issue #213）
+        ? <p className="contact-confirmed" tabIndex={-1} data-confirmed-home={h.contact_home_id}>園が確認しました {formatHM(h.confirmed_at)} {h.confirmed_staff_name}</p>
         : canConfirm && (
           <button type="button" className="btn-primary contact-confirm-button" onClick={onConfirm} disabled={busy} aria-busy={busy}
             aria-label={`${row.child.child_name}の家庭からを確認しました`}>
@@ -146,6 +148,7 @@ export default function ContactClassScreen() {
    * フォーカスした部品が園児名の列の下に隠れないようにする（WCAG 2.4.11 フォーカスの非隠蔽、GitHub Issue #212）
    */
   const childColumn = useStickyInset('.contact-table-wrap', '--contact-col-child-w', 'width');
+  const fillAllButton = useRef<HTMLButtonElement>(null);
 
   const go = (next: { class?: number; date?: string; sort?: string }) => {
     const p: Record<string, string> = {};
@@ -159,13 +162,20 @@ export default function ContactClassScreen() {
     setParams(p);
   };
 
-  /** 押したら応答を待つ。成功でも失敗でも、今の状態を読み直す */
-  const act = async (key: string, name: string, work: () => Promise<void>) => {
+  /**
+   * 押したら応答を待つ。成功でも失敗でも、今の状態を読み直す。
+   * 送っている間は表のボタンがすべて押せなくなり、押したボタンからフォーカスが外れる。応答のあと、押したボタンへ戻す。
+   * 押したボタンが消えるもの（確認しました）は、成功したときに movedTo の場所へ移す（src/focusAfter.ts、GitHub Issue #213）
+   */
+  const act = async (key: string, name: string, work: () => Promise<void>, movedTo?: () => HTMLElement | null) => {
     if (busyKey !== null) return;
+    const pressed = focusedNow();
+    let done = false;
     setBusyKey(key); setError(null);
     try {
       await work();
       setFailed(false);
+      done = true;
     } catch (e) {
       const message = (e as Error).message;
       setError(`${name}さん：${message}`);
@@ -174,17 +184,18 @@ export default function ContactClassScreen() {
     } finally {
       setBusyKey(null);
       view.refresh();
+      focusAfter(pressed, done ? movedTo : undefined);
     }
   };
 
   const confirm = (row: ContactClassRow) => {
     if (!row.home) return;
     const home = row.home;
-    // 読んだあとに保護者が直していたら 409。読み直して、新しい内容を読んでから押してもらう
+    // 読んだあとに保護者が直していたら 409。読み直して、新しい内容を読んでから押してもらう（ボタンが残るので、ボタンへ戻す）
     return act(`home-${home.contact_home_id}`, row.child.child_name, async () => {
       await api.confirmHome(user!, home.contact_home_id, home.updated_at);
       notify(`${row.child.child_name}さんの家庭からを確認しました。保護者に「園が確認しました」と出ます。`);
-    });
+    }, () => document.querySelector<HTMLElement>(`[data-confirmed-home="${home.contact_home_id}"]`));
   };
 
   /** 1件を記録する（段1。その場で保存）。結果の表示に「取り消す」を添える */
@@ -224,7 +235,8 @@ export default function ContactClassScreen() {
       setTentative(null);
       const skipped = res.skipped.length > 0 ? `${res.skipped.length}人はすでに記録されていたため飛ばしました。` : '';
       notify(`${res.events.length}人の${slotLabel(slot)}を記録しました。保護者が見られる状態です。${skipped}`);
-    });
+    // 記録すると「記録する」は消え、同じ場所に「全員ぜんぶ」が戻る
+    }, () => fillAllButton.current);
   };
   /** 区分を替える。仮に入れていれば、捨ててよいかを確かめる */
   const chooseSlot = (next: MealSlot) => {
@@ -304,7 +316,7 @@ export default function ContactClassScreen() {
                 ))}
               </div>
               {!tentative ? (
-                <button type="button" onClick={fillAll} disabled={busyKey !== null}>全員ぜんぶ</button>
+                <button ref={fillAllButton} type="button" onClick={fillAll} disabled={busyKey !== null}>全員ぜんぶ</button>
               ) : (
                 <>
                   <p className="contact-meal-tentative" role="status">{TEXT.mealTentative(tentativeCount)}</p>

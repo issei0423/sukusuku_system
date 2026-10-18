@@ -13,7 +13,7 @@
  * 活動のひとことと園からのひとことは段2：「送る」のすぐ上に宛先を大きく示し、サーバが他児の名前を照合する
  * （詳細設計書「園からのひとことを送る」(2-3 (3))）。園からは園児・日に1件。送ったあとは送った文と「直す」「取り消す」。
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { api, className, findChild } from '../../api/client';
 import type { ContactEventInput, ContactPage, MealAmount } from '../../api/shapes';
@@ -24,6 +24,7 @@ import { addDays, formatHM, today } from '../../api/util';
 import { Alert, ErrorBox, Loading } from '../../components/ui';
 import { notify } from '../../components/feedback';
 import { useReachable } from '../../api/reachability';
+import { focusAfter, focusedNow } from '../../focusAfter';
 import ChildAvatar from '../../components/ChildAvatar';
 import TemperaturePicker from '../../components/TemperaturePicker';
 import { MEAL_AMOUNT_STAFF_TEXT, MEAL_KIND_TEXT, TEXT } from '../../messages';
@@ -56,6 +57,9 @@ export default function ContactChildScreen() {
   const [fix, setFix] = useState<{ target: FixTarget; mode: 'edit' | 'cancel' } | null>(null);
   const [editingFacility, setEditingFacility] = useState(false);
   const reachable = useReachable();
+  // 押したあとのフォーカスの移し先（GitHub Issue #213）。家庭からを確認したあと → 「園が確認しました」、園からを送ったあと → 送った文の「直す」
+  const confirmedRef = useRef<HTMLParagraphElement>(null);
+  const facilityFixRef = useRef<HTMLButtonElement>(null);
   // 連絡帳（クラス）画面の「園から」の列から来たときは、園からの欄を見せる
   const { hash } = useLocation();
   const loaded = !!page.data;
@@ -100,12 +104,19 @@ export default function ContactChildScreen() {
     page.refresh();
   };
 
-  const act = async (key: string, work: () => Promise<void>) => {
+  /**
+   * 送っている間は記録のボタンがすべて押せなくなり、押したボタンからフォーカスが外れる。応答のあと、押したボタンへ戻す。
+   * 押したボタンが消えるもの（確認しました）は、成功したときに movedTo の場所へ移す（src/focusAfter.ts、GitHub Issue #213）
+   */
+  const act = async (key: string, work: () => Promise<void>, movedTo?: () => HTMLElement | null) => {
     if (busy) return;
+    const pressed = focusedNow();
+    let done = false;
     setBusy(key); setError(null);
     try {
       await work();
       setFailed(false);
+      done = true;
     } catch (e) {
       const message = (e as Error).message;
       setError(message);
@@ -114,6 +125,7 @@ export default function ContactChildScreen() {
     } finally {
       setBusy(null);
       page.refresh();
+      focusAfter(pressed, done ? movedTo : undefined);
     }
   };
 
@@ -138,7 +150,7 @@ export default function ContactChildScreen() {
     void act('home', async () => {
       await api.confirmHome(user!, h.contact_home_id, h.updated_at);
       notify(`${name}さんの家庭からを確認しました。保護者に「園が確認しました」と出ます。`);
-    });
+    }, () => confirmedRef.current);
   };
 
   const openFix = (t: TimelineFix) => setFix({
@@ -187,7 +199,7 @@ export default function ContactChildScreen() {
                   ))}
                 </dl>
                 {h.confirmed_at
-                  ? <p className="contact-confirmed">園が確認しました {formatHM(h.confirmed_at)} {h.confirmed_staff_name}</p>
+                  ? <p ref={confirmedRef} className="contact-confirmed" tabIndex={-1}>園が確認しました {formatHM(h.confirmed_at)} {h.confirmed_staff_name}</p>
                   : data.can_write && (
                     <button type="button" className="btn-primary contact-confirm-button" onClick={confirmHome} disabled={busy !== null}
                       aria-busy={busy === 'home'}>{busy === 'home' ? TEXT.sending : '確認しました'}</button>
@@ -210,7 +222,7 @@ export default function ContactChildScreen() {
                   {' '}{data.facility.body}{data.facility.corrected_at && <span className="muted">　訂正しました（{formatHM(data.facility.corrected_at)}）</span>}</p>
                 {canFix && (
                   <div className="contact-composer-actions">
-                    <button type="button" onClick={() => setEditingFacility(true)}>直す</button>
+                    <button ref={facilityFixRef} type="button" onClick={() => setEditingFacility(true)}>直す</button>
                     <button type="button" className="btn-quiet" onClick={() => setFix({ target: { kind: 'facility', facility: data.facility!, childName: name }, mode: 'cancel' })}>取り消す</button>
                   </div>
                 )}
@@ -220,7 +232,7 @@ export default function ContactChildScreen() {
             {((!data.facility && canRecord) || (data.facility && editingFacility)) && (
               <Composer key={editingFacility ? `fix-${data.facility?.contact_facility_id}` : 'new'} label={editingFacility ? '園から（直して送る）' : '園からのひとこと'}
                 max={500} scope="1" recipient={data.recipient} className={childClass} initial={editingFacility ? data.facility?.body : ''}
-                submitLabel={editingFacility ? '直して送る' : '送る'} onSend={sendFacility}
+                submitLabel={editingFacility ? '直して送る' : '送る'} onSend={sendFacility} focusAfterSend={() => facilityFixRef.current}
                 onCancel={editingFacility ? () => setEditingFacility(false) : undefined} />
             )}
           </section>

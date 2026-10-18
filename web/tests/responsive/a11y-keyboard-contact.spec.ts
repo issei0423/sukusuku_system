@@ -17,11 +17,9 @@
  * 表が横に送られる幅（iPad の横向き 1024×768）の連絡帳（クラス）画面と、保護者の幅（390×844）の連絡帳画面を、
  * Tab で最後まで進み Shift+Tab で戻って確かめる。
  *
- * 分かっている抜け（このブランチでは直していない。直し方に判断が要るため PR の本文の「人の判断を待つ」に挙げた）：
- *   1. 送っている間にボタンを押せなくする（disabled）ため、押したボタンからフォーカスが外れて body に落ちる。
- *      Chromium は外れる前の位置を覚えており、次の Tab はその続きから進む。落ちたときは注記（annotation）に残し、
- *      続きの操作へキーボードで進めることを確かめる（pressAllowingFocusLoss）。直すことは Issue #213 で追う
- * これは**起きてもテストは失敗にならない**（CI は緑のまま）。直すときは注記を外し、失敗にする確かめへ戻す。
+ * 送る・記録するボタンは、送っている間に押せなくなる（disabled）・送ったあとに消えるため、押したボタンからフォーカスが外れる。
+ * 応答のあとに、押したボタンが残っていればそこへ、消えていれば決めた場所へフォーカスが移ることを確かめる
+ * （WCAG 2.4.3 フォーカス順序、GitHub Issue #213。共通の決まりは src/focusAfter.ts）。
  */
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { REVIEW_TIME } from './scenarios';
@@ -97,17 +95,14 @@ async function key(page: Page, name: string) {
 }
 
 /**
- * 送る・記録するボタンを押し、応答を待つ。押したボタンは送っている間 disabled になり、フォーカスが外れることがある。
- * **フォーカスが body に落ちても失敗にしない**（分かっている抜け 1）。落ちたら注記に残すだけで、
- * 続きへキーボードで進めるかは呼んだ側で確かめる。押したあとのフォーカスの印は確かめない（key と違う）
+ * 送る・記録するボタンを押し、応答を待つ。押したボタンは送っている間 disabled になり、いったんフォーカスが外れる。
+ * 応答のあとに、フォーカスが moved（押したボタンが残るなら同じボタン）へ移り、見えることを確かめる（GitHub Issue #213）
  */
-async function pressAllowingFocusLoss(page: Page, name: string, what: string) {
+async function pressAndExpectFocus(page: Page, name: string, moved: Locator) {
   await page.keyboard.press(name);
   await ready(page);
-  const state = await focusState(page);
-  if (state.where === 'body') {
-    test.info().annotations.push({ type: 'フォーカスが外れる', description: `${what}を押したあと、フォーカスが body に落ちた` });
-  }
+  await expect(moved, '押したあと、決めた場所へフォーカスが移っていない').toBeFocused();
+  await expectFocusVisible(page);
 }
 
 const isFocused = (target: Locator) => target.evaluate((el) => el === document.activeElement);
@@ -185,18 +180,20 @@ test.describe('[guardian] contact キーボードだけで通す', () => {
     const home = page.getByRole('region', { name: '家庭から' });
     await expect(home.getByRole('button', { name: '家庭からを送る' })).toBeVisible();
 
-    // 体温：一覧のダイアログを開くと中へ入り、Esc で閉じると開いた元へ戻る
+    // 体温：一覧のダイアログを開くと、36.5（保護者の画面の開く位置）にフォーカスが入る（GitHub Issue #213）。Esc で閉じると開いた元へ戻る
     const pick = home.getByRole('button', { name: '体温を入れる' });
     await tabTo(page, pick);
     await key(page, 'Enter');
     const picker = page.getByRole('dialog', { name: '体温' });
+    const origin = picker.getByRole('button', { name: '36.5', exact: true });
     await expectFocusInside(page, picker);
+    await expect(origin).toBeFocused();
     await key(page, 'Escape');
     await expectFocusBack(page, pick);
-    // もう一度開き、Tab で 36.5 へ進めて Enter。開いた元のボタンは、値が入ると「入れ直す」になる（同じボタン）
+    // もう一度開き、フォーカスの入った 36.5 をそのまま Enter。開いた元のボタンは、値が入ると「入れ直す」になる（同じボタン）
     await key(page, 'Enter');
     await expectFocusInside(page, picker);
-    await tabTo(page, picker.getByRole('button', { name: '36.5', exact: true }), { max: 60 });
+    await expect(origin).toBeFocused();
     await key(page, 'Enter');
     await expectFocusBack(page, home.getByRole('button', { name: '入れ直す' }));
     await expect(home).toContainText('36.5℃');
@@ -212,19 +209,17 @@ test.describe('[guardian] contact キーボードだけで通す', () => {
     await key(page, 'ArrowRight');
     await expect(mood.getByRole('radio', { name: 'ふつう', exact: true })).toBeChecked();
 
-    // 送る（Enter）。送ったあとは送った内容と「急ぎはお電話でお願いします。」が出る
+    // 送る（Enter）。送ったあとは書く欄が送った内容と「急ぎはお電話でお願いします。」の短い表示に替わり、
+    // フォーカスは送った内容の「直す」へ移る（押したボタンは書く欄ごと消える。GitHub Issue #213）。
+    // 「直す」は上へ戻る位置にあるが、画面の上に止めた見出しの下には隠れない（GitHub Issue #212）
     await tabTo(page, home.getByRole('button', { name: '家庭からを送る' }));
-    await pressAllowingFocusLoss(page, 'Enter', '「家庭からを送る」');
+    await pressAndExpectFocus(page, 'Enter', home.getByRole('button', { name: '直す', exact: true }));
     await expect(home).toContainText('送りました');
     await expect(home.getByRole('status')).toHaveText('急ぎはお電話でお願いします。');
     const lines = home.locator('.contact-home-lines');
     await expect(lines).toContainText('体温36.5℃');
     await expect(lines).toContainText('朝ごはんぜんぶ');
     await expect(lines).toContainText('きげんふつう');
-    // 送ったあとは書く欄が短い表示に替わる。次の Tab で「直す」へ進める。
-    // 「直す」は上へ戻る位置にあるが、画面の上に止めた見出しの下には隠れない（GitHub Issue #212）
-    await key(page, 'Tab');
-    await expect(home.getByRole('button', { name: '直す', exact: true })).toBeFocused();
     expect(errors, 'ブラウザ実行エラー').toEqual([]);
   });
 });
@@ -265,14 +260,28 @@ test.describe('[staff] contact キーボードだけで通す', () => {
 
     const confirm = page.getByRole('button', { name: '金城 陸の家庭からを確認しました' });
     await tabTo(page, confirm);
-    await pressAllowingFocusLoss(page, 'Enter', '「確認しました」');
+    // 押したボタンは消え、確認した行は「未確認を上に」の並びで下へ移る。フォーカスはその行の「園が確認しました」へ移る（GitHub Issue #213）
     const row = page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: '金城 陸' }) });
+    await pressAndExpectFocus(page, 'Enter', row.locator('.contact-confirmed'));
     await expect(row).toContainText('園が確認しました 13:30 高梨 倫太朗');
     await expect(confirm).toHaveCount(0);
-    // 押したボタンは消え、確認した行は「未確認を上に」の並びで下へ移る。次の Tab は表の中の続きへ進み、ページの先頭へ戻らない
+    // 次の Tab は表の中の続き（同じ行の食事）へ進み、ページの先頭へ戻らない
     await key(page, 'Tab');
     await expect.poll(() => page.locator('.contact-class-table').evaluate((el) => el.contains(document.activeElement)),
       { message: '確認したあとの Tab が表の外へ出た' }).toBe(true);
+    expect(errors, 'ブラウザ実行エラー').toEqual([]);
+  });
+
+  test('連絡帳（クラス）画面で食事の量を Enter で記録したあと、押したボタンにフォーカスが残る', async ({ page }) => {
+    // 送っている間は表のボタンがすべて押せなくなる。応答のあと、押したボタンへ戻す（GitHub Issue #213）
+    const errors = await open(page, 'contact-class');
+    // まだ記録していない行の「ぜんぶ」。記録すると絞り込みに当たらなくなるので、名前で指し直す
+    const unrecorded = page.locator('.contact-picks.is-meal').filter({ hasNot: page.locator('[aria-pressed="true"]') }).first();
+    const name = await unrecorded.getByRole('button').first().getAttribute('aria-label');
+    const zenbu = page.getByRole('button', { name: name!, exact: true });
+    await tabTo(page, zenbu);
+    await pressAndExpectFocus(page, 'Enter', zenbu);
+    await expect(zenbu).toHaveAttribute('aria-pressed', 'true');
     expect(errors, 'ブラウザ実行エラー').toEqual([]);
   });
 
@@ -304,19 +313,14 @@ test.describe('[staff] contact キーボードだけで通す', () => {
     const row = page.getByRole('region', { name: '野原 太郎の午睡チェック' });
     const state = row.locator('.nap-sleep-state');
     await tabTo(page, row.getByRole('button', { name: '野原 太郎のねた' }));
-    await pressAllowingFocusLoss(page, 'Enter', '「ねた」');
+    // 同じボタンが「おきた」になり、フォーカスはそのボタンに残る（GitHub Issue #213）。続けて Enter で「おきた」を記録できる
+    await pressAndExpectFocus(page, 'Enter', row.getByRole('button', { name: '野原 太郎のおきた' }));
     await expect(state).toHaveText('13:30 ねた');
-
-    // 同じボタンが「おきた」になる。Tab で次（直す・取り消す）へ進み、Shift+Tab で「おきた」へ戻れる
-    const fix = row.getByRole('button', { name: '野原 太郎のねた・おきたを直す・取り消す' });
-    await key(page, 'Tab');
-    await expect(fix).toBeFocused();
-    await tabTo(page, row.getByRole('button', { name: '野原 太郎のおきた' }), { shift: true, max: 1 });
-    await pressAllowingFocusLoss(page, 'Enter', '「おきた」');
+    await pressAndExpectFocus(page, 'Enter', row.getByRole('button', { name: '野原 太郎のもう一度ねた' }));
     await expect(state).toContainText('13:30〜13:30');
-    await expect(row.getByRole('button', { name: '野原 太郎のもう一度ねた' })).toBeVisible();
 
-    // 押し間違いを直す窓：開くと中へ、Esc で閉じると開いた元へ
+    // 押し間違いを直す窓：Tab で「直す・取り消す」へ。開くと中へ、Esc で閉じると開いた元へ
+    const fix = row.getByRole('button', { name: '野原 太郎のねた・おきたを直す・取り消す' });
     await key(page, 'Tab');
     await expect(fix).toBeFocused();
     await key(page, 'Enter');
@@ -335,12 +339,15 @@ test.describe('[staff] contact キーボードだけで通す', () => {
     await page.keyboard.type('あおちゃんとしゃぼん玉を追いかけていました。');
     await expectFocusVisible(page);
 
-    // 定型文：開くと中へ入り、Tab で候補へ進めて Enter。閉じると「定型文」へ戻り、入力欄の末尾に足される
+    // 定型文：開くと中へ入り、候補を読み込めたら最初の候補へフォーカスが移る（GitHub Issue #213）。
+    // Tab で候補へ進めて Enter。閉じると「定型文」へ戻り、入力欄の末尾に足される
     const phraseButton = facility.getByRole('button', { name: '定型文', exact: true });
     await tabTo(page, phraseButton, { max: 3 });
     await key(page, 'Enter');
     const phrases = page.getByRole('dialog', { name: '定型文を選ぶ' });
     await expectFocusInside(page, phrases);
+    await expect(phrases.locator('.phrase-list button').first()).toBeFocused();
+    await expectFocusVisible(page);
     await tabTo(page, phrases.getByRole('button', { name: '明日もよろしくお願いします。' }), { max: 6 });
     await key(page, 'Enter');
     await expectFocusBack(page, phraseButton);
@@ -354,7 +361,7 @@ test.describe('[staff] contact キーボードだけで通す', () => {
     // 送る → 他児の名前の注意（フォーカスは窓の中）。Esc（直す）で閉じると「送る」へ戻り、入力は残る
     const send = facility.getByRole('button', { name: '送る', exact: true });
     await tabTo(page, send, { max: 3 });
-    await pressAllowingFocusLoss(page, 'Enter', '「送る」');
+    await page.keyboard.press('Enter');
     const check = page.getByRole('dialog', { name: 'ほかのお子さんの名前の注意' });
     await expectFocusInside(page, check);
     await expect(check.locator('mark')).toHaveText('あおちゃん');
@@ -362,16 +369,15 @@ test.describe('[staff] contact キーボードだけで通す', () => {
     await expectFocusBack(page, send);
     await expect(text).toHaveValue(/^あおちゃんと/);
 
-    // もう一度送り、注意の中で「このまま送る」へ Tab で進めて Enter
-    await pressAllowingFocusLoss(page, 'Enter', '「送る」');
+    // もう一度送り、注意の中で「このまま送る」へ Tab で進めて Enter。
+    // 送ったあとは窓も書く欄も消え、フォーカスは送った文の「直す」へ移る（GitHub Issue #213）
+    await page.keyboard.press('Enter');
     await expectFocusInside(page, check);
     await tabTo(page, check.getByRole('button', { name: 'このまま送る' }), { max: 3 });
-    await pressAllowingFocusLoss(page, 'Enter', '「このまま送る」');
+    await pressAndExpectFocus(page, 'Enter', facility.getByRole('button', { name: '直す', exact: true }));
     await expect(check).toHaveCount(0);
     await expect(facility).toContainText('送った 13:30 高梨 倫太朗');
     await expect(facility).toContainText('あおちゃんとしゃぼん玉を追いかけていました。明日もよろしくお願いします。');
-    // 送ったあとは書く欄が消え、Tab で送った文の「直す」へ進める
-    await tabTo(page, facility.getByRole('button', { name: '直す', exact: true }), { max: 3 });
     expect(errors, 'ブラウザ実行エラー').toEqual([]);
   });
 });
