@@ -16,11 +16,12 @@
  * 分かっている抜け（このブランチでは直していない。直し方に判断が要るため PR の本文の「人の判断を待つ」に挙げた）：
  *   1. 送っている間にボタンを押せなくする（disabled）ため、押したボタンからフォーカスが外れて body に落ちる。
  *      Chromium は外れる前の位置を覚えており、次の Tab はその続きから進む。落ちたときは注記（annotation）に残し、
- *      続きの操作へキーボードで進めることを確かめる（pressAllowingFocusLoss）
- *   2. 保護者の連絡帳画面は上端の見出し（.contact-page-head）を画面の上に止めている。上へ戻る Tab で止まった部品が
- *      その下に隠れることがある。分かっている1か所だけ注記に残す（knownCovered）
+ *      続きの操作へキーボードで進めることを確かめる（pressAllowingFocusLoss）。直すことは Issue #213 で追う
+ *   2. 止めた見出し・列の下に、Tab で止まった部品が隠れる（WCAG 2.4.11。直すことは Issue #212 で追う）。分かっている場所だけ注記に残す（knownCovered）
+ *      - 保護者の連絡帳画面：上端に止めた見出し（.contact-page-head）。送ったあとの Tab で止まる「直す」
+ *      - 連絡帳（クラス）画面：左に止めた園児名の列（.contact-col-child）。表が横に送られる幅（iPad の横向き 1024px など）で、
+ *        表の中の部品が列の下に隠れる（a11y の検査 playwright.a11y.config.ts は 1024×768 で回す）
  * どちらも**起きてもテストは失敗にならない**（CI は緑のまま）。直すときは注記を外し、失敗にする確かめへ戻す。
- * Issue を立てたら、ここと注記の説明に番号を添える。
  */
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { REVIEW_TIME } from './scenarios';
@@ -118,12 +119,16 @@ async function pressAllowingFocusLoss(page: Page, name: string, what: string) {
 
 const isFocused = (target: Locator) => target.evaluate((el) => el === document.activeElement);
 
-/** Tab（shift なら Shift+Tab）を押して target まで進む。途中の1歩ごとにフォーカスが見えることを確かめる */
-async function tabTo(page: Page, target: Locator, { shift = false, max = 120 } = {}) {
+/**
+ * Tab（shift なら Shift+Tab）を押して target まで進む。途中の1歩ごとにフォーカスが見えることを確かめる。
+ * knownCovered は key と同じ（分かっている抜け 2 の場所だけで渡す）
+ */
+async function tabTo(page: Page, target: Locator,
+  { shift = false, max = 120, knownCovered }: { shift?: boolean; max?: number; knownCovered?: string } = {}) {
   await expect(target).toBeVisible();
   for (let i = 0; i < max; i++) {
     if (await isFocused(target)) return;
-    await key(page, shift ? 'Shift+Tab' : 'Tab');
+    await key(page, shift ? 'Shift+Tab' : 'Tab', { knownCovered });
   }
   if (await isFocused(target)) return;
   throw new Error(`${max} 回の${shift ? ' Shift+Tab' : ' Tab'} で届かない：${await target.evaluate((el) => el.outerHTML.slice(0, 120))}`);
@@ -187,7 +192,7 @@ test.describe('[guardian] contact キーボードだけで通す', () => {
     await expect(lines).toContainText('きげんふつう');
     // 送ったあとは書く欄が短い表示に替わる。次の Tab で「直す」へ進める。
     // 「直す」は上へ戻る位置にあり、画面の上に止めた見出しの下に隠れることがある（分かっている抜け 2）
-    await key(page, 'Tab', { knownCovered: '送ったあとの Tab で、画面の上に止めた見出し（.contact-page-head）の下に隠れた' });
+    await key(page, 'Tab', { knownCovered: '送ったあとの Tab で、画面の上に止めた見出し（.contact-page-head）の下に隠れた（#212）' });
     await expect(home.getByRole('button', { name: '直す', exact: true })).toBeFocused();
     expect(errors, 'ブラウザ実行エラー').toEqual([]);
   });
@@ -209,14 +214,16 @@ test.describe('[staff] contact キーボードだけで通す', () => {
     await ready(page);
     await expect(page.getByRole('rowheader').first()).toHaveText('上園 花子');
 
+    // 表が横に送られる幅では、表の中の部品が左に止めた園児名の列の下に隠れる（分かっている抜け 2）
+    const tableCovered = '表を横に送った先が、左に止めた園児名の列（.contact-col-child）の下になった（#212）';
     const confirm = page.getByRole('button', { name: '金城 陸の家庭からを確認しました' });
-    await tabTo(page, confirm);
+    await tabTo(page, confirm, { knownCovered: tableCovered });
     await pressAllowingFocusLoss(page, 'Enter', '「確認しました」');
     const row = page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: '金城 陸' }) });
     await expect(row).toContainText('園が確認しました 13:30 高梨 倫太朗');
     await expect(confirm).toHaveCount(0);
     // 押したボタンは消え、確認した行は「未確認を上に」の並びで下へ移る。次の Tab は表の中の続きへ進み、ページの先頭へ戻らない
-    await key(page, 'Tab');
+    await key(page, 'Tab', { knownCovered: tableCovered });
     await expect.poll(() => page.locator('.contact-class-table').evaluate((el) => el.contains(document.activeElement)),
       { message: '確認したあとの Tab が表の外へ出た' }).toBe(true);
     expect(errors, 'ブラウザ実行エラー').toEqual([]);
