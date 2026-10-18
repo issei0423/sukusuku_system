@@ -155,6 +155,30 @@ async function expectFocusBack(page: Page, opener: Locator) {
   await expectFocusVisible(page);
 }
 
+/**
+ * root（CSS のセレクタ）の中の押せるもの（リンク・ボタン・入力欄。隠したラジオは包む label）のうち、
+ * 44×44px に届かないものと、いちばん近い押せるものとの間が 8px に満たないものを返す
+ * （詳細設計書「全画面に共通する部品と決まり」(2-0) の「タッチの条件」(4)、GitHub Issue #215）。重なっているもの（包む label と中の input）は比べない
+ */
+async function touchProblems(page: Page, root: string) {
+  return page.evaluate((root) => {
+    const items = [...document.querySelectorAll<HTMLElement>(`${root} :is(a[href], button, input, select, textarea)`)].map((el) => {
+      const target = el.matches('input[type="radio"]') ? el.closest('label') ?? el : el;
+      return { name: (el.getAttribute('aria-label') ?? target.textContent ?? '').trim().slice(0, 30), box: target.getBoundingClientRect() };
+    }).filter(({ box }) => box.width > 0 && box.height > 0);
+    const small = items.filter(({ box }) => box.width < 44 || box.height < 44).map(({ name, box }) => `${name} ${Math.round(box.width)}×${Math.round(box.height)}`);
+    const close: string[] = [];
+    for (const a of items) {
+      for (const b of items) {
+        const dx = Math.max(0, Math.max(a.box.left, b.box.left) - Math.min(a.box.right, b.box.right));
+        const dy = Math.max(0, Math.max(a.box.top, b.box.top) - Math.min(a.box.bottom, b.box.bottom));
+        if ((dx > 0 || dy > 0) && Math.max(dx, dy) < 8) close.push(`${a.name} と ${b.name} の間 ${Math.max(dx, dy).toFixed(1)}px`);
+      }
+    }
+    return { small, close };
+  }, root);
+}
+
 test.describe('[guardian] contact キーボードだけで通す', () => {
   test('① 保護者が家庭からを選んで送る（体温の一覧・朝ごはん・きげん → 送る）', async ({ page }) => {
     const errors = await open(page, 'guardian-contact');
@@ -215,6 +239,12 @@ test.describe('[guardian] contact 保護者の幅（390×844）', () => {
     expect(visited.at(-1), '家庭からの書く欄を通って、下に止めた「家庭からを送る」まで進んだ').toContain('家庭からを送る');
     expect(errors, 'ブラウザ実行エラー').toEqual([]);
   });
+
+  test('連絡帳画面の押せるものは 44×44px 以上で、隣との間は 8px 以上', async ({ page }) => {
+    // 詳細設計書「全画面に共通する部品と決まり」(2-0) の「タッチの条件」(4)。GitHub Issue #215（直す前は「‹ ホームへ」が高さ 27px、選択肢の間が 4px）
+    await open(page, 'guardian-contact');
+    expect(await touchProblems(page, '.contact-page')).toEqual({ small: [], close: [] });
+  });
 });
 
 test.describe('[staff] contact キーボードだけで通す', () => {
@@ -257,6 +287,15 @@ test.describe('[staff] contact キーボードだけで通す', () => {
       const visited = await walkThrough(page, page.getByRole('rowheader').first().getByRole('link'), '.contact-table-wrap');
       expect(visited.at(-1), '表の最後の行の、右端の列（園から）まで進んだ').toContain('吉田 心春の園から');
       expect(errors, 'ブラウザ実行エラー').toEqual([]);
+    });
+
+    test('連絡帳（クラス）・連絡帳（園児）画面の押せるものは 44×44px 以上で、隣との間は 8px 以上', async ({ page }) => {
+      // 「タッチの条件」(2-0 (4))。GitHub Issue #215（直す前は表のリンクの高さが 20px、排せつのボタンと「（時刻）を直す」の間が 4px、
+      // 連絡帳（園児）画面の食事の区分と量の間が 4px）
+      await open(page, 'contact-class');
+      expect(await touchProblems(page, '.contact-class')).toEqual({ small: [], close: [] });
+      await open(page, 'contact-child');
+      expect(await touchProblems(page, '.contact-child')).toEqual({ small: [], close: [] });
     });
   });
 
