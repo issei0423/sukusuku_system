@@ -4,7 +4,7 @@
  *
  * 記録の修正と改ざん防止（同「記録の修正と改ざん防止」(4-7)）に従い、この画面からは記録を消せない。
  * チェック時刻と保存時刻の両方を出し、後から入れた記録が分かるようにする（基本設計書 5-6）。
- * 園児ごとの入眠（ねた）と起床（おきた）を同じ一覧の行として並べ、ねたの行に入眠時の体温を出す
+ * 園児ごとの入眠（ねた）と起床（おきた）、きょうは対象外とその理由を同じ一覧の行として並べ、ねたの行に入眠時の体温を出す
  * （画面詳細図「午睡記録検索画面」(5-3) の項目6・9、基本設計書「帳票の出力」(4-8)）。
  */
 import { useState } from 'react';
@@ -17,14 +17,16 @@ import { notify } from '../../components/feedback';
 import { downloadCsvText } from '../../csv';
 import { BODY_POSITION, BREATHING, COMPLEXION } from '../../api/codes';
 import type { NapSearchRow } from '../../api/shapes';
-import { SLEEP_ROW_LABEL, rowTemperature } from './napReport';
+import { rowLabel, rowTemperature } from './napReport';
 import { formatMD, formatHM, formatMDHM, today, addDays } from '../../api/util';
 
 export default function NapSearchScreen() {
   const { user } = useSession();
   const classesForUser = selectableClasses(user!);
 
-  const [from, setFrom] = useState(addDays(today(), -7));
+  // 期間の初期値は直近1か月（開始＝当日の30日前、終了＝当日）。画面詳細図「午睡記録検索画面」(5-3) の項目1、
+  // 基本設計書「入力項目の制約値」(4-12) の検索の期間（第1.x版は直近1週間）
+  const [from, setFrom] = useState(addDays(today(), -30));
   const [to, setTo] = useState(today());
   const [classId, setClassId] = useState<number | ''>(user!.role === '2' ? (user!.class_id ?? '') : '');
   const [childNameQ, setChildNameQ] = useState('');
@@ -131,7 +133,7 @@ export default function NapSearchScreen() {
                 </tr>
               </thead>
               <tbody>
-                {data.rows.map((r) => <SearchRow key={`${r.kind}-${r.nap_record_id ?? r.nap_sleep_id}`} r={r} />)}
+                {data.rows.map((r) => <SearchRow key={`${r.kind}-${r.nap_record_id ?? r.nap_sleep_id ?? r.nap_exclusion_id}`} r={r} />)}
               </tbody>
             </table>
             <Pager page={data.page} perPage={data.per_page} total={data.total} onChange={setPage} />
@@ -191,10 +193,11 @@ export default function NapSearchScreen() {
 
 /**
  * 一覧の1行。確認の行は体位・呼吸・顔色・体温・保存時刻を出す。
- * ねた・おきたの行は、押した時刻と、体位・呼吸・顔色の3列をまとめた「入眠（ねた）」「起床（おきた）」を出し、
- * ねたの行の体温の列に入眠時の体温を出す（画面詳細図「午睡記録検索画面」(5-3) の項目6）。
- * 【仮置き】3列をまとめて名前を出す形と、ねた・おきたの保存時刻を「―」にすること（web/仮置き値.md）。
- * ねた・おきたは押した時刻をサーバが記録しており、チェックした時刻と保存時刻を分けて持たない
+ * ねた・おきた・きょうは対象外の行は、押した時刻と、体位・呼吸・顔色の3列をまとめた「入眠（ねた）」「起床（おきた）」
+ * 「きょうは対象外（欠席）」などを出し、ねたの行の体温の列に入眠時の体温を出す（画面詳細図「午睡記録検索画面」(5-3) の項目6）。
+ * 名前は帳票の体位の列と同じ。
+ * 【仮置き】3列をまとめて名前を出す形と、ねた・おきた・対象外の保存時刻を「―」にすること（web/仮置き値.md）。
+ * ねた・おきた・対象外は押した時刻をサーバが記録しており、チェックした時刻と保存時刻を分けて持たない
  */
 function SearchRow({ r }: { r: NapSearchRow }) {
   const temperature = rowTemperature(r);
@@ -216,7 +219,7 @@ function SearchRow({ r }: { r: NapSearchRow }) {
           <td className="nowrap">{r.complexion ? COMPLEXION[r.complexion] : '―'}</td>
         </>
       ) : (
-        <td className="nowrap" colSpan={3}>{SLEEP_ROW_LABEL[r.kind]}</td>
+        <td className="nowrap" colSpan={3}>{rowLabel(r)}</td>
       )}
       <td className="num nowrap">{temperature ?? '―'}</td>
       <td className="nowrap">{r.staff_name}</td>

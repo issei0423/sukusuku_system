@@ -65,8 +65,7 @@ var (
 // ねた・おきたの行に出す名前。画面詳細図「午睡記録検索画面」(5-3) の項目6。web/src/api/napReport.ts の SLEEP_ROW_LABEL と同じ
 var napReportSleepLabel = map[string]string{napRowSleep: "入眠（ねた）", napRowWake: "起床（おきた）"}
 
-// 帳票の行の種類。napRowCheck・napRowSleep・napRowWake（api_nap.go）に、きょうは対象外を足す
-const napRowExclusion = "exclusion"
+// 帳票の行の種類は、午睡記録検索と同じ napRowCheck・napRowSleep・napRowWake・napRowExclusion（api_nap.go）
 
 // napReportLine は帳票の1行。並べ替えの鍵と、出すセルを持つ
 type napReportLine struct {

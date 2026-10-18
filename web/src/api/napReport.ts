@@ -22,6 +22,14 @@ export const SLEEP_ROW_LABEL = { sleep: '入眠（ねた）', wake: '起床（�
 /** きょうは対象外の理由（t_nap_exclusion.reason。1:欠席 2:午睡なし） */
 export const EXCLUSION_REASON_LABEL = { '1': '欠席', '2': '午睡なし' } as const;
 
+/**
+ * きょうは対象外の行に出す名前。帳票と午睡記録検索の一覧で同じ（server/api_nap_report.go と同じ）。
+ * 【仮置き】「きょうは対象外（理由）」の形（web/仮置き値.md「午睡の帳票」）
+ */
+export function exclusionRowLabel(reason: '1' | '2'): string {
+  return `きょうは対象外（${EXCLUSION_REASON_LABEL[reason]}）`;
+}
+
 /** 帳票の文言。サーバ（server/api_nap_report.go の msgNapReport*・requireAdmin）と同じ */
 export const NAP_REPORT_MSG = {
   adminOnly: 'この操作は管理者のみが行えます',

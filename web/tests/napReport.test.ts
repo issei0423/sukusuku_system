@@ -84,6 +84,41 @@ describe('午睡記録検索に、ねた・おきたの行と入眠時の体温�
   });
 });
 
+describe('午睡記録検索に、きょうは対象外とその理由の行を出す（画面詳細図「午睡記録検索画面」(5-3) の項目6）', () => {
+  it('押した時刻と理由を出し、確認・ねたの値は持たない。同じ時刻のねたより下。取り消したものは出さず、絞り込みと参照範囲はほかの行と同じ', async () => {
+    // 昨日の実施 2 に足す（デモの今日の対象外は、時計によっては起動時に外れる）。上園 花子は「ねた」と同じ時刻にする。宮城 美咲は取り消したもの
+    const s = demoSleep();
+    const date = sessionDateOf(2);
+    const added = [
+      { nap_exclusion_id: 900101, nap_session_id: 2, child_id: 'C002', reason: '2' as const, staff_id: 'S003', is_deleted: false, created_at: s.slept_at },
+      { nap_exclusion_id: 900102, nap_session_id: 2, child_id: 'C004', reason: '1' as const, staff_id: 'S003', is_deleted: true, created_at: `${date}T13:00:00` },
+    ];
+    db.napExclusions.push(...added);
+    const exclusionOf = (rows: NapSearchRow[], childId: string) => rows.filter((r) => r.kind === 'exclusion' && r.child_id === childId);
+    try {
+      const { rows } = await api.searchRecords(admin, { from: date, to: date, classId: 1 });
+      expect(exclusionOf(rows, 'C002')).toEqual([{
+        kind: 'exclusion', nap_record_id: null, nap_sleep_id: null, nap_exclusion_id: 900101, exclusion_reason: '2',
+        nap_session_id: 2, child_id: 'C002', checked_at: s.slept_at, saved_at: null,
+        body_position: null, breathing: null, complexion: null, temperature: null, sleep_temperature: null,
+        staff_id: 'S003', session_date: date, child_name: '上園 花子', class_name: 'さくら組', staff_name: '高梨 倫太朗',
+      }]);
+      expect(exclusionOf(rows, 'C004')).toHaveLength(0);
+      const sleepIdx = rows.findIndex((r) => r.kind === 'sleep' && r.nap_sleep_id === 8);
+      const exclusionIdx = rows.findIndex((r) => r.nap_exclusion_id === 900101);
+      expect(sleepIdx).toBeGreaterThanOrEqual(0);
+      expect(sleepIdx).toBeLessThan(exclusionIdx);
+
+      expect(exclusionOf((await api.searchRecords(admin, { classId: 2 })).rows, 'C002')).toHaveLength(0);
+      expect(exclusionOf((await api.searchRecords(admin, { childName: '野原' })).rows, 'C002')).toHaveLength(0);
+      expect(exclusionOf((await api.searchRecords(otherTeacher, {})).rows, 'C002')).toHaveLength(0);
+      expect(exclusionOf((await api.searchRecords(teacher, {})).rows, 'C002')).toHaveLength(1);
+    } finally {
+      for (const e of added) db.napExclusions.splice(db.napExclusions.indexOf(e), 1);
+    }
+  });
+});
+
 /* ============ 帳票（api.napReport） ============ */
 
 /** すべてのセルを " で囲んだ CSV を読む。セルの中の改行と "" を扱う */

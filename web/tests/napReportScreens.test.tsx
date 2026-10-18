@@ -68,6 +68,33 @@ describe('午睡記録検索画面に、ねた・おきたの行と入眠時の�
     expect(woke.textContent).not.toContain('36.5');
   });
 
+  it('きょうは対象外とその理由の行を出し、期間の初期値は直近1か月（当日の30日前〜当日）', async () => {
+    // 昨日の実施 2 に足す（デモの今日の対象外は、時計によっては起動時に外れる）
+    const yesterday = db.napSessions.find((s) => s.nap_session_id === 2)!.session_date;
+    const added = { nap_exclusion_id: 900201, nap_session_id: 2, child_id: 'C002', reason: '2' as const, staff_id: 'S003', is_deleted: false, created_at: `${yesterday}T13:00:00` };
+    db.napExclusions.push(added);
+    try {
+      open('/staff/nap/search', teacher);
+      await settled();
+      await waitFor(() => expect(document.querySelector('table.list tbody tr')).toBeTruthy(), { timeout: 3000 });
+
+      // 画面詳細図「午睡記録検索画面」(5-3) の項目1「開始＝当日の30日前、終了＝本日」
+      const [fromInput, toInput] = Array.from(document.querySelectorAll('input[type="date"]')) as HTMLInputElement[];
+      expect(fromInput.value).toBe(addDays(today(), -30));
+      expect(toInput.value).toBe(today());
+
+      // 体位・呼吸・顔色の3列をまとめて「きょうは対象外（理由）」。体温と保存時刻は「―」
+      const row = listRow('上園 花子', 'きょうは対象外（午睡なし）');
+      expect(row.textContent).toContain('13:00');
+      expect(row.textContent).toContain('高梨 倫太朗');
+      const cells = Array.from(row.querySelectorAll('td'));
+      expect(cells.find((td) => td.textContent === 'きょうは対象外（午睡なし）')?.getAttribute('colspan')).toBe('3');
+      expect(cells[cells.length - 1].textContent).toBe('―');
+    } finally {
+      db.napExclusions.splice(db.napExclusions.indexOf(added), 1);
+    }
+  });
+
   it('管理者の CSV は、サーバで作る帳票（ねたの体温・起票済みはヒヤリハット側の1行）を BOM を付けて保存する', async () => {
     let blob: Blob | null = null;
     let fileName = '';
@@ -88,9 +115,9 @@ describe('午睡記録検索画面に、ねた・おきたの行と入眠時の�
 
     // 「絞り込む」を押した時点の期間・クラス（管理者の初期値は「すべて」）で帳票を求める。画面が申告する件数の記録は呼ばない
     expect(reportSpy).toHaveBeenCalledTimes(1);
-    expect(reportSpy.mock.calls[0][1]).toEqual({ from: addDays(today(), -7), to: today(), classId: '', format: 'csv' });
+    expect(reportSpy.mock.calls[0][1]).toEqual({ from: addDays(today(), -30), to: today(), classId: '', format: 'csv' });
     expect(recordSpy).not.toHaveBeenCalled();
-    expect(fileName).toBe(`午睡記録_${addDays(today(), -7)}_${today()}.csv`);
+    expect(fileName).toBe(`午睡記録_${addDays(today(), -30)}_${today()}.csv`);
 
     // Excel で文字化けしないよう BOM（EF BB BF）を付ける。Blob の text() は BOM を外して読むため、バイトで確かめる
     const bytes = new Uint8Array(await blob!.arrayBuffer());

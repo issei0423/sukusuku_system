@@ -744,6 +744,8 @@ handleSearchNapRecords は午睡記録検索画面のためのデータを返す
 入眠時の体温（sleep_temperature）を出す（画面詳細図「午睡記録検索画面」(5-3) の項目6「園児ごとの入眠（ねた）と
 起床（おきた）、入眠時の体温（ねたの行）…も、その日の行に出す」、基本設計書「帳票の出力」(4-8)）。
 取り消した「ねた」（is_deleted = 1）は出さない。期間・クラス・園児名・参照範囲は確認の行と同じ規則で絞る。
+きょうは対象外とその理由（t_nap_exclusion）も、押した時刻の行として出す（同 (5-3) の項目6「きょうは対象外とその理由も、
+その日の行に出す」）。取り消した対象外は出さない。帳票（api_nap_report.go）と同じ行・同じ並び。
 画面側のモック（web/src/api/mock.ts の searchRecords）と同じ規則
 */
 func (a *app) handleSearchNapRecords(w http.ResponseWriter, r *http.Request) {
@@ -834,6 +836,33 @@ func (a *app) handleSearchNapRecords(w http.ResponseWriter, r *http.Request) {
 	}
 	sleeps.Close()
 
+	// きょうは対象外と理由（t_nap_exclusion）も、その日の行として出す。取り消した対象外は出さない
+	exclusions, err := a.db.Query(`SELECT e.nap_exclusion_id, e.nap_session_id, e.child_id, e.created_at, e.reason,
+		e.staff_id, s.session_date, s.class_id
+		FROM t_nap_exclusion e
+		JOIN t_nap_session s ON s.nap_session_id = e.nap_session_id
+		WHERE e.is_deleted = 0`+cond, args...)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "午睡の記録を取得できませんでした")
+		return
+	}
+	for exclusions.Next() {
+		var (
+			x           napSearchRow
+			exclusionID int64
+			reason      string
+		)
+		if exclusions.Scan(&exclusionID, &x.NapSessionID, &x.ChildID, &x.CheckedAt, &reason,
+			&x.StaffID, &x.SessionDate, &x.classID) != nil {
+			continue
+		}
+		x.Kind = napRowExclusion
+		x.NapExclusionID = &exclusionID
+		x.ExclusionReason = &reason
+		all = append(all, x)
+	}
+	exclusions.Close()
+
 	sortNapSearchRows(all)
 
 	nameFilter := strings.TrimSpace(r.URL.Query().Get("child_name"))
@@ -861,6 +890,8 @@ const (
 	napRowCheck = "check" // 5分ごとの確認（t_nap_record）
 	napRowSleep = "sleep" // ねた（t_nap_sleep の slept_at）
 	napRowWake  = "wake"  // おきた（t_nap_sleep の woke_at）
+	// きょうは対象外（t_nap_exclusion。押した時刻は created_at）
+	napRowExclusion = "exclusion"
 )
 
 /*
@@ -868,12 +899,15 @@ napSearchRow は午睡記録検索の1行。
 
 確認の行は、体位・呼吸・顔色・体温・保存時刻を持つ。ねた・おきたの行は、押した時刻（サーバの時刻）を
 checked_at に持ち、体位・呼吸・顔色・保存時刻は持たない（null）。入眠時の体温はねたの行だけに出す。
-入眠時の体温は監査の層の値であり、この経路は職員だけが呼べる（基本設計書「ねた・おきた（t_nap_sleep）」(5-7)）
+入眠時の体温は監査の層の値であり、この経路は職員だけが呼べる（基本設計書「ねた・おきた（t_nap_sleep）」(5-7)）。
+きょうは対象外の行は、押した時刻を checked_at に、理由（1:欠席 2:午睡なし）を exclusion_reason に持つ
 */
 type napSearchRow struct {
 	Kind             string   `json:"kind"`
 	NapRecordID      *int64   `json:"nap_record_id"`
 	NapSleepID       *int64   `json:"nap_sleep_id"`
+	NapExclusionID   *int64   `json:"nap_exclusion_id"`
+	ExclusionReason  *string  `json:"exclusion_reason"`
 	NapSessionID     int64    `json:"nap_session_id"`
 	ChildID          string   `json:"child_id"`
 	CheckedAt        string   `json:"checked_at"`
@@ -894,18 +928,21 @@ type napSearchRow struct {
 /*
 sortNapSearchRows は時刻の新しい順に並べる。
 
-【仮置き】同じ時刻の行は、おきた・確認・ねたの順にし、同じ種類は ID の小さい順にする（web/仮置き値.md
+【仮置き】同じ時刻の行は、おきた・確認・ねた・対象外の順にし、同じ種類は ID の小さい順にする（web/仮置き値.md
 「一覧の並び順」）。新しい順の一覧で、寝ている間の出来事を、ねたより上・おきたより下に置くため。
-画面側のモック（web/src/api/mock.ts の searchRecords）と同じ並び
+帳票（api_nap_report.go の napReportData）と同じ並び。画面側のモック（web/src/api/mock.ts の searchRecords）と同じ並び
 */
 func sortNapSearchRows(rows []napSearchRow) {
-	rank := map[string]int{napRowWake: 0, napRowCheck: 1, napRowSleep: 2}
+	rank := map[string]int{napRowWake: 0, napRowCheck: 1, napRowSleep: 2, napRowExclusion: 3}
 	id := func(x napSearchRow) int64 {
 		if x.NapRecordID != nil {
 			return *x.NapRecordID
 		}
 		if x.NapSleepID != nil {
 			return *x.NapSleepID
+		}
+		if x.NapExclusionID != nil {
+			return *x.NapExclusionID
 		}
 		return 0
 	}

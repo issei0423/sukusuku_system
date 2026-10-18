@@ -24,6 +24,8 @@ type napSearchPage struct {
 		Kind             string   `json:"kind"`
 		NapRecordID      *int64   `json:"nap_record_id"`
 		NapSleepID       *int64   `json:"nap_sleep_id"`
+		NapExclusionID   *int64   `json:"nap_exclusion_id"`
+		ExclusionReason  *string  `json:"exclusion_reason"`
 		ChildID          string   `json:"child_id"`
 		CheckedAt        string   `json:"checked_at"`
 		SavedAt          *string  `json:"saved_at"`
@@ -129,6 +131,84 @@ func TestNapSearchSleepRowsFollowFiltersAndScope(t *testing.T) {
 	}
 	if has(searchNap(t, h, admin, ""), 8) {
 		t.Fatal("取り消したねた・おきたが出ています")
+	}
+}
+
+// 午睡記録検索に「きょうは対象外」とその理由の行を出す（画面詳細図「午睡記録検索画面」(5-3) の項目6）。
+// 帳票と同じ行・同じ並び（同じ時刻は、おきた・確認・ねた・対象外の順）。取り消した対象外は出さない
+func TestNapSearchShowsExclusionRows(t *testing.T) {
+	a, h := newTestApp(t)
+	admin := loginAs(a, 1, "staff")
+	teacher := loginAs(a, 3, "staff") // さくら組の担任
+	kinjo := loginAs(a, 5, "staff")   // ひまわり組
+	_, yesterday, _ := demoNapDates(t, a)
+	var sleptAt string
+	if err := a.db.QueryRow(`SELECT slept_at FROM t_nap_sleep WHERE nap_sleep_id = 8`).Scan(&sleptAt); err != nil {
+		t.Fatal(err)
+	}
+	// 昨日の実施 2 に足す（デモの今日の対象外は、テストを夜中に回すと起動時に外れる）。
+	// 上園 花子は「ねた」と同じ時刻にして並びを確かめる。宮城 美咲は取り消したもの
+	res, err := a.db.Exec(`INSERT INTO t_nap_exclusion (nap_session_id, child_id, reason, staff_id, is_deleted, created_at) VALUES
+		(2, 'C002', '2', 'S003', 0, ?)`, sleptAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exclusionID, _ := res.LastInsertId()
+	if _, err := a.db.Exec(`INSERT INTO t_nap_exclusion (nap_session_id, child_id, reason, staff_id, is_deleted, created_at) VALUES
+		(2, 'C004', '1', 'S003', 1, ?)`, yesterday+"T13:00:00"); err != nil {
+		t.Fatal(err)
+	}
+
+	find := func(p napSearchPage, childID string) []int {
+		idx := []int{}
+		for i, r := range p.Rows {
+			if r.Kind == "exclusion" && r.ChildID == childID {
+				idx = append(idx, i)
+			}
+		}
+		return idx
+	}
+
+	p := searchNap(t, h, admin, "?from="+yesterday+"&to="+yesterday+"&class_id=1")
+	got := find(p, "C002")
+	if len(got) != 1 {
+		t.Fatalf("対象外の行が1行ではありません: %+v", p.Rows)
+	}
+	x := p.Rows[got[0]]
+	if x.NapExclusionID == nil || *x.NapExclusionID != exclusionID || x.ExclusionReason == nil || *x.ExclusionReason != "2" ||
+		x.CheckedAt != sleptAt || x.SessionDate != yesterday || x.StaffName != "高梨 倫太朗" || x.ClassName != "さくら組" {
+		t.Fatalf("対象外の行の値が正しくありません: %+v", x)
+	}
+	if x.NapRecordID != nil || x.NapSleepID != nil || x.SavedAt != nil || x.BodyPosition != nil ||
+		x.Temperature != nil || x.SleepTemperature != nil {
+		t.Fatalf("対象外の行に確認・ねたの値が入っています: %+v", x)
+	}
+	if len(find(p, "C004")) != 0 {
+		t.Fatal("取り消した対象外が出ています")
+	}
+	// 同じ時刻の「ねた」（野原 太郎）より下に出る
+	sleepIdx := -1
+	for i, r := range p.Rows {
+		if r.Kind == "sleep" && r.NapSleepID != nil && *r.NapSleepID == 8 {
+			sleepIdx = i
+		}
+	}
+	if sleepIdx < 0 || sleepIdx > got[0] {
+		t.Fatalf("同じ時刻の行が、ねた・対象外の順になっていません（ねた %d、対象外 %d）", sleepIdx, got[0])
+	}
+
+	// 絞り込みと参照範囲は、ほかの行と同じ
+	if len(find(searchNap(t, h, admin, "?class_id=2"), "C002")) != 0 {
+		t.Fatal("クラスで絞っても、ほかのクラスの対象外が出ています")
+	}
+	if len(find(searchNap(t, h, admin, "?child_name=野原"), "C002")) != 0 {
+		t.Fatal("園児名で絞っても、ほかの園児の対象外が出ています")
+	}
+	if len(find(searchNap(t, h, kinjo, ""), "C002")) != 0 {
+		t.Fatal("一般（保育士）に、ほかのクラスの園児の対象外が出ています")
+	}
+	if len(find(searchNap(t, h, teacher, ""), "C002")) != 1 {
+		t.Fatal("担任に、自クラスの園児の対象外が出ていません")
 	}
 }
 

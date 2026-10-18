@@ -32,7 +32,7 @@ import { emitLive } from '../live';
 import type { LiveEvent } from '../live';
 import type { NapAbnormalRow, NapSearchRow } from './shapes';
 import {
-  EXCLUSION_REASON_LABEL, NAP_REPORT_MSG, SLEEP_ROW_LABEL, napReportCsv, reportTemperature, sortReportAbnormals, sortReportLines,
+  NAP_REPORT_MSG, SLEEP_ROW_LABEL, exclusionRowLabel, napReportCsv, reportTemperature, sortReportAbnormals, sortReportLines,
 } from './napReport';
 import type { NapReportAbnormal, NapReportFilter, NapReportLine } from './napReport';
 import type {
@@ -1809,6 +1809,7 @@ const napApi2 = {
    * 入眠時の体温（sleep_temperature）を出す（画面詳細図「午睡記録検索画面」(5-3) の項目6「園児ごとの入眠（ねた）と
    * 起床（おきた）、入眠時の体温（ねたの行）…も、その日の行に出す」、基本設計書「帳票の出力」(4-8)）。
    * 取り消した「ねた」は出さない。期間・クラス・園児名・参照範囲は確認の行と同じ規則で絞る。
+   * きょうは対象外とその理由も、押した時刻の行として出す（同 (5-3) の項目6）。帳票（napReport）と同じ行・同じ並び。
    * サーバ側は server/api_nap.go の handleSearchNapRecords
    */
   async searchRecords(
@@ -1839,7 +1840,7 @@ const napApi2 = {
         ...base(r.nap_session_id, r.child_id, r.checked_at, r.staff_id),
         kind: 'check' as const, nap_record_id: r.nap_record_id, nap_sleep_id: null, saved_at: r.saved_at,
         body_position: r.body_position, breathing: r.breathing, complexion: r.complexion,
-        temperature: r.temperature, sleep_temperature: null,
+        temperature: r.temperature, sleep_temperature: null, nap_exclusion_id: null, exclusion_reason: null,
       }));
     const sleepRows = db.napSleeps
       .filter((s) => !s.is_deleted && visible.has(s.child_id))
@@ -1847,6 +1848,7 @@ const napApi2 = {
         const blank = {
           nap_record_id: null, nap_sleep_id: s.nap_sleep_id, saved_at: null,
           body_position: null, breathing: null, complexion: null, temperature: null,
+          nap_exclusion_id: null, exclusion_reason: null,
         };
         const slept = {
           ...base(s.nap_session_id, s.child_id, s.slept_at, s.slept_staff_id), ...blank,
@@ -1858,17 +1860,26 @@ const napApi2 = {
           kind: 'wake' as const, sleep_temperature: null,
         }];
       });
-    let rows = [...checks, ...sleepRows];
+    // きょうは対象外と理由も、押した時刻の行として出す（画面詳細図「午睡記録検索画面」(5-3) の項目6）。取り消したものは出さない
+    const exclusionRows = db.napExclusions
+      .filter((e) => !e.is_deleted && visible.has(e.child_id))
+      .map((e) => ({
+        ...base(e.nap_session_id, e.child_id, e.created_at, e.staff_id),
+        kind: 'exclusion' as const, nap_record_id: null, nap_sleep_id: null, saved_at: null,
+        body_position: null, breathing: null, complexion: null, temperature: null, sleep_temperature: null,
+        nap_exclusion_id: e.nap_exclusion_id, exclusion_reason: e.reason,
+      }));
+    let rows = [...checks, ...sleepRows, ...exclusionRows];
 
     if (f.from) rows = rows.filter((r) => r.session_date >= f.from!);
     if (f.to) rows = rows.filter((r) => r.session_date <= f.to!);
     if (f.classId) rows = rows.filter((r) => r._class_id === f.classId);
     if (f.childName) rows = rows.filter((r) => r.child_name.includes(f.childName!.trim()));
 
-    // 【仮置き】時刻の新しい順。同じ時刻は、おきた・確認・ねたの順、同じ種類は ID の小さい順（web/仮置き値.md「一覧の並び順」）。
-    // サーバ側の server/api_nap.go の sortNapSearchRows と同じ並び
-    const rank = { wake: 0, check: 1, sleep: 2 };
-    const idOf = (r: (typeof rows)[number]) => r.nap_record_id ?? r.nap_sleep_id ?? 0;
+    // 【仮置き】時刻の新しい順。同じ時刻は、おきた・確認・ねた・対象外の順、同じ種類は ID の小さい順（web/仮置き値.md「一覧の並び順」）。
+    // サーバ側の server/api_nap.go の sortNapSearchRows、帳票（api/napReport.ts の sortReportLines）と同じ並び
+    const rank = { wake: 0, check: 1, sleep: 2, exclusion: 3 };
+    const idOf = (r: (typeof rows)[number]) => r.nap_record_id ?? r.nap_sleep_id ?? r.nap_exclusion_id ?? 0;
     rows.sort((a, b) => b.checked_at.localeCompare(a.checked_at) || rank[a.kind] - rank[b.kind] || idOf(a) - idOf(b));
     const page = f.page ?? 1;
     const out: NapSearchRow[] = rows.map(({ _class_id: _drop, ...r }) => r);
@@ -1926,7 +1937,7 @@ const napApi2 = {
       const [date, child, cls] = head(e.nap_session_id, e.child_id);
       // 【仮置き】対象外は、体位の列に「きょうは対象外（理由）」を入れて1行で出す（web/仮置き値.md「午睡の帳票」）
       lines.push({ kind: 'exclusion', id: e.nap_exclusion_id, at: e.created_at, cells: [
-        date, e.created_at, child, cls, `きょうは対象外（${EXCLUSION_REASON_LABEL[e.reason]}）`, '', '', '', staffName(e.staff_id), '',
+        date, e.created_at, child, cls, exclusionRowLabel(e.reason), '', '', '', staffName(e.staff_id), '',
       ] });
     }
     // 「修正あり」の列は置くが、いまは空。午睡チェックの記録を修正する機能が、サーバにもモックにも無いため

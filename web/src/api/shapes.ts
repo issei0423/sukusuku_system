@@ -135,20 +135,25 @@ export interface NapAbnormalRow {
 }
 
 /**
- * 午睡記録検索の行の種類。check は5分ごとの確認（t_nap_record）、sleep は「ねた」、wake は「おきた」（t_nap_sleep）
- * （画面詳細図「午睡記録検索画面」(5-3) の項目6「園児ごとの入眠（ねた）と起床（おきた）、入眠時の体温（ねたの行）…も、その日の行に出す」）
+ * 午睡記録検索の行の種類。check は5分ごとの確認（t_nap_record）、sleep は「ねた」、wake は「おきた」（t_nap_sleep）、
+ * exclusion は「きょうは対象外」（t_nap_exclusion）
+ * （画面詳細図「午睡記録検索画面」(5-3) の項目6「園児ごとの入眠（ねた）と起床（おきた）、入眠時の体温（ねたの行）、
+ * きょうは対象外とその理由も、その日の行に出す」）
  */
-export type NapSearchRowKind = 'check' | 'sleep' | 'wake';
+export type NapSearchRowKind = 'check' | 'sleep' | 'wake' | 'exclusion';
 
 /**
- * 午睡記録検索の1行。確認の行は体位・呼吸・顔色・体温・保存時刻を持つ。ねた・おきたの行は押した時刻（サーバの時刻）を
- * checked_at に持ち、体位・呼吸・顔色・保存時刻は null。入眠時の体温（sleep_temperature）はねたの行だけに入る。
+ * 午睡記録検索の1行。確認の行は体位・呼吸・顔色・体温・保存時刻を持つ。ねた・おきた・対象外の行は押した時刻（サーバの時刻）を
+ * checked_at に持ち、体位・呼吸・顔色・保存時刻は null。入眠時の体温（sleep_temperature）はねたの行だけに、
+ * 対象外の理由（exclusion_reason。1:欠席 2:午睡なし）は対象外の行だけに入る。
  * 職員だけの経路（GET /api/nap/records）で返す
  */
 export interface NapSearchRow {
   kind: NapSearchRowKind;
   nap_record_id: number | null;
   nap_sleep_id: number | null;
+  nap_exclusion_id: number | null;
+  exclusion_reason: '1' | '2' | null;
   nap_session_id: number;
   child_id: string;
   checked_at: string;
