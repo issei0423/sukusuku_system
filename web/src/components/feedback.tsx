@@ -8,7 +8,7 @@
  * 確認ダイアログ（ConfirmDialog）：1回押すだけで確定させない（GitHub Issue #107）。
  *   何が起きるかは呼び出し側が文章で書く。
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Modal } from './ui';
 
@@ -81,23 +81,49 @@ export function ToastHost() {
       .catch((e: Error) => setConfirming((c) => (c ? { ...c, busy: false, error: e.message } : c)));
   };
 
+  /*
+   * 時間が来たら自分で消える。ただし、フォーカスがあるあいだ・ポインタが乗っているあいだは消すまでの時間を止め、
+   * 離れたら残りの時間から数え直す。キーボードで「取り消す」へ移るあいだや、読んでいるあいだに消えて、
+   * フォーカスと取り消す機会を失わないようにする（WCAG 2.2.1 タイミング調整可能、GitHub Issue #210 の 2）
+   */
+  const [hold, setHold] = useState({ focus: false, pointer: false });
+  const box = useRef<HTMLDivElement>(null);
+  const left = useRef<{ seq: number; ms: number } | null>(null);
+
   useEffect(() => {
-    listeners.add(setToast);
-    return () => { listeners.delete(setToast); };
+    // 知らせが消えたら、止めていたことも忘れる（消えた表示からは、離れた知らせが届かないため）
+    const onToast = (next: Toast | null) => { setToast(next); if (!next) setHold({ focus: false, pointer: false }); };
+    listeners.add(onToast);
+    return () => { listeners.delete(onToast); };
   }, []);
 
-  // 時間が来たら自分で消える
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => { if (current?.seq === toast.seq) publish(null); }, Math.max(0, toast.until - Date.now()));
-    return () => clearTimeout(t);
-  }, [toast]);
+    // フォーカスのあった部品が知らせの差し替えで消えると、離れた知らせが届かない。いまも中にあるかを見る
+    const held = hold.pointer || (hold.focus && !!box.current?.contains(document.activeElement));
+    if (held) {
+      // 止めた時点の残りを覚える（同じ知らせのあいだに何度止めても、残りから数える）
+      if (left.current?.seq !== toast.seq) left.current = { seq: toast.seq, ms: Math.max(0, toast.until - Date.now()) };
+      return;
+    }
+    const rest = left.current?.seq === toast.seq ? left.current.ms : Math.max(0, toast.until - Date.now());
+    const startedAt = Date.now();
+    const t = setTimeout(() => { if (current?.seq === toast.seq) publish(null); }, rest);
+    return () => {
+      clearTimeout(t);
+      left.current = { seq: toast.seq, ms: Math.max(0, rest - (Date.now() - startedAt)) };
+    };
+  }, [toast, hold]);
 
   if (!toast && !confirming) return null;
   return (
     <>
       {toast && (
-        <div className="toast" role="status" aria-live="polite">
+        <div ref={box} className="toast" role="status" aria-live="polite"
+          onFocus={() => setHold((h) => ({ ...h, focus: true }))}
+          onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setHold((h) => ({ ...h, focus: false })); }}
+          onPointerEnter={() => setHold((h) => ({ ...h, pointer: true }))}
+          onPointerLeave={() => setHold((h) => ({ ...h, pointer: false }))}>
           <span>{toast.text}</span>
           {toast.action && (
             <button className="btn-sm btn-quiet" onClick={() => openConfirm(toast.action!)}>{toast.action.label}</button>
