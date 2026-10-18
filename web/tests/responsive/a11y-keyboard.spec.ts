@@ -78,8 +78,10 @@ for (const { tag, scene, email, home } of [
 test('[staff] keyboard-nap-temperature — 体温パネルを Enter で開き、Esc で閉じるとフォーカスが元へ戻る', async ({ page }) => {
   await open(page, 'nap');
   const row = page.getByRole('region', { name: '伊藤 葵の午睡チェック' });
-  const button = row.getByRole('button', { name: '伊藤 葵の体温を選ぶ' });
+  // 名前は、見えている文字「体温 未測定」に氏名を添えたもの。値を選ぶと名前も変わるので、頭で探す（Issue #207）
+  const button = row.getByRole('button', { name: /^伊藤 葵の体温/ });
   const dialog = page.getByRole('dialog', { name: '伊藤 葵の体温' });
+  await expect(button).toHaveAccessibleName('伊藤 葵の体温 未測定');
   await tabTo(page, button);
 
   await page.keyboard.press('Enter');
@@ -104,6 +106,7 @@ test('[staff] keyboard-nap-temperature — 体温パネルを Enter で開き、
   await expect(dialog).toHaveCount(0);
   await expect(button).toBeFocused();
   await expect(button).toContainText('36.5℃');
+  await expect(button).toHaveAccessibleName('伊藤 葵の体温 36.5℃');
 });
 
 test('[guardian] keyboard-guardian-menu — 保護者のメニューを開いて閉じると、フォーカスが元へ戻る', async ({ page }) => {

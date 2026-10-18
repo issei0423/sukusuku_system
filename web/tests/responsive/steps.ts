@@ -25,7 +25,7 @@ export async function performAction(page: Page, scenario: Scenario, touch: boole
   const row = page.getByRole('region', { name: '伊藤 葵の午睡チェック' });
   await expect(row).toBeVisible();
   if (scenario.action.startsWith('temperature')) {
-    await press(row.getByRole('button', { name: '伊藤 葵の体温を選ぶ' }));
+    await press(row.getByRole('button', { name: '伊藤 葵の体温 未測定', exact: true }));
     const dialog = page.getByRole('dialog', { name: '伊藤 葵の体温' });
     await expect(dialog).toBeVisible();
     // 体温パネルを開くだけでソフトウェアキーボードを呼ばない。

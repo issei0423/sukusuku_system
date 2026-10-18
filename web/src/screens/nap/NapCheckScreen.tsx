@@ -284,6 +284,8 @@ function NapRecordRow({ row, sessionId, due, onSaved }: {
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
 
+  const temperatureText = `体温 ${temperature === null ? '未測定' : `${temperature.toFixed(1)}℃`}`;
+
   return (
     <section className={`nap-card nap-record-row${!row.latest || due ? ' unrecorded' : ''}`} aria-label={`${name}の午睡チェック`}>
       <div className="nap-row-head">
@@ -306,9 +308,16 @@ function NapRecordRow({ row, sessionId, due, onSaved }: {
       {error && <Alert>{error}</Alert>}
 
       <div className="nap-row-actions">
+        {/*
+          読み上げの名前は「（氏名）の体温 未測定」「（氏名）の体温 36.5℃」。見えている文字をそのまま名前に含め、
+          氏名を前に添える。見えている文字を名前に入れないと、いまの値が読み上げに入らず、
+          見えている文字で音声操作もできない（WCAG 2.5.3 ラベルの中の名前、GitHub Issue #207）。
+          氏名を .sr-only の要素で添えると、Chromium は要素の境目に空白を足し「（氏名）の 体温」になるため、
+          見えている文字と同じ文字列から aria-label を作る
+        */}
         <button type="button" className="nap-temperature-button" onClick={() => setTemperatureOpen(true)}
-          aria-label={`${name}の体温を選ぶ`}>
-          体温 {temperature === null ? '未測定' : `${temperature.toFixed(1)}℃`}
+          aria-label={`${name}の${temperatureText}`}>
+          {temperatureText}
         </button>
         {temperature !== null && <button type="button" className="btn-quiet btn-sm" onClick={() => setTemperature(null)}>体温を消す</button>}
         <div className="spacer" />
