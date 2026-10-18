@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 )
 
@@ -31,9 +32,10 @@ func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
 	 * ログアウトを促して終了する。新しいセッションは作らない。上書きログインは設けない
 	 * （基本設計書「ログイン」(4-3)、要件定義書「同時ログインの扱い」(4-1-1)）。
 	 * 画面（TopScreen）もログイン中は入力欄を出さないが、ログインより前に開いておいた別のタブからは
-	 * 送れてしまうため、サーバで止める（GitHub Issue #159）。案内にログイン中の氏名・ロールは出さない
+	 * 送れてしまうため、サーバで止める（GitHub Issue #159）。案内にログイン中の氏名・ロールは出さない。
+	 * 自動ログアウトで切れたセッションは、ログイン中とみなさない（GitHub Issue #210）
 	 */
-	if _, ok := a.sessions.accountID(r); ok {
+	if _, ok := a.sessionAccount(r); ok {
 		writeAlreadyLoggedIn(w)
 		return
 	}
@@ -160,12 +162,12 @@ func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	a.db.Exec(`UPDATE m_account SET failed_login_count = 0, locked_until = NULL WHERE account_id = ?`, accountID)
 
-	// ログイン状態を保持するかで有効期間を変える
-	ttl := a.settingInt("ui.auto_logout_minutes", 30)
-	if req.Remember {
-		ttl = a.settingInt("auth.remember_days", 30) * 24 * 60
-	}
-	a.sessions.create(w, accountID, req.Entrance, ttl)
+	/*
+	 * 自動ログアウト（最後の操作から数える）は職員の画面に限る。保護者には課さず、「ログイン情報の記憶」の期間だけで
+	 * 制限する（基本設計書「ログイン」(4-3)、要件定義書「『ログイン情報の記憶』と自動ログアウトの関係」(4-1-4 (4))）。
+	 * 記憶を付けた職員にも自動ログアウトを課す（同「自動ログアウトを優先する」）。期限の判定は session.go の sessionAccount
+	 */
+	a.sessions.create(w, accountID, req.Entrance, isStaffAccount, req.Remember, a.rememberPeriod())
 
 	u, err := a.loadSessionUser(accountID)
 	if err != nil {
@@ -178,7 +180,7 @@ func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
 func (a *app) handleLogout(w http.ResponseWriter, r *http.Request) {
 	// 編集ロックを持ったままログアウトすると、ほかの職員が無操作の経過まで保存できなくなる。
 	// ログアウトは編集の終了であり、保持しているロックをすべて外す（基本設計書「編集ロックの解除」(4-5)）
-	if accountID, ok := a.sessions.accountID(r); ok {
+	if accountID, ok := a.sessionAccount(r); ok {
 		a.db.Exec(`DELETE FROM t_diary_lock WHERE locked_staff_id =
 			(SELECT staff_id FROM m_staff WHERE account_id = ?)`, accountID)
 	}
@@ -412,7 +414,7 @@ type signUpRequest struct {
 func (a *app) handleSignUpGuardian(w http.ResponseWriter, r *http.Request) {
 	// ログイン中は新しいアカウントを作らせない。登録が成立するとセッションが新しい保護者に置き換わり、
 	// 上書きログインと同じことになる（基本設計書「ログイン」(4-3)。GitHub Issue #159）
-	if _, ok := a.sessions.accountID(r); ok {
+	if _, ok := a.sessionAccount(r); ok {
 		writeAlreadyLoggedIn(w)
 		return
 	}
@@ -549,9 +551,16 @@ func (a *app) handleSignUpGuardian(w http.ResponseWriter, r *http.Request) {
 	a.log(accountID, fnAccount, opCreate, "m_account", i64(accountID), s(code.ChildID), nil,
 		s("保護者アカウントを自己登録"))
 
-	a.sessions.create(w, accountID, "guardian", a.settingInt("ui.auto_logout_minutes", 30))
+	// 保護者なので自動ログアウトは課さない。登録の画面には記憶の選択肢が無いため、記憶を付けないログインと同じにする
+	// （【仮置き】web/仮置き値.md）
+	a.sessions.create(w, accountID, "guardian", false, false, a.rememberPeriod())
 	u, _ := a.loadSessionUser(accountID)
 	writeJSON(w, http.StatusOK, u)
+}
+
+// rememberPeriod は「ログイン情報の記憶」の保存期間（auth.remember_days）。ログインを保つ上限に使う（session.go の expiresAt）
+func (a *app) rememberPeriod() time.Duration {
+	return time.Duration(a.settingInt("auth.remember_days", 30)) * 24 * time.Hour
 }
 
 // writeAlreadyLoggedIn は、ログイン中に新しいログイン・新規登録を受けたときの応答。

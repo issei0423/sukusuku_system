@@ -22,6 +22,7 @@ import type {
 import {
   ProcedureRequiredError, isProcedureKind, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
 } from './procedure';
+import { AUTO_REFRESH_HEADER, isAutomatic } from './automatic';
 
 // 画面はこれまでどおり client 経由で型を参照する。定義の実体は shapes.ts が持つ
 export type {
@@ -43,13 +44,20 @@ class ApiError extends Error {
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  /*
+   * 裏の読み直しには印を付け、職員の自動ログアウトの「操作」に数えさせない（api/automatic.ts。GitHub Issue #210）。
+   * await より前に読む。読み直しの関数がその場で始めた要求だけに付けるため
+   */
+  if (isAutomatic()) headers[AUTO_REFRESH_HEADER] = '1';
   const res = await fetch(path, {
     method,
     // セッションの Cookie を送る。認証情報の保持方式は未確定（要決定事項.md 優先度A）
     credentials: 'same-origin',
     // 編集ロックの解除は、タブを閉じる・読み込み直す途中にも送る。途中で打ち切られないようにする
     keepalive: method === 'DELETE',
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    headers: Object.keys(headers).length > 0 ? headers : undefined,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 

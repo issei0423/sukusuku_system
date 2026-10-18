@@ -38,6 +38,12 @@ export { onProcedureRequired } from './procedure';
 /** ログイン中のセッションがサーバに切られたことの知らせ（停止・紐づけの解除など。GitHub Issue #159） */
 export { onSessionEnded } from './procedure';
 
+/**
+ * 裏の読み直しとして要求を送る。職員の自動ログアウトの「操作」に数えさせない（GitHub Issue #210）。
+ * http は印の見出しを付ける。モックにはセッションの期限が無いので、そのまま呼ぶのと同じ
+ */
+export { asAutomatic } from './automatic';
+
 /** いまどちらの実装で動いているか。画面の注記に使う */
 export const backend: 'http' | 'mock' = useMock ? 'mock' : 'http';
 

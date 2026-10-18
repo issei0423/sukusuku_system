@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
+import { asAutomatic } from './api/client';
 
 /**
  * 開いたままの画面で、ほかの人の操作（保護者からのチャット、職員の返信・承認など）を拾うために
@@ -71,7 +72,12 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[], options: Asyn
     }
     const gen = generation.current;
     backgroundBusy.current = true;
-    latestFn.current()
+    /*
+     * 裏の読み直しは利用者の操作ではない。印を付けて送り、職員の自動ログアウトを延ばさせない
+     * （api/automatic.ts、server/session.go の countsAsOperation。GitHub Issue #210）。
+     * 自分の操作のあとの refresh も印が付くが、その操作の要求でもう延びている
+     */
+    asAutomatic(() => latestFn.current())
       .then(
         (v) => {
           if (gen !== generation.current) return;
