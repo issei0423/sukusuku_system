@@ -21,11 +21,11 @@ import type {
   DevDraftView,
   ContactPage, ContactClassView, ContactHome, ContactHomeInput, NapSleep, NapExclusion,
 } from './shapes';
+import type { SendPhotoInput, SendPhotoResult } from './shapes';
 import type {
   ContactEvent, ContactEventInput, RecordEventsResult, ContactEventCorrection, NapSleepCorrection, CancelResult, Readers,
   ContactFacility, FacilityCorrection, Phrase, NameMatch,
 } from './shapes';
-import type { SendPhotoInput, SendPhotoResult } from './shapes';
 import {
   ProcedureRequiredError, isProcedureKind, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
 } from './procedure';
@@ -667,8 +667,30 @@ const apiHandout = {
 };
 
 /* ============ 画面が使う入口 ============ */
+/* 連絡帳の写真（詳細設計書「きょうのようす」(4-4 (2))・(4-4 (3))。名前はモック（api/mock.ts の contactPhotoApi）と同じ） */
+const contactPhotoApi = {
+  /** 写真を送る（multipart/form-data）。写っている子・承諾した名前はカンマ区切りで送る */
+  sendPhoto: (_u: SessionUser, input: SendPhotoInput) => {
+    const form = new FormData();
+    form.append('file', input.file);
+    form.append('subject_child_ids', input.subject_child_ids.join(','));
+    if (input.target_child_id) form.append('target_child_id', input.target_child_id);
+    if (input.body) form.append('body', input.body);
+    form.append('keep_in_growth', input.keep_in_growth ? '1' : '0');
+    form.append('acknowledged_names', (input.acknowledged_names ?? []).join(','));
+    return post<SendPhotoResult>('/api/contact/photos', form);
+  },
+  /**
+   * 写真の実体の URL。画面は <img src> に使う（Cookie が送られる）。見てよいかの判定は、サーバが実体を返すときに行う
+   * （取り消した写真・条件に合わない写真は 403「この写真は開けません。」）
+   */
+  photoUrl: (_u: SessionUser, photoId: number) => Promise.resolve(`/api/contact/photos/${photoId}`),
+};
+
 /* 連絡帳と、ねた・おきた（詳細設計書「経路の一覧」(4-2)。名前はモック（api/mock.ts の contactApi）と同じ） */
 const contactApi = {
+  // 写真の2つ（上の contactPhotoApi）も、連絡帳の経路として画面へ出す
+  ...contactPhotoApi,
   contactPage: (_u: SessionUser, childId: string, date?: string) =>
     get<ContactPage>(`/api/contact/children/${encodeURIComponent(childId)}${date ? qs({ date }) : ''}`),
   markContactRead: (_u: SessionUser, childId: string, date: string) =>
@@ -709,24 +731,4 @@ const contactApi = {
   contactPhrases: (_u: SessionUser, scope: Phrase['phrase_scope']) => get<Phrase[]>(`/api/phrases${qs({ scope })}`),
 };
 
-/* 連絡帳の写真（詳細設計書「きょうのようす」(4-4 (2))・(4-4 (3))。名前はモック（api/mock.ts の contactPhotoApi）と同じ） */
-const contactPhotoApi = {
-  /** 写真を送る（multipart/form-data）。写っている子・承諾した名前はカンマ区切りで送る */
-  sendPhoto: (_u: SessionUser, input: SendPhotoInput) => {
-    const form = new FormData();
-    form.append('file', input.file);
-    form.append('subject_child_ids', input.subject_child_ids.join(','));
-    if (input.target_child_id) form.append('target_child_id', input.target_child_id);
-    if (input.body) form.append('body', input.body);
-    form.append('keep_in_growth', input.keep_in_growth ? '1' : '0');
-    form.append('acknowledged_names', (input.acknowledged_names ?? []).join(','));
-    return post<SendPhotoResult>('/api/contact/photos', form);
-  },
-  /**
-   * 写真の実体の URL。画面は <img src> に使う（Cookie が送られる）。見てよいかの判定は、サーバが実体を返すときに行う
-   * （取り消した写真・条件に合わない写真は 403「この写真は開けません。」）
-   */
-  photoUrl: (_u: SessionUser, photoId: number) => Promise.resolve(`/api/contact/photos/${photoId}`),
-};
-
-export const api = { ...apiAuth, ...apiChatNap, ...apiGrowth, ...apiAdmin, ...apiHandout, ...contactApi, ...contactPhotoApi };
+export const api = { ...apiAuth, ...apiChatNap, ...apiGrowth, ...apiAdmin, ...apiHandout, ...contactApi };

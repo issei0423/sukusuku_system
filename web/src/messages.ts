@@ -31,6 +31,11 @@ export const MSG = {
   excludeAfterSleep: '『ねた』を記録した園児は対象外にできません。',
   /** 【仮置き】対象外が既にあるとき。設計に文言が無い（web/仮置き値.md） */
   excludedTwice: 'すでに対象外になっています。画面を読み込み直してください。',
+  /* 連絡帳の写真（server/messages.go と同じ。詳細設計書 (4-4 (2))・(4-4 (3))・「本書で足す文言」(4-1 (6))） */
+  photoForbidden: 'この写真は開けません。',
+  /** 設定（attachment.max_size_mb）を変えても文言は変えない（設計の文言のまま） */
+  photoFormat: '写真は JPEG・PNG で、10MB までです。',
+  photoSubjectRequired: '写っている子を選んでください。子どもが写っていないときは『子どもは写っていない』を選んでください。',
   /* きょうのようすの記録と、訂正・取り消し（server/messages.go と同じ。詳細設計書 (4-4)・(4-7)） */
   badRequest: 'リクエストの内容を読み取れませんでした',
   eventTimeRange: '時刻は、その日の0時からいままでで選んでください。',
@@ -44,11 +49,6 @@ export const MSG = {
   facilityTooLong: '園からのひとことは500文字以内で入力してください。',
   facilitySent: 'この日の園からは、もう送られています。直すときは送られた文の「直す」から行ってください。',
   commentTooLong: 'ひとことは200文字以内で入力してください。',
-  /* 連絡帳の写真（server/messages.go と同じ。詳細設計書 (4-4 (2))・(4-4 (3))・「本書で足す文言」(4-1 (6))） */
-  photoForbidden: 'この写真は開けません。',
-  /** 設定（attachment.max_size_mb）を変えても文言は変えない（設計の文言のまま） */
-  photoFormat: '写真は JPEG・PNG で、10MB までです。',
-  photoSubjectRequired: '写っている子を選んでください。子どもが写っていないときは『子どもは写っていない』を選んでください。',
 } as const;
 
 /** 他児の名前の注意（基本設計書「メッセージ一覧」(4-12)。server/namecheck.go の otherNamesMessage と同じ） */

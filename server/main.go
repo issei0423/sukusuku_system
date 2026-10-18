@@ -15,21 +15,21 @@ import (
 type app struct {
 	db       *sql.DB
 	sessions *sessionStore
+	// 添付ファイルの実体を置く場所（起動の引数 -files）。公開ディレクトリには置かず、権限の判定を通してから配信する
+	// （基本設計書「添付ファイルの実体の保存先」(5-6)、詳細設計書「写真」(4-4 (2))）。空なら既定の files（photoRoot）
+	filesDir string
 	// 開いている画面への知らせ（events.go）。init で用意する
 	live                *liveHub
 	currentTermsVersion string
 	// 最新版の規約のID。同意履歴（t_terms_agreement）へ記録するときに使う
 	currentTermsID int64
-	// 添付ファイルの実体を置く場所（起動の引数 -files）。公開ディレクトリには置かず、権限の判定を通してから配信する
-	// （基本設計書「添付ファイルの実体の保存先」(5-6)、詳細設計書「写真」(4-4 (2))）。空なら既定の files（photoRoot）
-	filesDir string
 }
 
 func main() {
 	addr := flag.String("addr", ":8080", "待ち受けるアドレス")
+	filesDir := flag.String("files", defaultFilesDir, "添付ファイル（連絡帳の写真）の実体を置くディレクトリ")
 	dbPath := flag.String("db", "sukusuku.db", "SQLite のファイル")
 	webDir := flag.String("web", "../web/dist", "配信する静的ファイルのディレクトリ")
-	filesDir := flag.String("files", defaultFilesDir, "添付ファイル（連絡帳の写真）の実体を置くディレクトリ")
 	flag.Parse()
 
 	db, err := openDB(*dbPath)
@@ -49,7 +49,6 @@ func main() {
 
 	log.Printf("すくすくシステム サーバを起動します http://localhost%s", *addr)
 	log.Printf("データベース: %s", *dbPath)
-	log.Printf("添付ファイル: %s", *filesDir)
 	// 状態を変える要求は送信元を確かめてから通す（csrf.go）
 	if err := http.ListenAndServe(*addr, checkOrigin(mux)); err != nil {
 		log.Fatal(err)

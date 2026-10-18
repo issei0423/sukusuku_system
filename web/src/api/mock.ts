@@ -20,6 +20,9 @@ import type {
   OperationLog, Allergy, FunctionType, OperationType, Paged, Handout,
   ContactHomeRecord, ContactEventRecord, ContactClassRecord, ContactFacilityRecord, NapSleepRecord, NapExclusionRecord,
 } from './types';
+import type { ContactPhotoRecord, PhotoConsentLevel } from './types';
+import type { ContactPhoto, SendPhotoInput, SendPhotoResult } from './shapes';
+import { photoConsentMessage } from '../messages';
 import {
   ageInMonths, now, today, addDays, plusMinutes, fromNowMinutes, napAutoCloseAt, normalizeInvitationCode, validateEmail,
   validateNewPassword, isRealDate, validateStaffAccountInput, formatYM, isOneDecimal,
@@ -41,9 +44,6 @@ import type {
   ContactEventInput, RecordEventsResult, ContactEventCorrection, NapSleepCorrection, CancelResult, Readers,
   ContactRecipient, Phrase, NameMatch, FacilityCorrection,
 } from './shapes';
-import type { ContactPhoto, SendPhotoInput, SendPhotoResult } from './shapes';
-import type { ContactPhotoRecord, PhotoConsentLevel } from './types';
-import { photoConsentMessage } from '../messages';
 
 // 画面はこれまでどおり client 経由で型を参照する。定義の実体は shapes.ts が持つ
 export type {
@@ -4179,6 +4179,153 @@ const contactEventsApi = {
   },
 };
 
+/* ============ 連絡帳の写真（詳細設計書「きょうのようす」(4-4 (2))・(4-4 (3))・「写真」(3-3)） ============
+ * 規則は server/api_contact_photo.go と同じ。関数の名前もそろえる（9-2）。検査の順も同じ：
+ * 大きさ → 先頭のバイトで形式 → 写っている子か届ける子 → contactAccess の write → 同意 → 届く家庭ごとの他児の名前。
+ * モックは実体を持たず、URL.createObjectURL で作った URL を mockDb に持つ（再読み込みで消える）。
+ * 描き直して付帯情報を落とすのは、画面（2-2 (7)）とサーバ（決めたこと D-6）。モックは描き直さない（中身を読めないため、形式は先頭のバイトだけで見る）
+ */
+
+/** ファイルの先頭のバイトから形式を決める（server の http.DetectContentType の JPEG・PNG の分）。申告した形式（Blob.type）は使わない */
+async function sniffPhotoType(file: Blob): Promise<string | null> {
+  const head = new Uint8Array(await file.slice(0, 8).arrayBuffer());
+  if (head.length >= 3 && head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return 'image/jpeg';
+  const png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  if (head.length >= 8 && png.every((b, i) => head[i] === b)) return 'image/png';
+  return null;
+}
+
+let mockPhotoSeq = 0;
+/** 写真の URL。ブラウザ（dev:mock）では URL.createObjectURL。作れない環境（jsdom など）では目印の文字列 */
+function objectUrlOf(file: Blob): string {
+  try {
+    if (typeof URL.createObjectURL === 'function') return URL.createObjectURL(file);
+  } catch { /* 作れない環境は下の目印にする */ }
+  return `blob:mock/${++mockPhotoSeq}`;
+}
+
+/** 園児の ID の並び。前後の空白を除き、空と重なりを落とす（server の splitIDs） */
+const splitIds = (ids: string[] | undefined) =>
+  [...new Set((ids ?? []).map((id) => id.trim()).filter(Boolean))];
+
+/** ContactPhoto（職員だけが受け取る形。写っている子を入れる） */
+function photoView(p: ContactPhotoRecord): ContactPhoto {
+  return {
+    contact_photo_id: p.contact_photo_id, contact_date: p.contact_date, file_type: p.file_type, file_size: p.file_size,
+    subject_child_ids: db.contactPhotoChildren.filter((c) => c.contact_photo_id === p.contact_photo_id).map((c) => c.child_id),
+    is_deleted: p.is_deleted,
+  };
+}
+
+/**
+ * その利用者にその写真の実体を返してよいか（server/api_contact_photo.go の canSeePhoto。詳細設計書 (4-4 (3))）。
+ * 職員：写真を指す出来事の園児か、クラスのようすのクラスを読める。
+ * 保護者：写真を指す取り消していない出来事のうち読める園児のものがある、または読める園児のクラスのクラスのようすが指す。
+ * contact.show_items に photo が無ければ返さない。取り消した写真は呼ぶ側で断る
+ */
+function canSeePhoto(user: SessionUser, photoId: number): boolean {
+  const guardian = user.role === '3';
+  if (!isStaffUser(user) && !guardian) return false;
+  if (guardian && !guardianSeesItem('photo')) return false;
+  const alive = (x: { is_deleted: boolean }) => !guardian || !x.is_deleted;
+  const childIds = new Set(db.contactEvents.filter((e) => e.contact_photo_id === photoId && alive(e)).map((e) => e.child_id));
+  for (const id of childIds) if (contactAccess(user, id).read) return true;
+  const classIds = new Set(db.contactClasses.filter((c) => c.contact_photo_id === photoId && alive(c)).map((c) => c.class_id));
+  if (classIds.size === 0) return false;
+  if (!guardian) return [...classIds].some((id) => classContactAccess(user, id).read);
+  return guardianContactChildren(user).some((c) => {
+    const cls = contactClassOf(c.child_id);
+    return cls !== null && classIds.has(cls);
+  });
+}
+
+const contactPhotoApi = {
+  /**
+   * 写真を送る（POST /api/contact/photos）。写真の行・写っている子の行（送った時点の同意を写す）・
+   * 届く先ごとの出来事（種類 5）を1つの処理で作る。同意を満たさなければ送らない（基本設計書「写真の同意で止める規則」(4-2)）
+   */
+  async sendPhoto(user: SessionUser, input: SendPhotoInput): Promise<SendPhotoResult> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    // ① 大きさ（attachment.max_size_mb まで）② 形式（先頭のバイト。attachment.allowed_types にあるもの）
+    const file = input.file;
+    if (!file || file.size === 0 || file.size > settingNumber('attachment.max_size_mb', 10) * 1024 * 1024) return fail(MSG.photoFormat);
+    const fileType = await sniffPhotoType(file);
+    if (fileType === null || !settingList('attachment.allowed_types', 'image/jpeg,image/png').includes(fileType)) return fail(MSG.photoFormat);
+    // ③ 写っている子が1人以上か、0人なら届ける子が1人
+    const subjects = splitIds(input.subject_child_ids);
+    const target = (input.target_child_id ?? '').trim();
+    let recipients = subjects;
+    if (subjects.length === 0) {
+      if (target === '' || target.includes(',')) return fail(MSG.photoSubjectRequired);
+      recipients = [target];
+    }
+    // 添える文（任意・200文字）。【仮置き】上限を超えたときは活動のひとことと同じ文（web/仮置き値.md）
+    const body = trimmedOrNull(input.body);
+    if (body !== null && tooLong(body, 200)) return fail(MSG.commentTooLong);
+    const keep = input.keep_in_growth === true;
+    // ④ 写っている子・届ける子のすべてについて書けること（ページは今日。その日に在籍するクラスが要る）
+    const classOf = new Map<string, number>();
+    for (const id of recipients) {
+      const classId = contactClassOf(id);
+      if (!contactAccess(user, id).write || classId === null) return fail(MSG.contactForbidden);
+      classOf.set(id, classId);
+    }
+    // ⑤ 同意：1人なら 2 以上、2人以上なら全員 3。0人は条件なし
+    const consent = new Map<string, PhotoConsentLevel>();
+    const failed: string[] = [];
+    for (const id of subjects) {
+      const c = findChild(id)!;
+      consent.set(id, c.photo_consent_level);
+      if ((subjects.length === 1 && c.photo_consent_level < '2') || (subjects.length >= 2 && c.photo_consent_level !== '3')) failed.push(c.child_name);
+    }
+    if (failed.length > 0) return fail(photoConsentMessage(failed, subjects.length));
+    // ⑥ 添える文があれば、届く家庭ごとに他児の名前を照合する（写っているほかの子も相手）
+    if (body !== null) {
+      const hit = checkOtherNames(body, 'body', recipients, false, input.acknowledged_names);
+      if (hit) return failOtherNames(hit);
+    }
+    const day = today();
+    const at = now();
+    // 写真の行の class_id は「撮ったクラス」。【仮置き】届く先の先頭の園児のクラス（web/仮置き値.md）
+    const photo: ContactPhotoRecord = {
+      contact_photo_id: nextId(), class_id: classOf.get(recipients[0])!, contact_date: day, file_path: objectUrlOf(file),
+      file_type: fileType, file_size: file.size, staff_id: user.staff_id ?? '', is_deleted: false, created_at: at,
+    };
+    db.contactPhotos.push(photo);
+    for (const id of subjects) db.contactPhotoChildren.push({ contact_photo_id: photo.contact_photo_id, child_id: id, consent_level: consent.get(id)! });
+    const events = recipients.map((id) => {
+      const row: ContactEventRecord = {
+        contact_event_id: nextId(), child_id: id, class_id: classOf.get(id)!, contact_date: day, event_type: '5', recorded_at: at,
+        meal_kind: null, meal_amount: null, toilet_label: null, temperature: null, body, contact_photo_id: photo.contact_photo_id,
+        keep_in_growth: keep, staff_id: user.staff_id ?? '', corrected_at: null, is_deleted: false, created_at: at, updated_at: at,
+      };
+      db.contactEvents.push(row);
+      return row;
+    });
+    // 操作ログ：写真の行に 8・1（写っている子が0人なら「なし」）。【仮置き】届く先ごとの出来事にも 8・1（web/仮置き値.md）
+    const photoFields: Field[] = [['写っている子', subjects.length > 0 ? subjects : 'なし']];
+    if (subjects.length === 0) photoFields.push(['届ける子', target]);
+    photoFields.push(['file_type', fileType], ['file_size', file.size]);
+    log(user.account_id, '8', '1', 't_contact_photo', photo.contact_photo_id, recipients.length === 1 ? recipients[0] : null, null, fieldsJSON(photoFields));
+    for (const e of events) {
+      log(user.account_id, '8', '1', 't_contact_event', e.contact_event_id, e.child_id, null,
+        fieldsJSON([...eventLogFields(e), ['contact_photo_id', photo.contact_photo_id], ['keep_in_growth', keep]]));
+    }
+    for (const id of recipients) publishContactChild(id, 'photo');
+    return ok({ photo: photoView(photo), events: events.map((e) => eventView(e, true)) });
+  },
+
+  /**
+   * 写真の実体の URL（GET /api/contact/photos/{id} にあたる）。取り消した写真・条件に合わない・無い写真は、
+   * どれも「この写真は開けません。」（写真の ID だけで配らない）。http.ts は経路をそのまま返し、判定はサーバが行う
+   */
+  async photoUrl(user: SessionUser, photoId: number): Promise<string> {
+    const p = db.contactPhotos.find((x) => x.contact_photo_id === photoId);
+    if (!p || p.is_deleted || !canSeePhoto(user, photoId)) return fail(MSG.photoForbidden);
+    return ok(p.file_path);
+  },
+};
+
 /* ============ 他児の名前の照合・園からのひとこと・定型文・宛先（詳細設計書「園からのひとことと他児の名前」(4-5)） ============
  * 規則は server/namecheck.go・api_contact_facility.go と同じ。関数の名前もそろえる（9-2）。
  * 段2：送る人が確かめて届く。管理者の事前の承認は置かない。宛先を大きく示し（画面）、他児の名前を照合する。
@@ -4506,153 +4653,6 @@ const contactFacilityApi = {
   },
 };
 
-/* ============ 連絡帳の写真（詳細設計書「きょうのようす」(4-4 (2))・(4-4 (3))・「写真」(3-3)） ============
- * 規則は server/api_contact_photo.go と同じ。関数の名前もそろえる（9-2）。検査の順も同じ：
- * 大きさ → 先頭のバイトで形式 → 写っている子か届ける子 → contactAccess の write → 同意 → 届く家庭ごとの他児の名前。
- * モックは実体を持たず、URL.createObjectURL で作った URL を mockDb に持つ（再読み込みで消える）。
- * 描き直して付帯情報を落とすのは、画面（2-2 (7)）とサーバ（決めたこと D-6）。モックは描き直さない（中身を読めないため、形式は先頭のバイトだけで見る）
- */
-
-/** ファイルの先頭のバイトから形式を決める（server の http.DetectContentType の JPEG・PNG の分）。申告した形式（Blob.type）は使わない */
-async function sniffPhotoType(file: Blob): Promise<string | null> {
-  const head = new Uint8Array(await file.slice(0, 8).arrayBuffer());
-  if (head.length >= 3 && head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return 'image/jpeg';
-  const png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-  if (head.length >= 8 && png.every((b, i) => head[i] === b)) return 'image/png';
-  return null;
-}
-
-let mockPhotoSeq = 0;
-/** 写真の URL。ブラウザ（dev:mock）では URL.createObjectURL。作れない環境（jsdom など）では目印の文字列 */
-function objectUrlOf(file: Blob): string {
-  try {
-    if (typeof URL.createObjectURL === 'function') return URL.createObjectURL(file);
-  } catch { /* 作れない環境は下の目印にする */ }
-  return `blob:mock/${++mockPhotoSeq}`;
-}
-
-/** 園児の ID の並び。前後の空白を除き、空と重なりを落とす（server の splitIDs） */
-const splitIds = (ids: string[] | undefined) =>
-  [...new Set((ids ?? []).map((id) => id.trim()).filter(Boolean))];
-
-/** ContactPhoto（職員だけが受け取る形。写っている子を入れる） */
-function photoView(p: ContactPhotoRecord): ContactPhoto {
-  return {
-    contact_photo_id: p.contact_photo_id, contact_date: p.contact_date, file_type: p.file_type, file_size: p.file_size,
-    subject_child_ids: db.contactPhotoChildren.filter((c) => c.contact_photo_id === p.contact_photo_id).map((c) => c.child_id),
-    is_deleted: p.is_deleted,
-  };
-}
-
-/**
- * その利用者にその写真の実体を返してよいか（server/api_contact_photo.go の canSeePhoto。詳細設計書 (4-4 (3))）。
- * 職員：写真を指す出来事の園児か、クラスのようすのクラスを読める。
- * 保護者：写真を指す取り消していない出来事のうち読める園児のものがある、または読める園児のクラスのクラスのようすが指す。
- * contact.show_items に photo が無ければ返さない。取り消した写真は呼ぶ側で断る
- */
-function canSeePhoto(user: SessionUser, photoId: number): boolean {
-  const guardian = user.role === '3';
-  if (!isStaffUser(user) && !guardian) return false;
-  if (guardian && !guardianSeesItem('photo')) return false;
-  const alive = (x: { is_deleted: boolean }) => !guardian || !x.is_deleted;
-  const childIds = new Set(db.contactEvents.filter((e) => e.contact_photo_id === photoId && alive(e)).map((e) => e.child_id));
-  for (const id of childIds) if (contactAccess(user, id).read) return true;
-  const classIds = new Set(db.contactClasses.filter((c) => c.contact_photo_id === photoId && alive(c)).map((c) => c.class_id));
-  if (classIds.size === 0) return false;
-  if (!guardian) return [...classIds].some((id) => classContactAccess(user, id).read);
-  return guardianContactChildren(user).some((c) => {
-    const cls = contactClassOf(c.child_id);
-    return cls !== null && classIds.has(cls);
-  });
-}
-
-const contactPhotoApi = {
-  /**
-   * 写真を送る（POST /api/contact/photos）。写真の行・写っている子の行（送った時点の同意を写す）・
-   * 届く先ごとの出来事（種類 5）を1つの処理で作る。同意を満たさなければ送らない（基本設計書「写真の同意で止める規則」(4-2)）
-   */
-  async sendPhoto(user: SessionUser, input: SendPhotoInput): Promise<SendPhotoResult> {
-    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
-    // ① 大きさ（attachment.max_size_mb まで）② 形式（先頭のバイト。attachment.allowed_types にあるもの）
-    const file = input.file;
-    if (!file || file.size === 0 || file.size > settingNumber('attachment.max_size_mb', 10) * 1024 * 1024) return fail(MSG.photoFormat);
-    const fileType = await sniffPhotoType(file);
-    if (fileType === null || !settingList('attachment.allowed_types', 'image/jpeg,image/png').includes(fileType)) return fail(MSG.photoFormat);
-    // ③ 写っている子が1人以上か、0人なら届ける子が1人
-    const subjects = splitIds(input.subject_child_ids);
-    const target = (input.target_child_id ?? '').trim();
-    let recipients = subjects;
-    if (subjects.length === 0) {
-      if (target === '' || target.includes(',')) return fail(MSG.photoSubjectRequired);
-      recipients = [target];
-    }
-    // 添える文（任意・200文字）。【仮置き】上限を超えたときは活動のひとことと同じ文（web/仮置き値.md）
-    const body = trimmedOrNull(input.body);
-    if (body !== null && tooLong(body, 200)) return fail(MSG.commentTooLong);
-    const keep = input.keep_in_growth === true;
-    // ④ 写っている子・届ける子のすべてについて書けること（ページは今日。その日に在籍するクラスが要る）
-    const classOf = new Map<string, number>();
-    for (const id of recipients) {
-      const classId = contactClassOf(id);
-      if (!contactAccess(user, id).write || classId === null) return fail(MSG.contactForbidden);
-      classOf.set(id, classId);
-    }
-    // ⑤ 同意：1人なら 2 以上、2人以上なら全員 3。0人は条件なし
-    const consent = new Map<string, PhotoConsentLevel>();
-    const failed: string[] = [];
-    for (const id of subjects) {
-      const c = findChild(id)!;
-      consent.set(id, c.photo_consent_level);
-      if ((subjects.length === 1 && c.photo_consent_level < '2') || (subjects.length >= 2 && c.photo_consent_level !== '3')) failed.push(c.child_name);
-    }
-    if (failed.length > 0) return fail(photoConsentMessage(failed, subjects.length));
-    // ⑥ 添える文があれば、届く家庭ごとに他児の名前を照合する（写っているほかの子も相手）
-    if (body !== null) {
-      const hit = checkOtherNames(body, 'body', recipients, false, input.acknowledged_names);
-      if (hit) return failOtherNames(hit);
-    }
-    const day = today();
-    const at = now();
-    // 写真の行の class_id は「撮ったクラス」。【仮置き】届く先の先頭の園児のクラス（web/仮置き値.md）
-    const photo: ContactPhotoRecord = {
-      contact_photo_id: nextId(), class_id: classOf.get(recipients[0])!, contact_date: day, file_path: objectUrlOf(file),
-      file_type: fileType, file_size: file.size, staff_id: user.staff_id ?? '', is_deleted: false, created_at: at,
-    };
-    db.contactPhotos.push(photo);
-    for (const id of subjects) db.contactPhotoChildren.push({ contact_photo_id: photo.contact_photo_id, child_id: id, consent_level: consent.get(id)! });
-    const events = recipients.map((id) => {
-      const row: ContactEventRecord = {
-        contact_event_id: nextId(), child_id: id, class_id: classOf.get(id)!, contact_date: day, event_type: '5', recorded_at: at,
-        meal_kind: null, meal_amount: null, toilet_label: null, temperature: null, body, contact_photo_id: photo.contact_photo_id,
-        keep_in_growth: keep, staff_id: user.staff_id ?? '', corrected_at: null, is_deleted: false, created_at: at, updated_at: at,
-      };
-      db.contactEvents.push(row);
-      return row;
-    });
-    // 操作ログ：写真の行に 8・1（写っている子が0人なら「なし」）。【仮置き】届く先ごとの出来事にも 8・1（web/仮置き値.md）
-    const photoFields: Field[] = [['写っている子', subjects.length > 0 ? subjects : 'なし']];
-    if (subjects.length === 0) photoFields.push(['届ける子', target]);
-    photoFields.push(['file_type', fileType], ['file_size', file.size]);
-    log(user.account_id, '8', '1', 't_contact_photo', photo.contact_photo_id, recipients.length === 1 ? recipients[0] : null, null, fieldsJSON(photoFields));
-    for (const e of events) {
-      log(user.account_id, '8', '1', 't_contact_event', e.contact_event_id, e.child_id, null,
-        fieldsJSON([...eventLogFields(e), ['contact_photo_id', photo.contact_photo_id], ['keep_in_growth', keep]]));
-    }
-    for (const id of recipients) publishContactChild(id, 'photo');
-    return ok({ photo: photoView(photo), events: events.map((e) => eventView(e, true)) });
-  },
-
-  /**
-   * 写真の実体の URL（GET /api/contact/photos/{id} にあたる）。取り消した写真・条件に合わない・無い写真は、
-   * どれも「この写真は開けません。」（写真の ID だけで配らない）。http.ts は経路をそのまま返し、判定はサーバが行う
-   */
-  async photoUrl(user: SessionUser, photoId: number): Promise<string> {
-    const p = db.contactPhotos.find((x) => x.contact_photo_id === photoId);
-    if (!p || p.is_deleted || !canSeePhoto(user, photoId)) return fail(MSG.photoForbidden);
-    return ok(p.file_path);
-  },
-};
-
 /* ============ 画面が使う入口 ============ */
 export const api = guardProcedure({
   ...authApi, ...childApi, ...diaryApi, ...diaryApi2,
@@ -4661,8 +4661,8 @@ export const api = guardProcedure({
   ...bulkApi, ...dashboardApi, ...handoutApi,
   ...contactApi,
   ...contactEventsApi,
-  ...contactFacilityApi,
   ...contactPhotoApi,
+  ...contactFacilityApi,
 });
 
 /* ============ 入力の検査の補助（Go サーバの httpx.go と同じ規則） ============ */
