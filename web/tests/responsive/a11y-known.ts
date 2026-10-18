@@ -37,6 +37,15 @@ export const knownA11yViolations: KnownA11yViolation[] = [
     issue: 207,
     note: '午睡チェックの体温のボタン。PR #186 のテストが名前をそのまま引くため、#186 の後に名前とテストを一緒に直す（#207）',
   },
+  {
+    // 園児登録・園児編集の「呼び名」の入力欄（PR #198 で足す）。Field の子が入力欄と説明の2つあるため、
+    // Field が入力欄に label を結び付けず、読み上げの名前が無い（WCAG 1.3.1・4.1.2）。直すのは #198 の中（PR にコメントした）。
+    // #198 がマージされる前の本線では出ないので、そのあいだは a11y-report/summary.md の「既知だが今回は出なかったもの」に出る
+    rule: 'label',
+    scenes: ['child-new', 'child-edit'],
+    issue: 198,
+    note: '園児登録・園児編集の「呼び名」の入力欄に label が結び付いていない。PR #198 の中で直す',
+  },
 ];
 
 export function findKnownA11yViolation(rule: string, scene: string): KnownA11yViolation | undefined {
