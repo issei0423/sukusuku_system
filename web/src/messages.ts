@@ -48,6 +48,11 @@ export const MSG = {
 
 /** 他児の名前の注意（基本設計書「メッセージ一覧」(4-12)。server/namecheck.go の otherNamesMessage と同じ） */
 export const otherNamesMessage = (names: string[]) => `ほかのお子さんの名前（${names.join('・')}）が入っています。このまま送りますか。`;
+/**
+ * 写っている子が2人以上の写真の注意に添える文（詳細設計書 4-5 (2) の④。server/namecheck.go の otherNamesFamiliesNote と同じ）。
+ * 【仮置き】文言と、家庭の数を写っている子の数（届く先の園児のページの数）で数えること（web/仮置き値.md）
+ */
+export const otherNamesFamiliesNote = (n: number) => `この文は写っている全員（${n} 家庭）に届きます。`;
 
 /* ---- 画面の文言（図/画面詳細図「連絡帳画面」(8-3)・「連絡帳（クラス）画面」(8-1)、詳細設計書 2章） ---- */
 export const TEXT = {

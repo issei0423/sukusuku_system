@@ -127,6 +127,11 @@ describe('定型文・宛先・照合の経路・ダッシュボード', () => {
     await expect(api.nameCheck(teacher, { child_ids: ['C001'], text: 'あ'.repeat(1001) })).rejects.toThrow(MSG.badRequest);
   });
 
+  it('照合の経路も、写っている2人なら家庭ごとに照合し、クラス名と「〇〇先生」を除く（server/namecheck_family_test.go と同じ）', async () => {
+    expect((await api.nameCheck(teacher, { child_ids: ['C001', 'C006'], text: 'たっくんとあおちゃん' })).names).toHaveLength(2);
+    expect((await api.nameCheck(teacher, { child_ids: ['C001'], text: 'さくら組の高梨先生' })).names).toEqual([]);
+  });
+
   it('ダッシュボードの園から未送信：送ると減り、今日の午睡で欠席にした子は数えない', async () => {
     clearFacility('C002');
     const n0 = (await api.staffSummary(teacher)).facilityUnsent;

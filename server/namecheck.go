@@ -2,6 +2,7 @@ package main
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -18,7 +19,12 @@ import (
 ② 書き方の揺れ：本文はそのままにし、名前の側に変種を作る。仮名の名前はひらがなとカタカナの両方、
    氏名とよみは姓と名の間に空白なし・半角の空白・全角の空白の3つ（本文の位置をそのまま返すため。AI へ送る前の置き換えと同じ関数）
 ③ 短い名前：1文字の名前と2文字以下の仮名の名前は、すぐ後ろに敬称（ちゃん・くん・さん・君）が続くときだけ当てる
+③の2 照合の前に除くもの：今年度のクラス名（「さくら組」）と、職員の姓・氏名のすぐ後ろに「先生」「せんせい」が続く部分
+   （「高梨先生」）。園児を指さないため（詳細設計書 4-5 (2) の③の2）。他児の名前の注意だけに当て、AI へ送る前の置き換えには当てない
 ④ 相手：宛先以外の在籍園児（enrollment_status = '1'、取り消していない）全員。宛先がクラスなら在籍園児全員。
+   写真で写っている子が2人以上のときは、届く家庭ごとに照合する。各家庭について、その家庭の子のほかの在籍園児
+   （写っているほかの子を含む）を相手にする（詳細設計書「写真」(4-4 (2))。写っている子どうしを互いに宛先にすると、
+   1人のことを書いた添え文がほかの家庭へ注意なしに届くため）。
    宛先の子の名前に当たった部分は、先に印を付けて除いてから探す（同じ名の子を取り違えない。D-17）。
    除くのは、ほかの子の当たりが印の中に**すべて入る**ときだけにする。宛先の姓の印に一部が重なる、同じ姓のきょうだいの
    氏名（宛先「野原 太郎」で本文「野原あいに伝えました」）は当てる（自動レビューの指摘。一部でも重なれば除くと、きょうだいの名前を見落とす）
@@ -160,72 +166,112 @@ func occurrences(text []rune, v nameVariant) [][2]int {
 
 /*
 findOtherNames は、本文 text に、宛先（recipients）以外の園児の名前があるかを照合する。
-everyone は、在籍園児の全員（候補 all）が相手か（宛先がクラスのとき）。field は matches に入れる欄の名前。
+recipients が空なら、在籍園児の全員（候補 all）が相手（宛先がクラスのとき）。field は matches に入れる欄の名前。
 names は当たった園児の氏名（照合の候補の並び順）、matches は当たった位置（始まりの順）。
+照合の前に除く語（③の2）は持たない。送る経路の注意は findOtherNamesFor で除く語を渡す
 */
 func findOtherNames(text, field string, recipients []nameChild, all []nameChild) ([]string, []nameMatch) {
+	return findOtherNamesFor(text, field, [][]nameChild{recipients}, all, nil)
+}
+
+// markWord は、本文の中の語 word の部分に印を付ける（そのままの文字で当てる）
+func markWord(runes []rune, masked []bool, word []rune) {
+	n := len(word)
+	if n == 0 {
+		return
+	}
+	for i := 0; i+n <= len(runes); i++ {
+		if string(runes[i:i+n]) == string(word) {
+			for k := i; k < i+n; k++ {
+				masked[k] = true
+			}
+		}
+	}
+}
+
+/*
+findOtherNamesFor は、届く家庭（families。家庭ごとの宛先の園児）ごとに照合し、当たりを合わせて返す（④）。
+家庭が1つなら findOtherNames と同じ。宛先がクラスなら、宛先の子のいない家庭1つ（[][]nameChild{nil}）を渡す。
+excluded は照合の前に除く語（③の2。クラス名・「〇〇先生」）。ほかの子の当たりが除く語の中にすべて入れば数えない
+*/
+func findOtherNamesFor(text, field string, families [][]nameChild, all []nameChild, excluded []string) ([]string, []nameMatch) {
 	runes := []rune(text)
-	masked := make([]bool, len(runes))
-	isRecipient := map[string]bool{}
-	// 宛先の子の名前に当たった部分を先に除く（D-17）。長い書き方から印を付ける
-	for _, r := range recipients {
-		isRecipient[r.ID] = true
-		vs := nameVariants(r)
-		sort.SliceStable(vs, func(i, j int) bool { return len(vs[i].text) > len(vs[j].text) })
-		for _, v := range vs {
-			for _, o := range occurrences(runes, v) {
-				// すぐ後ろの敬称も宛先の子の名前の部分に含める（宛先「山田 ゆい」の「ゆいちゃん」を、ほかの子の呼び名「ゆいちゃん」と数えない）
-				end := o[1]
-				rest := string(runes[end:])
-				for _, h := range honorifics {
-					if strings.HasPrefix(rest, h) {
-						end += utf8.RuneCountInString(h)
+	base := make([]bool, len(runes))
+	for _, w := range excluded {
+		markWord(runes, base, []rune(w))
+	}
+	if len(families) == 0 {
+		families = [][]nameChild{nil}
+	}
+	hit := make([]bool, len(all))
+	matches := []nameMatch{}
+	for _, recipients := range families {
+		masked := append([]bool(nil), base...)
+		isRecipient := map[string]bool{}
+		// 宛先の子の名前に当たった部分を先に除く（D-17）。長い書き方から印を付ける
+		for _, r := range recipients {
+			isRecipient[r.ID] = true
+			vs := nameVariants(r)
+			sort.SliceStable(vs, func(i, j int) bool { return len(vs[i].text) > len(vs[j].text) })
+			for _, v := range vs {
+				for _, o := range occurrences(runes, v) {
+					// すぐ後ろの敬称も宛先の子の名前の部分に含める（宛先「山田 ゆい」の「ゆいちゃん」を、ほかの子の呼び名「ゆいちゃん」と数えない）
+					end := o[1]
+					rest := string(runes[end:])
+					for _, h := range honorifics {
+						if strings.HasPrefix(rest, h) {
+							end += utf8.RuneCountInString(h)
+							break
+						}
+					}
+					for k := o[0]; k < end; k++ {
+						masked[k] = true
+					}
+				}
+			}
+		}
+		for ci, c := range all {
+			if isRecipient[c.ID] {
+				continue
+			}
+			found := [][2]int{}
+			for _, v := range nameVariants(c) {
+				for _, o := range occurrences(runes, v) {
+					inside := true
+					for k := o[0]; k < o[1]; k++ {
+						if !masked[k] {
+							inside = false
+							break
+						}
+					}
+					if !inside {
+						found = append(found, o)
+					}
+				}
+			}
+			if len(found) == 0 {
+				continue
+			}
+			hit[ci] = true
+			// ほかの当たりに含まれる短い当たりを除く（「野原太郎」と「野原」が同じ所に当たったときは長いほう）
+			for _, o := range found {
+				inside := false
+				for _, p := range found {
+					if p != o && p[0] <= o[0] && o[1] <= p[1] {
+						inside = true
 						break
 					}
 				}
-				for k := o[0]; k < end; k++ {
-					masked[k] = true
+				if !inside {
+					matches = append(matches, nameMatch{Field: field, Start: o[0], End: o[1]})
 				}
 			}
 		}
 	}
 	names := []string{}
-	matches := []nameMatch{}
-	for _, c := range all {
-		if isRecipient[c.ID] {
-			continue
-		}
-		found := [][2]int{}
-		for _, v := range nameVariants(c) {
-			for _, o := range occurrences(runes, v) {
-				inside := true
-				for k := o[0]; k < o[1]; k++ {
-					if !masked[k] {
-						inside = false
-						break
-					}
-				}
-				if !inside {
-					found = append(found, o)
-				}
-			}
-		}
-		if len(found) == 0 {
-			continue
-		}
-		names = append(names, c.Name)
-		// ほかの当たりに含まれる短い当たりを除く（「野原太郎」と「野原」が同じ所に当たったときは長いほう）
-		for _, o := range found {
-			inside := false
-			for _, p := range found {
-				if p != o && p[0] <= o[0] && o[1] <= p[1] {
-					inside = true
-					break
-				}
-			}
-			if !inside {
-				matches = append(matches, nameMatch{Field: field, Start: o[0], End: o[1]})
-			}
+	for ci, c := range all {
+		if hit[ci] {
+			names = append(names, c.Name)
 		}
 	}
 	sort.SliceStable(matches, func(i, j int) bool {
@@ -234,7 +280,8 @@ func findOtherNames(text, field string, recipients []nameChild, all []nameChild)
 		}
 		return matches[i].End > matches[j].End
 	})
-	// 【仮置き】位置は強調の表示に使う。同じ位置・ほかの当たりに含まれる位置（同じ名の子、「小林」の中の「林」）は1つにまとめる（web/仮置き値.md）。
+	// 【仮置き】位置は強調の表示に使う。同じ位置・ほかの当たりに含まれる位置（同じ名の子、「小林」の中の「林」、
+	// 家庭ごとに同じ所に当たったもの）は1つにまとめる（web/仮置き値.md）。
 	// 名前（names）はまとめない（どちらの子かを決めない。判断しない）
 	uniq := []nameMatch{}
 	for _, m := range matches {
@@ -280,21 +327,93 @@ func (a *app) nameChildOf(childID string) nameChild {
 }
 
 /*
+nameCheckExclusions は、照合の前に除く語（③の2）。今年度のクラス名と、職員の姓・氏名（空白なし・半角・全角）に
+「先生」「せんせい」を続けたもの。モックは web/src/api/mock.ts の nameCheckExclusions
+*/
+func (a *app) nameCheckExclusions() ([]string, error) {
+	out := []string{}
+	rows, err := a.db.Query(`SELECT class_name FROM m_class WHERE fiscal_year = ?`, fiscalYear)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if n = strings.TrimSpace(n); n != "" {
+			out = append(out, n)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	srows, err := a.db.Query(`SELECT staff_name FROM m_staff`)
+	if err != nil {
+		return nil, err
+	}
+	defer srows.Close()
+	for srows.Next() {
+		var n string
+		if err := srows.Scan(&n); err != nil {
+			return nil, err
+		}
+		out = append(out, staffTitleWords(n)...)
+	}
+	return out, srows.Err()
+}
+
+// staffTitleWords は、職員1人の「姓＋先生」「氏名＋先生」の書き方（③の2）。【仮置き】よみは除かない（web/仮置き値.md）
+func staffTitleWords(staffName string) []string {
+	parts := splitName(staffName)
+	if len(parts) == 0 {
+		return nil
+	}
+	bases := []string{parts[0], strings.Join(parts, "")}
+	if len(parts) >= 2 {
+		bases = append(bases, strings.Join(parts, " "), strings.Join(parts, "　"))
+	}
+	out := []string{}
+	for _, b := range bases {
+		for _, t := range []string{"先生", "せんせい"} {
+			out = append(out, b+t)
+		}
+	}
+	return out
+}
+
+// nameFamilies は、照合する家庭（④）。宛先がクラスなら宛先の子のいない家庭1つ、
+// 宛先の園児が2人以上（写真で写っている子）なら、【仮置き】園児ごと（その子の連絡帳を読む家庭）に1家庭とする（web/仮置き値.md）
+func (a *app) nameFamilies(recipientIDs []string, everyone bool) [][]nameChild {
+	if everyone || len(recipientIDs) == 0 {
+		return [][]nameChild{nil}
+	}
+	families := [][]nameChild{}
+	for _, id := range recipientIDs {
+		families = append(families, []nameChild{a.nameChildOf(id)})
+	}
+	return families
+}
+
+/*
 checkOtherNames は、段2の送信の本文を照合し、承諾（acknowledged）が当たった名前をすべて含むかを見る（4-5 (2) の⑥）。
 含まなければ 409 other_child_names の応答（apiError）を返す。照合できなかったときは ok=false・err を返す。
+recipientIDs が2人以上（写真で写っている子）なら、届く家庭ごとに照合し（④）、注意の文に届く家庭の数を添える。
+照合の前にクラス名と「〇〇先生」を除く（③の2）。
 */
 func (a *app) checkOtherNames(text, field string, recipientIDs []string, everyone bool, acknowledged []string) (*apiError, error) {
 	all, err := a.enrolledNameChildren()
 	if err != nil {
 		return nil, err
 	}
-	recipients := []nameChild{}
-	if !everyone {
-		for _, id := range recipientIDs {
-			recipients = append(recipients, a.nameChildOf(id))
-		}
+	excluded, err := a.nameCheckExclusions()
+	if err != nil {
+		return nil, err
 	}
-	names, matches := findOtherNames(text, field, recipients, all)
+	families := a.nameFamilies(recipientIDs, everyone)
+	names, matches := findOtherNamesFor(text, field, families, all, excluded)
 	if len(names) == 0 {
 		return nil, nil
 	}
@@ -308,10 +427,23 @@ func (a *app) checkOtherNames(text, field string, recipientIDs []string, everyon
 	if !missing {
 		return nil, nil
 	}
-	return &apiError{Message: otherNamesMessage(names), Kind: kindOtherChildNames, Names: names, Matches: matches}, nil
+	msg := otherNamesMessage(names)
+	if len(families) >= 2 {
+		msg += otherNamesFamiliesNote(len(families))
+	}
+	return &apiError{Message: msg, Kind: kindOtherChildNames, Names: names, Matches: matches}, nil
 }
 
 // otherNamesMessage は、基本設計書「メッセージ一覧」(4-12) の「他児の名前の注意」の文
 func otherNamesMessage(names []string) string {
 	return "ほかのお子さんの名前（" + strings.Join(names, "・") + "）が入っています。このまま送りますか。"
+}
+
+/*
+otherNamesFamiliesNote は、写っている子が2人以上の写真の注意に添える文（詳細設計書 4-5 (2) の④）。
+【仮置き】文言と、家庭の数を写っている子の数（届く先の園児のページの数）で数えること（web/仮置き値.md）。
+モックは web/src/messages.ts の otherNamesFamiliesNote
+*/
+func otherNamesFamiliesNote(n int) string {
+	return "この文は写っている全員（" + strconv.Itoa(n) + " 家庭）に届きます。"
 }
