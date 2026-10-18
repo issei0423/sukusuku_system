@@ -108,7 +108,8 @@
 .nap-inline-fields { display: grid; grid-template-columns: minmax(255px, 1.4fr) minmax(160px, .8fr) minmax(255px, 1.2fr); gap: var(--sp-3) var(--sp-4); }
 .nap-choice-field { min-width: 0; margin: 0; padding: 0; border: 0; }
 .nap-choice-field legend { margin-bottom: var(--sp-1); font-size: var(--fs-small); font-weight: 700; }
-.nap-choice-options { display: flex; gap: var(--sp-1); }
+/* 選択肢どうしの間は 8px。詳細設計書「全画面に共通する部品と決まり」(2-0) の「タッチの条件」(4)（GitHub Issue #215） */
+.nap-choice-options { display: flex; gap: var(--sp-2); }
 .nap-choice { flex: 1; min-width: 0; min-height: 52px; margin: 0; padding: 0; position: relative; }
 .nap-choice input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .nap-choice span {
