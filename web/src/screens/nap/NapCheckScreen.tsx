@@ -213,8 +213,26 @@ function NapTimer({ startedAt, intervalMinutes, rows }: {
   };
   const hmm = (sec: number) => `${Math.floor(sec / 3600)}:${String(Math.floor((sec % 3600) / 60)).padStart(2, '0')}`;
 
+  /*
+   * 上に止めたタイマーの高さを、スクロールする枠（.main）へ --nap-timer-h として渡す。
+   * 枠はその高さぶんを scroll-padding-top に取り、キーボードで上へ戻ったとき（Shift+Tab）に、
+   * フォーカスした部品がタイマーの下へ隠れないようにする（WCAG 2.4.11 フォーカスの非隠蔽、GitHub Issue #212）。
+   * タイマーは幅によって折り返し、高さが変わるので、決めた値でなく測った値を使う
+   */
+  const timerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const timer = timerRef.current;
+    const main = timer?.closest<HTMLElement>('.main');
+    if (!timer || !main || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      main.style.setProperty('--nap-timer-h', `${timer.getBoundingClientRect().height}px`);
+    });
+    observer.observe(timer);
+    return () => { observer.disconnect(); main.style.removeProperty('--nap-timer-h'); };
+  }, []);
+
   return (
-    <div className={`nap-timer${over ? ' over' : ''}`}>
+    <div ref={timerRef} className={`nap-timer${over ? ' over' : ''}`}>
       <div>
         <div className="muted" role="status" aria-live="polite">
           {over ? `チェックの時刻を過ぎています（未確認 ${dueCount} 名）` : '次のチェックまで'}

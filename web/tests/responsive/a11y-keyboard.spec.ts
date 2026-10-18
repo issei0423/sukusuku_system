@@ -109,6 +109,34 @@ test('[staff] keyboard-nap-temperature — 体温パネルを Enter で開き、
   await expect(button).toHaveAccessibleName('伊藤 葵の体温 36.5℃');
 });
 
+test('[staff] keyboard-nap-timer — Shift+Tab で上へ戻っても、フォーカスした部品が上に止めたタイマーの下に隠れない', async ({ page }) => {
+  // WCAG 2.4.11 フォーカスの非隠蔽（最低限）。GitHub Issue #212
+  await open(page, 'nap');
+  await tabTo(page, page.locator('.nap-record-row').last().getByRole('button', { name: /の体温 / }));
+  const hidden: string[] = [];
+  let steps = 0;
+  for (; steps < 120; steps += 1) {
+    await page.keyboard.press('Shift+Tab');
+    const focus = await page.evaluate(() => {
+      const el = document.activeElement as HTMLElement | null;
+      const timer = document.querySelector('.nap-timer');
+      if (!el || !timer || !el.closest('.main')) return null;
+      // radio は隠してあり、押す場所は包む label
+      const target = el.matches('input[type="radio"]') ? el.closest('label') ?? el : el;
+      const box = target.getBoundingClientRect();
+      const bar = timer.getBoundingClientRect();
+      return {
+        what: `${el.tagName.toLowerCase()}「${(el.getAttribute('aria-label') ?? target.textContent ?? '').trim().slice(0, 30)}」`,
+        covered: box.top < bar.bottom && box.bottom > bar.top,
+      };
+    });
+    if (!focus) break;
+    if (focus.covered) hidden.push(focus.what);
+  }
+  expect(steps, '園児の行をさかのぼって、画面の上の部品まで戻った').toBeGreaterThan(40);
+  expect(hidden, 'タイマーの下に隠れた部品').toEqual([]);
+});
+
 test('[guardian] keyboard-guardian-menu — 保護者のメニューを開いて閉じると、フォーカスが元へ戻る', async ({ page }) => {
   await open(page, 'guardian-home');
   const menuButton = page.getByRole('button', { name: 'メニューを開く' });
