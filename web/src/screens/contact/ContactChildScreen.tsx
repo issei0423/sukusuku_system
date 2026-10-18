@@ -60,6 +60,8 @@ export default function ContactChildScreen() {
   // 押したあとのフォーカスの移し先（GitHub Issue #213）。家庭からを確認したあと → 「園が確認しました」、園からを送ったあと → 送った文の「直す」
   const confirmedRef = useRef<HTMLParagraphElement>(null);
   const facilityFixRef = useRef<HTMLButtonElement>(null);
+  // 体温の一覧で値を選んで送ったあと → 窓を開いた「体温を記録する」
+  const tempButtonRef = useRef<HTMLButtonElement>(null);
   // 連絡帳（クラス）画面の「園から」の列から来たときは、園からの欄を見せる
   const { hash } = useLocation();
   const loaded = !!page.data;
@@ -106,9 +108,10 @@ export default function ContactChildScreen() {
 
   /**
    * 送っている間は記録のボタンがすべて押せなくなり、押したボタンからフォーカスが外れる。応答のあと、押したボタンへ戻す。
-   * 押したボタンが消えるもの（確認しました）は、成功したときに movedTo の場所へ移す（src/focusAfter.ts、GitHub Issue #213）
+   * 押したボタンが消えるもの（確認しました）は、成功したときに movedTo の場所へ移す（src/focusAfter.ts、GitHub Issue #213）。
+   * 窓の中で押して窓ごと消えるもの（体温の一覧の値）は、成功・失敗とも back の場所（窓を開いた「体温を記録する」）へ移す
    */
-  const act = async (key: string, work: () => Promise<void>, movedTo?: () => HTMLElement | null) => {
+  const act = async (key: string, work: () => Promise<void>, movedTo?: () => HTMLElement | null, back?: () => HTMLElement | null) => {
     if (busy) return;
     const pressed = focusedNow();
     let done = false;
@@ -125,12 +128,12 @@ export default function ContactChildScreen() {
     } finally {
       setBusy(null);
       page.refresh();
-      focusAfter(pressed, done ? movedTo : undefined);
+      focusAfter(pressed, (done ? movedTo : undefined) ?? back);
     }
   };
 
-  /** 1件を記録する。排せつ・体温は「時刻を変える」で選んだ時刻を付ける（選んでいなければ今） */
-  const record = (key: string, input: ContactEventInput) => act(key, async () => {
+  /** 1件を記録する。排せつ・体温は「時刻を変える」で選んだ時刻を付ける（選んでいなければ今）。back は act と同じ */
+  const record = (key: string, input: ContactEventInput, back?: () => HTMLElement | null) => act(key, async () => {
     const withTime = time && (input.event_type === '2' || input.event_type === '3') ? { ...input, recorded_at: `${date}T${time}:00` } : input;
     const res = await api.recordEvents(user!, [withTime]);
     const saved = res.events[0];
@@ -142,7 +145,7 @@ export default function ContactChildScreen() {
     // 【仮置き】記録したときの結果の文（web/仮置き値.md）
     notify(`${name}さんの「${eventText(saved)}」（${formatHM(saved.recorded_at)}）を記録しました。保護者が見られる状態です。`,
       cancelAction(user!, { kind: 'event', event: saved, childName: name }));
-  });
+  }, undefined, back);
 
   const confirmHome = () => {
     const h = data.home;
@@ -265,7 +268,7 @@ export default function ContactChildScreen() {
               </div>
               <div className="contact-field">
                 <span>体温</span>
-                <button type="button" className="contact-pick" onClick={() => setTempOpen(true)} disabled={busy !== null}>
+                <button ref={tempButtonRef} type="button" className="contact-pick" onClick={() => setTempOpen(true)} disabled={busy !== null}>
                   {label('temp', '体温を記録する')}
                 </button>
               </div>
@@ -296,7 +299,11 @@ export default function ContactChildScreen() {
 
       {tempOpen && (
         <TemperaturePicker title={`${name}の体温`} start={findChild(childId)?.normal_temperature ?? null} busy={busy !== null} onClose={() => setTempOpen(false)}
-          onSelect={(value) => { setTempOpen(false); void record('temp', { child_id: childId, event_type: '3', temperature: value }); }} />
+          onSelect={(value) => {
+            setTempOpen(false);
+            // 窓が閉じて送る。送っている間は開いた元が押せないので、応答のあとに開いた元へ戻す（連絡帳（クラス）画面の「＋体温」と同じ。GitHub Issue #213）
+            void record('temp', { child_id: childId, event_type: '3', temperature: value }, () => tempButtonRef.current);
+          }} />
       )}
       {fix && (
         <FixDialog target={fix.target} startMode={fix.mode} normalTemperature={findChild(childId)?.normal_temperature ?? null} onClose={() => setFix(null)} onDone={(message) => { setFix(null); notify(message); page.refresh(); }} />

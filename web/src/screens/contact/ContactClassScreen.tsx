@@ -165,9 +165,10 @@ export default function ContactClassScreen() {
   /**
    * 押したら応答を待つ。成功でも失敗でも、今の状態を読み直す。
    * 送っている間は表のボタンがすべて押せなくなり、押したボタンからフォーカスが外れる。応答のあと、押したボタンへ戻す。
-   * 押したボタンが消えるもの（確認しました）は、成功したときに movedTo の場所へ移す（src/focusAfter.ts、GitHub Issue #213）
+   * 押したボタンが消えるもの（確認しました）は、成功したときに movedTo の場所へ移す（src/focusAfter.ts、GitHub Issue #213）。
+   * 窓の中で押して窓ごと消えるもの（体温の一覧の値）は、成功・失敗とも back の場所（窓を開いた「＋体温」）へ移す
    */
-  const act = async (key: string, name: string, work: () => Promise<void>, movedTo?: () => HTMLElement | null) => {
+  const act = async (key: string, name: string, work: () => Promise<void>, movedTo?: () => HTMLElement | null, back?: () => HTMLElement | null) => {
     if (busyKey !== null) return;
     const pressed = focusedNow();
     let done = false;
@@ -184,7 +185,7 @@ export default function ContactClassScreen() {
     } finally {
       setBusyKey(null);
       view.refresh();
-      focusAfter(pressed, done ? movedTo : undefined);
+      focusAfter(pressed, (done ? movedTo : undefined) ?? back);
     }
   };
 
@@ -198,8 +199,8 @@ export default function ContactClassScreen() {
     }, () => document.querySelector<HTMLElement>(`[data-confirmed-home="${home.contact_home_id}"]`));
   };
 
-  /** 1件を記録する（段1。その場で保存）。結果の表示に「取り消す」を添える */
-  const recordOne = (row: ContactClassRow, key: string, input: ContactEventInput) =>
+  /** 1件を記録する（段1。その場で保存）。結果の表示に「取り消す」を添える。back は act と同じ */
+  const recordOne = (row: ContactClassRow, key: string, input: ContactEventInput, back?: () => HTMLElement | null) =>
     act(key, row.child.child_name, async () => {
       const res = await api.recordEvents(user!, [input]);
       const saved = res.events[0];
@@ -211,7 +212,7 @@ export default function ContactClassScreen() {
       // 【仮置き】記録したときの結果の文。園児名と記録したものを足した（web/仮置き値.md）
       notify(`${row.child.child_name}さんの「${eventText(saved)}」を記録しました。保護者が見られる状態です。`,
         cancelAction(user!, { kind: 'event', event: saved, childName: row.child.child_name }));
-    });
+    }, undefined, back);
 
   const correctMeal = (row: ContactClassRow, e: ContactEvent, amount: MealAmount) =>
     act(`meal-${row.child.child_id}`, row.child.child_name, async () => {
@@ -417,7 +418,7 @@ export default function ContactClassScreen() {
                           )}
                           {canRecord && (
                             <button type="button" className="contact-pick contact-temp-add" onClick={() => setTempFor(row)} disabled={rowBusy}
-                              aria-label={`${name}の体温を記録する`}>＋体温</button>
+                              data-temp-add={id} aria-label={`${name}の体温を記録する`}>＋体温</button>
                           )}
                           {!lastTemp && !canRecord && <span className="muted">―</span>}
                           {row.child.normal_temperature !== null && <div className="muted">平熱 {row.child.normal_temperature.toFixed(1)}</div>}
@@ -447,7 +448,12 @@ export default function ContactClassScreen() {
           onSelect={(value) => {
             const row = tempFor;
             setTempFor(null);
-            void recordOne(row, `temp-${row.child.child_id}`, { child_id: row.child.child_id, event_type: '3', temperature: value });
+            /*
+             * 値を押すと窓が閉じて送る。窓の部品は開いた元の「＋体温」へフォーカスを戻すが、送っている間は押せないので戻らず、
+             * 押した値も窓ごと消える。応答のあと、押せるようになった「＋体温」へ移す（WCAG 2.4.3、GitHub Issue #213）
+             */
+            void recordOne(row, `temp-${row.child.child_id}`, { child_id: row.child.child_id, event_type: '3', temperature: value },
+              () => document.querySelector<HTMLElement>(`[data-temp-add="${row.child.child_id}"]`));
           }} />
       )}
       {fix && (

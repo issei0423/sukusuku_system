@@ -285,6 +285,20 @@ test.describe('[staff] contact キーボードだけで通す', () => {
     expect(errors, 'ブラウザ実行エラー').toEqual([]);
   });
 
+  test('連絡帳（クラス）画面で体温の一覧から値を選んで記録したあと、開いた元の「＋体温」にフォーカスが戻る', async ({ page }) => {
+    // 値を押すと窓が閉じて送る。送っている間は「＋体温」が押せず、窓の部品が開いた元へ戻せない。応答のあとに戻す（GitHub Issue #213）
+    const errors = await open(page, 'contact-class');
+    const add = page.getByRole('button', { name: '上園 花子の体温を記録する' });
+    await tabTo(page, add);
+    await key(page, 'Enter');
+    const picker = page.getByRole('dialog', { name: '上園 花子の体温' });
+    await expectFocusInside(page, picker);
+    await expect(picker.getByRole('button', { name: '36.8', exact: true })).toBeFocused();
+    await pressAndExpectFocus(page, 'Enter', add);
+    await expect(page.getByRole('button', { name: /^上園 花子の体温 36\.8℃/ })).toBeVisible();
+    expect(errors, 'ブラウザ実行エラー').toEqual([]);
+  });
+
   test.describe('表が横に送られる幅（iPad の横向き 1024×768）', () => {
     test.use({ viewport: { width: 1024, height: 768 } });
 
