@@ -88,6 +88,29 @@ export function settingText(key: string, fallback: string): string {
 }
 
 /**
+ * 保護者へ返す設定マスタのキー。保護者の画面で使うキーに絞る（詳細設計書「参照データの設定の返し方」(4-10 (7))、
+ * 決めたこと D-44）。午睡の確認の間隔のような監査の層の値を保護者へ返さない。contact.*・ai.enabled は
+ * 第3.0版で足すキーで、いまの設定マスタには無い。サーバ側は server/api_reference.go の guardianSettingKeys
+ */
+export const GUARDIAN_SETTING_KEYS: ReadonlySet<string> = new Set([
+  'facility.name', 'facility.phone_number', 'contact.home_items', 'contact.mood_choices', 'ai.enabled',
+]);
+
+/**
+ * 参照データ（GET /api/reference）の設定。保護者には GUARDIAN_SETTING_KEYS だけ、職員には全キー。
+ * http.ts の画面はこの形を受け取る。モックの画面は settingText・settingNumber で設定マスタを直接読むため、
+ * 利用者で絞れない（下の「手続きを終えるまでの拒否」の注記と同じ、利用者を受け取らない関数の制約）
+ */
+export function referenceSettings(user: SessionUser): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const s of db.settings) {
+    if (user.role === '3' && !GUARDIAN_SETTING_KEYS.has(s.setting_key)) continue;
+    out[s.setting_key] = s.setting_value;
+  }
+  return out;
+}
+
+/**
  * 同意を履歴へ追記する。前の版に同意した行は消さない
  * （基本設計書「同意履歴（t_terms_agreement）」(5-2)）。
  * 同意は要配慮個人情報を取り扱う根拠であり、いつ・どの版に同意したかを後から示せる必要がある
@@ -208,10 +231,22 @@ export function visibleChildren(user: SessionUser): Child[] {
   return user.guardian_id ? childrenOfGuardian(user.guardian_id) : [];
 }
 
-/** 職員が選べるクラス。一般は自クラスのみ（画面詳細図 3-1） */
+/**
+ * 職員が選べるクラス。一般は自クラスのみ（画面詳細図 3-1）。
+ * 保護者には自児（有効な紐づけのある在籍中の園児）のクラスだけを返す
+ * （【仮置き】設計は保護者に返すクラスを決めていない。web/仮置き値.md。サーバ側は server/scope.go の selectableClasses）
+ */
 export function selectableClasses(user: SessionUser): ClassRoom[] {
   const current = db.classes.filter((c) => c.fiscal_year === db.FISCAL_YEAR);
   if (user.role === '1') return current;
+  if (user.role === '3') {
+    if (!user.guardian_id) return [];
+    const mine = new Set(childrenOfGuardian(user.guardian_id)
+      .filter((c) => !c.is_deleted && c.enrollment_status === '1')
+      .map((c) => c.child_id));
+    const ids = new Set(db.classChildren.filter((cc) => mine.has(cc.child_id)).map((cc) => cc.class_id));
+    return current.filter((c) => ids.has(c.class_id));
+  }
   return current.filter((c) => c.class_id === user.class_id);
 }
 

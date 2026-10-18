@@ -8,7 +8,8 @@
  * 業務の規則を2か所に持っているため、片方だけを直すと食い違う（MOCKUP.md）。
  */
 import { describe, it, expect } from 'vitest';
-import { api, childrenOfGuardian, visibleChildren } from '../src/api/client';
+import { api, childrenOfGuardian, selectableClasses, visibleChildren } from '../src/api/client';
+import { GUARDIAN_SETTING_KEYS, referenceSettings } from '../src/api/mock';
 import * as db from '../src/api/mockDb';
 import { today } from '../src/api/util';
 import type { SessionUser } from '../src/api/types';
@@ -185,5 +186,46 @@ describe('保護者が見られない日誌は「この記録は共有されて�
     }
     await expect(api.getDiary(otherTeacher, 1)).rejects.toThrow('この日誌を参照する権限がありません');
     await expect(api.getDiary(guardian, 5)).resolves.toBeTruthy();
+  });
+});
+
+/*
+ * 保護者へ返す参照データは、自児のクラスと、保護者の画面で使う設定だけ
+ * （詳細設計書「参照データの設定の返し方」(4-10 (7))、決めたこと D-44。クラスを自児のものに絞るのは【仮置き】）。
+ * サーバ側は server/api_guardian_test.go の TestGuardianReferenceIsNarrowed
+ */
+describe('保護者へ返す参照データは、自児のクラスと保護者の画面で使う設定だけ', () => {
+  it('設定は保護者の画面で使うキーだけで、午睡の間隔などは返さない。職員には全キー', () => {
+    const mine = referenceSettings(guardian);
+    expect(Object.keys(mine).every((k) => GUARDIAN_SETTING_KEYS.has(k))).toBe(true);
+    expect(mine['facility.name']).toBeTruthy();
+    expect(mine['facility.phone_number']).toBeTruthy();
+    for (const k of ['nap.interval_minutes.age0', 'nap.time_range', 'auth.max_failed_login', 'ui.diary_lock_minutes']) {
+      expect(mine, k).not.toHaveProperty([k]);
+    }
+    for (const staff of [teacher, admin]) {
+      expect(referenceSettings(staff)).toHaveProperty(['nap.interval_minutes.age0']);
+    }
+  });
+
+  it('クラスは自児のクラスだけ。きょうだいが別のクラスにいれば両方、紐づけが終われば外れる', () => {
+    expect(selectableClasses(guardian).map((c) => c.class_id)).toEqual([1]);
+    const link = {
+      guardian_id: 'G001', child_id: 'C013', relationship: '父', link_status: '1' as const,
+      linked_at: '2026-04-01T09:00:00', ended_at: null as string | null,
+    };
+    db.guardianChildren.push(link);
+    try {
+      expect(selectableClasses(guardian).map((c) => c.class_id)).toEqual([1, 2]);
+      Object.assign(link, { link_status: '2', ended_at: '2026-04-02T09:00:00' });
+      expect(selectableClasses(guardian).map((c) => c.class_id)).toEqual([1]);
+    } finally {
+      db.guardianChildren.splice(db.guardianChildren.indexOf(link), 1);
+    }
+  });
+
+  it('職員の選べるクラスは変えない', () => {
+    expect(selectableClasses(teacher).map((c) => c.class_id)).toEqual([1]);
+    expect(selectableClasses(admin).length).toBeGreaterThanOrEqual(3);
   });
 });

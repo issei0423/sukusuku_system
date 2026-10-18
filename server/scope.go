@@ -166,15 +166,28 @@ type ClassRoom struct {
 }
 
 // selectableClasses は職員が選べるクラス。一般は自クラスのみ（画面詳細図 3-1）。
+// 保護者には自児（visibleChildren と同じ、有効な紐づけのある在籍中の園児）のクラスだけを返す。
+// 保護者の画面はクラスの一覧を使わず、ほかのクラスの名前や数を保護者へ渡す理由が無いため
+// （【仮置き】設計は保護者に返すクラスを決めていない。web/仮置き値.md。モックは web/src/api/mock.ts の selectableClasses）
 func (a *app) selectableClasses(u *SessionUser) ([]ClassRoom, error) {
 	q := `SELECT class_id, fiscal_year, class_name, age_class FROM m_class WHERE fiscal_year = ?`
 	args := []any{fiscalYear}
-	if u.isGeneralStaff() {
+	switch {
+	case u.isGeneralStaff():
 		if u.ClassID == nil {
 			return []ClassRoom{}, nil
 		}
 		q += ` AND class_id = ?`
 		args = append(args, *u.ClassID)
+	case u.isGuardian():
+		if u.GuardianID == nil {
+			return []ClassRoom{}, nil
+		}
+		q += ` AND class_id IN (SELECT cc.class_id FROM t_class_child cc
+		         JOIN t_guardian_child gc ON gc.child_id = cc.child_id AND gc.link_status = '1'
+		         JOIN m_child c ON c.child_id = cc.child_id AND c.is_deleted = 0 AND c.enrollment_status = '1'
+		        WHERE gc.guardian_id = ?)`
+		args = append(args, *u.GuardianID)
 	}
 	q += ` ORDER BY class_id`
 

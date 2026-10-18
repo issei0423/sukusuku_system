@@ -270,3 +270,105 @@ func TestGuardianChildIntakeItemsAreNotReturned(t *testing.T) {
 		}
 	})
 }
+
+/*
+ * 保護者へ返す参照データは、自児のクラスと、保護者の画面で使う設定だけ
+ * （詳細設計書「参照データの設定の返し方」(4-10 (7))、決めたこと D-44。図/インタフェース一覧.md の GET /api/reference。
+ * クラスを自児のものに絞るのは【仮置き】。web/仮置き値.md）。
+ * 画面側のモックは web/tests/guardianScope.test.ts で同じ観点を確かめる。
+ */
+func TestGuardianReferenceIsNarrowed(t *testing.T) {
+	a, h := newTestApp(t)
+	nohara := loginAs(a, 6, "guardian") // 野原 太郎（C001・さくら組）の保護者
+	teacher := loginAs(a, 3, "staff")   // さくら組
+	admin := loginAs(a, 1, "staff")
+
+	readRef := func(t *testing.T, c *http.Cookie) referenceData {
+		t.Helper()
+		var ref referenceData
+		if err := json.Unmarshal(call(t, h, c, "GET", "/api/reference", "").Body.Bytes(), &ref); err != nil {
+			t.Fatal(err)
+		}
+		return ref
+	}
+	classIDs := func(cs []ClassRoom) []int64 {
+		out := []int64{}
+		for _, c := range cs {
+			out = append(out, c.ClassID)
+		}
+		return out
+	}
+	sameIDs := func(got []int64, want ...int64) bool {
+		if len(got) != len(want) {
+			return false
+		}
+		for i := range got {
+			if got[i] != want[i] {
+				return false
+			}
+		}
+		return true
+	}
+
+	t.Run("設定は保護者の画面で使うキーだけで、午睡の間隔などは返さない", func(t *testing.T) {
+		ref := readRef(t, nohara)
+		for k := range ref.Settings {
+			if !guardianSettingKeys[k] {
+				t.Fatalf("保護者に設定 %s が返っています", k)
+			}
+		}
+		for _, k := range []string{"facility.name", "facility.phone_number"} {
+			if ref.Settings[k] == "" {
+				t.Fatalf("保護者の画面で使う設定 %s が返っていません: %v", k, ref.Settings)
+			}
+		}
+		for _, k := range []string{"nap.interval_minutes.age0", "nap.time_range", "auth.max_failed_login", "ui.diary_lock_minutes"} {
+			if _, has := ref.Settings[k]; has {
+				t.Fatalf("保護者に設定 %s が返っています", k)
+			}
+		}
+	})
+
+	t.Run("クラスは自児のクラスだけ。/api/classes も同じ", func(t *testing.T) {
+		if got := classIDs(readRef(t, nohara).Classes); !sameIDs(got, 1) {
+			t.Fatalf("保護者の参照データのクラス = %v, want [1]", got)
+		}
+		var classes []ClassRoom
+		if err := json.Unmarshal(call(t, h, nohara, "GET", "/api/classes", "").Body.Bytes(), &classes); err != nil {
+			t.Fatal(err)
+		}
+		if got := classIDs(classes); !sameIDs(got, 1) {
+			t.Fatalf("保護者の /api/classes = %v, want [1]", got)
+		}
+	})
+
+	t.Run("きょうだいが別のクラスにいれば両方。紐づけが終われば外れる", func(t *testing.T) {
+		if _, err := a.db.Exec(`INSERT INTO t_guardian_child (guardian_id, child_id, relationship, link_status, linked_at)
+			VALUES ('G001', 'C013', '父', '1', ?)`, now()); err != nil {
+			t.Fatal(err)
+		}
+		if got := classIDs(readRef(t, nohara).Classes); !sameIDs(got, 1, 2) {
+			t.Fatalf("きょうだいのいる保護者のクラス = %v, want [1 2]", got)
+		}
+		if _, err := a.db.Exec(`UPDATE t_guardian_child SET link_status = '2', ended_at = ? WHERE guardian_id = 'G001' AND child_id = 'C013'`, now()); err != nil {
+			t.Fatal(err)
+		}
+		if got := classIDs(readRef(t, nohara).Classes); !sameIDs(got, 1) {
+			t.Fatalf("紐づけを終えたあとのクラス = %v, want [1]", got)
+		}
+	})
+
+	t.Run("職員には、これまでどおり全キーと選べるクラスを返す", func(t *testing.T) {
+		for _, c := range []*http.Cookie{teacher, admin} {
+			if _, has := readRef(t, c).Settings["nap.interval_minutes.age0"]; !has {
+				t.Fatal("職員に午睡の間隔の設定が返っていません")
+			}
+		}
+		if got := classIDs(readRef(t, teacher).Classes); !sameIDs(got, 1) {
+			t.Fatalf("担任のクラス = %v, want [1]", got)
+		}
+		if got := classIDs(readRef(t, admin).Classes); len(got) < 3 {
+			t.Fatalf("管理者のクラス = %v, want 全クラス", got)
+		}
+	})
+}
