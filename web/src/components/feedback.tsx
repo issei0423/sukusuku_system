@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Modal } from './ui';
 import { useOverlayInset } from '../stickyInset';
+import { focusAfter, focusedNow } from '../focusAfter';
 
 // 表示する時間。読み上げに拾わせるため、すぐには消さない
 const SHOW_MS = 6000;
@@ -103,6 +104,19 @@ export function ToastHost() {
     return () => { box.current = null; release?.(); };
   }, [cover]);
 
+  /*
+   * 「閉じる」を押すと知らせごと消え、押したボタンからフォーカスが外れて body に落ちていた。
+   * 知らせへフォーカスが入る前にいた部品（cameFrom）へ戻す。消えた・押せなくなったなどで戻せなければ、本文（main）へ移す
+   * （WCAG 2.4.3 フォーカス順序、GitHub Issue #213。共通の決まりは src/focusAfter.ts。押したときにフォーカスが無ければ動かさない）
+   */
+  const cameFrom = useRef<HTMLElement | null>(null);
+  const close = () => {
+    const pressed = focusedNow();
+    const back = cameFrom.current;
+    publish(null);
+    focusAfter(pressed, () => (back?.isConnected && !back.matches(':disabled') ? back : document.querySelector<HTMLElement>('main')));
+  };
+
   useEffect(() => {
     // 知らせが消えたら、止めていたことも忘れる（消えた表示からは、離れた知らせが届かないため）
     const onToast = (next: Toast | null) => { setToast(next); if (!next) setHold({ focus: false, pointer: false }); };
@@ -133,7 +147,11 @@ export function ToastHost() {
     <>
       {toast && (
         <div ref={toastRef} className="toast" role="status" aria-live="polite"
-          onFocus={() => setHold((h) => ({ ...h, focus: true }))}
+          onFocus={(e) => {
+            // 外から入ってきたときだけ、入る前にいた部品を覚える（知らせの中で「取り消す」から「閉じる」へ移ったときは覚え直さない）
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) cameFrom.current = e.relatedTarget instanceof HTMLElement ? e.relatedTarget : null;
+            setHold((h) => ({ ...h, focus: true }));
+          }}
           onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setHold((h) => ({ ...h, focus: false })); }}
           onPointerEnter={() => setHold((h) => ({ ...h, pointer: true }))}
           onPointerLeave={() => setHold((h) => ({ ...h, pointer: false }))}>
@@ -141,7 +159,7 @@ export function ToastHost() {
           {toast.action && (
             <button className="btn-sm btn-quiet" onClick={() => openConfirm(toast.action!)}>{toast.action.label}</button>
           )}
-          <button className="btn-sm btn-quiet" onClick={() => publish(null)}>閉じる</button>
+          <button className="btn-sm btn-quiet" onClick={close}>閉じる</button>
         </div>
       )}
       {confirming && (

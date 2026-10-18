@@ -20,6 +20,7 @@
  * 送る・記録するボタンは、送っている間に押せなくなる（disabled）・送ったあとに消えるため、押したボタンからフォーカスが外れる。
  * 応答のあとに、押したボタンが残っていればそこへ、消えていれば決めた場所へフォーカスが移ることを確かめる
  * （WCAG 2.4.3 フォーカス順序、GitHub Issue #213。共通の決まりは src/focusAfter.ts）。
+ * 窓の中で押して窓ごと消えるもの（体温の一覧の値・対象外の理由）と、結果の表示の「閉じる」も同じく確かめる。
  */
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { REVIEW_TIME } from './scenarios';
@@ -134,6 +135,22 @@ async function walkThrough(page: Page, first: Locator, within: string) {
   }
   await tabTo(page, first, { shift: true, max: visited.length + 2 });
   return visited;
+}
+
+/**
+ * Tab で結果の表示（トースト。本文の後ろに置く）の中まで進む。1歩ごとに key と同じ確かめをする。
+ * 入る前にフォーカスがあった部品を返す（「閉じる」を押したあとの戻り先。GitHub Issue #213）
+ */
+async function tabIntoToast(page: Page, max = 40): Promise<Locator> {
+  for (let i = 0; i < max; i++) {
+    await page.evaluate(() => {
+      document.querySelectorAll('[data-before-toast]').forEach((el) => el.removeAttribute('data-before-toast'));
+      document.activeElement?.setAttribute('data-before-toast', '');
+    });
+    await key(page, 'Tab');
+    if (await page.evaluate(() => !!document.activeElement?.closest('.toast'))) return page.locator('[data-before-toast]');
+  }
+  throw new Error(`${max} 回の Tab で結果の表示に届かない`);
 }
 
 /** ダイアログを開いたあと、フォーカスがその中にあり、見えること */
@@ -296,6 +313,27 @@ test.describe('[staff] contact キーボードだけで通す', () => {
     await expect(picker.getByRole('button', { name: '36.8', exact: true })).toBeFocused();
     await pressAndExpectFocus(page, 'Enter', add);
     await expect(page.getByRole('button', { name: /^上園 花子の体温 36\.8℃/ })).toBeVisible();
+    expect(errors, 'ブラウザ実行エラー').toEqual([]);
+  });
+
+  test('連絡帳（園児）画面で体温を記録したあと「体温を記録する」へ戻り、結果の表示の「閉じる」のあとは入る前にいた部品へ戻る', async ({ page }) => {
+    // GitHub Issue #213。「閉じる」を押すと知らせごと消え、直す前はフォーカスが body に落ちていた
+    const errors = await open(page, 'contact-child');
+    const add = page.getByRole('button', { name: '体温を記録する', exact: true });
+    await tabTo(page, add);
+    await key(page, 'Enter');
+    const picker = page.getByRole('dialog', { name: '野原 太郎の体温' });
+    await expectFocusInside(page, picker);
+    await pressAndExpectFocus(page, 'Enter', add);
+    const toast = page.locator('.toast');
+    await expect(toast).toContainText('野原 太郎さんの「');
+    // 本文の続きを Tab で進んで結果の表示へ入り、「閉じる」を Enter
+    const before = await tabIntoToast(page);
+    await tabTo(page, toast.getByRole('button', { name: '閉じる' }), { max: 3 });
+    await page.keyboard.press('Enter');
+    await expect(toast).toHaveCount(0);
+    await expect(before, '「閉じる」のあと、結果の表示へ入る前にいた部品へ戻っていない').toBeFocused();
+    await expectFocusVisible(page);
     expect(errors, 'ブラウザ実行エラー').toEqual([]);
   });
 
