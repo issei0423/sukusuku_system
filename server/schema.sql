@@ -346,7 +346,7 @@ CREATE TABLE t_nap_abnormal (
   staff_id        TEXT    NOT NULL REFERENCES m_staff(staff_id),
   diary_id        INTEGER REFERENCES t_diary(diary_id),
   -- 保護者への連絡（基本設計書「午睡チェック」(5-7) の「足した列（午睡チェックの記録・異常時の記録）」）。
-  -- 空は未記入。連絡の要否はシステムが判断しない。「した」のときの必須はサーバが確かめる（api_nap.go の guardianNoticeProblem）
+  -- 空は未記入。連絡の要否はシステムが判断しない。「した」のときの必須はサーバが確かめる（api_nap.go の guardianNotice.problem。モックは web/src/api/mock.ts の guardianNoticeProblem）
   guardian_notice        TEXT CHECK (guardian_notice IN ('1','2')),                 -- 1:した 2:しない
   guardian_noticed_at    TEXT,
   guardian_notice_method TEXT CHECK (guardian_notice_method IN ('1','2','3','9')),  -- 1:電話 2:お迎えのときに対面 3:連絡帳・個人チャット 9:その他
