@@ -21,7 +21,7 @@ const teacher: SessionUser = {
   is_temp_password: false, terms_agreed: true,
 };
 
-const BREATHING_TEXT = '呼吸が確認できません。記録より先に、子どもへの対応と応援の要請を行ってください。異常時の記録は、そのあとでかまいません。';
+const BREATHING_TEXT = '呼吸が確認できません。ただちに、子どもへの対応と応援の要請を行ってください。異常時の記録は、そのあとでかまいません。';
 const PRONE_TEXT = 'うつ伏せを記録します。仰向けに直したときは、直したあとの向きをもう一度記録してください。';
 
 // 午睡の時間帯（13:00-15:00）の中に時計を固定する。デモの実施が自動で解除されないようにするため（napDevScreens.test.tsx と同じ）

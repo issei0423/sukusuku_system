@@ -310,7 +310,7 @@ function NapRecordRow({ row, sessionId, due, onSaved }: {
         【仮置き】呼吸の文の言い回しは設計が定めていない（web/仮置き値.md）
       */}
       {position === '2' && <Alert>うつ伏せを記録します。仰向けに直したときは、直したあとの向きをもう一度記録してください。</Alert>}
-      {breathing === '2' && <Alert>呼吸が確認できません。記録より先に、子どもへの対応と応援の要請を行ってください。異常時の記録は、そのあとでかまいません。</Alert>}
+      {breathing === '2' && <Alert>呼吸が確認できません。ただちに、子どもへの対応と応援の要請を行ってください。異常時の記録は、そのあとでかまいません。</Alert>}
       {error && <Alert>{error}</Alert>}
 
       <div className="nap-row-actions">
