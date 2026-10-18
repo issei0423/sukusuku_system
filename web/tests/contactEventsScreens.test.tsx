@@ -53,7 +53,8 @@ describe('連絡帳（クラス）画面：記録する', () => {
     expect(within(toast() as HTMLElement).getByRole('button', { name: '取り消す' })).toBeTruthy();
     const after = (await api.contactPage(guardian, 'C001')).events.filter((e) => e.toilet_label === 'うんち').length;
     expect(after).toBe(before + 1);
-    await waitFor(() => expect(screen.getByRole('button', { name: /野原 太郎の排せつ うんち \d{2}:\d{2} を直す・取り消す/ })).toBeTruthy(), { timeout: 3000 });
+    // 読み上げの名前に、見えている「n回／」も入れている（WCAG 2.5.3）
+    await waitFor(() => expect(screen.getByRole('button', { name: /野原 太郎の排せつ \d+回／うんち \d{2}:\d{2} を直す・取り消す/ })).toBeTruthy(), { timeout: 3000 });
 
     // 結果の「取り消す」→ いま読んでいる家庭の数を確かめてから取り消す
     fireEvent.click(within(toast() as HTMLElement).getByRole('button', { name: '取り消す' }));
@@ -123,7 +124,7 @@ describe('連絡帳（クラス）画面：記録する', () => {
   it('記録した値を押すと「直す」「取り消す」。取り消すと、いま読んでいる家庭の数を確かめてから消す', async () => {
     await api.recordEvents(teacher, [{ child_id: 'C004', event_type: '2', toilet_label: 'おしっこ' }]);
     open('/staff/contact', teacher);
-    fireEvent.click(await screen.findByRole('button', { name: /宮城 美咲の排せつ おしっこ \d{2}:\d{2} を直す・取り消す/ }, { timeout: 3000 }));
+    fireEvent.click(await screen.findByRole('button', { name: /宮城 美咲の排せつ \d+回／おしっこ \d{2}:\d{2} を直す・取り消す/ }, { timeout: 3000 }));
     const dialog = screen.getByRole('dialog', { name: '記録を直す' });
     fireEvent.click(within(dialog).getByRole('button', { name: 'トイレでできた' }));
     fireEvent.click(within(dialog).getByRole('button', { name: '直す' }));
@@ -131,7 +132,7 @@ describe('連絡帳（クラス）画面：記録する', () => {
     const misaki: SessionUser = { ...guardian, account_id: 9, guardian_id: 'G004' };
     expect((await api.contactPage(misaki, 'C004')).events.some((e) => e.toilet_label === 'トイレでできた' && e.corrected_at)).toBe(true);
 
-    fireEvent.click(await screen.findByRole('button', { name: /宮城 美咲の排せつ トイレでできた \d{2}:\d{2} を直す・取り消す/ }, { timeout: 3000 }));
+    fireEvent.click(await screen.findByRole('button', { name: /宮城 美咲の排せつ \d+回／トイレでできた \d{2}:\d{2} を直す・取り消す/ }, { timeout: 3000 }));
     fireEvent.click(within(screen.getByRole('dialog', { name: '記録を直す' })).getByRole('button', { name: 'この記録を取り消す' }));
     const confirm = screen.getByRole('dialog', { name: 'この記録を取り消しますか' });
     await within(confirm).findByText('いま保護者 0 家庭（0 名）が読んでいます。取り消しても、読まれた内容は取り消せません。', undefined, { timeout: 3000 });

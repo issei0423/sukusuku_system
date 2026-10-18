@@ -138,13 +138,14 @@ describe('職員ダッシュボードと連絡帳（クラス）画面の「園�
     expect(within(row).getByRole('link', { name: '開く' }).getAttribute('href')).toBe('/staff/contact?sort=facility');
     cleanup();
     open('/staff/contact?sort=facility', teacher);
-    const links = await screen.findAllByRole('link', { name: /の園から$/ }, { timeout: 3000 });
+    // 読み上げの名前は「（氏名）の園から 未送信」のように、見えている文字を後ろに足している（WCAG 2.5.3）
+    const links = await screen.findAllByRole('link', { name: /の園から (未送信|送った|欠席)/ }, { timeout: 3000 });
     const texts = links.map((l) => l.textContent ?? '');
     const firstSent = texts.findIndex((t) => !t.includes('未送信'));
     expect(texts.slice(firstSent).some((t) => t.includes('未送信'))).toBe(false);
     // 今日の午睡で欠席にした子（デモの高梨 健）は「欠席」
     if (db.napExclusions.some((x) => x.child_id === 'C003' && x.reason === '1' && !x.is_deleted)) {
-      expect(screen.getByRole('link', { name: '高梨 健の園から' }).textContent).toMatch(/欠席|送った/);
+      expect(screen.getByRole('link', { name: /^高梨 健の園から / }).textContent).toMatch(/欠席|送った/);
     }
   });
 });
