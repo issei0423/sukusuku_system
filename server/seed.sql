@@ -478,6 +478,10 @@ INSERT INTO t_nap_sleep (nap_sleep_id, nap_session_id, child_id, slept_at, woke_
  (7,1,'C010','2026-09-01T13:07:00',NULL,'S004',NULL,'2026-09-01T13:07:00','2026-09-01T13:07:00'),
  (8,2,'C001','2026-08-31T13:02:00','2026-08-31T14:35:00','S003','S003','2026-08-31T13:02:00','2026-08-31T14:35:00');
 
+-- 入眠時の体温（監査の層。保護者へは返さない）。昨日の C001 の「ねた」に入れ、午睡記録検索と CSV のねたの行に出す
+-- （画面詳細図「午睡記録検索画面」(5-3) の項目6・9。web/src/api/mockDb.ts の napSleeps と同じ）
+UPDATE t_nap_sleep SET sleep_temperature = 36.5 WHERE nap_sleep_id = 8;
+
 -- きょうは対象外。今日の実施 1 で C003 は欠席
 INSERT INTO t_nap_exclusion (nap_exclusion_id, nap_session_id, child_id, reason, staff_id, created_at) VALUES
  (1,1,'C003','1','S003','2026-09-01T13:01:00');

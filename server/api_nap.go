@@ -5,6 +5,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"sort"
 	"strings"
 )
 
@@ -465,6 +466,14 @@ type napAbnormalView struct {
 	DiaryID       *int64 `json:"diary_id"`
 	ChildName     string `json:"child_name"`
 	StaffName     string `json:"staff_name"`
+	/*
+	 * 起票したヒヤリハットの側の「状況」「とった対応」。起票していない記録・日誌が見つからない記録では null。
+	 * 帳票では、起票した記録はヒヤリハット側の状況・とった対応を出し、起票済みの印を付けて二重に数えない
+	 * （基本設計書「帳票の出力」(4-8)、要件定義書「日誌システム」(4-3) の「午睡チェックの異常時の記録との関係」の
+	 * 「集計・監査時はヒヤリハット側を正」）。記録そのものの状況・とった対応（situation・response）は書き換えない
+	 */
+	IncidentSituation *string `json:"incident_situation"`
+	IncidentResponse  *string `json:"incident_response"`
 }
 
 func (a *app) handleNapAbnormals(w http.ResponseWriter, r *http.Request) {
@@ -502,9 +511,51 @@ func (a *app) handleNapAbnormals(w http.ResponseWriter, r *http.Request) {
 		}
 		x.ChildName = a.childName(x.ChildID)
 		x.StaffName = a.staffName(x.StaffID)
+		if x.DiaryID != nil {
+			var body string
+			if a.db.QueryRow(`SELECT body FROM t_diary WHERE diary_id = ? AND is_deleted = 0`, *x.DiaryID).
+				Scan(&body) == nil {
+				situation, response := incidentSituationResponse(body)
+				x.IncidentSituation, x.IncidentResponse = &situation, &response
+			}
+		}
 		out = append(out, x)
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+/*
+incidentSituationResponse は、ヒヤリハットの本文から「【状況】」と「【とった対応】」の見出しの下の文を取り出す。
+
+本文は見出しを付けてつないで持つ（基本設計書「ヒヤリハットの記録」(4-6)、詳細設計書「日誌」(4-13) の (1)
+「ヒヤリハットの本文」）。見出しは「【〇〇】」だけの行とし、次の見出しの行までをその見出しの文とする。
+見出しが無いときは空の文を返す。画面側のモック（web/src/api/mock.ts の incidentSituationResponse）と同じ規則
+*/
+func incidentSituationResponse(body string) (situation, response string) {
+	sections := map[string][]string{}
+	current := ""
+	for _, line := range strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n") {
+		if t := strings.TrimSpace(line); isIncidentHeading(t) {
+			current = t
+			continue
+		}
+		if current != "" {
+			sections[current] = append(sections[current], line)
+		}
+	}
+	join := func(heading string) string {
+		return strings.TrimSpace(strings.Join(sections[heading], "\n"))
+	}
+	return join("【状況】"), join("【とった対応】")
+}
+
+// isIncidentHeading は、行が「【〇〇】」だけの見出しかを返す
+func isIncidentHeading(t string) bool {
+	if !strings.HasPrefix(t, "【") || !strings.HasSuffix(t, "】") {
+		return false
+	}
+	inner := strings.TrimSuffix(strings.TrimPrefix(t, "【"), "】")
+	return inner != "" && !strings.ContainsAny(inner, "【】")
 }
 
 func (a *app) handleRecordNapAbnormal(w http.ResponseWriter, r *http.Request) {
@@ -704,63 +755,105 @@ handleSearchNapRecords は午睡記録検索画面のためのデータを返す
 
 チェック時刻と保存時刻の両方を出し、後から入れた記録が分かるようにする（基本設計書 5-6）。
 記録は削除できない（同「記録の修正と改ざん防止」(4-7)）ため、削除の導線は持たない。
+
+5分ごとの確認（t_nap_record）に、ねた・おきた（t_nap_sleep）を同じ一覧の行として並べる。ねたの行には
+入眠時の体温（sleep_temperature）を出す（画面詳細図「午睡記録検索画面」(5-3) の項目6「園児ごとの入眠（ねた）と
+起床（おきた）、入眠時の体温（ねたの行）…も、その日の行に出す」、基本設計書「帳票の出力」(4-8)）。
+取り消した「ねた」（is_deleted = 1）は出さない。期間・クラス・園児名・参照範囲は確認の行と同じ規則で絞る。
+画面側のモック（web/src/api/mock.ts の searchRecords）と同じ規則
 */
 func (a *app) handleSearchNapRecords(w http.ResponseWriter, r *http.Request) {
 	u, ok := a.requireStaff(w, r)
 	if !ok {
 		return
 	}
-	q := `SELECT r.nap_record_id, r.nap_session_id, r.child_id, r.checked_at, r.saved_at,
+	cond := ``
+	args := []any{}
+	if v := r.URL.Query().Get("from"); v != "" {
+		cond += ` AND s.session_date >= ?`
+		args = append(args, v)
+	}
+	if v := r.URL.Query().Get("to"); v != "" {
+		cond += ` AND s.session_date <= ?`
+		args = append(args, v)
+	}
+	if v, has := queryInt64(r, "class_id"); has {
+		cond += ` AND s.class_id = ?`
+		args = append(args, v)
+	}
+
+	all := []napSearchRow{}
+	rows, err := a.db.Query(`SELECT r.nap_record_id, r.nap_session_id, r.child_id, r.checked_at, r.saved_at,
 		r.body_position, r.breathing, r.complexion, r.temperature, r.staff_id,
 		s.session_date, s.class_id
 		FROM t_nap_record r
 		JOIN t_nap_session s ON s.nap_session_id = r.nap_session_id
-		WHERE 1 = 1`
-	args := []any{}
-	if v := r.URL.Query().Get("from"); v != "" {
-		q += ` AND s.session_date >= ?`
-		args = append(args, v)
-	}
-	if v := r.URL.Query().Get("to"); v != "" {
-		q += ` AND s.session_date <= ?`
-		args = append(args, v)
-	}
-	if v, has := queryInt64(r, "class_id"); has {
-		q += ` AND s.class_id = ?`
-		args = append(args, v)
-	}
-	q += ` ORDER BY r.checked_at DESC`
-
-	rows, err := a.db.Query(q, args...)
+		WHERE 1 = 1`+cond, args...)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "午睡の記録を取得できませんでした")
 		return
 	}
-	type row struct {
-		NapRecord
-		SessionDate string `json:"session_date"`
-		ChildName   string `json:"child_name"`
-		ClassName   string `json:"class_name"`
-		StaffName   string `json:"staff_name"`
-		classID     int64
-	}
-	all := []row{}
 	for rows.Next() {
 		var (
-			x    row
-			temp sql.NullFloat64
+			x                          napSearchRow
+			recordID                   int64
+			savedAt                    string
+			position, breath, complexn string
+			temp                       sql.NullFloat64
 		)
-		if rows.Scan(&x.NapRecordID, &x.NapSessionID, &x.ChildID, &x.CheckedAt, &x.SavedAt,
-			&x.BodyPosition, &x.Breathing, &x.Complexion, &temp, &x.StaffID,
+		if rows.Scan(&recordID, &x.NapSessionID, &x.ChildID, &x.CheckedAt, &savedAt,
+			&position, &breath, &complexn, &temp, &x.StaffID,
 			&x.SessionDate, &x.classID) == nil {
+			x.Kind = napRowCheck
+			x.NapRecordID = &recordID
+			x.SavedAt = &savedAt
+			x.BodyPosition, x.Breathing, x.Complexion = &position, &breath, &complexn
 			x.Temperature = nullFloat(temp)
 			all = append(all, x)
 		}
 	}
 	rows.Close()
 
+	sleeps, err := a.db.Query(`SELECT n.nap_sleep_id, n.nap_session_id, n.child_id, n.slept_at, n.woke_at,
+		n.sleep_temperature, n.slept_staff_id, n.woke_staff_id, s.session_date, s.class_id
+		FROM t_nap_sleep n
+		JOIN t_nap_session s ON s.nap_session_id = n.nap_session_id
+		WHERE n.is_deleted = 0`+cond, args...)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "午睡の記録を取得できませんでした")
+		return
+	}
+	for sleeps.Next() {
+		var (
+			x           napSearchRow
+			sleepID     int64
+			wokeAt      sql.NullString
+			temp        sql.NullFloat64
+			wokeStaffID sql.NullString
+		)
+		if sleeps.Scan(&sleepID, &x.NapSessionID, &x.ChildID, &x.CheckedAt, &wokeAt,
+			&temp, &x.StaffID, &wokeStaffID, &x.SessionDate, &x.classID) != nil {
+			continue
+		}
+		x.NapSleepID = &sleepID
+		slept := x
+		slept.Kind = napRowSleep
+		slept.SleepTemperature = nullFloat(temp)
+		all = append(all, slept)
+		if wokeAt.Valid {
+			woke := x
+			woke.Kind = napRowWake
+			woke.CheckedAt = wokeAt.String
+			woke.StaffID = wokeStaffID.String
+			all = append(all, woke)
+		}
+	}
+	sleeps.Close()
+
+	sortNapSearchRows(all)
+
 	nameFilter := strings.TrimSpace(r.URL.Query().Get("child_name"))
-	out := []row{}
+	out := []napSearchRow{}
 	for _, x := range all {
 		if !a.canSeeChild(u, x.ChildID) {
 			continue
@@ -770,9 +863,75 @@ func (a *app) handleSearchNapRecords(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		x.ClassName = a.className(x.classID)
-		x.StaffName = a.staffName(x.StaffID)
+		if x.StaffID != "" {
+			x.StaffName = a.staffName(x.StaffID)
+		}
 		out = append(out, x)
 	}
 	writeJSON(w, http.StatusOK,
 		page(out, queryInt(r, "page", 1), a.settingInt("paging.nap_search_per_page", 50)))
+}
+
+// 午睡記録検索の行の種類
+const (
+	napRowCheck = "check" // 5分ごとの確認（t_nap_record）
+	napRowSleep = "sleep" // ねた（t_nap_sleep の slept_at）
+	napRowWake  = "wake"  // おきた（t_nap_sleep の woke_at）
+)
+
+/*
+napSearchRow は午睡記録検索の1行。
+
+確認の行は、体位・呼吸・顔色・体温・保存時刻を持つ。ねた・おきたの行は、押した時刻（サーバの時刻）を
+checked_at に持ち、体位・呼吸・顔色・保存時刻は持たない（null）。入眠時の体温はねたの行だけに出す。
+入眠時の体温は監査の層の値であり、この経路は職員だけが呼べる（基本設計書「ねた・おきた（t_nap_sleep）」(5-7)）
+*/
+type napSearchRow struct {
+	Kind             string   `json:"kind"`
+	NapRecordID      *int64   `json:"nap_record_id"`
+	NapSleepID       *int64   `json:"nap_sleep_id"`
+	NapSessionID     int64    `json:"nap_session_id"`
+	ChildID          string   `json:"child_id"`
+	CheckedAt        string   `json:"checked_at"`
+	SavedAt          *string  `json:"saved_at"`
+	BodyPosition     *string  `json:"body_position"`
+	Breathing        *string  `json:"breathing"`
+	Complexion       *string  `json:"complexion"`
+	Temperature      *float64 `json:"temperature"`
+	SleepTemperature *float64 `json:"sleep_temperature"`
+	StaffID          string   `json:"staff_id"`
+	SessionDate      string   `json:"session_date"`
+	ChildName        string   `json:"child_name"`
+	ClassName        string   `json:"class_name"`
+	StaffName        string   `json:"staff_name"`
+	classID          int64
+}
+
+/*
+sortNapSearchRows は時刻の新しい順に並べる。
+
+【仮置き】同じ時刻の行は、おきた・確認・ねたの順にし、同じ種類は ID の小さい順にする（web/仮置き値.md
+「一覧の並び順」）。新しい順の一覧で、寝ている間の出来事を、ねたより上・おきたより下に置くため。
+画面側のモック（web/src/api/mock.ts の searchRecords）と同じ並び
+*/
+func sortNapSearchRows(rows []napSearchRow) {
+	rank := map[string]int{napRowWake: 0, napRowCheck: 1, napRowSleep: 2}
+	id := func(x napSearchRow) int64 {
+		if x.NapRecordID != nil {
+			return *x.NapRecordID
+		}
+		if x.NapSleepID != nil {
+			return *x.NapSleepID
+		}
+		return 0
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].CheckedAt != rows[j].CheckedAt {
+			return rows[i].CheckedAt > rows[j].CheckedAt
+		}
+		if rank[rows[i].Kind] != rank[rows[j].Kind] {
+			return rank[rows[i].Kind] < rank[rows[j].Kind]
+		}
+		return id(rows[i]) < id(rows[j])
+	})
 }

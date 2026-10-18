@@ -4,6 +4,8 @@
  *
  * 記録の修正と改ざん防止（同「記録の修正と改ざん防止」(4-7)）に従い、この画面からは記録を消せない。
  * チェック時刻と保存時刻の両方を出し、後から入れた記録が分かるようにする（基本設計書 5-6）。
+ * 園児ごとの入眠（ねた）と起床（おきた）を同じ一覧の行として並べ、ねたの行に入眠時の体温を出す
+ * （画面詳細図「午睡記録検索画面」(5-3) の項目6・9、基本設計書「帳票の出力」(4-8)）。
  */
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -14,6 +16,8 @@ import { Loading, ErrorBox, Empty, Field, Pager } from '../../components/ui';
 import { notify } from '../../components/feedback';
 import { downloadCsv } from '../../csv';
 import { BODY_POSITION, BREATHING, COMPLEXION } from '../../api/codes';
+import type { NapSearchRow } from '../../api/shapes';
+import { NAP_REPORT_HEADER, SLEEP_ROW_LABEL, napReportRows, rowTemperature } from './napReport';
 import { formatMD, formatHM, formatMDHM, today, addDays } from '../../api/util';
 
 export default function NapSearchScreen() {
@@ -61,24 +65,20 @@ export default function NapSearchScreen() {
 
   const [exportError, setExportError] = useState<string | null>(null);
   const exportCsv = async () => {
-    if (!data) return;
+    // 異常時の記録も帳票に含める（画面詳細図 5-3 の項目9）。読めていないうちは出力しない（抜けた帳票を作らない）
+    if (!data || !abnormals.data) return;
     const { from: outFrom, to: outTo } = applied;
-    // 出力したことを先に操作ログへ残す。残せなかったときは出力しない
+    const abnormalRows = abnormals.data;
+    // 出力したことを先に操作ログへ残す。残せなかったときは出力しない。件数は一覧の行と異常時の記録の合計
     try {
-      await api.recordExport(user!, 'nap_record', outFrom, outTo, data.rows.length);
+      await api.recordExport(user!, 'nap_record', outFrom, outTo, data.rows.length + abnormalRows.length);
     } catch (e) {
       setExportError((e as Error).message);
       return;
     }
     setExportError(null);
     // 園児名・職員名などを式として開かせないよう csv.ts を通す（GitHub Issue #153）
-    const header = ['日付', 'チェック時刻', '園児', 'クラス', '体位', '呼吸', '顔色', '体温', '記録者', '保存時刻'];
-    const rows = data.rows.map((r) => [
-      r.session_date, r.checked_at, r.child_name, r.class_name,
-      BODY_POSITION[r.body_position], BREATHING[r.breathing], COMPLEXION[r.complexion],
-      r.temperature ?? '', r.staff_name, r.saved_at,
-    ]);
-    downloadCsv(`午睡記録_${outFrom}_${outTo}.csv`, header, rows);
+    downloadCsv(`午睡記録_${outFrom}_${outTo}.csv`, NAP_REPORT_HEADER, napReportRows(data.rows, abnormalRows));
     notify('午睡記録を CSV で出力しました。出力したことは操作ログに残ります');
   };
 
@@ -88,7 +88,7 @@ export default function NapSearchScreen() {
         <Link className="btn btn-quiet btn-sm" to="/staff/nap">&lt; 午睡チェックへ</Link>
         <h1>午睡記録の検索</h1>
         <div className="spacer" />
-        <button onClick={exportCsv} disabled={!data || data.rows.length === 0}>CSV出力</button>
+        <button onClick={exportCsv} disabled={!data || data.rows.length === 0 || !abnormals.data}>CSV出力</button>
       </div>
 
       {exportError && <section className="card"><ErrorBox text={exportError} /></section>}
@@ -126,25 +126,7 @@ export default function NapSearchScreen() {
                 </tr>
               </thead>
               <tbody>
-                {data.rows.map((r) => (
-                  <tr key={r.nap_record_id}>
-                    <td className="nowrap">{formatMD(r.session_date)}</td>
-                    <td className="nowrap">{formatHM(r.checked_at)}</td>
-                    <td className="nowrap">{r.child_name}</td>
-                    <td className="nowrap">{r.class_name}</td>
-                    <td className="nowrap">
-                      {/* うつ伏せは目を引く色で示す。判定ではなく、見落とさないための表示 */}
-                      <span className={r.body_position === '2' ? 'tag tag-returned' : ''}>
-                        {BODY_POSITION[r.body_position]}
-                      </span>
-                    </td>
-                    <td className="nowrap">{BREATHING[r.breathing]}</td>
-                    <td className="nowrap">{COMPLEXION[r.complexion]}</td>
-                    <td className="num nowrap">{r.temperature ?? '―'}</td>
-                    <td className="nowrap">{r.staff_name}</td>
-                    <td className="nowrap weak">{formatHM(r.saved_at)}</td>
-                  </tr>
-                ))}
+                {data.rows.map((r) => <SearchRow key={`${r.kind}-${r.nap_record_id ?? r.nap_sleep_id}`} r={r} />)}
               </tbody>
             </table>
             <Pager page={data.page} perPage={data.per_page} total={data.total} onChange={setPage} />
@@ -184,7 +166,9 @@ export default function NapSearchScreen() {
 
       <section className="card card-sub">
         <div className="muted">
-          CSV 出力は、いま表示しているページの行を出します。出力したことは操作ログに残ります。
+          {/* 【仮置き】異常時の記録を CSV に含めることと、起票したものの出し方の説明（web/仮置き値.md） */}
+          CSV 出力は、いま表示しているページの行と、同じ期間の異常時の記録を出します。
+          ヒヤリハットを起票した記録は、ヒヤリハットに書いた状況・対応を出します。出力したことは操作ログに残ります。
           <br />
           {/* 記録は削除させず、誤りは修正の履歴で残す（基本設計書「記録の修正と改ざん防止」(4-7)） */}
           午睡の記録は削除できません。誤りは修正の履歴として残ります。
@@ -192,5 +176,41 @@ export default function NapSearchScreen() {
         </div>
       </section>
     </div>
+  );
+}
+
+/**
+ * 一覧の1行。確認の行は体位・呼吸・顔色・体温・保存時刻を出す。
+ * ねた・おきたの行は、押した時刻と、体位・呼吸・顔色の3列をまとめた「入眠（ねた）」「起床（おきた）」を出し、
+ * ねたの行の体温の列に入眠時の体温を出す（画面詳細図「午睡記録検索画面」(5-3) の項目6）。
+ * 【仮置き】3列をまとめて名前を出す形と、ねた・おきたの保存時刻を「―」にすること（web/仮置き値.md）。
+ * ねた・おきたは押した時刻をサーバが記録しており、チェックした時刻と保存時刻を分けて持たない
+ */
+function SearchRow({ r }: { r: NapSearchRow }) {
+  const temperature = rowTemperature(r);
+  return (
+    <tr>
+      <td className="nowrap">{formatMD(r.session_date)}</td>
+      <td className="nowrap">{formatHM(r.checked_at)}</td>
+      <td className="nowrap">{r.child_name}</td>
+      <td className="nowrap">{r.class_name}</td>
+      {r.kind === 'check' ? (
+        <>
+          <td className="nowrap">
+            {/* うつ伏せは目を引く色で示す。判定ではなく、見落とさないための表示 */}
+            <span className={r.body_position === '2' ? 'tag tag-returned' : ''}>
+              {r.body_position ? BODY_POSITION[r.body_position] : '―'}
+            </span>
+          </td>
+          <td className="nowrap">{r.breathing ? BREATHING[r.breathing] : '―'}</td>
+          <td className="nowrap">{r.complexion ? COMPLEXION[r.complexion] : '―'}</td>
+        </>
+      ) : (
+        <td className="nowrap" colSpan={3}>{SLEEP_ROW_LABEL[r.kind]}</td>
+      )}
+      <td className="num nowrap">{temperature ?? '―'}</td>
+      <td className="nowrap">{r.staff_name}</td>
+      <td className="nowrap weak">{r.saved_at ? formatHM(r.saved_at) : '―'}</td>
+    </tr>
   );
 }

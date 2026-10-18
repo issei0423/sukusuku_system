@@ -34,7 +34,7 @@ import type {
   LoginError, ChildInput, DiaryFilter, DiaryInput, DiaryAttachmentInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
   DevDraftView,
   ContactHome, ContactHomeInput, ContactPage, ContactClassView, ContactClassRow, ContactEvent, ContactClass, ContactFacility,
-  NapSleep, NapExclusion, HomeState, GuardianToday, TodayItem, MealAmount,
+  NapSleep, NapExclusion, HomeState, GuardianToday, TodayItem, MealAmount, NapAbnormalRow, NapSearchRow,
 } from './shapes';
 import { MSG, MEAL_AMOUNT_TEXT, MEAL_KIND_TEXT } from '../messages';
 
@@ -1766,49 +1766,119 @@ export const napApi = {
    * 【仮置き】並びは発見時刻の新しい順、同じ時刻はあとで記録したものを先にする
    * （web/仮置き値.md「一覧の並び順」。GitHub Issue #177 の 7）。サーバ側は server/api_nap.go の handleNapAbnormals
    */
-  async abnormals(user: SessionUser) {
+  async abnormals(user: SessionUser): Promise<NapAbnormalRow[]> {
     if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
     return ok(db.napAbnormals
       .filter((a) => canSeeChild(user, a.child_id))
       .sort((a, b) => b.found_at.localeCompare(a.found_at) || b.nap_abnormal_id - a.nap_abnormal_id)
-      .map((a) => ({ ...a, child_name: childName(a.child_id), staff_name: staffName(a.staff_id) })));
+      .map((a) => {
+        /*
+         * 起票したヒヤリハットの側の状況・とった対応を添える。帳票では、起票した記録はこちらを出し、
+         * 起票済みの印を付けて二重に数えない（基本設計書「帳票の出力」(4-8)、要件定義書「日誌システム」(4-3) の
+         * 「集計・監査時はヒヤリハット側を正」）。記録そのもの（situation・response）は書き換えない。
+         * サーバ側は server/api_nap.go の handleNapAbnormals
+         */
+        const diary = a.diary_id === null ? undefined : db.diaries.find((d) => d.diary_id === a.diary_id && !d.is_deleted);
+        const incident = diary ? incidentSituationResponse(diary.body) : null;
+        return {
+          ...a, child_name: childName(a.child_id), staff_name: staffName(a.staff_id),
+          incident_situation: incident?.situation ?? null, incident_response: incident?.response ?? null,
+        };
+      }));
   },
 };
 
+/**
+ * ヒヤリハットの本文から「【状況】」と「【とった対応】」の見出しの下の文を取り出す。
+ *
+ * 本文は見出しを付けてつないで持つ（基本設計書「ヒヤリハットの記録」(4-6)、詳細設計書「日誌」(4-13) の (1)
+ * 「ヒヤリハットの本文」）。見出しは「【〇〇】」だけの行とし、次の見出しの行までをその見出しの文とする。
+ * 見出しが無いときは空の文を返す。サーバ側は server/api_nap.go の incidentSituationResponse
+ */
+export function incidentSituationResponse(body: string): { situation: string; response: string } {
+  const sections = new Map<string, string[]>();
+  let current = '';
+  for (const line of body.replace(/\r\n/g, '\n').split('\n')) {
+    const t = line.trim();
+    if (/^【[^【】]+】$/.test(t)) { current = t; continue; }
+    if (current) sections.set(current, [...(sections.get(current) ?? []), line]);
+  }
+  const join = (heading: string) => (sections.get(heading) ?? []).join('\n').trim();
+  return { situation: join('【状況】'), response: join('【とった対応】') };
+}
+
 const napApi2 = {
-  /** 午睡記録検索。日付・園児名・クラスで絞り込む（基本設計書「画面の一覧」(3-2)） */
+  /**
+   * 午睡記録検索。日付・園児名・クラスで絞り込む（基本設計書「画面の一覧」(3-2)）
+   *
+   * 5分ごとの確認（napRecords）に、ねた・おきた（napSleeps）を同じ一覧の行として並べる。ねたの行には
+   * 入眠時の体温（sleep_temperature）を出す（画面詳細図「午睡記録検索画面」(5-3) の項目6「園児ごとの入眠（ねた）と
+   * 起床（おきた）、入眠時の体温（ねたの行）…も、その日の行に出す」、基本設計書「帳票の出力」(4-8)）。
+   * 取り消した「ねた」は出さない。期間・クラス・園児名・参照範囲は確認の行と同じ規則で絞る。
+   * サーバ側は server/api_nap.go の handleSearchNapRecords
+   */
   async searchRecords(
     user: SessionUser,
     f: { from?: string; to?: string; classId?: number | ''; childName?: string; page?: number },
-  ): Promise<Paged<NapRecord & { child_name: string; class_name: string; staff_name: string; session_date: string }>> {
+  ): Promise<Paged<NapSearchRow>> {
     // 職員に限る（基本設計書「権限と利用可能機能」(6-1)「午睡チェックの実施・記録｜保護者 ×」。
     // サーバ側の server/api_nap.go の handleSearchNapRecords と同じ。GitHub Issue #177 の 3）
     if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
     const perPage = settingNumber('paging.nap_search_per_page', 50);
     const visible = new Set(visibleChildren(user).map((c) => c.child_id));
+    const sessionOf = (id: number) => db.napSessions.find((x) => x.nap_session_id === id);
+    const base = (sessionId: number, childId: string, at: string, staffId: string) => {
+      const s = sessionOf(sessionId);
+      return {
+        nap_session_id: sessionId, child_id: childId, checked_at: at, staff_id: staffId,
+        child_name: childName(childId),
+        class_name: className(s?.class_id ?? null),
+        staff_name: staffId ? staffName(staffId) : '',
+        session_date: s?.session_date ?? at.slice(0, 10),
+        _class_id: s?.class_id ?? null,
+      };
+    };
 
-    let rows = db.napRecords
+    const checks = db.napRecords
       .filter((r) => visible.has(r.child_id))
-      .map((r) => {
-        const s = db.napSessions.find((x) => x.nap_session_id === r.nap_session_id);
-        return {
-          ...r,
-          child_name: childName(r.child_id),
-          class_name: className(s?.class_id ?? null),
-          staff_name: staffName(r.staff_id),
-          session_date: s?.session_date ?? r.checked_at.slice(0, 10),
-          _class_id: s?.class_id ?? null,
+      .map((r) => ({
+        ...base(r.nap_session_id, r.child_id, r.checked_at, r.staff_id),
+        kind: 'check' as const, nap_record_id: r.nap_record_id, nap_sleep_id: null, saved_at: r.saved_at,
+        body_position: r.body_position, breathing: r.breathing, complexion: r.complexion,
+        temperature: r.temperature, sleep_temperature: null,
+      }));
+    const sleepRows = db.napSleeps
+      .filter((s) => !s.is_deleted && visible.has(s.child_id))
+      .flatMap((s) => {
+        const blank = {
+          nap_record_id: null, nap_sleep_id: s.nap_sleep_id, saved_at: null,
+          body_position: null, breathing: null, complexion: null, temperature: null,
         };
+        const slept = {
+          ...base(s.nap_session_id, s.child_id, s.slept_at, s.slept_staff_id), ...blank,
+          kind: 'sleep' as const, sleep_temperature: s.sleep_temperature,
+        };
+        if (s.woke_at === null) return [slept];
+        return [slept, {
+          ...base(s.nap_session_id, s.child_id, s.woke_at, s.woke_staff_id ?? ''), ...blank,
+          kind: 'wake' as const, sleep_temperature: null,
+        }];
       });
+    let rows = [...checks, ...sleepRows];
 
     if (f.from) rows = rows.filter((r) => r.session_date >= f.from!);
     if (f.to) rows = rows.filter((r) => r.session_date <= f.to!);
     if (f.classId) rows = rows.filter((r) => r._class_id === f.classId);
     if (f.childName) rows = rows.filter((r) => r.child_name.includes(f.childName!.trim()));
 
-    rows.sort((a, b) => b.checked_at.localeCompare(a.checked_at));
+    // 【仮置き】時刻の新しい順。同じ時刻は、おきた・確認・ねたの順、同じ種類は ID の小さい順（web/仮置き値.md「一覧の並び順」）。
+    // サーバ側の server/api_nap.go の sortNapSearchRows と同じ並び
+    const rank = { wake: 0, check: 1, sleep: 2 };
+    const idOf = (r: (typeof rows)[number]) => r.nap_record_id ?? r.nap_sleep_id ?? 0;
+    rows.sort((a, b) => b.checked_at.localeCompare(a.checked_at) || rank[a.kind] - rank[b.kind] || idOf(a) - idOf(b));
     const page = f.page ?? 1;
-    return ok({ rows: rows.slice((page - 1) * perPage, page * perPage), total: rows.length, page, per_page: perPage });
+    const out: NapSearchRow[] = rows.map(({ _class_id: _drop, ...r }) => r);
+    return ok({ rows: out.slice((page - 1) * perPage, page * perPage), total: out.length, page, per_page: perPage });
   },
 
   /** 年齢に応じたチェック間隔。マスタ値を用いる（基本設計書 5-8） */

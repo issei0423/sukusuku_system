@@ -8,7 +8,7 @@
 import type {
   Account, Child, ChatRoom, Diary, DevelopmentItem, GuardianChild, NapRecord, NapSession,
   DiaryRecordType, DiaryStatus, InvitationStatus, Role, FunctionType, OperationType,
-  DevelopmentCheck, DevelopmentResultRecord, MealAmount, ContactEventType,
+  DevelopmentCheck, DevelopmentResultRecord, MealAmount, ContactEventType, BodyPosition, Breathing, Complexion,
 } from './types';
 
 /** ログインの失敗理由。画面が分岐に使う（図/画面詳細図.md「職員用トップ／保護者用トップ」(2-1)） */
@@ -131,9 +131,40 @@ export interface NapAbnormalRow {
   diary_id: number | null;
   child_name: string;
   staff_name: string;
+  /**
+   * 起票したヒヤリハットの側の「状況」「とった対応」。起票していない記録・日誌が見つからない記録では null。
+   * 帳票では、起票した記録はこちらを出し、起票済みの印を付けて二重に数えない（基本設計書「帳票の出力」(4-8)、
+   * 要件定義書「日誌システム」(4-3) の「集計・監査時はヒヤリハット側を正」）。situation・response は記録そのもの
+   */
+  incident_situation: string | null;
+  incident_response: string | null;
 }
 
-export interface NapSearchRow extends NapRecord {
+/**
+ * 午睡記録検索の行の種類。check は5分ごとの確認（t_nap_record）、sleep は「ねた」、wake は「おきた」（t_nap_sleep）
+ * （画面詳細図「午睡記録検索画面」(5-3) の項目6「園児ごとの入眠（ねた）と起床（おきた）、入眠時の体温（ねたの行）…も、その日の行に出す」）
+ */
+export type NapSearchRowKind = 'check' | 'sleep' | 'wake';
+
+/**
+ * 午睡記録検索の1行。確認の行は体位・呼吸・顔色・体温・保存時刻を持つ。ねた・おきたの行は押した時刻（サーバの時刻）を
+ * checked_at に持ち、体位・呼吸・顔色・保存時刻は null。入眠時の体温（sleep_temperature）はねたの行だけに入る。
+ * 職員だけの経路（GET /api/nap/records）で返す
+ */
+export interface NapSearchRow {
+  kind: NapSearchRowKind;
+  nap_record_id: number | null;
+  nap_sleep_id: number | null;
+  nap_session_id: number;
+  child_id: string;
+  checked_at: string;
+  saved_at: string | null;
+  body_position: BodyPosition | null;
+  breathing: Breathing | null;
+  complexion: Complexion | null;
+  temperature: number | null;
+  sleep_temperature: number | null;
+  staff_id: string;
   session_date: string;
   child_name: string;
   class_name: string;
