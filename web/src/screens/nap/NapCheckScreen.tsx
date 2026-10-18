@@ -282,6 +282,28 @@ function NapRecordRow({ row, sessionId, due, onSaved }: {
   }, [justSaved]);
   const startInput = <T,>(set: (value: T) => void) => (value: T) => { setJustSaved(false); set(value); };
 
+  /*
+   * 「この子を記録」は、記録すると選択が空に戻って無効になり、押したボタンからフォーカスが外れて body に落ちる。
+   * 押したときにボタンにフォーカスがあった（キーボードで押したときなど）ら、次の園児の行の最初の選択肢へ移す。
+   * 巡回の順に次の子へ進めるようにするため。最後の行では、記録した行の最初の選択肢へ戻す
+   * （WCAG 2.4.3 フォーカス順序、GitHub Issue #213。共通の決まり：フォーカスを残すか、決めた場所へ移す）
+   */
+  const rowRef = useRef<HTMLElement>(null);
+  const saveRef = useRef<HTMLButtonElement>(null);
+  // 保存を終えて描き直したあとに、フォーカスを移す先。ボタンは保存している間は無効で、フォーカスを受け取れないため
+  const focusAfterSave = useRef<'next-row' | 'button' | null>(null);
+  useEffect(() => {
+    if (busy || !focusAfterSave.current) return;
+    const where = focusAfterSave.current;
+    focusAfterSave.current = null;
+    if (where === 'button') { saveRef.current?.focus(); return; }
+    const current = rowRef.current;
+    if (!current) return;
+    const next = current.nextElementSibling;
+    const target = next instanceof HTMLElement && next.matches('.nap-record-row') ? next : current;
+    target.querySelector<HTMLInputElement>('input[type="radio"]')?.focus();
+  }, [busy]);
+
   // 体温が範囲の外のときは、1度確かめてから記録する。記録は妨げない（園児の平熱と同じ範囲）
   const [confirmedTemp, setConfirmedTemp] = useState<number | null>(null);
   const save = async () => {
@@ -291,6 +313,8 @@ function NapRecordRow({ row, sessionId, due, onSaved }: {
       setError(`体温が ${TEMP_MIN.toFixed(1)}〜${TEMP_MAX.toFixed(1)}℃ の外です。入力に誤りがなければ、もう一度「この子を記録」を押してください。`);
       return;
     }
+    // 保存している間もボタンは無効になるので、押した時点で調べておく
+    const pressedWithFocus = document.activeElement === saveRef.current;
     setBusy(true); setError(null); setJustSaved(false);
     try {
       await api.record(user!, sessionId, {
@@ -299,13 +323,18 @@ function NapRecordRow({ row, sessionId, due, onSaved }: {
       setPosition(null); setBreathing(null); setComplexion(null); setTemperature(null); setConfirmedTemp(null);
       setJustSaved(true);
       onSaved();
-    } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+      if (pressedWithFocus) focusAfterSave.current = 'next-row';
+    } catch (e) {
+      setError((e as Error).message);
+      // 記録できなかったときは選択が残り、ボタンはまた押せるようになる。フォーカスをボタンへ戻す
+      if (pressedWithFocus) focusAfterSave.current = 'button';
+    } finally { setBusy(false); }
   };
 
   const temperatureText = `体温 ${temperature === null ? '未測定' : `${temperature.toFixed(1)}℃`}`;
 
   return (
-    <section className={`nap-card nap-record-row${!row.latest || due ? ' unrecorded' : ''}`} aria-label={`${name}の午睡チェック`}>
+    <section ref={rowRef} className={`nap-card nap-record-row${!row.latest || due ? ' unrecorded' : ''}`} aria-label={`${name}の午睡チェック`}>
       <div className="nap-row-head">
         <strong className="name">{name}</strong>
         <span className={`nap-row-status${!row.latest || due ? ' due' : ''}`} role="status">
@@ -339,7 +368,7 @@ function NapRecordRow({ row, sessionId, due, onSaved }: {
         </button>
         {temperature !== null && <button type="button" className="btn-quiet btn-sm" onClick={() => setTemperature(null)}>体温を消す</button>}
         <div className="spacer" />
-        <button type="button" className="btn-primary" onClick={save}
+        <button ref={saveRef} type="button" className="btn-primary" onClick={save}
           disabled={busy || !position || !breathing || !complexion}>
           {busy ? '保存中…' : 'この子を記録'}
         </button>

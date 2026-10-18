@@ -137,6 +137,40 @@ test('[staff] keyboard-nap-timer — Shift+Tab で上へ戻っても、フォー
   expect(hidden, 'タイマーの下に隠れた部品').toEqual([]);
 });
 
+test('[staff] keyboard-nap-record — 「この子を記録」を押したあと、フォーカスが次の園児の行の最初の選択肢へ移る', async ({ page }) => {
+  // 押したボタンは記録のあと無効になる。フォーカスを body に落とさない（WCAG 2.4.3 フォーカス順序、GitHub Issue #213）
+  await open(page, 'nap');
+  const rows = page.locator('.nap-record-row');
+  const row = rows.first();
+  const record = row.getByRole('button', { name: 'この子を記録' });
+  for (const group of ['体位', '呼吸', '顔色']) {
+    const first = row.getByRole('group', { name: group }).getByRole('radio').first();
+    await tabTo(page, first, 20);
+    await page.keyboard.press('Space');
+    await expect(first).toBeChecked();
+  }
+  await tabTo(page, record, 5);
+  await page.keyboard.press('Enter');
+  await expect(row.getByRole('status')).toHaveText('保存しました');
+  await expect(record).toBeDisabled();
+  await expect(rows.nth(1).getByRole('group', { name: '体位' }).getByRole('radio').first()).toBeFocused();
+  await expectFocusVisible(page);
+
+  // 最後の園児の行では、記録した行の最初の選択肢へ戻す
+  const last = rows.last();
+  const lastRecord = last.getByRole('button', { name: 'この子を記録' });
+  for (const group of ['体位', '呼吸', '顔色']) {
+    const first = last.getByRole('group', { name: group }).getByRole('radio').first();
+    await tabTo(page, first, 80);
+    await page.keyboard.press('Space');
+  }
+  await tabTo(page, lastRecord, 5);
+  await page.keyboard.press('Enter');
+  await expect(last.getByRole('status')).toHaveText('保存しました');
+  await expect(last.getByRole('group', { name: '体位' }).getByRole('radio').first()).toBeFocused();
+  await expectFocusVisible(page);
+});
+
 test('[guardian] keyboard-guardian-menu — 保護者のメニューを開いて閉じると、フォーカスが元へ戻る', async ({ page }) => {
   await open(page, 'guardian-home');
   const menuButton = page.getByRole('button', { name: 'メニューを開く' });
