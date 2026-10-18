@@ -1,11 +1,12 @@
 name: CI（テスト）
 
 # mockup-go-react への PR と push で、Go サーバと画面（web）のテストを回す。
-# 3 つのジョブは並んで走る。どれかが赤なら、マージの前に直す。
+# 4 つのジョブは並んで走る。どれかが赤なら、マージの前に直す。
 #
 # - server … go vet と go test
 # - web    … 型検査とビルド（tsc・vite）・lint（oxlint）・テスト（vitest。相手はブラウザ内のモック）
 # - 結合   … Go サーバを立て、画面と同じ経路（web/src/api/http.ts）でつないで確かめる
+# - a11y   … 画面をブラウザ（Chromium）で開き、axe とキーボード操作でアクセシビリティを確かめる（相手はモック）
 #
 # 読み取り専用（contents: read）。秘密は使わない。
 # 手元で同じことを回すコマンドは AGENTS.md の「コマンド」にある。
@@ -82,6 +83,44 @@ jobs:
 
       - name: テスト（vitest）
         run: npm test
+
+  a11y:
+    name: a11y（axe・キーボード）
+    runs-on: ubuntu-latest
+    timeout-minutes: 15     # ふだんは 3〜4 分（ブラウザを入れる時間を含む）
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: ソースを取り出す
+        uses: actions/checkout@v7
+
+      - name: Node.js を入れる
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: 依存を入れる（package-lock.json のとおり）
+        run: npm ci
+
+      - name: ブラウザを入れる（Chromium）
+        run: npx playwright install --with-deps chromium
+
+      # 基準は WCAG 2.2 AA を目安（仮置き。web/仮置き値.md）。一覧は web/a11y-report/summary.md
+      - name: アクセシビリティの検査（axe・キーボード）
+        run: npm run test:a11y
+
+      - name: 検査の一覧とレポートを残す（落ちたときだけ）
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: a11y-report
+          path: |
+            web/a11y-report/
+            web/test-results/a11y/
+          retention-days: 14
 
   integration:
     name: 結合（Go サーバ ＋ api/http.ts）

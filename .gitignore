@@ -5,6 +5,7 @@
 node_modules/
 dist/
 web/responsive-report/
+web/a11y-report/
 web/test-results/
 
 # Go（server/ のサーバ）
