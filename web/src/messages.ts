@@ -44,6 +44,11 @@ export const MSG = {
   facilityTooLong: '園からのひとことは500文字以内で入力してください。',
   facilitySent: 'この日の園からは、もう送られています。直すときは送られた文の「直す」から行ってください。',
   commentTooLong: 'ひとことは200文字以内で入力してください。',
+  /* 連絡帳の写真（server/messages.go と同じ。詳細設計書 (4-4 (2))・(4-4 (3))・「本書で足す文言」(4-1 (6))） */
+  photoForbidden: 'この写真は開けません。',
+  /** 設定（attachment.max_size_mb）を変えても文言は変えない（設計の文言のまま） */
+  photoFormat: '写真は JPEG・PNG で、10MB までです。',
+  photoSubjectRequired: '写っている子を選んでください。子どもが写っていないときは『子どもは写っていない』を選んでください。',
 } as const;
 
 /** 他児の名前の注意（基本設計書「メッセージ一覧」(4-12)。server/namecheck.go の otherNamesMessage と同じ） */
@@ -53,6 +58,16 @@ export const otherNamesMessage = (names: string[]) => `ほかのお子さんの�
  * 【仮置き】文言と、家庭の数を写っている子の数（届く先の園児のページの数）で数えること（web/仮置き値.md）
  */
 export const otherNamesFamiliesNote = (n: number) => `この文は写っている全員（${n} 家庭）に届きます。`;
+
+/**
+ * 写真の同意を満たさない子がいるときの文（詳細設計書 (4-4 (2))、基本設計書「写真の同意で止める規則」(4-2)。
+ * server/messages.go の photoConsentMessage と同じ）。写っている子が1人なら「園内記録として保持」の文、2人以上なら
+ * 「ほかの保護者にも見える場」の文。names は満たさない子の氏名
+ */
+export function photoConsentMessage(names: string[], subjects: number): string {
+  if (subjects === 1) return `${names[0]}さんは写真の同意が『園内記録として保持』のため送れません。写真を外すか、写っている子を見直してください。`;
+  return `${names.map((n) => `${n}さん`).join('・')}は、ほかの保護者にも見える場への写真の同意がないため送れません。写真を外すか、写っている子を見直してください。`;
+}
 
 /* ---- 画面の文言（図/画面詳細図「連絡帳画面」(8-3)・「連絡帳（クラス）画面」(8-1)、詳細設計書 2章） ---- */
 export const TEXT = {

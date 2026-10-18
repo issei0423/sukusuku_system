@@ -542,6 +542,41 @@ export interface Readers {
   guardian_count: number;
 }
 
+/**
+ * 連絡帳の写真（図/インタフェース一覧の ContactPhoto）。写っている子（subject_child_ids）は職員の応答だけ。
+ * 実体は GET /api/contact/photos/{id}（画面は api.photoUrl で URL を得る）
+ */
+export interface ContactPhoto {
+  contact_photo_id: number;
+  contact_date: string;
+  /** 静止画のみ（image/jpeg・image/png） */
+  file_type: string;
+  file_size: number;
+  /** 職員の応答だけ。写っている子（0人なら空） */
+  subject_child_ids?: string[];
+  is_deleted: boolean;
+}
+
+/**
+ * 写真を送る（POST /api/contact/photos、multipart/form-data。詳細設計書「きょうのようす」(4-4 (2))）。
+ * 写っている子が0人なら、届ける子（target_child_id）を1人選ぶ。添える文は任意・200文字
+ */
+export interface SendPhotoInput {
+  file: Blob;
+  subject_child_ids: string[];
+  target_child_id?: string | null;
+  body?: string | null;
+  /** 届く先の全員の出来事に「成長の記録に残す」を付ける（詳細設計書 (4-12 (3))） */
+  keep_in_growth?: boolean;
+  acknowledged_names?: string[];
+}
+
+/** POST /api/contact/photos の応答。events は届く先の園児ごとの出来事（種類 5） */
+export interface SendPhotoResult {
+  photo: ContactPhoto;
+  events: ContactEvent[];
+}
+
 /** 保護者ホームの「きょう」の1件（午睡を除く） */
 export interface TodayItem {
   kind: 'meal' | 'toilet' | 'temperature' | 'comment' | 'photo' | 'class_note';
