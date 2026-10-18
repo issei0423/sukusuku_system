@@ -22,7 +22,7 @@ const teacher: SessionUser = {
 };
 
 const BREATHING_TEXT = '呼吸が確認できません。ただちに、子どもへの対応と応援の要請を行ってください。異常時の記録は、そのあとでかまいません。';
-const PRONE_TEXT = 'うつ伏せを記録します。仰向けに直したときは、直したあとの向きをもう一度記録してください。';
+const PRONE_TEXT = 'うつ伏せです。このまま記録し、仰向けに直したら、直したあとの向きをもう一度記録してください。';
 
 // 午睡の時間帯（13:00-15:00）の中に時計を固定する。デモの実施が自動で解除されないようにするため（napDevScreens.test.tsx と同じ）
 beforeEach(() => {
@@ -67,11 +67,13 @@ describe('午睡チェック画面：異常に気づいたときの文', () => {
     expect(row.textContent).not.toContain('呼吸が確認できません');
   });
 
-  it('うつ伏せを選ぶと、判定の言葉を入れない注意喚起の文を出す', async () => {
+  it('うつ伏せを選ぶと、判定の言葉を入れない注意喚起の文を出す。保存の前に「記録します」と言い切らない', async () => {
     const row = await firstRow();
     choose(row, 'position', '2');
     const text = alertTexts(row).find((t) => t.includes('うつ伏せ'));
     expect(text).toContain(PRONE_TEXT);
+    // 言い切ると記録が済んだと受け取られ、「この子を記録」を押さずに離れるおそれがある（PR #223 の自動レビュー）
+    expect(text).not.toContain('記録します');
 
     choose(row, 'position', '1');
     expect(row.textContent).not.toContain(PRONE_TEXT);
