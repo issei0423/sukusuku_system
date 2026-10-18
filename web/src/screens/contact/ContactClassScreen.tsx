@@ -423,7 +423,10 @@ export default function ContactClassScreen() {
             const row = tempFor;
             setTempFor(null);
             void recordOne(row, `temp-${row.child.child_id}`, { child_id: row.child.child_id, event_type: '3', temperature: value });
-          }} />
+          }}>
+          {/* 入力欄（体温の一覧）の近くに固定の文【仮置き】（図/画面詳細図「連絡帳（クラス）画面」(8-1) 項目13。web/仮置き値.md） */}
+          <p className="contact-note">{TEXT.temperatureCallFirst}</p>
+        </TemperaturePicker>
       )}
       {fix && (
         <FixDialog target={fix.target} normalTemperature={fix.normal} onClose={() => setFix(null)}

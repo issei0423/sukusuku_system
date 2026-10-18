@@ -284,7 +284,10 @@ export default function ContactChildScreen() {
 
       {tempOpen && (
         <TemperaturePicker title={`${name}の体温`} start={findChild(childId)?.normal_temperature ?? null} busy={busy !== null} onClose={() => setTempOpen(false)}
-          onSelect={(value) => { setTempOpen(false); void record('temp', { child_id: childId, event_type: '3', temperature: value }); }} />
+          onSelect={(value) => { setTempOpen(false); void record('temp', { child_id: childId, event_type: '3', temperature: value }); }}>
+          {/* 入力欄（体温の一覧）の近くに固定の文【仮置き】（図/画面詳細図「連絡帳（園児）画面」(8-2) 項目10。web/仮置き値.md） */}
+          <p className="contact-note">{TEXT.temperatureCallFirst}</p>
+        </TemperaturePicker>
       )}
       {fix && (
         <FixDialog target={fix.target} startMode={fix.mode} normalTemperature={findChild(childId)?.normal_temperature ?? null} onClose={() => setFix(null)} onDone={(message) => { setFix(null); notify(message); page.refresh(); }} />
