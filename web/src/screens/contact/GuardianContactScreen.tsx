@@ -18,6 +18,7 @@ import { onContactChild } from '../../live';
 import { addDays, formatHM, today } from '../../api/util';
 import { ErrorBox, Loading } from '../../components/ui';
 import { notify } from '../../components/feedback';
+import { useStickyInset } from '../../stickyInset';
 import { TEXT } from '../../messages';
 import HomeForm from './HomeForm';
 import TodayTimeline from './TodayTimeline';
@@ -37,6 +38,12 @@ export default function GuardianContactScreen() {
     { refreshMs: AUTO_REFRESH_MS, live: onContactChild(childId, classId) });
   const data = page.data;
   useEffect(() => { if (data) setClassId(data.class_id); }, [data]);
+  /*
+   * 上に止めた見出し（園児名と日付）の高さを、スクロールする枠（.guardian-main）へ --contact-head-h として渡す。
+   * 枠はその高さぶんを scroll-padding-top に取り、キーボードで上へ戻ったとき・送ったあとの「直す」へ移ったときに、
+   * フォーカスした部品が見出しの下に隠れないようにする（WCAG 2.4.11 フォーカスの非隠蔽、GitHub Issue #212）
+   */
+  const head = useStickyInset('.guardian-main', '--contact-head-h');
 
   /*
    * 「新」の印は、この画面を開く前に読んだ時刻と比べる。開いた直後に開いた時刻を残すため、
@@ -85,7 +92,7 @@ export default function GuardianContactScreen() {
 
   return (
     <div className="contact-page">
-      <div className="contact-page-head">
+      <div ref={head} className="contact-page-head">
         <Link to="/guardian">‹ ホームへ</Link>
         <h1>{data.child_name}の連絡帳</h1>
         <nav className="contact-date" aria-label="連絡帳の日付">

@@ -27,6 +27,7 @@ import { Alert, Empty, ErrorBox, Loading } from '../../components/ui';
 import { notify } from '../../components/feedback';
 import { useReachable } from '../../api/reachability';
 import { useUnsavedInput } from '../../unsavedInput';
+import { useStickyInset } from '../../stickyInset';
 import TemperaturePicker from '../../components/TemperaturePicker';
 import { MEAL_AMOUNT_STAFF_TEXT, MEAL_KIND_TEXT, TEXT } from '../../messages';
 import { dayLabel, eventText, homeLines, latestSleepText } from './contactText';
@@ -139,6 +140,12 @@ export default function ContactClassScreen() {
     [user?.account_id, classId, date], { refreshMs: AUTO_REFRESH_MS, live: (e) => onContactClass(classId, childIds.current)(e) });
   const data = view.data;
   useEffect(() => { childIds.current = data?.rows.map((r) => r.child.child_id) ?? []; }, [data]);
+  /*
+   * 左に止めた園児名の列の幅を、表を横に送る枠（.contact-table-wrap）へ --contact-col-child-w として渡す。
+   * 枠はその幅ぶんを scroll-padding-left に取り、キーボードで表の中を移ったとき（iPad の横向き 1024px など、表が横に送られる幅）に、
+   * フォーカスした部品が園児名の列の下に隠れないようにする（WCAG 2.4.11 フォーカスの非隠蔽、GitHub Issue #212）
+   */
+  const childColumn = useStickyInset('.contact-table-wrap', '--contact-col-child-w', 'width');
 
   const go = (next: { class?: number; date?: string; sort?: string }) => {
     const p: Record<string, string> = {};
@@ -321,7 +328,7 @@ export default function ContactClassScreen() {
               <table className="list contact-class-table">
                 <thead>
                   <tr>
-                    <th scope="col" className="contact-col-child">園児</th>
+                    <th ref={childColumn} scope="col" className="contact-col-child">園児</th>
                     <th scope="col" className="contact-col-home">家庭から</th>
                     <th scope="col" className="contact-col-meal">{slotLabel(slot)}</th>
                     <th scope="col" className="contact-col-toilet">排せつ</th>

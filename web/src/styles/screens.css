@@ -298,6 +298,13 @@ button.guardian-record-link {
   position: sticky; top: 0; z-index: 2; display: grid; gap: var(--sp-2);
   padding: var(--sp-2) 0; background: var(--c-bg, var(--c-surface));
 }
+/*
+ * 上に止めた見出しと下に止めた「家庭からを送る」の帯の下に、フォーカスが隠れないよう、スクロールする枠の上下に余白を取る（GitHub Issue #212）。
+ * 高さは GuardianContactScreen・HomeForm が測って --contact-head-h・--contact-actions-h に入れる（src/stickyInset.ts）。
+ * フォーカスの枠（outline 4px・outline-offset 2px）も見えるよう、その幅を足す
+ */
+.guardian-main:has(.contact-page-head) { scroll-padding-top: calc(var(--contact-head-h, 0px) + 6px); }
+.guardian-main:has(.contact-form-actions) { scroll-padding-bottom: calc(var(--contact-actions-h, 0px) + 6px); }
 .contact-page-head h1 { font-size: 22px; margin: 0; }
 .contact-date { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .contact-date button { min-height: 44px; min-width: 44px; }
@@ -355,7 +362,11 @@ button.guardian-record-link {
 .contact-inline-field > span { white-space: nowrap; }
 .contact-inline-field select { min-height: 44px; }
 .contact-class-error { margin: var(--sp-2) 0; }
-.contact-table-wrap { overflow-x: auto; }
+/*
+ * 表を横に送ったとき、フォーカスした部品が左に止めた園児名の列の下に隠れないよう、送る先を列の幅ぶんずらす（GitHub Issue #212）。
+ * 列の幅は ContactClassScreen が測って --contact-col-child-w に入れる。フォーカスの枠の幅（6px）を足す
+ */
+.contact-table-wrap { overflow-x: auto; scroll-padding-left: calc(var(--contact-col-child-w, 0px) + 6px); }
 .contact-class-table { min-width: 1080px; }
 .contact-class-table th, .contact-class-table td { vertical-align: top; padding: var(--sp-2) var(--sp-3); height: 56px; }
 .contact-class-table .contact-col-child {

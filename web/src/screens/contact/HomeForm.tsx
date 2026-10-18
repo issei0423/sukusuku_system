@@ -13,6 +13,7 @@ import { settingText } from '../../api/client';
 import { useUnsavedInput } from '../../unsavedInput';
 import { MEAL_AMOUNT_TEXT, TEXT } from '../../messages';
 import { useReachable } from '../../api/reachability';
+import { useStickyInset } from '../../stickyInset';
 import TemperaturePicker from '../../components/TemperaturePicker';
 
 /** 基本設計書「設定マスタ」(5-9) の既定（サーバの defaultHomeItems と同じ） */
@@ -83,6 +84,11 @@ export default function HomeForm({ home, busy, error, onSubmit, onCancel }: {
   // サーバに届かないときは「もう一度送る」にする。入力は残す（詳細設計書「押したときの処理の型」(2-0 (2))）
   const reachable = useReachable();
   const touch = <T,>(set: (v: T) => void) => (v: T) => { set(v); setDirty(true); };
+  /*
+   * 下に止めた「家庭からを送る」の帯の高さを、スクロールする枠（.guardian-main）へ --contact-actions-h として渡す。
+   * 枠はその高さぶんを scroll-padding-bottom に取り、Tab で下へ進んだときに選択肢が帯の下に隠れないようにする（GitHub Issue #212）
+   */
+  const actions = useStickyInset('.guardian-main', '--contact-actions-h');
 
   const submit = () => {
     onSubmit({
@@ -180,7 +186,7 @@ export default function HomeForm({ home, busy, error, onSubmit, onCancel }: {
         </label>
       )}
       {error && <p className="contact-error" role="alert">{error}</p>}
-      <div className="contact-form-actions">
+      <div ref={actions} className="contact-form-actions">
         <button type="submit" className="btn-primary" disabled={busy} aria-busy={busy}>
           {busy ? TEXT.sending : !reachable ? TEXT.resend : '家庭からを送る'}
         </button>

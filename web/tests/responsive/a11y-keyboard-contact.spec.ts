@@ -13,15 +13,15 @@
  * モックは画面ごとにデータを持つため、職員の操作が保護者の画面に届くところまでは見ない（操作した画面の上で結果を見る）。
  * キー操作の既定の動き（ラジオの矢印・select の矢印）はブラウザで違うため、chromium（desktop）だけで回す。
  *
+ * 止めた見出し・列・帯の下に、Tab で止まった部品がすっかり隠れないこと（WCAG 2.4.11、GitHub Issue #212）は、各キーのあとの確かめに加えて、
+ * 表が横に送られる幅（iPad の横向き 1024×768）の連絡帳（クラス）画面と、保護者の幅（390×844）の連絡帳画面を、
+ * Tab で最後まで進み Shift+Tab で戻って確かめる。
+ *
  * 分かっている抜け（このブランチでは直していない。直し方に判断が要るため PR の本文の「人の判断を待つ」に挙げた）：
  *   1. 送っている間にボタンを押せなくする（disabled）ため、押したボタンからフォーカスが外れて body に落ちる。
  *      Chromium は外れる前の位置を覚えており、次の Tab はその続きから進む。落ちたときは注記（annotation）に残し、
  *      続きの操作へキーボードで進めることを確かめる（pressAllowingFocusLoss）。直すことは Issue #213 で追う
- *   2. 止めた見出し・列の下に、Tab で止まった部品が隠れる（WCAG 2.4.11。直すことは Issue #212 で追う）。分かっている場所だけ注記に残す（knownCovered）
- *      - 保護者の連絡帳画面：上端に止めた見出し（.contact-page-head）。送ったあとの Tab で止まる「直す」
- *      - 連絡帳（クラス）画面：左に止めた園児名の列（.contact-col-child）。表が横に送られる幅（iPad の横向き 1024px など）で、
- *        表の中の部品が列の下に隠れる（a11y の検査 playwright.a11y.config.ts は 1024×768 で回す）
- * どちらも**起きてもテストは失敗にならない**（CI は緑のまま）。直すときは注記を外し、失敗にする確かめへ戻す。
+ * これは**起きてもテストは失敗にならない**（CI は緑のまま）。直すときは注記を外し、失敗にする確かめへ戻す。
  */
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { REVIEW_TIME } from './scenarios';
@@ -81,26 +81,19 @@ async function focusState(page: Page) {
   });
 }
 
-/**
- * フォーカスが見えていること（:focus-visible が当たり、outline か輪が描かれ、ほかの要素にすっかり隠れていない）。
- * knownCovered に分かっている抜けの説明を渡したときだけ、**隠れていても失敗にせず**注記に残す（分かっている抜け 2）
- */
-async function expectFocusVisible(page: Page, { knownCovered }: { knownCovered?: string } = {}) {
+/** フォーカスが見えていること（:focus-visible が当たり、outline か輪が描かれ、ほかの要素にすっかり隠れていない） */
+async function expectFocusVisible(page: Page) {
   const state = await focusState(page);
   expect(state.where, 'フォーカスが行き先を失っている').not.toBe('body');
   expect(state.focusVisible, `${state.where} に :focus-visible が当たっていない`).toBe(true);
   expect(state.visible, `${state.where} のフォーカスの印が見えない`).toBe(true);
-  if (knownCovered && state.covered) {
-    test.info().annotations.push({ type: 'フォーカスが隠れる', description: `${state.where}：${knownCovered}` });
-    return;
-  }
   expect(state.covered, `${state.where} がほかの要素に隠れている`).toBe(false);
 }
 
 /** キーを押し、押したあとのフォーカスが見えることを確かめる */
-async function key(page: Page, name: string, options: { knownCovered?: string } = {}) {
+async function key(page: Page, name: string) {
   await page.keyboard.press(name);
-  await expectFocusVisible(page, options);
+  await expectFocusVisible(page);
 }
 
 /**
@@ -119,19 +112,33 @@ async function pressAllowingFocusLoss(page: Page, name: string, what: string) {
 
 const isFocused = (target: Locator) => target.evaluate((el) => el === document.activeElement);
 
-/**
- * Tab（shift なら Shift+Tab）を押して target まで進む。途中の1歩ごとにフォーカスが見えることを確かめる。
- * knownCovered は key と同じ（分かっている抜け 2 の場所だけで渡す）
- */
-async function tabTo(page: Page, target: Locator,
-  { shift = false, max = 120, knownCovered }: { shift?: boolean; max?: number; knownCovered?: string } = {}) {
+/** Tab（shift なら Shift+Tab）を押して target まで進む。途中の1歩ごとにフォーカスが見えることを確かめる */
+async function tabTo(page: Page, target: Locator, { shift = false, max = 120 }: { shift?: boolean; max?: number } = {}) {
   await expect(target).toBeVisible();
   for (let i = 0; i < max; i++) {
     if (await isFocused(target)) return;
-    await key(page, shift ? 'Shift+Tab' : 'Tab', { knownCovered });
+    await key(page, shift ? 'Shift+Tab' : 'Tab');
   }
   if (await isFocused(target)) return;
   throw new Error(`${max} 回の${shift ? ' Shift+Tab' : ' Tab'} で届かない：${await target.evaluate((el) => el.outerHTML.slice(0, 120))}`);
+}
+
+/**
+ * first から Tab で within（CSS のセレクタ）の外へ出るまで進み、Shift+Tab で first まで戻る。1歩ごとに key と同じ確かめをする
+ * （止めた見出し・列・帯の下にすっかり隠れる部品が無いこと。WCAG 2.4.11、GitHub Issue #212）。Tab で止まった部品を順に返す
+ */
+async function walkThrough(page: Page, first: Locator, within: string) {
+  const inside = () => page.evaluate((sel) => !!document.activeElement?.closest(sel), within);
+  await tabTo(page, first);
+  const visited: string[] = [];
+  while (visited.length < 300) {
+    await page.keyboard.press('Tab');
+    if (!(await inside())) break;
+    await expectFocusVisible(page);
+    visited.push((await focusState(page)).where);
+  }
+  await tabTo(page, first, { shift: true, max: visited.length + 2 });
+  return visited;
 }
 
 /** ダイアログを開いたあと、フォーカスがその中にあり、見えること */
@@ -191,9 +198,21 @@ test.describe('[guardian] contact キーボードだけで通す', () => {
     await expect(lines).toContainText('朝ごはんぜんぶ');
     await expect(lines).toContainText('きげんふつう');
     // 送ったあとは書く欄が短い表示に替わる。次の Tab で「直す」へ進める。
-    // 「直す」は上へ戻る位置にあり、画面の上に止めた見出しの下に隠れることがある（分かっている抜け 2）
-    await key(page, 'Tab', { knownCovered: '送ったあとの Tab で、画面の上に止めた見出し（.contact-page-head）の下に隠れた（#212）' });
+    // 「直す」は上へ戻る位置にあるが、画面の上に止めた見出しの下には隠れない（GitHub Issue #212）
+    await key(page, 'Tab');
     await expect(home.getByRole('button', { name: '直す', exact: true })).toBeFocused();
+    expect(errors, 'ブラウザ実行エラー').toEqual([]);
+  });
+});
+
+test.describe('[guardian] contact 保護者の幅（390×844）', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test('連絡帳画面を Tab で最後まで進み、Shift+Tab で戻っても、上に止めた見出し・下に止めた送る帯の下に隠れない', async ({ page }) => {
+    // WCAG 2.4.11 フォーカスの非隠蔽（最低限）。GitHub Issue #212
+    const errors = await open(page, 'guardian-contact');
+    const visited = await walkThrough(page, page.getByRole('link', { name: '‹ ホームへ' }), '.contact-page');
+    expect(visited.at(-1), '家庭からの書く欄を通って、下に止めた「家庭からを送る」まで進んだ').toContain('家庭からを送る');
     expect(errors, 'ブラウザ実行エラー').toEqual([]);
   });
 });
@@ -214,19 +233,31 @@ test.describe('[staff] contact キーボードだけで通す', () => {
     await ready(page);
     await expect(page.getByRole('rowheader').first()).toHaveText('上園 花子');
 
-    // 表が横に送られる幅では、表の中の部品が左に止めた園児名の列の下に隠れる（分かっている抜け 2）
-    const tableCovered = '表を横に送った先が、左に止めた園児名の列（.contact-col-child）の下になった（#212）';
     const confirm = page.getByRole('button', { name: '金城 陸の家庭からを確認しました' });
-    await tabTo(page, confirm, { knownCovered: tableCovered });
+    await tabTo(page, confirm);
     await pressAllowingFocusLoss(page, 'Enter', '「確認しました」');
     const row = page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: '金城 陸' }) });
     await expect(row).toContainText('園が確認しました 13:30 高梨 倫太朗');
     await expect(confirm).toHaveCount(0);
     // 押したボタンは消え、確認した行は「未確認を上に」の並びで下へ移る。次の Tab は表の中の続きへ進み、ページの先頭へ戻らない
-    await key(page, 'Tab', { knownCovered: tableCovered });
+    await key(page, 'Tab');
     await expect.poll(() => page.locator('.contact-class-table').evaluate((el) => el.contains(document.activeElement)),
       { message: '確認したあとの Tab が表の外へ出た' }).toBe(true);
     expect(errors, 'ブラウザ実行エラー').toEqual([]);
+  });
+
+  test.describe('表が横に送られる幅（iPad の横向き 1024×768）', () => {
+    test.use({ viewport: { width: 1024, height: 768 } });
+
+    test('連絡帳（クラス）画面の表を Tab で最後まで進み、Shift+Tab で戻っても、左に止めた園児名の列の下に隠れない', async ({ page }) => {
+      // WCAG 2.4.11 フォーカスの非隠蔽（最低限）。GitHub Issue #212（直す前は Tab で 20 か所、Shift+Tab で 22 か所がすっかり隠れた）
+      const errors = await open(page, 'contact-class');
+      const wrap = page.locator('.contact-table-wrap');
+      expect(await wrap.evaluate((el) => el.scrollWidth > el.clientWidth), 'この幅では表が横に送られる').toBe(true);
+      const visited = await walkThrough(page, page.getByRole('rowheader').first().getByRole('link'), '.contact-table-wrap');
+      expect(visited.at(-1), '表の最後の行の、右端の列（園から）まで進んだ').toContain('吉田 心春の園から');
+      expect(errors, 'ブラウザ実行エラー').toEqual([]);
+    });
   });
 
   test('② 職員が午睡チェック画面の園児の行で ねた・おきた を記録する', async ({ page }) => {
