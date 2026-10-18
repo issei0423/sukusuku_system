@@ -11,6 +11,9 @@
  * サーバ側の送り分け（誰に届くか）は server/events_test.go、モックの送り分けは liveMock.test.ts が確かめる。
  */
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { render, screen, cleanup, waitFor, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import App from '../src/App';
@@ -344,6 +347,21 @@ describe('職員のヘッダの表示', () => {
 
     act(() => stops.splice(0).forEach((stop) => stop()));
     expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('縦向きの狭い幅でも文言を隠さず、2行に折り返す切れ目は語の境目に置く（色だけに頼らない。GitHub Issue #211）', () => {
+    render(<LiveIndicator />);
+    act(() => { connect(); });
+    // 折り返しの切れ目（<wbr>）は「自動で」のあとだけ。読み上げる文は切れ目を入れても変わらない
+    const text = document.querySelector('.live-indicator .live-text')!;
+    expect(text.querySelectorAll('wbr')).toHaveLength(1);
+    expect(text.firstChild?.textContent).toBe('自動で');
+    expect(screen.getByRole('status').textContent).toBe('自動で読み直しています');
+
+    // jsdom は @media を当てないため、CSS の文で見る。文言を読み上げ用にだけ残す（見た目から隠す）規則を置いていない
+    const appCss = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../src/styles/app.css'), 'utf8');
+    expect(appCss).toContain('.live-indicator');
+    expect(appCss).not.toMatch(/\.live-text\s*\{[^}]*(clip|position:\s*absolute|display:\s*none)/);
   });
 
   it('モックの職員の画面には出さない（サーバにつないでいないため）', async () => {
