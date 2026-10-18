@@ -1367,7 +1367,7 @@ export const napApi = {
     const foundAt = input.found_at || now();
     const problem = foundAtProblem(foundAt);
     if (problem) return fail(problem);
-    const noticeProblem = guardianNoticeProblem(input);
+    const noticeProblem = guardianNoticeProblem(input, foundAt);
     if (noticeProblem) return fail(noticeProblem);
     if (!canSeeChild(user, input.child_id)) return fail('この園児を記録する権限がありません');
     autoCloseNapSessions();
@@ -2701,9 +2701,12 @@ function foundAtProblem(v: string): string | null {
  * 異常時の記録の保護者への連絡を確かめる（画面詳細図「異常時記録画面」(5-2) 項目13、基本設計書「入力項目の制約値」(4-12)）。
  * した／しないは任意で、空は未記入。連絡の要否はシステムが判断しない。「した」のときは日時（未来は不可）・
  * 手段・相手（50文字以内）が必須。サーバ側は server/api_nap.go の guardianNotice.problem と同じ規則。
+ * foundAt は確かめ終えた発見時刻（foundAtProblem を通ったもの）。
+ * 【仮置き】連絡した日時は発見時刻より前を断る（分の単位。ちょうど発見時刻は通す）。発見より前に連絡することはないため。
+ * 設計は「未来は不可」だけを定め、発見時刻との前後を決めていない（web/仮置き値.md）
  * 【仮置き】文言は設計に無い。日誌のヒヤリハットの文言にならって置いた（web/仮置き値.md）
  */
-function guardianNoticeProblem(g: AbnormalGuardianNoticeInput): string | null {
+function guardianNoticeProblem(g: AbnormalGuardianNoticeInput, foundAt: string): string | null {
   const notice = g.guardian_notice ?? '';
   if (notice === '' || notice === '2') return null;
   if (notice !== '1') return '保護者への連絡は「した」か「しない」を選んでください';
@@ -2714,6 +2717,7 @@ function guardianNoticeProblem(g: AbnormalGuardianNoticeInput): string | null {
   if (!isISODateTime(at)) return '保護者へ連絡した日時の形式が正しくありません';
   // 未来かどうかは発見時刻と同じく分の単位で比べる（foundAtProblem）
   if (at.slice(0, 16) > now().slice(0, 16)) return '保護者へ連絡した日時に未来の日時は指定できません';
+  if (at.slice(0, 16) < foundAt.slice(0, 16)) return '保護者へ連絡した日時に、発見時刻より前の日時は指定できません';
   if (!(GUARDIAN_NOTICE_METHOD_ORDER as string[]).includes(method)) return '保護者への連絡の手段の指定が正しくありません';
   if (tooLong(person, 50)) return '保護者への連絡の相手は50文字以内で入力してください';
   return null;

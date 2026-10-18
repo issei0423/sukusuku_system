@@ -124,8 +124,11 @@ export default function NapAbnormalScreen() {
           {notice === '1' && (
             <div className="row">
               <Field label="連絡した日時" required>
-                {/* 未来の日時は選べない（基本設計書「入力項目の制約値」(4-12)）。【仮置き】初期値は空（web/仮置き値.md） */}
-                <input type="datetime-local" value={noticedAt} max={now().slice(0, 16)}
+                {/*
+                  * 未来の日時は選べない（基本設計書「入力項目の制約値」(4-12)）。【仮置き】初期値は空。
+                  * 【仮置き】発見時刻より前も選べない（サーバとモックも断る。web/仮置き値.md）
+                  */}
+                <input type="datetime-local" value={noticedAt} min={foundAt || undefined} max={now().slice(0, 16)}
                   onChange={(e) => setNoticedAt(e.target.value)} />
               </Field>
               <Field label="手段" required>

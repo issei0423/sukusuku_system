@@ -155,6 +155,26 @@ describe('異常時の記録の保護者への連絡（モックの規則）', (
   });
 });
 
+describe('異常時の記録の保護者へ連絡した日時と発見時刻の前後（【仮置き】web/仮置き値.md。PR #229 で頭役が決めた）', () => {
+  atNapTime();
+  const base = { child_id: 'C001', situation: '顔色がやや紅潮', response: '別室で休ませた' };
+
+  it('発見より前に連絡することはないため、ちょうど発見時刻は通し、1分前は断る', async () => {
+    const s = await api.startSession(teacher, 1, today());
+    const found = `${today()}T13:00:00`;
+    const notice = (at: string) => ({
+      ...base, found_at: found, guardian_notice: '1' as const, guardian_noticed_at: at,
+      guardian_notice_method: '1' as const, guardian_notice_person: '母',
+    });
+    const before = db.napAbnormals.length;
+    await expect(api.recordAbnormal(teacher, s.nap_session_id, notice(`${today()}T12:59:00`)))
+      .rejects.toThrow('発見時刻より前');
+    expect(db.napAbnormals.length).toBe(before);
+    const same = await api.recordAbnormal(teacher, s.nap_session_id, notice(found));
+    expect(db.napAbnormals.find((a) => a.nap_abnormal_id === same.nap_abnormal_id)!.guardian_noticed_at).toBe(found);
+  });
+});
+
 describe('異常時記録画面の保護者への連絡（画面詳細図 5-2 項目13）', () => {
   atNapTime();
 
@@ -183,7 +203,8 @@ describe('異常時記録画面の保護者への連絡（画面詳細図 5-2 �
       .toEqual(['手段を選んでください', '電話', 'お迎えのときに対面', '連絡帳・個人チャット', 'その他']);
     expect(record.disabled).toBe(true); // 「した」のときは日時・手段・相手が要る
 
-    fireEvent.change(screen.getByLabelText('連絡した日時'), { target: { value: `${today()}T13:20` } });
+    // 連絡した日時は発見時刻（初期値はいまの 13:30）より前にできない
+    fireEvent.change(screen.getByLabelText('連絡した日時'), { target: { value: `${today()}T13:30` } });
     fireEvent.change(method, { target: { value: '1' } });
     fireEvent.change(screen.getByLabelText('相手'), { target: { value: '母（勤務先）' } });
     expect(record.disabled).toBe(false);
@@ -191,7 +212,7 @@ describe('異常時記録画面の保護者への連絡（画面詳細図 5-2 �
 
     await waitFor(() => expect(db.napAbnormals.some((a) => a.situation === '呼吸の確認に時間がかかった')).toBe(true));
     expect(db.napAbnormals.find((a) => a.situation === '呼吸の確認に時間がかかった')).toMatchObject({
-      guardian_notice: '1', guardian_noticed_at: `${today()}T13:20:00`,
+      guardian_notice: '1', guardian_noticed_at: `${today()}T13:30:00`,
       guardian_notice_method: '1', guardian_notice_person: '母（勤務先）',
     });
     // 一覧の「対応」の欄に、保護者への連絡を添える（同じファイルの前のテストの記録も並ぶため、本文で探す）

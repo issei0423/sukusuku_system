@@ -116,6 +116,25 @@ func TestNapAbnormalGuardianNotice(t *testing.T) {
 			t.Fatalf("一覧の手段 = %v, want 1（電話）と 3（連絡帳・個人チャット）", methods)
 		}
 	})
+
+	// 【仮置き】発見より前に連絡することはないため、発見時刻より前を断る（web/仮置き値.md。PR #229 で頭役が決めた）
+	t.Run("連絡した日時は、ちょうど発見時刻なら通し、1分前は断る", func(t *testing.T) {
+		n := count()
+		earlier := addDays(today(), -1) + "T23:59:00" // 発見時刻（今日の 00:00）の1分前
+		got := expectStatus(t, request(t, h, takanashi, "POST", path, body(
+			`"guardian_notice":"1","guardian_noticed_at":"`+earlier+`","guardian_notice_method":"1","guardian_notice_person":"母"`)), http.StatusBadRequest)
+		if !strings.Contains(got, "発見時刻より前") {
+			t.Fatalf("発見時刻より前を断る文言ではありません: %s", got)
+		}
+		if c := count(); c != n {
+			t.Fatalf("断ったはずの記録が %d 件できています", c-n)
+		}
+		x := storedOf(call(t, h, takanashi, "POST", path, body(
+			`"guardian_notice":"1","guardian_noticed_at":"`+found+`","guardian_notice_method":"1","guardian_notice_person":"母"`)).Body.Bytes())
+		if x.at.String != found {
+			t.Fatalf("ちょうど発見時刻の連絡 = %+v, want %s", x, found)
+		}
+	})
 }
 
 // 列を足す前に作られたデータベースへ、保護者への連絡の4列を足す。前の記録は未記入のまま残す

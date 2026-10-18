@@ -515,7 +515,7 @@ func (a *app) handleRecordNapAbnormal(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, msg)
 		return
 	}
-	if msg := req.guardianNotice.problem(); msg != "" {
+	if msg := req.guardianNotice.problem(req.FoundAt); msg != "" {
 		writeErr(w, http.StatusBadRequest, msg)
 		return
 	}
@@ -616,11 +616,14 @@ var guardianNoticeMethods = []string{"1", "2", "3", "9"}
 
 /*
 problem は保護者への連絡を確かめ、受け付けられないときは利用者に見せる文言を返す。
+foundAt は確かめ終えた発見時刻（foundAtProblem を通ったもの）。
 
+【仮置き】連絡した日時は発見時刻より前を断る（分の単位。ちょうど発見時刻は通す）。発見より前に連絡することはないため。
+設計は「未来は不可」だけを定め、発見時刻との前後を決めていない（web/仮置き値.md）。
 【仮置き】文言は設計に無い。日誌のヒヤリハットの「保護者へ伝えた日時・手段・相手を入れてください。」
 （詳細設計書「日誌」(4-13) の (1)）にならって置いた（web/仮置き値.md）
 */
-func (g guardianNotice) problem() string {
+func (g guardianNotice) problem(foundAt string) string {
 	switch g.GuardianNotice {
 	case "", "2":
 		return ""
@@ -637,6 +640,9 @@ func (g guardianNotice) problem() string {
 	// 未来かどうかは発見時刻と同じく分の単位で比べる（foundAtProblem）
 	if g.GuardianNoticedAt[:16] > now()[:16] {
 		return "保護者へ連絡した日時に未来の日時は指定できません"
+	}
+	if g.GuardianNoticedAt[:16] < foundAt[:16] {
+		return "保護者へ連絡した日時に、発見時刻より前の日時は指定できません"
 	}
 	known := false
 	for _, m := range guardianNoticeMethods {
