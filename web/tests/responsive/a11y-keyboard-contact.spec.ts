@@ -16,9 +16,11 @@
  * 分かっている抜け（このブランチでは直していない。直し方に判断が要るため PR の本文の「人の判断を待つ」に挙げた）：
  *   1. 送っている間にボタンを押せなくする（disabled）ため、押したボタンからフォーカスが外れて body に落ちる。
  *      Chromium は外れる前の位置を覚えており、次の Tab はその続きから進む。落ちたときは注記（annotation）に残し、
- *      続きの操作へキーボードで進めることを確かめる（pressAndWait）
+ *      続きの操作へキーボードで進めることを確かめる（pressAllowingFocusLoss）
  *   2. 保護者の連絡帳画面は上端の見出し（.contact-page-head）を画面の上に止めている。上へ戻る Tab で止まった部品が
  *      その下に隠れることがある。分かっている1か所だけ注記に残す（knownCovered）
+ * どちらも**起きてもテストは失敗にならない**（CI は緑のまま）。直すときは注記を外し、失敗にする確かめへ戻す。
+ * Issue を立てたら、ここと注記の説明に番号を添える。
  */
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { REVIEW_TIME } from './scenarios';
@@ -80,7 +82,7 @@ async function focusState(page: Page) {
 
 /**
  * フォーカスが見えていること（:focus-visible が当たり、outline か輪が描かれ、ほかの要素にすっかり隠れていない）。
- * knownCovered に分かっている抜けの説明を渡したときだけ、隠れていても失敗にせず注記に残す
+ * knownCovered に分かっている抜けの説明を渡したときだけ、**隠れていても失敗にせず**注記に残す（分かっている抜け 2）
  */
 async function expectFocusVisible(page: Page, { knownCovered }: { knownCovered?: string } = {}) {
   const state = await focusState(page);
@@ -102,9 +104,10 @@ async function key(page: Page, name: string, options: { knownCovered?: string } 
 
 /**
  * 送る・記録するボタンを押し、応答を待つ。押したボタンは送っている間 disabled になり、フォーカスが外れることがある。
- * 外れたら注記に残す（失敗にはしない。続きへ進めるかは呼んだ側で確かめる）
+ * **フォーカスが body に落ちても失敗にしない**（分かっている抜け 1）。落ちたら注記に残すだけで、
+ * 続きへキーボードで進めるかは呼んだ側で確かめる。押したあとのフォーカスの印は確かめない（key と違う）
  */
-async function pressAndWait(page: Page, name: string, what: string) {
+async function pressAllowingFocusLoss(page: Page, name: string, what: string) {
   await page.keyboard.press(name);
   await ready(page);
   const state = await focusState(page);
@@ -175,7 +178,7 @@ test.describe('[guardian] contact キーボードだけで通す', () => {
 
     // 送る（Enter）。送ったあとは送った内容と「急ぎはお電話でお願いします。」が出る
     await tabTo(page, home.getByRole('button', { name: '家庭からを送る' }));
-    await pressAndWait(page, 'Enter', '「家庭からを送る」');
+    await pressAllowingFocusLoss(page, 'Enter', '「家庭からを送る」');
     await expect(home).toContainText('送りました');
     await expect(home.getByRole('status')).toHaveText('急ぎはお電話でお願いします。');
     const lines = home.locator('.contact-home-lines');
@@ -208,7 +211,7 @@ test.describe('[staff] contact キーボードだけで通す', () => {
 
     const confirm = page.getByRole('button', { name: '金城 陸の家庭からを確認しました' });
     await tabTo(page, confirm);
-    await pressAndWait(page, 'Enter', '「確認しました」');
+    await pressAllowingFocusLoss(page, 'Enter', '「確認しました」');
     const row = page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: '金城 陸' }) });
     await expect(row).toContainText('園が確認しました 13:30 高梨 倫太朗');
     await expect(confirm).toHaveCount(0);
@@ -224,7 +227,7 @@ test.describe('[staff] contact キーボードだけで通す', () => {
     const row = page.getByRole('region', { name: '野原 太郎の午睡チェック' });
     const state = row.locator('.nap-sleep-state');
     await tabTo(page, row.getByRole('button', { name: '野原 太郎のねた' }));
-    await pressAndWait(page, 'Enter', '「ねた」');
+    await pressAllowingFocusLoss(page, 'Enter', '「ねた」');
     await expect(state).toHaveText('13:30 ねた');
 
     // 同じボタンが「おきた」になる。Tab で次（直す・取り消す）へ進み、Shift+Tab で「おきた」へ戻れる
@@ -232,7 +235,7 @@ test.describe('[staff] contact キーボードだけで通す', () => {
     await key(page, 'Tab');
     await expect(fix).toBeFocused();
     await tabTo(page, row.getByRole('button', { name: '野原 太郎のおきた' }), { shift: true, max: 1 });
-    await pressAndWait(page, 'Enter', '「おきた」');
+    await pressAllowingFocusLoss(page, 'Enter', '「おきた」');
     await expect(state).toContainText('13:30〜13:30');
     await expect(row.getByRole('button', { name: '野原 太郎のもう一度ねた' })).toBeVisible();
 
@@ -274,7 +277,7 @@ test.describe('[staff] contact キーボードだけで通す', () => {
     // 送る → 他児の名前の注意（フォーカスは窓の中）。Esc（直す）で閉じると「送る」へ戻り、入力は残る
     const send = facility.getByRole('button', { name: '送る', exact: true });
     await tabTo(page, send, { max: 3 });
-    await pressAndWait(page, 'Enter', '「送る」');
+    await pressAllowingFocusLoss(page, 'Enter', '「送る」');
     const check = page.getByRole('dialog', { name: 'ほかのお子さんの名前の注意' });
     await expectFocusInside(page, check);
     await expect(check.locator('mark')).toHaveText('あおちゃん');
@@ -283,10 +286,10 @@ test.describe('[staff] contact キーボードだけで通す', () => {
     await expect(text).toHaveValue(/^あおちゃんと/);
 
     // もう一度送り、注意の中で「このまま送る」へ Tab で進めて Enter
-    await pressAndWait(page, 'Enter', '「送る」');
+    await pressAllowingFocusLoss(page, 'Enter', '「送る」');
     await expectFocusInside(page, check);
     await tabTo(page, check.getByRole('button', { name: 'このまま送る' }), { max: 3 });
-    await pressAndWait(page, 'Enter', '「このまま送る」');
+    await pressAllowingFocusLoss(page, 'Enter', '「このまま送る」');
     await expect(check).toHaveCount(0);
     await expect(facility).toContainText('送った 13:30 高梨 倫太朗');
     await expect(facility).toContainText('あおちゃんとしゃぼん玉を追いかけていました。明日もよろしくお願いします。');
