@@ -392,7 +392,9 @@ func (a *app) lookupUsableCode(code string) (usableCode, error) {
 }
 
 // handleVerifyInvitationCode は招待コードの有効性だけを返す。
-// 園児名を返さない。誰の保護者かを名乗る前の段階であるため（画面詳細図 2-3）。
+// ログインしていない人（新規登録の途中）には園児名を返さない。誰の保護者かを名乗る前の段階であるため（画面詳細図 2-3）。
+// ログインしている保護者（お子さまの追加）には園児名を返す（api_guardian.go の writeAddChildPreview。
+// 詳細設計書「お子さまの追加」(4-15 (1))、決めたこと D-47）
 func (a *app) handleVerifyInvitationCode(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Code string `json:"code"`
@@ -400,8 +402,13 @@ func (a *app) handleVerifyInvitationCode(w http.ResponseWriter, r *http.Request)
 	if !readJSON(w, r, &req) {
 		return
 	}
-	if _, err := a.lookupUsableCode(req.Code); err != nil {
+	code, err := a.lookupUsableCode(req.Code)
+	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if g := a.loggedInGuardian(r); g != nil {
+		a.writeAddChildPreview(w, g, code)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

@@ -171,6 +171,11 @@ export interface GuardianChild {
   grace_ends_on?: string | null;
   /** 保護者が「AI の下書きを使わない」を選んだ（詳細設計書「使える条件」(8-3) の④。無ければ偽） */
   ai_opt_out?: boolean;
+  /**
+   * 連絡順（緊急時にかける順。管理者が紐づけごとに決める。基本設計書「保護者と園児の紐づけ（t_guardian_child）」(5-3)）。
+   * 無ければ 1（server/schema.sql の既定）。お子さまの追加で、その園児のいまの最大＋1 を入れる（詳細設計書「お子さまの追加」(4-15 (1))）
+   */
+  contact_order?: number;
 }
 
 /** アレルギー（m_allergy）。1園児に複数登録できる（5-3） */

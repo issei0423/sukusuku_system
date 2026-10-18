@@ -22,8 +22,10 @@ func (a *app) routes(mux *http.ServeMux) {
 	a.routeGuardian(mux)
 }
 
-// 保護者のメニュー（詳細設計書「保護者のメニュー」(4-15)。api_guardian.go）。本版は AI の下書きの利用だけ
+// 保護者のメニュー（詳細設計書「保護者のメニュー」(4-15)。api_guardian.go）。本版は AI の下書きの利用とお子さまの追加。
+// お子さまの追加の招待コードの確認は、新規登録と同じ POST /api/invitation/verify を広げて使う（routeAuth）
 func (a *app) routeGuardian(mux *http.ServeMux) {
+	mux.HandleFunc("POST /api/guardian/children", a.handleAddChild)
 	mux.HandleFunc("POST /api/guardian/children/{childID}/ai-opt-out", a.handleAiOptOut)
 }
 

@@ -577,6 +577,23 @@ export interface GuardianToday {
   ai_opt_out: boolean;
 }
 
+/**
+ * POST /api/invitation/verify の応答（詳細設計書「お子さまの追加」(4-15 (1))）。
+ * child_name・relationship は、ログインしている保護者が呼んだときだけ入る（決めたこと D-47）
+ */
+export interface InvitationPreview {
+  ok: true;
+  child_name?: string;
+  /** 【仮置き】ダイアログの続柄の初期値（最初に登録したときの続柄。設計は渡し方を決めていない。web/仮置き値.md） */
+  relationship?: string;
+}
+
+/** POST /api/guardian/children の応答（詳細設計書「お子さまの追加」(4-15 (1))） */
+export interface AddChildResult {
+  ok: true;
+  child_id: string;
+}
+
 /* ============ 文章の下書き（AI）（詳細設計書「経路」(8-2)） ============ */
 
 /** 用途。facility_note：園からのひとことの下書き（1つ）、rephrase：言い換え（候補3つ）、continue：続きの候補（3つ） */
