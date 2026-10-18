@@ -25,6 +25,10 @@ import (
  *   （要件定義書「日誌システム」(4-3) の「午睡チェックの異常時の記録との関係」の「集計・監査時はヒヤリハット側を正」）
  *
  * 画面側のモック（web/src/api/mock.ts の napReport と web/src/api/napReport.ts）と同じ規則・同じ中身にしてある。
+ *
+ * 異常時の記録の一覧（GET /api/nap/abnormals。api_nap.go の handleNapAbnormals）は、起票したヒヤリハットの
+ * 状況・とった対応を返さない。一般（保育士）もその一覧を読めるため、日誌を開けるかどうかと関わりなく日誌の本文が
+ * 読めてしまう。ヒヤリハット側の文は、管理者だけが出せるこの帳票がサーバの中で日誌の本文を読んで出す。
  */
 
 // 帳票の文言。モック（web/src/api/napReport.ts の NAP_REPORT_MSG）と同じ

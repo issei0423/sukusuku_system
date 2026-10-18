@@ -466,11 +466,6 @@ type napAbnormalView struct {
 	DiaryID       *int64 `json:"diary_id"`
 	ChildName     string `json:"child_name"`
 	StaffName     string `json:"staff_name"`
-	/*
-	 * 起票したヒヤリハットの側の状況・とった対応は返さない。一般（保育士）もこの一覧を読めるため、
-	 * 日誌を開けるかどうかと関わりなく日誌の本文が読めてしまう。帳票（管理者だけ。api_nap_report.go）が
-	 * サーバの中で日誌の本文を読んで出す（基本設計書「帳票の出力」(4-8)）
-	 */
 }
 
 func (a *app) handleNapAbnormals(w http.ResponseWriter, r *http.Request) {
