@@ -8,8 +8,9 @@
 import type {
   Account, Child, ChatRoom, Diary, DevelopmentItem, GuardianChild, NapRecord, NapSession,
   DiaryRecordType, DiaryStatus, InvitationStatus, Role, FunctionType, OperationType,
-  DevelopmentCheck, DevelopmentResultRecord, MealAmount, ContactEventType, BodyPosition, Breathing, Complexion,
+  DevelopmentCheck, DevelopmentResultRecord, MealAmount, ContactEventType,
 } from './types';
+import type { BodyPosition, Breathing, Complexion } from './types';
 
 /** ログインの失敗理由。画面が分岐に使う（図/画面詳細図.md「職員用トップ／保護者用トップ」(2-1)） */
 export type LoginError =

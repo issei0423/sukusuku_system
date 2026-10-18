@@ -34,8 +34,9 @@ import type {
   LoginError, ChildInput, DiaryFilter, DiaryInput, DiaryAttachmentInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
   DevDraftView,
   ContactHome, ContactHomeInput, ContactPage, ContactClassView, ContactClassRow, ContactEvent, ContactClass, ContactFacility,
-  NapSleep, NapExclusion, HomeState, GuardianToday, TodayItem, MealAmount, NapAbnormalRow, NapSearchRow,
+  NapSleep, NapExclusion, HomeState, GuardianToday, TodayItem, MealAmount,
 } from './shapes';
+import type { NapAbnormalRow, NapSearchRow } from './shapes';
 import { MSG, MEAL_AMOUNT_TEXT, MEAL_KIND_TEXT } from '../messages';
 
 // 画面はこれまでどおり client 経由で型を参照する。定義の実体は shapes.ts が持つ
