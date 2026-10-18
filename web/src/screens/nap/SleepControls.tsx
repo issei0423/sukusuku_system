@@ -78,8 +78,12 @@ export default function SleepControls({ row, sessionId, onSaved }: {
    *   - 理由を押して対象外にした：窓が閉じ、窓の部品が「対象外」へ戻すが、「対象外」は読み直すと消える。
    *     窓を片付けたあと（下の useEffect）に、同じ行に現れる「戻す」へ移す（「ねた」が同じ場所の「おきた」に替わるのと同じ）
    *   - 送れなかった：窓は開いたまま。送っている間に外れたフォーカスを、押した理由のボタンへ戻す
+   * 行の「戻す」も、送っている間に押せなくなり、戻すと「戻す」が消えて「ねた」「対象外」に替わる。
+   *   - 戻した：同じ行に現れる「対象外」へ移す（対象外にしたら「戻す」へ移すのと対になる）
+   *   - 送れなかった：「戻す」が残るので、押せるようになった「戻す」へ戻す
    */
   const restoreButton = useRef<HTMLButtonElement>(null);
+  const excludeButton = useRef<HTMLButtonElement>(null);
   const excludedFrom = useRef<HTMLElement | null>(null);
   useEffect(() => {
     // 窓の部品が閉じるときの後片付け（開いた元へ戻す）は、この effect より先に済んでいる
@@ -93,6 +97,7 @@ export default function SleepControls({ row, sessionId, onSaved }: {
   const exclude = async (reason: '1' | '2' | null) => {
     if (busy) return;
     const pressed = focusedNow();
+    let restored = false;
     setBusy(true); setError(null);
     try {
       if (reason) {
@@ -102,14 +107,17 @@ export default function SleepControls({ row, sessionId, onSaved }: {
       } else if (row.exclusion) {
         await api.cancelExclusion(user!, row.exclusion.nap_exclusion_id);
         notify(`${name}さんの対象外を戻しました。`);
+        restored = true;
       }
       setExcluding(false);
     } catch (e) {
       setError((e as Error).message);
-      if (reason) focusAfter(pressed);
+      // 窓の中の理由、または行の「戻す」。どちらも残るので、押したボタンへ戻す
+      focusAfter(pressed);
     } finally {
       setBusy(false);
       onSaved();
+      if (restored) focusAfter(pressed, () => excludeButton.current);
     }
   };
 
@@ -130,7 +138,7 @@ export default function SleepControls({ row, sessionId, onSaved }: {
         </button>
       )}
       {!row.exclusion && row.sleeps.length === 0 && (
-        <button type="button" className="btn-quiet nap-exclude-button" onClick={() => setExcluding(true)} disabled={busy}
+        <button ref={excludeButton} type="button" className="btn-quiet nap-exclude-button" onClick={() => setExcluding(true)} disabled={busy}
           aria-label={`${name}をきょうは対象外にする`}>
           対象外
         </button>

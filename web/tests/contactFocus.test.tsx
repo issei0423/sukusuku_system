@@ -4,7 +4,7 @@
  * 典拠：WCAG 2.4.3 フォーカス順序、GitHub Issue #213
  * 画面の上での動き（キーボードだけで通す道）は tests/responsive/a11y-keyboard-contact.spec.ts で確かめる
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import App from '../src/App';
@@ -50,6 +50,7 @@ function dropFocus(el: HTMLButtonElement) {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
   act(() => clearNotice());
   cleanup();
   document.body.innerHTML = '';
@@ -163,7 +164,7 @@ describe('体温の一覧の窓（GitHub Issue #213）', () => {
   });
 });
 
-describe('午睡チェック画面の「対象外」の窓（GitHub Issue #213）', () => {
+describe('午睡チェック画面の「対象外」の窓と、行の「戻す」（GitHub Issue #213）', () => {
   /** デモの実施（13:00 開始）は 18:00 には自動で終わっている。新しく始める */
   async function startNap() {
     const active = await api.activeSession(1, today(), admin);
@@ -213,5 +214,33 @@ describe('午睡チェック画面の「対象外」の窓（GitHub Issue #213�
     await waitFor(() => expect(document.querySelector('.nap-sleep-error')?.textContent).toBeTruthy(), { timeout: 3000 });
     expect(screen.getByRole('dialog', { name: '野原 太郎をきょうは対象外にする' })).toBe(dialog);
     await waitFor(() => expect(document.activeElement).toBe(noNap), { timeout: 3000 });
+  });
+
+  /*
+   * 行の「戻す」は送っている間に押せなくなり、戻すと「戻す」が消えて「ねた」「対象外」に替わる。
+   * 応答のあと、同じ行に現れる「対象外」へ移す（対象外にしたら「戻す」へ移すのと対になる）
+   */
+  it('「戻す」を押して対象外を戻したら、同じ行に現れる「対象外」へフォーカスが移る', async () => {
+    const session = await startNap();
+    await api.exclude(teacher, session.nap_session_id, 'C001', '1');
+    open('/staff/nap', teacher);
+    const restore = await screen.findByRole('button', { name: '野原 太郎の対象外を戻す' }, { timeout: 3000 }) as HTMLButtonElement;
+    const row = restore.closest('.nap-record-row') as HTMLElement;
+    press(restore);
+    dropFocus(restore);
+    const opener = await within(row).findByRole('button', { name: '野原 太郎をきょうは対象外にする' }, { timeout: 3000 });
+    await waitFor(() => expect(document.activeElement).toBe(opener), { timeout: 3000 });
+  });
+
+  it('「戻す」が送れなかったときは、「戻す」へフォーカスを戻す', async () => {
+    const session = await startNap();
+    await api.exclude(teacher, session.nap_session_id, 'C001', '1');
+    open('/staff/nap', teacher);
+    const restore = await screen.findByRole('button', { name: '野原 太郎の対象外を戻す' }, { timeout: 3000 }) as HTMLButtonElement;
+    vi.spyOn(api, 'cancelExclusion').mockRejectedValueOnce(new Error('この実施は終わっています。'));
+    press(restore);
+    dropFocus(restore);
+    await waitFor(() => expect(document.querySelector('.nap-sleep-error')?.textContent).toBe('この実施は終わっています。'), { timeout: 3000 });
+    await waitFor(() => expect(document.activeElement).toBe(restore), { timeout: 3000 });
   });
 });

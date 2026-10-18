@@ -394,8 +394,9 @@ test.describe('[staff] contact キーボードだけで通す', () => {
     expect(errors, 'ブラウザ実行エラー').toEqual([]);
   });
 
-  test('午睡チェック画面の「対象外」の窓：開くと「欠席」へ入り、Esc で「対象外」へ戻り、理由を選ぶと同じ行の「戻す」へ移る', async ({ page }) => {
-    // 理由を押すとそのまま送り、窓が閉じる。開いた元の「対象外」は読み直すと消えるので、同じ行の「戻す」へ移す（GitHub Issue #213）
+  test('午睡チェック画面の「対象外」の窓：開くと「欠席」へ入り、Esc で「対象外」へ戻り、理由を選ぶと同じ行の「戻す」へ、「戻す」を押すと「対象外」へ移る', async ({ page }) => {
+    // 理由を押すとそのまま送り、窓が閉じる。開いた元の「対象外」は読み直すと消えるので、同じ行の「戻す」へ移す（GitHub Issue #213）。
+    // 「戻す」も、戻すと消えて「ねた」「対象外」に替わるので、同じ行の「対象外」へ移す
     const errors = await open(page, 'nap');
     const row = page.getByRole('region', { name: '野原 太郎の午睡チェック' });
     const opener = row.getByRole('button', { name: '野原 太郎をきょうは対象外にする' });
@@ -411,6 +412,9 @@ test.describe('[staff] contact キーボードだけで通す', () => {
     await pressAndExpectFocus(page, 'Enter', row.getByRole('button', { name: '野原 太郎の対象外を戻す' }));
     await expect(dialog).toHaveCount(0);
     await expect(row.locator('.nap-sleep-state')).toHaveText('対象外（欠席）');
+    await pressAndExpectFocus(page, 'Enter', opener);
+    await expect(row.getByRole('button', { name: '野原 太郎の対象外を戻す' })).toHaveCount(0);
+    await expect(row.getByRole('button', { name: '野原 太郎のねた' })).toBeVisible();
     expect(errors, 'ブラウザ実行エラー').toEqual([]);
   });
 
