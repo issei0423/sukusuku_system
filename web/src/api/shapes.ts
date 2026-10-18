@@ -9,6 +9,7 @@ import type {
   Account, Child, ChatRoom, Diary, DevelopmentItem, GuardianChild, NapRecord, NapSession,
   DiaryRecordType, DiaryStatus, InvitationStatus, Role, FunctionType, OperationType,
 } from './types';
+import type { GuardianNotice, GuardianNoticeMethod } from './types';
 
 /** ログインの失敗理由。画面が分岐に使う（図/画面詳細図.md「職員用トップ／保護者用トップ」(2-1)） */
 export type LoginError =
@@ -110,8 +111,24 @@ export interface NapAbnormalRow {
   response: string;
   staff_id: string;
   diary_id: number | null;
+  /** 保護者への連絡（画面詳細図「異常時記録画面」(5-2) 項目13）。空は未記入 */
+  guardian_notice: GuardianNotice | null;
+  guardian_noticed_at: string | null;
+  guardian_notice_method: GuardianNoticeMethod | null;
+  guardian_notice_person: string | null;
   child_name: string;
   staff_name: string;
+}
+
+/**
+ * 異常時の記録で送る保護者への連絡（画面詳細図「異常時記録画面」(5-2) 項目13）。
+ * guardian_notice が空（''）なら未記入。「した」（'1'）のときだけ日時・手段・相手を使う
+ */
+export interface AbnormalGuardianNoticeInput {
+  guardian_notice?: GuardianNotice | '';
+  guardian_noticed_at?: string;
+  guardian_notice_method?: GuardianNoticeMethod | '';
+  guardian_notice_person?: string;
 }
 
 export interface NapSearchRow extends NapRecord {

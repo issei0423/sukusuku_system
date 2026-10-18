@@ -60,6 +60,9 @@ func openDB(path string) (*sql.DB, error) {
 	if err := ensureTermsAgreement(db); err != nil {
 		return nil, err
 	}
+	if err := ensureNapAbnormalGuardianNotice(db); err != nil {
+		return nil, err
+	}
 	if err := ensureDesignColumns(db); err != nil {
 		return nil, err
 	}

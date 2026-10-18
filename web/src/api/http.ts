@@ -19,6 +19,7 @@ import type {
   DevListRow, DevScheduleRow, CsvRow, FiscalClassRow, StaffAccountRow,
   GuardianAccountRow, InvitationCodeRow, OperationLogRow, StaffSummary, GuardianHomeRow,
 } from './shapes';
+import type { AbnormalGuardianNoticeInput } from './shapes';
 import {
   ProcedureRequiredError, isProcedureKind, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
 } from './procedure';
@@ -375,7 +376,7 @@ const apiChatNap = {
   ) => post<NapRecord>(`/api/nap/session/${sessionId}/records`, input),
   recordAbnormal: (
     _u: SessionUser, sessionId: number,
-    input: { child_id: string; found_at: string; situation: string; response: string },
+    input: { child_id: string; found_at: string; situation: string; response: string } & AbnormalGuardianNoticeInput,
   ) => post<{ nap_abnormal_id: number }>(`/api/nap/session/${sessionId}/abnormals`, input),
   abnormals: (_u: SessionUser) => get<NapAbnormalRow[]>('/api/nap/abnormals'),
   raiseIncidentDiary: (_u: SessionUser, abnormalId: number) =>

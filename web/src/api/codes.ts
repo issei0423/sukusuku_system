@@ -8,6 +8,7 @@ import type {
   Role, AccountStatus, InvitationStatus, Sex, EnrollmentStatus, PhotoConsentLevel,
   DiaryRecordType, DiaryStatus, ChatRoomType, BodyPosition, Breathing, Complexion,
   DevelopmentResult, ShareStatus, MeasureType, FunctionType, OperationType, LinkStatus,
+  GuardianNotice, GuardianNoticeMethod,
 } from './types';
 
 export const ROLE: Record<Role, string> = { '1': '管理者', '2': '一般', '3': '保護者' };
@@ -70,3 +71,17 @@ export const THREAD_STATUS: Record<string, string> = { '1': '未対応', '2': '�
 export const HANDOUT_TYPE: Record<string, string> = {
   '1': '園だより', '2': '献立表', '3': '行事のお知らせ', '4': 'クラスだより', '5': 'その他',
 };
+
+/** 異常時の記録の保護者への連絡（t_nap_abnormal.guardian_notice） */
+export const GUARDIAN_NOTICE: Record<GuardianNotice, string> = { '1': 'した', '2': 'しない' };
+
+/*
+ * 保護者への連絡の手段（t_nap_abnormal.guardian_notice_method。基本設計書「午睡チェック」(5-7)）
+ * 並びは選択肢の並び。午睡中の異常は電話で伝える（段4）ため電話を先頭に置き、
+ * 連絡帳・個人チャットは電話のあとに経過を書く手段として後ろに置く
+ * （PR #216 の 図/画面詳細図.md「異常時記録画面」(5-2) 項目13）。Go サーバ（server/api_nap.go の guardianNoticeMethods）と同じ並び
+ */
+export const GUARDIAN_NOTICE_METHOD: Record<GuardianNoticeMethod, string> = {
+  '1': '電話', '2': 'お迎えのときに対面', '3': '連絡帳・個人チャット', '9': 'その他',
+};
+export const GUARDIAN_NOTICE_METHOD_ORDER: GuardianNoticeMethod[] = ['1', '2', '3', '9'];
