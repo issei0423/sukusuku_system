@@ -249,6 +249,9 @@ function buildSessionUser(a: Account): SessionUser {
   };
 }
 
+/** 存在しないログインIDへの失敗の回数（GitHub Issue #159 の 5）。アカウントの行が無いので、ここに持つ */
+const unknownLogins = new Map<string, { count: number; lockedUntil: string }>();
+
 export const authApi = {
   /**
    * ログイン
@@ -258,7 +261,25 @@ export const authApi = {
     const a = db.accounts.find((x) => x.email === email);
     const max = settingNumber('auth.max_failed_login', 5);
 
-    if (!a) return fail(JSON.stringify({ kind: 'credential', remaining: max } satisfies LoginError));
+    if (!a) {
+      /*
+       * 存在しないログインIDへの失敗も、実在のアカウントと同じように数えてロックする。存在しないIDだけ
+       * 「残り 5 回」のまま減らないと、それで有無が分かるため（GitHub Issue #159 の 5。server/attempts.go の
+       * unknownFailed と同じ）。送信元ごとの上限（#236 の 6）はモックに送信元が無いため持たない
+       */
+      const key = email.toLowerCase();
+      const u = unknownLogins.get(key) ?? { count: 0, lockedUntil: '' };
+      unknownLogins.set(key, u);
+      if (u.lockedUntil && u.lockedUntil > now()) {
+        return fail(JSON.stringify({ kind: 'locked', until: u.lockedUntil } satisfies LoginError));
+      }
+      u.count += 1;
+      if (u.count >= max) {
+        u.lockedUntil = fromNowMinutes(settingNumber('auth.lock_minutes', 30));
+        return fail(JSON.stringify({ kind: 'locked', until: u.lockedUntil } satisfies LoginError));
+      }
+      return fail(JSON.stringify({ kind: 'credential', remaining: max - u.count } satisfies LoginError));
+    }
 
     if (a.locked_until && a.locked_until > now()) {
       return fail(JSON.stringify({ kind: 'locked', until: a.locked_until } satisfies LoginError));

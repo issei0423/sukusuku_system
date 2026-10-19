@@ -75,6 +75,11 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       clearReference();
       notifySessionEnded();
     }
+    // 送信元の失敗が続いて止めているとき（server/attempts.go。GitHub Issue #236 の 6）。
+    // 招待コードの確認・新規登録の画面は文言をそのまま出すので、ログイン以外では文言で投げる
+    if (err.kind === 'too_many_attempts' && path !== '/api/login') {
+      throw new Error(err.message);
+    }
     // ログインの失敗理由は画面が分岐に使う。mock 実装と同じ形（JSON 文字列）で投げる
     if (err.kind) {
       throw new Error(JSON.stringify({ kind: err.kind, remaining: err.remaining, correct: err.correct }));

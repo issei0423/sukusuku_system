@@ -195,3 +195,71 @@ func TestServeWebDoesNotListDirectories(t *testing.T) {
 		t.Errorf("画面の経路が index.html に寄らない: %q", body)
 	}
 }
+
+// ---- #159 の 5：存在しないログインIDも、残りの回数とロックが実在のアカウントと同じに進む ----
+
+func TestUnknownLoginIDCountsDownLikeRealAccount(t *testing.T) {
+	_, h := newTestApp(t)
+	remainingOf := func(email string) []any {
+		var out []any
+		for i := 0; i < 6; i++ {
+			rec := send(t, h, nil, "POST", "/api/login",
+				`{"email":"`+email+`","password":"wrong-pass","entrance":"staff"}`)
+			var body apiError
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Kind == "credential" {
+				out = append(out, body.Remaining)
+			} else {
+				out = append(out, body.Kind)
+			}
+		}
+		return out
+	}
+	real := remainingOf("kinjo@hoiku.example.jp")
+	unknown := remainingOf("nobody@hoiku.example.jp")
+	want := []any{4, 3, 2, 1, "locked", "locked"}
+	for i := range want {
+		if real[i] != want[i] || unknown[i] != want[i] {
+			t.Fatalf("実在: %v / 存在しない: %v、どちらも %v になるはず", real, unknown, want)
+		}
+	}
+}
+
+// ---- #236 の 6：送信元ごとの失敗の上限 ----
+
+func TestTooManyFailuresFromOneAddressAreRefused(t *testing.T) {
+	_, h := newTestApp(t)
+	// 招待コードの総当たり。上限までは理由を返し、超えたら 429
+	for i := 0; i < ipFailureLimit; i++ {
+		rec := send(t, h, nil, "POST", "/api/invitation/verify", `{"code":"ZZZZ-ZZZZ-ZZZZ"}`)
+		expectStatus(t, rec, http.StatusBadRequest)
+	}
+	rec := send(t, h, nil, "POST", "/api/invitation/verify", `{"code":"ABCD-1234-EFGH"}`)
+	expectStatus(t, rec, http.StatusTooManyRequests)
+	if kind := errorKindOf(t, rec); kind != "too_many_attempts" {
+		t.Fatalf("kind = %q", kind)
+	}
+	// 同じ送信元からは、正しいパスワードのログインも新規登録も止める
+	expectStatus(t, send(t, h, nil, "POST", "/api/login",
+		`{"email":"nohara@hoiku.example.jp","password":"pass1234","entrance":"staff"}`), http.StatusTooManyRequests)
+	expectStatus(t, send(t, h, nil, "POST", "/api/signup", `{"code":"ABCD-1234-EFGH"}`), http.StatusTooManyRequests)
+
+	// ほかの送信元は止めない
+	req := httptest.NewRequest("POST", "/api/login",
+		strings.NewReader(`{"email":"nohara@hoiku.example.jp","password":"pass1234","entrance":"staff"}`))
+	req.RemoteAddr = "198.51.100.7:5555"
+	other := httptest.NewRecorder()
+	h.ServeHTTP(other, req)
+	expectStatus(t, other, http.StatusOK)
+}
+
+func TestSuccessfulLoginsAreNotCounted(t *testing.T) {
+	a, h := newTestApp(t)
+	// 園内の端末が同じ送信元でも、成功したログインは数えない（朝にそろってログインしても止めない）
+	for i := 0; i < ipFailureLimit+5; i++ {
+		login(t, h, "nohara@hoiku.example.jp", "pass1234", "staff")
+		a.sessions.destroyAccount(1, "")
+	}
+}

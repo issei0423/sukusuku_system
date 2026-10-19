@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -19,6 +20,9 @@ type app struct {
 	currentTermsVersion string
 	// 最新版の規約のID。同意履歴（t_terms_agreement）へ記録するときに使う
 	currentTermsID int64
+	// ログイン・招待コードの試行の見張り（attempts.go）。guard() で取り出す
+	guardOnce sync.Once
+	attempts  *attemptGuard
 }
 
 func main() {

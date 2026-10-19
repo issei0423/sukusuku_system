@@ -31,3 +31,29 @@ describe('推測されてはならない値', () => {
     expect(codes.size).toBe(3);
   });
 });
+
+/*
+ * 存在しないログインIDも、残りの回数とロックが実在のアカウントと同じに進む（GitHub Issue #159 の 5）。
+ * サーバ側（server/security_test.go の TestUnknownLoginIDCountsDownLikeRealAccount）と同じ観点
+ */
+describe('存在しないログインID', () => {
+  const outcomes = async (email: string) => {
+    const out: (number | string)[] = [];
+    for (let i = 0; i < 6; i++) {
+      try {
+        await api.login(email, 'wrong-pass', 'staff');
+        out.push('ok');
+      } catch (e) {
+        const err = JSON.parse((e as Error).message) as { kind: string; remaining?: number };
+        out.push(err.kind === 'credential' ? err.remaining ?? -1 : err.kind);
+      }
+    }
+    return out;
+  };
+
+  it('残りの回数が減り、同じ回数でロックになる（実在のアカウントと見分けられない）', async () => {
+    const want = [4, 3, 2, 1, 'locked', 'locked'];
+    expect(await outcomes('kinjo@hoiku.example.jp')).toEqual(want);
+    expect(await outcomes('nobody@hoiku.example.jp')).toEqual(want);
+  });
+});
