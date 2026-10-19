@@ -177,7 +177,8 @@ function scrollParent(el: HTMLElement | null): HTMLElement | null {
     const y = getComputedStyle(node).overflowY;
     if (y === 'auto' || y === 'scroll') return node;
   }
-  return null;
+  // 列の内側でなくページ全体を送る作り（保護者の画面の PC の幅）では、文書そのものを送る
+  return (document.scrollingElement as HTMLElement | null) ?? null;
 }
 
 /**
