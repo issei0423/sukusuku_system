@@ -10,7 +10,6 @@
  * 分けても表示項目は増えず、画面数と図の分量だけが増えるため。
  */
 import { useEffect, useRef, useState } from 'react';
-import type { MouseEvent, PointerEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useAsync, useFollowLatest, AUTO_REFRESH_MS } from '../../hooks';
 import { useSession } from '../../session';
@@ -18,14 +17,8 @@ import { api, accountName } from '../../api/client';
 import { REACTION } from '../../api/codes';
 import { Loading, ErrorBox, Empty } from '../../components/ui';
 import Reactions from '../../components/Reactions';
+import { useSecondaryAction } from '../../secondaryAction';
 import { formatHM, formatMD } from '../../api/util';
-
-/*
- * メッセージを長押しして操作の一覧を開くまでの時間と、長押しとみなす指のずれの上限。
- * 設計に定めが無く、仮に置いた値（web/仮置き値.md）
- */
-const LONG_PRESS_MS = 800;
-const LONG_PRESS_MOVE_PX = 10;
 
 export default function GuardianChatScreen() {
   const { user } = useSession();
@@ -58,14 +51,11 @@ export default function GuardianChatScreen() {
    */
   const [menuPlace, setMenuPlace] = useState<{ above: boolean; offset: number }>({ above: false, offset: 0 });
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const pressTimer = useRef<number | null>(null);
-  const pressStart = useRef<{ x: number; y: number } | null>(null);
   /*
-   * 長押しで一覧を開いた直後に指を離すと、その位置が「押された」ことになる。
-   * 一覧を見える位置へ送ると画面が動くため、指の下に来たリアクションのボタンや本文中のリンクが
-   * 意図せず押されてしまう。長押しで開いた直後の1回だけ、どこに当たっても無視する
+   * 右クリック・長押しの判定（secondaryAction.ts）。長押しで開いた直後に指を離したときのクリックを
+   * 無視する扱いも、ここに含まれる（一覧を見える位置へ送ると画面が動き、指の下にボタンが来るため）
    */
-  const suppressClick = useRef(false);
+  const secondary = useSecondaryAction();
 
   const messages = useAsync(async () => (roomId ? api.messages(user!, roomId) : []), [roomId],
     { refreshMs: AUTO_REFRESH_MS });
@@ -102,23 +92,6 @@ export default function GuardianChatScreen() {
     };
   }, [menuId]);
 
-  useEffect(() => {
-    const swallow = (e: Event) => {
-      if (!suppressClick.current) return;
-      suppressClick.current = false;
-      e.preventDefault();
-      e.stopPropagation();
-    };
-    // 次に押し始めたら、無視する指定を解く（指を離しても「押された」ことにならなかった場合に残さない）
-    const reset = () => { suppressClick.current = false; };
-    document.addEventListener('click', swallow, true);
-    document.addEventListener('pointerdown', reset, true);
-    return () => {
-      document.removeEventListener('click', swallow, true);
-      document.removeEventListener('pointerdown', reset, true);
-      if (pressTimer.current !== null) clearTimeout(pressTimer.current);
-    };
-  }, []);
   useEffect(() => { setMenuId(null); }, [roomId]);
 
   // 読み込み中の表示は最初の1回だけ。読み直しのたびに画面を入れ替えると、入力中の文字や読んでいた位置が失われる
@@ -161,11 +134,6 @@ export default function GuardianChatScreen() {
     catch (e) { setError((e as Error).message); }
   };
 
-  const cancelPress = () => {
-    if (pressTimer.current !== null) { clearTimeout(pressTimer.current); pressTimer.current = null; }
-    pressStart.current = null;
-  };
-
   // 吹き出しの位置から、一覧を上下どちらへ出すかを決めて開く
   const openMenu = (messageId: number, bubble: HTMLElement) => {
     const r = bubble.getBoundingClientRect();
@@ -182,34 +150,8 @@ export default function GuardianChatScreen() {
     setMenuId(messageId);
   };
 
-  // 吹き出しに付ける。押したまま LONG_PRESS_MS が過ぎたら、そのメッセージの操作の一覧を開く
-  const pressHandlers = (messageId: number) => ({
-    onPointerDown: (e: PointerEvent) => {
-      if (e.pointerType === 'mouse' && e.button !== 0) return;
-      cancelPress();
-      pressStart.current = { x: e.clientX, y: e.clientY };
-      const bubble = e.currentTarget as HTMLElement;
-      pressTimer.current = window.setTimeout(() => {
-        pressTimer.current = null;
-        suppressClick.current = true;
-        openMenu(messageId, bubble);
-      }, LONG_PRESS_MS);
-    },
-    // 画面を送ろうとして指が動いたときは、長押しとみなさない
-    onPointerMove: (e: PointerEvent) => {
-      const s = pressStart.current;
-      if (s && Math.hypot(e.clientX - s.x, e.clientY - s.y) > LONG_PRESS_MOVE_PX) cancelPress();
-    },
-    onPointerUp: cancelPress,
-    onPointerCancel: cancelPress,
-    onPointerLeave: cancelPress,
-    // 右クリックと、端末が長押しで出す既定のメニューの代わりに開く
-    onContextMenu: (e: MouseEvent) => {
-      e.preventDefault();
-      cancelPress();
-      openMenu(messageId, e.currentTarget as HTMLElement);
-    },
-  });
+  // 吹き出しに付ける。右クリックか長押しで、そのメッセージの操作の一覧を開く
+  const pressHandlers = (messageId: number) => secondary((bubble) => openMenu(messageId, bubble));
 
   // 一覧
   if (!current) {
@@ -250,7 +192,7 @@ export default function GuardianChatScreen() {
       <div className="guardian-message-list" ref={listRef}>
         {(messages.data?.length ?? 0) > 0 && (
           <p id="guardian-message-hint" className="guardian-message-hint">
-            メッセージの「操作」ボタンか長押しで、リアクションを付けられます。自分のメッセージは編集・取消もできます。
+            メッセージの「操作」ボタン、長押し（パソコンでは右クリック）で、リアクションを付けられます。自分のメッセージは編集・取消もできます。
           </p>
         )}
         {messages.loading && <Loading />}

@@ -13,15 +13,16 @@ import { useSession } from '../../session';
 import { api, accountName } from '../../api/client';
 import { Loading, ErrorBox, Empty, Alert, Tag } from '../../components/ui';
 import Reactions from '../../components/Reactions';
+import { useSecondaryAction } from '../../secondaryAction';
+import type { SecondaryActionHandlers } from '../../secondaryAction';
 import { CHAT_ROOM_TYPE, THREAD_STATUS, REACTION } from '../../api/codes';
 import { formatHM, formatMD } from '../../api/util';
 import type { ChatMessage } from '../../api/types';
 
-/** 長押しとみなすまでの時間。保護者のチャット画面と同じ値（web/仮置き値.md） */
-const LONG_PRESS_MS = 800;
-
 export default function StaffChatScreen() {
   const { user } = useSession();
+  // 右クリック・長押しの判定（secondaryAction.ts）。保護者のチャット画面と同じ扱い
+  const secondary = useSecondaryAction();
   // 操作の一覧を開いているメッセージ。同時に開くのは1件だけ
   const [menuId, setMenuId] = useState<number | null>(null);
   /*
@@ -197,6 +198,7 @@ export default function StaffChatScreen() {
                 canEdit={m.sender_account_id === user!.account_id || schoolWideAdmin}
                 readOnly={!!current?.left}
                 menuOpen={menuId === m.chat_message_id}
+                bindPress={secondary}
                 onMenu={(open) => setMenuId((cur) => (open ? m.chat_message_id : cur === m.chat_message_id ? null : cur))}
                 onReact={(type) => react(m.chat_message_id, type)}
                 onRetract={async () => { await api.retract(user!, m.chat_message_id); messages.refresh(); }}
@@ -261,12 +263,14 @@ export default function StaffChatScreen() {
 }
 
 /** 1件のメッセージ。既読は人数で示す（画面詳細図 4-1） */
-function MessageRow({ message, mine, canEdit, readOnly, onRetract, onEdit, onReact, menuOpen, onMenu }: {
+function MessageRow({ message, mine, canEdit, readOnly, onRetract, onEdit, onReact, menuOpen, onMenu, bindPress }: {
   message: ChatMessage; mine: boolean; canEdit: boolean;
   /** 外れたチャンネルの過去ログ。操作の一覧（リアクション・編集・取消）を出さない */
   readOnly: boolean;
   onRetract: () => void; onEdit: (body: string) => Promise<void>; onReact: (reactionType: string) => void;
   menuOpen: boolean; onMenu: (open: boolean) => void;
+  /** 右クリック・長押しで一覧を開く扱い（secondaryAction.ts）。画面に1つ置いたものを受け取る */
+  bindPress: (open: (el: HTMLElement) => void) => SecondaryActionHandlers;
 }) {
   /*
    * 既読の人数はメッセージと一緒に受け取る（read_count）。1件ずつ問い合わせると往復が増えるうえ、
@@ -282,25 +286,14 @@ function MessageRow({ message, mine, canEdit, readOnly, onRetract, onEdit, onRea
   const bubbleRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const pressTimer = useRef<number | null>(null);
-  // 長押しで開いた直後に指を離したとき、指の下に来たボタンが押されないようにする
-  const openedByPressAt = useRef(0);
   // 一覧を出す向き。メッセージが画面の中央より下にあれば上へ出し、画面の外へ出ないようにする
   const [above, setAbove] = useState(false);
 
-  const openMenu = () => {
-    const r = bubbleRef.current?.getBoundingClientRect();
+  // 吹き出しの位置から、一覧を上下どちらへ出すかを決めて開く
+  const openMenu = (bubble: HTMLElement | null) => {
+    const r = bubble?.getBoundingClientRect();
     setAbove(!!r && r.top + r.height / 2 > window.innerHeight / 2);
     onMenu(true);
-  };
-  const cancelPress = () => {
-    if (pressTimer.current !== null) { clearTimeout(pressTimer.current); pressTimer.current = null; }
-  };
-  // 本文中のリンクや入力欄の上では、ブラウザの既定の動きを残す
-  const onControl = (target: EventTarget) => !!(target as HTMLElement).closest('a, button, textarea');
-  const guarded = (fn: () => void) => () => {
-    if (Date.now() - openedByPressAt.current < 400) return;
-    fn();
   };
 
   useEffect(() => {
@@ -323,7 +316,6 @@ function MessageRow({ message, mine, canEdit, readOnly, onRetract, onEdit, onRea
       document.removeEventListener('keydown', onKey);
     };
   }, [menuOpen]);
-  useEffect(() => cancelPress, []);
   /*
    * 編集は送信者本人のみ。園チャットに限り管理者同士でも編集できる
    * （基本設計書「メッセージの編集」(4-6)）。可否の判定は canEdit で受け取る。
@@ -360,23 +352,7 @@ function MessageRow({ message, mine, canEdit, readOnly, onRetract, onEdit, onRea
         {message.edited_at && <span className="weak">（編集済み）</span>}
       </div>
       <div ref={bubbleRef} className={`bubble${editing || readOnly ? '' : ' has-menu'}`}
-        onContextMenu={(e) => {
-          if (editing || readOnly || onControl(e.target)) return;
-          e.preventDefault();
-          cancelPress();
-          openMenu();
-        }}
-        onPointerDown={(e) => {
-          // マウスは右クリックで開く。長押しはタッチ・ペンのための操作
-          if (editing || readOnly || e.pointerType === 'mouse' || onControl(e.target)) return;
-          cancelPress();
-          pressTimer.current = window.setTimeout(() => {
-            pressTimer.current = null;
-            openedByPressAt.current = Date.now();
-            openMenu();
-          }, LONG_PRESS_MS);
-        }}
-        onPointerUp={cancelPress} onPointerCancel={cancelPress} onPointerLeave={cancelPress}>
+        {...(editing || readOnly ? {} : bindPress(openMenu))}>
         {editing ? (
           <>
             <textarea value={draft} onChange={(e) => setDraft(e.target.value)}
@@ -418,7 +394,7 @@ function MessageRow({ message, mine, canEdit, readOnly, onRetract, onEdit, onRea
           aria-label={`${mine ? '自分' : message.sender_name ?? accountName(message.sender_account_id)}のメッセージの操作`}
           aria-expanded={menuOpen}
           aria-controls={menuOpen ? `message-actions-${message.chat_message_id}` : undefined}
-          onClick={() => (menuOpen ? onMenu(false) : openMenu())}>操作</button>
+          onClick={() => (menuOpen ? onMenu(false) : openMenu(bubbleRef.current))}>操作</button>
       )}
       <Reactions reactions={message.reactions ?? []} onToggle={onReact} showAdd={false} />
       {/* 既読は自分の発言にだけ出す */}
@@ -432,7 +408,7 @@ function MessageRow({ message, mine, canEdit, readOnly, onRetract, onEdit, onRea
               {Object.entries(REACTION).map(([type, def]) => (
                 <button key={type} type="button" className="reaction pick"
                   aria-label={def.label} title={def.label}
-                  onClick={guarded(() => { onReact(type); onMenu(false); })}>
+                  onClick={() => { onReact(type); onMenu(false); }}>
                   <span aria-hidden="true">{def.emoji}</span>
                 </button>
               ))}
@@ -441,11 +417,11 @@ function MessageRow({ message, mine, canEdit, readOnly, onRetract, onEdit, onRea
               {/* 編集は送信者本人。園チャットに限り管理者同士でもできる。取消は自分の発言だけ */}
               {canEdit && (
                 <button type="button" className="btn-sm"
-                  onClick={guarded(() => { setDraft(message.body); setEditing(true); onMenu(false); })}>編集</button>
+                  onClick={() => { setDraft(message.body); setEditing(true); onMenu(false); }}>編集</button>
               )}
               {mine && (
                 <button type="button" className="btn-sm"
-                  onClick={guarded(() => { onRetract(); onMenu(false); })}>取消</button>
+                  onClick={() => { onRetract(); onMenu(false); }}>取消</button>
               )}
               <button type="button" className="btn-sm btn-quiet" onClick={() => onMenu(false)}>
                 閉じる
