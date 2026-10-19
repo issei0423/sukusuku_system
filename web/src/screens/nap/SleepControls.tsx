@@ -131,7 +131,11 @@ export default function SleepControls({ row, sessionId, onSaved }: {
 
   return (
     <div className="nap-sleep-controls">
-      {state && <span className="nap-sleep-state" role="status">{state}</span>}
+      {/*
+        行の状態（「13:30 ねた」など）は読み上げへ伝えない。午睡チェック画面の園児の行ごとの role="status" は外す
+        （詳細設計書 (2-0) の (6) の③、GitHub Issue #209）。自分で押した結果は notify() で読み、ほかの職員の記録は読まない
+      */}
+      {state && <span className="nap-sleep-state">{state}</span>}
       {!row.exclusion && (
         <button type="button" className={open ? 'btn-primary nap-sleep-button' : 'nap-sleep-button'} onClick={press}
           disabled={busy} aria-busy={busy} aria-label={`${name}の${label}`}>

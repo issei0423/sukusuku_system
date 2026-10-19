@@ -51,7 +51,8 @@ export default function TodayCard({ today: t, newCount }: {
         {nothing && <p className="empty">{TEXT.noRecordToday}</p>}
         {nap && (
           <>
-            <p className="contact-nap" role="status">{nap}</p>
+            {/* 保護者ホームの「きょう」は、園の記録で書き換わっても読み上げへ伝えない（詳細設計書 (2-0) の (6)「読まないもの」、GitHub Issue #209） */}
+            <p className="contact-nap">{nap}</p>
             <p className="muted contact-nap-note">{TEXT.napAlwaysNote}</p>
           </>
         )}

@@ -34,6 +34,8 @@ import { dayLabel, eventText, homeLines } from './contactText';
 import FixDialog, { cancelAction, timeOptions, toiletChoices } from './FixDialog';
 import Composer from './Composer';
 import type { FixTarget } from './FixDialog';
+import HomeArrivalStatus from './HomeArrival';
+import { useHomeArrival } from './useHomeArrival';
 
 const HOME_STATE_TEXT = { unconfirmed: '未確認', revised: '更新', confirmed: '確認済み' } as const;
 
@@ -48,6 +50,10 @@ export default function ContactChildScreen() {
     setClassId(p.class_id);
     return p;
   }, [user?.account_id, childId, date], { refreshMs: AUTO_REFRESH_MS, live: onContactChild(childId, classId) });
+  // 「家庭から」が届いたときだけ、読み上げへ伝える（詳細設計書 (2-0) の (6) の②、GitHub Issue #209）。範囲は応答の園児と日付
+  const shown = page.data;
+  const arrival = useHomeArrival(shown ? `${shown.child_id}:${shown.contact_date}` : null,
+    shown ? (shown.home ? [{ id: shown.child_id, name: shown.child_name }] : []) : null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -166,6 +172,7 @@ export default function ContactChildScreen() {
 
   return (
     <div className="contact-child">
+      <HomeArrivalStatus said={arrival} />
       <div className="page-head contact-child-head">
         <Link className="contact-back" to={classPath}>‹ クラスへ戻る</Link>
         <div className="contact-child-name">

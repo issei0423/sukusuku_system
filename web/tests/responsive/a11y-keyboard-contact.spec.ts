@@ -232,7 +232,9 @@ test.describe('[guardian] contact キーボードだけで通す', () => {
     await tabTo(page, home.getByRole('button', { name: '家庭からを送る' }));
     await pressAndExpectFocus(page, 'Enter', home.getByRole('button', { name: '直す', exact: true }));
     await expect(home).toContainText('送りました');
-    await expect(home.getByRole('status')).toHaveText('急ぎはお電話でお願いします。');
+    // この文は role="status" にしない（園が確認すると書き換わるが、相手の操作で読むのは3つだけ。GitHub Issue #209）。送った結果は notify() で読む
+    await expect(home.locator('.contact-call')).toHaveText('急ぎはお電話でお願いします。');
+    await expect(home.getByRole('status')).toHaveCount(0);
     const lines = home.locator('.contact-home-lines');
     await expect(lines).toContainText('体温36.5℃');
     await expect(lines).toContainText('朝ごはんぜんぶ');
