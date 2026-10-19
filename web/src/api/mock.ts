@@ -2976,17 +2976,19 @@ const adminApi3 = {
    * 画面側で組み立てた出力（CSV）を操作ログへ記録する。
    * 出力は目的を問わず操作ログへ記録する（基本設計書「発達チェック・身体測定」(4-8) と同じ扱い。
    * GitHub Issue #115・#117）
+   * 午睡記録の帳票はここでは受け付けない。帳票は napReport（サーバは GET /api/nap/report）が作り、そこで期間と件数を
+   * 記録する。ここで受け付けると、出力していない「午睡記録をCSV出力」を一般の職員も書けてしまう
+   * （server/api_audit.go の handleRecordExport と同じ）
    */
   async recordExport(
     user: SessionUser, kind: ExportKind, from: string, to: string, count: number,
   ): Promise<void> {
     if (user.role === '3') return fail('出力は職員のみが行えます');
+    if (!(EXPORT_KINDS as readonly string[]).includes(kind)) return fail('出力の種別が正しくありません');
     const period = `期間 ${from}〜${to}・${count} 件`;
     if (kind === 'operation_log') {
       if (user.role !== '1') return fail('操作ログの出力は管理者のみが行えます');
       log(user.account_id, '7', '5', 't_operation_log', null, null, null, `操作ログをCSV出力（${period}）`);
-    } else if (kind === 'nap_record') {
-      log(user.account_id, '3', '5', 't_nap_record', null, null, null, `午睡記録をCSV出力（${period}）`);
     } else if (kind === 'allergy_list') {
       // 要配慮個人情報の一覧。出力できるのは管理者のみ（画面詳細図「アレルギー一覧画面」(7-4)）
       if (user.role !== '1') return fail('アレルギー一覧の印刷は管理者のみが行えます');
@@ -4010,8 +4012,9 @@ export const api = guardProcedure({
 
 /* ============ 入力の検査の補助（Go サーバの httpx.go と同じ規則） ============ */
 
-/** 出力の記録の種別 */
-export type ExportKind = 'operation_log' | 'nap_record' | 'allergy_list' | 'invitation_sheet';
+/** 出力の記録の種別。午睡記録の帳票は napReport が記録するため入れない（server/api_audit.go の handleRecordExport と同じ） */
+const EXPORT_KINDS = ['operation_log', 'allergy_list', 'invitation_sheet'] as const;
+export type ExportKind = (typeof EXPORT_KINDS)[number];
 
 /** 文字数（符号位置の数）が上限を超えているか。上限の正は基本設計書「入力項目の制約値」(4-9) */
 function tooLong(v: string, max: number): boolean {

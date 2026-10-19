@@ -662,7 +662,7 @@ const apiAdmin = {
 
   /** 画面側で組み立てた出力（CSV）を操作ログへ記録する（GitHub Issue #115・#117） */
   recordExport: (
-    _u: SessionUser, kind: 'operation_log' | 'nap_record' | 'allergy_list' | 'invitation_sheet',
+    _u: SessionUser, kind: 'operation_log' | 'allergy_list' | 'invitation_sheet',
     from: string, to: string, count: number,
   ) => post<void>('/api/exports', { kind, from, to, count }),
 

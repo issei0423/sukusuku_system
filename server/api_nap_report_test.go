@@ -474,6 +474,33 @@ func TestNapReportLogsPeriodAndCountCountedByServer(t *testing.T) {
 	}
 }
 
+/*
+画面が申告する出力の記録（POST /api/exports）は、午睡記録を受け付けない。帳票を作るこの経路だけが記録する。
+受け付けると、出力していない「午睡記録をCSV出力」を一般の職員も書けて、監査の記録が信用できなくなる
+（web/tests/admin.test.ts の「午睡記録の出力は、画面からの申告では記録しない」と同じ）
+*/
+func TestRecordExportRejectsNapRecord(t *testing.T) {
+	a, h := newTestApp(t)
+	for _, c := range []struct {
+		name   string
+		cookie *http.Cookie
+	}{
+		{"一般（保育士）", loginAs(a, 3, "staff")},
+		{"管理者", loginAs(a, 1, "staff")},
+	} {
+		rec := request(t, h, c.cookie, "POST", "/api/exports",
+			`{"kind":"nap_record","from":"2026-09-01","to":"2026-09-30","count":8}`)
+		expectStatus(t, rec, http.StatusBadRequest)
+		var e apiError
+		if err := json.Unmarshal(rec.Body.Bytes(), &e); err != nil || e.Message != "出力の種別が正しくありません" {
+			t.Fatalf("%s: 文言 = %q（%v）", c.name, e.Message, err)
+		}
+	}
+	if n := countNapExportLogs(t, a); n != 0 {
+		t.Fatalf("申告だけの午睡記録の出力が操作ログに %d 件残っています", n)
+	}
+}
+
 func TestNapReportRejectsPdfAndBadInput(t *testing.T) {
 	a, h := newTestApp(t)
 	admin := loginAs(a, 1, "staff")
