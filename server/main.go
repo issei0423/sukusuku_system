@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -24,6 +25,8 @@ func main() {
 	addr := flag.String("addr", ":8080", "待ち受けるアドレス")
 	dbPath := flag.String("db", "sukusuku.db", "SQLite のファイル")
 	webDir := flag.String("web", "../web/dist", "配信する静的ファイルのディレクトリ")
+	// HTTPS で公開するときに付ける。Cookie に Secure を付け、Strict-Transport-Security を返す（GitHub Issue #236 の 4）
+	secure := flag.Bool("secure", false, "HTTPS で公開する（Cookie の Secure と HSTS を付ける）")
 	flag.Parse()
 
 	db, err := openDB(*dbPath)
@@ -33,6 +36,7 @@ func main() {
 	defer db.Close()
 
 	a := &app{db: db, sessions: newSessionStore()}
+	a.sessions.secure = *secure
 	if err := a.init(); err != nil {
 		log.Fatal(err)
 	}
@@ -43,8 +47,22 @@ func main() {
 
 	log.Printf("すくすくシステム サーバを起動します http://localhost%s", *addr)
 	log.Printf("データベース: %s", *dbPath)
-	// 状態を変える要求は送信元を確かめてから通す（csrf.go）
-	if err := http.ListenAndServe(*addr, checkOrigin(mux)); err != nil {
+	/*
+	 * 状態を変える要求は送信元を確かめてから通す（csrf.go）。応答にはセキュリティのヘッダを付ける（headers.go）。
+	 *
+	 * 接続ごとの待ち時間に上限を置く。上限が無いと、ヘッダや本文をゆっくり送り続ける接続で
+	 * 待ち受けを使い切らせることができる（Slowloris。GitHub Issue #236 の 5）。
+	 * WriteTimeout は置かない。相手の操作を開いている画面へ届ける接続（SSE）は長く開いたままにするため。
+	 * 【仮置き】秒数は設計に定めが無い（web/仮置き値.md）
+	 */
+	srv := &http.Server{
+		Addr:              *addr,
+		Handler:           securityHeaders(checkOrigin(mux), *secure),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+	if err := srv.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -126,7 +144,8 @@ func (a *app) serveWeb(mux *http.ServeMux, dir string) {
 			writeErr(w, http.StatusNotFound, "そのエンドポイントはありません")
 			return
 		}
-		if _, err := os.Stat(filepath.Join(dir, filepath.Clean(r.URL.Path))); err == nil && r.URL.Path != "/" {
+		// ディレクトリは渡さない。渡すと http.FileServer が中身の一覧を返す（GitHub Issue #236 の 10）
+		if fi, err := os.Stat(filepath.Join(dir, filepath.Clean(r.URL.Path))); err == nil && !fi.IsDir() {
 			files.ServeHTTP(w, r)
 			return
 		}

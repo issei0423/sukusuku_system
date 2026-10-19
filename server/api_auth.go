@@ -65,7 +65,9 @@ func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Scan(&accountID, &hash, &role, &status, &failedCount, &lockedUntil, &isTemp, &tempExpiresAt)
 
 	if errors.Is(err, sql.ErrNoRows) {
-		// 存在しないアカウントでも、あるかどうかを推測させない文言に揃える
+		// 存在しないアカウントでも、あるかどうかを推測させない文言に揃える。
+		// 照合も1回行う。照合をせずにすぐ返すと、応答の速さで存在しないことが分かるため（GitHub Issue #236 の 7）
+		checkPassword(dummyPasswordHash(), req.Password)
 		writeJSON(w, http.StatusUnauthorized, apiError{
 			Kind: "credential", Remaining: maxFailed,
 			Message: "ログインIDまたはパスワードが違います",

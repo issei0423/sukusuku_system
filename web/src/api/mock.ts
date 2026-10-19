@@ -1860,7 +1860,7 @@ export const adminApi = {
     const a = findAccount(accountId);
     if (!a) return fail('アカウントが見つかりません');
     const hours = settingNumber('auth.temp_password_hours', 48);
-    const temp = `temp${Math.floor(1000 + Math.random() * 9000)}`;
+    const temp = randomPassword();
     a.password_hash = temp;
     a.is_temp_password = true;
     a.temp_password_expires_at = fromNowMinutes(hours * 60);
@@ -1918,7 +1918,7 @@ export const adminApi = {
     if (db.staff.some((s) => s.staff_id === input.staff_id)) return fail('その職員IDはすでに使われています');
 
     const hours = settingNumber('auth.temp_password_hours', 48);
-    const temp = `temp${Math.floor(1000 + Math.random() * 9000)}`;
+    const temp = randomPassword();
     const accountId = nextId();
     db.accounts.push({
       account_id: accountId, email: input.email, password_hash: temp, role: input.role, status: '1',
@@ -2173,11 +2173,34 @@ function rejoinRoomsOfChild(accountId: number, childId: string): void {
     .forEach((m) => { m.left_at = null; });
 }
 
-/** 推測困難な値とする（基本設計書 5-2）。モックのため乱数の強度は本実装で見直す */
+/**
+ * alphabet の文字を、暗号に使える乱数で n 個選んで並べる。推測されてはならない値（一時パスワード・招待コード）に使う。
+ * Math.random は推測できないことを保証しない（GitHub Issue #236。server/api_admin.go の randomFrom と同じ）
+ */
+function randomFrom(alphabet: string, n: number): string {
+  const out: string[] = [];
+  const buf = new Uint32Array(1);
+  // 余りで選ぶと先頭の文字に偏るため、偏りの出る範囲の値は引き直す
+  const limit = Math.floor(0x100000000 / alphabet.length) * alphabet.length;
+  while (out.length < n) {
+    crypto.getRandomValues(buf);
+    if (buf[0] < limit) out.push(alphabet[buf[0] % alphabet.length]);
+  }
+  return out.join('');
+}
+
+/**
+ * 一時パスワード。紛らわしい文字（I・l・O・0・1）を除いた英数字 12 文字（server/api_admin.go の randomPassword と同じ）。
+ * 【仮置き】桁数・文字種は未確定（基本設計書「画面詳細」(3-6)）
+ */
+function randomPassword(): string {
+  return randomFrom('ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789', 12);
+}
+
+/** 推測困難な値とする（基本設計書 5-2） */
 function randomCode(): string {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const block = () => Array.from({ length: 4 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
-  return `${block()}-${block()}-${block()}`;
+  return `${randomFrom(alphabet, 4)}-${randomFrom(alphabet, 4)}-${randomFrom(alphabet, 4)}`;
 }
 
 const adminApi3 = {
