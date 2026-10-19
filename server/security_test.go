@@ -30,8 +30,8 @@ func TestTempPasswordIsHardToGuess(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
 		t.Fatal(err)
 	}
-	// 以前の「temp」＋4桁（9000通り）の形でない。紛らわしい文字を除いた英数字 12 文字
-	if !regexp.MustCompile(`^[A-HJ-NP-Za-km-np-z2-9]{12}$`).MatchString(out.Password) {
+	// 以前の「temp」＋4桁（9000通り）の形でない。紛らわしい文字を除いた英小文字と数字を 4 文字ずつ 3 組
+	if !regexp.MustCompile(`^[a-hjkmnp-z2-9]{4}-[a-hjkmnp-z2-9]{4}-[a-hjkmnp-z2-9]{4}$`).MatchString(out.Password) {
 		t.Fatalf("一時パスワードの形が違う: %q", out.Password)
 	}
 	// 発行した一時パスワードでログインできる

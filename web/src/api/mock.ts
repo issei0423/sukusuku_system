@@ -2211,11 +2211,13 @@ function randomFrom(alphabet: string, n: number): string {
 }
 
 /**
- * 一時パスワード。紛らわしい文字（I・l・O・0・1）を除いた英数字 12 文字（server/api_admin.go の randomPassword と同じ）。
+ * 一時パスワード。英小文字と数字（紛らわしい i・l・o・0・1 を除く）を 4 文字ずつハイフンでつないだ 12 文字。
+ * 例：k7dm-x3pa-9hzt。Shift を押さずに打て、読み上げやすい（server/api_admin.go の randomPassword と同じ）。
  * 【仮置き】桁数・文字種は未確定（基本設計書「画面詳細」(3-6)）
  */
 function randomPassword(): string {
-  return randomFrom('ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789', 12);
+  const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
+  return `${randomFrom(alphabet, 4)}-${randomFrom(alphabet, 4)}-${randomFrom(alphabet, 4)}`;
 }
 
 /** 推測困難な値とする（基本設計書 5-2） */

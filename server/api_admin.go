@@ -113,12 +113,19 @@ func (a *app) handleStaffAccounts(w http.ResponseWriter, r *http.Request) {
 randomPassword は一時パスワードを作る。
 
 以前は「temp」＋4桁（9000通り）で、ログインIDが分かれば総当たりの範囲がはっきりしていた（GitHub Issue #236）。
-暗号に使える乱数（crypto/rand）で、紛らわしい文字（I・l・O・0・1）を除いた英数字 12 文字とする。
+暗号に使える乱数（crypto/rand）で、4 文字ずつハイフンでつないだ 12 文字とする（例：k7dm-x3pa-9hzt）。
+
+打ちやすさのため、次のようにしている。管理者が口頭や手渡しで伝え、本人が手で打つため。
+  - 英小文字と数字だけ。Shift を押さずに打て、大文字・小文字の取り違えも起きない
+  - 紛らわしい文字（i・l・o・0・1）は使わない
+  - 4 文字ずつに区切り、読み上げ・書き写しで位置を見失わないようにする
+文字は 31 種 × 12 文字（約 59 ビット）あり、ロックと送信元ごとの上限の下では総当たりで当たらない。
 
 【仮置き】桁数・文字種は未確定（基本設計書「画面詳細」(3-6)）
 */
 func randomPassword() string {
-	return randomFrom("ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789", 12)
+	const alphabet = "abcdefghjkmnpqrstuvwxyz23456789"
+	return randomFrom(alphabet, 4) + "-" + randomFrom(alphabet, 4) + "-" + randomFrom(alphabet, 4)
 }
 
 // randomFrom は、alphabet の文字を暗号に使える乱数で n 個選んで並べる。

@@ -13,9 +13,9 @@ const admin: SessionUser = {
 };
 
 describe('推測されてはならない値', () => {
-  it('一時パスワードは「temp」＋4桁でなく、紛らわしい文字を除いた英数字 12 文字', async () => {
+  it('一時パスワードは「temp」＋4桁でなく、紛らわしい文字を除いた英小文字と数字を 4 文字ずつ 3 組', async () => {
     const temp = await api.reissueTempPassword(admin, 3);
-    expect(temp).toMatch(/^[A-HJ-NP-Za-km-np-z2-9]{12}$/);
+    expect(temp).toMatch(/^[a-hjkmnp-z2-9]{4}-[a-hjkmnp-z2-9]{4}-[a-hjkmnp-z2-9]{4}$/);
     // 発行した一時パスワードでログインできる
     const u = await api.login('takanashi@hoiku.example.jp', temp, 'staff');
     expect(u.is_temp_password).toBe(true);
