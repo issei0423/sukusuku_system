@@ -55,6 +55,11 @@ export interface CallInit {
   /** 既定は BASE（画面からの操作と同じ）。null なら付けない。文字列なら偽る */
   origin?: string | null;
   referer?: string | null;
+  /**
+   * Cookie を自分で決めて送る（セッションの改ざん・固定の確認用）。
+   * 端末の Cookie を持たない Session（ログインしていないもの）と組み合わせて使う
+   */
+  cookie?: string;
   headers?: Record<string, string>;
 }
 
@@ -118,6 +123,7 @@ export class Session {
     const headers: Record<string, string> = { ...init.headers };
     if (init.origin !== null) headers['Origin'] = init.origin ?? BASE;
     if (init.referer !== null) headers['Referer'] = init.referer ?? `${BASE}/`;
+    if (init.cookie !== undefined) headers['Cookie'] = init.cookie;
     if (init.body !== undefined) headers['Content-Type'] = headers['Content-Type'] ?? 'application/json';
 
     const res = await this.ctx.fetch(urlPath, {

@@ -15,7 +15,7 @@
  * 期待する状態は、設計書とサーバの実装から決めている。実装を読んで「こうなるはず」を
  * 書くのではなく、「守るべき姿」を書く。落ちたら、期待値を書き換える前にどちらが正しいか確かめる。
  */
-import { apiRequest, ACCOUNTS, BASE, Session, brief, kindOf, messageOf, rowsOf, type Call, type Row } from './http';
+import { apiRequest, ACCOUNTS, BASE, PORT, Session, brief, kindOf, messageOf, rowsOf, type Call, type Row } from './http';
 
 /** テストの印。レポーター（reporter.ts）がこれを見て結果を集める */
 export const ANNOTATION = 'sukusuku-security';
@@ -884,6 +884,276 @@ export const PROBES: Probe[] = [
         ),
       ];
       await s.close();
+      return attempts;
+    },
+  },
+
+  // ---- ここから下は、状態を変える試みを含む。前のプローブに響かせないよう最後に置く ----
+
+  {
+    id: 'session.tamper',
+    title: 'セッション ID を改ざんした Cookie は通らない',
+    category: 'セッション',
+    severity: '高',
+    basis: '要件定義書「セッションの保護」(8 No.9)、基本設計書「認証情報の保持方式」(6-3)',
+    why: '推測・改ざんした ID を受け付けると、他人のセッションに成りすませる',
+    async run() {
+      const real = await Session.open(ACCOUNTS.admin);
+      const original = (await real.cookies()).find((c) => c.name === 'sukusuku_session')?.value ?? '';
+      // 端末の Cookie を持たない Session を使い、送る Cookie を自分で決める
+      const s = await Session.open();
+      const attempts: Attempt[] = [];
+
+      if (original === '') {
+        attempts.push(broken('セッション ID を取れるか', '(取れない)'));
+      } else {
+        // 1 文字だけ変える（長さと形は元のまま）
+        const flipped = (original[0] === 'A' ? 'B' : 'A') + original.slice(1);
+        attempts.push(
+          expectStatus(await s.call('GET', '/api/me', { cookie: `sukusuku_session=${original}` }), [200], '（対照）元のセッション ID'),
+          expectStatus(await s.call('GET', '/api/me', { cookie: `sukusuku_session=${flipped}` }), [401], '1 文字だけ変えたセッション ID'),
+          expectStatus(await s.call('GET', '/api/me', { cookie: `sukusuku_session=${original.slice(0, -1)}` }), [401], '末尾を 1 文字削ったセッション ID'),
+          expectStatus(await s.call('GET', '/api/me', { cookie: 'sukusuku_session=' }), [401], '空のセッション ID'),
+        );
+      }
+
+      await real.close();
+      await s.close();
+      return attempts;
+    },
+  },
+
+  {
+    id: 'session.fixation',
+    title: 'ログイン前に外から決めたセッション ID を、そのまま使わない',
+    category: 'セッション',
+    severity: '中',
+    basis: '要件定義書「セッションの保護」(8 No.9)、基本設計書「認証情報の保持方式」(6-3)',
+    why: '外から決めた ID をログイン後も使い続けると、攻撃者が用意した ID で成りすませる（セッション固定）',
+    async run() {
+      const known = 'sukusuku-fixation-check-0000000000000000';
+      const s = await Session.open();
+      const attempts: Attempt[] = [
+        expectStatus(await s.call('GET', '/api/me', { cookie: `sukusuku_session=${known}` }), [401], 'ログイン前に、外から決めた ID を送る'),
+      ];
+
+      const login = await s.call('POST', '/api/login', {
+        data: { email: ACCOUNTS.admin.email, password: ACCOUNTS.admin.password, entrance: 'staff', remember: false },
+        cookie: `sukusuku_session=${known}`,
+      });
+      attempts.push(expectStatus(login, [200], 'その ID を持ったままログインする'));
+
+      const issued = /sukusuku_session=([^;]*)/.exec(login.headers['set-cookie'] ?? '')?.[1] ?? '';
+      attempts.push(
+        judge(
+          'ログイン後は、別のセッション ID が配られるか',
+          issued === '' ? '(Set-Cookie がない)' : `${issued.slice(0, 6)}…`,
+          issued !== '' && issued !== known,
+          '外から決めた ID を採用していないこと',
+        ),
+      );
+
+      await s.close();
+      return attempts;
+    },
+  },
+
+  {
+    id: 'csrf.origin-variants',
+    title: '送信元の書き方に抜け道がない（null・別ポート・別ホスト）',
+    category: 'CSRF',
+    severity: '中',
+    basis: '基本設計書「データ保護」(6-3)、server/csrf.go の sameOrigin',
+    why: 'Origin の比べ方が緩いと、細工したページから状態を変える要求を通せてしまう',
+    async run() {
+      const s = await Session.open(ACCOUNTS.admin);
+      const send = (origin: string | null, referer?: string | null) => s.post('/api/diaries', { data: {}, origin, referer });
+      const control = await send(null);
+
+      const attempts: Attempt[] = [
+        expectStatus(await send('null'), [403], 'Origin: null（サンドボックスや file 由来）'),
+        expectStatus(await send(`http://127.0.0.1:${PORT + 1}`), [403], `別のポート（${PORT + 1}）の Origin`),
+        expectStatus(await send(`http://127.0.0.1:${PORT}.evil.example`), [403], 'ホスト名を装った別ホストの Origin'),
+        expectStatus(await send(null, `http://127.0.0.1:${PORT + 1}/`), [403], 'Origin 無し ＋ 別ポートの Referer'),
+        judge('（対照）正しい Origin は CSRF では止まらない', brief(control), control.status !== 403),
+      ];
+
+      /*
+       * sameOrigin はホストとポート（u.Host）だけを比べるため、同じホスト:ポートならスキームが違っても通る。
+       * ブラウザは Origin を偽れないので、いまの使われ方では攻撃にならない。設計で決めるなら要決定事項
+       */
+      const scheme = await send(`https://127.0.0.1:${PORT}`);
+      attempts.push(
+        noted(
+          'http の宛先へ https の Origin（同じホスト・ポート）',
+          brief(scheme),
+          scheme.status === 403
+            ? '止めている'
+            : 'ホストとポートが同じなので通る。ブラウザは Origin を偽れないため、いまは攻撃にならない',
+        ),
+      );
+
+      await s.close();
+      return attempts;
+    },
+  },
+
+  {
+    id: 'output.error-leak',
+    title: 'エラーの応答から、内部の作りが読み取れない',
+    category: '出力',
+    severity: '中',
+    basis: '基本設計書「データ保護」(6-3)、server/httpx.go の writeErr',
+    why: '問い合わせの文・ファイルの経路・スタックの断片が出ると、攻撃の足がかりになる',
+    async run() {
+      const s = await Session.open(ACCOUNTS.admin);
+      const paths = [
+        '/api/diaries/not-a-number',
+        '/api/diaries/99999999999999999999',
+        '/api/children/%00',
+        '/api/does-not-exist',
+        '/api/children/C001/%2e%2e',
+      ];
+      const marker = /SELECT\s|INSERT\s+INTO|sqlite|goroutine|panic:|\.go:\d/i;
+      const attempts: Attempt[] = [];
+
+      for (const path of paths) {
+        const call = await s.get(path);
+        const leaked = marker.test(call.text);
+        attempts.push(
+          judge(
+            `GET ${path}`,
+            leaked ? `${call.status}（内部の情報らしき文字列が含まれる）` : `${call.status} ${messageOf(call.json)}`.trim(),
+            !leaked,
+            leaked ? 'エラーの本文に、内部の作りが現れている' : undefined,
+          ),
+        );
+      }
+
+      attempts.push(expectStatus(await s.get('/api/me'), [200], '壊れた要求のあとでも、サーバは応答する'));
+      await s.close();
+      return attempts;
+    },
+  },
+
+  {
+    id: 'authz.write-scope',
+    title: '書き込みも参照範囲に従う（担当外の園児に記録できない）',
+    category: '認可',
+    severity: '高',
+    basis: '基本設計書「権限チェックの実装方針」(6-2)、要件定義書「参照範囲の全体規定」(4-1-5)、GitHub Issue #153',
+    why: '参照は絞れていても登録・更新が絞れていないと、担当外の家庭の記録を作ったり書き換えたりできる',
+    async run() {
+      const admin = await Session.open(ACCOUNTS.admin);
+      const all = ids(rowsOf((await admin.get('/api/children')).json));
+      const s = await Session.open(ACCOUNTS.himawari);
+      const mine = ids(rowsOf((await s.get('/api/children')).json));
+      const outside = all.find((id) => !mine.includes(id));
+      const on = day(0);
+      const attempts: Attempt[] = [];
+
+      if (!outside) {
+        attempts.push(broken('担当外の園児を試せるか', '(デモデータに担当外の園児がない)'));
+      } else {
+        attempts.push(
+          expectStatus(
+            await s.post('/api/diaries', {
+              data: { record_type: '1', child_id: outside, diary_date: on, body: '担当外の園児への下書き', status: '1' },
+            }),
+            [403],
+            `担当外の園児（${outside}）の日誌を作成`,
+          ),
+          expectStatus(
+            await s.post('/api/development/checks', {
+              data: { child_id: outside, checked_on: on, results: [], note: '', status: '1' },
+            }),
+            [403],
+            `担当外の園児（${outside}）の発達チェックを保存`,
+          ),
+        );
+
+        // 日誌 ID を直接指定した書き換え（基本設計書 4-5。GitHub Issue #153 の攻撃）。
+        // 入力の園児は自分の担当にして園児の範囲を通過させ、日誌 ID だけを担当外にする。
+        // これで「日誌そのものの範囲」を見ているかどうかだけを試せる
+        const listed = pageRows((await admin.get(`/api/diaries?from=${day(-365)}&to=${day(0)}`)).json);
+        const foreign = listed.find((d) => typeof d.child_id === 'string' && !mine.includes(d.child_id as string));
+        if (foreign && mine[0]) {
+          attempts.push(
+            expectStatus(
+              await s.post('/api/diaries', {
+                data: { diary_id: foreign.diary_id, record_type: '1', child_id: mine[0], diary_date: on, body: '書き換え', status: '1' },
+              }),
+              [403],
+              `担当外の日誌（${foreign.diary_id}）を、日誌 ID を指定して書き換え`,
+            ),
+          );
+        }
+      }
+
+      if (mine[0]) {
+        attempts.push(
+          expectStatus(
+            await s.post('/api/diaries', {
+              data: { record_type: '1', child_id: mine[0], diary_date: on, body: '担当の園児への下書き（確認用）', status: '1' },
+            }),
+            [200],
+            `（対照）担当の園児（${mine[0]}）の下書きは作成できる`,
+          ),
+        );
+      }
+
+      await admin.close();
+      await s.close();
+      return attempts;
+    },
+  },
+
+  {
+    id: 'authz.link-removal',
+    title: '保護者の紐づけを解除すると、その場で参照できなくなる',
+    category: '認可',
+    severity: '高',
+    basis: '画面詳細図「保護者アカウント管理」(7-8 項目6)、基本設計書「データベース設計」の紐づけ（5-5）、GitHub Issue #159',
+    why: '解除してもセッションが生きていると、卒園・退会した家庭の端末が、開いたまま記録を読めてしまう',
+    async run() {
+      const admin = await Session.open(ACCOUNTS.admin);
+      const guardian = await Session.open(ACCOUNTS.guardian);
+      const me = await guardian.me();
+      const guardianId = String(me?.guardian_id ?? '');
+      const childId = ids(rowsOf((await guardian.get('/api/children')).json))[0];
+      const attempts: Attempt[] = [];
+
+      if (!guardianId || !childId) {
+        attempts.push(broken('解除を試せるか', `保護者 ID=${guardianId || '(なし)'} / 園児=${childId || '(なし)'}`));
+        await admin.close();
+        await guardian.close();
+        return attempts;
+      }
+
+      const end = await admin.post('/api/admin/guardian-links/end', { data: { guardian_id: guardianId, child_id: childId } });
+      attempts.push(expectStatus(end, [200], `管理者が、保護者の紐づけ（${childId}）を解除する`));
+      attempts.push(expectStatus(await guardian.get('/api/children'), [401], '解除された保護者の、解除前からのセッションで園児の一覧'));
+      const after = await guardian.me();
+      attempts.push(judge('セッションが切れているか', String(after?.email ?? '(切れた)'), after === null));
+
+      // 確かめたあと、紐づけを戻す（このあとのプローブに響かせない）
+      const restore = await admin.post('/api/admin/guardian-links/restore', { data: { guardian_id: guardianId, child_id: childId } });
+      attempts.push(expectStatus(restore, [200], '確かめたあと、紐づけを戻す'));
+
+      let relogin: Call | null = null;
+      try {
+        const again = await Session.open(ACCOUNTS.guardian);
+        relogin = await again.get('/api/children');
+        await again.close();
+      } catch {
+        relogin = null;
+      }
+      attempts.push(
+        judge('戻したあと、保護者はまたログインして自児の一覧を取れるか', relogin ? brief(relogin) : '(ログインできない)', relogin?.status === 200),
+      );
+
+      await admin.close();
+      await guardian.close();
       return attempts;
     },
   },

@@ -58,6 +58,8 @@ npm run review:security:check
 | 認証 | auth.relogin-while-logged-in | 高 | ログイン中は、別のアカウントでログインし直せない |
 | 認証 | auth.credential-response | 中 | ログインの失敗は、アカウントの有無を推測させない |
 | セッション | session.cookie | 高 | セッションは、盗まれにくく（HttpOnly・SameSite=Strict）、切れやすい Cookie で持つ |
+| セッション | session.tamper | 高 | セッション ID を改ざんした Cookie は通らない |
+| セッション | session.fixation | 中 | ログイン前に外から決めたセッション ID を、そのまま使わない |
 | 認可 | auth.temp-password-gate | 高 | 一時パスワードのままでは、手続き以外の機能を使えない |
 | 認可 | auth.terms-gate | 中 | 規約に同意するまで、他の機能を使えない |
 | セッション | auth.stop-cuts-session | 高 | アカウントを停止すると、その場でセッションが切れる |
@@ -66,10 +68,14 @@ npm run review:security:check
 | 認可 | authz.cross-class-diary | 高 | 担当外の日誌は、開くことも編集ロックもできない |
 | 認可 | authz.guardian-staff-api | 高 | 保護者は、職員用の API を使えない |
 | 認可 | authz.guardian-link-scope | 高 | 保護者は、紐づいた園児の記録しか参照できない |
+| 認可 | authz.write-scope | 高 | 書き込みも参照範囲に従う（担当外の園児に記録できない） |
+| 認可 | authz.link-removal | 高 | 保護者の紐づけを解除すると、その場で参照できなくなる |
 | CSRF | csrf.origin-required | 高 | 状態を変える要求は、送信元を確かめてから通す |
+| CSRF | csrf.origin-variants | 中 | 送信元の書き方に抜け道がない（null・別ポート・別ホスト） |
 | 入力 | injection.sql | 高 | 入力に SQL の断片を入れても、組み立てた問い合わせにならない |
 | 入力 | injection.path-traversal | 高 | 配信ディレクトリの外のファイルは読めない |
 | 入力 | input.body-limit | 中 | 大きすぎる本文は受け取らず、サーバも止まらない |
+| 出力 | output.error-leak | 中 | エラーの応答から、内部の作りが読み取れない |
 | 出力 | output.no-secret-leak | 高 | 応答に、パスワードのハッシュを載せない |
 | 出力 | output.headers | 記録 | 【記録】応答のヘッダーに、どんな守りが付いているか |
 
@@ -97,12 +103,12 @@ CLI が見つからないとき（CI など）や `SECURITY_GLM=0` のときは�
 
 ## CI
 
-`.github/workflows/ci.yml` の `security` ジョブが `npm run review:security` を回す。CI には OpenCode の CLI が無いため、GLM の工程は飛ばす。決まった 20 件のプローブを実行し、`ng` があれば赤になる。
+`.github/workflows/ci.yml` の `security` ジョブが `npm run review:security` を回す。CI には OpenCode の CLI が無いため、GLM の工程は飛ばす。決まった 26 件のプローブを実行し、`ng` があれば赤になる。
 
 ## 再現性と構成
 
 - `start-server.mjs`: Go サーバをビルドし、一時フォルダのデータベースで起動する（Playwright の `webServer` から呼ばれる）。静的ファイルは `web/public` を配信する。配信ディレクトリの外（`server/` など）を読めないことの確認に使う。起動したサーバは Playwright が終わるときに一緒に終わる。
-- `http.ts`: サーバへ要求を送る薄い道具。端末ごとに Cookie を分けて持つ。`Origin`・`Referer` の付け方をプローブから変えられる。
+- `http.ts`: サーバへ要求を送る薄い道具。端末ごとに Cookie を分けて持つ。`Origin`・`Referer` の付け方と、送る Cookie の値をプローブから変えられる（セッションの改ざん・固定の確認に使う）。
 - `probes.ts`: 攻撃ケースの一覧と判定。`security.spec.ts` が 1 つずつ実行する。
 - `reporter.ts`: `security-report/` に `results.json` と `index.html` を書く。レスポンシブレビューのレポーターと同じ流儀（`tests/responsive/reporter.ts`）。
 - `playwright.security.config.ts`: 実行の設定。サーバ側の状態（セッション、ロック）を 1 つずつ確かめるため、`workers: 1` で順番に回す。
@@ -116,6 +122,14 @@ CLI が見つからないとき（CI など）や `SECURITY_GLM=0` のときは�
 - 操作ログ（誰が何をしたか）の内容。記録の有無と参照範囲は別のテストが見ている。
 - 同時に多数の要求を送ったときの挙動（総当たりの速度、資源の使い切り）。
 - ログインの失敗で返る `remaining`（残り回数）が、存在する ID と存在しない ID で異なるため、アカウントの有無が推測できる。文言はそろっている。設計上そう決めているのか、修正するのかは人が判断する（この点はプローブで「記録のみ」として残している）。
+- CSRF の `Origin` は、ホストとポートだけを比べている。同じホスト:ポートならスキームが違っても通るが、ブラウザは送信元を偽れないため、いまの使われ方では攻撃にならない（`csrf.origin-variants` で「記録のみ」として残している）。
 - GLM の所見と追加の攻撃案は AI の答えであり、正しさは確かめていない。
+
+## プローブがサーバに残すもの
+
+使い捨てのデータベースなので、実行が終われば消える。それでも、途中で他のプローブに響かないよう次のようにしてある。
+
+- `authz.write-scope` は確認用に下書きを 1 件作り、`authz.link-removal` は紐づけを解除する。どちらも状態を変えるプローブとして `probes.ts` の最後に置いてある。
+- `authz.link-removal` は、確かめたあと**同じプローブの中で紐づけを戻す**。保護者に紐づけが 1 件しかないデモデータでは、解除するとアカウントも停止するため、戻すときに再開も行っている。
 
 参考: [Playwright の webServer](https://playwright.dev/docs/test-webserver)、[APIRequestContext](https://playwright.dev/docs/api-testing)、[自作レポーター](https://playwright.dev/docs/test-reporters#custom-reporters)。
