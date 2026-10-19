@@ -35,6 +35,9 @@ import (
  * 自動ログアウトの例外として、その職員が開始した午睡チェックが実施中のあいだは切らない
  * （基本設計書「午睡チェックの実施」(4-7)、要件定義書「午睡チェック中の例外」(4-1-4 (4))）。判定は app.sessionAccount。
  * 開いたままの画面が裏で読み直す要求と、知らせの受け取りは、操作に数えない（countsAsOperation）。
+ *
+ * 切れる時刻はサーバが決め、画面へ返す（api_session.go の GET /api/session。切れる前の予告と「続ける」に使う）。
+ * 判定と返す時刻は、どちらも idleDeadline で求める。
  */
 type session struct {
 	accountID int64
@@ -161,12 +164,16 @@ const autoRefreshHeader = "X-Sukusuku-Auto-Refresh"
 // EventSource は見出しを付けられないため、経路で見る
 const liveEventsPath = "/api/events"
 
+// sessionStatusPath は、ログインの期限を尋ねる口（api_session.go の GET /api/session）。
+// 画面は予告を出す前・出している間に何度も尋ねる。尋ねるたびに延びると切れなくなるため、操作に数えない（GitHub Issue #210）
+const sessionStatusPath = "/api/session"
+
 // countsAsOperation は、その要求を利用者の操作に数えるか（期限を延ばすか）を返す
 func countsAsOperation(r *http.Request) bool {
 	if r.Header.Get(autoRefreshHeader) != "" {
 		return false
 	}
-	return r.URL.Path != liveEventsPath
+	return r.URL.Path != liveEventsPath && r.URL.Path != sessionStatusPath
 }
 
 /*
@@ -187,16 +194,40 @@ func (a *app) sessionAccount(r *http.Request) (int64, bool) {
 		return sess.accountID, true
 	}
 	at := a.sessions.now()
-	idle := time.Duration(a.settingInt("ui.auto_logout_minutes", 30)) * time.Minute
-	if !at.After(sess.lastActiveAt.Add(idle)) {
+	// 最後の操作から時間内なら、午睡チェックの実施を確かめるまでもなく使える（要求のたびにデータベースを引かない）
+	if !at.After(sess.lastActiveAt.Add(a.idleLimit())) {
 		return sess.accountID, true
 	}
-	active, endedAt := a.napExemption(sess.accountID, sess.lastActiveAt, at)
-	if active || (endedAt.After(sess.lastActiveAt) && !at.After(endedAt.Add(idle))) {
+	deadline, napActive := a.idleDeadline(sess, at)
+	if napActive || !at.After(deadline) {
 		return sess.accountID, true
 	}
 	a.sessions.drop(id)
 	return 0, false
+}
+
+// idleLimit は、自動ログアウトまでの無操作の時間（ui.auto_logout_minutes）
+func (a *app) idleLimit() time.Duration {
+	return time.Duration(a.settingInt("ui.auto_logout_minutes", 30)) * time.Minute
+}
+
+/*
+idleDeadline は、職員のセッションが、このまま操作が無ければ切れる時刻を返す。切れるかどうかの判定（sessionAccount）と、
+画面へ返す期限（api_session.go の sessionStatusOf）は、どちらもこれで求める。
+
+最後の操作の時刻から ui.auto_logout_minutes。最後の操作より後に、その職員が開始した午睡チェックの実施が終わっていれば、
+終わった時刻から数える。実施中なら切らないので、切れる時刻は決まらない（napActive が真、deadline はゼロ）
+*/
+func (a *app) idleDeadline(sess session, at time.Time) (deadline time.Time, napActive bool) {
+	active, endedAt := a.napExemption(sess.accountID, sess.lastActiveAt, at)
+	if active {
+		return time.Time{}, true
+	}
+	from := sess.lastActiveAt
+	if endedAt.After(from) {
+		from = endedAt
+	}
+	return from.Add(a.idleLimit()), false
 }
 
 /*

@@ -25,6 +25,9 @@ func (a *app) routeAuth(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/login", a.handleLogin)
 	mux.HandleFunc("POST /api/logout", a.handleLogout)
 	mux.HandleFunc("GET /api/me", a.handleMe)
+	// 自動ログアウトの期限と、予告の「続ける」（api_session.go。GitHub Issue #210）
+	mux.HandleFunc("GET /api/session", a.handleSessionStatus)
+	mux.HandleFunc("POST /api/session/extend", a.handleExtendSession)
 	mux.HandleFunc("GET /api/reference", a.handleReference)
 	mux.HandleFunc("POST /api/password", a.handleChangePassword)
 	mux.HandleFunc("GET /api/terms", a.handleCurrentTerms)

@@ -14,7 +14,8 @@ import (
  *      「リアルタイムの反映と通知」(4-10)「知らせの受け取りは、職員の自動ログアウトの『操作』に数えない」
  *      要件定義書.md「『ログイン情報の記憶』と自動ログアウトの関係」・「午睡チェック中の例外」(4-1-4 (4))
  *
- * モック（web/src/api/mock.ts）にはセッションの期限が無いため、規則はサーバだけにある。
+ * モック（web/src/api/mock.ts）も同じ数え方で期限を返す（sessionStatus。web/tests/sessionTimeout.test.ts）が、
+ * 切れたあとにほかの api を拒むことはしない。切る判定（401）はサーバだけにあり、ここで確かめる。
  *
  * 時間はセッションの時計（sessionStore.now）を止めて手で進める。午睡の実施は、デモデータの実施（今日まで）と
  * 重ならないよう1年先の日に置く。本物の時計で回る午睡の自動の解除（autoCloseNapSessions）にも閉じられない
@@ -132,6 +133,9 @@ func TestCountsAsOperation(t *testing.T) {
 		{"裏の読み直し", "GET", "/api/dashboard/staff", true, false},
 		// 知らせの受け取り口（PR #196）。EventSource は見出しを付けられないため、経路で見る（基本設計書 4-10）
 		{"知らせの受け取り", "GET", "/api/events", false, false},
+		// 期限を尋ねるだけでは延ばさない。予告の「続ける」は操作に数える（api_session.go。GitHub Issue #210）
+		{"期限を尋ねる", "GET", "/api/session", false, false},
+		{"続ける", "POST", "/api/session/extend", false, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

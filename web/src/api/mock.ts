@@ -27,8 +27,9 @@ import { BODY_POSITION, BREATHING, COMPLEXION, REACTION, HANDOUT_TYPE } from './
 import {
   ProcedureRequiredError, SESSION_ENDED_MESSAGE, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
 } from './procedure';
+import { isAutomatic } from './automatic';
 import type {
-  LoginError, ChildInput, DiaryFilter, DiaryInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
+  LoginError, ChildInput, DiaryFilter, DiaryInput, ChatRoomView, NapChildState, DevListRow, CsvRow, SessionStatus,
 } from './shapes';
 
 // 画面はこれまでどおり client 経由で型を参照する。定義の実体は shapes.ts が持つ
@@ -304,6 +305,8 @@ export const authApi = {
     a.locked_until = null;
     const sessionUser = buildSessionUser(a);
     loggedInStaffId = sessionUser.staff_id;
+    // ログインそのものを最初の操作とし、自動ログアウトの時間を数え始める（server/session.go の create と同じ）
+    startIdleSession(a.account_id);
     return ok(sessionUser);
   },
 
@@ -372,6 +375,23 @@ export const authApi = {
     // 停止中のアカウントは、ログイン中であっても通さない（server/session.go の requireLogin。GitHub Issue #159）
     if (a.status === '2') return sessionEnded();
     return ok(buildSessionUser(a));
+  },
+
+  /**
+   * ログインの期限（GitHub Issue #210）。職員の画面が、自動ログアウトの予告を出すかを決めるのに使う
+   * （components/SessionTimeoutWarning.tsx）。尋ねるだけでは延ばさない（下の「ログインの期限」の touchIdleSession）。
+   * サーバ側は server/api_session.go の handleSessionStatus
+   */
+  async sessionStatus(user: SessionUser): Promise<SessionStatus> {
+    return idleSessionStatus(user);
+  },
+
+  /**
+   * 予告の「続ける」。操作の1つとして期限を延ばし（呼んだ時点で touchIdleSession が延ばしている）、延びた期限を返す。
+   * 切れたあとは延ばさない。サーバ側は server/api_session.go の handleExtendSession
+   */
+  async extendSession(user: SessionUser): Promise<SessionStatus> {
+    return idleSessionStatus(user);
   },
 };
 
@@ -2622,6 +2642,97 @@ function sessionAlive(u: SessionUser): boolean {
   return findAccount(u.account_id)?.status !== '2';
 }
 
+/* ============ ログインの期限（GitHub Issue #210） ============
+ *
+ * 職員の画面は、最後の操作から ui.auto_logout_minutes を過ぎたら切れる（基本設計書「ログイン」(4-3)）。
+ * 切れる時刻を画面へ返し（sessionStatus）、予告の「続ける」で延ばす（extendSession）。
+ * サーバ側は server/session.go の idleDeadline・napExemption と server/api_session.go。同じ規則にしてある。
+ *
+ * モックはセッションを持たないため、アカウントごとに最後の操作の時刻を持つ（同じブラウザのタブはどれも同じセッションになる）。
+ *   - ログインで数え始める。ログインしないで呼んだとき（テストなど）は、最初に呼ばれた時刻から数える
+ *   - 操作に数えるのは、利用者を受け取る api の呼び出しのうち、裏の読み直し（api/automatic.ts の asAutomatic）でないもの。
+ *     期限を尋ねる sessionStatus は数えない（server/session.go の countsAsOperation と同じ）
+ *   - その職員が開始した午睡チェックの実施中は切らず、期限を返さない。実施が終わったら、終わった時刻から数え直す
+ *   - 切れたあとは、操作しても戻らない。sessionStatus・extendSession は切れたと知らせる（サーバの 401 にあたる）
+ *   - 【モックだけ】ほかの api は、切れたあとも拒まない。モックはもともと期限でセッションを切らない（web/仮置き値.md）。
+ *     画面は期限の時刻に sessionStatus を尋ねるので、モックでも入口へ戻る
+ */
+interface IdleSession { lastActiveMs: number; ended: boolean }
+const idleSessions = new Map<number, IdleSession>();
+
+const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+/** 時刻（ミリ秒）を JST の 'YYYY-MM-DDTHH:MM:SS' にする */
+const jstISO = (ms: number) => new Date(ms + JST_OFFSET_MS).toISOString().slice(0, 19);
+/** JST の 'YYYY-MM-DDTHH:MM:SS' を時刻（ミリ秒）にする */
+const jstMs = (iso: string) => Date.parse(`${iso}+09:00`);
+
+function startIdleSession(accountId: number): void {
+  idleSessions.set(accountId, { lastActiveMs: Date.now(), ended: false });
+}
+
+function idleSessionOf(u: SessionUser): IdleSession {
+  let s = idleSessions.get(u.account_id);
+  if (!s) {
+    s = { lastActiveMs: Date.now(), ended: false };
+    idleSessions.set(u.account_id, s);
+  }
+  return s;
+}
+
+/**
+ * その職員が、このまま操作が無ければ切れる時刻（ミリ秒）。開始した午睡チェックが実施中なら決まらない（napActive）。
+ * 最後の操作から ui.auto_logout_minutes。最後の操作より後に実施が終わっていれば、終わった時刻から数える。
+ * 終了の操作を忘れた実施は、午睡の時間帯（nap.time_range）の終わりで解除する（napAutoCloseAt）
+ */
+function idleDeadlineOf(u: SessionUser, s: IdleSession): { deadlineMs: number; napActive: boolean } {
+  const staffId = db.staff.find((x) => x.account_id === u.account_id)?.staff_id;
+  const range = settingText('nap.time_range', '13:00-15:00');
+  const nowISO = now();
+  const since = jstISO(s.lastActiveMs);
+  let from = s.lastActiveMs;
+  for (const n of db.napSessions) {
+    if (!staffId || n.started_staff_id !== staffId) continue;
+    if (n.ended_at !== null && n.ended_at <= since) continue;
+    let end = n.ended_at;
+    if (end === null) {
+      const closeAt = napAutoCloseAt(n.session_date, n.started_at, range);
+      if (nowISO <= closeAt) return { deadlineMs: 0, napActive: true };
+      end = closeAt;
+    }
+    from = Math.max(from, jstMs(end));
+  }
+  return { deadlineMs: from + settingNumber('ui.auto_logout_minutes', 30) * 60_000, napActive: false };
+}
+
+/** 切れていれば切れた印を付ける。ちょうどの時刻まではまだ使える（server/session.go の sessionAccount と同じ） */
+function expireIfIdle(u: SessionUser, s: IdleSession): void {
+  if (s.ended) return;
+  const { deadlineMs, napActive } = idleDeadlineOf(u, s);
+  if (!napActive && Date.now() > deadlineMs) s.ended = true;
+}
+
+/** 操作に数える呼び出しなら、最後の操作の時刻をいまにする（server/session.go の requireLogin の touch） */
+function touchIdleSession(u: SessionUser, name: string): void {
+  if (u.role === '3' || name === 'sessionStatus' || isAutomatic()) return;
+  const s = idleSessionOf(u);
+  expireIfIdle(u, s);
+  if (!s.ended) s.lastActiveMs = Date.now();
+}
+
+/** いまの期限。保護者には自動ログアウトが無いので返さない（server/api_session.go の sessionStatusOf） */
+function idleSessionStatus(u: SessionUser): Promise<SessionStatus> {
+  if (u.role === '3') return ok({ auto_logout: false, nap_exempt: false, expires_at: null, remaining_seconds: null });
+  const s = idleSessionOf(u);
+  expireIfIdle(u, s);
+  if (s.ended) return sessionEnded();
+  const { deadlineMs, napActive } = idleDeadlineOf(u, s);
+  if (napActive) return ok({ auto_logout: true, nap_exempt: true, expires_at: null, remaining_seconds: null });
+  return ok({
+    auto_logout: true, nap_exempt: false,
+    expires_at: jstISO(deadlineMs), remaining_seconds: Math.floor((deadlineMs - Date.now()) / 1000),
+  });
+}
+
 function guardProcedure<T extends Record<string, unknown>>(apis: T): T {
   const out: Record<string, unknown> = {};
   for (const [name, fn] of Object.entries(apis)) {
@@ -2629,6 +2740,8 @@ function guardProcedure<T extends Record<string, unknown>>(apis: T): T {
     out[name] = (...args: unknown[]) => {
       const caller = args.find(isSessionUser);
       if (caller && !sessionAlive(caller)) return sessionEnded();
+      // 自動ログアウトの時間を、最後の操作から数え直す（上の「ログインの期限」）。サーバと同じく、手続きで拒むより前に数える
+      if (caller) touchIdleSession(caller, name);
       const kind = caller ? pendingProcedure(caller) : null;
       if (!kind) return fn(...args);
       notifyProcedureRequired(kind);

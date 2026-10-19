@@ -17,7 +17,7 @@ import type {
   LoginError, ChildInput, DiaryFilter, DiaryInput, DiaryTemplate, ChatRoomView,
   MisdeliveryRow, RetractedRow, NapChildState, NapAbnormalRow, NapSearchRow,
   DevListRow, DevScheduleRow, CsvRow, FiscalClassRow, StaffAccountRow,
-  GuardianAccountRow, InvitationCodeRow, OperationLogRow, StaffSummary, GuardianHomeRow,
+  GuardianAccountRow, InvitationCodeRow, OperationLogRow, StaffSummary, GuardianHomeRow, SessionStatus,
 } from './shapes';
 import {
   ProcedureRequiredError, isProcedureKind, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
@@ -239,6 +239,15 @@ const apiAuth = {
     await loadReferenceFor(u);
     return u;
   },
+
+  /**
+   * ログインの期限（GitHub Issue #210）。期限はサーバが決める。尋ねるだけでは延びない
+   * （server/api_session.go、server/session.go の countsAsOperation）。切れていれば 401 になり、画面へ知らせる（request）
+   */
+  sessionStatus: (_user: SessionUser) => get<SessionStatus>('/api/session'),
+
+  /** 予告の「続ける」。操作の1つとして期限を延ばし、延びた期限を返す */
+  extendSession: (_user: SessionUser) => post<SessionStatus>('/api/session/extend'),
 
   async changePassword(_accountId: number, current: string, next: string): Promise<void> {
     await post('/api/password', { current, next });

@@ -8,6 +8,7 @@ import { useAsync, AUTO_REFRESH_MS } from '../hooks';
 import { api } from '../api/client';
 import { BellIcon, Alert } from '../components/ui';
 import { ToastHost } from '../components/feedback';
+import SessionTimeoutWarning from '../components/SessionTimeoutWarning';
 
 const NAV = [
   { to: '/staff', label: 'ダッシュボード', end: true, adminOnly: false },
@@ -112,6 +113,11 @@ export default function StaffLayout() {
           <Outlet />
         </main>
         <ToastHost />
+        {/*
+          自動ログアウトの予告と「続ける」。自動ログアウトは職員の画面に限る（基本設計書「ログイン」(4-3)）ので、
+          保護者の共通レイアウトには置かない（GitHub Issue #210）
+        */}
+        <SessionTimeoutWarning />
       </div>
     </div>
   );

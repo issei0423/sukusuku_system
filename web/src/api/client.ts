@@ -40,7 +40,7 @@ export { onSessionEnded } from './procedure';
 
 /**
  * 裏の読み直しとして要求を送る。職員の自動ログアウトの「操作」に数えさせない（GitHub Issue #210）。
- * http は印の見出しを付ける。モックにはセッションの期限が無いので、そのまま呼ぶのと同じ
+ * http は印の見出しを付ける。モックは呼ばれたときに印の中かを見て、期限を延ばさない
  */
 export { asAutomatic } from './automatic';
 
