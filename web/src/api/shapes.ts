@@ -168,6 +168,10 @@ export interface NapSearchRow {
   child_name: string;
   class_name: string;
   staff_name: string;
+  /** 確認の行だけ：最後に修正した時刻（「修正あり」の印）。ほかの行は null */
+  corrected_at: string | null;
+  /** 確認の行だけ：この利用者が直せるか（画面は「修正」を出す。担保は POST /api/nap/records/{id}/correct） */
+  can_correct: boolean;
 }
 
 /** 発達チェック一覧の行。overdue は予定日を過ぎて未実施の状態 */

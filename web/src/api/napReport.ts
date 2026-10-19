@@ -16,6 +16,13 @@ export const NAP_ABNORMAL_HEADER = ['発見時刻', '園児', '状況', '対応'
 
 export const NAP_ABNORMAL_TITLE = '同じ期間の異常時の記録';
 
+/**
+ * 末尾の「修正の履歴」の見出しと列。同 (5-3) の項目10「記録・修正日時・修正者・修正前・修正後・理由。1回の修正で1行」
+ * （server/api_nap_correct.go の napReportHistoryTitle・napReportHistoryHeader）
+ */
+export const NAP_HISTORY_TITLE = '修正の履歴';
+export const NAP_HISTORY_HEADER = ['記録', '修正日時', '修正者', '修正前', '修正後', '理由'];
+
 /** ねた・おきたの行に出す名前。画面詳細図「午睡記録検索画面」(5-3) の項目6「入眠（ねた）と起床（おきた）」 */
 export const SLEEP_ROW_LABEL = { sleep: '入眠（ねた）', wake: '起床（おきた）' } as const;
 
@@ -110,16 +117,43 @@ export function sortReportAbnormals(rows: NapReportAbnormal[]): NapReportAbnorma
     || byCode(a.foundAt, b.foundAt) || a.id - b.id);
 }
 
+/** 「修正の履歴」の1行。並べ替えの鍵（実施の日・クラス・園児のよみと ID・記録の時刻・修正日時・操作ログの番号）と、出すセル */
+export interface NapReportHistory {
+  logId: number;
+  date: string;
+  classId: number;
+  kana: string;
+  childId: string;
+  recordAt: string;
+  at: string;
+  cells: string[];
+}
+
+/**
+ * 修正の履歴を、一覧の行と同じ向きで 実施の日 → クラス → 園児 → 記録の時刻 → 修正日時 の古い順に並べる
+ * （同じなら操作ログの番号の順）。【仮置き】（web/仮置き値.md「午睡チェックの記録の修正」）。
+ * server/api_nap_correct.go の napReportHistories と同じ
+ */
+export function sortReportHistories(rows: NapReportHistory[]): NapReportHistory[] {
+  return [...rows].sort((a, b) => byCode(a.date, b.date) || a.classId - b.classId
+    || a.kana.localeCompare(b.kana, 'ja') || byCode(a.childId, b.childId)
+    || byCode(a.recordAt, b.recordAt) || byCode(a.at, b.at) || a.logId - b.logId);
+}
+
 /**
  * 帳票の本文（BOM は付けない。保存する画面が付ける）。1行目は見出し、続けて一覧の行。
  * 異常時の記録があれば、1行あけて「同じ期間の異常時の記録」の見出しと行を続ける。
- * 【仮置き】1つのファイルに2つの表を続ける形（web/仮置き値.md「午睡の帳票」）。
+ * 修正の履歴があれば、ファイルの末尾に1行あけて「修正の履歴」の見出しと行を続ける（基本設計書「帳票の出力」(4-8)）。
+ * 【仮置き】1つのファイルに表を続ける形（web/仮置き値.md「午睡の帳票」）。
  * セルは web/src/csv.ts で無害化する（式の始まりになる文字に ' を付ける。GitHub Issue #153）
  */
-export function napReportCsv(lines: NapReportLine[], abnormals: NapReportAbnormal[]): string {
+export function napReportCsv(lines: NapReportLine[], abnormals: NapReportAbnormal[], histories: NapReportHistory[] = []): string {
   const rows: string[][] = lines.map((l) => l.cells);
   if (abnormals.length > 0) {
     rows.push([], [NAP_ABNORMAL_TITLE], NAP_ABNORMAL_HEADER, ...abnormals.map((a) => a.cells));
+  }
+  if (histories.length > 0) {
+    rows.push([], [NAP_HISTORY_TITLE], NAP_HISTORY_HEADER, ...histories.map((h) => h.cells));
   }
   return toCsv(NAP_REPORT_HEADER, rows);
 }

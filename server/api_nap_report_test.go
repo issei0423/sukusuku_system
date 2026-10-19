@@ -231,9 +231,11 @@ func demoNapDates(t *testing.T, a *app) (today, yesterday, twoDaysAgo string) {
 type napReportCSVFile struct {
 	raw       string
 	header    []string
-	rows      [][]string // 一覧の行
-	abnormals [][]string // 同じ期間の異常時の記録の行
-	hasTitle  bool
+	rows       [][]string // 一覧の行
+	abnormals  [][]string // 同じ期間の異常時の記録の行
+	hasTitle   bool
+	histories  [][]string // 末尾の修正の履歴の行
+	hasHistory bool
 }
 
 // napReportOf は帳票を取り、BOM を外して CSV の行に分ける。200 でなければ止める
@@ -263,6 +265,15 @@ func napReportOf(t *testing.T, h http.Handler, c *http.Cookie, query string) nap
 				t.Fatalf("異常時の記録の見出しが正しくありません: %v", records[i:])
 			}
 			section = &f.abnormals
+			i++
+			continue
+		}
+		if len(records[i]) == 1 && records[i][0] == napReportHistoryTitle {
+			f.hasHistory = true
+			if i+1 >= len(records) || strings.Join(records[i+1], ",") != strings.Join(napReportHistoryHeader, ",") {
+				t.Fatalf("修正の履歴の見出しが正しくありません: %v", records[i:])
+			}
+			section = &f.histories
 			i++
 			continue
 		}
@@ -371,7 +382,7 @@ func TestNapReportContents(t *testing.T) {
 		t.Fatalf("取り消した対象外が出ています: %v", cancelled)
 	}
 
-	// 「修正あり」の列は置き、修正の機能が無いあいだは空
+	// 「修正あり」の列は置き、どの記録も修正していないあいだは空（修正したときは TestNapReportShowsCorrections）
 	for _, r := range f.rows {
 		if len(r) != len(napReportHeader) || r[10] != "" {
 			t.Fatalf("「修正あり」の列が無いか、空ではありません: %v", r)

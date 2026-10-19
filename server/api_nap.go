@@ -39,6 +39,8 @@ type NapRecord struct {
 	Complexion   string   `json:"complexion"`
 	Temperature  *float64 `json:"temperature"`
 	StaffID      string   `json:"staff_id"`
+	// 最後に修正した時刻。空なら修正なし（「修正あり」の印。api_nap_correct.go）
+	CorrectedAt *string `json:"corrected_at"`
 }
 
 func (a *app) handleActiveNapSession(w http.ResponseWriter, r *http.Request) {
@@ -295,19 +297,21 @@ func (a *app) handleNapClassState(w http.ResponseWriter, r *http.Request) {
 
 func (a *app) latestNapRecord(sessionID int64, childID string) *NapRecord {
 	var (
-		x    NapRecord
-		temp sql.NullFloat64
+		x         NapRecord
+		temp      sql.NullFloat64
+		corrected sql.NullString
 	)
 	err := a.db.QueryRow(`SELECT nap_record_id, nap_session_id, child_id, checked_at, saved_at,
-		body_position, breathing, complexion, temperature, staff_id
+		body_position, breathing, complexion, temperature, staff_id, corrected_at
 		FROM t_nap_record WHERE nap_session_id = ? AND child_id = ?
 		ORDER BY checked_at DESC, nap_record_id DESC LIMIT 1`, sessionID, childID).
 		Scan(&x.NapRecordID, &x.NapSessionID, &x.ChildID, &x.CheckedAt, &x.SavedAt,
-			&x.BodyPosition, &x.Breathing, &x.Complexion, &temp, &x.StaffID)
+			&x.BodyPosition, &x.Breathing, &x.Complexion, &temp, &x.StaffID, &corrected)
 	if err != nil {
 		return nil
 	}
 	x.Temperature = nullFloat(temp)
+	x.CorrectedAt = nullStr(corrected)
 	return &x
 }
 
@@ -771,7 +775,7 @@ func (a *app) handleSearchNapRecords(w http.ResponseWriter, r *http.Request) {
 	all := []napSearchRow{}
 	rows, err := a.db.Query(`SELECT r.nap_record_id, r.nap_session_id, r.child_id, r.checked_at, r.saved_at,
 		r.body_position, r.breathing, r.complexion, r.temperature, r.staff_id,
-		s.session_date, s.class_id
+		s.session_date, s.class_id, r.corrected_at
 		FROM t_nap_record r
 		JOIN t_nap_session s ON s.nap_session_id = r.nap_session_id
 		WHERE 1 = 1`+cond, args...)
@@ -786,15 +790,17 @@ func (a *app) handleSearchNapRecords(w http.ResponseWriter, r *http.Request) {
 			savedAt                    string
 			position, breath, complexn string
 			temp                       sql.NullFloat64
+			corrected                  sql.NullString
 		)
 		if rows.Scan(&recordID, &x.NapSessionID, &x.ChildID, &x.CheckedAt, &savedAt,
 			&position, &breath, &complexn, &temp, &x.StaffID,
-			&x.SessionDate, &x.classID) == nil {
+			&x.SessionDate, &x.classID, &corrected) == nil {
 			x.Kind = napRowCheck
 			x.NapRecordID = &recordID
 			x.SavedAt = &savedAt
 			x.BodyPosition, x.Breathing, x.Complexion = &position, &breath, &complexn
 			x.Temperature = nullFloat(temp)
+			x.CorrectedAt = nullStr(corrected)
 			all = append(all, x)
 		}
 	}
@@ -881,8 +887,18 @@ func (a *app) handleSearchNapRecords(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, x)
 	}
-	writeJSON(w, http.StatusOK,
-		page(out, queryInt(r, "page", 1), a.settingInt("paging.nap_search_per_page", 50)))
+	p := page(out, queryInt(r, "page", 1), a.settingInt("paging.nap_search_per_page", 50))
+	/*
+	 * 確認の行に、この利用者が直せるか（can_correct）を添える。画面は直せる行にだけ「修正」を出す
+	 * （画面詳細図「午睡記録検索画面」(5-3) の項目12。担保は POST /api/nap/records/{id}/correct が同じ判定で行う）。
+	 * 判定は1行ごとに問い合わせるため、出すページの行にだけ行う
+	 */
+	for i := range p.Rows {
+		if p.Rows[i].Kind == napRowCheck {
+			p.Rows[i].CanCorrect = a.napRecordCorrectDenied(u, p.Rows[i].ChildID, p.Rows[i].NapSessionID, p.Rows[i].SessionDate) == ""
+		}
+	}
+	writeJSON(w, http.StatusOK, p)
 }
 
 // 午睡記録検索の行の種類
@@ -922,7 +938,10 @@ type napSearchRow struct {
 	ChildName        string   `json:"child_name"`
 	ClassName        string   `json:"class_name"`
 	StaffName        string   `json:"staff_name"`
-	classID          int64
+	// 確認の行だけ：最後に修正した時刻（「修正あり」の印）と、この利用者が直せるか（「修正」を出すか）
+	CorrectedAt *string `json:"corrected_at"`
+	CanCorrect  bool    `json:"can_correct"`
+	classID     int64
 }
 
 /*

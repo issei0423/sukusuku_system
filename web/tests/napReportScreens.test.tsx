@@ -89,7 +89,9 @@ describe('午睡記録検索画面に、ねた・おきたの行と入眠時の�
       expect(row.textContent).toContain('高梨 倫太朗');
       const cells = Array.from(row.querySelectorAll('td'));
       expect(cells.find((td) => td.textContent === 'きょうは対象外（午睡なし）')?.getAttribute('colspan')).toBe('3');
-      expect(cells[cells.length - 1].textContent).toBe('―');
+      // 保存時刻は「―」。最後の列（修正）は確認の行だけが使い、対象外の行は空
+      expect(cells[cells.length - 2].textContent).toBe('―');
+      expect(cells[cells.length - 1].textContent).toBe('');
     } finally {
       db.napExclusions.splice(db.napExclusions.indexOf(added), 1);
     }

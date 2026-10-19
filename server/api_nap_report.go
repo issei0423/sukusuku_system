@@ -20,7 +20,8 @@ import (
  * - 出力したことを操作ログへ記録する。期間と件数はサーバが数えた値を書く（画面が申告した値を使わない）。
  *   記録できなかったときは出力しない
  * - 含めるもの：確認の行（チェックした時刻と保存時刻・体位・呼吸・顔色・体温・記録した職員）、ねた・おきた、
- *   入眠時の体温（ねたの行）、きょうは対象外と理由、異常時の記録、「修正あり」の列
+ *   入眠時の体温（ねたの行）、きょうは対象外と理由、異常時の記録、「修正あり」の印、末尾の「修正の履歴」の表
+ *   （修正した午睡チェックの記録ごとに、操作ログの修正の行から作る。api_nap_correct.go）
  * - ヒヤリハットを起票した異常時の記録は、ヒヤリハット側の状況・とった対応に起票済みの印を付けて1行だけ出す
  *   （要件定義書「日誌システム」(4-3) の「午睡チェックの異常時の記録との関係」の「集計・監査時はヒヤリハット側を正」）
  *
@@ -188,13 +189,19 @@ func (a *app) handleNapReport(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, msgNapReportLoad)
 		return
 	}
-	body := napReportCSV(lines, abnormals)
+	histories, err := a.napReportHistories(from, to, classID, hasClass)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, msgNapReportLoad)
+		return
+	}
+	body := napReportCSV(lines, abnormals, histories)
 
 	classLabel := "すべてのクラス"
 	if hasClass {
 		classLabel = a.className(classID)
 	}
-	count := len(lines) + len(abnormals)
+	// 【仮置き】件数は、一覧・異常時の記録・修正の履歴の行の合計（出したデータの行の数。web/仮置き値.md）
+	count := len(lines) + len(abnormals) + len(histories)
 	after := "午睡記録をCSV出力（期間 " + from + "〜" + to + "・" + classLabel + "・" + strconv.Itoa(count) + " 件）"
 	if _, err := a.db.Exec(`INSERT INTO t_operation_log
 		(account_id, operated_at, function_type, operation_type, target_table, target_id,
@@ -237,11 +244,13 @@ func (a *app) napReportData(from, to string, classID int64, hasClass bool) ([]na
 		savedAt, position, breath, compl string
 		temp                             sql.NullFloat64
 		reason                           string
+		corrected                        sql.NullString
 	}
 	raws := []rawLine{}
 
 	rows, err := a.db.Query(`SELECT r.nap_record_id, r.child_id, r.checked_at, r.saved_at,
-		r.body_position, r.breathing, r.complexion, r.temperature, r.staff_id, s.session_date, s.class_id
+		r.body_position, r.breathing, r.complexion, r.temperature, r.staff_id, s.session_date, s.class_id,
+		r.corrected_at
 		FROM t_nap_record r JOIN t_nap_session s ON s.nap_session_id = r.nap_session_id
 		WHERE 1 = 1`+cond, args...)
 	if err != nil {
@@ -250,7 +259,7 @@ func (a *app) napReportData(from, to string, classID int64, hasClass bool) ([]na
 	for rows.Next() {
 		x := rawLine{kind: napRowCheck}
 		if err := rows.Scan(&x.id, &x.childID, &x.at, &x.savedAt, &x.position, &x.breath, &x.compl,
-			&x.temp, &x.staffID, &x.date, &x.classID); err != nil {
+			&x.temp, &x.staffID, &x.date, &x.classID, &x.corrected); err != nil {
 			rows.Close()
 			return nil, nil, err
 		}
@@ -362,10 +371,14 @@ func (a *app) napReportData(from, to string, classID int64, hasClass bool) ([]na
 			cells = append(cells, "きょうは対象外（"+napExclusionLabel[x.reason]+"）", "", "", "", staff, "")
 		}
 		/*
-		 * 「修正あり」の列は置くが、いまは空にする。午睡チェックの記録を修正する機能（POST /api/nap/records/{id}/correct と
-		 * t_nap_record.corrected_at）が、サーバにもモックにも無いため（基本設計書「記録の修正と改ざん防止」(4-8)）
+		 * 「修正あり」の列：修正した午睡チェックの記録（t_nap_record.corrected_at がある）に印を付ける
+		 * （基本設計書「帳票の出力」(4-8)）。ねた・おきた・対象外の行は空（伝える層の訂正は別の規則。異常時の記録の修正は別の PR）
 		 */
-		cells = append(cells, "")
+		mark := ""
+		if x.kind == napRowCheck && x.corrected.Valid {
+			mark = napReportCorrectedMark
+		}
+		cells = append(cells, mark)
 		lines = append(lines, napReportLine{kind: x.kind, id: x.id, date: x.date, classID: x.classID,
 			kana: childKana(x.childID), childID: x.childID, at: x.at, cells: cells})
 	}
@@ -402,12 +415,13 @@ func napReportTemperature(v sql.NullFloat64) string {
 
 /*
 napReportCSV は帳票の本文を作る。1行目は見出し、続けて一覧の行。異常時の記録があれば、1行あけて
-「同じ期間の異常時の記録」の見出しと行を続ける。
+「同じ期間の異常時の記録」の見出しと行を続ける。修正の履歴があれば、ファイルの末尾に1行あけて「修正の履歴」の
+見出しと行を続ける（基本設計書「帳票の出力」(4-8)）。
 
-【仮置き】1つのファイルに2つの表を続ける形（web/仮置き値.md「午睡の帳票」）。行の区切りは改行（\n）で、
+【仮置き】1つのファイルに表を続ける形（web/仮置き値.md「午睡の帳票」）。行の区切りは改行（\n）で、
 画面で作っていたときの CSV（web/src/csv.ts の toCsv）と同じ。
 */
-func napReportCSV(lines []napReportLine, abnormals []napReportAbnormal) string {
+func napReportCSV(lines []napReportLine, abnormals []napReportAbnormal, histories []napReportHistory) string {
 	out := []string{napReportCSVRow(napReportHeader)}
 	for _, l := range lines {
 		out = append(out, napReportCSVRow(l.cells))
@@ -415,6 +429,12 @@ func napReportCSV(lines []napReportLine, abnormals []napReportAbnormal) string {
 	if len(abnormals) > 0 {
 		out = append(out, "", napReportCSVRow([]string{napReportAbnormalTitle}), napReportCSVRow(napReportAbnormalHeader))
 		for _, x := range abnormals {
+			out = append(out, napReportCSVRow(x.cells))
+		}
+	}
+	if len(histories) > 0 {
+		out = append(out, "", napReportCSVRow([]string{napReportHistoryTitle}), napReportCSVRow(napReportHistoryHeader))
+		for _, x := range histories {
 			out = append(out, napReportCSVRow(x.cells))
 		}
 	}

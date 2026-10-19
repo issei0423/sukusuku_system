@@ -102,6 +102,8 @@ describe('午睡記録検索に、きょうは対象外とその理由の行を�
         nap_session_id: 2, child_id: 'C002', checked_at: s.slept_at, saved_at: null,
         body_position: null, breathing: null, complexion: null, temperature: null, sleep_temperature: null,
         staff_id: 'S003', session_date: date, child_name: '上園 花子', class_name: 'さくら組', staff_name: '高梨 倫太朗',
+        // 修正あり・直せるか は確認の行だけが持つ
+        corrected_at: null, can_correct: false,
       }]);
       expect(exclusionOf(rows, 'C004')).toHaveLength(0);
       const sleepIdx = rows.findIndex((r) => r.kind === 'sleep' && r.nap_sleep_id === 8);
@@ -241,7 +243,7 @@ describe('帳票の中身', () => {
       ]);
       expect(find((x) => x[2] === '宮城 美咲' && x[0] === yesterday())).toHaveLength(0);
 
-      // 「修正あり」の列は置き、修正の機能が無いあいだは空。実施の日 → クラス → 園児 → 時刻 の古い順
+      // 「修正あり」の列は置き、どの記録も修正していないあいだは空（修正したときは napCorrect.test.ts）。実施の日 → クラス → 園児 → 時刻 の古い順
       for (const x of r.rows) expect(x).toHaveLength(NAP_REPORT_HEADER.length);
       expect(r.rows.every((x) => x[10] === '')).toBe(true);
       expectReportOrder(r.rows);

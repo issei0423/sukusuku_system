@@ -78,6 +78,9 @@ func openDB(path string) (*sql.DB, error) {
 	if err := ensureContactSchema(db); err != nil {
 		return nil, err
 	}
+	if err := ensureNapRecordCorrectedAt(db); err != nil {
+		return nil, err
+	}
 	return db, nil
 }
 
