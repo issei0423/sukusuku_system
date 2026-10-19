@@ -385,6 +385,13 @@ button.guardian-record-link {
  */
 .contact-class-table :is(th, td) > a { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; }
 .contact-class-table td.num > a { justify-content: flex-end; }
+/*
+ * ひとこと・写真が無いセルと、園からを送っていないセルの文字のボタン「書く」は、セルいっぱい・高さ 44px にする
+ * （GitHub Issue #215。直す前は「―」「未送信」の小さなリンクだった。2026-10-19 に決めた）。
+ * 上の「幅は文字に合わせる」は左に止めた園児名の列のためで、「書く」は列を止めていない右のほうの列にだけある。
+ * 幅の決まっていない列なので、折り返さない（「書」「く」の2行に割れていた）
+ */
+.contact-class-table td > a.contact-write { display: flex; width: 100%; justify-content: center; min-height: 44px; white-space: nowrap; }
 .contact-class-table .contact-col-home { width: 240px; min-width: 240px; }
 .contact-home-cell { display: grid; gap: var(--sp-1); }
 .contact-home-cell p { margin: 0; }
@@ -486,4 +493,3 @@ button.guardian-record-link {
 .name-check-text mark { background: var(--c-primary); color: var(--c-primary-ink); font-weight: 700; outline: 2px solid var(--c-primary-ink); }
 .phrase-list { display: grid; gap: var(--sp-2); }
 .phrase-list button { min-height: 48px; text-align: left; justify-content: flex-start; white-space: normal; }
-.contact-unsent { font-weight: 700; color: var(--c-alert); }

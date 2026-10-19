@@ -12,7 +12,8 @@
  *   - 記録した値を押すと「直す」「取り消す」（その日はその園児のクラスの担任、管理者はいつでも。取り消しは確認のダイアログ）
  * 午睡は表示だけ（記録は午睡チェック画面の行で行う）。押したらサーバの応答を待って結果を出す（楽観的更新をしない。決めたこと D-3）。
  * ひとこと・園からは、連絡帳（園児）画面で書いて送る（段2。宛先を大きく示し、他児の名前を照合する）。この表は件数と
- * 「未送信」「欠席」（午睡で欠席にした子。未送信に数えない）「送った 17:05」を出し、押すとその園児の画面へ移る。
+ * 「欠席」（午睡で欠席にした子。未送信に数えない）「送った 17:05」を出し、押すとその園児の画面へ移る。
+ * ひとこと・写真が無いセルと園からを送っていないセルは、文字のボタン「書く」をセルいっぱいに出す（GitHub Issue #215）。
  * 体温に判定の色や言葉を付けない（平熱は比べる材料として並べてよい）。
  */
 import { useEffect, useRef, useState } from 'react';
@@ -365,11 +366,11 @@ export default function ContactClassScreen() {
                     const lastToilet = toilets.at(-1);
                     const lastTemp = temps.at(-1);
                     const rowBusy = busyKey !== null;
-                    // 見えている文字は、読み上げの名前にもそのまま入れる（WCAG 2.5.3。声で「未送信」と言って押せるように）
+                    // 見えている文字は、読み上げの名前にもそのまま入れる（WCAG 2.5.3。声で「書く」「送った」と言って押せるように）
                     const toiletText = lastToilet ? `${toilets.length}回／${eventText(lastToilet)} ${formatHM(lastToilet.recorded_at)}` : '';
                     const tempText = lastTemp ? `${eventText(lastTemp)}（${formatHM(lastTemp.recorded_at)}）` : '';
                     const facilityText = row.facility ? `送った ${formatHM(row.facility.recorded_at)}`
-                      : row.exclusion?.reason === '1' ? '欠席' : '未送信';
+                      : row.exclusion?.reason === '1' ? '欠席' : null;
                     return (
                       <tr key={id}>
                         <th scope="row" className="contact-col-child"><Link to={childPath}>{name}</Link></th>
@@ -424,14 +425,23 @@ export default function ContactClassScreen() {
                           {row.child.normal_temperature !== null && <div className="muted">平熱 {row.child.normal_temperature.toFixed(1)}</div>}
                         </td>
                         <td>{nap ? <Link to="/staff/nap">{nap}</Link> : <span className="muted">―</span>}</td>
+                        {/*
+                          * ひとこと・写真の件数。無ければ、園からを送っていないときと同じく文字のボタン「書く」（押すと連絡帳（園児）画面で書く）。
+                          * 直す前は「―」「未送信」の小さなリンクで、押せると分かりにくかった。セルいっぱい・高さ 44px にする
+                          * （「タッチの条件」(2-0 (4))、GitHub Issue #215。2026-10-19 に決めた）。行き先は画面の移動なので、ボタンの見た目のリンクにする。
+                          * 同じ「書く」が表に並ぶので、読み上げの名前に園児名と列を入れる（WCAG 2.4.6。見えている「書く」も入れる。2.5.3）
+                          * 【仮置き】文言「書く」（web/仮置き値.md）
+                          */}
                         <td className="num">
-                          <Link to={childPath} aria-label={`${name}のひとこと・写真${comments > 0 ? ` ${comments} 件` : ''}`}>{comments > 0 ? `${comments} 件` : '―'}</Link>
+                          {comments > 0
+                            ? <Link to={childPath} aria-label={`${name}のひとこと・写真 ${comments} 件`}>{comments} 件</Link>
+                            : <Link to={childPath} className="btn btn-sm contact-write" aria-label={`${name}のひとことを書く`}>書く</Link>}
                         </td>
-                        {/* 園から：未送信・送った（時刻）。午睡で欠席にした子は「欠席」（未送信に数えない）。押すと連絡帳（園児）画面の園から */}
+                        {/* 園から：送った（時刻）・送っていなければ「書く」。午睡で欠席にした子は「欠席」（未送信に数えない）。押すと連絡帳（園児）画面の園から */}
                         <td>
-                          <Link to={`${childPath}#facility`} aria-label={`${name}の園から ${facilityText}`}>
-                            {row.facility || row.exclusion?.reason === '1' ? facilityText : <span className="contact-unsent">{facilityText}</span>}
-                          </Link>
+                          {facilityText
+                            ? <Link to={`${childPath}#facility`} aria-label={`${name}の園から ${facilityText}`}>{facilityText}</Link>
+                            : <Link to={`${childPath}#facility`} className="btn btn-sm contact-write" aria-label={`${name}の園からを書く`}>書く</Link>}
                         </td>
                       </tr>
                     );

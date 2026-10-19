@@ -392,6 +392,30 @@ test.describe('[staff] contact キーボードだけで通す', () => {
       await open(page, 'contact-child');
       expect(await touchProblems(page, '.contact-child')).toEqual({ small: [], close: [] });
     });
+
+    test('連絡帳（クラス）画面のひとこと・写真が無い・園からを送っていないセルは、セルいっぱいで高さ 44px 以上の文字のボタン「書く」', async ({ page }) => {
+      // GitHub Issue #215（直す前は「―」が 14×20px、「未送信」が 28〜42×20px のリンクで、押せると分かりにくかった）。
+      // 2026-10-19 に、文字のボタン「書く」にしてセルいっぱいに広げると決めた。読み上げの名前は園児名と列で分ける
+      const errors = await open(page, 'contact-class');
+      const writes = page.locator('.contact-class-table td > a.contact-write');
+      expect(await writes.count(), '表に「書く」がある').toBeGreaterThan(0);
+      const problems = await writes.evaluateAll((els) => els.flatMap((el) => {
+        const cell = el.parentElement as HTMLElement;
+        const style = getComputedStyle(cell);
+        const inner = cell.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+        const box = el.getBoundingClientRect();
+        const name = el.getAttribute('aria-label') ?? '';
+        const found: string[] = [];
+        if (el.textContent !== '書く') found.push(`${name} の文字が「${el.textContent}」`);
+        if (!/^.+の(ひとこと|園から)を書く$/.test(name)) found.push(`読み上げの名前が「${name}」`);
+        if (box.height < 44) found.push(`${name} の高さ ${box.height.toFixed(1)}px`);
+        if (Math.abs(box.width - inner) > 1) found.push(`${name} の幅 ${box.width.toFixed(1)}px（セルの中は ${inner.toFixed(1)}px）`);
+        return found;
+      }));
+      expect(problems).toEqual([]);
+      await expect(page.locator('.contact-class-table a').filter({ hasText: /^(―|未送信)$/ }), '「―」「未送信」のリンクは残らない').toHaveCount(0);
+      expect(errors, 'ブラウザ実行エラー').toEqual([]);
+    });
   });
 
   test('② 職員が午睡チェック画面の園児の行で ねた・おきた を記録する', async ({ page }) => {
