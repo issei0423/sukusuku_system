@@ -84,6 +84,9 @@ func (a *app) init() error {
 	if err := a.refreshDemoLock(); err != nil {
 		return err
 	}
+	// 存在しないログインIDの照合に使うハッシュを、先に作っておく。最初の要求で作ると、
+	// その1回だけ応答が遅くなり、IDが無いことが分かるため（password.go の dummyPasswordHash）
+	dummyPasswordHash()
 	// 職員のチャットの参加を、担任・ロール・状態から決まる規則に合わせる（chat_membership.go）
 	return a.syncChatMembership()
 }
