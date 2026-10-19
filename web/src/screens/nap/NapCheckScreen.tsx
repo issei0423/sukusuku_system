@@ -15,7 +15,7 @@ import { onNapClass } from '../../live';
 import { useSession } from '../../session';
 import { api, selectableClasses } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Alert, Modal } from '../../components/ui';
-import { ConfirmDialog, notify } from '../../components/feedback';
+import { ConfirmDialog } from '../../components/feedback';
 import { BODY_POSITION, BREATHING, COMPLEXION } from '../../api/codes';
 import { formatHM, formatTemperature, today, now, napTimerBase, plusMinutes, jstMs, isOneDecimal } from '../../api/util';
 import type { BodyPosition, Breathing, Complexion, NapRecord } from '../../api/types';
@@ -334,9 +334,6 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved }: {
       });
       setPosition(null); setBreathing(null); setComplexion(null); setTemperature(null); setConfirmedTemp(null);
       setJustSaved(true);
-      // 自分の操作の結果は notify()（role="status"）で読む。行の「保存しました」は見える手応えとして残す
-      // （詳細設計書「全画面に共通する部品と決まり」(2-0) の (2)・(6)。【仮置き】文言（web/仮置き値.md））
-      notify(`${name}さんの午睡チェックを記録しました。`);
       onSaved();
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
@@ -357,12 +354,16 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved }: {
       <div className="nap-row-head">
         <strong className="name">{name}</strong>
         {/*
-          行ごとには読み上げへ伝えない（role="status" を外した）。時刻を過ぎると全員の行が同時に変わり、続けて何度も読むため
-          （詳細設計書 (2-0) の (6) の③、GitHub Issue #209）。過ぎたことはタイマーの欄、自分で記録した結果は notify() で読む
+          行の状態の文（「確認済み」「チェック時刻を過ぎています」など）は読み上げへ伝えない。時刻を過ぎると全員の行が同時に変わり、
+          続けて何度も読むため（詳細設計書 (2-0) の (6) の③、GitHub Issue #209）。過ぎたことはタイマーの欄で読む。
+          自分で記録した結果の「保存しました」だけを、行の見えない role="status" の欄で読む。結果の表示（notify()）は出さない：
+          画面の下に重なり、続けて記録する次の行の体位・顔色・体温のボタンを隠すため（iPad 横 1180×820・縦 820×1180・744×1133・1440×900 で確かめた）。
+          欄は前から置いておき（入れたときに読まれるように）、「保存しました」を出す間だけ中身を入れる。見えている文は二重に読まれないよう、その間は読み上げから外す
         */}
-        <span className={`nap-row-status${!excluded && (!row.latest || due) ? ' due' : ''}`}>
+        <span className={`nap-row-status${!excluded && (!row.latest || due) ? ' due' : ''}`} aria-hidden={justSaved || undefined}>
           {justSaved ? '保存しました' : excluded ? 'きょうは対象外' : !row.latest ? '未記録' : due ? 'チェック時刻を過ぎています' : '確認済み'}
         </span>
+        <span className="sr-only" role="status">{justSaved ? '保存しました' : ''}</span>
         <span className="last">{row.latest ? `前回 ${formatHM(row.latest.checked_at)} ${BODY_POSITION[row.latest.body_position]}` : '前回の記録なし'}</span>
         {latest && <LatestObservation record={latest} />}
         <span className="last">平熱 {formatTemperature(row.child.normal_temperature)}℃</span>

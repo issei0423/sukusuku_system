@@ -147,12 +147,17 @@ describe('② 連絡帳の画面：「家庭から」が増えたときだけ、
 describe('③ 午睡チェック画面：確認の時刻を過ぎた子を、タイマーの欄で「未確認 n 名」とまとめて1回読む', () => {
   const timerStatus = () => document.querySelectorAll<HTMLElement>('.nap-timer [role="status"]');
 
-  it('園児の行には role="status" を置かず、時刻を過ぎたら1回読み、記録して減っても読み直さない', async () => {
+  /** 園児の行の読み上げの欄（「保存しました」だけを入れる）の中身。空でないものだけ */
+  const rowSaid = () => [...document.querySelectorAll('.nap-grid [role="status"], .nap-grid [aria-live]')]
+    .map((el) => el.textContent ?? '').filter((t) => t !== '');
+
+  it('園児の行の状態の文は読み上げの欄に入れず、時刻を過ぎたらタイマーの欄で1回読み、記録して減っても読み直さない', async () => {
     const session = await startNap();
     open('/staff/nap', teacher);
     await screen.findByRole('region', { name: '野原 太郎の午睡チェック' }, { timeout: 3000 });
-    // 園児の行ごとの読み上げは外す（時刻を過ぎると全員の行が同時に変わり、続けて何度も読むため）
-    expect(document.querySelectorAll('.nap-grid [role="status"], .nap-grid [aria-live]')).toHaveLength(0);
+    // 行の状態（「未記録」「確認済み」「チェック時刻を過ぎています」）は読み上げへ伝えない
+    // （時刻を過ぎると全員の行が同時に変わり、続けて何度も読むため）
+    expect(rowSaid()).toEqual([]);
     expect(timerStatus()).toHaveLength(1);
     expect(timerStatus()[0].textContent).toBe('');
 
@@ -161,22 +166,34 @@ describe('③ 午睡チェック画面：確認の時刻を過ぎた子を、タ
     vi.setSystemTime(Date.now() + api.intervalMinutesFor(1) * 60_000 + 1000);
     const announced = `チェックの時刻を過ぎています（未確認 ${rows.length} 名）`;
     await waitFor(() => expect(timerStatus()[0].textContent).toBe(announced), { timeout: 3000 });
+    expect(rowSaid()).toEqual([]);
 
     // ほかの職員が1人を記録した。見えている数は減るが、読み上げの欄は書き換えない（数を読み続けない）
     await api.record(teacher, session.nap_session_id, { child_id: 'C001', body_position: '1', breathing: '1', complexion: '1', temperature: null });
     await waitFor(() => expect(document.querySelector('.nap-timer')?.textContent).toContain(`未確認 ${rows.length - 1} 名`), { timeout: 3000 });
     expect(timerStatus()[0].textContent).toBe(announced);
+    expect(rowSaid()).toEqual([]);
   });
 
-  it('自分で記録したときは、結果の表示（notify）で読む', async () => {
+  /*
+   * 自分で記録した結果は、その行の見えない role="status" の欄で「保存しました」とだけ読む。
+   * 結果の表示（notify）は出さない。画面の下に重なり、続けて記録する次の行の体位・顔色・体温のボタンを隠すため（2026-10-19 に画面で確かめた）
+   */
+  it('自分で記録したときは、その行の読み上げの欄に「保存しました」を入れ、結果の表示は出さない', async () => {
     await startNap();
     open('/staff/nap', teacher);
     const row = await screen.findByRole('region', { name: '加藤 大和の午睡チェック' }, { timeout: 3000 });
+    const said = row.querySelector<HTMLElement>('[role="status"]')!;
+    expect(said.textContent).toBe('');
     for (const [group, label] of [['体位', '仰向け'], ['呼吸', 'あり'], ['顔色', '通常']] as const) {
       fireEvent.click(within(within(row).getByRole('group', { name: group })).getByRole('radio', { name: label }));
     }
     fireEvent.click(within(row).getByRole('button', { name: 'この子を記録' }));
-    await waitFor(() => expect(document.querySelector('.toast')?.textContent).toContain('加藤 大和さんの午睡チェックを記録しました。'), { timeout: 3000 });
+    await waitFor(() => expect(said.textContent).toBe('保存しました'), { timeout: 3000 });
+    expect(rowSaid()).toEqual(['保存しました']);
+    // 見えている「保存しました」は、読み上げでは二重に読まない
+    expect(row.querySelector('.nap-row-status')?.getAttribute('aria-hidden')).toBe('true');
+    expect(document.querySelector('.toast')).toBeNull();
   });
 });
 

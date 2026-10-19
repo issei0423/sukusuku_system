@@ -80,18 +80,33 @@ test.describe('[staff] 相手の操作で読み上げへ伝えるもの', () => 
     expect(errors, 'ブラウザ実行エラー').toEqual([]);
   });
 
-  test('③ 午睡チェック画面：確認の時刻を過ぎた子が増えると、タイマーの欄で「未確認 n 名」をまとめて1回だけ伝え、行ごとには伝えない', async ({ page }) => {
+  test('③ 午睡チェック画面：確認の時刻を過ぎた子が増えると、タイマーの欄で「未確認 n 名」をまとめて1回だけ伝え、行の状態の文は伝えない。自分で記録したときはその行の「保存しました」だけ', async ({ page }) => {
     const errors = await open(page, 'nap');
-    await expect(page.locator('.nap-grid [role="status"], .nap-grid [aria-live]'), '園児の行ごとの role="status" は外す').toHaveCount(0);
+    const rowSaid = () => page.locator('.nap-grid [role="status"], .nap-grid [aria-live]').evaluateAll((els) => els.map((e) => e.textContent ?? '').filter((t) => t !== ''));
+    expect(await rowSaid(), '行の状態の文（「確認済み」など）は読み上げの欄に入れない').toEqual([]);
     const before = Number(/未確認 (\d+) 名/.exec(await page.locator('.nap-timer').innerText())?.[1] ?? 0);
+    const confirmed = page.locator('.nap-row-status', { hasText: '確認済み' });
+    expect(await confirmed.count(), '13:30 には「確認済み」の行がある').toBeGreaterThan(0);
     const said = await watchLive(page);
     // 13:20〜13:23 に確認した子（さくら組は10分ごと）も、13:34 にはそろって時刻を過ぎる
     await page.clock.setFixedTime(new Date('2026-09-01T13:34:00+09:00'));
     await expect(page.locator('.nap-timer')).not.toContainText(`未確認 ${before} 名`);
     const after = Number(/未確認 (\d+) 名/.exec(await page.locator('.nap-timer').innerText())?.[1] ?? 0);
     expect(after, '時刻を過ぎた子が増えた').toBeGreaterThan(before);
-    await expect(page.locator('.nap-timer [role="status"]')).toHaveText(`チェックの時刻を過ぎています（未確認 ${after} 名）`);
-    expect(await said()).toEqual([`チェックの時刻を過ぎています（未確認 ${after} 名）`]);
+    const timerText = `チェックの時刻を過ぎています（未確認 ${after} 名）`;
+    await expect(page.locator('.nap-timer [role="status"]')).toHaveText(timerText);
+
+    // 1人を記録する。画面が読み直され、ほかの行の文が「確認済み」から「チェック時刻を過ぎています」に変わるが、それは伝えない。
+    // 伝えるのは記録した行の「保存しました」だけ。結果の表示（notify）は出さない（次の行のボタンを隠すため）。
+    // 数が減ってもタイマーの欄は読み直さない
+    const row = page.getByRole('region', { name: '伊藤 葵の午睡チェック' });
+    for (const label of ['仰向け', 'あり', '通常']) await row.getByText(label, { exact: true }).click();
+    await row.getByRole('button', { name: 'この子を記録' }).click();
+    await expect(row.locator('[role="status"]')).toHaveText('保存しました');
+    await ready(page);
+    await expect(confirmed, '「確認済み」だった行が「チェック時刻を過ぎています」に変わった').toHaveCount(0);
+    await expect(page.locator('.toast')).toHaveCount(0);
+    expect(await said()).toEqual([timerText, '保存しました']);
     expect(errors, 'ブラウザ実行エラー').toEqual([]);
   });
 
