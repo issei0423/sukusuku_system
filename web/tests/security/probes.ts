@@ -721,10 +721,32 @@ export const PROBES: Probe[] = [
       const admin = await Session.open(ACCOUNTS.admin);
       const all = rowsOf((await admin.get('/api/children')).json);
       const filtered = await admin.get(`/api/children?name=${encodeURIComponent(fragment)}`);
+      const hits = rowsOf(filtered.json).length;
+
+      // 対照: 実在する園児名の 1 文字で絞り込むと、ちゃんと当たる（絞り込みが動いていること）。
+      // これが 0 件だと「いつでも 0 件」を確かめただけになり、下の判定に意味が無くなる
+      const sampleName = String(all[0]?.child_name ?? '').slice(0, 1);
+      const control = sampleName === '' ? null : await admin.get(`/api/children?name=${encodeURIComponent(sampleName)}`);
+
       attempts.push(
         judge('一覧の絞り込みに断片を入れても壊れないか', brief(filtered), filtered.status === 200),
-        judge('断片で全件が返っていないか', `${rowsOf(filtered.json).length} 件 / 全 ${all.length} 件`, rowsOf(filtered.json).length <= all.length),
+        judge(
+          '断片で絞り込むと 1 件も出ないか（全件が返っていないか）',
+          `${hits} 件 / 全 ${all.length} 件`,
+          hits === 0,
+          '断片はどの園児名にも含まれない。絞り込みが正しければ 1 件も出ない（件数が全件と一致していたら漏えい）',
+        ),
       );
+      if (control) {
+        attempts.push(
+          judge(
+            '（対照）実在する名前で絞り込むと当たるか',
+            `${rowsOf(control.json).length} 件`,
+            rowsOf(control.json).length > 0,
+            '絞り込みがいつでも 0 件になっているわけではないこと',
+          ),
+        );
+      }
       await s.close();
       await admin.close();
       return attempts;
@@ -743,23 +765,25 @@ export const PROBES: Probe[] = [
       const attempts: Attempt[] = [
         expectStatus(await s.get('/favicon.svg'), [200], '（対照）配信ディレクトリのファイルは取れる'),
       ];
-      // ブラウザ・node は URL を正規化してから送るため、符号化した形（攻撃者が実際に送る形）で試す
-      const paths = [
-        '/%2e%2e%2fserver%2fseed.sql',
-        '/%2e%2e%2f%2e%2e%2fserver%2fseed.sql',
-        '/%2e%2e%2f%2e%2e%2fAGENTS.md',
-        '/assets%2f%2e%2e%2f%2e%2e%2fserver%2fseed.sql',
-        '/%2e%2e%2fserver%2fsukusuku.db',
+      // ブラウザ・node は URL を正規化してから送るため、符号化した形（攻撃者が実際に送る形）で試す。
+      // ねらうファイルごとに、返ってきたら分かる目印を決めておく。目印を 1 つにすると、
+      // 別のファイルが返ったときに見逃す（テーブル定義の目印だけでは AGENTS.md や DB を見落とす）
+      const targets: [string, RegExp, string][] = [
+        ['/%2e%2e%2fserver%2fseed.sql', /CREATE TABLE|INSERT INTO m_account/i, 'テーブル定義の SQL（server/seed.sql）'],
+        ['/%2e%2e%2f%2e%2e%2fserver%2fseed.sql', /CREATE TABLE|INSERT INTO m_account/i, 'テーブル定義の SQL（server/seed.sql）'],
+        ['/%2e%2e%2f%2e%2e%2fAGENTS.md', /AGENTS\.md|すくすくシステム モックアップ/, 'リポジトリの決まり（AGENTS.md）'],
+        ['/assets%2f%2e%2e%2f%2e%2e%2fserver%2fseed.sql', /CREATE TABLE|INSERT INTO m_account/i, 'テーブル定義の SQL（server/seed.sql）'],
+        ['/%2e%2e%2fserver%2fsukusuku.db', /SQLite format 3/, 'データベースファイル（server/sukusuku.db）'],
       ];
-      for (const path of paths) {
+      for (const [path, marker, what] of targets) {
         const call = await s.get(path);
-        const leaked = /CREATE TABLE|INSERT INTO m_account/i.test(call.text);
+        const leaked = marker.test(call.text);
         attempts.push(
           judge(
             `GET ${path}`,
-            leaked ? `${call.status}（配信ディレクトリの外の中身が返った）` : String(call.status),
+            leaked ? `${call.status}（${what} が返った）` : String(call.status),
             !leaked,
-            leaked ? '配信ディレクトリの外のファイルが読めている' : undefined,
+            leaked ? `配信ディレクトリの外のファイルが読めている（探した内容: ${what}）` : undefined,
           ),
         );
       }
@@ -777,14 +801,27 @@ export const PROBES: Probe[] = [
     why: '本文を無制限に読むと、メモリを使い切って他の利用者の応答が止まる',
     async run() {
       const s = await Session.open(ACCOUNTS.admin);
+      const attempts: Attempt[] = [
+        expectStatus(await s.get('/api/me'), [200], '（前提）送る前に、ログインできているか'),
+      ];
+
       const huge = JSON.stringify({ body: 'あ'.repeat(1_200_000) });
       const res = await s.post('/api/diaries', { body: huge });
-      const alive = await s.get('/api/me');
-      const ok = res.status === 400 || res.status === 413 || res.status === 401;
-      const attempts = [
-        judge('1MB を超える本文', brief(res), ok, ok ? undefined : '受け取るか、応答が返ってこない'),
-        expectStatus(alive, [200], '大きな本文のあとでも、サーバは応答する'),
-      ];
+      // 401 は「ログインしていない」であり、大きさを断ったことにはならない。成功に数えない。
+      // 400 は入力の検証でも返るが、そのときの文言は「本文を入力してください」など別である。
+      // 読み取りの失敗（大きさの上限）で断られたことまで見る
+      const refusedForSize = (res.status === 400 || res.status === 413) && /読み取れません/.test(messageOf(res.json));
+      attempts.push(
+        judge(
+          '1MB を超える本文は、本文の読み取りで断られるか',
+          brief(res),
+          refusedForSize,
+          refusedForSize
+            ? '本文を受け取る前に断っている'
+            : '受け取ったか、401（ログインしていない）や入力の検証として断った',
+        ),
+        expectStatus(await s.get('/api/me'), [200], '大きな本文のあとでも、サーバは応答する'),
+      );
       await s.close();
       return attempts;
     },
