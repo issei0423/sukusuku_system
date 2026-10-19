@@ -322,6 +322,32 @@ run('Go サーバとの結合', () => {
     }
   });
 
+  /*
+   * 自動ログアウトの予告と「続ける」（GitHub Issue #210）。期限はサーバが決めて返す。
+   * 尋ねるだけでは延びず、「続ける」で延びる（server/api_session.go）。野原（S001）は午睡チェックを開始しないので、
+   * 午睡の時間帯に回しても期限が返る
+   */
+  it('ログインの期限はサーバが返し、尋ねても延びず、「続ける」で延びる（GitHub Issue #210）', async () => {
+    await switchTo('nohara@hoiku.example.jp', 'pass1234', 'staff');
+    try {
+      const first = await http.api.sessionStatus(dummy);
+      expect(first).toMatchObject({ auto_logout: true, nap_exempt: false });
+      expect(first.expires_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/);
+      expect(first.remaining_seconds).toBeGreaterThan(29 * 60);
+      expect(first.remaining_seconds).toBeLessThanOrEqual(30 * 60);
+
+      await new Promise((r) => setTimeout(r, 1100));
+      const asked = await http.api.sessionStatus(dummy);
+      expect(asked.expires_at).toBe(first.expires_at);
+
+      const extended = await http.api.extendSession(dummy);
+      expect(extended.auto_logout).toBe(true);
+      expect(extended.expires_at! > first.expires_at!).toBe(true);
+    } finally {
+      await http.api.logout();
+    }
+  });
+
   it('担当外の日誌の添付・編集ロック、園児の所属クラスは拒否される（GitHub Issue #153）', async () => {
     await switchTo('kinjo@hoiku.example.jp', 'pass1234', 'staff');
     try {
@@ -362,32 +388,6 @@ run('Go サーバとの結合', () => {
     } finally {
       cookie = adminCookie;
       await http.api.setAccountStatus(dummy, kinjo.account_id, '1');
-      await http.api.logout();
-    }
-  });
-
-  /*
-   * 自動ログアウトの予告と「続ける」（GitHub Issue #210）。期限はサーバが決めて返す。
-   * 尋ねるだけでは延びず、「続ける」で延びる（server/api_session.go）。野原（S001）は午睡チェックを開始しないので、
-   * 午睡の時間帯に回しても期限が返る
-   */
-  it('ログインの期限はサーバが返し、尋ねても延びず、「続ける」で延びる（GitHub Issue #210）', async () => {
-    await switchTo('nohara@hoiku.example.jp', 'pass1234', 'staff');
-    try {
-      const first = await http.api.sessionStatus(dummy);
-      expect(first).toMatchObject({ auto_logout: true, nap_exempt: false });
-      expect(first.expires_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/);
-      expect(first.remaining_seconds).toBeGreaterThan(29 * 60);
-      expect(first.remaining_seconds).toBeLessThanOrEqual(30 * 60);
-
-      await new Promise((r) => setTimeout(r, 1100));
-      const asked = await http.api.sessionStatus(dummy);
-      expect(asked.expires_at).toBe(first.expires_at);
-
-      const extended = await http.api.extendSession(dummy);
-      expect(extended.auto_logout).toBe(true);
-      expect(extended.expires_at! > first.expires_at!).toBe(true);
-    } finally {
       await http.api.logout();
     }
   });

@@ -17,12 +17,13 @@ import type {
   LoginError, ChildInput, DiaryFilter, DiaryInput, DiaryTemplate, ChatRoomView,
   MisdeliveryRow, RetractedRow, NapChildState, NapAbnormalRow, NapSearchRow,
   DevListRow, DevScheduleRow, CsvRow, FiscalClassRow, StaffAccountRow,
-  GuardianAccountRow, InvitationCodeRow, OperationLogRow, StaffSummary, GuardianHomeRow, SessionStatus,
+  GuardianAccountRow, InvitationCodeRow, OperationLogRow, StaffSummary, GuardianHomeRow,
 } from './shapes';
 import {
   ProcedureRequiredError, isProcedureKind, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
 } from './procedure';
 import { AUTO_REFRESH_HEADER, isAutomatic } from './automatic';
+import type { SessionStatus } from './shapes';
 
 // 画面はこれまでどおり client 経由で型を参照する。定義の実体は shapes.ts が持つ
 export type {
