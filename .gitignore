@@ -4,7 +4,9 @@
 # Node（web/ の React アプリ）
 node_modules/
 dist/
+# 生成物（Git に入れない）
 web/responsive-report/
+web/security-report/
 web/test-results/
 
 # Go（server/ のサーバ）
