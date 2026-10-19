@@ -416,7 +416,9 @@ test.describe('[staff] contact キーボードだけで通す', () => {
     expect(errors, 'ブラウザ実行エラー').toEqual([]);
   });
 
-  test('午睡チェック画面の「対象外」の窓：開くと「欠席」へ入り、Esc で「対象外」へ戻り、理由を選ぶと同じ行の「戻す」へ、「戻す」を押すと「対象外」へ移る', async ({ page }) => {
+  test('午睡チェック画面の「対象外」の窓：開くと「やめる」へ入り（続けて Enter を押しても記録しない）、Esc で「対象外」へ戻り、理由を選ぶと同じ行の「戻す」へ、「戻す」を押すと「対象外」へ移る', async ({ page }) => {
+    // 理由を押すとすぐ記録され、その子はタイマーから外れる。開いてすぐの Enter の押しすぎで記録しないよう、開いたときは「やめる」へ入れる
+    // （取り返しにくい操作の窓は、いちばん弱い操作へ。WAI-ARIA の窓の型。2026-10-19 に決めた。それまでは「欠席」に入っていた）。
     // 理由を押すとそのまま送り、窓が閉じる。開いた元の「対象外」は読み直すと消えるので、同じ行の「戻す」へ移す（GitHub Issue #213）。
     // 「戻す」も、戻すと消えて「ねた」「対象外」に替わるので、同じ行の「対象外」へ移す
     const errors = await open(page, 'nap');
@@ -426,11 +428,20 @@ test.describe('[staff] contact キーボードだけで通す', () => {
     await key(page, 'Enter');
     const dialog = page.getByRole('dialog', { name: '野原 太郎をきょうは対象外にする' });
     await expectFocusInside(page, dialog);
-    await expect(dialog.getByRole('button', { name: '欠席' })).toBeFocused();
+    await expect(dialog.getByRole('button', { name: 'やめる' })).toBeFocused();
     await key(page, 'Escape');
     await expectFocusBack(page, opener);
+    // 開いて、そのまま Enter（押しすぎ）。「やめる」が押されて窓が閉じ、何も記録しない
     await key(page, 'Enter');
     await expectFocusInside(page, dialog);
+    await key(page, 'Enter');
+    await expectFocusBack(page, opener);
+    await expect(row.locator('.nap-sleep-state')).toHaveCount(0);
+    await expect(row.getByRole('button', { name: '野原 太郎のねた' })).toBeVisible();
+    // もう一度開き、Tab で理由「欠席」へ（窓の中で折り返す）進めて Enter
+    await key(page, 'Enter');
+    await expectFocusInside(page, dialog);
+    await tabTo(page, dialog.getByRole('button', { name: '欠席' }), { max: 3 });
     await pressAndExpectFocus(page, 'Enter', row.getByRole('button', { name: '野原 太郎の対象外を戻す' }));
     await expect(dialog).toHaveCount(0);
     await expect(row.locator('.nap-sleep-state')).toHaveText('対象外（欠席）');

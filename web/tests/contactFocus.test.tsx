@@ -172,16 +172,26 @@ describe('午睡チェック画面の「対象外」の窓と、行の「戻す�
     return api.startSession(teacher, 1, today());
   }
 
-  it('開くと最初の理由「欠席」にフォーカスが入り、「やめる」で閉じると開いた元の「対象外」へ戻る', async () => {
+  /*
+   * 理由を押すとすぐ記録され、その子はタイマーと未記録の数から外れる。開いてすぐ Enter を押しすぎても記録しないよう、
+   * 開いたときは「やめる」へ入れる（取り返しにくい操作の窓は、いちばん弱い操作へ。WAI-ARIA の窓の型。
+   * 2026-10-19 に決めた。それまでは最初の理由「欠席」に入っていた）
+   */
+  it('開くと「やめる」にフォーカスが入り、そのまま押しても（Enter の押しすぎ）記録せずに閉じ、開いた元の「対象外」へ戻る', async () => {
     await startNap();
     open('/staff/nap', teacher);
     const opener = await screen.findByRole('button', { name: '加藤 大和をきょうは対象外にする' }, { timeout: 3000 });
+    const row = opener.closest('.nap-record-row') as HTMLElement;
+    const exclude = vi.spyOn(api, 'exclude');
     press(opener);
     const dialog = screen.getByRole('dialog', { name: '加藤 大和をきょうは対象外にする' });
-    expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: '欠席' }));
-    fireEvent.click(within(dialog).getByRole('button', { name: 'やめる' }));
+    expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'やめる' }));
+    // フォーカスのある部品を押す（キーボードの Enter と同じ。jsdom は Enter でボタンを押さない）
+    fireEvent.click(document.activeElement as HTMLElement);
     expect(screen.queryByRole('dialog')).toBeNull();
+    expect(exclude).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(opener);
+    expect(within(row).queryByRole('button', { name: '加藤 大和の対象外を戻す' })).toBeNull();
   });
 
   /*
