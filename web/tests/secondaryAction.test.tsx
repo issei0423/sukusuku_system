@@ -11,13 +11,13 @@ import { useSecondaryAction, LONG_PRESS_MS } from '../src/secondaryAction';
 afterEach(() => cleanup());
 
 /** 吹き出し1つと、開いた回数・開いたときに出るボタン */
-function Bubble({ onOpen }: { onOpen: () => void }) {
+function Bubble({ onOpen }: { onOpen: (at?: { x: number; y: number }) => void }) {
   const secondary = useSecondaryAction();
   const [open, setOpen] = useState(false);
   const [pressed, setPressed] = useState(0);
   return (
     <div>
-      <div data-testid="bubble" {...secondary(() => { onOpen(); setOpen(true); })}>
+      <div data-testid="bubble" {...secondary((_el, at) => { onOpen(at); setOpen(true); })}>
         本文 <a href="#x">リンク</a>
       </div>
       {open && <button onClick={() => setPressed((n) => n + 1)}>取消</button>}
@@ -30,12 +30,28 @@ function Bubble({ onOpen }: { onOpen: () => void }) {
 const pressed = () => Number(screen.getByTestId('pressed').textContent);
 
 describe('右クリック・長押し', () => {
-  it('右クリックで開き、既定のメニューを出さない', () => {
+  it('右クリックで、右クリックした位置を添えて開き、既定のメニューを出さない', () => {
     const onOpen = vi.fn();
     render(<Bubble onOpen={onOpen} />);
-    const notCancelled = fireEvent.contextMenu(screen.getByTestId('bubble'));
-    expect(onOpen).toHaveBeenCalledTimes(1);
+    const notCancelled = fireEvent.contextMenu(screen.getByTestId('bubble'), { button: 2, clientX: 40, clientY: 70 });
+    expect(onOpen).toHaveBeenCalledWith({ x: 40, y: 70 });
     expect(notCancelled).toBe(false);
+  });
+
+  it('キーボード：吹き出しを Tab で選べ、Enter・スペース・メニューキーで開く（位置は添えない）', () => {
+    const onOpen = vi.fn();
+    render(<Bubble onOpen={onOpen} />);
+    const b = screen.getByTestId('bubble');
+    expect(b.tabIndex).toBe(0);
+    fireEvent.keyDown(b, { key: 'Enter' });
+    fireEvent.keyDown(b, { key: ' ' });
+    // メニューキー・Shift+F10 は button 0 の contextmenu として届く
+    fireEvent.contextMenu(b, { button: 0 });
+    expect(onOpen).toHaveBeenCalledTimes(3);
+    expect(onOpen.mock.calls.every((c) => c[0] === undefined)).toBe(true);
+    // 中のリンクで Enter を押したときは開かない
+    fireEvent.keyDown(screen.getByText('リンク'), { key: 'Enter' });
+    expect(onOpen).toHaveBeenCalledTimes(3);
   });
 
   it('指で押し続けると開き、すぐ離したときと指が動いたときは開かない', () => {

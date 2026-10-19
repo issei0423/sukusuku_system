@@ -6,15 +6,15 @@
  * 未読はチャンネル一覧に件数で示す。既読はメッセージ側に人数で示す。
  * 園全体は一般には投稿欄を表示しない（閲覧のみ）。
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAsync, useFollowLatest, AUTO_REFRESH_MS } from '../../hooks';
 import { useSession } from '../../session';
 import { api, accountName } from '../../api/client';
 import { Loading, ErrorBox, Empty, Alert, Tag } from '../../components/ui';
 import Reactions from '../../components/Reactions';
-import { useSecondaryAction } from '../../secondaryAction';
-import type { SecondaryActionHandlers } from '../../secondaryAction';
+import { useSecondaryAction, keepInViewport } from '../../secondaryAction';
+import type { MenuAt, SecondaryActionHandlers } from '../../secondaryAction';
 import { CHAT_ROOM_TYPE, THREAD_STATUS, REACTION } from '../../api/codes';
 import { formatHM, formatMD } from '../../api/util';
 import type { ChatMessage } from '../../api/types';
@@ -189,8 +189,8 @@ export default function StaffChatScreen() {
             {messages.data?.length === 0 && <Empty text="まだメッセージはありません。" />}
             {/* 右クリックと長押しは、見ただけでは気づけない。先頭で知らせる（GitHub Issue #103） */}
             {(messages.data?.length ?? 0) > 0 && !current?.left && (
-              <p className="message-hint">
-                メッセージの「操作」ボタンか、右クリック（タブレットでは長押し）で、リアクション・編集・取消ができます。
+              <p id="staff-message-hint" className="message-hint">
+                メッセージを右クリック（タブレットでは長押し）すると、リアクション・編集・取消ができます。
               </p>
             )}
             {messages.data?.map((m) => (
@@ -270,7 +270,7 @@ function MessageRow({ message, mine, canEdit, readOnly, onRetract, onEdit, onRea
   onRetract: () => void; onEdit: (body: string) => Promise<void>; onReact: (reactionType: string) => void;
   menuOpen: boolean; onMenu: (open: boolean) => void;
   /** 右クリック・長押しで一覧を開く扱い（secondaryAction.ts）。画面に1つ置いたものを受け取る */
-  bindPress: (open: (el: HTMLElement) => void) => SecondaryActionHandlers;
+  bindPress: (open: (el: HTMLElement, at?: MenuAt) => void) => SecondaryActionHandlers;
 }) {
   /*
    * 既読の人数はメッセージと一緒に受け取る（read_count）。1件ずつ問い合わせると往復が増えるうえ、
@@ -285,37 +285,45 @@ function MessageRow({ message, mine, canEdit, readOnly, onRetract, onEdit, onRea
    */
   const bubbleRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
   // 一覧を出す向き。メッセージが画面の中央より下にあれば上へ出し、画面の外へ出ないようにする
   const [above, setAbove] = useState(false);
+  // PC の右クリックで開いたときの位置（カーソルの所）。長押し・キーボードでは無い
+  const [at, setAt] = useState<MenuAt | undefined>(undefined);
 
-  // 吹き出しの位置から、一覧を上下どちらへ出すかを決めて開く
-  const openMenu = (bubble: HTMLElement | null) => {
+  // 吹き出しの位置から、一覧を上下どちらへ出すかを決めて開く。PC の右クリックではカーソルの位置に出す
+  const openMenu = (bubble: HTMLElement | null, cursor?: MenuAt) => {
     const r = bubble?.getBoundingClientRect();
     setAbove(!!r && r.top + r.height / 2 > window.innerHeight / 2);
+    setAt(cursor);
     onMenu(true);
   };
+  // カーソルの位置に出したときは、画面の外へはみ出さないよう寄せる
+  useLayoutEffect(() => {
+    if (menuOpen && at) keepInViewport(menuRef.current?.parentElement ?? null, at);
+  }, [menuOpen, at]);
 
   useEffect(() => {
     if (!menuOpen) return;
     menuRef.current?.querySelector('button')?.focus({ preventScroll: true });
     const onDown = (e: Event) => {
-      // 「操作」ボタンは自分で開閉する。ここで閉じると、押した直後にもう一度開いてしまう
-      if (triggerRef.current?.contains(e.target as Node)) return;
       if (!menuRef.current?.contains(e.target as Node)) onMenu(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       onMenu(false);
-      triggerRef.current?.focus({ preventScroll: true });
+      bubbleRef.current?.focus({ preventScroll: true });
     };
+    // カーソルの位置に出した一覧は、画面を送るとメッセージから離れるので閉じる
+    const onScroll = () => { if (at) onMenu(false); };
     document.addEventListener('pointerdown', onDown);
     document.addEventListener('keydown', onKey);
+    document.addEventListener('scroll', onScroll, true);
     return () => {
       document.removeEventListener('pointerdown', onDown);
       document.removeEventListener('keydown', onKey);
+      document.removeEventListener('scroll', onScroll, true);
     };
-  }, [menuOpen]);
+  }, [menuOpen, at]);
   /*
    * 編集は送信者本人のみ。園チャットに限り管理者同士でも編集できる
    * （基本設計書「メッセージの編集」(4-6)）。可否の判定は canEdit で受け取る。
@@ -352,6 +360,9 @@ function MessageRow({ message, mine, canEdit, readOnly, onRetract, onEdit, onRea
         {message.edited_at && <span className="weak">（編集済み）</span>}
       </div>
       <div ref={bubbleRef} className={`bubble${editing || readOnly ? '' : ' has-menu'}`}
+        aria-describedby={editing || readOnly ? undefined : 'staff-message-hint'}
+        aria-expanded={editing || readOnly ? undefined : menuOpen}
+        aria-controls={menuOpen ? `message-actions-${message.chat_message_id}` : undefined}
         {...(editing || readOnly ? {} : bindPress(openMenu))}>
         {editing ? (
           <>
@@ -385,23 +396,13 @@ function MessageRow({ message, mine, canEdit, readOnly, onRetract, onEdit, onRea
         リアクションは編集の影響を受けない（基本設計書「メッセージの編集」(4-6)）。
         付いているものだけを並べる。付けるためのボタンは、操作の一覧の中に置く
       */}
-      {/*
-        操作の一覧を開くボタン。キーボードと読み上げからは、ここから開く。
-        吹き出しそのものには役割を持たせない（GitHub Issue #105）
-      */}
-      {!editing && !readOnly && (
-        <button ref={triggerRef} type="button" className="message-actions-trigger"
-          aria-label={`${mine ? '自分' : message.sender_name ?? accountName(message.sender_account_id)}のメッセージの操作`}
-          aria-expanded={menuOpen}
-          aria-controls={menuOpen ? `message-actions-${message.chat_message_id}` : undefined}
-          onClick={() => (menuOpen ? onMenu(false) : openMenu(bubbleRef.current))}>操作</button>
-      )}
       <Reactions reactions={message.reactions ?? []} onToggle={onReact} showAdd={false} />
       {/* 既読は自分の発言にだけ出す */}
       {mine && !editing && <div className="read">既読 {readCount}</div>}
 
       {menuOpen && !editing && (
-        <div className="msg-menu-wrap" style={above ? { bottom: '100%' } : { top: '100%' }}>
+        <div className={`msg-menu-wrap${at ? ' at-cursor' : ''}`}
+          style={at ? { left: at.x, top: at.y } : above ? { bottom: '100%' } : { top: '100%' }}>
           <div ref={menuRef} id={`message-actions-${message.chat_message_id}`} className="msg-menu"
             role="group" aria-label="メッセージの操作">
             <div className="msg-menu-row">

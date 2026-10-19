@@ -13,11 +13,15 @@
  *     一覧が指の下に出ると、離した瞬間に「取消」などが押されてしまうため。無視する指定は、次に押し始めたときに解く
  *     （クリックが来なかったときに残り、次の普通のタップを食べないようにする）
  *   - 本文中のリンク・ボタン・入力欄の上では受け付けず、ブラウザの既定の動きを残す
- *   - キーボードのメニューキー・Shift+F10 も contextmenu として届くので、同じ一覧を開く
- *     （キーボード・読み上げ向けには、各画面に「操作」ボタンも置いている）
+ *   - PC の右クリックでは、右クリックした位置（カーソルの所）に一覧を出す（at を渡す）。
+ *     長押しとキーボードでは at を渡さず、画面がメッセージの上か下に出す
+ *   - 「操作」ボタンは置かない。キーボード・読み上げで使う人のために、吹き出しを Tab で選べるようにし、
+ *     Enter・スペース・メニューキー・Shift+F10 で同じ一覧を開く（WCAG 2.1.1）
  */
 import { useEffect, useRef } from 'react';
-import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
+import type {
+  KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent,
+} from 'react';
 
 /** 長押しとみなすまでの時間（【仮置き】web/仮置き値.md） */
 export const LONG_PRESS_MS = 800;
@@ -26,7 +30,13 @@ export const LONG_PRESS_MOVE_PX = 10;
 
 const onControl = (target: EventTarget) => !!(target as HTMLElement).closest?.('a, button, input, textarea, select');
 
+/** 一覧を出す位置（画面の左上からの px）。PC の右クリックのときだけ渡る */
+export type MenuAt = { x: number; y: number };
+
 export type SecondaryActionHandlers = {
+  tabIndex: number;
+  'aria-haspopup': 'true';
+  onKeyDown: (e: ReactKeyboardEvent<HTMLElement>) => void;
   onPointerDown: (e: ReactPointerEvent<HTMLElement>) => void;
   onPointerMove: (e: ReactPointerEvent<HTMLElement>) => void;
   onPointerUp: () => void;
@@ -39,7 +49,7 @@ export type SecondaryActionHandlers = {
  * 画面に1つ置き、返った bind をメッセージの吹き出しへ広げて付ける。
  * open には、押された吹き出しの要素が渡る（一覧を上下どちらへ出すかを決めるため）
  */
-export function useSecondaryAction(): (open: (el: HTMLElement) => void) => SecondaryActionHandlers {
+export function useSecondaryAction(): (open: (el: HTMLElement, at?: MenuAt) => void) => SecondaryActionHandlers {
   const timer = useRef<number | null>(null);
   const start = useRef<{ x: number; y: number } | null>(null);
   // 長押しで開き、まだ指を離したあとのクリックを無視していない
@@ -68,6 +78,14 @@ export function useSecondaryAction(): (open: (el: HTMLElement) => void) => Secon
   }, []);
 
   return (open) => ({
+    tabIndex: 0,
+    'aria-haspopup': 'true',
+    // 吹き出しそのものを選んでいるときだけ。中のリンク・入力欄の Enter はそのまま通す
+    onKeyDown: (e) => {
+      if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
+      e.preventDefault();
+      open(e.currentTarget);
+    },
     onPointerDown: (e) => {
       if (e.pointerType === 'mouse' || onControl(e.target)) return;
       cancel();
@@ -95,7 +113,22 @@ export function useSecondaryAction(): (open: (el: HTMLElement) => void) => Secon
       // Android で、タイマーより先に contextmenu が来たときも、指を離したあとのクリックは無視する
       if (timer.current !== null) suppressClick.current = true;
       cancel();
-      open(e.currentTarget);
+      // マウスの右クリックだけカーソルの位置に出す。メニューキー・Shift+F10 は button が 0 で届く
+      open(e.currentTarget, e.button === 2 ? { x: e.clientX, y: e.clientY } : undefined);
     },
   });
+}
+
+/**
+ * カーソルの位置に出した一覧（position: fixed）を、画面の外へはみ出さないよう寄せる。
+ * 右へはみ出すときは左へ寄せ、下へはみ出すときはカーソルの上へ出す。開いた直後に1回呼ぶ
+ */
+export function keepInViewport(wrap: HTMLElement | null, at: MenuAt): void {
+  if (!wrap) return;
+  const margin = 8;
+  const r = wrap.getBoundingClientRect();
+  const left = Math.max(margin, Math.min(at.x, window.innerWidth - r.width - margin));
+  const top = at.y + r.height + margin > window.innerHeight ? Math.max(margin, at.y - r.height) : at.y;
+  wrap.style.left = `${left}px`;
+  wrap.style.top = `${top}px`;
 }
