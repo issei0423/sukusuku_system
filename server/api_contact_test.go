@@ -258,13 +258,38 @@ func TestContactHomeFlow(t *testing.T) {
 	})
 }
 
+/*
+startFreshNap は、さくら組の午睡チェックを、デモの実施を使わずに新しく開始する（GitHub Issue #237）。
+
+デモデータには、さくら組の今日の実施（13:00 開始。15:00 に自動で終わる）があり、起動した時刻までの「ねた」が入っている
+（trimFutureDemoContacts。13:05 を過ぎると C002 の「ねた」が残る）。startOwnNap は実施中の実施をそのまま返すため、
+回す時刻によって、使う実施とそこに入っている記録が変わる。実施中のデモの実施を終えてから開始し、
+「ねた」の無い実施で確かめる（このファイルの頭と同じく、今日の記録がデモデータに入っていることを前提にしない。
+詳細設計書「時計」(9-3)）。デモデータそのもの（seed.sql・mockDb.ts）は変えない。
+*/
+func startFreshNap(t *testing.T, a *app, h http.Handler, teacher *http.Cookie) NapSession {
+	t.Helper()
+	if _, err := a.db.Exec(`UPDATE t_nap_session SET ended_staff_id = 'S003', ended_at = ?
+		WHERE class_id = ? AND ended_at IS NULL`, now(), classSakura); err != nil {
+		t.Fatal(err)
+	}
+	s := startOwnNap(t, h, teacher)
+	var n int
+	a.db.QueryRow(`SELECT COUNT(*) FROM t_nap_sleep WHERE nap_session_id = ?`, s.NapSessionID).Scan(&n)
+	if n != 0 {
+		t.Fatalf("新しく開始した実施に「ねた」が %d 件ある（デモの実施を使っている）: %+v", n, s)
+	}
+	return s
+}
+
 // ねた・おきた（詳細設計書「午睡の園児」(3-4)）。5分ごとの確認は今までどおり残る
 func TestNapSleepWake(t *testing.T) {
 	a, h := newTestApp(t)
 	teacher := loginAs(a, accTeacher, "staff")
 	otherTeacher := loginAs(a, accOtherTeacher, "staff")
 	guardian := loginAs(a, accGuardian, "guardian")
-	s := startOwnNap(t, h, teacher)
+	// デモの実施（13:05〜15:00 は C002 の「ねた」が残っている）を使わない。下の「対象外のねた」が時刻で変わらないように
+	s := startFreshNap(t, a, h, teacher)
 	base := "/api/nap/session/" + itoa(s.NapSessionID)
 
 	expectStatus(t, request(t, h, otherTeacher, "POST", base+"/sleeps", `{"child_id":"C001"}`), http.StatusForbidden)
