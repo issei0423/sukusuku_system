@@ -409,19 +409,25 @@ export const PROBES: Probe[] = [
       if (accountId === undefined) throw new Error('停止の対象にするアカウントのIDが取れませんでした');
 
       const admin = await Session.open(ACCOUNTS.admin);
-      const stop = await admin.post(`/api/admin/accounts/${accountId}/status`, { data: { status: '2' } });
-      const cut = await victim.get('/api/children');
-      const after = await victim.me();
-      const restore = await admin.post(`/api/admin/accounts/${accountId}/status`, { data: { status: '1' } });
-
-      const attempts = [
-        expectStatus(stop, [200], `管理者が ${ACCOUNTS.himawari.label} を停止する`),
-        expectStatus(cut, [401], '停止されたアカウントの、停止前からのセッションで園児の一覧'),
-        judge('セッションが切れているか', String(after?.email ?? '(切れた)'), after === null),
-        expectStatus(restore, [200], '確かめたあと、状態を有効へ戻す'),
-      ];
-      await victim.close();
-      await admin.close();
+      const attempts: Attempt[] = [];
+      try {
+        const stop = await admin.post(`/api/admin/accounts/${accountId}/status`, { data: { status: '2' } });
+        const cut = await victim.get('/api/children');
+        const after = await victim.me();
+        attempts.push(
+          expectStatus(stop, [200], `管理者が ${ACCOUNTS.himawari.label} を停止する`),
+          expectStatus(cut, [401], '停止されたアカウントの、停止前からのセッションで園児の一覧'),
+          judge('セッションが切れているか', String(after?.email ?? '(切れた)'), after === null),
+        );
+      } finally {
+        try {
+          const restore = await admin.post(`/api/admin/accounts/${accountId}/status`, { data: { status: '1' } });
+          attempts.push(expectStatus(restore, [200], '確かめたあと、状態を有効へ戻す'));
+        } finally {
+          await victim.close();
+          await admin.close();
+        }
+      }
       return attempts;
     },
   },
@@ -585,35 +591,35 @@ export const PROBES: Probe[] = [
     basis: '基本設計書「権限と利用可能機能」(6-1)、「データベース設計」の紐づけ（5-5）、画面詳細図「保護者アカウント管理」(7-8 項目6)',
     why: '紐づけの外の園児が読めると、他の家庭の記録が保護者に渡ってしまう',
     async run() {
+      // server/seed.sql: m_account(6) → m_guardian(G001) → t_guardian_child(C001, 有効)。
+      // 検査対象の API 応答から期待値を作ると、同じ他児を複数の API が漏らしても通ってしまう。
+      const expected = ['C001'];
       const admin = await Session.open(ACCOUNTS.admin);
       const all = ids(rowsOf((await admin.get('/api/children')).json));
 
       const s = await Session.open(ACCOUNTS.guardian);
-      // 保護者が見える園児は、保護者ホーム（GET /api/dashboard/guardian）と一覧
-      // （GET /api/children は requireUser なので保護者にも通る）の両方から分かる。
       // 園児の詳細（GET /api/children/{id}）は職員専用で、保護者には常に 403 になるため
       // （server/api_child.go の handleGetChild）、範囲のすり抜けは
       // 「一覧に自児以外が出ないか」と「日誌の ID を直接指定できるか」で見る
       const home = rowsOf((await s.get('/api/dashboard/guardian')).json);
-      const mine = home
+      const viaHome = home
         .map((row) => String((row.child as Row | undefined)?.child_id ?? ''))
         .filter((id) => id !== '');
       const viaList = ids(rowsOf((await s.get('/api/children')).json));
-      const outside = all.filter((id) => !mine.includes(id));
+      const outside = all.filter((id) => !expected.includes(id));
 
       const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x));
       const attempts: Attempt[] = [
-        judge('保護者ホームに、自児が並ぶか', `${mine.length} 名: ${mine.join('、') || '(なし)'}`, mine.length > 0),
+        judge('デモデータに期待する園児がいるか', `${expected.join('、')} ／ 全 ${all.join('、')}`, expected.every((id) => all.includes(id))),
         judge(
-          '自児だけが並ぶか（全園児より少ないか）',
-          `${mine.length} 名 / 全 ${all.length} 名`,
-          mine.length > 0 && mine.length < all.length,
-          '紐づきのない園児が混ざっていないこと',
+          '保護者ホームは、有効に紐づいた園児だけを返すか',
+          `${viaHome.join('、') || '(なし)'} ／ 期待 ${expected.join('、')}`,
+          sameSet(viaHome, expected),
         ),
         judge(
-          '一覧（GET /api/children）と、保護者ホームで見える園児が一致するか',
-          `${viaList.join('、') || '(なし)'} ／ ${mine.join('、') || '(なし)'}`,
-          sameSet(viaList, mine),
+          '園児一覧は、有効に紐づいた園児だけを返すか',
+          `${viaList.join('、') || '(なし)'} ／ 期待 ${expected.join('、')}`,
+          sameSet(viaList, expected),
         ),
       ];
 
@@ -623,7 +629,7 @@ export const PROBES: Probe[] = [
         judge(
           '共有日誌の一覧に、他児の日誌が混ざっていないか',
           `${own.length} 件`,
-          own.every((d) => typeof d.child_id === 'string' && mine.includes(d.child_id as string)),
+          own.every((d) => typeof d.child_id === 'string' && expected.includes(d.child_id as string)),
         ),
       );
       if (own.length > 0) {
@@ -649,7 +655,7 @@ export const PROBES: Probe[] = [
           ),
         );
       } else {
-        attempts.push(noted('紐づきのない園児の日誌を試せるか', '(期間内に見つからない)', 'デモデータの範囲では試せなかった'));
+        attempts.push(broken('紐づきのない園児の日誌を試せるか', '(期間内に見つからない)', '直接指定の拒否を試せるデモデータが必要'));
       }
 
       await admin.close();

@@ -16,8 +16,6 @@ import { ANNOTATION, PROBES, verdictOf, type Attempt } from './probes';
 
 const reportOnly = process.env.SECURITY_REPORT_ONLY === '1';
 
-test.describe.configure({ mode: 'serial' });
-
 for (const probe of PROBES) {
   test(`[${probe.id}] ${probe.title}`, async () => {
     const attempts = await probe.run();
