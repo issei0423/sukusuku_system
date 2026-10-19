@@ -370,7 +370,7 @@ func TestNotifyContactAudience(t *testing.T) {
 	a, h := newTestApp(t)
 	teacher := loginAs(a, accTeacher, "staff")
 	guardian := loginAs(a, accGuardian, "guardian")
-	s := startOwnNap(t, h, teacher)
+	s := startFreshNap(t, a, h, teacher)
 	clients := map[string]*liveClient{
 		"管理者":       listen(a, accAdmin),
 		"さくら組の担任":   listen(a, accTeacher),
@@ -439,7 +439,7 @@ func TestGuardianToday(t *testing.T) {
 	if before.Today.UnreadContact != 0 || !before.Today.CanWriteHome || len(before.Today.Latest) > 3 {
 		t.Fatalf("開いた直後: %+v", before.Today)
 	}
-	s := startOwnNap(t, h, teacher)
+	s := startFreshNap(t, a, h, teacher)
 	// 開いた時刻と同じ秒に記録すると新しいものと数えないため、開いた時刻を1分前にしておく
 	a.db.Exec(`UPDATE t_contact_read SET read_at = strftime('%Y-%m-%dT%H:%M:%S', read_at, '-1 minute') WHERE account_id = ?`, accGuardian)
 	call(t, h, teacher, "POST", "/api/nap/session/"+itoa(s.NapSessionID)+"/sleeps", `{"child_id":"C001"}`)
@@ -456,7 +456,7 @@ func TestNapExclusion(t *testing.T) {
 	teacher := loginAs(a, accTeacher, "staff")
 	otherTeacher := loginAs(a, accOtherTeacher, "staff")
 	guardian := loginAs(a, accGuardian, "guardian")
-	s := startOwnNap(t, h, teacher)
+	s := startFreshNap(t, a, h, teacher)
 	base := "/api/nap/session/" + itoa(s.NapSessionID)
 	clients := map[string]*liveClient{
 		"さくら組の担任":   listen(a, accTeacher),
@@ -509,7 +509,7 @@ func TestNapExclusion(t *testing.T) {
 func TestNapSleepAndExclusionAtOnce(t *testing.T) {
 	a, h := newTestApp(t)
 	teacher := loginAs(a, accTeacher, "staff")
-	s := startOwnNap(t, h, teacher)
+	s := startFreshNap(t, a, h, teacher)
 	base := "/api/nap/session/" + itoa(s.NapSessionID)
 	for i := 0; i < 40; i++ {
 		a.db.Exec(`DELETE FROM t_nap_sleep WHERE nap_session_id = ? AND child_id = 'C002'`, s.NapSessionID)
