@@ -408,6 +408,13 @@ cmd_finish() {
     else
       say "- ラベル「$LABEL」が外された。入れない"; dispatch_next; return 0
     fi
+  else
+    # (1) 入れる直前にも、いま付いているラベルを最後に付けたのが持ち主かを見る（CI のあいだに別の人が付け直したとき）
+    local ev2
+    ev2=$(label_event "$n")
+    if [ "${ev2%% *}" != "$OWNER" ]; then
+      say "- ラベル「$LABEL」を最後に付けたのが持ち主でなくなった（${ev2%% *}）。入れない"; dispatch_next; return 0
+    fi
   fi
   if [ "$msha" != "$base_sha" ] || [ "$now_head" != "$head_sha" ] || [ "$base" != "$MAIN" ]; then
     say "- 試したあとに本線（いま ${msha:0:7}）か head（いま ${now_head:0:7}）か base（いま $base）が動いた。入れずに、次の run で試し直す"
