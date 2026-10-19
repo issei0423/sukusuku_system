@@ -98,10 +98,11 @@ type Refusal = {
 const addChildRefusals: Refusal[] = [
   { name: '職員（担任）', who: teacher, code: codeHanako, rel: '母', message: MSG.guardianOnly },
   { name: '職員（管理者）', who: admin, code: codeHanako, rel: '母', message: MSG.guardianOnly },
-  { name: '無いコード', who: taroGuardian, code: 'ZZZZ-0000-ZZZZ', rel: '母', message: '招待コードが確認できません' },
-  { name: '使用済み', who: taroGuardian, code: codeUsed, rel: '母', message: 'すでに使われています' },
-  { name: '失効', who: taroGuardian, code: codeRevoked, rel: '母', message: '失効しています' },
-  { name: '期限切れ', who: taroGuardian, code: codeHanako, rel: '母', message: '有効期限が切れています',
+  // 招待コードの4つの文言（基本設計書「メッセージ一覧」(4-12)。設計書の文と同じことは tests/invitationMessages.test.ts が確かめる）
+  { name: '無いコード', who: taroGuardian, code: 'ZZZZ-0000-ZZZZ', rel: '母', message: MSG.invitationNotFound },
+  { name: '使用済み', who: taroGuardian, code: codeUsed, rel: '母', message: MSG.invitationUsed },
+  { name: '失効', who: taroGuardian, code: codeRevoked, rel: '母', message: MSG.invitationRevoked },
+  { name: '期限切れ', who: taroGuardian, code: codeHanako, rel: '母', message: MSG.invitationExpired,
     setup: () => { codeOf(codeHanako).expires_on = '2000-01-01'; } },
   { name: 'もう追加済み（有効）', who: taroGuardian, code: codeTaro, rel: '父', message: MSG.childAlreadyAdded },
   { name: 'もう追加済み（猶予中）', who: taroGuardian, code: codeTaro, rel: '父', message: MSG.childAlreadyAdded,

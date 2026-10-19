@@ -2707,18 +2707,19 @@ function randomCode(): string {
 
 /**
  * 使える招待コードを引く。使えないときは、画面へ出す文言を返す（server/api_auth.go の lookupUsableCode と同じ規則・同じ文言）。
- * 新規登録の確認と、お子さまの追加（確認と追加）が使う
+ * 新規登録の確認と送信、お子さまの追加（確認と追加）が使う。文言は基本設計書「メッセージ一覧」(4-12) の招待コードの4つ
+ * （MSG.invitation…。決めたこと D-52）。待たずに（await を挟まずに）答えを返す
  */
 function usableInvitationCode(code: string): InvitationCode | string {
   const normalized = normalizeInvitationCode(code);
   const c = db.invitationCodes.find((x) => normalizeInvitationCode(x.code) === normalized);
-  if (!c) return '招待コードが確認できません。園から配布されたコードをお確かめください';
-  if (c.status === '2') return 'この招待コードはすでに使われています';
-  if (c.status === '3') return 'この招待コードは失効しています';
-  if (c.expires_on < today()) return 'この招待コードは有効期限が切れています';
+  if (!c) return MSG.invitationNotFound;
+  if (c.status === '2') return MSG.invitationUsed;
+  if (c.status === '3') return MSG.invitationRevoked;
+  if (c.expires_on < today()) return MSG.invitationExpired;
   // 取り消した・在籍していない園児のコードでは登録させない。園児の状態は言わず、無いコードと同じ文言にする
   // （GitHub Issue #166 の 4。サーバ側は server/api_auth.go の lookupUsableCode）
-  if (!childIssuable(c.child_id).issuable) return '招待コードが確認できません。園から配布されたコードをお確かめください';
+  if (!childIssuable(c.child_id).issuable) return MSG.invitationNotFound;
   return c;
 }
 
@@ -2748,11 +2749,10 @@ const adminApi3 = {
      * あいだに同じコードでの別の登録が割り込まないようにするため。1枚のコードは1アカウントの登録にのみ使える
      * （基本設計書 5-2。GitHub Issue #163）。サーバ側は取引の中の条件付きの更新で同じことを守る（server/api_auth.go）
      */
-    const normalized = normalizeInvitationCode(input.code);
-    const c = db.invitationCodes.find((x) => normalizeInvitationCode(x.code) === normalized);
-    if (!c || c.status !== '1' || c.expires_on < today() || !childIssuable(c.child_id).issuable) {
-      return fail('招待コードが確認できません');
-    }
+    // 招待コードの検査は、コードの確認と同じ。通らなければ同じ4つの文言を返す（基本設計書「保護者アカウントの自己登録」(4-3) の
+    // 手順6、決めたこと D-52。server/api_auth.go の handleSignUpGuardian と同じ）
+    const c = usableInvitationCode(input.code);
+    if (typeof c === 'string') return fail(c);
     /*
      * 規約への同意を受け取ってから登録する。同意しなかった場合は登録を完了しない
      * （基本設計書「保護者アカウントの自己登録」(4-3)、画面詳細図 2-3 項目5。GitHub Issue #170）。

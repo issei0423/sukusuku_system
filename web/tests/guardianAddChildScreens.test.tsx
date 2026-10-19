@@ -93,7 +93,7 @@ describe('保護者のメニュー：お子さまの追加', () => {
     expect(within(dialog).queryByRole('button', { name: ADD_CHILD_TEXT.submit })).toBeNull();
 
     verify(dialog, 'IJKL-5678-MNOP');
-    await waitFor(() => expect(within(dialog).getByRole('alert').textContent).toContain('すでに使われています'));
+    await waitFor(() => expect(within(dialog).getByRole('alert').textContent).toBe(MSG.invitationUsed));
     expect(within(dialog).queryByRole('button', { name: ADD_CHILD_TEXT.submit })).toBeNull();
     expect(link('G001', 'C002')).toBeUndefined();
   });

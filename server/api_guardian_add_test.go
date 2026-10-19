@@ -157,13 +157,14 @@ var addChildRefusals = []struct {
 }{
 	{name: "職員（担任）", account: accTeacher, code: codeHanako, rel: "母", status: http.StatusForbidden, message: msgGuardianOnly},
 	{name: "職員（管理者）", account: accAdmin, code: codeHanako, rel: "母", status: http.StatusForbidden, message: msgGuardianOnly},
-	{name: "無いコード", account: accGuardian, code: "ZZZZ-0000-ZZZZ", rel: "母", status: http.StatusBadRequest, message: "招待コードが確認できません"},
-	{name: "使用済み", account: accGuardian, code: codeUsed, rel: "母", status: http.StatusBadRequest, message: "すでに使われています"},
-	{name: "失効", account: accGuardian, code: codeRevoked, rel: "母", status: http.StatusBadRequest, message: "失効しています"},
+	// 招待コードの4つの文言は api_invitation_messages_test.go の wantInvitation…（基本設計書「メッセージ一覧」(4-12)）
+	{name: "無いコード", account: accGuardian, code: "ZZZZ-0000-ZZZZ", rel: "母", status: http.StatusBadRequest, message: wantInvitationNotFound},
+	{name: "使用済み", account: accGuardian, code: codeUsed, rel: "母", status: http.StatusBadRequest, message: wantInvitationUsed},
+	{name: "失効", account: accGuardian, code: codeRevoked, rel: "母", status: http.StatusBadRequest, message: wantInvitationRevoked},
 	{name: "期限切れ", account: accGuardian, code: codeHanako, rel: "母",
 		setup:  []string{`UPDATE t_invitation_code SET expires_on = '2000-01-01' WHERE code = '` + codeHanako + `'`},
 		undo:   []string{`UPDATE t_invitation_code SET expires_on = '2099-12-31' WHERE code = '` + codeHanako + `'`},
-		status: http.StatusBadRequest, message: "有効期限が切れています"},
+		status: http.StatusBadRequest, message: wantInvitationExpired},
 	{name: "もう追加済み（有効）", account: accGuardian, code: codeTaro, rel: "父", status: http.StatusBadRequest, message: msgChildAlreadyAdded},
 	{name: "もう追加済み（猶予中）", account: accGuardian, code: codeTaro, rel: "父",
 		setup:  []string{`UPDATE t_guardian_child SET link_status = '3', grace_ends_on = '2099-03-31' WHERE guardian_id = 'G001' AND child_id = 'C001'`},
