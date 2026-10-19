@@ -168,6 +168,28 @@ const yesterday = () => sessionDateOf(2);
 const twoDaysAgo = () => sessionDateOf(3);
 const napExportLogs = () => db.operationLogs.filter((l) => l.function_type === '3' && l.operation_type === '5');
 
+/**
+ * 帳票の一覧の行が 実施の日 → クラス（番号の順）→ 園児（よみの順）→ 時刻 の古い順に並んでいるか
+ * （server/api_nap_report_test.go の expectNapReportOrder と同じ）。クラスと園児は、帳票に出る名前から番号とよみを引く
+ */
+function expectReportOrder(rows: string[][]) {
+  const keyOf = (r: string[]) => ({
+    date: r[0], at: r[1],
+    classId: Math.min(...db.classes.filter((c) => c.class_name === r[3]).map((c) => c.class_id)),
+    kana: db.children.find((c) => c.child_name === r[2])!.child_name_kana,
+  });
+  for (let i = 1; i < rows.length; i++) {
+    const p = keyOf(rows[i - 1]);
+    const c = keyOf(rows[i]);
+    const inOrder = p.date !== c.date ? p.date < c.date
+      : p.classId !== c.classId ? p.classId < c.classId
+        : p.kana !== c.kana ? p.kana.localeCompare(c.kana, 'ja') < 0
+          : p.at <= c.at;
+    expect(inOrder, `実施の日 → クラス → 園児 → 時刻 の古い順になっていません: ${rows[i - 1].join(',')} のあとに ${rows[i].join(',')}`)
+      .toBe(true);
+  }
+}
+
 describe('帳票（CSV）は管理者だけが出せる', () => {
   it('一般（保育士）と保護者は断り、操作ログにも残さない。管理者は見出しと行を受け取る', async () => {
     const before = napExportLogs().length;
@@ -219,10 +241,10 @@ describe('帳票の中身', () => {
       ]);
       expect(find((x) => x[2] === '宮城 美咲' && x[0] === yesterday())).toHaveLength(0);
 
-      // 「修正あり」の列は置き、修正の機能が無いあいだは空。時刻の新しい順
+      // 「修正あり」の列は置き、修正の機能が無いあいだは空。実施の日 → クラス → 園児 → 時刻 の古い順
       for (const x of r.rows) expect(x).toHaveLength(NAP_REPORT_HEADER.length);
       expect(r.rows.every((x) => x[10] === '')).toBe(true);
-      for (let i = 1; i < r.rows.length; i++) expect(r.rows[i - 1][1] >= r.rows[i][1]).toBe(true);
+      expectReportOrder(r.rows);
 
       // 異常時の記録：起票済み（記録 1。高梨 健、日誌 3）はヒヤリハット側の文に印を付けて1行。記録そのものの文は出さない
       expect(r.hasTitle).toBe(true);
@@ -237,6 +259,53 @@ describe('帳票の中身', () => {
       ]);
     } finally {
       for (const e of added) db.napExclusions.splice(db.napExclusions.indexOf(e), 1);
+    }
+  });
+
+  it('一覧は 実施の日 → クラス → 園児 → 時刻 の古い順。同じ時刻は、ねた・確認・おきた。画面の一覧は新しい順のまま', async () => {
+    /*
+     * server/api_nap_report_test.go の TestNapReportOrdersByDateClassChildTime と同じ。監査では、1人の子の確認が
+     * 間隔どおりかを時刻の順に読む（2026-10-19、持ち主が任せて決めた）。
+     * 昨日の実施 2（さくら組）に、野原 太郎（のはら）の確認を ねた（13:02）・おきた（14:35）と同じ時刻とその間に足し、
+     * 伊藤 葵（いとう）の確認を野原 太郎のどの確認よりも後に足す。今日の実施 4（ひまわり組）に、井上 空の確認を
+     * さくら組の確認（13:20〜）より前の時刻に足す
+     */
+    const rec = (id: number, session: number, child: string, at: string): (typeof db.napRecords)[number] => ({
+      nap_record_id: id, nap_session_id: session, child_id: child, checked_at: at, saved_at: at,
+      body_position: '1', breathing: '1', complexion: '1', temperature: null, staff_id: 'S003',
+    });
+    const added = [
+      rec(900201, 2, 'C001', `${yesterday()}T14:35:00`),
+      rec(900202, 2, 'C001', `${yesterday()}T13:20:00`),
+      rec(900203, 2, 'C001', `${yesterday()}T13:02:00`),
+      rec(900204, 2, 'C006', `${yesterday()}T14:50:00`),
+      rec(900205, 4, 'C013', `${today()}T13:15:00`),
+    ];
+    db.napRecords.push(...added);
+    try {
+      const r = splitReport(await api.napReport(admin, { from: yesterday(), to: today(), format: 'csv' }));
+      expectReportOrder(r.rows);
+
+      const indexOf = (date: string, child: string) =>
+        r.rows.flatMap((x, i) => (x[0] === date && x[2] === child ? [i] : []));
+      // 同じ日・同じクラスでは、時刻が後でも、よみが先の園児（いとう）を先に出す
+      const ito = indexOf(yesterday(), '伊藤 葵');
+      const nohara = indexOf(yesterday(), '野原 太郎');
+      expect(ito).toHaveLength(1);
+      expect(ito[0]).toBeLessThan(nohara[0]);
+      // 1人の子の行は時刻の古い順。同じ時刻は、ねた・確認・おきた
+      expect(nohara.map((i) => `${r.rows[i][1].slice(11)} ${r.rows[i][4]}`)).toEqual([
+        '13:02:00 入眠（ねた）', '13:02:00 仰向け', '13:20:00 仰向け', '14:35:00 仰向け', '14:35:00 起床（おきた）',
+      ]);
+      // 同じ日では、時刻が前でも、番号の後のクラス（ひまわり組）をさくら組のあとに出す
+      expect(r.rows[r.rows.length - 1].slice(0, 4)).toEqual([today(), `${today()}T13:15:00`, '井上 空', 'ひまわり組']);
+      expect(indexOf(today(), '野原 太郎').length).toBeGreaterThan(0);
+
+      // 画面の一覧（午睡記録検索）は時刻の新しい順のまま
+      const page = await api.searchRecords(admin, { from: yesterday(), to: today() });
+      for (let i = 1; i < page.rows.length; i++) expect(page.rows[i - 1].checked_at >= page.rows[i].checked_at).toBe(true);
+    } finally {
+      for (const x of added) db.napRecords.splice(db.napRecords.indexOf(x), 1);
     }
   });
 

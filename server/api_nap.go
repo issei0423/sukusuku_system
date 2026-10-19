@@ -930,7 +930,8 @@ sortNapSearchRows は時刻の新しい順に並べる。
 
 【仮置き】同じ時刻の行は、おきた・確認・ねた・対象外の順にし、同じ種類は ID の小さい順にする（web/仮置き値.md
 「一覧の並び順」）。新しい順の一覧で、寝ている間の出来事を、ねたより上・おきたより下に置くため。
-帳票（api_nap_report.go の napReportData）と同じ並び。画面側のモック（web/src/api/mock.ts の searchRecords）と同じ並び
+画面側のモック（web/src/api/mock.ts の searchRecords）と同じ並び。帳票（api_nap_report.go の sortNapReportLines）は
+実施の日 → クラス → 園児 → 時刻 の古い順で、この並びとは違う
 */
 func sortNapSearchRows(rows []napSearchRow) {
 	rank := map[string]int{napRowWake: 0, napRowCheck: 1, napRowSleep: 2, napRowExclusion: 3}

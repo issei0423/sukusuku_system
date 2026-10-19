@@ -67,12 +67,50 @@ var napReportSleepLabel = map[string]string{napRowSleep: "入眠（ねた）", n
 
 // 帳票の行の種類は、午睡記録検索と同じ napRowCheck・napRowSleep・napRowWake・napRowExclusion（api_nap.go）
 
-// napReportLine は帳票の1行。並べ替えの鍵と、出すセルを持つ
+// napReportLine は帳票の1行。並べ替えの鍵（実施の日・クラス・園児のよみと ID・時刻・種類・番号）と、出すセルを持つ
 type napReportLine struct {
-	kind  string
-	id    int64
-	at    string
-	cells []string
+	kind    string
+	id      int64
+	date    string
+	classID int64
+	kana    string
+	childID string
+	at      string
+	cells   []string
+}
+
+// napReportLineRank は、同じ園児の同じ時刻の行の並び。時刻の古い順の中で、寝ている間の確認をねたより下・
+// おきたより上に置く（午睡記録検索の新しい順の並び（sortNapSearchRows）を逆にしたもの）
+var napReportLineRank = map[string]int{napRowExclusion: 0, napRowSleep: 1, napRowCheck: 2, napRowWake: 3}
+
+/*
+sortNapReportLines は、帳票の一覧の行を 実施の日 → クラス → 園児 → 時刻 の古い順に並べる。
+監査では、1人の子の確認が間隔どおりかを時刻の順に読むため（2026-10-19、持ち主が任せて決めた）。
+画面の一覧（午睡記録検索）は時刻の新しい順のまま。
+
+【仮置き】クラスはクラスの番号の順、園児はよみの順（よみが同じなら園児IDの順）。ほかのよみ順の一覧と同じく、よみは
+文字コードの順で比べる（モックは日本語の照合の順。web/仮置き値.md「一覧の並び順」）。同じ時刻は napReportLineRank、
+同じ種類は番号の小さい順。web/src/api/napReport.ts の sortReportLines と同じ。
+*/
+func sortNapReportLines(lines []napReportLine) {
+	sort.SliceStable(lines, func(i, j int) bool {
+		x, y := lines[i], lines[j]
+		switch {
+		case x.date != y.date:
+			return x.date < y.date
+		case x.classID != y.classID:
+			return x.classID < y.classID
+		case x.kana != y.kana:
+			return x.kana < y.kana
+		case x.childID != y.childID:
+			return x.childID < y.childID
+		case x.at != y.at:
+			return x.at < y.at
+		case napReportLineRank[x.kind] != napReportLineRank[y.kind]:
+			return napReportLineRank[x.kind] < napReportLineRank[y.kind]
+		}
+		return x.id < y.id
+	})
 }
 
 // napReportAbnormal は「同じ期間の異常時の記録」の1行
@@ -148,9 +186,9 @@ func (a *app) handleNapReport(w http.ResponseWriter, r *http.Request) {
 /*
 napReportData は、期間（実施の日）とクラスで帳票の行と異常時の記録を集める。
 
-行の並びは午睡記録検索と同じ時刻の新しい順（sortNapSearchRows と同じ）。【仮置き】同じ時刻の行は、おきた・確認・ねた・
-対象外の順にする（web/仮置き値.md「一覧の並び順」）。異常時の記録は発見時刻の新しい順、同じ時刻はあとで記録したものを先にする
-（handleNapAbnormals と同じ）。異常時の記録も、つないだ実施の日とクラスで絞る。
+行は 実施の日 → クラス → 園児 → 時刻 の古い順（sortNapReportLines。画面の一覧の新しい順とは違う）。
+異常時の記録は発見時刻の新しい順、同じ時刻はあとで記録したものを先にする（handleNapAbnormals と同じ）。
+異常時の記録も、つないだ実施の日とクラスで絞る。
 
 SQLite の接続は1本なので（db.go）、名前を引くのはカーソルを閉じたあとにする。
 */
@@ -260,6 +298,18 @@ func (a *app) napReportData(from, to string, classID int64, hasClass bool) ([]na
 	}
 	abnormalRows.Close()
 
+	// 園児のよみは並べ替えにだけ使う（帳票には出さない）。園児ごとに1回だけ引く
+	kanaOf := map[string]string{}
+	childKana := func(childID string) string {
+		if k, ok := kanaOf[childID]; ok {
+			return k
+		}
+		var k sql.NullString
+		a.db.QueryRow(`SELECT child_name_kana FROM m_child WHERE child_id = ?`, childID).Scan(&k)
+		kanaOf[childID] = k.String
+		return k.String
+	}
+
 	lines := make([]napReportLine, 0, len(raws))
 	for _, x := range raws {
 		cells := []string{x.date, x.at, a.childName(x.childID), a.className(x.classID)}
@@ -282,18 +332,10 @@ func (a *app) napReportData(from, to string, classID int64, hasClass bool) ([]na
 		 * t_nap_record.corrected_at）が、サーバにもモックにも無いため（基本設計書「記録の修正と改ざん防止」(4-8)）
 		 */
 		cells = append(cells, "")
-		lines = append(lines, napReportLine{kind: x.kind, id: x.id, at: x.at, cells: cells})
+		lines = append(lines, napReportLine{kind: x.kind, id: x.id, date: x.date, classID: x.classID,
+			kana: childKana(x.childID), childID: x.childID, at: x.at, cells: cells})
 	}
-	rank := map[string]int{napRowWake: 0, napRowCheck: 1, napRowSleep: 2, napRowExclusion: 3}
-	sort.SliceStable(lines, func(i, j int) bool {
-		if lines[i].at != lines[j].at {
-			return lines[i].at > lines[j].at
-		}
-		if rank[lines[i].kind] != rank[lines[j].kind] {
-			return rank[lines[i].kind] < rank[lines[j].kind]
-		}
-		return lines[i].id < lines[j].id
-	})
+	sortNapReportLines(lines)
 
 	abnormals := make([]napReportAbnormal, 0, len(rawAbnormals))
 	for _, x := range rawAbnormals {

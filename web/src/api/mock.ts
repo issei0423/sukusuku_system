@@ -1877,7 +1877,8 @@ const napApi2 = {
     if (f.childName) rows = rows.filter((r) => r.child_name.includes(f.childName!.trim()));
 
     // 【仮置き】時刻の新しい順。同じ時刻は、おきた・確認・ねた・対象外の順、同じ種類は ID の小さい順（web/仮置き値.md「一覧の並び順」）。
-    // サーバ側の server/api_nap.go の sortNapSearchRows、帳票（api/napReport.ts の sortReportLines）と同じ並び
+    // サーバ側の server/api_nap.go の sortNapSearchRows と同じ並び。帳票（api/napReport.ts の sortReportLines）は
+    // 実施の日 → クラス → 園児 → 時刻 の古い順で、この並びとは違う
     const rank = { wake: 0, check: 1, sleep: 2, exclusion: 3 };
     const idOf = (r: (typeof rows)[number]) => r.nap_record_id ?? r.nap_sleep_id ?? r.nap_exclusion_id ?? 0;
     rows.sort((a, b) => b.checked_at.localeCompare(a.checked_at) || rank[a.kind] - rank[b.kind] || idOf(a) - idOf(b));
@@ -1908,35 +1909,37 @@ const napApi2 = {
     };
     const head = (sessionId: number, childId: string) => {
       const s = sessionIn(sessionId)!;
-      return [s.session_date, childName(childId), className(s.class_id)] as const;
+      // 並べ替えの鍵（実施の日・クラス・園児のよみと ID）。よみは帳票には出さない（sortReportLines）
+      const key = { date: s.session_date, classId: s.class_id, kana: findChild(childId)?.child_name_kana ?? '', childId };
+      return [s.session_date, childName(childId), className(s.class_id), key] as const;
     };
     const lines: NapReportLine[] = [];
     for (const r of db.napRecords) {
       if (!sessionIn(r.nap_session_id)) continue;
-      const [date, child, cls] = head(r.nap_session_id, r.child_id);
-      lines.push({ kind: 'check', id: r.nap_record_id, at: r.checked_at, cells: [
+      const [date, child, cls, key] = head(r.nap_session_id, r.child_id);
+      lines.push({ kind: 'check', id: r.nap_record_id, ...key, at: r.checked_at, cells: [
         date, r.checked_at, child, cls, BODY_POSITION[r.body_position], BREATHING[r.breathing], COMPLEXION[r.complexion],
         reportTemperature(r.temperature), staffName(r.staff_id), r.saved_at,
       ] });
     }
     for (const s of db.napSleeps) {
       if (s.is_deleted || !sessionIn(s.nap_session_id)) continue;
-      const [date, child, cls] = head(s.nap_session_id, s.child_id);
+      const [date, child, cls, key] = head(s.nap_session_id, s.child_id);
       // ねたの行の体温の列に入眠時の体温を出す（基本設計書「帳票の出力」(4-8)）
-      lines.push({ kind: 'sleep', id: s.nap_sleep_id, at: s.slept_at, cells: [
+      lines.push({ kind: 'sleep', id: s.nap_sleep_id, ...key, at: s.slept_at, cells: [
         date, s.slept_at, child, cls, SLEEP_ROW_LABEL.sleep, '', '', reportTemperature(s.sleep_temperature), staffName(s.slept_staff_id), '',
       ] });
       if (s.woke_at !== null) {
-        lines.push({ kind: 'wake', id: s.nap_sleep_id, at: s.woke_at, cells: [
+        lines.push({ kind: 'wake', id: s.nap_sleep_id, ...key, at: s.woke_at, cells: [
           date, s.woke_at, child, cls, SLEEP_ROW_LABEL.wake, '', '', '', staffName(s.woke_staff_id), '',
         ] });
       }
     }
     for (const e of db.napExclusions) {
       if (e.is_deleted || !sessionIn(e.nap_session_id)) continue;
-      const [date, child, cls] = head(e.nap_session_id, e.child_id);
+      const [date, child, cls, key] = head(e.nap_session_id, e.child_id);
       // 【仮置き】対象外は、体位の列に「きょうは対象外（理由）」を入れて1行で出す（web/仮置き値.md「午睡の帳票」）
-      lines.push({ kind: 'exclusion', id: e.nap_exclusion_id, at: e.created_at, cells: [
+      lines.push({ kind: 'exclusion', id: e.nap_exclusion_id, ...key, at: e.created_at, cells: [
         date, e.created_at, child, cls, exclusionRowLabel(e.reason), '', '', '', staffName(e.staff_id), '',
       ] });
     }

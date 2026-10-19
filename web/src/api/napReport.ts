@@ -51,10 +51,14 @@ export interface NapReportFilter {
 /** 帳票の行の種類。午睡記録検索の check・sleep・wake に、きょうは対象外（exclusion）を足す */
 export type NapReportLineKind = 'check' | 'sleep' | 'wake' | 'exclusion';
 
-/** 帳票の1行。並べ替えの鍵と、出すセル */
+/** 帳票の1行。並べ替えの鍵（実施の日・クラス・園児のよみと ID・時刻・種類・番号）と、出すセル */
 export interface NapReportLine {
   kind: NapReportLineKind;
   id: number;
+  date: string;
+  classId: number;
+  kana: string;
+  childId: string;
   at: string;
   cells: string[];
 }
@@ -72,12 +76,20 @@ export function reportTemperature(v: number | null): string {
 }
 
 /**
- * 行を時刻の新しい順に並べる（午睡記録検索と同じ）。
- * 【仮置き】同じ時刻は、おきた・確認・ねた・対象外の順、同じ種類は番号の小さい順（web/仮置き値.md「一覧の並び順」）
+ * 行を 実施の日 → クラス → 園児 → 時刻 の古い順に並べる（server/api_nap_report.go の sortNapReportLines と同じ）。
+ * 監査では、1人の子の確認が間隔どおりかを時刻の順に読むため（2026-10-19、持ち主が任せて決めた）。
+ * 画面の一覧（午睡記録検索）は時刻の新しい順のまま。
+ * 【仮置き】クラスはクラスの番号の順、園児はよみの順（よみが同じなら園児IDの順。よみは、ほかのよみ順の一覧と同じく
+ * 日本語の照合の順で比べる。サーバは文字コードの順。web/仮置き値.md「一覧の並び順」）。同じ園児の同じ時刻は、
+ * 対象外・ねた・確認・おきたの順（寝ている間の確認を、ねたより下・おきたより上に置く）、同じ種類は番号の小さい順
  */
 export function sortReportLines(lines: NapReportLine[]): NapReportLine[] {
-  const rank: Record<NapReportLineKind, number> = { wake: 0, check: 1, sleep: 2, exclusion: 3 };
-  return [...lines].sort((a, b) => b.at.localeCompare(a.at) || rank[a.kind] - rank[b.kind] || a.id - b.id);
+  const rank: Record<NapReportLineKind, number> = { exclusion: 0, sleep: 1, check: 2, wake: 3 };
+  // 日付・時刻・園児ID はサーバ（Go の文字列の比べ方）と同じく、文字コードの順で比べる
+  const byCode = (x: string, y: string) => (x < y ? -1 : x > y ? 1 : 0);
+  return [...lines].sort((a, b) => byCode(a.date, b.date) || a.classId - b.classId
+    || a.kana.localeCompare(b.kana, 'ja') || byCode(a.childId, b.childId)
+    || byCode(a.at, b.at) || rank[a.kind] - rank[b.kind] || a.id - b.id);
 }
 
 /** 異常時の記録を発見時刻の新しい順に並べる。同じ時刻はあとで記録したもの（番号の大きいもの）を先にする */

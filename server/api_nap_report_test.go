@@ -135,7 +135,7 @@ func TestNapSearchSleepRowsFollowFiltersAndScope(t *testing.T) {
 }
 
 // 午睡記録検索に「きょうは対象外」とその理由の行を出す（画面詳細図「午睡記録検索画面」(5-3) の項目6）。
-// 帳票と同じ行・同じ並び（同じ時刻は、おきた・確認・ねた・対象外の順）。取り消した対象外は出さない
+// 帳票と同じ行。並びは時刻の新しい順（同じ時刻は、おきた・確認・ねた・対象外の順）。取り消した対象外は出さない
 func TestNapSearchShowsExclusionRows(t *testing.T) {
 	a, h := newTestApp(t)
 	admin := loginAs(a, 1, "staff")
@@ -377,12 +377,8 @@ func TestNapReportContents(t *testing.T) {
 			t.Fatalf("「修正あり」の列が無いか、空ではありません: %v", r)
 		}
 	}
-	// 時刻の新しい順
-	for i := 1; i < len(f.rows); i++ {
-		if f.rows[i-1][1] < f.rows[i][1] {
-			t.Fatalf("時刻の新しい順になっていません: %v のあとに %v", f.rows[i-1], f.rows[i])
-		}
-	}
+	// 実施の日 → クラス → 園児 → 時刻 の古い順（TestNapReportOrdersByDateClassChildTime）
+	expectNapReportOrder(t, a, f.rows)
 
 	// 異常時の記録：起票済み（記録 1。高梨 健、日誌 3）はヒヤリハット側の状況・とった対応に印を付けて1行。
 	// 記録そのものの文は出さない（二重に数えない）
@@ -406,6 +402,118 @@ func TestNapReportContents(t *testing.T) {
 	notRaised := f.abnormals[0]
 	if notRaised[1] != "金城 陸" || notRaised[2] != "顔色がやや紅潮していた。体温37.4度。" || notRaised[5] != "未起票" {
 		t.Fatalf("起票していない記録が正しくありません: %v", f.abnormals)
+	}
+}
+
+/*
+expectNapReportOrder は、帳票の一覧の行が 実施の日 → クラス（番号の順）→ 園児（よみの順）→ 時刻 の古い順に
+並んでいることを確かめる。クラスと園児は、帳票に出る名前からデモデータの番号とよみを引く
+*/
+func expectNapReportOrder(t *testing.T, a *app, rows [][]string) {
+	t.Helper()
+	type key struct {
+		date    string
+		classID int64
+		kana    string
+		at      string
+	}
+	keyOf := func(r []string) key {
+		k := key{date: r[0], at: r[1]}
+		if err := a.db.QueryRow(`SELECT MIN(class_id) FROM m_class WHERE class_name = ?`, r[3]).Scan(&k.classID); err != nil {
+			t.Fatal(err)
+		}
+		if err := a.db.QueryRow(`SELECT child_name_kana FROM m_child WHERE child_name = ?`, r[2]).Scan(&k.kana); err != nil {
+			t.Fatal(err)
+		}
+		return k
+	}
+	for i := 1; i < len(rows); i++ {
+		p, c := keyOf(rows[i-1]), keyOf(rows[i])
+		ok := true
+		switch {
+		case p.date != c.date:
+			ok = p.date < c.date
+		case p.classID != c.classID:
+			ok = p.classID < c.classID
+		case p.kana != c.kana:
+			ok = p.kana < c.kana
+		default:
+			ok = p.at <= c.at
+		}
+		if !ok {
+			t.Fatalf("実施の日 → クラス → 園児 → 時刻 の古い順になっていません: %v のあとに %v", rows[i-1], rows[i])
+		}
+	}
+}
+
+/*
+帳票の一覧は、実施の日 → クラス → 園児 → 時刻 の古い順（2026-10-19、持ち主が任せて決めた）。監査では、1人の子の確認が
+間隔どおりかを時刻の順に読むため。画面の一覧（GET /api/nap/records）は時刻の新しい順のまま。
+同じ園児の同じ時刻は、ねた・確認・おきたの順（寝ている間の確認を、ねたより下・おきたより上に置く）
+*/
+func TestNapReportOrdersByDateClassChildTime(t *testing.T) {
+	a, h := newTestApp(t)
+	admin := loginAs(a, 1, "staff")
+	today, yesterday, _ := demoNapDates(t, a)
+	/*
+	 * 昨日の実施 2（さくら組）に、野原 太郎（のはら）の確認を ねた（13:02）・おきた（14:35）と同じ時刻とその間に足し、
+	 * 伊藤 葵（いとう）の確認を野原 太郎のどの確認よりも後の時刻に足す。今日の実施 4（ひまわり組）に、井上 空の確認を
+	 * さくら組の確認（13:20〜）より前の時刻に足す
+	 */
+	add := func(session int, child, at string) {
+		t.Helper()
+		if _, err := a.db.Exec(`INSERT INTO t_nap_record (nap_session_id, child_id, checked_at, saved_at, body_position,
+			breathing, complexion, temperature, staff_id) VALUES (?, ?, ?, ?, '1', '1', '1', NULL, 'S003')`,
+			session, child, at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add(2, "C001", yesterday+"T14:35:00")
+	add(2, "C001", yesterday+"T13:20:00")
+	add(2, "C001", yesterday+"T13:02:00")
+	add(2, "C006", yesterday+"T14:50:00")
+	add(4, "C013", today+"T13:15:00")
+
+	f := napReportOf(t, h, admin, "?from="+yesterday+"&to="+today)
+	expectNapReportOrder(t, a, f.rows)
+
+	indexOf := func(date, child string) []int {
+		out := []int{}
+		for i, r := range f.rows {
+			if r[0] == date && r[2] == child {
+				out = append(out, i)
+			}
+		}
+		return out
+	}
+	// 同じ日・同じクラスでは、時刻が後でも、よみが先の園児（いとう）を先に出す
+	ito, nohara := indexOf(yesterday, "伊藤 葵"), indexOf(yesterday, "野原 太郎")
+	if len(ito) != 1 || len(nohara) == 0 || ito[0] > nohara[0] {
+		t.Fatalf("園児のよみの順になっていません（伊藤 葵 %v、野原 太郎 %v）", ito, nohara)
+	}
+	// 1人の子の行は時刻の古い順。同じ時刻は、ねた・確認・おきた
+	got := []string{}
+	for _, i := range nohara {
+		got = append(got, f.rows[i][1][11:]+" "+f.rows[i][4])
+	}
+	want := []string{"13:02:00 入眠（ねた）", "13:02:00 仰向け", "13:20:00 仰向け", "14:35:00 仰向け", "14:35:00 起床（おきた）"}
+	if strings.Join(got, "、") != strings.Join(want, "、") {
+		t.Fatalf("昨日の野原 太郎の行 = %v、want %v", got, want)
+	}
+	// 同じ日では、時刻が前でも、番号の後のクラス（ひまわり組）をさくら組のあとに出す
+	if last := f.rows[len(f.rows)-1]; last[0] != today || last[2] != "井上 空" || last[3] != "ひまわり組" {
+		t.Fatalf("今日のひまわり組の行が、さくら組のあとに出ていません: %v", last)
+	}
+	if len(indexOf(today, "野原 太郎")) == 0 {
+		t.Fatal("今日のさくら組の行がありません（並びを確かめられない）")
+	}
+
+	// 画面の一覧（午睡記録検索）は時刻の新しい順のまま
+	p := searchNap(t, h, admin, "?from="+yesterday+"&to="+today)
+	for i := 1; i < len(p.Rows); i++ {
+		if p.Rows[i-1].CheckedAt < p.Rows[i].CheckedAt {
+			t.Fatalf("画面の一覧が時刻の新しい順になっていません: %s のあとに %s", p.Rows[i-1].CheckedAt, p.Rows[i].CheckedAt)
+		}
 	}
 }
 
