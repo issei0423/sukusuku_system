@@ -1953,7 +1953,8 @@ const napApi2 = {
         // 起票したヒヤリハットの側の状況・とった対応を出す。日誌が見つからないとき（削除したなど）は記録そのものを出す
         const diary = a.diary_id === null ? undefined : db.diaries.find((d) => d.diary_id === a.diary_id && !d.is_deleted);
         const v = diary ? incidentSituationResponse(diary.body) : { situation: a.situation, response: a.response };
-        return { id: a.nap_abnormal_id, foundAt: a.found_at, cells: [
+        const [, , , key] = head(a.nap_session_id, a.child_id);
+        return { id: a.nap_abnormal_id, ...key, foundAt: a.found_at, cells: [
           a.found_at, childName(a.child_id), v.situation, v.response, staffName(a.staff_id), a.diary_id === null ? '未起票' : '起票済み',
         ] };
       });

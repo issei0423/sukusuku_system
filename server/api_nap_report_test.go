@@ -398,9 +398,10 @@ func TestNapReportContents(t *testing.T) {
 	if strings.Contains(f.raw, "うつ伏せの体位で寝ているのを発見") {
 		t.Fatal("起票済みの記録が、記録そのものの文でも出ています（二重に数えている）")
 	}
-	// 起票していない記録 2（金城 陸）は、記録そのものの文に「未起票」。発見時刻の新しい順で先頭
-	notRaised := f.abnormals[0]
-	if notRaised[1] != "金城 陸" || notRaised[2] != "顔色がやや紅潮していた。体温37.4度。" || notRaised[5] != "未起票" {
+	// 起票していない記録 2（金城 陸。昨日）は、記録そのものの文に「未起票」。実施の日の古い順で、2日前の高梨 健のあと
+	notRaised := f.abnormals[1]
+	if f.abnormals[0][1] != "高梨 健" || notRaised[1] != "金城 陸" || notRaised[2] != "顔色がやや紅潮していた。体温37.4度。" ||
+		notRaised[5] != "未起票" {
 		t.Fatalf("起票していない記録が正しくありません: %v", f.abnormals)
 	}
 }
@@ -513,6 +514,61 @@ func TestNapReportOrdersByDateClassChildTime(t *testing.T) {
 	for i := 1; i < len(p.Rows); i++ {
 		if p.Rows[i-1].CheckedAt < p.Rows[i].CheckedAt {
 			t.Fatalf("画面の一覧が時刻の新しい順になっていません: %s のあとに %s", p.Rows[i-1].CheckedAt, p.Rows[i].CheckedAt)
+		}
+	}
+}
+
+/*
+帳票の「同じ期間の異常時の記録」の表も、一覧の行と同じ向きで、つないだ実施の日 → クラス → 園児 → 発見時刻 の古い順
+（2026-10-19、持ち主が任せて決めた）。監査では1つのファイルを時刻の順に読み、表ごとに向きが違うと読み違えるため。
+異常時記録画面の一覧（GET /api/nap/abnormals）は新しい順のまま
+*/
+func TestNapReportOrdersAbnormalsByDateClassChildTime(t *testing.T) {
+	a, h := newTestApp(t)
+	admin := loginAs(a, 1, "staff")
+	today, yesterday, twoDaysAgo := demoNapDates(t, a)
+	/*
+	 * デモ：記録 1（2日前・さくら組・高梨 健 13:40）、記録 2（昨日・さくら組・金城 陸 14:10）。
+	 * 昨日に、金城 陸の 13:50 と、よみが後（のはら）で発見時刻が前の野原 太郎の 13:30 を足す。
+	 * 今日に、さくら組の伊藤 葵 13:45 と、発見時刻が前のひまわり組の井上 空 13:15 を足す
+	 */
+	add := func(session int, child, foundAt string) {
+		t.Helper()
+		if _, err := a.db.Exec(`INSERT INTO t_nap_abnormal (nap_session_id, child_id, found_at, recorded_at, situation,
+			response, staff_id, diary_id) VALUES (?, ?, ?, ?, '状況', '対応', 'S003', NULL)`,
+			session, child, foundAt, foundAt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add(2, "C005", yesterday+"T13:50:00")
+	add(2, "C001", yesterday+"T13:30:00")
+	add(1, "C006", today+"T13:45:00")
+	add(4, "C013", today+"T13:15:00")
+
+	f := napReportOf(t, h, admin, "?from="+twoDaysAgo+"&to="+today)
+	got := []string{}
+	for _, r := range f.abnormals {
+		got = append(got, r[0]+" "+r[1])
+	}
+	want := []string{
+		twoDaysAgo + "T13:40:00 高梨 健",
+		yesterday + "T13:50:00 金城 陸", yesterday + "T14:10:00 金城 陸",
+		yesterday + "T13:30:00 野原 太郎",
+		today + "T13:45:00 伊藤 葵",
+		today + "T13:15:00 井上 空",
+	}
+	if strings.Join(got, "、") != strings.Join(want, "、") {
+		t.Fatalf("異常時の記録の並び = %v、want %v", got, want)
+	}
+
+	// 異常時記録画面の一覧は発見時刻の新しい順のまま
+	var list []struct {
+		FoundAt string `json:"found_at"`
+	}
+	decode(t, call(t, h, admin, "GET", "/api/nap/abnormals", ""), &list)
+	for i := 1; i < len(list); i++ {
+		if list[i-1].FoundAt < list[i].FoundAt {
+			t.Fatalf("異常時の記録の一覧が新しい順になっていません: %s のあとに %s", list[i-1].FoundAt, list[i].FoundAt)
 		}
 	}
 }

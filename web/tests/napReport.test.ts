@@ -253,8 +253,9 @@ describe('帳票の中身', () => {
         [`${twoDaysAgo()}T13:40:00`, '高梨 健', '午睡中にうつ伏せの体位を確認した。', '仰向けに直し、呼吸と顔色を確認した。', '宮城 蓮', '起票済み'],
       ]);
       expect(text).not.toContain('うつ伏せの体位で寝ているのを発見');
-      // 起票していない記録 2（金城 陸）は記録そのものの文に「未起票」。発見時刻の新しい順で先頭
-      expect(r.abnormals[0]).toEqual([
+      // 起票していない記録 2（金城 陸。昨日）は記録そのものの文に「未起票」。実施の日の古い順で、2日前の高梨 健のあと
+      expect(r.abnormals[0][1]).toBe('高梨 健');
+      expect(r.abnormals[1]).toEqual([
         `${yesterday()}T14:10:00`, '金城 陸', '顔色がやや紅潮していた。体温37.4度。', '別室で休ませ、保護者へ連絡した。', '高梨 倫太朗', '未起票',
       ]);
     } finally {
@@ -306,6 +307,43 @@ describe('帳票の中身', () => {
       for (let i = 1; i < page.rows.length; i++) expect(page.rows[i - 1].checked_at >= page.rows[i].checked_at).toBe(true);
     } finally {
       for (const x of added) db.napRecords.splice(db.napRecords.indexOf(x), 1);
+    }
+  });
+
+  it('同じ期間の異常時の記録の表も、実施の日 → クラス → 園児 → 発見時刻 の古い順。異常時の記録の一覧は新しい順のまま', async () => {
+    /*
+     * server/api_nap_report_test.go の TestNapReportOrdersAbnormalsByDateClassChildTime と同じ。監査では1つのファイルを
+     * 時刻の順に読み、表ごとに向きが違うと読み違えるため（2026-10-19、持ち主が任せて決めた）。
+     * デモ：記録 1（2日前・さくら組・高梨 健 13:40）、記録 2（昨日・さくら組・金城 陸 14:10）。昨日に金城 陸の 13:50 と、
+     * よみが後（のはら）で発見時刻が前の野原 太郎の 13:30 を、今日にさくら組の伊藤 葵 13:45 と、発見時刻が前のひまわり組の
+     * 井上 空 13:15 を足す
+     */
+    const ab = (id: number, session: number, child: string, at: string): (typeof db.napAbnormals)[number] => ({
+      nap_abnormal_id: id, nap_session_id: session, child_id: child, found_at: at, recorded_at: at,
+      situation: '状況', response: '対応', staff_id: 'S003', diary_id: null,
+    });
+    const added = [
+      ab(900301, 2, 'C005', `${yesterday()}T13:50:00`),
+      ab(900302, 2, 'C001', `${yesterday()}T13:30:00`),
+      ab(900303, 1, 'C006', `${today()}T13:45:00`),
+      ab(900304, 4, 'C013', `${today()}T13:15:00`),
+    ];
+    db.napAbnormals.push(...added);
+    try {
+      const r = splitReport(await api.napReport(admin, { from: twoDaysAgo(), to: today(), format: 'csv' }));
+      expect(r.abnormals.map((x) => `${x[0]} ${x[1]}`)).toEqual([
+        `${twoDaysAgo()}T13:40:00 高梨 健`,
+        `${yesterday()}T13:50:00 金城 陸`, `${yesterday()}T14:10:00 金城 陸`,
+        `${yesterday()}T13:30:00 野原 太郎`,
+        `${today()}T13:45:00 伊藤 葵`,
+        `${today()}T13:15:00 井上 空`,
+      ]);
+
+      // 異常時記録画面の一覧は発見時刻の新しい順のまま
+      const list = await api.abnormals(admin);
+      for (let i = 1; i < list.length; i++) expect(list[i - 1].found_at >= list[i].found_at).toBe(true);
+    } finally {
+      for (const x of added) db.napAbnormals.splice(db.napAbnormals.indexOf(x), 1);
     }
   });
 

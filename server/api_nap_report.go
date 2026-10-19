@@ -113,11 +113,42 @@ func sortNapReportLines(lines []napReportLine) {
 	})
 }
 
-// napReportAbnormal は「同じ期間の異常時の記録」の1行
+// napReportAbnormal は「同じ期間の異常時の記録」の1行。並べ替えの鍵（つないだ実施の日・クラス・園児のよみと ID・発見時刻・番号）と、出すセルを持つ
 type napReportAbnormal struct {
 	id      int64
+	date    string
+	classID int64
+	kana    string
+	childID string
 	foundAt string
 	cells   []string
+}
+
+/*
+sortNapReportAbnormals は、同じ期間の異常時の記録を、つないだ実施の日 → クラス → 園児 → 発見時刻 の古い順に並べる。
+一覧の行（sortNapReportLines）と同じ向きにする。監査では1つのファイルを時刻の順に読み、表ごとに向きが違うと読み違えるため
+（2026-10-19、持ち主が任せて決めた）。画面の「同じ期間の異常時の記録」と異常時記録画面の一覧（handleNapAbnormals）は新しい順のまま。
+
+【仮置き】クラス・園児の比べ方は sortNapReportLines と同じ。同じ発見時刻は、先に記録したもの（番号の小さいもの）を先にする。
+web/src/api/napReport.ts の sortReportAbnormals と同じ。
+*/
+func sortNapReportAbnormals(rows []napReportAbnormal) {
+	sort.SliceStable(rows, func(i, j int) bool {
+		x, y := rows[i], rows[j]
+		switch {
+		case x.date != y.date:
+			return x.date < y.date
+		case x.classID != y.classID:
+			return x.classID < y.classID
+		case x.kana != y.kana:
+			return x.kana < y.kana
+		case x.childID != y.childID:
+			return x.childID < y.childID
+		case x.foundAt != y.foundAt:
+			return x.foundAt < y.foundAt
+		}
+		return x.id < y.id
+	})
 }
 
 func (a *app) handleNapReport(w http.ResponseWriter, r *http.Request) {
@@ -187,7 +218,7 @@ func (a *app) handleNapReport(w http.ResponseWriter, r *http.Request) {
 napReportData は、期間（実施の日）とクラスで帳票の行と異常時の記録を集める。
 
 行は 実施の日 → クラス → 園児 → 時刻 の古い順（sortNapReportLines。画面の一覧の新しい順とは違う）。
-異常時の記録は発見時刻の新しい順、同じ時刻はあとで記録したものを先にする（handleNapAbnormals と同じ）。
+異常時の記録も同じ向きで、つないだ実施の日 → クラス → 園児 → 発見時刻 の古い順（sortNapReportAbnormals）。
 異常時の記録も、つないだ実施の日とクラスで絞る。
 
 SQLite の接続は1本なので（db.go）、名前を引くのはカーソルを閉じたあとにする。
@@ -279,10 +310,12 @@ func (a *app) napReportData(from, to string, classID int64, hasClass bool) ([]na
 		id                                         int64
 		childID, foundAt, situation, resp, staffID string
 		diaryID                                    sql.NullInt64
+		date                                       string
+		classID                                    int64
 	}
 	rawAbnormals := []rawAbnormal{}
 	abnormalRows, err := a.db.Query(`SELECT a.nap_abnormal_id, a.child_id, a.found_at, a.situation, a.response,
-		a.staff_id, a.diary_id
+		a.staff_id, a.diary_id, s.session_date, s.class_id
 		FROM t_nap_abnormal a JOIN t_nap_session s ON s.nap_session_id = a.nap_session_id
 		WHERE 1 = 1`+cond, args...)
 	if err != nil {
@@ -290,7 +323,8 @@ func (a *app) napReportData(from, to string, classID int64, hasClass bool) ([]na
 	}
 	for abnormalRows.Next() {
 		var x rawAbnormal
-		if err := abnormalRows.Scan(&x.id, &x.childID, &x.foundAt, &x.situation, &x.resp, &x.staffID, &x.diaryID); err != nil {
+		if err := abnormalRows.Scan(&x.id, &x.childID, &x.foundAt, &x.situation, &x.resp, &x.staffID, &x.diaryID,
+			&x.date, &x.classID); err != nil {
 			abnormalRows.Close()
 			return nil, nil, err
 		}
@@ -349,16 +383,12 @@ func (a *app) napReportData(from, to string, classID int64, hasClass bool) ([]na
 				situation, resp = incidentSituationResponse(diaryBody)
 			}
 		}
-		abnormals = append(abnormals, napReportAbnormal{id: x.id, foundAt: x.foundAt, cells: []string{
-			x.foundAt, a.childName(x.childID), situation, resp, a.staffName(x.staffID), mark,
-		}})
+		abnormals = append(abnormals, napReportAbnormal{id: x.id, date: x.date, classID: x.classID,
+			kana: childKana(x.childID), childID: x.childID, foundAt: x.foundAt, cells: []string{
+				x.foundAt, a.childName(x.childID), situation, resp, a.staffName(x.staffID), mark,
+			}})
 	}
-	sort.SliceStable(abnormals, func(i, j int) bool {
-		if abnormals[i].foundAt != abnormals[j].foundAt {
-			return abnormals[i].foundAt > abnormals[j].foundAt
-		}
-		return abnormals[i].id > abnormals[j].id
-	})
+	sortNapReportAbnormals(abnormals)
 	return lines, abnormals, nil
 }
 

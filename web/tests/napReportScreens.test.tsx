@@ -109,6 +109,8 @@ describe('午睡記録検索画面に、ねた・おきたの行と入眠時の�
     open('/staff/nap/search', admin);
     await settled();
     await waitFor(() => expect((screen.getByText('CSV出力') as HTMLButtonElement).disabled).toBe(false), { timeout: 3000 });
+    // 帳票は画面の一覧（新しい順）と並びが違うので、注記で知らせる（【仮置き】web/仮置き値.md「午睡の帳票」）
+    expect(document.body.textContent).toContain('CSV は、日付・クラス・園児ごとに時刻の古い順に並べます（この画面の一覧は新しい順です）。');
     const logsBefore = db.operationLogs.filter((l) => (l.after_value ?? '').startsWith('午睡記録をCSV出力')).length;
     fireEvent.click(screen.getByText('CSV出力'));
     await waitFor(() => expect(blob).not.toBeNull());
@@ -144,6 +146,7 @@ describe('午睡記録検索画面に、ねた・おきたの行と入眠時の�
     await waitFor(() => expect(document.querySelector('table.list tbody tr')).toBeTruthy(), { timeout: 3000 });
     expect(screen.queryByText('CSV出力')).toBeNull();
     expect(document.body.textContent).not.toContain('CSV 出力は');
+    expect(document.body.textContent).not.toContain('時刻の古い順に並べます');
     // 閲覧はできる（画面詳細図「午睡記録検索画面」(5-3)「一般は閲覧と修正ができるが、帳票・CSV の出力はできない」）
     expect(listRow('野原 太郎', '入眠（ねた）').textContent).toContain('36.5');
   });

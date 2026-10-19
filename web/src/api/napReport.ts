@@ -63,12 +63,19 @@ export interface NapReportLine {
   cells: string[];
 }
 
-/** 同じ期間の異常時の記録の1行 */
+/** 同じ期間の異常時の記録の1行。並べ替えの鍵（つないだ実施の日・クラス・園児のよみと ID・発見時刻・番号）と、出すセル */
 export interface NapReportAbnormal {
   id: number;
+  date: string;
+  classId: number;
+  kana: string;
+  childId: string;
   foundAt: string;
   cells: string[];
 }
+
+/** 日付・時刻・園児ID はサーバ（Go の文字列の比べ方）と同じく、文字コードの順で比べる */
+const byCode = (x: string, y: string) => (x < y ? -1 : x > y ? 1 : 0);
 
 /** 体温を小数第1位まで出す。記録が無ければ空（server/api_nap_report.go の napReportTemperature） */
 export function reportTemperature(v: number | null): string {
@@ -85,16 +92,22 @@ export function reportTemperature(v: number | null): string {
  */
 export function sortReportLines(lines: NapReportLine[]): NapReportLine[] {
   const rank: Record<NapReportLineKind, number> = { exclusion: 0, sleep: 1, check: 2, wake: 3 };
-  // 日付・時刻・園児ID はサーバ（Go の文字列の比べ方）と同じく、文字コードの順で比べる
-  const byCode = (x: string, y: string) => (x < y ? -1 : x > y ? 1 : 0);
   return [...lines].sort((a, b) => byCode(a.date, b.date) || a.classId - b.classId
     || a.kana.localeCompare(b.kana, 'ja') || byCode(a.childId, b.childId)
     || byCode(a.at, b.at) || rank[a.kind] - rank[b.kind] || a.id - b.id);
 }
 
-/** 異常時の記録を発見時刻の新しい順に並べる。同じ時刻はあとで記録したもの（番号の大きいもの）を先にする */
+/**
+ * 同じ期間の異常時の記録を、つないだ実施の日 → クラス → 園児 → 発見時刻 の古い順に並べる
+ * （server/api_nap_report.go の sortNapReportAbnormals と同じ）。一覧の行（sortReportLines）と同じ向きにする。
+ * 監査では1つのファイルを時刻の順に読み、表ごとに向きが違うと読み違えるため（2026-10-19、持ち主が任せて決めた）。
+ * 画面の「同じ期間の異常時の記録」と異常時記録画面の一覧は新しい順のまま。
+ * 【仮置き】クラス・園児の比べ方は sortReportLines と同じ。同じ発見時刻は、先に記録したもの（番号の小さいもの）を先にする
+ */
 export function sortReportAbnormals(rows: NapReportAbnormal[]): NapReportAbnormal[] {
-  return [...rows].sort((a, b) => b.foundAt.localeCompare(a.foundAt) || b.id - a.id);
+  return [...rows].sort((a, b) => byCode(a.date, b.date) || a.classId - b.classId
+    || a.kana.localeCompare(b.kana, 'ja') || byCode(a.childId, b.childId)
+    || byCode(a.foundAt, b.foundAt) || a.id - b.id);
 }
 
 /**
