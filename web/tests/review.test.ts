@@ -99,6 +99,7 @@ describe('メッセージの取消とリアクション（GitHub Issue #98・#10
     const code = await api.issueOneInvitationCode(admin, 'C001', 30);
     const late = await api.signUpGuardian({
       code, email: 'late.review@example.jp', password: 'pass12345', guardian_name: '野原 節子', relationship: '祖母',
+      terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION,
     });
     await expect(api.toggleReaction(late, old.chat_message_id, '1')).rejects.toThrow('メッセージが見つかりません');
     // 先に登録していた保護者は付けられる
@@ -112,6 +113,7 @@ describe('メッセージの取消とリアクション（GitHub Issue #98・#10
     const code = await api.issueOneInvitationCode(admin, 'C001', 30);
     const late = await api.signUpGuardian({
       code, email: 'late.same@example.jp', password: 'pass12345', guardian_name: '野原 茂', relationship: '祖父',
+      terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION,
     });
     expect(await api.messages(late, 6)).toHaveLength(0);
   });

@@ -21,6 +21,7 @@ import { ConfirmDialog } from '../../components/feedback';
 import Reactions from '../../components/Reactions';
 import { formatHM, formatMD } from '../../api/util';
 import type { ChatMessage } from '../../api/types';
+import { useUnsavedInput } from '../../unsavedInput';
 
 /*
  * メッセージを長押しして操作の一覧を開くまでの時間と、長押しとみなす指のずれの上限。
@@ -89,6 +90,15 @@ export default function GuardianChatScreen() {
   useEffect(() => {
     if (roomId) api.markRead(user!, roomId).then(() => rooms.refresh(), () => {});
   }, [roomId, lastMessageId]);
+
+  /*
+   * 書きかけのメッセージと、保存していない編集は、ログアウトの前に確かめる。
+   * 確かめずにログアウトすると、書いた文が黙って消える（基本設計書「ログアウト」(4-3)。GitHub Issue #170）
+   * 書きかけはチャンネルごとに持つので（GitHub Issue #172）、いま開いていないチャンネルの書きかけも数える
+   */
+  const editingOriginal = messages.data?.find((m) => m.chat_message_id === editingId)?.body;
+  const hasDraft = Object.values(drafts).some((d) => d.trim() !== '');
+  useUnsavedInput(hasDraft || (editingId !== null && draft !== editingOriginal));
 
   // 開いたチャンネルは、いちばん下（最新）から見せる（GitHub Issue #172）。いちばん下を読んでいるときに届いた
   // メッセージは、見える位置まで送る。上へ戻って読んでいるときは動かさない

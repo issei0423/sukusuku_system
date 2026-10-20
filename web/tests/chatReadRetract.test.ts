@@ -38,6 +38,7 @@ describe('後から登録した保護者は、見えない登録前のメッセ�
     const code = await api.issueOneInvitationCode(admin, 'C002', 14);
     const haha = await api.signUpGuardian({
       code, email: 'uezono.haha@example.jp', password: 'uezono-5678', guardian_name: '上園 母', relationship: '母',
+      terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION, // 規約への同意（GitHub Issue #170）
     });
     expect(await api.messages(haha, 7)).toHaveLength(0);
     // 保護者のチャット画面は、チャンネルを開くとこれを呼ぶ

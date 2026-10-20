@@ -243,13 +243,19 @@ run('Go サーバとの結合', () => {
     const adminCookie = cookie;
     try {
       await expect(http.api.verifyInvitationCode(code.replace(/-/g, '').toLowerCase())).resolves.toBeTruthy();
-      const base = { code, password: 'pass12345', guardian_name: '検査 太郎', relationship: '父' };
+      // 規約への同意（いまの版）を添える。同意の無い登録は受け付けない（GitHub Issue #170）
+      const { terms_version } = await http.api.currentTerms();
+      const base = { code, password: 'pass12345', guardian_name: '検査 太郎', relationship: '父', terms_agreed: true, terms_version };
       // ログイン中は新規登録を受け付けない（GitHub Issue #159）
       await expect(http.api.signUpGuardian({ ...base, email: 'taro@example.jp' })).rejects.toThrow(/already_logged_in/);
       // 登録は、ログインしていない端末から行う
       cookie = '';
       await expect(http.api.signUpGuardian({ ...base, email: '' })).rejects.toThrow(/メールアドレスを入力/);
       await expect(http.api.signUpGuardian({ ...base, email: 'taro.example.jp' })).rejects.toThrow(/形式/);
+      // 規約に同意していない登録・大文字違いの既存のメールアドレスは受け付けない（GitHub Issue #170）
+      await expect(http.api.signUpGuardian({ ...base, email: 'noagree@example.jp', terms_agreed: false }))
+        .rejects.toThrow(/利用規約/);
+      await expect(http.api.signUpGuardian({ ...base, email: 'NOHARA.I@EXAMPLE.JP' })).rejects.toThrow(/すでに登録/);
     } finally {
       cookie = adminCookie;
       const row = (await http.api.invitationCodes(dummy)).find((c) => c.code === code)!;
