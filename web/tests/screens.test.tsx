@@ -7,7 +7,7 @@
  * データの読み込みは非同期のため、読み込み完了まで待ってから内容を検査する。
  */
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
-import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, fireEvent, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import App from '../src/App';
 import { SessionProvider } from '../src/session';
@@ -64,7 +64,15 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date(`${day}T13:30:00+09:00`));
 });
-afterEach(() => { vi.useRealTimers(); });
+/*
+ * 画面を片付けてから時計を戻す。片付ける前に戻すと、その間に届いた応答（チャンネルを開いたときの既読など）の
+ * 知らせ（src/live.ts）で、開いたままのヘッダが本物の時計のまま読み直し、午睡の実施が自動で解除されてしまう
+ * （after 系は登録の逆順に走り、上の afterEach(cleanup) は最後になるため、ここで先に片付ける）
+ */
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe('共通・認証（7画面）', () => {
   it('保護者用トップ：新規登録の導線を置く', async () => {
@@ -91,11 +99,13 @@ describe('共通・認証（7画面）', () => {
 
   it('パスワード変更画面', async () => {
     open('/staff/password', teacher);
-    expect(screen.getByText('パスワードの変更')).toBeTruthy();
+    // サイドナビにも「パスワードの変更」がある（GitHub Issue #178 の 3）。見出しで確かめる
+    expect(screen.getByRole('heading', { name: 'パスワードの変更' })).toBeTruthy();
   });
 
   it('利用規約同意画面', async () => {
-    open('/terms-agree', guardian);
+    // 同意を求める画面は、同意が残っている利用者にだけ出す（GitHub Issue #178 の 4。同意済みなら利用規約の参照へ送る）
+    open('/terms-agree', { ...guardian, terms_agreed: false });
     expect(screen.getByText('利用規約への同意')).toBeTruthy();
   });
 
@@ -130,7 +140,7 @@ describe('日誌システム（6画面）', () => {
 
   it('日誌作成・編集画面：他の職員が編集中ならその旨を出す', async () => {
     // 日誌2は宮城 蓮（S004）がロックを保持している
-    open('/staff/diary/2', teacher);
+    open('/staff/diary/3', teacher);
     await waitFor(() => {
       expect(document.body.textContent).toContain('宮城 蓮さんが編集中です');
     }, { timeout: 3000 });
@@ -153,12 +163,14 @@ describe('日誌システム（6画面）', () => {
     expect(screen.queryByText('承認待ち')).toBeNull();
   });
 
-  it('日誌承認画面：共有の指定を同じ画面に置く', async () => {
+  it('日誌承認画面：承認と差し戻しを置き、保護者への共有の指定は置かない', async () => {
+    // 日誌は園内の記録で、承認しても保護者へは届かない（詳細設計書「日誌の画面（作り直し）」(2-13 (1))）
     open('/staff/admin/approval/2', admin);
     await settled();
-    expect(screen.getByText('保護者への共有')).toBeTruthy();
     expect(screen.getByText('承認する')).toBeTruthy();
     expect(screen.getByText('差し戻す')).toBeTruthy();
+    expect(screen.queryByText('保護者への共有')).toBeNull();
+    expect(document.body.textContent).not.toContain('共有する');
   });
 
   it('園児タイムライン画面', async () => {
@@ -306,16 +318,30 @@ describe('チャット画面の表示', () => {
     expect(screen.queryByText('取消')).toBeNull();
     expect(screen.queryByText('リアクション')).toBeNull();
 
+    /*
+     * 長押しの時間は、偽のタイマーで進める。本物の時間（0.9 秒・0.8 秒）を待つと、負荷の高いときに
+     * テストが長くなるうえ、長押しのタイマーと waitFor の時間切れが同じ回にまとめて来て、
+     * 一覧を描く前に時間切れになることがある。
+     * ここから先は setTimeout も偽物になり、waitFor・findBy の待ちも止まるため使わない。
+     * 進めた時間の中で起きた描画と effect は act の中で済ませ、そのまま見る
+     */
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+
     // 押してすぐ離したときは開かない
     const mine = document.querySelector('.msg.mine .bubble.pressable')!;
     fireEvent.pointerDown(mine, { button: 0, clientX: 10, clientY: 10 });
     fireEvent.pointerUp(mine);
-    await new Promise((r) => setTimeout(r, 900));
+    act(() => { vi.advanceTimersByTime(900); });
     expect(screen.queryByRole('group', { name: 'メッセージの操作' })).toBeNull();
 
     // 0.8秒押し続けると、リアクション・編集・取消の3つが出る
     fireEvent.pointerDown(mine, { button: 0, clientX: 10, clientY: 10 });
-    await waitFor(() => { expect(screen.getByRole('group', { name: 'メッセージの操作' })).toBeTruthy(); }, { timeout: 2000 });
+    act(() => { vi.advanceTimersByTime(799); });
+    expect(screen.queryByRole('group', { name: 'メッセージの操作' })).toBeNull();
+    act(() => { vi.advanceTimersByTime(1); });
+    expect(screen.getByRole('group', { name: 'メッセージの操作' })).toBeTruthy();
+    // 開いたら最初の操作へフォーカスが移る。一覧の外を押したときに閉じる仕組みも、同じ effect で付いている
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('了解');
     expect(screen.getByRole('button', { name: '了解' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '編集' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '取消' })).toBeTruthy();
@@ -329,7 +355,7 @@ describe('チャット画面の表示', () => {
 
     // 一覧の外を押すと閉じる
     fireEvent.pointerDown(document.body);
-    await waitFor(() => { expect(screen.queryByRole('group', { name: 'メッセージの操作' })).toBeNull(); });
+    expect(screen.queryByRole('group', { name: 'メッセージの操作' })).toBeNull();
   });
 
   it('保護者：相手のメッセージの長押しでは、リアクションだけを出す', async () => {
@@ -388,9 +414,11 @@ describe('午睡チェック（3画面）', () => {
     const timerLabel = screen.queryByText('次のチェックまで') ?? screen.queryByText(/チェックの時刻を過ぎています/);
     expect(timerLabel).toBeTruthy();
     expect(screen.getByText('午睡チェックを終了')).toBeTruthy();
-    // 記録済み 8 / 12 名（デモデータ）。園児の状態はセッション取得後に読み直すため待つ
+    // 記録済み 8 / 11 名（デモデータ）。園児の状態はセッション取得後に読み直すため待つ。
+    // 高梨 健（C003）は今日の実施で「対象外（欠席）」のため、数から外す（詳細設計書「タイマー」(2-4 (3))、「デモデータ」(5-5)）。
+    // 対象外の記録（13:01）は、デモデータを読み込んだ時刻より後なら入らない（未来の出来事を入れない）。そのときは 12 名
     await waitFor(() => {
-      expect(document.body.textContent).toContain('記録済み 8 / 12 名');
+      expect(document.body.textContent).toMatch(/記録済み 8 \/ (11|12) 名/);
     }, { timeout: 3000 });
   });
 
@@ -553,6 +581,8 @@ describe('園児マスター・アカウント管理（10画面）', () => {
     expect(screen.getByText('アレルギー一覧（全園児）')).toBeTruthy();
     // 一般（さくら組担任）にも、ひまわり組の園児が出る
     expect(document.body.textContent).toContain('井上 空');
+    // 一般も印刷できる（画面詳細図「アレルギー一覧画面」(7-4) の項目2。PR #216 の直-16・直-24）
+    expect(screen.getByRole('button', { name: '印刷する' }).hasAttribute('disabled')).toBe(false);
   });
 
   it('年度更新画面：未確定事項があるため実行できない', async () => {
@@ -601,17 +631,12 @@ describe('保護者から見える範囲', () => {
     expect(screen.queryByText('記録日')).toBeNull();
   });
 
-  it('共有された日誌は開ける', async () => {
-    open('/guardian/diary/4', guardian);
-    await settled();
-    // 日誌4は C002（上園 花子）のもの。野原 一誠は参照できない。
-    // 保護者には、見られない日誌を「この記録は共有されていません」と示す（画面詳細図 2-8。GitHub Issue #157）
-    expect(document.body.textContent).toContain('この記録は共有されていません');
-  });
-
-  it('自児の共有済みの日誌は開ける', async () => {
+  it('共有日誌閲覧画面は無い。以前の経路を開いても日誌は出ない', async () => {
+    // 日誌は園内の記録（詳細設計書「日誌の画面（作り直し）」(2-13 (1))「共有日誌閲覧画面は画面ごと外す」）。
+    // 日誌 5 は野原 太郎（自児）の承認済みの個人日誌。経路が無いため入口へ戻る
     open('/guardian/diary/5', guardian);
     await settled();
-    expect(document.body.textContent).toContain('砂場でスコップ');
+    expect(document.body.textContent).not.toContain('砂場でスコップ');
+    expect(document.body.textContent).not.toContain('共有された');
   });
 });

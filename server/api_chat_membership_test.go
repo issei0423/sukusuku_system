@@ -30,11 +30,28 @@ func chatReq(h http.Handler, c *http.Cookie, method, path, body string) *httptes
 	return rec
 }
 
+func TestGuardianCannotReadChatMembers(t *testing.T) {
+	a, h := newTestApp(t)
+	guardian := loginAs(a, 6, "guardian")
+	staff := loginAs(a, 3, "staff")
+	for _, roomID := range []string{"1", "3"} {
+		r := chatReq(h, guardian, "GET", "/api/chat/rooms/"+roomID+"/members", "")
+		if r.Code != http.StatusForbidden {
+			t.Fatalf("保護者にメンバー一覧を返しました: room=%s status=%d body=%s", roomID, r.Code, r.Body.String())
+		}
+	}
+	if r := chatReq(h, staff, "GET", "/api/chat/rooms/3/members", ""); r.Code != http.StatusOK {
+		t.Fatalf("担任のメンバー一覧まで拒否されました: %d", r.Code)
+	}
+}
+
 // currentRooms は、いま参加している（left_at の無い）チャンネルを番号順に返す
 func currentRooms(t *testing.T, a *app, accountID int64) []int64 {
 	t.Helper()
+	// この既存テストは元からあった 1〜9 番の参加状態を確かめる。
+	// 新しい在籍園児のルームは api_child_room_test.go で確かめる。
 	rows, err := a.db.Query(`SELECT chat_room_id FROM t_chat_member
-		WHERE account_id = ? AND left_at IS NULL ORDER BY chat_room_id`, accountID)
+		WHERE account_id = ? AND left_at IS NULL AND chat_room_id <= 9 ORDER BY chat_room_id`, accountID)
 	if err != nil {
 		t.Fatal(err)
 	}

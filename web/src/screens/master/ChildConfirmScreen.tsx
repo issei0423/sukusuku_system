@@ -4,14 +4,20 @@
  *
  * 生年月日は月齢の算出の根拠であり、後から直すと過去の記録の月齢表示が変わる。
  * 確認画面で強調する。
+ *
+ * 新規登録では、同じ氏名・生年月日の園児がいれば知らせる。園児IDは使われている番号の次が自動で入るため、
+ * 同じ子を重ねて登録するまちがいは園児IDの重複では防げない（GitHub Issue #144 の 2）。
+ * 【仮置き】知らせるだけで、登録は止めない。同じ氏名・生年月日の別の子もありうる
+ * （web/仮置き値.md「同じ氏名・生年月日の園児の知らせ」）。
  */
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api, className } from '../../api/client';
 import { Alert, Empty } from '../../components/ui';
 import { notify } from '../../components/feedback';
-import { SEX, PHOTO_CONSENT } from '../../api/codes';
+import { SEX, PHOTO_CONSENT, ENROLLMENT_STATUS } from '../../api/codes';
 import { formatYMD, formatAge, today } from '../../api/util';
 import type { ChildInput } from '../../api/client';
 import type { Child } from '../../api/types';
@@ -22,6 +28,14 @@ export default function ChildConfirmScreen() {
   const state = useLocation().state as { form: ChildInput; mode: 'create' | 'edit'; before: Child | null } | null;
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const same = useAsync(
+    async () => (state?.mode === 'create'
+      ? api.sameNameBirthChildren(user!, state.form.child_name, state.form.birth_date) : []),
+    [state?.mode, state?.form.child_name, state?.form.birth_date],
+  );
+  // 「C001 野原 太郎」。在籍でない園児は「C001 野原 太郎・退園」のように状態を添える
+  const sameChildren = (same.data ?? []).map((c) => `${c.child_id} ${c.child_name}`
+    + (c.enrollment_status !== '1' ? `・${ENROLLMENT_STATUS[c.enrollment_status]}` : ''));
 
   if (!state) return <Empty text="確認する内容がありません。園児情報の入力画面から進んでください。" />;
   const { form, mode, before } = state;
@@ -32,7 +46,7 @@ export default function ChildConfirmScreen() {
     setBusy(true); setError(null);
     try {
       await api.saveChild(user!, form, mode);
-      notify(mode === 'create' ? `${form.child_name} を登録しました` : `${form.child_name} の情報を更新しました`);
+      notify(mode === 'create' ? `登録しました。${form.child_name}さんの個人チャットも用意しました。` : `${form.child_name} の情報を更新しました`);
       navigate('/staff/children');
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
@@ -53,12 +67,23 @@ export default function ChildConfirmScreen() {
         </div>
       )}
 
+      {/* 同じ子を重ねて登録していないかを確かめてもらう。登録するボタンは止めない（GitHub Issue #144 の 2） */}
+      {sameChildren.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <Alert>
+            同じ氏名・生年月日の園児がいます（{sameChildren.join('、')}）。同じ子を重ねて登録していないか確かめてください。
+            別の子であれば、このまま登録できます。
+          </Alert>
+        </div>
+      )}
+
       <section className="card">
         <table className="list">
           <tbody>
             <tr><th scope="col" style={{ width: 150 }}>園児ID</th><td>{form.child_id}</td></tr>
             <tr><th scope="col">氏名</th><td>{form.child_name}</td></tr>
             <tr><th scope="col">よみ</th><td>{form.child_name_kana || '―'}</td></tr>
+            <tr><th scope="col">呼び名</th><td>{form.nickname || '―'}</td></tr>
             <tr>
               <th scope="col">生年月日</th>
               <td>

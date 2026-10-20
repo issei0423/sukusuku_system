@@ -3,7 +3,8 @@
  * 典拠：基本設計書.md「操作ログ」(5-8)「操作ログと午睡記録の CSV 出力は、操作ログへ「出力」として記録する。
  *      出力は画面側で作る」
  *
- * CSV を出す画面（操作ログ参照画面・午睡記録検索画面）は、必ずここを通して作る。
+ * CSV を出す画面（操作ログ参照画面）は、必ずここを通して作る。午睡記録の帳票はサーバで作り
+ * （server/api_nap_report.go。モックは api/napReport.ts がここの toCsv で作る）、画面は downloadCsvText で保存だけする。
  *
  * 【仮置き】セルの無害化は設計に定めが無い（web/仮置き値.md、GitHub Issue #153）。
  * 出力した CSV は Excel などの表計算ソフトで開かれる。先頭が = + - @ のセルは式として扱われうる。
@@ -29,7 +30,15 @@ export function toCsv(header: string[], rows: unknown[][]): string {
 
 /** CSV をファイルとして保存させる。Excel で開いても文字化けしないよう、先頭に BOM を付ける */
 export function downloadCsv(fileName: string, header: string[], rows: unknown[][]): void {
-  const blob = new Blob([`﻿${toCsv(header, rows)}`], { type: 'text/csv' });
+  downloadCsvText(fileName, toCsv(header, rows));
+}
+
+/**
+ * 出来上がった CSV の本文（サーバで作った帳票など。BOM なし）をファイルとして保存させる。先頭に BOM を付ける
+ * （午睡記録検索画面が GET /api/nap/report の本文を保存する）
+ */
+export function downloadCsvText(fileName: string, text: string): void {
+  const blob = new Blob([`${String.fromCharCode(0xfeff)}${text}`], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

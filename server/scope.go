@@ -17,10 +17,13 @@ import (
 
 // Child は園児（m_child）。
 // 保護者へ返すときは forGuardian を通し、園児情報入力画面の項目を応答から落とす（下の MarshalJSON）
+// 呼び名（Nickname）は保護者の応答には含めない（インタフェース一覧「Child」）。保護者へ返す visibleChildren・
+// guardianContactChildren が forGuardian で空にし、omitempty で項目ごと落とす
 type Child struct {
 	ChildID           string   `json:"child_id"`
 	ChildName         string   `json:"child_name"`
 	ChildNameKana     string   `json:"child_name_kana"`
+	Nickname          string   `json:"nickname,omitempty"`
 	BirthDate         string   `json:"birth_date"`
 	Sex               string   `json:"sex"`
 	NormalTemperature *float64 `json:"normal_temperature"`
@@ -42,8 +45,11 @@ type Child struct {
 // モックは web/src/api/mock.ts の childForGuardian
 var guardianHiddenChildKeys = []string{"normal_temperature", "photo_consent_level"}
 
-// forGuardian は、保護者へ返す園児の形にする。値も消しておき、JSON 以外の使い道からも漏らさない
+// forGuardian は、保護者へ返す園児の形にする。値も消しておき、JSON 以外の使い道からも漏らさない。
+// 呼び名も保護者の応答に含めない（インタフェース一覧「Child」）。
+// モックは web/src/api/mock.ts の childForGuardian
 func (c Child) forGuardian() Child {
+	c.Nickname = ""
 	c.NormalTemperature = nil
 	c.PhotoConsentLevel = ""
 	c.guardianView = true
@@ -68,13 +74,14 @@ func (c Child) MarshalJSON() ([]byte, error) {
 	return json.Marshal(m)
 }
 
-const childColumns = `child_id, child_name, IFNULL(child_name_kana,''), birth_date, sex,
+// 呼び名の列は空のまま足す（詳細設計書「変える表」(5-3)）ため NULL がある。IFNULL で空の文字列にそろえて読む
+const childColumns = `child_id, child_name, IFNULL(child_name_kana,''), IFNULL(nickname,''), birth_date, sex,
 	normal_temperature, enrollment_status, photo_consent_level, is_deleted, created_at, updated_at`
 
 func scanChild(rows interface{ Scan(...any) error }) (Child, error) {
 	var c Child
 	var temp sql.NullFloat64
-	err := rows.Scan(&c.ChildID, &c.ChildName, &c.ChildNameKana, &c.BirthDate, &c.Sex,
+	err := rows.Scan(&c.ChildID, &c.ChildName, &c.ChildNameKana, &c.Nickname, &c.BirthDate, &c.Sex,
 		&temp, &c.EnrollmentStatus, &c.PhotoConsentLevel, &c.IsDeleted, &c.CreatedAt, &c.UpdatedAt)
 	c.NormalTemperature = nullFloat(temp)
 	return c, err

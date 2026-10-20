@@ -22,10 +22,11 @@ import (
  * 日付だけの列（_on。発達チェックの予定日・実施日、身体測定の測定日など）も対象にする。
  * 外すと、作成日時だけがずれて予定日・実施日・測定日が基準日のまま残り、前後関係が崩れる
  * （GitHub Issue #164。モックの web/src/api/mockDb.ts は日付の形の値をすべてずらしている）。
- * 園児の生年月日や年度の開始日は絶対の日付であり、動かしてはならない。
- * それらはマスタ（m_）にあるため、対象から自然に外れる。
- * ただし一時パスワードの有効期限（m_account.temp_password_expires_at）は、デモの「今日」から
- * 決めた日時なので、明示的に対象へ入れる（seedShiftMasterColumns）。
+ * 年度の開始日などの絶対の日付は、動かしてはならない。それらはマスタ（m_）にあるため、対象から自然に外れる。
+ * ただしマスタにあっても、デモの「今日」から決めた値は明示的に対象へ入れる（seedShiftMasterColumns）。
+ * 一時パスワードの有効期限（m_account.temp_password_expires_at）と、園児の生年月日（m_child.birth_date）である。
+ * 生年月日をずらさないと、実施日・測定日だけが動いて記録の時点の月齢が変わり、デモの発達チェックが
+ * 別の発達過程区分になって「未入力」が出る（GitHub Issue #164）。
  * ただし t_invitation_code.birth_date は記録テーブルにある生年月日なので、
  * 明示的に除外する。
  *
@@ -109,11 +110,16 @@ func shiftDatesBy(db *sql.DB, offset int) error {
 		}
 	}
 
-	// 記録テーブルの外にあって、ずらす必要のある列
+	// 記録テーブルの外にあって、ずらす必要のある列。日付だけの列（生年月日）と日時の列を、上と同じく長さで見分ける。
+	// どれも一意制約が無いので、逃がさずに一度でずらす
 	for _, tc := range seedShiftMasterColumns {
-		q := fmt.Sprintf(`UPDATE %s SET %s = replace(datetime(%s, ?), ' ', 'T') WHERE %s IS NOT NULL`,
-			tc.table, tc.column, tc.column, tc.column)
-		if _, err := db.Exec(q, fmt.Sprintf("%+d days", offset)); err != nil {
+		q := fmt.Sprintf(`UPDATE %s SET %s = CASE
+				WHEN length(%s) = 10 THEN date(%s, ?)
+				ELSE replace(datetime(%s, ?), ' ', 'T')
+			END WHERE %s IS NOT NULL`,
+			tc.table, tc.column, tc.column, tc.column, tc.column, tc.column)
+		days := fmt.Sprintf("%+d days", offset)
+		if _, err := db.Exec(q, days, days); err != nil {
 			return fmt.Errorf("%s.%s の日付をずらせませんでした: %w", tc.table, tc.column, err)
 		}
 		shifted++
@@ -188,10 +194,15 @@ seedShiftMasterColumns は、マスタ（m_）にあるが、デモデータの�
 
 ずらしの対象は記録テーブル（t_）だけだが、一時パスワードの有効期限は「今日から 48 時間」として入れてある。
 ずらさないと、デモの 宮城 蓮 は起動した日によって期限切れになり、一時パスワードでのログインを見せられない
-（GitHub Issue #159。有効期限をログインで確かめるようにしたため）。日時（YYYY-MM-DDTHH:MM:SS）の列に限る
+（GitHub Issue #159。有効期限をログインで確かめるようにしたため）。
+
+園児の生年月日も、デモの「今日」に何か月の子かを決めて入れてある。記録と同じ日数だけずらし、
+起動した日にもデモの園児の月齢（今日の時点・実施日の時点・測定日の時点）を保つ（GitHub Issue #164。
+モックの web/src/api/mockDb.ts も同じ）。日付をずらすので、月末生まれ（小林 結衣）は起動した日によって月末でなくなる
 */
 var seedShiftMasterColumns = []struct{ table, column string }{
 	{"m_account", "temp_password_expires_at"},
+	{"m_child", "birth_date"},
 }
 
 func hasDateSuffix(name string) bool {

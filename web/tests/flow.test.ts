@@ -1,6 +1,6 @@
 /*
  * 業務の流れのテスト
- * 典拠：基本設計書.md「日誌の作成から保護者への共有」(4-5)、「保護者アカウントの自己登録」(4-3)、
+ * 典拠：基本設計書.md「日誌システム（園内の記録）」(4-6)、「保護者アカウントの自己登録」(4-3)、
  *      「異常時の記録」(4-7)、5-2（招待コードは1枚＝1アカウント）
  */
 import { describe, it, expect, vi } from 'vitest';
@@ -63,30 +63,23 @@ describe('ログイン', () => {
   });
 });
 
-describe('日誌の作成から保護者への共有', () => {
-  it('承認と共有の指定は別。共有しない承認では個人チャットへ流さない', async () => {
+/*
+ * 日誌の承認は園内の確認で、保護者へは何も届かない
+ * （基本設計書「日誌システム（園内の記録）」(4-6)、詳細設計書「日誌」(4-13 (2))）
+ */
+describe('園内の日誌の承認', () => {
+  it('承認しても個人チャットへ流さない（チャットのメッセージが増えない）', async () => {
     const d = await api.saveDiary(teacher, {
       record_type: '1', child_id: 'C001', class_id: 1,
-      diary_date: '2026-09-02', body: '共有しない日誌',
+      diary_date: '2026-09-02', body: '園内で確かめる日誌',
     }, '2');
     const before = db.chatMessages.length;
-    const approved = await api.approveDiary(admin, d.diary_id, false);
+    const approved = await api.approveDiary(admin, d.diary_id);
 
     expect(approved.status).toBe('3');
-    expect(approved.is_shared_to_guardian).toBe(false);
-    expect(approved.shared_at).toBeNull();
+    expect(approved.applied_staff_id).toBe('S003');
     expect(db.chatMessages.length).toBe(before);
-  });
-
-  it('共有する承認では個人チャットへ日誌の共有として流す', async () => {
-    const d = await api.saveDiary(teacher, {
-      record_type: '1', child_id: 'C001', class_id: 1,
-      diary_date: '2026-09-03', body: '共有する日誌',
-    }, '2');
-    await api.approveDiary(admin, d.diary_id, true);
-
-    const msg = db.chatMessages.find((m) => m.source_type === '2' && m.source_id === d.diary_id);
-    expect(msg).toBeDefined();
+    expect(db.chatMessages.some((m) => m.source_type === '2' && m.source_id === d.diary_id)).toBe(false);
   });
 
   it('差し戻しは理由の入力を必須とする', async () => {
@@ -101,12 +94,15 @@ describe('日誌の作成から保護者への共有', () => {
     expect(returned.returned_reason).toBe('記録が不足しています');
   });
 
-  it('申請中でない日誌は承認できない', async () => {
+  it('申請中でない日誌は承認できない。下書きは「取り下げられました」、承認済みは「申請中の日誌のみ」', async () => {
     const d = await api.saveDiary(teacher, {
       record_type: '2', child_id: null, class_id: 1,
       diary_date: '2026-09-05', body: '下書きのまま',
     }, '1');
-    await expect(api.approveDiary(admin, d.diary_id, false)).rejects.toThrow('申請中');
+    // 下書きへの承認は、取り下げたあとに届いた承認として扱う（詳細設計書「日誌の状態」(3-6)）
+    await expect(api.approveDiary(admin, d.diary_id)).rejects.toThrow('この日誌は取り下げられました。');
+    // 日誌 5 は承認済み
+    await expect(api.approveDiary(admin, 5)).rejects.toThrow('申請中の日誌のみ承認できます');
   });
 });
 
@@ -242,17 +238,9 @@ describe('メッセージの編集', () => {
     expect(after.body).toBe('既読が付いたあとの本文');
   });
 
-  it('日誌の共有は、本文だけ編集でき、リンク先の記録は変わらない', async () => {
-    // 日誌の共有（source_type=2）は個人チャットへ送られる（基本設計書「日誌の作成から保護者への共有」(4-5)）
-    const shared = db.chatMessages.find((m) => m.source_type === '2')!;
-    const sourceID = shared.source_id;
-
-    await api.edit(teacher, shared.chat_message_id, '本日の日誌を共有しました。お目通しください。');
-
-    const after = db.chatMessages.find((m) => m.chat_message_id === shared.chat_message_id)!;
-    expect(after.body).toBe('本日の日誌を共有しました。お目通しください。');
-    expect(after.source_type).toBe('2');
-    expect(after.source_id).toBe(sourceID);
+  it('デモデータに日誌の共有の知らせ（source_type=2）は無い', async () => {
+    // 日誌は園内の記録。共有の知らせは作らず、デモデータにも入れない（詳細設計書「デモデータ」(5-5)）
+    expect(db.chatMessages.filter((m) => m.source_type === '2' && !m.is_deleted)).toEqual([]);
   });
 });
 
@@ -305,7 +293,7 @@ describe('発達チェックの確定（基本設計書「発達チェックの�
 
   it('所見は、確定したあとに開き直しても残っている', async () => {
     await api.saveCheck(teacher, childId, checkedOn, [], '歩き始めが安定してきた', '2');
-    const again = await api.draftFor(childId, checkedOn);
+    const again = await api.draftFor(teacher, childId, checkedOn);
     expect(again?.check.note).toBe('歩き始めが安定してきた');
   });
 
@@ -338,11 +326,8 @@ describe('発達チェックの確定（基本設計書「発達チェックの�
 });
 
 describe('記録した職員の表示', () => {
-  it('保護者が開く共有日誌には、記入者・確認者の氏名が載る（職員IDではない）', async () => {
-    const shared = db.diaries.find((d) => !d.is_deleted && d.status === '3' && d.is_shared_to_guardian
-      && d.child_id && db.guardianChildren.some((gc) =>
-        gc.guardian_id === 'G001' && gc.child_id === d.child_id && gc.link_status === '1'))!;
-    const d = await api.getDiary(guardian, shared.diary_id);
+  it('職員が開く承認済み日誌には、作成者・承認者の氏名が載る', async () => {
+    const d = await api.getDiary(admin, 5);
     expect(d.staff_name).toBeTruthy();
     expect(d.staff_name).not.toMatch(/^S\d+$/);
     expect(d.approved_staff_name).toBeTruthy();
@@ -423,6 +408,7 @@ describe('利用規約の同意履歴（基本設計書「同意履歴（t_terms
     const code = await api.issueOneInvitationCode(admin, 'C002', 30);
     const u = await api.signUpGuardian({
       code, email: 'rireki@example.jp', password: 'pass12345', guardian_name: '履歴 確認', relationship: '母',
+      terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION,
     });
     expect(db.termsAgreements.filter((x) => x.account_id === u.account_id).length).toBe(1);
   });
@@ -451,24 +437,38 @@ describe('設計の決定を反映したもの（基本設計書 第2.3版）', 
     expect(db.accounts.find((a) => a.account_id === u.account_id)!.is_temp_password).toBe(true);
   });
 
-  it('後から登録した保護者には、登録より前の個人チャットのやりとりを見せない', async () => {
+  it('後から登録した保護者には、最初の保護者が参加した後のやりとりを見せない', async () => {
     const before = (await api.messages(guardian, 6)).filter((m) => !m.is_deleted).length;
     expect(before).toBeGreaterThan(0);
 
     const code = await api.issueOneInvitationCode(admin, 'C001', 30);
     const grandma = await api.signUpGuardian({
       code, email: 'sobo@example.jp', password: 'pass12345', guardian_name: '野原 和子', relationship: '祖母',
+      terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION,
     });
-    // 登録した直後は、以前のやりとりが見えず、未読にも数えない
-    expect(await api.messages(grandma, 6)).toHaveLength(0);
-    expect((await api.rooms(grandma)).find((r) => r.room.chat_room_id === 6)!.unread).toBe(0);
+    /*
+     * 登録より前か後かは、送った日時と登録した日時で決まる。件数を決め打ちせず、日時で分けて確かめる。
+     * デモデータには「今日の 07:40」のやりとりがあり、時計が 07:40 より前のとき（SUKUSUKU_TEST_CLOCK=03:00 など）は
+     * 登録より後の出来事になるため、後から登録した保護者にも見えてよい（tests/setup-clock.ts、GitHub Issue #152）
+     */
+    const joinedAt = db.chatMembers.find((x) => x.chat_room_id === 6 && x.account_id === grandma.account_id)!.joined_at;
+    const beforeJoined = (ms: { sent_at: string }[]) => ms.filter((m) => m.sent_at <= joinedAt);
+    // 見せないはずのやりとりが、いつ回しても 1 件はある（3 日前のもの）
+    expect(beforeJoined(await api.messages(guardian, 6)).length).toBeGreaterThan(0);
+
+    // 最初の保護者の参加後で、自分の参加より前のやりとりは見えず、未読にも数えない
+    const first = await api.messages(grandma, 6);
+    expect(beforeJoined(first)).toEqual([]);
+    expect((await api.rooms(grandma)).find((r) => r.room.chat_room_id === 6)!.unread)
+      .toBe(first.filter((m) => !m.is_deleted).length);
 
     // 登録したあとのメッセージは見える。時刻は秒の単位のため、時計を 1 秒より先へ進めてから送る
     // （テストの時計は止めてある。tests/setup-clock.ts）
     vi.advanceTimersByTime(1100);
     await api.send(teacher, 6, '明日の持ち物は水筒です。');
     const seen = await api.messages(grandma, 6);
-    expect(seen.map((m) => m.body)).toEqual(['明日の持ち物は水筒です。']);
+    expect(seen.map((m) => m.body)).toContain('明日の持ち物は水筒です。');
+    expect(beforeJoined(seen)).toEqual([]);
 
     // 先に登録していた保護者と職員は、これまでどおり全部読める
     expect((await api.messages(guardian, 6)).length).toBeGreaterThan(before);
@@ -490,8 +490,7 @@ describe('設計の決定を反映したもの（基本設計書 第2.3版）', 
     // 保護者の野原 一誠は、職員（園長）の野原 一誠と同じ氏名なので、ロールで見分ける
     expect(forStaff.find((m) => m.role === '3' && m.name === '野原 一誠')!.relationship).toBe('父');
     expect(forStaff.find((m) => m.name === '野原 和子')!.relationship).toBe('祖母');
-    const forGuardian = await api.members(6, guardian);
-    expect(forGuardian.every((m) => m.relationship === null)).toBe(true);
+    await expect(api.members(6, guardian)).rejects.toThrow('権限がありません');
   });
 
   it('園の電話番号は設定マスタから引ける', () => {

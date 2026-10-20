@@ -15,11 +15,14 @@ import { formatYMD } from '../../api/util';
 
 export default function AllergyListScreen() {
   const { user } = useSession();
-  const { data, error, loading } = useAsync(() => api.allAllergies(), []);
+  const { data, error, loading } = useAsync(() => api.allAllergies(user!), []);
   const [printError, setPrintError] = useState<string | null>(null);
-  const isAdmin = user!.role === '1';
 
-  // 要配慮個人情報の一覧を紙に出す。出したことを先に記録し、記録できなければ印刷しない
+  /*
+   * 要配慮個人情報の一覧を紙に出す。出したことを先に記録し、記録できなければ印刷しない。
+   * 印刷できるのは管理者・一般（担任でない職員も、受け入れや合同保育で子を見る場面で配膳に使う。
+   * 基本設計書「権限と利用可能機能」(6-1)、画面詳細図「アレルギー一覧画面」(7-4) の項目2。PR #216 の直-16・直-24）
+   */
   const print = async () => {
     setPrintError(null);
     try {
@@ -33,7 +36,7 @@ export default function AllergyListScreen() {
       <div className="page-head">
         <h1>アレルギー一覧（全園児）</h1>
         <div className="spacer" />
-        {isAdmin && <button onClick={print} disabled={!data}>印刷する</button>}
+        <button onClick={print} disabled={!data}>印刷する</button>
       </div>
       {printError && <section className="card"><ErrorBox text={printError} /></section>}
 
@@ -43,7 +46,7 @@ export default function AllergyListScreen() {
           誤食は担任以外が配膳する場面でも起こるためです。
           <br />
           アレルギー・既往歴は要配慮個人情報です。印刷したものの取り扱いにご注意ください。
-          印刷は管理者が行い、印刷したことは操作ログに残ります。
+          印刷したことは操作ログに残ります。
         </div>
       </section>
 

@@ -7,15 +7,17 @@
  * 「未入力」と「未確認」は別の状態。未確認は結果として保持し、未入力はチェック漏れの対象となる。
  * 区分は月齢から自動で表示するが、項目はマスタから読む。園が調整できるため。
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
-import { api } from '../../api/client';
+import { api, staffName } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Alert, Disclaimer, Modal } from '../../components/ui';
 import { DEVELOPMENT_RESULT } from '../../api/codes';
-import { ageInMonths, formatAge, formatYMD, today } from '../../api/util';
+import { ageInMonths, formatAge, formatHM, formatYMD, today } from '../../api/util';
 import type { DevelopmentResult } from '../../api/types';
+import { notify } from '../../components/feedback';
+import { MSG, TEXT } from '../../messages';
 
 const DISCLAIMER = '本機能は発達の判定・診断を行うものではありません。';
 
@@ -32,25 +34,30 @@ export default function DevInputScreen() {
   const category = api.categoryFor(ageM);
 
   const items = useAsync(() => api.itemsFor(ageM), [ageM]);
-  const draft = useAsync(() => api.draftFor(childId!, checkedOn), [childId, checkedOn]);
-  const previous = useAsync(() => api.previousCheck(childId!, checkedOn), [childId, checkedOn]);
+  const draft = useAsync(() => api.draftFor(user!, childId!, checkedOn), [childId, checkedOn]);
+  const previous = useAsync(() => api.previousCheck(user!, childId!, checkedOn), [childId, checkedOn]);
 
   const [results, setResults] = useState<Record<number, DevelopmentResult | null>>({});
   const [note, setNote] = useState('');
+  // 保護者へのひとこと。所見とは別の欄で、確定した時点で成長の記録に届く（詳細設計書 (2-12 (2))）
+  const [guardianMessage, setGuardianMessage] = useState('');
+  const messageId = useId();
   const [compare, setCompare] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const noteHintId = useId();
 
   // 下書きがあれば読み直す
   useEffect(() => {
     const d = draft.data;
-    if (!d) { setResults({}); setNote(''); return; }
+    if (!d) { setResults({}); setNote(''); setGuardianMessage(''); return; }
     const map: Record<number, DevelopmentResult | null> = {};
     d.results.filter((r) => r.development_item_id !== 0).forEach((r) => { map[r.development_item_id] = r.result; });
     setResults(map);
     // 所見はチェックの側が持つ。結果（項目単位）の側には無い
     setNote(d.check.note ?? '');
+    setGuardianMessage(d.check.guardian_message ?? '');
   }, [draft.data?.check.development_check_id, checkedOn]);
 
   const save = async (status: '1' | '2') => {
@@ -62,8 +69,15 @@ export default function DevInputScreen() {
           development_item_id: it.development_item_id,
           result: results[it.development_item_id] ?? null,
         })),
-        note, status,
+        note, status, guardianMessage.trim() || null,
       );
+      /*
+       * 結果の表示（詳細設計書「職員の画面から成長の記録へ届けるもの」(2-12 (2)) の文言）。
+       * 【仮置き】届くものがあるかは、ひとことか「確認できた」が1つでもあるかで見る。項目の共有範囲と、保護者がまだ登録していない
+       * ときの「確定しました。保護者が登録すると読めます。」は見分けていない（web/仮置き値.md）
+       */
+      const delivered = !!guardianMessage.trim() || Object.values(results).includes('1');
+      notify(status === '1' ? TEXT.devDraftSaved : delivered ? TEXT.devConfirmedShared : TEXT.devConfirmed);
       navigate('/staff/growth');
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
@@ -81,6 +95,13 @@ export default function DevInputScreen() {
   const unfilled = (items.data ?? []).filter((it) => !results[it.development_item_id]).length;
   // 確定した記録は下書きに戻さない。直すときは「確定する」で保存する（GitHub Issue #164。web/仮置き値.md）
   const confirmed = draft.data?.check.status === '2';
+  /*
+   * 確定済みの保護者へのひとことを直せるのは、確定した日（finalized_at の日付）はその園児のクラスの担任、翌日以降は管理者だけ
+   * （詳細設計書 (2-12 (2))、決めたこと D-51）。権限の担保はサーバ（server/api_dev_write.go）。
+   * 【仮置き】直せない職員には欄を読むだけにして、断る文言を添える（web/仮置き値.md）
+   */
+  const finalizedDay = draft.data?.check.finalized_at?.slice(0, 10) ?? draft.data?.check.checked_on;
+  const messageLocked = confirmed && user!.role !== '1' && finalizedDay !== today();
 
   return (
     <div style={{ maxWidth: 860 }}>
@@ -146,9 +167,17 @@ export default function DevInputScreen() {
 
       <section className="card">
         <Field label="所見">
-          <textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000}
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} aria-describedby={noteHintId}
             placeholder="気づいたことを記録してください（判定ではありません）" />
         </Field>
+        {/*
+          所見は園内限定であり、保護者へは共有しない（画面詳細図「発達チェック入力画面」(6-2) 項目6、
+          基本設計書「発達チェック・身体測定」(5-7)）。書く前に分かるよう、欄に添える（GitHub Issue #178 の 8）。
+          【仮置き】文言（web/仮置き値.md）
+        */}
+        <div className="muted" id={noteHintId} style={{ marginTop: 4 }}>
+          所見は園内限定の記録です。保護者へは共有しません。
+        </div>
         <label style={{ marginTop: 8 }}>
           <input type="checkbox" checked={compare} onChange={(e) => setCompare(e.target.checked)} />
           前回の記録と並べて表示する
@@ -161,19 +190,55 @@ export default function DevInputScreen() {
         )}
       </section>
 
+      {/*
+        保護者へのひとこと。所見の下に別の欄として置く（詳細設計書 (2-12 (2))、図/画面詳細図「発達チェック入力画面」(6-2) の項目14〜16）。
+        発達の記録は外部の AI へ送らないため、AI のボタンは置かない（基本設計書「文章の下書き（AI）」(4-11)）。
+        定型文（PhraseMenu）と宛先の表示（RecipientBadge）は PR #201 の部品と合わせるときに置く
+      */}
+      <section className="card">
+        <label htmlFor={messageId} style={{ fontWeight: 700 }}>{TEXT.guardianMessageLabel}</label>
+        <textarea id={messageId} value={guardianMessage} onChange={(e) => setGuardianMessage(e.target.value)} maxLength={500}
+          readOnly={messageLocked} aria-describedby={confirmed ? `${messageId}-rest ${messageId}-fix` : `${messageId}-rest`} />
+        <div className="muted" id={`${messageId}-rest`} style={{ marginTop: 4 }}>残り {500 - [...guardianMessage].length} 文字</div>
+        {confirmed && (
+          <div className="muted" id={`${messageId}-fix`} style={{ marginTop: 4 }}>
+            {messageLocked ? MSG.guardianMessageFixForbidden : TEXT.guardianMessageCorrectionNote}
+          </div>
+        )}
+      </section>
+
+      <section className="card card-sub">
+        <div className="muted">{TEXT.guardianMessageGuide}</div>
+      </section>
+
       <section className="card card-sub">
         <div className="muted">
+          {/* 「未確認」は結果として残す状態で、チェック漏れの対象にしない（基本設計書「発達チェック・身体測定」(5-7)） */}
           未入力の項目：{unfilled} 件。未入力のままにするとチェック漏れの対象になります。
-          確認できなかった項目は「未確認」を選んで残してください（基本設計書 5-7）。
+          確認できなかった項目は「未確認」を選んで残してください。
         </div>
       </section>
 
       {/* 免責表示を保存操作の直上に固定する（画面詳細図 6-1） */}
       <Disclaimer text={DISCLAIMER} />
 
-      {confirmed && (
+      {/*
+        確定したあとに開き直したとき、確定済みであることと、誰が・いつ確定したか、「確定する」で何が起きるかを示す
+        （GitHub Issue #143）。記録は園児と実施日で1件であり、「確定する」は同じ記録を書き換える。
+        確定の前に確かめるダイアログは、未入力が残るときだけ出す（基本設計書「画面の洗い出しの考え方」(3-1)。
+        連続入力を前提とする発達チェックには、1件ごとの確認を挟まない）
+      */}
+      {confirmed && draft.data && (
         <div className="muted" style={{ marginTop: 12 }}>
-          この日の記録は確定しています。直すときは「確定する」で保存してください（下書きには戻せません）。
+          <div>
+            この日の記録は確定しています（確定した職員：{staffName(draft.data.check.staff_id)}
+            {draft.data.confirmedAt && (
+              <>、確定した日時：{formatYMD(draft.data.confirmedAt.slice(0, 10))} {formatHM(draft.data.confirmedAt)}</>
+            )}）。
+          </div>
+          <div>
+            直すときは、内容を変えて「確定する」を押すと、この記録を書き換えます（新しい記録は増えません。下書きには戻せません）。
+          </div>
         </div>
       )}
       <div className="row-end" style={{ marginTop: 12 }}>
