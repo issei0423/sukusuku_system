@@ -14,6 +14,7 @@ import { settingText } from '../../api/client';
 import { formatHM, today } from '../../api/util';
 import { TEXT } from '../../messages';
 import { eventText, sleepLines } from './contactText';
+import ContactPhotoImage from './ContactPhotoImage';
 
 const EVENT_ITEM: Record<string, string> = { '1': 'meal', '2': 'toilet', '3': 'temperature', '4': 'comment', '5': 'photo' };
 
@@ -22,6 +23,8 @@ export type TimelineFix = { kind: 'event'; event: ContactEvent } | { kind: 'slee
 interface Item {
   key: string; at: string; text: string; heading?: string; corrected: string | null; staff?: string; nap?: boolean;
   hidden?: boolean; fix?: TimelineFix;
+  /** 写真の出来事なら写真の ID（時刻と絵を出す。押すと画面いっぱいに出す。詳細設計書 (2-6 (5))） */
+  photoId?: number;
 }
 
 export default function TodayTimeline({ page, viewer, lastReadAt, onFix }: {
@@ -39,8 +42,11 @@ export default function TodayTimeline({ page, viewer, lastReadAt, onFix }: {
     : null;
   const hidden = (item: string) => !!shown && !shown.includes(item);
   const items: Item[] = [
-    ...page.events.map((e): Item => ({ key: `e${e.contact_event_id}`, at: e.recorded_at, text: eventText(e), corrected: e.corrected_at,
-      staff: viewer === 'staff' ? e.staff_name : undefined, hidden: hidden(EVENT_ITEM[e.event_type]), fix: { kind: 'event', event: e } })),
+    ...page.events.map((e): Item => ({ key: `e${e.contact_event_id}`, at: e.recorded_at,
+      // 写真は「写真」と添えた文（あれば）
+      text: e.event_type === '5' && e.body ? `${eventText(e)}　${e.body}` : eventText(e), corrected: e.corrected_at,
+      staff: viewer === 'staff' ? e.staff_name : undefined, hidden: hidden(EVENT_ITEM[e.event_type]), fix: { kind: 'event', event: e },
+      photoId: e.event_type === '5' && e.contact_photo_id !== null ? e.contact_photo_id : undefined })),
     ...page.class_notes.map((c): Item => ({ key: `c${c.contact_class_id}`, at: c.recorded_at, text: c.body, heading: 'クラスのようす',
       corrected: c.corrected_at, hidden: hidden('class') })),
     ...page.sleeps.flatMap((s) => sleepLines(s, isToday, viewer).map((l, i): Item => ({ key: `s${s.nap_sleep_id}-${i}`, at: l.at, text: l.text,
@@ -64,6 +70,11 @@ export default function TodayTimeline({ page, viewer, lastReadAt, onFix }: {
               {it.corrected && <span className="muted">　訂正しました（{formatHM(it.corrected)}）</span>}
               {it.staff && <span className="muted">　{it.staff}</span>}
               {it.hidden && <span className="tag tag-plain contact-hidden">保護者には出していません</span>}
+              {it.photoId !== undefined && (
+                <span className="contact-timeline-photo">
+                  <ContactPhotoImage photoId={it.photoId} label={`${formatHM(it.at)} の写真`} size="timeline" />
+                </span>
+              )}
             </span>
             {isNew(it) && <span className="tag tag-applied contact-new">新</span>}
             {onFix && it.fix && (

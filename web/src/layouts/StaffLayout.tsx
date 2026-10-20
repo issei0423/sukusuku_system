@@ -41,6 +41,7 @@ const ADMIN_NAV = [
   { to: '/staff/admin/fiscal-year', label: '年度更新' },
   { to: '/staff/admin/logs', label: '操作ログ' },
   { to: '/staff/admin/misdelivery', label: '誤送信対応' },
+  { to: '/staff/admin/settings', label: '設定' },
 ];
 
 export default function StaffLayout() {

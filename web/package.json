@@ -14,7 +14,9 @@
     "test:integration": "vitest run tests/integration.test.ts",
     "review:responsive": "playwright test -c playwright.responsive.config.ts",
     "review:responsive:report": "playwright show-report responsive-report/html",
-    "review:responsive:check": "tsc -p tests/responsive/tsconfig.json"
+    "review:responsive:check": "tsc -p tests/responsive/tsconfig.json",
+    "review:security": "playwright test -c playwright.security.config.ts",
+    "review:security:check": "tsc -p tests/security/tsconfig.json"
   },
   "dependencies": {
     "react": "^19.2.7",

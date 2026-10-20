@@ -8,7 +8,7 @@
 import type {
   Account, Child, ChatRoom, Diary, DevelopmentItem, GuardianChild, NapRecord, NapSession,
   DiaryRecordType, DiaryStatus, InvitationStatus, Role, FunctionType, OperationType,
-  DevelopmentCheck, DevelopmentResultRecord, MealAmount, ContactEventType,
+  DevelopmentCheck, DevelopmentResultRecord, MealAmount, ContactEventType, Setting,
 } from './types';
 
 /** ログインの失敗理由。画面が分岐に使う（図/画面詳細図.md「職員用トップ／保護者用トップ」(2-1)） */
@@ -20,7 +20,9 @@ export type LoginError =
   /** 一時パスワードの有効期限切れ（基本設計書「ログイン」(4-3)、メッセージ一覧 (4-9)。GitHub Issue #159） */
   | { kind: 'temp_expired' }
   /** ログイン中の新しいログイン・新規登録。上書きログインは設けない（基本設計書「ログイン」(4-3)。GitHub Issue #159） */
-  | { kind: 'already_logged_in' };
+  | { kind: 'already_logged_in' }
+  /** 送信元の失敗が続き、しばらく受け付けを止めている（server/attempts.go。GitHub Issue #236 の 6）。Go サーバだけが返す */
+  | { kind: 'too_many_attempts' };
 
 /** 園児情報の登録・編集の入力（図/画面詳細図.md 7-2） */
 export interface ChildInput {
@@ -542,6 +544,41 @@ export interface Readers {
   guardian_count: number;
 }
 
+/**
+ * 連絡帳の写真（図/インタフェース一覧の ContactPhoto）。写っている子（subject_child_ids）は職員の応答だけ。
+ * 実体は GET /api/contact/photos/{id}（画面は api.photoUrl で URL を得る）
+ */
+export interface ContactPhoto {
+  contact_photo_id: number;
+  contact_date: string;
+  /** 静止画のみ（image/jpeg・image/png） */
+  file_type: string;
+  file_size: number;
+  /** 職員の応答だけ。写っている子（0人なら空） */
+  subject_child_ids?: string[];
+  is_deleted: boolean;
+}
+
+/**
+ * 写真を送る（POST /api/contact/photos、multipart/form-data。詳細設計書「きょうのようす」(4-4 (2))）。
+ * 写っている子が0人なら、届ける子（target_child_id）を1人選ぶ。添える文は任意・200文字
+ */
+export interface SendPhotoInput {
+  file: Blob;
+  subject_child_ids: string[];
+  target_child_id?: string | null;
+  body?: string | null;
+  /** 届く先の全員の出来事に「成長の記録に残す」を付ける（詳細設計書 (4-12 (3))） */
+  keep_in_growth?: boolean;
+  acknowledged_names?: string[];
+}
+
+/** POST /api/contact/photos の応答。events は届く先の園児ごとの出来事（種類 5） */
+export interface SendPhotoResult {
+  photo: ContactPhoto;
+  events: ContactEvent[];
+}
+
 /** 保護者ホームの「きょう」の1件（午睡を除く） */
 export interface TodayItem {
   kind: 'meal' | 'toilet' | 'temperature' | 'comment' | 'photo' | 'class_note';
@@ -570,6 +607,74 @@ export interface GuardianToday {
   personal_room_id: number | null;
   /** 成長の記録を作るまでは常に偽 */
   growth_new: boolean;
+  /**
+   * ログイン中の保護者自身の紐づけの「AI の下書きを使わない」。ほかの家族の値は入れない
+   * （詳細設計書「ダッシュボード」(4-8 (1))・「AI の下書きの利用」(4-15 (3))。保護者のメニューのダイアログの初期値）
+   */
+  ai_opt_out: boolean;
+}
+
+/**
+ * POST /api/invitation/verify の応答（詳細設計書「お子さまの追加」(4-15 (1))）。
+ * child_name・relationship は、ログインしている保護者が呼んだときだけ入る（決めたこと D-47）
+ */
+export interface InvitationPreview {
+  ok: true;
+  child_name?: string;
+  /** 【仮置き】ダイアログの続柄の初期値（最初に登録したときの続柄。設計は渡し方を決めていない。web/仮置き値.md） */
+  relationship?: string;
+}
+
+/** POST /api/guardian/children の応答（詳細設計書「お子さまの追加」(4-15 (1))） */
+export interface AddChildResult {
+  ok: true;
+  child_id: string;
+}
+
+/* ============ 文章の下書き（AI）（詳細設計書「経路」(8-2)） ============ */
+
+/** 用途。facility_note：園からのひとことの下書き（1つ）、rephrase：言い換え（候補3つ）、continue：続きの候補（3つ） */
+export type AiPurpose = 'facility_note' | 'rephrase' | 'continue';
+/** 下書きを入れる欄（文字数の上限と操作ログの表を決める）。facility：園から 500、comment：活動のひとこと 200、class：クラスのようす 500 */
+export type AiField = 'facility' | 'comment' | 'class';
+
+/** GET /api/ai/status の宛先（どちらか一方） */
+export type AiTarget = { child_id: string; class_id?: undefined } | { class_id: number; child_id?: undefined };
+
+/** POST /api/ai/drafts の要求。画面は「何の下書きか」「宛先」「メモ」「欄の文」だけを送り、送る項目はサーバが決める */
+export type AiDraftInput = AiTarget & {
+  purpose: AiPurpose;
+  date: string;
+  memo?: string;
+  text?: string;
+  field?: AiField;
+};
+
+/** POST /api/ai/drafts の応答 */
+export interface AiDraftResult {
+  drafts: string[];
+  /** メモ・欄の文の中のほかの園児の名前を「おともだち」に置き換えて送った */
+  replaced_other_names: boolean;
+}
+
+/* ============ 設定画面（詳細設計書「設定」(4-10)。本版は AI の区画だけ） ============ */
+
+export interface SettingRow extends Setting {
+  group: 'contact' | 'notify' | 'ai' | 'other';
+  /** 基本設計書「設定マスタ（m_setting）」(5-9) の既定値 */
+  default_value: string;
+  /** 画面から変えられるか */
+  editable: boolean;
+}
+
+/** GET /api/settings の応答。API キーそのものは返さない（あるか・無効と分かったかの真偽だけ。詳細設計書 (8-8)） */
+export interface SettingsView {
+  settings: SettingRow[];
+  /** サーバの今。保存のときに送り返す（ほかの管理者の変更を見つけるため） */
+  read_at: string;
+  ai_key_present: boolean;
+  ai_key_rejected: boolean;
+  push_available: boolean;
 }
 
 /** 参照のみに使う型の再輸出。画面が types.ts を直接読まなくて済むようにする */

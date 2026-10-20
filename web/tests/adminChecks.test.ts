@@ -12,6 +12,7 @@ import type { ChildInput } from '../src/api/client';
 import * as db from '../src/api/mockDb';
 import type { SessionUser } from '../src/api/types';
 import { fromNowMinutes } from '../src/api/util';
+import { MSG } from '../src/messages';
 
 const admin: SessionUser = {
   account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
@@ -49,11 +50,12 @@ describe('園児の取消（GitHub Issue #166 の 4）', () => {
 
     await expect(api.issueOneInvitationCode(admin, 'C902', 30)).rejects.toThrow('在籍していない園児');
     await expect(api.issueOneInvitationCode(admin, 'C999', 30)).rejects.toThrow('園児が見つかりません');
-    await expect(api.verifyInvitationCode(code)).rejects.toThrow('招待コードが確認できません');
+    // 園児の状態は言わず、無いコードと同じ文言（基本設計書「メッセージ一覧」(4-12)）
+    await expect(api.verifyInvitationCode(code)).rejects.toThrow(MSG.invitationNotFound);
     await expect(api.signUpGuardian({
       code, email: 'gotoroku@example.jp', password: 'gotoroku-5678', guardian_name: '誤登録 花子', relationship: '母',
       terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION, // 規約への同意（GitHub Issue #170）
-    })).rejects.toThrow('招待コードが確認できません');
+    })).rejects.toThrow(MSG.invitationNotFound);
     expect(db.accounts.some((a) => a.email === 'gotoroku@example.jp')).toBe(false);
   });
 });
