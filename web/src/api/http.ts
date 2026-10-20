@@ -21,6 +21,7 @@ import type {
   DevDraftView,
   ContactPage, ContactClassView, ContactHome, ContactHomeInput, NapSleep, NapExclusion,
 } from './shapes';
+import type { SendPhotoInput, SendPhotoResult } from './shapes';
 import type {
   ContactEvent, ContactEventInput, RecordEventsResult, ContactEventCorrection, NapSleepCorrection, CancelResult, Readers,
   ContactFacility, FacilityCorrection, Phrase, NameMatch, AiTarget, AiDraftInput, AiDraftResult, SettingsView,
@@ -77,10 +78,12 @@ const AI_REQUEST_TIMEOUT_MS = 20_000;
 const UNREACHABLE_MESSAGE = `${TEXT.unreachableBanner}。つながったら、もう一度送ってください。`;
 
 /** ログインの失敗理由（LoginError）。画面（TopScreen）が JSON にして分岐に使う */
-const LOGIN_KINDS = new Set(['credential', 'locked', 'suspended', 'wrong_entrance', 'temp_expired', 'already_logged_in']);
+const LOGIN_KINDS = new Set(['credential', 'locked', 'suspended', 'wrong_entrance', 'temp_expired', 'already_logged_in', 'too_many_attempts']);
 
 async function request<T>(method: string, path: string, body?: unknown, timeoutMs = REQUEST_TIMEOUT_MS): Promise<T> {
   let res: Response;
+  // 写真（multipart/form-data）は FormData のまま送る。境界の入った Content-Type はブラウザが付ける
+  const form = typeof FormData !== 'undefined' && body instanceof FormData;
   try {
     res = await fetch(path, {
       method,
@@ -88,8 +91,8 @@ async function request<T>(method: string, path: string, body?: unknown, timeoutM
       credentials: 'same-origin',
       // 編集ロックの解除は、タブを閉じる・読み込み直す途中にも送る。途中で打ち切られないようにする
       keepalive: method === 'DELETE',
-      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      headers: body === undefined || form ? undefined : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : form ? body : JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch {
@@ -129,6 +132,11 @@ async function request<T>(method: string, path: string, body?: unknown, timeoutM
     if (res.status === 401 && path !== '/api/login') {
       clearReference();
       notifySessionEnded();
+    }
+    // 送信元の失敗が続いて止めているとき（server/attempts.go。GitHub Issue #236 の 6）。
+    // 招待コードの確認・新規登録の画面は文言をそのまま出すので、ログイン以外では文言で投げる
+    if (err.kind === 'too_many_attempts' && path !== '/api/login') {
+      throw new Error(err.message);
     }
     // ログインの失敗理由は画面が分岐に使う。mock 実装と同じ形（JSON 文字列）で投げる。
     // ほかの kind（version_conflict など）は文言をそのまま見せる
@@ -669,8 +677,30 @@ const apiHandout = {
 };
 
 /* ============ 画面が使う入口 ============ */
+/* 連絡帳の写真（詳細設計書「きょうのようす」(4-4 (2))・(4-4 (3))。名前はモック（api/mock.ts の contactPhotoApi）と同じ） */
+const contactPhotoApi = {
+  /** 写真を送る（multipart/form-data）。写っている子・承諾した名前はカンマ区切りで送る */
+  sendPhoto: (_u: SessionUser, input: SendPhotoInput) => {
+    const form = new FormData();
+    form.append('file', input.file);
+    form.append('subject_child_ids', input.subject_child_ids.join(','));
+    if (input.target_child_id) form.append('target_child_id', input.target_child_id);
+    if (input.body) form.append('body', input.body);
+    form.append('keep_in_growth', input.keep_in_growth ? '1' : '0');
+    form.append('acknowledged_names', (input.acknowledged_names ?? []).join(','));
+    return post<SendPhotoResult>('/api/contact/photos', form);
+  },
+  /**
+   * 写真の実体の URL。画面は <img src> に使う（Cookie が送られる）。見てよいかの判定は、サーバが実体を返すときに行う
+   * （取り消した写真・条件に合わない写真は 403「この写真は開けません。」）
+   */
+  photoUrl: (_u: SessionUser, photoId: number) => Promise.resolve(`/api/contact/photos/${photoId}`),
+};
+
 /* 連絡帳と、ねた・おきた（詳細設計書「経路の一覧」(4-2)。名前はモック（api/mock.ts の contactApi）と同じ） */
 const contactApi = {
+  // 写真の2つ（上の contactPhotoApi）も、連絡帳の経路として画面へ出す
+  ...contactPhotoApi,
   contactPage: (_u: SessionUser, childId: string, date?: string) =>
     get<ContactPage>(`/api/contact/children/${encodeURIComponent(childId)}${date ? qs({ date }) : ''}`),
   markContactRead: (_u: SessionUser, childId: string, date: string) =>
