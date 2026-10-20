@@ -1432,9 +1432,12 @@ function hiddenBeforeJoined(user: SessionUser, m: ChatMessage): boolean {
   const member = db.chatMembers.find((x) => x.chat_room_id === m.chat_room_id && x.account_id === user.account_id);
   // 【仮置き】時刻は秒の単位で持つため、登録と同じ秒のメッセージは前か後かを区別できない。
   // 見せない側へ倒す（GitHub Issue #102）。見せる側へ倒すと、登録の直前に送られたものが読めてしまう
+  // 【仮置き】最初の参加は first_joined_at（空なら joined_at）で見る。参加し直した行は joined_at が今に書き換わる（決めたこと D-48）ため
+  // （server/api_chat.go の firstGuardianJoinedAt と同じ。web/仮置き値.md）
   const firstGuardianJoin = db.chatMembers
     .filter((x) => x.chat_room_id === m.chat_room_id && findAccount(x.account_id)?.role === '3')
-    .reduce<string | null>((first, x) => first === null || x.joined_at < first ? x.joined_at : first, null);
+    .map((x) => x.first_joined_at ?? x.joined_at)
+    .reduce<string | null>((first, at) => first === null || at < first ? at : first, null);
   return !!member && firstGuardianJoin !== null && member.joined_at > firstGuardianJoin
     && m.sent_at <= member.joined_at && m.sent_at >= firstGuardianJoin;
 }
@@ -5530,8 +5533,10 @@ const guardianApi = {
         if (m && m.left_at === null) continue;
         if (m) {
           const memberBefore = { ...m };
-          undo.push(() => { Object.assign(m, memberBefore); });
-          Object.assign(m, { joined_at: at, left_at: null });
+          undo.push(() => { delete m.first_joined_at; Object.assign(m, memberBefore); });
+          // 【仮置き】参加し直す前の joined_at を first_joined_at に残す（すでにあれば変えない。server/api_guardian.go の addChildTx と同じ。
+          // 個人チャットの「保護者がまだ1人もいなかった間の投稿は見せる」境が今へ動かないように。web/仮置き値.md）
+          Object.assign(m, { first_joined_at: m.first_joined_at ?? m.joined_at, joined_at: at, left_at: null });
         } else {
           const row = { chat_room_id: r.chat_room_id, account_id: user.account_id, joined_at: at, left_at: null };
           db.chatMembers.push(row);

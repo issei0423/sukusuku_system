@@ -260,6 +260,10 @@ CREATE TABLE t_chat_member (
   account_id   INTEGER NOT NULL REFERENCES m_account(account_id),
   joined_at    TEXT    NOT NULL,
   left_at      TEXT,
+  -- 【仮置き】最初に参加した日時。抜けていた行を今の時刻で参加し直す（決めたこと D-48）ときに、書き換える前の joined_at を残す。
+  -- 個人チャットの「保護者がまだ1人もいなかった間の投稿は見せる」境（api_chat.go の firstGuardianJoinedAt）が今へ動かないように。
+  -- 空なら joined_at が最初の参加。既存の DB には db.go の ensureChatMemberFirstJoined が足す（web/仮置き値.md）
+  first_joined_at TEXT,
   PRIMARY KEY (chat_room_id, account_id)
 );
 
