@@ -5,12 +5,12 @@
  * 入力→確認の段階を設ける（同「画面の洗い出しの考え方」(3-1) 基準2）。
  * ここで確定するのは「申請」であり、承認ではない。
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useSession } from '../../session';
 import { api, childName, className } from '../../api/client';
 import { Alert, Empty } from '../../components/ui';
-import { notify } from '../../components/feedback';
+import { clearNotice, notify } from '../../components/feedback';
 import { DIARY_RECORD_TYPE } from '../../api/codes';
 import { formatYMD } from '../../api/util';
 import type { DiaryRecordType } from '../../api/types';
@@ -32,6 +32,9 @@ export default function DiaryConfirmScreen() {
   const state = useLocation().state as ConfirmState | null;
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // 申請の直前に、前の画面の「下書きを保存しました」を残さない（GitHub Issue #139 の 2）
+  useEffect(() => { clearNotice(); }, []);
 
   if (!state) {
     return <Empty text="確認する内容がありません。日誌の作成画面から進んでください。" />;

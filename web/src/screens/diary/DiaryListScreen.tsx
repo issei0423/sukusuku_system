@@ -24,13 +24,21 @@ export default function DiaryListScreen() {
   // 一般の既定は自クラス。管理者は「すべて」から始める
   const [classId, setClassId] = useState<number | ''>(user!.role === '2' ? (user!.class_id ?? '') : '');
   const [status, setStatus] = useState<DiaryStatus | ''>((params.get('status') as DiaryStatus) ?? '');
-  const [from, setFrom] = useState(addDays(today(), -31));
-  const [to, setTo] = useState(today());
+  /*
+   * 【仮置き】職員ダッシュボードの「差し戻された日誌」から開いたとき（?mine=1）は、自分が書いた日誌に絞り、
+   * 期間を問わない。ダッシュボードは自分が書いた差し戻しを期間によらず数えるため、既定の期間（直近1か月）のままだと
+   * 数えた日誌が一覧に出ず、ほかの職員の差し戻しが出ていた（図/画面詳細図.md「職員ダッシュボード」(2-6) 項目2。
+   * GitHub Issue #174。web/仮置き値.md）
+   */
+  const fromDashboard = params.get('mine') === '1';
+  const [mine, setMine] = useState(fromDashboard);
+  const [from, setFrom] = useState(fromDashboard ? '' : addDays(today(), -31));
+  const [to, setTo] = useState(fromDashboard ? '' : today());
   const [page, setPage] = useState(1);
   const [applied, setApplied] = useState(0);
 
   const { data, error, loading } = useAsync(
-    () => api.listDiaries(user!, { recordType, classId, status, from, to, page }),
+    () => api.listDiaries(user!, { recordType, classId, status, from, to, page, mine }),
     [user?.account_id, page, applied],
   );
 
@@ -74,6 +82,14 @@ export default function DiaryListScreen() {
           <button onClick={search}>絞り込む</button>
         </div>
         {rangeError && <ErrorBox text={rangeError} />}
+        {mine && (
+          <div className="row" style={{ marginTop: 8 }}>
+            <span className="muted">自分が書いた日誌に絞っています。</span>
+            <button className="btn-sm" onClick={() => { setMine(false); setPage(1); setApplied((n) => n + 1); }}>
+              作成者で絞らない
+            </button>
+          </div>
+        )}
         {user!.role === '2' && (
           <div className="muted" style={{ marginTop: 8 }}>
             担当するクラスの日誌のみ表示しています。

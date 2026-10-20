@@ -36,6 +36,14 @@ export function notify(message: string): void {
   publish({ text: message, seq: ++seq, until: Date.now() + SHOW_MS });
 }
 
+/**
+ * 出ている完了の表示を消す。前の操作の知らせが、次の操作を確かめる画面に残ると紛らわしいときに使う
+ * （日誌確認画面の上に「下書きを保存しました」が残っていた。GitHub Issue #139）
+ */
+export function clearNotice(): void {
+  publish(null);
+}
+
 /** 完了の表示の置き場所。共通レイアウトに1つだけ置く */
 export function ToastHost() {
   const [toast, setToast] = useState<Toast | null>(() => (current && current.until > Date.now() ? current : null));

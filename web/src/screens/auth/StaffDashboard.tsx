@@ -35,7 +35,8 @@ export default function StaffDashboard() {
     : undefined;
 
   const rows: { label: string; note?: string; count: number; unit: string; to: string }[] = [
-    { label: '差し戻された日誌', count: data.returned, unit: '件', to: '/staff/diary?status=4' },
+    // 数えるのは自分が書いて差し戻されたもの。開いた一覧も自分が書いたものに絞り、期間を問わない（GitHub Issue #174）
+    { label: '差し戻された日誌', count: data.returned, unit: '件', to: '/staff/diary?status=4&mine=1' },
     { label: '未読のチャット', count: data.unreadChat, unit: '件', to: '/staff/chat' },
     { label: '未対応の個人チャット', note: unhandledNote, count: data.unhandledChat, unit: '件',
       to: firstUnhandled ? `/staff/chat?room=${firstUnhandled.chat_room_id}` : '/staff/chat' },
