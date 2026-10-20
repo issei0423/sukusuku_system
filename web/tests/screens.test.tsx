@@ -558,6 +558,8 @@ describe('園児マスター・アカウント管理（10画面）', () => {
     expect(screen.getByText('アレルギー一覧（全園児）')).toBeTruthy();
     // 一般（さくら組担任）にも、ひまわり組の園児が出る
     expect(document.body.textContent).toContain('井上 空');
+    // 一般も印刷できる（画面詳細図「アレルギー一覧画面」(7-4) の項目2。PR #216 の直-16・直-24）
+    expect(screen.getByRole('button', { name: '印刷する' }).hasAttribute('disabled')).toBe(false);
   });
 
   it('年度更新画面：未確定事項があるため実行できない', async () => {

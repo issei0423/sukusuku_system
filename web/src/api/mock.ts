@@ -28,7 +28,7 @@ import {
   ProcedureRequiredError, SESSION_ENDED_MESSAGE, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
 } from './procedure';
 import type {
-  LoginError, ChildInput, DiaryFilter, DiaryInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
+  LoginError, ChildInput, DiaryFilter, DiaryInput, DiaryAttachmentInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
   DevDraftView,
 } from './shapes';
 
@@ -799,6 +799,37 @@ function heldDiaryLock(user: SessionUser, diaryId: number, token: string | undef
     && l.locked_staff_id === user.staff_id);
 }
 
+/**
+ * 日誌に付ける写真を確かめ、断る理由を返す（問題が無ければ null）。
+ * 写真は設定マスタの上限（attachment.max_count_diary、既定 3 枚）まで、形式は attachment.allowed_types（JPEG・PNG）に限る
+ * （基本設計書「雛形・添付」(5-4)「t_diary_attachment｜1〜3枚」・「設定マスタ」(5-8)、
+ * 図/画面詳細図.md「日誌作成・編集画面」(3-2) 項目10）。文言は【仮置き】。
+ * サーバ側は server/api_diary_write.go の checkDiaryAttachments
+ */
+function diaryAttachmentError(photos: DiaryAttachmentInput[]): string | null {
+  const max = settingNumber('attachment.max_count_diary', 3);
+  if (photos.length > max) return `写真は${max}枚までです`;
+  // 設定マスタの並びに空白が混じっていても（「image/jpeg, image/png」）、並べた形式を受け付ける
+  const allowed = settingText('attachment.allowed_types', 'image/jpeg,image/png').split(',').map((x) => x.trim());
+  for (const p of photos) {
+    if (!p.file_path.trim()) return '写真のファイルを選んでください';
+    if (!allowed.includes(p.file_type)) return '添付できる写真は JPEG・PNG のファイルです';
+  }
+  return null;
+}
+
+/** 日誌の写真を、渡した並びで置き換える（サーバ側は server/api_diary_write.go の replaceDiaryAttachments） */
+function replaceDiaryAttachments(diaryId: number, photos: DiaryAttachmentInput[]): void {
+  for (let i = db.diaryAttachments.length - 1; i >= 0; i--) {
+    if (db.diaryAttachments[i].diary_id === diaryId) db.diaryAttachments.splice(i, 1);
+  }
+  photos.forEach((p) => {
+    db.diaryAttachments.push({
+      diary_attachment_id: nextId(), diary_id: diaryId, file_path: p.file_path.trim(), file_type: p.file_type,
+    });
+  });
+}
+
 const diaryApi2 = {
   /** 下書き保存・申請。status は呼び出し側が指定する */
   async saveDiary(user: SessionUser, input: DiaryInput, status: '1' | '2'): Promise<Diary> {
@@ -823,6 +854,13 @@ const diaryApi2 = {
     if (needsChild && !db.classChildren.some((cc) => cc.class_id === classId && cc.child_id === input.child_id)) {
       return fail('対象のクラスは、対象の園児が在籍するクラスを選んでください');
     }
+    // 写真は、日誌と一緒に保存する。画面で足した写真が日誌に付かず、確認画面の「写真 n 枚」と承認画面が
+    // 食い違っていた（GitHub Issue #175 の 2）。サーバ側は server/api_diary_write.go の checkDiaryAttachments
+    const photos = input.attachments;
+    if (photos) {
+      const msg = diaryAttachmentError(photos);
+      if (msg) return fail(msg);
+    }
 
     if (input.diary_id) {
       const d = db.diaries.find((x) => x.diary_id === input.diary_id);
@@ -840,6 +878,7 @@ const diaryApi2 = {
       const lock = heldDiaryLock(user, d.diary_id, input.lock_token);
       if (!lock) return fail(LOCK_RELEASED_MESSAGE);
       const before = `${d.status}`;
+      if (photos) replaceDiaryAttachments(d.diary_id, photos);
       d.record_type = input.record_type;
       d.child_id = input.child_id;
       d.class_id = input.class_id;
@@ -873,6 +912,7 @@ const diaryApi2 = {
       is_deleted: false, created_at: now(), updated_at: now(),
     };
     db.diaries.unshift(row);
+    if (photos) replaceDiaryAttachments(row.diary_id, photos);
     log(user.account_id, '1', '1', 't_diary', row.diary_id, row.child_id, null,
       status === '2' ? DIARY_LOG_CREATE_AND_APPLY : '下書き作成');
     return ok(row);
@@ -2686,8 +2726,12 @@ const adminApi3 = {
     } else if (kind === 'nap_record') {
       log(user.account_id, '3', '5', 't_nap_record', null, null, null, `午睡記録をCSV出力（${period}）`);
     } else if (kind === 'allergy_list') {
-      // 要配慮個人情報の一覧。出力できるのは管理者のみ（画面詳細図「アレルギー一覧画面」(7-4)）
-      if (user.role !== '1') return fail('アレルギー一覧の印刷は管理者のみが行えます');
+      /*
+       * 要配慮個人情報の一覧。印刷できるのは管理者・一般（保護者は上で断る）。担任でない職員も、受け入れや
+       * 合同保育で子を見る場面で配膳に使うため（基本設計書「権限と利用可能機能」(6-1)「アレルギー一覧の印刷」、
+       * 画面詳細図「アレルギー一覧画面」(7-4) の項目2。設計の直しは PR #216 の直-16・直-24）。
+       * サーバ側は server/api_audit.go の handleRecordExport
+       */
       log(user.account_id, '6', '5', 'm_allergy', null, null, null, `アレルギー一覧を印刷（${count} 名）`);
     } else {
       if (user.role !== '1') return fail('招待コードの出力は管理者のみが行えます');

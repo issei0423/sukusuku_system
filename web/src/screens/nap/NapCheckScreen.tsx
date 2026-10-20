@@ -344,8 +344,16 @@ function NapRecordRow({ row, sessionId, due, abnormalAt, onSaved }: {
         <NapChoices label="顔色" name={`complexion-${id}`} options={COMPLEXION} value={complexion} onChange={startInput(setComplexion)} />
       </div>
 
-      {position === '2' && <Alert>うつ伏せです。仰向けに直してください。</Alert>}
-      {breathing === '2' && <Alert>呼吸が確認できません。ただちに応援を呼び、異常時の記録を残してください。</Alert>}
+      {/*
+        うつ伏せ：注意喚起であって判定ではなく、記録は妨げない。文は図/画面詳細図.md「午睡チェック画面」(5-1) の項目14
+        「注意喚起」、詳細設計書.md「共通」(4-1) の「(6) 本書で足す文言」のとおり（第2.3版・第1.3版。PR #216、未マージ）。
+        呼吸「確認できず」：記録より先に子どもへの対応と応援の要請を促し、異常時の記録はそのあとでよいと伝える。
+        救命の手順そのものは書かない（同 (5-1) の項目10「呼吸」、利用手引き.md「午睡チェック（最も重要な運用）」(2-5)、
+        要件定義書.md「午睡チェック」(4-5)「救急要請…の要否はシステムが判断せず、園の手順に従う」）。
+        【仮置き】呼吸の文の言い回しは設計が定めていない（web/仮置き値.md）
+      */}
+      {position === '2' && <Alert>うつ伏せです。このまま記録し、仰向けに直したら、直したあとの向きをもう一度記録してください。</Alert>}
+      {breathing === '2' && <Alert>呼吸が確認できません。ただちに、子どもへの対応と応援の要請を行ってください。異常時の記録は、そのあとでかまいません。</Alert>}
       {error && <Alert>{error}</Alert>}
 
       <div className="nap-row-actions">
