@@ -257,9 +257,14 @@ func (a *app) addChildTx(u *SessionUser, code usableCode, relationship string) (
 		return out, failed
 	}
 	for _, roomID := range rooms {
+		// 【仮置き】参加し直す前の joined_at を first_joined_at に残す（すでにあれば変えない）。
+		// DO UPDATE の中の t_chat_member.joined_at は書き換える前の値。個人チャットの「保護者がまだ1人もいなかった間の投稿は見せる」
+		// 境（api_chat.go の firstGuardianJoinedAt）が、ここで joined_at を今にしても動かないように（web/仮置き値.md）
 		res, err := tx.Exec(`INSERT INTO t_chat_member (chat_room_id, account_id, joined_at, left_at)
 			VALUES (?, ?, ?, NULL)
-			ON CONFLICT(chat_room_id, account_id) DO UPDATE SET joined_at = excluded.joined_at, left_at = NULL
+			ON CONFLICT(chat_room_id, account_id) DO UPDATE SET
+			  first_joined_at = COALESCE(t_chat_member.first_joined_at, t_chat_member.joined_at),
+			  joined_at = excluded.joined_at, left_at = NULL
 			WHERE t_chat_member.left_at IS NOT NULL`, roomID, u.AccountID, at)
 		if err != nil {
 			return out, failed

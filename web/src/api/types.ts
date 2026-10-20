@@ -136,6 +136,8 @@ export interface Child {
   child_id: string;
   child_name: string;
   child_name_kana: string;
+  /** 呼び名。職員の応答だけに入る（保護者の応答には含めない。インタフェース一覧「Child」） */
+  nickname?: string;
   /** 月齢算出の唯一の根拠。未来日不可（5-3） */
   birth_date: string;
   sex: Sex;
@@ -275,6 +277,12 @@ export interface ChatMember {
   account_id: number;
   joined_at: string;
   left_at: string | null;
+  /**
+   * 【仮置き】最初に参加した日時。抜けていた行を今の時刻で参加し直す（決めたこと D-48）ときに、書き換える前の joined_at を残す。
+   * 空なら joined_at が最初の参加。個人チャットの「保護者がまだ1人もいなかった間の投稿は見せる」境（mock.ts の hiddenBeforeJoined）が
+   * 今へ動かないように（server/schema.sql の t_chat_member.first_joined_at と同じ。web/仮置き値.md）
+   */
+  first_joined_at?: string | null;
 }
 
 /** メッセージ（t_chat_message） */

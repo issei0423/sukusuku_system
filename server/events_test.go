@@ -381,6 +381,11 @@ func TestNotifyChatAudience(t *testing.T) {
 	expect(t, "リアクション", clients, to(who("管理者", "さくら組の担任", "野原 太郎の保護者"), personal))
 
 	t.Run("後から加わった保護者には、加わる前のメッセージの変化を送らない", func(t *testing.T) {
+		// 最初の保護者の参加時刻を残し、その後から加わった保護者の閲覧範囲を確かめる。
+		if _, err := a.db.Exec(`INSERT INTO t_chat_member (chat_room_id, account_id, joined_at, left_at)
+			VALUES (6, 7, '2025-06-10T10:00:00', '2025-06-11T10:00:00')`); err != nil {
+			t.Fatal(err)
+		}
 		if _, err := a.db.Exec(`UPDATE t_chat_member SET joined_at = '2099-01-01T00:00:00'
 			WHERE chat_room_id = 6 AND account_id = ?`, accGuardian); err != nil {
 			t.Fatal(err)
@@ -389,6 +394,9 @@ func TestNotifyChatAudience(t *testing.T) {
 		expect(t, "加わる前のメッセージへのリアクション", clients, to(who("管理者", "さくら組の担任"), personal))
 		if _, err := a.db.Exec(`UPDATE t_chat_member SET joined_at = '2025-06-10T10:00:00'
 			WHERE chat_room_id = 6 AND account_id = ?`, accGuardian); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := a.db.Exec(`DELETE FROM t_chat_member WHERE chat_room_id = 6 AND account_id = 7`); err != nil {
 			t.Fatal(err)
 		}
 	})

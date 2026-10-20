@@ -188,7 +188,7 @@ func (a *app) handleAllAllergies(w http.ResponseWriter, r *http.Request) {
 			temp sql.NullFloat64
 			cls  string
 		)
-		if err := rows.Scan(&c.ChildID, &c.ChildName, &c.ChildNameKana, &c.BirthDate, &c.Sex,
+		if err := rows.Scan(&c.ChildID, &c.ChildName, &c.ChildNameKana, &c.Nickname, &c.BirthDate, &c.Sex,
 			&temp, &c.EnrollmentStatus, &c.PhotoConsentLevel, &c.IsDeleted, &c.CreatedAt, &c.UpdatedAt, &cls); err != nil {
 			continue
 		}

@@ -61,7 +61,7 @@ export default function ChildCsvScreen() {
     setBusy(true); setError(null);
     try {
       const n = await api.importChildCsv(user!, parsed.rows, parsed.text);
-      notify(`${n} 件を登録しました`);
+      notify(`${n}名を登録し、個人チャットを用意しました。`);
       navigate('/staff/children');
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
