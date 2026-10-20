@@ -16,8 +16,44 @@ func (a *app) routes(mux *http.ServeMux) {
 	a.routeDiary(mux)
 	a.routeChat(mux)
 	a.routeNap(mux)
+	a.routeContact(mux)
 	a.routeGrowth(mux)
 	a.routeAdmin(mux)
+}
+
+// 連絡帳の読み書きと、ねた・おきた（詳細設計書「経路の一覧」(4-2)）
+func (a *app) routeContact(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/contact/children/{childID}", a.handleContactPage)
+	mux.HandleFunc("POST /api/contact/children/{childID}/read", a.handleContactRead)
+	mux.HandleFunc("PUT /api/contact/children/{childID}/home", a.handleSaveHome)
+	mux.HandleFunc("GET /api/contact/classes", a.handleContactClasses)
+	mux.HandleFunc("GET /api/contact/classes/{classID}", a.handleContactClass)
+	mux.HandleFunc("POST /api/contact/home/{id}/confirm", a.handleConfirmHome)
+	mux.HandleFunc("POST /api/nap/session/{id}/sleeps", a.handleSleep)
+	mux.HandleFunc("POST /api/nap/sleeps/{id}/wake", a.handleWake)
+	mux.HandleFunc("POST /api/nap/session/{id}/exclusions", a.handleExclude)
+	mux.HandleFunc("POST /api/nap/exclusions/{id}/cancel", a.handleCancelExclusion)
+	// きょうのようすの記録と、訂正・取り消し（詳細設計書「きょうのようす」(4-4)・「訂正・取り消し」(4-7)・(4-6 (4))）
+	mux.HandleFunc("POST /api/contact/events", a.handleRecordEvents)
+	mux.HandleFunc("POST /api/contact/events/{id}/correct", a.handleCorrectEvent)
+	mux.HandleFunc("POST /api/contact/events/{id}/cancel", a.handleCancelEvent)
+	mux.HandleFunc("GET /api/contact/events/{id}/readers", a.handleEventReaders)
+	mux.HandleFunc("POST /api/nap/sleeps/{id}/correct", a.handleCorrectSleep)
+	mux.HandleFunc("POST /api/nap/sleeps/{id}/cancel", a.handleCancelSleep)
+	mux.HandleFunc("GET /api/nap/sleeps/{id}/readers", a.handleSleepReaders)
+	// 写真を送る・写真の実体（詳細設計書「きょうのようす」(4-4 (2))・(4-4 (3))）
+	mux.HandleFunc("POST /api/contact/photos", a.handleSendPhoto)
+	mux.HandleFunc("GET /api/contact/photos/{id}", a.handlePhotoFile)
+	// 園からのひとこと・他児の名前の照合・定型文（詳細設計書「園からのひとことと他児の名前」(4-5)）
+	mux.HandleFunc("PUT /api/contact/children/{childID}/facility", a.handleSendFacility)
+	mux.HandleFunc("POST /api/contact/facility/{id}/correct", a.handleCorrectFacility)
+	mux.HandleFunc("POST /api/contact/facility/{id}/cancel", a.handleCancelFacility)
+	mux.HandleFunc("GET /api/contact/facility/{id}/readers", a.handleFacilityReaders)
+	mux.HandleFunc("POST /api/contact/name-check", a.handleNameCheck)
+	mux.HandleFunc("GET /api/phrases", a.handlePhrases)
+	// 文章の下書き（AI）（詳細設計書「経路」(8-2)）
+	mux.HandleFunc("GET /api/ai/status", a.handleAiStatus)
+	mux.HandleFunc("POST /api/ai/drafts", a.handleAiDrafts)
 }
 
 // 共通基盤：ログインとアカウント（基本設計書 4-3）
@@ -33,6 +69,8 @@ func (a *app) routeAuth(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/signup", a.handleSignUpGuardian)
 	mux.HandleFunc("GET /api/dashboard/staff", a.handleStaffSummary)
 	mux.HandleFunc("GET /api/dashboard/guardian", a.handleGuardianHome)
+	// 開いている画面への知らせ（Server-Sent Events。events.go）
+	mux.HandleFunc("GET /api/events", a.handleEvents)
 }
 
 // 共通基盤：園児マスターの管理（基本設計書 4-4）
@@ -41,6 +79,7 @@ func (a *app) routeChild(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/children", a.handleListChildren)
 	mux.HandleFunc("POST /api/children", a.handleSaveChild)
 	mux.HandleFunc("GET /api/children/allergies", a.handleAllAllergies)
+	mux.HandleFunc("GET /api/children/same-name-birth", a.handleSameNameBirthChildren)
 	mux.HandleFunc("GET /api/children/{childID}", a.handleGetChild)
 	mux.HandleFunc("DELETE /api/children/{childID}", a.handleRemoveChild)
 	mux.HandleFunc("GET /api/children/{childID}/allergies", a.handleAllergiesOf)
@@ -64,6 +103,7 @@ func (a *app) routeDiary(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/diaries/{id}/approve", a.handleApproveDiary)
 	mux.HandleFunc("POST /api/diaries/{id}/return", a.handleReturnDiary)
 	mux.HandleFunc("POST /api/diaries/{id}/lock", a.handleAcquireLock)
+	mux.HandleFunc("PUT /api/diaries/{id}/lock", a.handleTouchLock)
 	mux.HandleFunc("DELETE /api/diaries/{id}/lock", a.handleReleaseLock)
 	mux.HandleFunc("GET /api/diaries/{id}/lock", a.handleLockOf)
 	mux.HandleFunc("GET /api/children/{childID}/diaries", a.handlePastDiaries)
@@ -146,4 +186,7 @@ func (a *app) routeAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/invitations/{id}/revoke", a.handleRevokeInvitationCode)
 	mux.HandleFunc("GET /api/admin/logs", a.handleOperationLogs)
 	mux.HandleFunc("POST /api/exports", a.handleRecordExport)
+	// 設定画面（詳細設計書「設定」(4-10)。本版は AI の区画だけ）
+	mux.HandleFunc("GET /api/settings", a.handleSettings)
+	mux.HandleFunc("POST /api/settings", a.handleSaveSettings)
 }

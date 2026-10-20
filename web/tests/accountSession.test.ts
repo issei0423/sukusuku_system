@@ -131,7 +131,9 @@ describe('パスワードの長さとよく使われるパスワード（GitHub 
 
   it('新規登録でも同じ規則にする', async () => {
     const code = await api.issueOneInvitationCode(admin, 'C008', 30);
-    const input = { code, email: 'rule@example.jp', guardian_name: '小林 次郎', relationship: '父' };
+    const input = { code, email: 'rule@example.jp', guardian_name: '小林 次郎', relationship: '父',
+      terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION,
+    };
     await expect(api.signUpGuardian({ ...input, password: 'password' })).rejects.toThrow('よく使われる');
     await expect(api.signUpGuardian({ ...input, password: 'あいう' })).rejects.toThrow('8文字以上');
     await expect(api.signUpGuardian({ ...input, password: 'a'.repeat(129) })).rejects.toThrow('128文字以内');
@@ -154,6 +156,7 @@ describe('個人チャットは園児ID で結ぶ（GitHub Issue #163 の 1）',
     const code = await api.issueOneInvitationCode(admin, 'C023', 30);
     const hanako = await api.signUpGuardian({
       code, email: 'other.nohara@example.jp', password: 'hanako-5678', guardian_name: '野原 花子', relationship: '母',
+      terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION,
     });
     expect(await roomIds(hanako)).not.toContain(6);
     await expect(api.messages(hanako, 6)).rejects.toThrow();
@@ -171,6 +174,7 @@ describe('個人チャットは園児ID で結ぶ（GitHub Issue #163 の 1）',
     const code = await api.issueOneInvitationCode(admin, 'C001', 30);
     const mama = await api.signUpGuardian({
       code, email: 'nohara.m@example.jp', password: 'mama-5678-x', guardian_name: '野原 みさえ', relationship: '母',
+      terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION,
     });
     expect(await roomIds(mama)).toContain(6);
   });
@@ -181,6 +185,7 @@ describe('招待コード 1 枚は 1 アカウント（GitHub Issue #163 の 2�
     const code = await api.issueOneInvitationCode(admin, 'C010', 30);
     const results = await Promise.allSettled([0, 1, 2, 3, 4].map((i) => api.signUpGuardian({
       code, email: `dup${i}@example.jp`, password: 'dup-pass-5678', guardian_name: '吉田 次郎', relationship: '父',
+      terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION,
     })));
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     expect(db.guardianChildren.filter((gc) => gc.child_id === 'C010' && gc.link_status === '1')).toHaveLength(1);

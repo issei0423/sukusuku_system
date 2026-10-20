@@ -141,14 +141,18 @@ export function Empty({ text }: { text: string }) { return <div className="empty
 export function ErrorBox({ text }: { text: string }) { return <Alert>{text}</Alert>; }
 
 /** 選択肢。(*) が選択中、( ) が未選択（図/画面詳細図.md「表記ルール」(0-1)） */
-export function Radios<T extends string>({ name, value, options, onChange, label, required }: {
+export function Radios<T extends string>({ name, value, options, onChange, label, required, disabled }: {
   name: string; value: T | null; options: { value: T; label: string }[]; onChange: (v: T) => void; label?: string; required?: boolean;
+  /** 編集できない状態では選び直させない（日誌作成・編集画面。GitHub Issue #175 の 4） */
+  disabled?: boolean;
 }) {
   return (
-    <div className="choices" role="radiogroup" aria-label={label ?? name} aria-required={required || undefined}>
+    <div className="choices" role="radiogroup" aria-label={label ?? name} aria-required={required || undefined}
+      aria-disabled={disabled || undefined}>
       {options.map((o) => (
         <label key={o.value}>
-          <input type="radio" name={name} checked={value === o.value} onChange={() => onChange(o.value)} />
+          <input type="radio" name={name} checked={value === o.value} disabled={disabled}
+            onChange={() => { if (!disabled) onChange(o.value); }} />
           {o.label}
         </label>
       ))}

@@ -30,6 +30,21 @@ func chatReq(h http.Handler, c *http.Cookie, method, path, body string) *httptes
 	return rec
 }
 
+func TestGuardianCannotReadChatMembers(t *testing.T) {
+	a, h := newTestApp(t)
+	guardian := loginAs(a, 6, "guardian")
+	staff := loginAs(a, 3, "staff")
+	for _, roomID := range []string{"1", "3"} {
+		r := chatReq(h, guardian, "GET", "/api/chat/rooms/"+roomID+"/members", "")
+		if r.Code != http.StatusForbidden {
+			t.Fatalf("保護者にメンバー一覧を返しました: room=%s status=%d body=%s", roomID, r.Code, r.Body.String())
+		}
+	}
+	if r := chatReq(h, staff, "GET", "/api/chat/rooms/3/members", ""); r.Code != http.StatusOK {
+		t.Fatalf("担任のメンバー一覧まで拒否されました: %d", r.Code)
+	}
+}
+
 // currentRooms は、いま参加している（left_at の無い）チャンネルを番号順に返す
 func currentRooms(t *testing.T, a *app, accountID int64) []int64 {
 	t.Helper()

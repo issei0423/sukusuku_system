@@ -52,8 +52,13 @@ export default function DiaryApproveScreen() {
   const isPersonal = d.record_type === '1';
   const willShare = isPersonal && share === 'yes';
   const target = d.child_id ? childName(d.child_id) : className(d.class_id);
-  // 【仮置き】自分が申請した日誌は承認できない（GitHub Issue #106。web/仮置き値.md）
-  const own = d.created_staff_id === user!.staff_id;
+  /*
+   * 自分が申請した日誌は承認できない。その旨を表示し、承認のボタンを押せなくする
+   * （図/画面詳細図.md「日誌承認画面（管理者）」(3-5)。演習上の想定。GitHub Issue #106）。
+   * 作成者だけでなく、最後に申請した職員も見る。担任の下書きを書き直して申請した管理者が承認できていた（GitHub Issue #174）
+   */
+  const applicant = d.applied_staff_id ?? null;
+  const own = d.created_staff_id === user!.staff_id || applicant === user!.staff_id;
 
   const approve = async () => {
     setBusy(true); setError(null);
@@ -81,7 +86,11 @@ export default function DiaryApproveScreen() {
         <Link className="btn btn-quiet btn-sm" to="/staff/admin/approval">&lt; 承認待ち一覧へ</Link>
         <h1>日誌の承認</h1>
         <div className="spacer" />
-        <span className="muted">申請 {formatMDHM(d.updated_at)}　作成者 {staffName(d.created_staff_id)}</span>
+        <span className="muted">
+          申請 {formatMDHM(d.updated_at)}　作成者 {staffName(d.created_staff_id)}
+          {/* 作成者とは別の職員が申請したときは、申請した職員も示す（GitHub Issue #174） */}
+          {applicant && applicant !== d.created_staff_id && `　申請者 ${staffName(applicant)}`}
+        </span>
       </div>
 
       {error && <div style={{ marginBottom: 16 }}><Alert>{error}</Alert></div>}
@@ -98,6 +107,15 @@ export default function DiaryApproveScreen() {
           {DIARY_RECORD_TYPE[d.record_type]} ／ {d.child_id ? childName(d.child_id) : className(d.class_id)}
           {' '}／ 記録日 {formatYMD(d.diary_date)}
         </h2>
+        {/*
+          * 差し戻したことのある日誌は、前回の差し戻しの理由を出す。理由は承認されるまで残し、
+          * 承認者が前回の指摘を見ながら確かめられるようにする（基本設計書「日誌（t_diary）」(5-4)。GitHub Issue #174）
+          */}
+        {d.returned_reason && (
+          <div style={{ marginBottom: 12 }}>
+            <Alert soft>前回差し戻した理由：{d.returned_reason}</Alert>
+          </div>
+        )}
         {/* 本文は読み取り専用。承認者が書き換えられないようにする */}
         <div style={{ whiteSpace: 'pre-wrap', border: '1px solid var(--c-border)', borderRadius: 6, padding: 12, background: 'var(--c-surface-sub)' }}>
           {d.body}

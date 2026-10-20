@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -47,6 +47,11 @@ func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "入口の指定が正しくありません。職員用または保護者用のトップからログインしてください")
 		return
 	}
+	// 送信元の失敗が上限を超えていたら、照合せずに断る（attempts.go。GitHub Issue #236 の 6）
+	if a.guard().blocked(r) {
+		writeTooManyAttempts(w)
+		return
+	}
 	maxFailed := a.settingInt("auth.max_failed_login", 5)
 
 	var (
@@ -65,9 +70,19 @@ func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Scan(&accountID, &hash, &role, &status, &failedCount, &lockedUntil, &isTemp, &tempExpiresAt)
 
 	if errors.Is(err, sql.ErrNoRows) {
-		// 存在しないアカウントでも、あるかどうかを推測させない文言に揃える
+		// 存在しないアカウントでも、あるかどうかを推測させない文言に揃える。
+		// 照合も1回行う。照合をせずにすぐ返すと、応答の速さで存在しないことが分かるため（GitHub Issue #236 の 7）
+		checkPassword(dummyPasswordHash(), req.Password)
+		a.guard().failed(r)
+		// 残りの回数とロックも、実在のアカウントと同じように進める。存在しないIDだけ残りが減らないと、
+		// それで有無が分かるため（attempts.go。GitHub Issue #159 の 5）
+		locked, remaining := a.guard().unknownFailed(req.Email, maxFailed, a.settingInt("auth.lock_minutes", 30))
+		if locked {
+			writeLocked(w)
+			return
+		}
 		writeJSON(w, http.StatusUnauthorized, apiError{
-			Kind: "credential", Remaining: maxFailed,
+			Kind: "credential", Remaining: remaining,
 			Message: "ログインIDまたはパスワードが違います",
 		})
 		return
@@ -78,14 +93,15 @@ func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if lockedUntil.Valid && lockedUntil.String > now() {
-		writeJSON(w, http.StatusUnauthorized, apiError{
-			Kind:    "locked",
-			Message: "ログインを一定回数以上まちがえたため、アカウントをロックしました。園の管理者へご連絡ください",
-		})
+		// 存在しないIDのときと同じだけ時間をかける（GitHub Issue #236 の 7）
+		checkPassword(dummyPasswordHash(), req.Password)
+		a.guard().failed(r)
+		writeLocked(w)
 		return
 	}
 
 	if !checkPassword(hash, req.Password) {
+		a.guard().failed(r)
 		failedCount++
 		/*
 		 * ログインの失敗と、失敗が続いたことによるロックを操作ログに残す（GitHub Issue #115）。
@@ -102,10 +118,7 @@ func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
 				failedCount, fromNowMinutes(lockMinutes), accountID)
 			a.log(accountID, fnAccount, opUpdate, "m_account", i64(accountID), nil, nil,
 				s("ログインに失敗（"+attempt+"）。失敗が続いたためロック"))
-			writeJSON(w, http.StatusUnauthorized, apiError{
-				Kind:    "locked",
-				Message: "ログインを一定回数以上まちがえたため、アカウントをロックしました。園の管理者へご連絡ください",
-			})
+			writeLocked(w)
 			return
 		}
 		a.db.Exec(`UPDATE m_account SET failed_login_count = ? WHERE account_id = ?`, failedCount, accountID)
@@ -173,6 +186,14 @@ func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, u)
+}
+
+// writeLocked は、失敗が続いてロックしたことを返す。実在しないIDにも同じ応答を返す（GitHub Issue #159 の 5）
+func writeLocked(w http.ResponseWriter) {
+	writeJSON(w, http.StatusUnauthorized, apiError{
+		Kind:    "locked",
+		Message: "ログインを一定回数以上まちがえたため、アカウントをロックしました。園の管理者へご連絡ください",
+	})
 }
 
 func (a *app) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -268,7 +289,7 @@ type Terms struct {
 func (a *app) handleCurrentTerms(w http.ResponseWriter, r *http.Request) {
 	var t Terms
 	err := a.db.QueryRow(`SELECT terms_id, terms_version, document_type, body, published_on
-	                        FROM m_terms WHERE terms_version = ?`, a.currentTermsVersion).
+	                        FROM m_terms WHERE terms_id = ?`, a.currentTermsID).
 		Scan(&t.TermsID, &t.TermsVersion, &t.DocumentType, &t.Body, &t.PublishedOn)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "利用規約を読み込めませんでした")
@@ -382,6 +403,12 @@ func (a *app) lookupUsableCode(code string) (usableCode, error) {
 	case expiresOn < today():
 		return out, errors.New("この招待コードは有効期限が切れています")
 	}
+	// 取り消した（誤登録）・在籍していない園児のコードでは登録させない。発行のあとで園児を取り消しても、
+	// 配ったコードで、その園児に紐づく保護者アカウントができてしまうため（GitHub Issue #166 の 4）。
+	// 園児の状態は言わず、無いコードと同じ文言にする
+	if _, issuable := a.childIssuable(out.ChildID); !issuable {
+		return out, errors.New("招待コードが確認できません。園から配布されたコードをお確かめください")
+	}
 	return out, nil
 }
 
@@ -394,7 +421,13 @@ func (a *app) handleVerifyInvitationCode(w http.ResponseWriter, r *http.Request)
 	if !readJSON(w, r, &req) {
 		return
 	}
+	// 未ログインで呼べるため、送信元ごとの失敗に上限を置く。コードの総当たりを止める（attempts.go。GitHub Issue #236 の 6）
+	if a.guard().blocked(r) {
+		writeTooManyAttempts(w)
+		return
+	}
 	if _, err := a.lookupUsableCode(req.Code); err != nil {
+		a.guard().failed(r)
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -407,7 +440,21 @@ type signUpRequest struct {
 	Password     string `json:"password"`
 	GuardianName string `json:"guardian_name"`
 	Relationship string `json:"relationship"`
+	// 利用規約に同意したか（画面の「利用規約に同意します」）と、画面に出して同意を得た規約の版。
+	// 同意は要配慮個人情報を取り扱う根拠であり、いつ・どの版に同意したかを後から示せる必要がある
+	// （基本設計書「同意履歴（t_terms_agreement）」(5-2)。GitHub Issue #170）
+	TermsAgreed  bool   `json:"terms_agreed"`
+	TermsVersion string `json:"terms_version"`
 }
+
+// guardianRelationships は続柄の選択肢（画面詳細図「新規登録画面（保護者）」(2-3) 項目11）
+var guardianRelationships = map[string]bool{"母": true, "父": true, "祖母": true, "祖父": true, "その他": true}
+
+// termsNotAgreedMessage は規約に同意しないときの文言（基本設計書「メッセージ一覧」(4-9)「規約に同意しない」）
+const termsNotAgreedMessage = "利用規約に同意いただけない場合、ご利用いただけません。"
+
+// 【仮置き】画面に出していた規約が、送るまでのあいだに改定されたときの文言（web/仮置き値.md）
+const termsOutdatedMessage = "利用規約が改定されました。改定後の利用規約をお読みいただき、あらためて同意してください。"
 
 func (a *app) handleSignUpGuardian(w http.ResponseWriter, r *http.Request) {
 	// ログイン中は新しいアカウントを作らせない。登録が成立するとセッションが新しい保護者に置き換わり、
@@ -421,9 +468,29 @@ func (a *app) handleSignUpGuardian(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if a.guard().blocked(r) {
+		writeTooManyAttempts(w)
+		return
+	}
 	code, err := a.lookupUsableCode(req.Code)
 	if err != nil {
+		a.guard().failed(r)
 		writeErr(w, http.StatusBadRequest, "招待コードが確認できません")
+		return
+	}
+	/*
+	 * 規約への同意を受け取ってから登録する。同意しなかった場合は登録を完了しない
+	 * （基本設計書「保護者アカウントの自己登録」(4-3)、画面詳細図 2-3 項目5「未チェックのままでは登録できない」）。
+	 * 画面のチェックだけで止めると、API を直接呼んだ登録にも同意の記録が付いてしまう（GitHub Issue #170）。
+	 * 同意した版は、画面に出した版と、いま有効な版が同じときだけ記録する。送るまでのあいだに規約が改定されていたら、
+	 * 読んでいない版に同意したことになるため、改定後の規約を読み直してもらう
+	 */
+	if !req.TermsAgreed {
+		writeErr(w, http.StatusBadRequest, termsNotAgreedMessage)
+		return
+	}
+	if req.TermsVersion != a.currentTermsVersion {
+		writeErr(w, http.StatusBadRequest, termsOutdatedMessage)
 		return
 	}
 	// ログインIDはメールアドレス。空や形式の誤りを受け付けない（要件定義書「ログインIDの定義」(4-1-1)）
@@ -432,10 +499,12 @@ func (a *app) handleSignUpGuardian(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, msg)
 		return
 	}
-	// ログインIDはロールをまたいで園内で一意（基本設計書 5-2）
-	var dup int
-	a.db.QueryRow(`SELECT COUNT(*) FROM m_account WHERE email = ?`, req.Email).Scan(&dup)
-	if dup > 0 {
+	/*
+	 * ログインIDはロールをまたいで園内で一意（基本設計書 5-2）。
+	 * 大文字・小文字だけが違うメールアドレスは同じ宛先に届くため、同じものとして重複を判定する（GitHub Issue #170）。
+	 * 判定は職員アカウントの発行と同じ api_admin.go の emailTaken を使う（GitHub Issue #167 の 1）
+	 */
+	if a.emailTaken(req.Email) {
 		writeErr(w, http.StatusBadRequest, "このメールアドレスはすでに登録されています")
 		return
 	}
@@ -444,8 +513,19 @@ func (a *app) handleSignUpGuardian(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, msg)
 		return
 	}
-	if strings.TrimSpace(req.GuardianName) == "" {
+	// 氏名は前後の空白を落として、50文字以内（基本設計書「入力項目の制約値」(4-9)「氏名・かな（園児・職員・保護者）」）
+	req.GuardianName = strings.TrimSpace(req.GuardianName)
+	if req.GuardianName == "" {
 		writeErr(w, http.StatusBadRequest, "保護者の氏名を入力してください")
+		return
+	}
+	if tooLong(req.GuardianName, 50) {
+		writeErr(w, http.StatusBadRequest, "保護者の氏名は50文字以内で入力してください")
+		return
+	}
+	// 続柄は必須で、選択肢のどれか（画面詳細図 2-3 項目11）。お迎えに来る人が誰かを職員が確かめる手がかりになる（基本設計書 5-5）
+	if !guardianRelationships[req.Relationship] {
+		writeErr(w, http.StatusBadRequest, "続柄は 母・父・祖母・祖父・その他 から選んでください")
 		return
 	}
 

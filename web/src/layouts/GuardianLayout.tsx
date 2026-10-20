@@ -14,8 +14,12 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useSession } from '../session';
 import { useAsync, AUTO_REFRESH_MS } from '../hooks';
+import { onLive } from '../live';
 import { api, settingText } from '../api/client';
 import { BellIcon } from '../components/ui';
+import { ConfirmDialog, ToastHost } from '../components/feedback';
+import ConnectionBanner from '../components/ConnectionBanner';
+import { UnsavedInputContext, useUnsavedInputTracker } from '../unsavedInput';
 
 /** メニューの行き先。スマートフォンのメニュー（ドロワー）と、PC の幅で常に出すメニューで同じものを並べる */
 const MENU = [
@@ -33,10 +37,15 @@ export default function GuardianLayout() {
   const { user, logout } = useSession();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  // 保存していない入力があるときに出す、ログアウトの確認（基本設計書「ログアウト」(4-3)。GitHub Issue #170）
+  const [confirmLogout, setConfirmLogout] = useState(false);
+  const unsaved = useUnsavedInputTracker();
   const drawer = useRef<HTMLElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
-  // 園からの返信が、どの画面を開いていても数秒で通知の件数に表れるよう、裏で読み直す
-  const home = useAsync(() => api.guardianHome(user!), [user?.account_id], { refreshMs: AUTO_REFRESH_MS });
+  // 園からの返信が、どの画面を開いていてもすぐに通知の件数に表れるよう、知らせ（live.ts）を受けて読み直す
+  // （知らせが切れている間は数秒ごとに読み直す）。ここで使うのは未読の件数だけ
+  const home = useAsync(() => api.guardianHome(user!), [user?.account_id],
+    { refreshMs: AUTO_REFRESH_MS, live: onLive('chat') });
 
   // PC の幅へ広げたら、開いていたメニューを閉じる。PC の幅ではメニューを左に常に出すため
   useEffect(() => {
@@ -69,12 +78,24 @@ export default function GuardianLayout() {
   const unread = home.data?.[0]?.unread ?? 0;
   const phone = settingText('facility.phone_number', '');
 
-  const onLogout = async () => {
+  const doLogout = async () => {
     await logout();
     navigate('/');
   };
   // 誰の保護者かを示す。「園児の氏名 保護者」と表す（図/画面詳細図.md の保護者の表し方）
   const who = `${home.data?.map((h) => h.child.child_name).join('・') || user.display_name} 保護者`;
+  /*
+   * 保存していない入力（書きかけのメッセージなど）があれば、破棄される旨を表示して確認する
+   * （基本設計書「ログアウト」(4-3)）。メニューは閉じてから確認を出す（メニューとダイアログを重ねない）
+   */
+  const onLogout = () => {
+    if (unsaved.hasUnsavedInput()) {
+      setOpen(false);
+      setConfirmLogout(true);
+      return;
+    }
+    void doLogout();
+  };
 
   return (
     <div className="guardian-shell">
@@ -120,6 +141,14 @@ export default function GuardianLayout() {
         </>
       )}
 
+      {confirmLogout && (
+        <ConfirmDialog title="保存していない入力があります" confirmLabel="破棄してログアウトする" danger
+          onConfirm={() => { setConfirmLogout(false); void doLogout(); }} onCancel={() => setConfirmLogout(false)}>
+          <p>入力した内容を送信・保存していません。このままログアウトすると、入力した内容は破棄されます。</p>
+          <p className="muted">残すときは、「やめる」を押してから送信・保存してください。</p>
+        </ConfirmDialog>
+      )}
+
       <div className="guardian-body">
         {/* PC の幅で常に出すメニュー。スマートフォン・タブレットの幅では CSS で隠し、上のメニューから開く */}
         <nav className="guardian-sidebar" aria-label="メニュー">
@@ -129,7 +158,11 @@ export default function GuardianLayout() {
           <button className="btn-block" onClick={onLogout}>ログアウト</button>
         </nav>
         <main className="guardian-main" tabIndex={-1}>
-          <Outlet />
+          {/* 知らせが切れている・サーバに届かないときの帯（詳細設計書「つながっているかの表示」(2-8)） */}
+          <ConnectionBanner audience="guardian" />
+          <UnsavedInputContext.Provider value={unsaved.report}>
+            <Outlet />
+          </UnsavedInputContext.Provider>
         </main>
       </div>
 
@@ -142,6 +175,8 @@ export default function GuardianLayout() {
         <span>緊急のご連絡はお電話でお願いします</span>
         {phone && <a href={`tel:${phone.replace(/[^0-9+]/g, '')}`}>{phone}</a>}
       </footer>
+      {/* 押した結果の表示。保護者のレイアウトにも置く（詳細設計書「共通の部品」(2-0 (1))、決めたこと D-21） */}
+      <ToastHost />
     </div>
   );
 }

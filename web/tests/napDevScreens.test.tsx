@@ -115,6 +115,17 @@ describe('発達チェック入力画面（GitHub Issue #164）', () => {
     expect(screen.getByText('確定する')).toBeTruthy();
   });
 
+  it('確定した記録を開き直すと、確定した職員と日時、「確定する」で書き換わることを出す（GitHub Issue #143）', async () => {
+    await api.saveCheck(teacher, 'C007', today(), [], '', '2'); // 中村 蓮
+    open('/staff/growth/dev/C007', teacher);
+    await settled();
+    await waitFor(() => expect(document.body.textContent).toContain('確定した職員：高梨 倫太朗'));
+    // 時計は 13:30 に止めてある（このファイルの beforeEach）
+    expect(document.body.textContent).toContain('確定した日時：');
+    expect(document.body.textContent).toContain('13:30');
+    expect(document.body.textContent).toContain('この記録を書き換えます');
+  });
+
   it('確定していない日は「下書き保存」を出す', async () => {
     open('/staff/growth/dev/C010', teacher);
     await settled();

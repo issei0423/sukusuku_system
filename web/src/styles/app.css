@@ -48,6 +48,36 @@
   font-size: var(--fs-small); font-weight: 700; line-height: 22px; letter-spacing: 0; text-align: center;
 }
 
+/*
+ * 相手の操作がすぐに出る状態か（components/LiveIndicator.tsx）。通知の左に小さく置く。
+ * 色だけに頼らず文言でも示す。縦向きの狭い幅でも文言を隠さない（WCAG 1.4.1、GitHub Issue #211）
+ */
+.live-indicator {
+  display: inline-flex; align-items: center; gap: var(--sp-1);
+  font-size: var(--fs-small); white-space: nowrap; color: var(--c-primary-ink);
+}
+.live-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 10px; border: 1px solid var(--c-primary-ink); }
+.live-indicator.is-open .live-dot { background: var(--c-live-on); }
+.live-indicator.is-fallback .live-dot { background: var(--c-live-off); }
+/*
+ * 【仮置き】縦向きの狭い幅で入りきらないときは、文言の区切り（<wbr>）で2行に折り返す。
+ * 「自動で／読み直しています」のように、語の途中では切らない（keep-all）。入りきる幅では1行のまま。
+ * 縮めるのはこの表示だけにし、通知とログアウトのボタンは縮めない（「ログアウト」の文字を折り返させない）
+ */
+@media (max-width: 900px) {
+  .live-indicator { white-space: normal; word-break: keep-all; line-height: 1.25; }
+  .app-header button { flex-shrink: 0; }
+}
+
+/*
+ * 画面の上端の帯（components/ConnectionBanner.tsx。詳細設計書「つながっているかの表示」(2-8)）。
+ * サーバに届かないときは警告色、保護者の「自動で読み直しています」は細い帯。午睡チェック画面では大きく出す
+ */
+.connection-banner { margin: 0 0 var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: 8px; font-weight: 700; }
+.connection-banner.is-unreachable { background: var(--c-alert); color: var(--dads-white); }
+.connection-banner.is-unreachable.is-large { min-height: 64px; display: flex; align-items: center; font-size: 20px; }
+.connection-banner.is-fallback { padding: var(--sp-1) var(--sp-3); background: var(--c-alert-soft); color: var(--c-primary-ink); font-weight: 400; font-size: var(--fs-small); }
+
 .staff-body { flex: 1; display: flex; min-height: 0; position: relative; }
 
 /*
@@ -78,6 +108,10 @@
 }
 .sidenav hr { margin: var(--sp-3) var(--sp-4); border: 0; border-top: 1px solid var(--c-border); }
 .sidenav .group-label { padding: var(--sp-1) var(--sp-4); font-size: var(--fs-small); font-weight: 700; color: var(--c-text-sub); }
+.sidenav-hint { display: none; }
+@media (max-height: 900px) {
+  .sidenav-hint { display: block; position: sticky; bottom: 0; padding: 6px 10px; background: var(--c-surface); border-top: 1px solid var(--c-border); color: var(--c-text-sub); font-size: var(--fs-small); text-align: center; }
+}
 
 .main { flex: 1; min-width: 0; overflow-y: auto; padding: var(--main-pad); background: var(--c-bg); }
 

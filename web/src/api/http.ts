@@ -18,10 +18,20 @@ import type {
   MisdeliveryRow, RetractedRow, NapChildState, NapAbnormalRow, NapSearchRow,
   DevListRow, DevScheduleRow, CsvRow, FiscalClassRow, StaffAccountRow,
   GuardianAccountRow, InvitationCodeRow, OperationLogRow, StaffSummary, GuardianHomeRow,
+  DevDraftView,
+  ContactPage, ContactClassView, ContactHome, ContactHomeInput, NapSleep, NapExclusion,
+} from './shapes';
+import type { SendPhotoInput, SendPhotoResult } from './shapes';
+import type {
+  ContactEvent, ContactEventInput, RecordEventsResult, ContactEventCorrection, NapSleepCorrection, CancelResult, Readers,
+  ContactFacility, FacilityCorrection, Phrase, NameMatch, AiTarget, AiDraftInput, AiDraftResult, SettingsView,
 } from './shapes';
 import {
   ProcedureRequiredError, isProcedureKind, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
 } from './procedure';
+import { startLive } from '../live';
+import { setReachable } from './reachability';
+import { TEXT } from '../messages';
 
 // 画面はこれまでどおり client 経由で型を参照する。定義の実体は shapes.ts が持つ
 export type {
@@ -30,28 +40,76 @@ export type {
 
 /* ============ 通信 ============ */
 
+/**
+ * 開いている画面への知らせ（server/events.go の GET /api/events。SSE）につなぐ。返す関数で切る。
+ * App.tsx がログイン中に1か所で呼ぶ。だれの知らせかはサーバがセッションで決めるため、引数は使わない
+ * （モック（api/mock.ts の connectLive）と同じ形にしてある）
+ */
+export function connectLive(accountId: number): () => void {
+  void accountId;
+  return startLive('/api/events');
+}
+
 class ApiError extends Error {
   kind?: string;
   remaining?: number;
   correct?: string;
-  constructor(body: { message: string; kind?: string; remaining?: number; correct?: string }) {
+  /** 他児の名前の注意（409 other_child_names）の、当たった園児の氏名と本文の中の位置（詳細設計書「誤りの応答」(4-1 (3))） */
+  names?: string[];
+  matches?: NameMatch[];
+  /** 設定の保存で、誤りのあった設定のキー（詳細設計書「設定」(4-10 (2))） */
+  field?: string;
+  constructor(body: { message: string; kind?: string; remaining?: number; correct?: string; names?: string[]; matches?: NameMatch[]; field?: string }) {
     super(body.message);
     this.kind = body.kind;
     this.remaining = body.remaining;
     this.correct = body.correct;
+    this.names = body.names;
+    this.matches = body.matches;
+    this.field = body.field;
   }
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(path, {
-    method,
-    // セッションの Cookie を送る。認証情報の保持方式は未確定（要決定事項.md 優先度A）
-    credentials: 'same-origin',
-    // 編集ロックの解除は、タブを閉じる・読み込み直す途中にも送る。途中で打ち切られないようにする
-    keepalive: method === 'DELETE',
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+/** 画面からサーバへの要求の上限（詳細設計書「押したときの処理の型」(2-0 (2))、決めたこと D-19） */
+const REQUEST_TIMEOUT_MS = 15_000;
+/** AI の下書きの要求の上限（決めたこと D-19。サーバは再試行を含めて10秒で諦める） */
+const AI_REQUEST_TIMEOUT_MS = 20_000;
+/** 画面に出す文（サーバに届かないとき。詳細設計書「つながっているかの表示」(2-8)） */
+const UNREACHABLE_MESSAGE = `${TEXT.unreachableBanner}。つながったら、もう一度送ってください。`;
+
+/** ログインの失敗理由（LoginError）。画面（TopScreen）が JSON にして分岐に使う */
+const LOGIN_KINDS = new Set(['credential', 'locked', 'suspended', 'wrong_entrance', 'temp_expired', 'already_logged_in', 'too_many_attempts']);
+
+async function request<T>(method: string, path: string, body?: unknown, timeoutMs = REQUEST_TIMEOUT_MS): Promise<T> {
+  let res: Response;
+  // 写真（multipart/form-data）は FormData のまま送る。境界の入った Content-Type はブラウザが付ける
+  const form = typeof FormData !== 'undefined' && body instanceof FormData;
+  try {
+    res = await fetch(path, {
+      method,
+      // セッションの Cookie を送る。認証情報の保持方式は未確定（要決定事項.md 優先度A）
+      credentials: 'same-origin',
+      // 編集ロックの解除は、タブを閉じる・読み込み直す途中にも送る。途中で打ち切られないようにする
+      keepalive: method === 'DELETE',
+      headers: body === undefined || form ? undefined : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : form ? body : JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch {
+    // 通信の失敗・時間切れは「サーバに届かない」（詳細設計書「画面の受け取り」(6-4)）。貯めて後から送ることはしない
+    setReachable(false);
+    throw new ApiError({ message: UNREACHABLE_MESSAGE, kind: 'unreachable' });
+  }
+  // 502・503（AI が下書きを返さなかったものを除く）・504 も「サーバに届かない」。ほかの応答はサーバに届いている
+  if (res.status === 502 || res.status === 504 || res.status === 503) {
+    const retryBody = await res.clone().json().catch(() => null);
+    if (res.status !== 503 || retryBody?.kind !== 'ai_unavailable') {
+      setReachable(false);
+      throw new ApiError({ message: UNREACHABLE_MESSAGE, kind: 'unreachable' });
+    }
+  } else {
+    setReachable(true);
+  }
 
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
@@ -75,8 +133,14 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       clearReference();
       notifySessionEnded();
     }
-    // ログインの失敗理由は画面が分岐に使う。mock 実装と同じ形（JSON 文字列）で投げる
-    if (err.kind) {
+    // 送信元の失敗が続いて止めているとき（server/attempts.go。GitHub Issue #236 の 6）。
+    // 招待コードの確認・新規登録の画面は文言をそのまま出すので、ログイン以外では文言で投げる
+    if (err.kind === 'too_many_attempts' && path !== '/api/login') {
+      throw new Error(err.message);
+    }
+    // ログインの失敗理由は画面が分岐に使う。mock 実装と同じ形（JSON 文字列）で投げる。
+    // ほかの kind（version_conflict など）は文言をそのまま見せる
+    if (err.kind && LOGIN_KINDS.has(err.kind)) {
       throw new Error(JSON.stringify({ kind: err.kind, remaining: err.remaining, correct: err.correct }));
     }
     throw err;
@@ -87,6 +151,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 const get = <T>(path: string) => request<T>('GET', path);
 const post = <T>(path: string, body?: unknown) => request<T>('POST', path, body ?? {});
 const del = <T>(path: string) => request<T>('DELETE', path);
+const put = <T>(path: string, body?: unknown) => request<T>('PUT', path, body ?? {});
 
 /** クエリ文字列を組み立てる。空の値は落とす */
 function qs(params: Record<string, string | number | boolean | null | undefined>): string {
@@ -166,6 +231,7 @@ export const accountName = (accountId: number) =>
 export function settingNumber(key: string, fallback: number): number {
   const raw = ref.settings[key];
   const n = Number(raw);
+  if (raw === undefined && Object.keys(ref.settings).length === 0) return fallback;
   if (raw === undefined || Number.isNaN(n)) {
     console.warn(`[設定マスタ] ${key} を数値として解釈できません。既定値 ${fallback} を用います`);
     return fallback;
@@ -246,6 +312,8 @@ const apiAuth = {
 
   async signUpGuardian(input: {
     code: string; email: string; password: string; guardian_name: string; relationship: string;
+    /** 利用規約に同意したかと、画面に出して同意を得た規約の版（GitHub Issue #170） */
+    terms_agreed: boolean; terms_version: string;
   }): Promise<SessionUser> {
     const u = await post<SessionUser>('/api/signup', input);
     await loadReferenceFor(u);
@@ -263,13 +331,17 @@ const apiAuth = {
     const r = await get<{ exists: boolean }>(`/api/children/${encodeURIComponent(childId.trim())}/exists`);
     return r.exists;
   },
+
+  /** 氏名と生年月日が同じ園児。登録の確認画面で、重ねて登録していないかを知らせるために使う（GitHub Issue #144 の 2） */
+  sameNameBirthChildren: (_u: SessionUser, childName: string, birthDate: string) =>
+    get<Child[]>('/api/children/same-name-birth' + qs({ child_name: childName, birth_date: birthDate })),
   // 第1引数はモック実装（mock.ts）が権限の判定に使う。サーバはセッションから利用者を引く
   allergiesOf: (_u: SessionUser, childId: string) => get<Allergy[]>(`/api/children/${childId}/allergies`),
   medicalHistoriesOf: (_u: SessionUser, childId: string) =>
     get<{ medical_history_id: number; child_id: string; content: string }[]>(
       `/api/children/${childId}/medical-histories`),
   classOf: (_u: SessionUser, childId: string) => get<number | null>(`/api/children/${childId}/class`),
-  allAllergies: () =>
+  allAllergies: (_u: SessionUser) =>
     get<{ child: Child; className: string; allergies: Allergy[] }[]>('/api/children/allergies'),
 
   async saveChild(_u: SessionUser, input: ChildInput, mode: 'create' | 'edit'): Promise<Child> {
@@ -287,7 +359,7 @@ const apiAuth = {
   listDiaries: (_u: SessionUser, f: DiaryFilter = {}) =>
     get<Paged<Diary>>('/api/diaries' + qs({
       record_type: f.recordType ?? '', class_id: f.classId ?? '', status: f.status ?? '',
-      from: f.from ?? '', to: f.to ?? '', page: f.page ?? 1,
+      from: f.from ?? '', to: f.to ?? '', page: f.page ?? 1, mine: f.mine ? 1 : '',
     })),
 
   getDiary: (_u: SessionUser, diaryId: number) => get<Diary>(`/api/diaries/${diaryId}`),
@@ -296,7 +368,9 @@ const apiAuth = {
   attachmentsOf: (_u: SessionUser, diaryId: number) =>
     get<{ diary_attachment_id: number; diary_id: number; file_path: string; file_type: string }[]>(
       `/api/diaries/${diaryId}/attachments`),
-  pastDiariesOf: (_u: SessionUser, childId: string, _exclude?: number) => get<Diary[]>(`/api/children/${childId}/diaries`),
+  // いま開いている日誌そのものは除く（GitHub Issue #139・#174）。サーバが除く日誌を受け取る
+  pastDiariesOf: (_u: SessionUser, childId: string, exclude?: number) =>
+    get<Diary[]>(`/api/children/${childId}/diaries${qs({ exclude })}`),
   timelineOf: (_u: SessionUser, childId: string) => get<Diary[]>(`/api/children/${childId}/timeline`),
   pendingDiaries: (_u: SessionUser) => get<Diary[]>('/api/diaries/pending'),
 
@@ -314,11 +388,17 @@ const apiAuth = {
     return r.token ? { token: r.token } : { heldBy: r.held_by! };
   },
 
-  releaseLock: (_u: SessionUser, diaryId: number, force = false) =>
-    del<void>(`/api/diaries/${diaryId}/lock${force ? '?force=true' : ''}`),
+  // 本人の解除は、取得のときに受け取った識別子を添える。一致するときだけ外れる（GitHub Issue #166）
+  releaseLock: (_u: SessionUser, diaryId: number, force = false, token?: string) =>
+    del<void>(`/api/diaries/${diaryId}/lock${force ? '?force=true' : token ? `?token=${encodeURIComponent(token)}` : ''}`),
 
+  // 編集画面での操作を知らせ、無操作の判定を最後の操作から数えさせる（GitHub Issue #166 の 3）
+  touchLock: (_u: SessionUser, diaryId: number, token: string) =>
+    put<void>(`/api/diaries/${diaryId}/lock`, { lock_token: token }),
+
+  // ロックの識別子は返らない。誰が編集中かと最終操作時刻だけ（GitHub Issue #166 の 2）
   lockOf: (_u: SessionUser, diaryId: number) =>
-    get<{ diary_id: number; lock_token: string; locked_staff_id: string; last_active_at: string; staff_name: string } | null>(
+    get<{ diary_id: number; locked_staff_id: string; locked_at: string; last_active_at: string; staff_name: string } | null>(
       `/api/diaries/${diaryId}/lock`),
 };
 
@@ -339,7 +419,8 @@ const apiChatNap = {
   retract: (_u: SessionUser, messageId: number) => post<void>(`/api/chat/messages/${messageId}/retract`),
   edit: (_u: SessionUser, messageId: number, body: string) =>
     post<void>(`/api/chat/messages/${messageId}/edit`, { body }),
-  groups: () => get<ChatRoom[]>('/api/chat/groups'),
+  // 一般の職員には、いま参加しているグループだけが返る（GitHub Issue #172）。第1引数はモックが判定に使う
+  groups: (_u: SessionUser) => get<ChatRoom[]>('/api/chat/groups'),
   // 目的別グループへ入れられる相手（有効な職員）。一般の職員も取得できる
   groupCandidates: (_u: SessionUser) =>
     get<{ account_id: number; name: string; role: Role }[]>('/api/chat/group-candidates'),
@@ -348,7 +429,7 @@ const apiChatNap = {
   updateGroupMembers: (_u: SessionUser, roomId: number, accountIds: number[]) =>
     post<void>(`/api/chat/groups/${roomId}/members`, { account_ids: accountIds }),
   misdeliveryRecords: (_u: SessionUser) => get<MisdeliveryRow[]>('/api/chat/misdelivery'),
-  retractedWithoutRecord: () => get<RetractedRow[]>('/api/chat/misdelivery/pending'),
+  retractedWithoutRecord: (_u: SessionUser) => get<RetractedRow[]>('/api/chat/misdelivery/pending'),
   addMisdeliveryRecord: (
     _u: SessionUser,
     input: { chat_message_id: number; occurred_at: string; was_read: boolean; response: string },
@@ -420,12 +501,13 @@ const apiGrowth = {
   list: (_u: SessionUser, classId: number) =>
     get<DevListRow[]>('/api/development/list' + qs({ class_id: classId })),
 
-  previousCheck: (childId: string, beforeDate: string) =>
+  // 第1引数はモック実装（mock.ts）が権限の判定に使う。サーバはセッションから利用者を引く（GitHub Issue #177 の 3）
+  previousCheck: (_u: SessionUser, childId: string, beforeDate: string) =>
     get<{ check: DevelopmentCheck; results: DevelopmentResultRecord[] } | null>(
       `/api/children/${childId}/development/previous` + qs({ before: beforeDate })),
 
-  draftFor: (childId: string, checkedOn: string) =>
-    get<{ check: DevelopmentCheck; results: DevelopmentResultRecord[] } | null>(
+  draftFor: (_u: SessionUser, childId: string, checkedOn: string) =>
+    get<DevDraftView | null>(
       `/api/children/${childId}/development/draft` + qs({ checked_on: checkedOn })),
 
   saveCheck: (
@@ -458,7 +540,11 @@ const apiGrowth = {
 
   recordsOf: (_u: SessionUser, childId: string) => get<PhysicalRecord[]>(`/api/children/${childId}/physical`),
 
-  save: (_u: SessionUser, input: { child_id: string; measured_on: string; height_cm: number; weight_kg: number }) =>
+  /** 上書き・同じ月の別の記録は、画面で確かめた承諾を添えて送る（server/api_physical.go の handleSavePhysical） */
+  save: (_u: SessionUser, input: {
+    child_id: string; measured_on: string; height_cm: number; weight_kg: number;
+    confirm_overwrite?: boolean; confirm_same_month?: boolean;
+  }) =>
     post<PhysicalRecord>('/api/physical/records', input),
 
   growthBand: (sex: Sex, measureType: '1' | '2') =>
@@ -591,4 +677,77 @@ const apiHandout = {
 };
 
 /* ============ 画面が使う入口 ============ */
-export const api = { ...apiAuth, ...apiChatNap, ...apiGrowth, ...apiAdmin, ...apiHandout };
+/* 連絡帳の写真（詳細設計書「きょうのようす」(4-4 (2))・(4-4 (3))。名前はモック（api/mock.ts の contactPhotoApi）と同じ） */
+const contactPhotoApi = {
+  /** 写真を送る（multipart/form-data）。写っている子・承諾した名前はカンマ区切りで送る */
+  sendPhoto: (_u: SessionUser, input: SendPhotoInput) => {
+    const form = new FormData();
+    form.append('file', input.file);
+    form.append('subject_child_ids', input.subject_child_ids.join(','));
+    if (input.target_child_id) form.append('target_child_id', input.target_child_id);
+    if (input.body) form.append('body', input.body);
+    form.append('keep_in_growth', input.keep_in_growth ? '1' : '0');
+    form.append('acknowledged_names', (input.acknowledged_names ?? []).join(','));
+    return post<SendPhotoResult>('/api/contact/photos', form);
+  },
+  /**
+   * 写真の実体の URL。画面は <img src> に使う（Cookie が送られる）。見てよいかの判定は、サーバが実体を返すときに行う
+   * （取り消した写真・条件に合わない写真は 403「この写真は開けません。」）
+   */
+  photoUrl: (_u: SessionUser, photoId: number) => Promise.resolve(`/api/contact/photos/${photoId}`),
+};
+
+/* 連絡帳と、ねた・おきた（詳細設計書「経路の一覧」(4-2)。名前はモック（api/mock.ts の contactApi）と同じ） */
+const contactApi = {
+  // 写真の2つ（上の contactPhotoApi）も、連絡帳の経路として画面へ出す
+  ...contactPhotoApi,
+  contactPage: (_u: SessionUser, childId: string, date?: string) =>
+    get<ContactPage>(`/api/contact/children/${encodeURIComponent(childId)}${date ? qs({ date }) : ''}`),
+  markContactRead: (_u: SessionUser, childId: string, date: string) =>
+    post<{ ok: true }>(`/api/contact/children/${encodeURIComponent(childId)}/read`, { date }),
+  contactClasses: (_u: SessionUser) => get<{ class_id: number; class_name: string }[]>('/api/contact/classes'),
+  contactClass: (_u: SessionUser, classId: number, date?: string) =>
+    get<ContactClassView>(`/api/contact/classes/${classId}${date ? qs({ date }) : ''}`),
+  saveHome: (_u: SessionUser, childId: string, input: ContactHomeInput) =>
+    put<ContactHome>(`/api/contact/children/${encodeURIComponent(childId)}/home`, input),
+  confirmHome: (_u: SessionUser, homeId: number, updatedAt: string) =>
+    post<ContactHome>(`/api/contact/home/${homeId}/confirm`, { updated_at: updatedAt }),
+  sleep: (_u: SessionUser, sessionId: number, childId: string) =>
+    post<NapSleep>(`/api/nap/session/${sessionId}/sleeps`, { child_id: childId }),
+  wake: (_u: SessionUser, sleepId: number) => post<NapSleep>(`/api/nap/sleeps/${sleepId}/wake`),
+  exclude: (_u: SessionUser, sessionId: number, childId: string, reason: '1' | '2') =>
+    post<NapExclusion>(`/api/nap/session/${sessionId}/exclusions`, { child_id: childId, reason }),
+  cancelExclusion: (_u: SessionUser, exclusionId: number) => post<{ ok: true }>(`/api/nap/exclusions/${exclusionId}/cancel`),
+  /* きょうのようすの記録と、訂正・取り消し（詳細設計書「経路の一覧」(4-2)） */
+  recordEvents: (_u: SessionUser, items: ContactEventInput[], acknowledgedNames?: string[]) =>
+    post<RecordEventsResult>('/api/contact/events', { items, acknowledged_names: acknowledgedNames ?? [] }),
+  correctEvent: (_u: SessionUser, eventId: number, input: ContactEventCorrection) =>
+    post<ContactEvent>(`/api/contact/events/${eventId}/correct`, input),
+  cancelEvent: (_u: SessionUser, eventId: number) => post<CancelResult>(`/api/contact/events/${eventId}/cancel`),
+  eventReaders: (_u: SessionUser, eventId: number) => get<Readers>(`/api/contact/events/${eventId}/readers`),
+  correctSleep: (_u: SessionUser, sleepId: number, input: NapSleepCorrection) =>
+    post<NapSleep>(`/api/nap/sleeps/${sleepId}/correct`, input),
+  cancelSleep: (_u: SessionUser, sleepId: number) => post<CancelResult>(`/api/nap/sleeps/${sleepId}/cancel`),
+  sleepReaders: (_u: SessionUser, sleepId: number) => get<Readers>(`/api/nap/sleeps/${sleepId}/readers`),
+  /* 園からのひとこと・他児の名前の照合・定型文（詳細設計書「園からのひとことと他児の名前」(4-5)） */
+  sendFacility: (_u: SessionUser, childId: string, body: string, acknowledgedNames?: string[]) =>
+    put<ContactFacility>(`/api/contact/children/${encodeURIComponent(childId)}/facility`, { body, acknowledged_names: acknowledgedNames ?? [] }),
+  correctFacility: (_u: SessionUser, facilityId: number, input: FacilityCorrection) =>
+    post<ContactFacility>(`/api/contact/facility/${facilityId}/correct`, input),
+  cancelFacility: (_u: SessionUser, facilityId: number) => post<CancelResult>(`/api/contact/facility/${facilityId}/cancel`),
+  facilityReaders: (_u: SessionUser, facilityId: number) => get<Readers>(`/api/contact/facility/${facilityId}/readers`),
+  nameCheck: (_u: SessionUser, input: { child_ids?: string[]; class_id?: number; text: string }) =>
+    post<{ names: string[] }>('/api/contact/name-check', input),
+  contactPhrases: (_u: SessionUser, scope: Phrase['phrase_scope']) => get<Phrase[]>(`/api/phrases${qs({ scope })}`),
+  /* 文章の下書き（AI）（詳細設計書「経路」(8-2)。名前はモック（api/mock.ts の aiApi）と同じ） */
+  aiStatus: (_u: SessionUser, target: AiTarget) =>
+    get<{ available: boolean }>(`/api/ai/status${qs({ child_id: target.child_id, class_id: target.class_id })}`),
+  aiDrafts: (_u: SessionUser, input: AiDraftInput) =>
+    request<AiDraftResult>('POST', '/api/ai/drafts', input, AI_REQUEST_TIMEOUT_MS),
+  /* 設定画面（詳細設計書「設定」(4-10)。本版は AI の区画だけ。名前はモックの settingsApi と同じ） */
+  settings: (_u: SessionUser) => get<SettingsView>('/api/settings'),
+  saveSettings: (_u: SessionUser, changes: Record<string, string>, readAt: string) =>
+    post<SettingsView>('/api/settings', { changes, read_at: readAt }),
+};
+
+export const api = { ...apiAuth, ...apiChatNap, ...apiGrowth, ...apiAdmin, ...apiHandout, ...contactApi };

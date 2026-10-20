@@ -4,18 +4,21 @@
  *
  * 他の職員が開いている場合は、その旨をヘッダ直下に出す（要件定義書「同時編集」(4-1-4)）。
  * 過去の記録を同じ画面に並べる。前回の記述を見ながら書けるようにするため。
- * 写真は3枚まで。上限に達したら追加を無効にする。
+ * 写真は3枚まで。上限に達したら追加を無効にする。写真は、下書き保存・申請のときに日誌と一緒に保存する（GitHub Issue #175 の 2）。
+ * 編集できない状態（申請中・承認済み、ほかの職員が編集中）では、内容を変える部品を動かさない（同 4）。
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api, selectableClasses, visibleChildren, settingNumber, staffName } from '../../api/client';
+import type { DiaryAttachmentInput } from '../../api/client';
 import { Field, Alert, Loading, ErrorBox, Radios, Tag } from '../../components/ui';
 import { ConfirmDialog, notify } from '../../components/feedback';
 import { DIARY_RECORD_TYPE, DIARY_STATUS, DIARY_STATUS_CLASS } from '../../api/codes';
 import { formatMD, formatMDHM, today, now, plusMinutes } from '../../api/util';
 import type { DiaryRecordType } from '../../api/types';
+import { acquireDiaryLock, releaseDiaryLock, releaseDiaryLockNow, markDiaryLockHandOver, LOCK_TOUCH_MS } from './diaryLock';
 
 // 本文の上限（基本設計書「入力項目の制約値」(4-9)）
 const BODY_MAX = 2000;
@@ -27,7 +30,7 @@ interface DiaryDraft {
   classId: number | null;
   date: string;
   body: string;
-  photos: string[];
+  photos: DiaryAttachmentInput[];
 }
 
 export default function DiaryEditScreen() {
@@ -51,8 +54,13 @@ export default function DiaryEditScreen() {
   const [classId, setClassId] = useState<number | ''>(draft ? (draft.classId ?? '') : (user!.class_id ?? ''));
   const [date, setDate] = useState(draft?.date ?? today());
   const [body, setBody] = useState(draft?.body ?? '');
-  const [photos, setPhotos] = useState<string[]>(draft?.photos ?? []);
-  // 保存していない入力があるか。一覧へ戻る前に確かめるために持つ
+  const [photos, setPhotos] = useState<DiaryAttachmentInput[]>(draft?.photos ?? []);
+  /*
+   * 保存していない入力があるか。一覧へ戻る前に確かめるために持つ（画面詳細図「日誌作成・編集画面」(3-2) 項目1
+   * 「未保存の内容がある場合は確認する」）。本文の欄だけでなく、内容を変える操作（記録種別・園児・クラス・記録日・
+   * 雛形・定型文・写真）のすべてで立て、保存できたら下ろす。保存のあとも立てたままだと、保存した直後に
+   * 「保存していない内容があります」が出ていた。定型文を選んでも立てずに、黙って離れていた（GitHub Issue #175 の 3）
+   */
   const [dirty, setDirty] = useState(!!draft);
   const [leaving, setLeaving] = useState(false);
   const [lockToken, setLockToken] = useState<string | undefined>();
@@ -60,6 +68,13 @@ export default function DiaryEditScreen() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [unlocking, setUnlocking] = useState(false);
+  // いま持っているロックの識別子。画面を離れるときの解除に使う（描画を待たずに読めるよう ref にも持つ）
+  const lockRef = useRef<string | undefined>(undefined);
+  // 確認画面へ進むときは、ロックを確認画面へ引き継ぐ（外さない。./diaryLock.ts）
+  const handOverRef = useRef(false);
+  const lastTouchRef = useRef(0);
+  // 「＋ 追加」で足す仮の写真の通し番号。時計が同じ値を返しても、写真どうしの名前をぶつけない
+  const photoSeqRef = useRef(0);
 
   const children = visibleChildren(user!);
   const classesForUser = selectableClasses(user!);
@@ -73,9 +88,18 @@ export default function DiaryEditScreen() {
       setRecordType(d.record_type);
       setChildId(d.child_id ?? '');
       setClassId(d.class_id ?? '');
+      /*
+       * 書いたあとに園児のクラスが変わった、またはクラスの空いた（以前の版の）個人日誌は、直せるうちは
+       * 園児のいまの在籍クラスを入れる。担当外のクラスのままでは保存を断られ、一般はクラスを選び直せない（GitHub Issue #174）
+       */
+      if (d.child_id && d.status !== '2' && d.status !== '3'
+        && (d.class_id == null || !classesForUser.some((c) => c.class_id === d.class_id))) {
+        api.classOf(user!, d.child_id).then((c) => { if (c != null) setClassId(c); }, () => {});
+      }
       setDate(d.diary_date);
       setBody(d.body);
-      api.attachmentsOf(user!, d.diary_id).then((a) => setPhotos(a.map((x) => x.file_path)));
+      api.attachmentsOf(user!, d.diary_id)
+        .then((a) => setPhotos(a.map((x) => ({ file_path: x.file_path, file_type: x.file_type }))));
     }
     // 申請中・承認済みは編集できない。読むだけの人にロックを取らせない（GitHub Issue #110）
     // ロックは取らないが、ほかの職員が開いていればその旨は出す（画面詳細図 3-2）
@@ -88,15 +112,45 @@ export default function DiaryEditScreen() {
       });
       return;
     }
-    api.acquireLock(user!, d.diary_id).then((r) => {
-      if ('token' in r) { setLockToken(r.token); setHeldBy(null); }
+    let active = true;
+    acquireDiaryLock(user!, d.diary_id).then((r) => {
+      if (!active) {
+        // 取りにいっている間に画面を離れた。取れたロックは外す
+        if ('token' in r) void releaseDiaryLock(user!, d.diary_id, r.token);
+        return;
+      }
+      // 取ったこと自体が操作にあたる（サーバは取得の時刻を最終操作時刻にする）。続けて知らせを送らない
+      if ('token' in r) { lockRef.current = r.token; lastTouchRef.current = Date.now(); setLockToken(r.token); setHeldBy(null); }
       else setHeldBy(r.heldBy);
-    });
-    // 画面を移るときだけでなく、タブを閉じる・読み込み直すときにもロックを外す
-    const release = () => { void api.releaseLock(user!, d.diary_id); };
-    window.addEventListener('pagehide', release);
-    return () => { window.removeEventListener('pagehide', release); release(); };
+    }).catch((e) => { if (active) setError((e as Error).message); });
+    // 画面を移るときだけでなく、タブを閉じる・読み込み直すときにもロックを外す。解除は識別子を添えて送る
+    const onPageHide = () => {
+      if (lockRef.current) void releaseDiaryLockNow(user!, d.diary_id, lockRef.current);
+    };
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      active = false;
+      window.removeEventListener('pagehide', onPageHide);
+      const token = lockRef.current;
+      lockRef.current = undefined;
+      // 確認画面へ進むときは外さない。確認画面が、申請する（サーバが外す）か離れるときに外す（GitHub Issue #166 の 1）
+      if (token && !handOverRef.current) void releaseDiaryLock(user!, d.diary_id, token);
+    };
   }, [existing.data?.diary_id]);
+
+  /*
+   * 編集画面での操作（入力の変化）をサーバへ知らせ、無操作の判定を最後の操作から数えさせる
+   * （基本設計書「編集ロックの解除」(4-5)、5-4 last_active_at。GitHub Issue #166 の 3）。
+   * 知らせないと、書き続けていても取った時刻から無操作の時間で切れ、ほかの職員に取られる。
+   * ロックが外れていたら（強制解除・無操作で引き取られた）、その場で知らせる。入力中の内容は画面に残す
+   */
+  useEffect(() => {
+    if (!diaryId || !lockToken) return;
+    const t = Date.now();
+    if (t - lastTouchRef.current < LOCK_TOUCH_MS) return;
+    lastTouchRef.current = t;
+    api.touchLock(user!, diaryId, lockToken).catch((e) => setError((e as Error).message));
+  }, [user, diaryId, lockToken, body, recordType, childId, classId, date, photos]);
 
   // 管理者による強制解除（基本設計書「編集ロックの解除」(4-5)）。解除したあと、自分がロックを取り直す
   const forceUnlock = async () => {
@@ -110,8 +164,11 @@ export default function DiaryEditScreen() {
         notify('編集ロックを解除しました');
         return;
       }
-      const r = await api.acquireLock(user!, diaryId);
-      if ('token' in r) { setLockToken(r.token); setHeldBy(null); notify('編集ロックを解除しました'); }
+      const r = await acquireDiaryLock(user!, diaryId);
+      if ('token' in r) {
+        lockRef.current = r.token; lastTouchRef.current = Date.now();
+        setLockToken(r.token); setHeldBy(null); notify('編集ロックを解除しました');
+      }
       else setHeldBy(r.heldBy);
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); setUnlocking(false); }
   };
@@ -121,16 +178,39 @@ export default function DiaryEditScreen() {
     [childId, diaryId],
   );
 
+  /*
+   * 雛形は、いまの記録種別のものだけを並べる。選んでも記録種別は変えない（画面詳細図「日誌作成・編集画面」(3-2)
+   * 項目7「記録種別に応じた雛形を本文へ入れる」）。すべての雛形を並べ、選ぶと記録種別が黙って変わっていた（GitHub Issue #178 の 2）
+   */
+  const templatesForType = templates.data?.filter((t) => t.record_type === recordType) ?? [];
+
   const applyTemplate = (templateId: number) => {
-    const t = templates.data?.find((x) => x.diary_template_id === templateId);
+    const t = templatesForType.find((x) => x.diary_template_id === templateId);
     if (!t) return;
     // 書きかけを失わせない。本文が空なら入れ、入力済みなら末尾へ足す（画面詳細図「日誌作成・編集画面」(3-2)）
-    if (body.trim()) {
-      setBody(`${body.trimEnd()}\n\n${t.body}`);
-    } else {
-      setRecordType(t.record_type);
-      setBody(t.body);
-    }
+    setBody(body.trim() ? `${body.trimEnd()}\n\n${t.body}` : t.body);
+    setDirty(true);
+  };
+
+  /*
+   * 定型文は、本文の末尾へ足す（基本設計書「日誌の作成から保護者への共有」(4-5)、画面詳細図 3-2 項目8）。
+   * 書いてある本文の後ろは、行を改めてから足す（【仮置き】web/仮置き値.md「日誌作成・編集画面の動き」）。
+   * 選んだ値は呼び出しの前に受け取る。欄を空へ戻したあとに読むと空になり、改行しか入らなかった（GitHub Issue #175 の 1）
+   */
+  const addPhrase = (phrase: string) => {
+    setBody((b) => (b === '' || b.endsWith('\n') ? `${b}${phrase}` : `${b}\n${phrase}`));
+    setDirty(true);
+  };
+
+  // 「＋ 追加」は仮の写真を足す。ファイルを選ぶ部品は置かない（図/画面詳細図.md「モックアップでは実装しないもの」(11-1)）。
+  // 実体は持たず、名前と形式だけを持つ（web/仮置き値.md 7「添付ファイルの実体」）
+  const addPhoto = () => {
+    photoSeqRef.current += 1;
+    setPhotos([...photos, { file_path: `demo/photo-${Date.now()}-${photoSeqRef.current}`, file_type: 'image/jpeg' }]);
+    setDirty(true);
+  };
+  const removePhoto = (path: string) => {
+    setPhotos(photos.filter((x) => x.file_path !== path));
     setDirty(true);
   };
 
@@ -142,8 +222,10 @@ export default function DiaryEditScreen() {
         diary_id: diaryId ?? undefined, record_type: recordType,
         child_id: needsChild ? childId : null,
         class_id: classId === '' ? null : classId,
-        diary_date: date, body, lock_token: lockToken,
+        diary_date: date, body, lock_token: lockToken, attachments: photos,
       }, status);
+      // 保存できたので、保存していない内容は無い（GitHub Issue #175 の 3）
+      setDirty(false);
       notify(status === '2' ? '日誌を申請しました' : '下書きを保存しました');
       navigate(status === '2' ? '/staff/diary' : `/staff/diary/${saved.diary_id}`);
     } catch (e) {
@@ -156,6 +238,40 @@ export default function DiaryEditScreen() {
   const needsChild = recordType === '1' || recordType === '4';
   const d = existing.data;
   const readOnly = !!d && (d.status === '2' || d.status === '3');
+  // 内容を変えられない状態。申請中・承認済みの日誌と、ほかの職員が編集中の日誌（画面詳細図 3-2 項目17、
+  // 基本設計書「編集ロックの解除」(4-5)）。本文の欄だけ止めても、ほかの部品で中身が変わっていた（GitHub Issue #175 の 4）
+  const locked = readOnly || !!heldBy;
+  const lockPending = !!diaryId && !lockToken && !heldBy;
+
+  /*
+   * 園児を選んだら、その園児の在籍クラスを対象のクラスに入れる。個人日誌・ヒヤリハットの対象のクラスは、
+   * 対象の園児が在籍するクラスに限る（サーバが確かめる。web/仮置き値.md。GitHub Issue #174）。
+   * 担当クラスを持たない管理者が、園児ごとにクラスを選び直さなくて済むようにする。
+   * 引けなかったときは何もしない（クラスは手で選べ、保存のときにサーバが確かめる）
+   */
+  const chooseChild = (id: string) => {
+    setChildId(id);
+    setDirty(true);
+    if (!id) return;
+    api.classOf(user!, id).then((c) => { if (c != null) setClassId(c); }, () => {});
+  };
+
+  /*
+   * 確認へ進む前に、記録日を確かめる。記録日は当日まで（図/画面詳細図.md「日誌作成・編集画面」(3-2) 項目6）。
+   * 欄の max だけでは、打ち込んだ先の日付を止められない（GitHub Issue #174）。サーバとモックも同じ規則で断る
+   */
+  const goConfirm = () => {
+    if (!date) { setError('記録日を入力してください'); return; }
+    if (date > today()) { setError('記録日に未来日は指定できません（当日まで）'); return; }
+    // ロックは確認画面へ引き継ぐ。確認画面にいる間に、ほかの職員が開いて直せないようにする（GitHub Issue #166 の 1）。
+    // 記録日で止めたときは編集画面に残るので、引き継ぎの印は進むと決まってから付ける
+    handOverRef.current = true;
+    if (diaryId && lockToken) markDiaryLockHandOver(diaryId, lockToken);
+    navigate('/staff/diary/confirm', {
+      state: { recordType, childId: needsChild ? childId : null, classId: classId === '' ? null : classId,
+               date, body, diaryId, lockToken, photos },
+    });
+  };
 
   if (existing.loading) return <Loading />;
   if (existing.error) return <ErrorBox text={existing.error} />;
@@ -217,43 +333,51 @@ export default function DiaryEditScreen() {
         <section className="card col-8">
           <div className="stack">
             <Field label="記録種別" required>
-              <Radios name="recordType" value={recordType}
+              <Radios name="recordType" value={recordType} disabled={locked}
                 options={(Object.keys(DIARY_RECORD_TYPE) as DiaryRecordType[])
                   .map((k) => ({ value: k, label: DIARY_RECORD_TYPE[k] }))}
-                onChange={setRecordType} />
+                onChange={(v) => { setRecordType(v); setDirty(true); }} />
             </Field>
 
             <div className="row">
               {needsChild && (
                 <Field label="対象の園児" required style={{ flex: 1 }}>
-                  <select value={childId} onChange={(e) => setChildId(e.target.value)} disabled={readOnly}>
+                  <select value={childId} onChange={(e) => chooseChild(e.target.value)} disabled={locked}>
                     <option value="">選んでください</option>
                     {children.map((c) => <option key={c.child_id} value={c.child_id}>{c.child_name}</option>)}
                   </select>
                 </Field>
               )}
-              <Field label="対象のクラス" style={{ flex: 1 }}>
-                <select value={classId} onChange={(e) => setClassId(e.target.value ? Number(e.target.value) : '')}
-                  disabled={readOnly}>
-                  <option value="">指定しない</option>
+              {/*
+                * 対象のクラスは必須。「指定しない」は置かない（図/画面詳細図.md「日誌作成・編集画面」(3-2) 項目5
+                * 「入力：必須」）。クラスの空いた日誌は、書いた本人が開けなくなったり、日誌一覧から漏れたりしていた
+                * （GitHub Issue #174）。担当クラスを持たない管理者は、選ぶまで空のまま
+                */}
+              <Field label="対象のクラス" required style={{ flex: 1 }}>
+                <select value={classId}
+                  onChange={(e) => { setClassId(e.target.value ? Number(e.target.value) : ''); setDirty(true); }}
+                  disabled={locked}>
+                  {classId === '' && <option value="">選んでください</option>}
                   {classesForUser.map((c) => <option key={c.class_id} value={c.class_id}>{c.class_name}</option>)}
                 </select>
               </Field>
               <Field label="記録日" required>
-                <input type="date" value={date} max={today()} onChange={(e) => setDate(e.target.value)} disabled={readOnly} />
+                <input type="date" value={date} max={today()} onChange={(e) => { setDate(e.target.value); setDirty(true); }}
+                  disabled={locked} />
               </Field>
             </div>
 
+            {/* 選んだあとは見出しの行へ戻す（値を持たない）。同じ雛形・定型文を続けて選べるようにする */}
             <div className="row">
-              <select defaultValue="" onChange={(e) => { if (e.target.value) applyTemplate(Number(e.target.value)); }}
-                aria-label="雛形を呼び出す" disabled={readOnly} style={{ maxWidth: 240 }}>
+              <select value="" onChange={(e) => { if (e.target.value) applyTemplate(Number(e.target.value)); }}
+                aria-label="雛形を呼び出す" disabled={locked} style={{ maxWidth: 240 }}>
                 <option value="">雛形を呼び出す</option>
-                {templates.data?.map((t) => (
+                {templatesForType.map((t) => (
                   <option key={t.diary_template_id} value={t.diary_template_id}>{t.template_name}</option>
                 ))}
               </select>
-              <select defaultValue="" onChange={(e) => { if (e.target.value) { setBody((b) => `${b}${e.target.value}\n`); e.target.value = ''; } }}
-                aria-label="定型文を入れる" disabled={readOnly} style={{ maxWidth: 320 }}>
+              <select value="" onChange={(e) => { if (e.target.value) addPhrase(e.target.value); }}
+                aria-label="定型文を入れる" disabled={locked} style={{ maxWidth: 320 }}>
                 <option value="">定型文を入れる</option>
                 {phrases.data?.map((p) => <option key={p} value={p}>{p}</option>)}
               </select>
@@ -261,7 +385,7 @@ export default function DiaryEditScreen() {
 
             <Field label="本文" required>
               <textarea value={body} onChange={(e) => { setBody(e.target.value); setDirty(true); }}
-                disabled={readOnly || !!heldBy} maxLength={BODY_MAX} style={{ minHeight: 280 }} />
+                disabled={locked} maxLength={BODY_MAX} style={{ minHeight: 280 }} />
             </Field>
             {!readOnly && <div className="muted" aria-live="polite">残り {BODY_MAX - [...body].length} 文字</div>}
 
@@ -269,14 +393,13 @@ export default function DiaryEditScreen() {
             <Field label={`写真（1〜${maxPhotos}枚）`}>
               <div className="row">
                 {photos.map((p, i) => (
-                  <span key={p} className="tag tag-plain" style={{ padding: '10px 14px' }}>
+                  <span key={p.file_path} className="tag tag-plain" style={{ padding: '10px 14px' }}>
                     {i + 1}
-                    <button className="btn-sm btn-quiet" onClick={() => setPhotos(photos.filter((x) => x !== p))}
-                      disabled={readOnly}>削除</button>
+                    <button className="btn-sm btn-quiet" onClick={() => removePhoto(p.file_path)}
+                      disabled={locked}>削除</button>
                   </span>
                 ))}
-                <button onClick={() => setPhotos([...photos, `demo/photo-${Date.now()}`])}
-                  disabled={readOnly || photos.length >= maxPhotos}>
+                <button onClick={addPhoto} disabled={locked || photos.length >= maxPhotos}>
                   ＋ 追加
                 </button>
               </div>
@@ -287,13 +410,15 @@ export default function DiaryEditScreen() {
             {needsChild && !childId && !readOnly && (
               <div className="muted">対象の園児を選ぶと、確認へ進めます。</div>
             )}
+            {classId === '' && !readOnly && (
+              <div className="muted">対象のクラスを選ぶと、確認へ進めます。</div>
+            )}
 
             <div className="row-end">
-              <button onClick={() => save('1')} disabled={busy || readOnly || !!heldBy}>下書き保存</button>
-              <button className="btn-primary" onClick={() => navigate('/staff/diary/confirm', {
-                state: { recordType, childId: needsChild ? childId : null, classId: classId === '' ? null : classId,
-                         date, body, diaryId, lockToken, photos },
-              })} disabled={busy || readOnly || !!heldBy || !body.trim() || (needsChild && !childId)}>
+              {/* 既存の日誌は、ロックを取れるまで保存させない。ロックの無い保存はサーバが断る（GitHub Issue #166） */}
+              <button onClick={() => save('1')} disabled={busy || readOnly || !!heldBy || lockPending}>下書き保存</button>
+              <button className="btn-primary" onClick={goConfirm}
+                disabled={busy || readOnly || !!heldBy || lockPending || !body.trim() || (needsChild && !childId) || classId === ''}>
                 確認へ進む
               </button>
             </div>

@@ -7,6 +7,8 @@ export interface Scenario {
   role: ReviewRole;
   action?: ReviewAction;
   state?: unknown;
+  /** ロールの既定の利用者から変える点。同意が残っている利用者で開くときなど */
+  user?: { terms_agreed?: boolean; is_temp_password?: boolean };
 }
 
 export const REVIEW_TIME = '2026-09-01T13:30:00+09:00';
@@ -14,7 +16,8 @@ export const scenarios: Scenario[] = [
   { id: 'guardian-login', name: '保護者用トップ', path: '/', role: 'public' },
   { id: 'staff-login', name: '職員用トップ', path: '/staff-top', role: 'public' },
   { id: 'signup', name: '新規登録', path: '/signup', role: 'public' },
-  { id: 'terms', name: '利用規約への同意', path: '/terms-agree', role: 'guardian' },
+  // 同意を求める画面は、同意が残っている利用者にだけ出る（GitHub Issue #178 の 4）
+  { id: 'terms', name: '利用規約への同意', path: '/terms-agree', role: 'guardian', user: { terms_agreed: false } },
   { id: 'staff-password', name: '職員パスワード変更', path: '/staff/password', role: 'teacher' },
   { id: 'dashboard', name: '職員ダッシュボード', path: '/staff', role: 'teacher' },
   { id: 'admin-dashboard', name: '管理者ダッシュボード', path: '/staff', role: 'admin' },
