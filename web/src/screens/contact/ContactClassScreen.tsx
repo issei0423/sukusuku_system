@@ -351,6 +351,11 @@ export default function ContactClassScreen() {
                     const lastToilet = toilets.at(-1);
                     const lastTemp = temps.at(-1);
                     const rowBusy = busyKey !== null;
+                    // 見えている文字は、読み上げの名前にもそのまま入れる（WCAG 2.5.3。声で「未送信」と言って押せるように）
+                    const toiletText = lastToilet ? `${toilets.length}回／${eventText(lastToilet)} ${formatHM(lastToilet.recorded_at)}` : '';
+                    const tempText = lastTemp ? `${eventText(lastTemp)}（${formatHM(lastTemp.recorded_at)}）` : '';
+                    const facilityText = row.facility ? `送った ${formatHM(row.facility.recorded_at)}`
+                      : row.exclusion?.reason === '1' ? '欠席' : '未送信';
                     return (
                       <tr key={id}>
                         <th scope="row" className="contact-col-child"><Link to={childPath}>{name}</Link></th>
@@ -384,18 +389,18 @@ export default function ContactClassScreen() {
                           {lastToilet ? (
                             canRecord
                               ? <button type="button" className="btn-quiet contact-last" onClick={() => openFix(row, lastToilet)}
-                                aria-label={`${name}の排せつ ${eventText(lastToilet)} ${formatHM(lastToilet.recorded_at)} を直す・取り消す`}>
-                                {toilets.length}回／{eventText(lastToilet)} {formatHM(lastToilet.recorded_at)}</button>
-                              : <span>{toilets.length}回／{eventText(lastToilet)} {formatHM(lastToilet.recorded_at)}</span>
+                                aria-label={`${name}の排せつ ${toiletText} を直す・取り消す`}>
+                                {toiletText}</button>
+                              : <span>{toiletText}</span>
                           ) : !canRecord && <span className="muted">―</span>}
                         </td>
                         <td className="contact-col-temp">
                           {lastTemp && (
                             canRecord
                               ? <button type="button" className="btn-quiet contact-last" onClick={() => openFix(row, lastTemp)}
-                                aria-label={`${name}の体温 ${eventText(lastTemp)} ${formatHM(lastTemp.recorded_at)} を直す・取り消す`}>
-                                {eventText(lastTemp)}（{formatHM(lastTemp.recorded_at)}）</button>
-                              : <span>{eventText(lastTemp)}（{formatHM(lastTemp.recorded_at)}）</span>
+                                aria-label={`${name}の体温 ${tempText} を直す・取り消す`}>
+                                {tempText}</button>
+                              : <span>{tempText}</span>
                           )}
                           {canRecord && (
                             <button type="button" className="contact-pick contact-temp-add" onClick={() => setTempFor(row)} disabled={rowBusy}
@@ -405,12 +410,13 @@ export default function ContactClassScreen() {
                           {row.child.normal_temperature !== null && <div className="muted">平熱 {row.child.normal_temperature.toFixed(1)}</div>}
                         </td>
                         <td>{nap ? <Link to="/staff/nap">{nap}</Link> : <span className="muted">―</span>}</td>
-                        <td className="num"><Link to={childPath} aria-label={`${name}のひとこと・写真`}>{comments > 0 ? `${comments} 件` : '―'}</Link></td>
+                        <td className="num">
+                          <Link to={childPath} aria-label={`${name}のひとこと・写真${comments > 0 ? ` ${comments} 件` : ''}`}>{comments > 0 ? `${comments} 件` : '―'}</Link>
+                        </td>
                         {/* 園から：未送信・送った（時刻）。午睡で欠席にした子は「欠席」（未送信に数えない）。押すと連絡帳（園児）画面の園から */}
                         <td>
-                          <Link to={`${childPath}#facility`} aria-label={`${name}の園から`}>
-                            {row.facility ? `送った ${formatHM(row.facility.recorded_at)}`
-                              : row.exclusion?.reason === '1' ? '欠席' : <span className="contact-unsent">未送信</span>}
+                          <Link to={`${childPath}#facility`} aria-label={`${name}の園から ${facilityText}`}>
+                            {row.facility || row.exclusion?.reason === '1' ? facilityText : <span className="contact-unsent">{facilityText}</span>}
                           </Link>
                         </td>
                       </tr>
