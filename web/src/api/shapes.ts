@@ -20,7 +20,9 @@ export type LoginError =
   /** 一時パスワードの有効期限切れ（基本設計書「ログイン」(4-3)、メッセージ一覧 (4-9)。GitHub Issue #159） */
   | { kind: 'temp_expired' }
   /** ログイン中の新しいログイン・新規登録。上書きログインは設けない（基本設計書「ログイン」(4-3)。GitHub Issue #159） */
-  | { kind: 'already_logged_in' };
+  | { kind: 'already_logged_in' }
+  /** 送信元の失敗が続き、しばらく受け付けを止めている（server/attempts.go。GitHub Issue #236 の 6）。Go サーバだけが返す */
+  | { kind: 'too_many_attempts' };
 
 /** 園児情報の登録・編集の入力（図/画面詳細図.md 7-2） */
 export interface ChildInput {

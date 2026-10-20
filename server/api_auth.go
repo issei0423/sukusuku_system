@@ -47,6 +47,11 @@ func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "入口の指定が正しくありません。職員用または保護者用のトップからログインしてください")
 		return
 	}
+	// 送信元の失敗が上限を超えていたら、照合せずに断る（attempts.go。GitHub Issue #236 の 6）
+	if a.guard().blocked(r) {
+		writeTooManyAttempts(w)
+		return
+	}
 	maxFailed := a.settingInt("auth.max_failed_login", 5)
 
 	var (
@@ -65,9 +70,19 @@ func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Scan(&accountID, &hash, &role, &status, &failedCount, &lockedUntil, &isTemp, &tempExpiresAt)
 
 	if errors.Is(err, sql.ErrNoRows) {
-		// 存在しないアカウントでも、あるかどうかを推測させない文言に揃える
+		// 存在しないアカウントでも、あるかどうかを推測させない文言に揃える。
+		// 照合も1回行う。照合をせずにすぐ返すと、応答の速さで存在しないことが分かるため（GitHub Issue #236 の 7）
+		checkPassword(dummyPasswordHash(), req.Password)
+		a.guard().failed(r)
+		// 残りの回数とロックも、実在のアカウントと同じように進める。存在しないIDだけ残りが減らないと、
+		// それで有無が分かるため（attempts.go。GitHub Issue #159 の 5）
+		locked, remaining := a.guard().unknownFailed(req.Email, maxFailed, a.settingInt("auth.lock_minutes", 30))
+		if locked {
+			writeLocked(w)
+			return
+		}
 		writeJSON(w, http.StatusUnauthorized, apiError{
-			Kind: "credential", Remaining: maxFailed,
+			Kind: "credential", Remaining: remaining,
 			Message: "ログインIDまたはパスワードが違います",
 		})
 		return
@@ -78,14 +93,15 @@ func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if lockedUntil.Valid && lockedUntil.String > now() {
-		writeJSON(w, http.StatusUnauthorized, apiError{
-			Kind:    "locked",
-			Message: "ログインを一定回数以上まちがえたため、アカウントをロックしました。園の管理者へご連絡ください",
-		})
+		// 存在しないIDのときと同じだけ時間をかける（GitHub Issue #236 の 7）
+		checkPassword(dummyPasswordHash(), req.Password)
+		a.guard().failed(r)
+		writeLocked(w)
 		return
 	}
 
 	if !checkPassword(hash, req.Password) {
+		a.guard().failed(r)
 		failedCount++
 		/*
 		 * ログインの失敗と、失敗が続いたことによるロックを操作ログに残す（GitHub Issue #115）。
@@ -102,10 +118,7 @@ func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
 				failedCount, fromNowMinutes(lockMinutes), accountID)
 			a.log(accountID, fnAccount, opUpdate, "m_account", i64(accountID), nil, nil,
 				s("ログインに失敗（"+attempt+"）。失敗が続いたためロック"))
-			writeJSON(w, http.StatusUnauthorized, apiError{
-				Kind:    "locked",
-				Message: "ログインを一定回数以上まちがえたため、アカウントをロックしました。園の管理者へご連絡ください",
-			})
+			writeLocked(w)
 			return
 		}
 		a.db.Exec(`UPDATE m_account SET failed_login_count = ? WHERE account_id = ?`, failedCount, accountID)
@@ -173,6 +186,14 @@ func (a *app) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, u)
+}
+
+// writeLocked は、失敗が続いてロックしたことを返す。実在しないIDにも同じ応答を返す（GitHub Issue #159 の 5）
+func writeLocked(w http.ResponseWriter) {
+	writeJSON(w, http.StatusUnauthorized, apiError{
+		Kind:    "locked",
+		Message: "ログインを一定回数以上まちがえたため、アカウントをロックしました。園の管理者へご連絡ください",
+	})
 }
 
 func (a *app) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -400,7 +421,13 @@ func (a *app) handleVerifyInvitationCode(w http.ResponseWriter, r *http.Request)
 	if !readJSON(w, r, &req) {
 		return
 	}
+	// 未ログインで呼べるため、送信元ごとの失敗に上限を置く。コードの総当たりを止める（attempts.go。GitHub Issue #236 の 6）
+	if a.guard().blocked(r) {
+		writeTooManyAttempts(w)
+		return
+	}
 	if _, err := a.lookupUsableCode(req.Code); err != nil {
+		a.guard().failed(r)
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -441,8 +468,13 @@ func (a *app) handleSignUpGuardian(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if a.guard().blocked(r) {
+		writeTooManyAttempts(w)
+		return
+	}
 	code, err := a.lookupUsableCode(req.Code)
 	if err != nil {
+		a.guard().failed(r)
 		writeErr(w, http.StatusBadRequest, "招待コードが確認できません")
 		return
 	}
