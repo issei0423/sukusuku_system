@@ -298,7 +298,16 @@ button.guardian-record-link {
   position: sticky; top: 0; z-index: 2; display: grid; gap: var(--sp-2);
   padding: var(--sp-2) 0; background: var(--c-bg, var(--c-surface));
 }
+/*
+ * 上に止めた見出しと下に止めた「家庭からを送る」の帯の下に、フォーカスが隠れないよう、スクロールする枠の上下に余白を取る（GitHub Issue #212）。
+ * 高さは GuardianContactScreen・HomeForm が測って --contact-head-h・--contact-actions-h に入れる（src/stickyInset.ts）。
+ * フォーカスの枠（outline 4px・outline-offset 2px）も見えるよう、その幅を足す
+ */
+.guardian-main:has(.contact-page-head) { scroll-padding-top: calc(var(--contact-head-h, 0px) + 6px); }
+.guardian-main:has(.contact-form-actions) { scroll-padding-bottom: calc(var(--contact-actions-h, 0px) + 6px); }
 .contact-page-head h1 { font-size: 22px; margin: 0; }
+/* 「‹ ホームへ」も押せるものとして高さ 44px 以上にする（詳細設計書「全画面に共通する部品と決まり」(2-0) の「タッチの条件」(4)、GitHub Issue #215） */
+.contact-page-head > a { display: flex; align-items: center; min-height: 44px; }
 .contact-date { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .contact-date button { min-height: 44px; min-width: 44px; }
 .contact-section { display: grid; gap: var(--sp-3); }
@@ -317,9 +326,12 @@ button.guardian-record-link {
 .contact-note { margin: 0; font-weight: 700; }
 .contact-wide-button { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 48px; }
 .contact-home-form { display: grid; gap: var(--sp-3); }
-.contact-choice-options { flex-wrap: wrap; }
-.contact-choice-options .nap-choice { flex: 1 1 calc(50% - var(--sp-1)); min-width: 7em; }
+/* 朝ごはん・きげん・お迎えの選択肢どうしの間は 8px（「タッチの条件」(2-0 (4))、GitHub Issue #215）。1行に2つ並べる */
+.contact-choice-options { flex-wrap: wrap; gap: var(--sp-2); }
+.contact-choice-options .nap-choice { flex: 1 1 calc(50% - var(--sp-2)); min-width: 7em; }
 .contact-field { display: grid; gap: var(--sp-1); }
+/* ボタンの並びを2段に重ねた欄（連絡帳（園児）画面の食事の区分と量）は、段の間を 8px にする（「タッチの条件」(2-0 (4))、GitHub Issue #215） */
+.contact-field:has(> .contact-picks + .contact-picks) { gap: var(--sp-2); }
 .contact-field > span:first-child { font-weight: 700; font-size: var(--fs-small); }
 .contact-field select, .contact-field input { min-height: 44px; }
 .contact-field textarea { display: block; width: 100%; min-height: 96px; }
@@ -360,12 +372,31 @@ button.guardian-record-link {
 .contact-inline-field > span { white-space: nowrap; }
 .contact-inline-field select { min-height: 44px; }
 .contact-class-error { margin: var(--sp-2) 0; }
-.contact-table-wrap { overflow-x: auto; }
+/*
+ * 表を横に送ったとき、フォーカスした部品が左に止めた園児名の列の下に隠れないよう、送る先を列の幅ぶんずらす（GitHub Issue #212）。
+ * 列の幅は ContactClassScreen が測って --contact-col-child-w に入れる。フォーカスの枠の幅（6px）を足す
+ */
+.contact-table-wrap { overflow-x: auto; scroll-padding-left: calc(var(--contact-col-child-w, 0px) + 6px); }
 .contact-class-table { min-width: 1080px; }
 .contact-class-table th, .contact-class-table td { vertical-align: top; padding: var(--sp-2) var(--sp-3); height: 56px; }
 .contact-class-table .contact-col-child {
   position: sticky; left: 0; z-index: 1; min-width: 160px; background: var(--c-surface); text-align: left;
 }
+/*
+ * 表の中のリンク（園児名・午睡・ひとこと・写真・園から）は、高さ 44px・幅 44px 以上の押す場所にする
+ * （「タッチの条件」(2-0 (4)) の 44×44px、GitHub Issue #215。直す前は高さ 20px、「―」は 14×20px だった）。
+ * 幅は文字に合わせる（セルいっぱいに広げると、左に止めた園児名の列のリンクへ移ったときに表の送り方が変わり、続く部品が列に半分隠れた）。
+ * 件数の列（右寄せ）は、44px の中でも右に寄せる
+ */
+.contact-class-table :is(th, td) > a { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; }
+.contact-class-table td.num > a { justify-content: flex-end; }
+/*
+ * ひとこと・写真が無いセルと、園からを送っていないセルの文字のボタン「書く」は、セルいっぱい・高さ 44px にする
+ * （GitHub Issue #215。直す前は「―」「未送信」の小さなリンクだった。2026-10-19 に決めた）。
+ * 上の「幅は文字に合わせる」は左に止めた園児名の列のためで、「書く」は列を止めていない右のほうの列にだけある。
+ * 幅の決まっていない列なので、折り返さない（「書」「く」の2行に割れていた）
+ */
+.contact-class-table td > a.contact-write { display: flex; width: 100%; justify-content: center; min-height: 44px; white-space: nowrap; }
 .contact-class-table .contact-col-home { width: 240px; min-width: 240px; }
 .contact-home-cell { display: grid; gap: var(--sp-1); }
 .contact-home-cell p { margin: 0; }
@@ -393,8 +424,9 @@ button.guardian-record-link {
 .contact-class-table .contact-col-meal { width: 220px; min-width: 220px; }
 .contact-class-table .contact-col-toilet { width: 240px; min-width: 240px; }
 .contact-class-table .contact-col-temp { width: 120px; min-width: 120px; }
-.contact-last { min-height: 44px; margin-top: var(--sp-1); text-align: left; white-space: normal; }
-.contact-temp-add { margin-top: var(--sp-1); }
+/* 記録のボタンと、その下の「（時刻）を直す」・「＋体温」との間は 8px（「タッチの条件」(2-0 (4))、GitHub Issue #215。直す前は 4px） */
+.contact-last { min-height: 44px; margin-top: var(--sp-2); text-align: left; white-space: normal; }
+.contact-temp-add { margin-top: var(--sp-2); }
 .contact-meal-bar {
   display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3);
   margin: var(--sp-2) 0 var(--sp-3); padding: var(--sp-2) var(--sp-3);
@@ -480,7 +512,6 @@ button.guardian-record-link {
 .name-check-text mark { background: var(--c-primary); color: var(--c-primary-ink); font-weight: 700; outline: 2px solid var(--c-primary-ink); }
 .phrase-list { display: grid; gap: var(--sp-2); }
 .phrase-list button { min-height: 48px; text-align: left; justify-content: flex-start; white-space: normal; }
-.contact-unsent { font-weight: 700; color: var(--c-alert); }
 
 /* 設定画面（screens/admin/settings。詳細設計書「設定画面（管理者）」(2-14)） */
 .settings-screen { max-width: 820px; }

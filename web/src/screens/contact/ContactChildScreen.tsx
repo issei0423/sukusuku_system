@@ -15,7 +15,7 @@
  * 今日のページでは、使えるときだけ AI の下書き（園からは「AI で下書き」「言い換え」「続き」、ひとことは「言い換え」「続き」）を出す
  * （詳細設計書「画面」(8-9)）。下書きは欄に入るだけで、送るのは職員。
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { api, className, findChild } from '../../api/client';
 import type { ContactEventInput, ContactPage, MealAmount } from '../../api/shapes';
@@ -26,6 +26,7 @@ import { addDays, formatHM, today } from '../../api/util';
 import { Alert, ErrorBox, Loading } from '../../components/ui';
 import { notify } from '../../components/feedback';
 import { useReachable } from '../../api/reachability';
+import { focusAfter, focusedNow } from '../../focusAfter';
 import ChildAvatar from '../../components/ChildAvatar';
 import TemperaturePicker from '../../components/TemperaturePicker';
 import { MEAL_AMOUNT_STAFF_TEXT, MEAL_KIND_TEXT, TEXT } from '../../messages';
@@ -36,6 +37,8 @@ import FixDialog, { cancelAction, timeOptions, toiletChoices } from './FixDialog
 import Composer from './Composer';
 import type { FixTarget } from './FixDialog';
 import PhotoSendDialog from './PhotoSendDialog';
+import HomeArrivalStatus from './HomeArrival';
+import { useHomeArrival } from './useHomeArrival';
 
 const HOME_STATE_TEXT = { unconfirmed: '未確認', revised: '更新', confirmed: '確認済み' } as const;
 
@@ -50,6 +53,10 @@ export default function ContactChildScreen() {
     setClassId(p.class_id);
     return p;
   }, [user?.account_id, childId, date], { refreshMs: AUTO_REFRESH_MS, live: onContactChild(childId, classId) });
+  // 「家庭から」が届いたときだけ、読み上げへ伝える（詳細設計書 (2-0) の (6) の②、GitHub Issue #209）。範囲は応答の園児と日付
+  const shown = page.data;
+  const arrival = useHomeArrival(shown ? `${shown.child_id}:${shown.contact_date}` : null,
+    shown ? (shown.home ? [{ id: shown.child_id, name: shown.child_name }] : []) : null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -61,6 +68,11 @@ export default function ContactChildScreen() {
   // 写真を送る（詳細設計書「きょうのようすを足す・直す」(2-3 (4))。中身は PhotoSendDialog.tsx）
   const [photoOpen, setPhotoOpen] = useState(false);
   const reachable = useReachable();
+  // 押したあとのフォーカスの移し先（GitHub Issue #213）。家庭からを確認したあと → 「園が確認しました」、園からを送ったあと → 送った文の「直す」
+  const confirmedRef = useRef<HTMLParagraphElement>(null);
+  const facilityFixRef = useRef<HTMLButtonElement>(null);
+  // 体温の一覧で値を選んで送ったあと → 窓を開いた「体温を記録する」
+  const tempButtonRef = useRef<HTMLButtonElement>(null);
   // 連絡帳（クラス）画面の「園から」の列から来たときは、園からの欄を見せる
   const { hash } = useLocation();
   const loaded = !!page.data;
@@ -105,12 +117,20 @@ export default function ContactChildScreen() {
     page.refresh();
   };
 
-  const act = async (key: string, work: () => Promise<void>) => {
+  /**
+   * 送っている間は記録のボタンがすべて押せなくなり、押したボタンからフォーカスが外れる。応答のあと、押したボタンへ戻す。
+   * 押したボタンが消えるもの（確認しました）は、成功したときに movedTo の場所へ移す（src/focusAfter.ts、GitHub Issue #213）。
+   * 窓の中で押して窓ごと消えるもの（体温の一覧の値）は、成功・失敗とも back の場所（窓を開いた「体温を記録する」）へ移す
+   */
+  const act = async (key: string, work: () => Promise<void>, movedTo?: () => HTMLElement | null, back?: () => HTMLElement | null) => {
     if (busy) return;
+    const pressed = focusedNow();
+    let done = false;
     setBusy(key); setError(null);
     try {
       await work();
       setFailed(false);
+      done = true;
     } catch (e) {
       const message = (e as Error).message;
       setError(message);
@@ -119,11 +139,12 @@ export default function ContactChildScreen() {
     } finally {
       setBusy(null);
       page.refresh();
+      focusAfter(pressed, (done ? movedTo : undefined) ?? back);
     }
   };
 
-  /** 1件を記録する。排せつ・体温は「時刻を変える」で選んだ時刻を付ける（選んでいなければ今） */
-  const record = (key: string, input: ContactEventInput) => act(key, async () => {
+  /** 1件を記録する。排せつ・体温は「時刻を変える」で選んだ時刻を付ける（選んでいなければ今）。back は act と同じ */
+  const record = (key: string, input: ContactEventInput, back?: () => HTMLElement | null) => act(key, async () => {
     const withTime = time && (input.event_type === '2' || input.event_type === '3') ? { ...input, recorded_at: `${date}T${time}:00` } : input;
     const res = await api.recordEvents(user!, [withTime]);
     const saved = res.events[0];
@@ -135,7 +156,7 @@ export default function ContactChildScreen() {
     // 【仮置き】記録したときの結果の文（web/仮置き値.md）
     notify(`${name}さんの「${eventText(saved)}」（${formatHM(saved.recorded_at)}）を記録しました。保護者が見られる状態です。`,
       cancelAction(user!, { kind: 'event', event: saved, childName: name }));
-  });
+  }, undefined, back);
 
   const confirmHome = () => {
     const h = data.home;
@@ -143,7 +164,7 @@ export default function ContactChildScreen() {
     void act('home', async () => {
       await api.confirmHome(user!, h.contact_home_id, h.updated_at);
       notify(`${name}さんの家庭からを確認しました。保護者に「園が確認しました」と出ます。`);
-    });
+    }, () => confirmedRef.current);
   };
 
   const openFix = (t: TimelineFix) => setFix({
@@ -156,6 +177,7 @@ export default function ContactChildScreen() {
 
   return (
     <div className="contact-child">
+      <HomeArrivalStatus said={arrival} />
       <div className="page-head contact-child-head">
         <Link className="contact-back" to={classPath}>‹ クラスへ戻る</Link>
         <div className="contact-child-name">
@@ -192,7 +214,7 @@ export default function ContactChildScreen() {
                   ))}
                 </dl>
                 {h.confirmed_at
-                  ? <p className="contact-confirmed">園が確認しました {formatHM(h.confirmed_at)} {h.confirmed_staff_name}</p>
+                  ? <p ref={confirmedRef} className="contact-confirmed" tabIndex={-1}>園が確認しました {formatHM(h.confirmed_at)} {h.confirmed_staff_name}</p>
                   : data.can_write && (
                     <button type="button" className="btn-primary contact-confirm-button" onClick={confirmHome} disabled={busy !== null}
                       aria-busy={busy === 'home'}>{busy === 'home' ? TEXT.sending : '確認しました'}</button>
@@ -215,7 +237,7 @@ export default function ContactChildScreen() {
                   {' '}{data.facility.body}{data.facility.corrected_at && <span className="muted">　訂正しました（{formatHM(data.facility.corrected_at)}）</span>}</p>
                 {canFix && (
                   <div className="contact-composer-actions">
-                    <button type="button" onClick={() => setEditingFacility(true)}>直す</button>
+                    <button ref={facilityFixRef} type="button" onClick={() => setEditingFacility(true)}>直す</button>
                     <button type="button" className="btn-quiet" onClick={() => setFix({ target: { kind: 'facility', facility: data.facility!, childName: name }, mode: 'cancel' })}>取り消す</button>
                   </div>
                 )}
@@ -225,7 +247,7 @@ export default function ContactChildScreen() {
             {((!data.facility && canRecord) || (data.facility && editingFacility)) && (
               <Composer key={editingFacility ? `fix-${data.facility?.contact_facility_id}` : 'new'} label={editingFacility ? '園から（直して送る）' : '園からのひとこと'}
                 max={500} scope="1" recipient={data.recipient} className={childClass} initial={editingFacility ? data.facility?.body : ''}
-                submitLabel={editingFacility ? '直して送る' : '送る'} onSend={sendFacility}
+                submitLabel={editingFacility ? '直して送る' : '送る'} onSend={sendFacility} focusAfterSend={() => facilityFixRef.current}
                 onCancel={editingFacility ? () => setEditingFacility(false) : undefined}
                 ai={isToday ? { childId, date, field: 'facility', allowDraft: true } : undefined} />
             )}
@@ -259,7 +281,7 @@ export default function ContactChildScreen() {
               </div>
               <div className="contact-field">
                 <span>体温</span>
-                <button type="button" className="contact-pick" onClick={() => setTempOpen(true)} disabled={busy !== null}>
+                <button ref={tempButtonRef} type="button" className="contact-pick" onClick={() => setTempOpen(true)} disabled={busy !== null}>
                   {label('temp', '体温を記録する')}
                 </button>
               </div>
@@ -297,7 +319,11 @@ export default function ContactChildScreen() {
 
       {tempOpen && (
         <TemperaturePicker title={`${name}の体温`} start={findChild(childId)?.normal_temperature ?? null} busy={busy !== null} onClose={() => setTempOpen(false)}
-          onSelect={(value) => { setTempOpen(false); void record('temp', { child_id: childId, event_type: '3', temperature: value }); }}>
+          onSelect={(value) => {
+            setTempOpen(false);
+            // 窓が閉じて送る。送っている間は開いた元が押せないので、応答のあとに開いた元へ戻す（連絡帳（クラス）画面の「＋体温」と同じ。GitHub Issue #213）
+            void record('temp', { child_id: childId, event_type: '3', temperature: value }, () => tempButtonRef.current);
+          }}>
           {/* 入力欄（体温の一覧）の近くに固定の文【仮置き】（図/画面詳細図「連絡帳（園児）画面」(8-2) 項目10。web/仮置き値.md） */}
           <p className="contact-note">{TEXT.temperatureCallFirst}</p>
         </TemperaturePicker>
