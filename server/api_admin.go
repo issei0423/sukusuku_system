@@ -1,8 +1,10 @@
 package main
 
 import (
+	"crypto/rand"
 	"database/sql"
-	"math/rand"
+	"log"
+	"math/big"
 	"net/http"
 	"strconv"
 	"strings"
@@ -107,10 +109,39 @@ func (a *app) handleStaffAccounts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// randomPassword は一時パスワードを作る。
-// 【仮置き】桁数・文字種は未確定（基本設計書「画面詳細」(3-6)）
+/*
+randomPassword は一時パスワードを作る。
+
+以前は「temp」＋4桁（9000通り）で、ログインIDが分かれば総当たりの範囲がはっきりしていた（GitHub Issue #236）。
+暗号に使える乱数（crypto/rand）で、4 文字ずつハイフンでつないだ 12 文字とする（例：k7dm-x3pa-9hzt）。
+
+打ちやすさのため、次のようにしている。管理者が口頭や手渡しで伝え、本人が手で打つため。
+  - 英小文字と数字だけ。Shift を押さずに打て、大文字・小文字の取り違えも起きない
+  - 紛らわしい文字（i・l・o・0・1）は使わない
+  - 4 文字ずつに区切り、読み上げ・書き写しで位置を見失わないようにする
+文字は 31 種 × 12 文字（約 59 ビット）あり、ロックと送信元ごとの上限の下では総当たりで当たらない。
+
+【仮置き】桁数・文字種は未確定（基本設計書「画面詳細」(3-6)）
+*/
 func randomPassword() string {
-	return "temp" + strconv.Itoa(1000+rand.Intn(9000))
+	const alphabet = "abcdefghjkmnpqrstuvwxyz23456789"
+	return randomFrom(alphabet, 4) + "-" + randomFrom(alphabet, 4) + "-" + randomFrom(alphabet, 4)
+}
+
+// randomFrom は、alphabet の文字を暗号に使える乱数で n 個選んで並べる。
+// 推測されてはならない値（一時パスワード・招待コード）に使う。math/rand は推測できないことを保証しない
+func randomFrom(alphabet string, n int) string {
+	max := big.NewInt(int64(len(alphabet)))
+	b := make([]byte, n)
+	for i := range b {
+		k, err := rand.Int(rand.Reader, max)
+		if err != nil {
+			// 乱数が取れない状態で推測しやすい値を返すわけにはいかない（session.go の randomToken と同じ）
+			log.Fatalf("乱数を生成できません: %v", err)
+		}
+		b[i] = alphabet[k.Int64()]
+	}
+	return string(b)
 }
 
 // handleReissueTempPassword は一時パスワードを再発行する（基本設計書「一時パスワードの再発行」(4-3)）
@@ -571,16 +602,10 @@ func (a *app) handleAllAccounts(w http.ResponseWriter, r *http.Request) {
 
 // randomCode は推測困難な値を作る（基本設計書 5-2）。
 // 紛らわしい文字（I・O・0・1）を除いた集合を使う。配布物の読み違いを避けるため。
+// 乱数は暗号に使えるもの（randomFrom）。GitHub Issue #236
 func randomCode() string {
 	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-	block := func() string {
-		var b strings.Builder
-		for i := 0; i < 4; i++ {
-			b.WriteByte(alphabet[rand.Intn(len(alphabet))])
-		}
-		return b.String()
-	}
-	return block() + "-" + block() + "-" + block()
+	return randomFrom(alphabet, 4) + "-" + randomFrom(alphabet, 4) + "-" + randomFrom(alphabet, 4)
 }
 
 func (a *app) handleInvitationCodes(w http.ResponseWriter, r *http.Request) {

@@ -582,6 +582,9 @@ type guardianTodayOut struct {
 	UnreadChat     int    `json:"unread_chat"`
 	PersonalRoomID *int64 `json:"personal_room_id"`
 	GrowthNew      bool   `json:"growth_new"`
+	// ログイン中の保護者自身の紐づけの「AI の下書きを使わない」。ほかの家族の値は入れない
+	// （詳細設計書「ダッシュボード」(4-8 (1))・「AI の下書きの利用」(4-15 (3))。保護者のメニューのダイアログの初期値）
+	AiOptOut bool `json:"ai_opt_out"`
 }
 
 // mealAmountText は食事の量の言葉。保護者には「食べない」を「食べていない」と出す（詳細設計書「食事の列」(2-2 (4))）
@@ -639,6 +642,7 @@ func (a *app) guardianToday(u *SessionUser, childID string) (*guardianTodayOut, 
 	a.db.QueryRow(`SELECT grace_ends_on FROM t_guardian_child WHERE guardian_id = ? AND child_id = ? AND link_status = '3'`,
 		u.guardian(), childID).Scan(&grace)
 	t.GraceEndsOn = nullStr(grace)
+	t.AiOptOut = a.guardianAiOptOut(u, childID)
 	if p.Home != nil {
 		t.Home = &struct {
 			SubmittedAt string  `json:"submitted_at"`

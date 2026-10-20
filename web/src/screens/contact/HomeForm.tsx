@@ -7,7 +7,7 @@
  * 押したらサーバの応答を待って結果を出す（楽観的更新をしない。決めたこと D-3）。
  * 送れなかったときは入力を残し、何が違うかと次にすることを出す。
  */
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { ContactHome, ContactHomeInput, MealAmount } from '../../api/shapes';
 import { settingText } from '../../api/client';
 import { useUnsavedInput } from '../../unsavedInput';
@@ -79,6 +79,7 @@ export default function HomeForm({ home, busy, error, onSubmit, onCancel }: {
   const [pickupOther, setPickupOther] = useState(!!home?.pickup_person && !PICKUP_PEOPLE.includes(home.pickup_person));
   const [pickupTime, setPickupTime] = useState(home?.pickup_time ?? '');
   const [message, setMessage] = useState(home?.message ?? '');
+  const messageNoteId = useId();
   const [dirty, setDirty] = useState(false);
   useUnsavedInput(dirty);
   // サーバに届かないときは「もう一度送る」にする。入力は残す（詳細設計書「押したときの処理の型」(2-0 (2))）
@@ -179,11 +180,18 @@ export default function HomeForm({ home, busy, error, onSubmit, onCancel }: {
         </>
       )}
       {items.includes('message') && (
-        <label className="contact-field">
-          <span>連絡事項（任意）</span>
-          <textarea value={message} maxLength={MESSAGE_MAX} onChange={(e) => touch(setMessage)(e.target.value)} />
-          <span className="muted contact-count">あと {MESSAGE_MAX - [...message].length} 文字</span>
-        </label>
+        <>
+          <label className="contact-field">
+            <span>連絡事項（任意）</span>
+            <textarea value={message} maxLength={MESSAGE_MAX} onChange={(e) => touch(setMessage)(e.target.value)} aria-describedby={messageNoteId} />
+            <span className="muted contact-count">あと {MESSAGE_MAX - [...message].length} 文字</span>
+          </label>
+          {/*
+            欄の近くに常に出す【仮置き】（図/画面詳細図「連絡帳画面」(8-3) 項目10、要件定義書「家庭から」(4-2-2)。web/仮置き値.md）。
+            読み上げでも欄の説明として届くよう、入力欄の説明（aria-describedby）にする
+          */}
+          <p id={messageNoteId} className="contact-note">{TEXT.homeWrittenRequest}</p>
+        </>
       )}
       {error && <p className="contact-error" role="alert">{error}</p>}
       <div ref={actions} className="contact-form-actions">

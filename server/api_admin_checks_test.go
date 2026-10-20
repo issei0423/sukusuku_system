@@ -111,7 +111,7 @@ func TestRemoveChildRequiresNoRecords(t *testing.T) {
 		expectStatus(t, request(t, h, admin, "POST", "/api/admin/invitations", `{"child_id":"C999","valid_days":30}`),
 			http.StatusNotFound)
 		expectStatus(t, send(t, h, nil, "POST", "/api/signup",
-			`{"code":"`+issued.Code+`","email":"gotoroku@example.jp","password":"gotoroku-5678","guardian_name":"誤登録 花子","relationship":"母","terms_agreed":true,"terms_version":"1.0"}`),
+			`{"code":"`+issued.Code+`","email":"gotoroku@example.jp","password":"gotoroku-5678","guardian_name":"誤登録 花子","relationship":"母","terms_agreed":true,"terms_version":"1.1"}`),
 			http.StatusBadRequest)
 		var n int
 		a.db.QueryRow(`SELECT COUNT(*) FROM m_account WHERE email = 'gotoroku@example.jp'`).Scan(&n)

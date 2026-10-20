@@ -350,7 +350,7 @@ func TestPasswordRules(t *testing.T) {
 			body, _ := json.Marshal(map[string]any{
 				"code": "GHIJ-7890-KLMN", "email": email, "password": password,
 				"guardian_name": "高梨 次郎", "relationship": "父",
-				"terms_agreed": true, "terms_version": "1.0", // 規約への同意（GitHub Issue #170）
+				"terms_agreed": true, "terms_version": "1.1", // 規約への同意（GitHub Issue #170）
 			})
 			return send(t, h, nil, "POST", "/api/signup", string(body))
 		}
@@ -403,7 +403,7 @@ func TestSignUpJoinsPersonalRoomOfThatChild(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := send(t, h, nil, "POST", "/api/signup", `{"code":"`+issued.Code+`","email":"other.nohara@example.jp",
-		"password":"hanako-5678","guardian_name":"野原 花子","relationship":"母","terms_agreed":true,"terms_version":"1.0"}`)
+		"password":"hanako-5678","guardian_name":"野原 花子","relationship":"母","terms_agreed":true,"terms_version":"1.1"}`)
 	expectStatus(t, rec, http.StatusOK)
 	hanako := sessionCookieOf(t, rec)
 
@@ -428,7 +428,7 @@ func TestSignUpJoinsPersonalRoomOfThatChild(t *testing.T) {
 
 	t.Run("元の家庭（C001）の新しい保護者は、これまでどおり C001 の個人チャットへ入る", func(t *testing.T) {
 		rec := send(t, h, nil, "POST", "/api/signup", `{"code":"ABCD-1234-EFGH","email":"nohara.m@example.jp",
-			"password":"mama-5678-x","guardian_name":"野原 みさえ","relationship":"母","terms_agreed":true,"terms_version":"1.0"}`)
+			"password":"mama-5678-x","guardian_name":"野原 みさえ","relationship":"母","terms_agreed":true,"terms_version":"1.1"}`)
 		expectStatus(t, rec, http.StatusOK)
 		if rooms := roomIDsOf(t, h, sessionCookieOf(t, rec)); !rooms[otherFamilyRoom] {
 			t.Fatalf("自児の個人チャットに入っていない: %v", rooms)
@@ -438,12 +438,15 @@ func TestSignUpJoinsPersonalRoomOfThatChild(t *testing.T) {
 
 /*
  * ---- #163 の 2：招待コード 1 枚を同時に使っても、1 アカウントしか作らない ----
- * 1枚のコードは1アカウントの登録にのみ使える。使用と同時に status を使用済みにする（基本設計書 5-2）
+ * 1枚のコードは1アカウントの登録にのみ使える。使用と同時に status を使用済みにする（基本設計書 5-2）。
+ * 登録できなかったものは、どれも使用済みの文を受け取る（同じコードを同時に送ったときの2つ目も同じ。
+ * 基本設計書「メッセージ一覧」(4-12)・「保護者アカウントの自己登録」(4-3)、決めたこと D-52）
  */
 func TestInvitationCodeIsSingleUseUnderConcurrency(t *testing.T) {
 	a, h := newTestApp(t)
 	const attempts = 5
 	codes := make([]int, attempts)
+	messages := make([]string, attempts)
 	var wg sync.WaitGroup
 	start := make(chan struct{})
 	for i := 0; i < attempts; i++ {
@@ -454,22 +457,29 @@ func TestInvitationCodeIsSingleUseUnderConcurrency(t *testing.T) {
 			body, _ := json.Marshal(map[string]any{
 				"code": "OPQR-1234-STUV", "email": "dup" + string(rune('a'+i)) + "@example.jp",
 				"password": "dup-pass-5678", "guardian_name": "宮城 次郎", "relationship": "父",
-				"terms_agreed": true, "terms_version": "1.0",
+				"terms_agreed": true, "terms_version": "1.1",
 			})
 			req := httptest.NewRequest("POST", "/api/signup", strings.NewReader(string(body)))
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 			h.ServeHTTP(rec, req)
 			codes[i] = rec.Code
+			var e apiError
+			json.Unmarshal(rec.Body.Bytes(), &e)
+			messages[i] = e.Message
 		}(i)
 	}
 	close(start)
 	wg.Wait()
 
 	ok := 0
-	for _, c := range codes {
+	for i, c := range codes {
 		if c == http.StatusOK {
 			ok++
+			continue
+		}
+		if c != http.StatusBadRequest || messages[i] != wantInvitationUsed {
+			t.Errorf("登録できなかった %d 件目: %d %q, want 400 %q", i+1, c, messages[i], wantInvitationUsed)
 		}
 	}
 	if ok != 1 {

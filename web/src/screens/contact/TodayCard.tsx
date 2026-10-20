@@ -10,6 +10,7 @@ import type { GuardianToday } from '../../api/shapes';
 import { formatHM, formatMD } from '../../api/util';
 import { TEXT } from '../../messages';
 import { dayLabel, latestSleepText } from './contactText';
+import ContactPhotoImage from './ContactPhotoImage';
 
 export default function TodayCard({ today: t, newCount }: {
   today: GuardianToday;
@@ -60,6 +61,12 @@ export default function TodayCard({ today: t, newCount }: {
             {t.latest.map((item) => (
               <li key={`${item.kind}-${item.recorded_at}-${item.text}`}>
                 <time dateTime={item.recorded_at}>{formatHM(item.recorded_at)}</time> {item.kind === 'class_note' ? `クラスのようす：${item.text}` : item.text}
+                {/* 写真は 56px の小さな絵（詳細設計書「保護者ホーム」(2-5 (2))） */}
+                {item.contact_photo_id !== null && (
+                  <span className="contact-latest-photo">
+                    <ContactPhotoImage photoId={item.contact_photo_id} label={`${formatHM(item.recorded_at)} の写真`} size="thumb" />
+                  </span>
+                )}
               </li>
             ))}
           </ul>
