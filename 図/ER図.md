@@ -3,15 +3,17 @@
 | 項目 | 内容 |
 | :-- | :-- |
 | 対象システム | 保育支援システム（すくすくシステム） |
-| 版数 | 第 2.3 版 |
+| 版数 | 第 2.5 版 |
 | 作成日 | 2026 年 8 月 4 日 |
-| 典拠 | `要件定義書.md` 第3.0版、`基本設計書.md` 第3.0版「データベース設計」(5) |
+| 典拠 | `要件定義書.md` 第3.2版、`基本設計書.md` 第3.4版「データベース設計」(5) |
 | 作成区分 | チーム開発演習 基本設計 |
 
 ## 改訂履歴
 
 | 版 | 日付 | 変更内容 |
 | :-: | :-: | :-- |
+| 2.5 | 2026/10/19 | `t_nap_abnormal` に `corrected_at`（最後に修正した時刻。修正ありの印）を足した。異常時の記録も、午睡チェックの記録と同じく行を書き換えて修正し、修正前・修正後の値と理由を操作ログに残す（`基本設計書.md` 第3.4版「記録の修正と改ざん防止」(4-8)・「足した列」(5-7)） |
+| 2.4 | 2026/10/18 | **設計の細部の見直し（共通の仕組み）に合わせた。** `t_guardian_child` の自動採番の `guardian_child_id` を外し、`guardian_id`・`child_id` の複合の主キーにした（`基本設計書.md`「クラスと紐づけ」(5-3)・「操作ログ（t_operation_log）」(5-9) の対象レコードの入れ方、実装の `schema.sql` と同じ）。理由は `ナレッジ/決定事項.md` 2026-10-18「設計の細部の見直し（保護者へ届ける流れ・共通の仕組み）で直したもの」 |
 | 2.3 | 2026/10/18 | 園児のクラスの在籍に期間（`t_class_child.started_on`・`ended_on`）を足し、保護者がクラスのようすを参照できるかの経路を、年度ではなく在籍の期間で引く形にした（`基本設計書.md` 第3.2版「クラスと紐づけ」(5-3)） |
 | 2.2 | 2026/10/17 | 保護者が個人チャットを読める範囲に「保護者がまだ1人も参加していなかった間のやりとり」を足した（`基本設計書.md` 第3.1版） |
 | 2.1 | 2026/10/17 | `m_staff.staff_id` を参照する表の案内を、基本設計書 第3.0版の節（「発達チェック・身体測定」(5-8)）に直した。基本設計書 第3.0版の統合で名前と番号の対を照合した結果である |
@@ -237,9 +239,8 @@ erDiagram
         datetime created_at "登録日時"
     }
     t_guardian_child {
-        bigint guardian_child_id PK "自動採番"
-        varchar guardian_id FK "m_guardian を参照"
-        varchar child_id FK "m_child を参照"
+        varchar guardian_id PK, FK "m_guardian を参照。child_id との複合の主キー"
+        varchar child_id PK, FK "m_child を参照"
         varchar relationship "続柄"
         int contact_order "緊急時にかける順"
         char link_status "1:有効 2:終了 3:猶予中"
@@ -630,6 +631,7 @@ erDiagram
         varchar guardian_notice_person "連絡した相手"
         varchar confirmed_staff_id FK "確認した管理者"
         datetime confirmed_at "確認した時刻"
+        datetime corrected_at "最後に修正した時刻。修正ありの印"
         datetime created_at "登録日時"
     }
     t_nap_sleep {
