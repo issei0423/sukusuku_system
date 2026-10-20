@@ -3,6 +3,9 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: './tests/responsive',
   testMatch: '**/*.spec.ts',
+  // アクセシビリティの検査は playwright.a11y.config.ts で回す。
+  // 絶対パスと照らすので、フォルダ名（a11y-axe など）に当たらないようファイル名で指す
+  testIgnore: '**/a11y-*.spec.ts',
   outputDir: './test-results/responsive',
   fullyParallel: true,
   workers: 3,

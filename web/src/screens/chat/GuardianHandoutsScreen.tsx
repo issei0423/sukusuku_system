@@ -10,6 +10,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAsync } from '../../hooks';
+import { onLive } from '../../live';
 import { useSession } from '../../session';
 import { api } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Tag } from '../../components/ui';
@@ -21,7 +22,9 @@ import type { Handout } from '../../api/types';
 export default function GuardianHandoutsScreen() {
   const { user } = useSession();
   const [type, setType] = useState('');
-  const { data, error, loading } = useAsync(() => api.handouts(user!, { type }), [user?.account_id, type]);
+  // 園が掲載・取り下げしたら、開いたままでも読み直す（live.ts）
+  const { data, error, loading } = useAsync(() => api.handouts(user!, { type }), [user?.account_id, type],
+    { live: onLive('handout') });
   const [opened, setOpened] = useState<Handout | null>(null);
 
   // 月ごとにまとめる。並びは新しい月が上

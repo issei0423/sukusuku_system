@@ -44,9 +44,15 @@ export { onSessionEnded } from './procedure';
  */
 export { asAutomatic } from './automatic';
 
+/**
+ * 開いている画面への知らせにつなぐ（live.ts）。返す関数で切る。
+ * http はサーバ（GET /api/events）へつなぎ、mock はブラウザの中で同じ知らせを出す相手を決める
+ */
+export const connectLive = impl.connectLive;
+
 /** いまどちらの実装で動いているか。画面の注記に使う */
 export const backend: 'http' | 'mock' = useMock ? 'mock' : 'http';
 
 export type {
-  LoginError, ChildInput, DiaryFilter, DiaryInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
+  LoginError, ChildInput, DiaryFilter, DiaryInput, DiaryAttachmentInput, DiaryIncidentInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
 } from './shapes';

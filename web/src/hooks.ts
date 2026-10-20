@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import { asAutomatic } from './api/client';
+import { LIVE_REFRESH_MS, subscribeLive, useLiveConnected } from './live';
+import type { LiveEvent } from './live';
 
 /**
  * 開いたままの画面で、ほかの人の操作（保護者からのチャット、職員の返信・承認など）を拾うために
  * 裏で読み直す間隔。
  *
- * 【仮置き】設計に定めが無い（web/仮置き値.md）。通知は「ログイン後の画面内表示を基本とする」
- * （要件定義書「通知」(4-1-4 (1))）とだけ定まっており、画面を開いている間にどれだけ早く
- * 反映するかは決まっていない。チャットの返事を待つ間に気にならない長さとして5秒を置いた。
+ * 相手の操作は、サーバからの知らせ（live.ts。SSE）を受けてすぐに読み直す。この間隔の読み直しは、
+ * 知らせが切れている間の保険である（ナレッジ/決定事項.md 2026-10-15「5秒ごとの読み直しは、接続が
+ * 切れたときの保険として残す」）。つながっている間は LIVE_REFRESH_MS（30秒）まで延ばす。
+ *
+ * 【仮置き】5秒は設計に定めが無い（web/仮置き値.md）。チャットの返事を待つ間に気にならない長さとして置いた。
  */
 export const AUTO_REFRESH_MS = 5_000;
 
@@ -16,8 +20,16 @@ export interface AsyncOptions {
   /**
    * 指定すると、この間隔で裏で読み直す（AUTO_REFRESH_MS を渡す）。
    * タブが隠れている間は止め、戻ったときに待たずに1回読む。
+   * live も指定していて、サーバからの知らせがつながっている間は、LIVE_REFRESH_MS まで延ばす。
    */
   refreshMs?: number;
+  /**
+   * サーバからの知らせ（live.ts）のうち、この読み込みに関係するものを選ぶ（onLive・onRoom・onNapClass）。
+   * 選んだ知らせが届いたら、読み込み中の表示を出さずに読み直す（refresh と同じ）。
+   * つないだ・つなぎ直したときも、取りこぼしに備えて1回読み直す。
+   * タブが隠れている間に届いた知らせでは読み直さず、戻ったときに1回読む。
+   */
+  live?: (e: LiveEvent) => boolean;
 }
 
 export interface AsyncState<T> {
@@ -55,6 +67,15 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[], options: Asyn
   const foregroundBusy = useRef(false);
   const backgroundBusy = useRef(false);
   const queued = useRef(false);
+  /*
+   * 画面に出ている間だけ裏で読み直す。知らせ（live.ts）で積んだ読み直しが、画面を閉じたあとに走らないようにする。
+   * 閉じた画面のための問い合わせは無駄であり、モックでは問い合わせのたびに午睡の自動解除などが走る
+   */
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   // 最後に画面へ渡した値の写し。モック（api/mock.ts）は保持している実物をそのまま返すことがあり、
   // 渡した値そのものと比べると、書き換わっていても「同じ」に見えるため、写しで比べる
   const shown = useRef<string | undefined>(undefined);
@@ -66,6 +87,7 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[], options: Asyn
   }, []);
 
   const background = useCallback((whenBusy: 'queue' | 'skip') => {
+    if (!mounted.current) return;
     if (foregroundBusy.current || backgroundBusy.current) {
       if (whenBusy === 'queue') queued.current = true;
       return;
@@ -135,7 +157,42 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[], options: Asyn
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, tick]);
 
-  useAutoRefresh(() => background('skip'), options.refreshMs);
+  /*
+   * サーバからの知らせを受けて読み直す。選び方（live）は描くたびに作り直されるため、最新のものを参照する。
+   * 読み直しの途中で届いたら、終わったあとにもう1回読む（途中の応答が知らせより前の状態かもしれないため）
+   */
+  const liveFilter = useRef(options.live);
+  useEffect(() => { liveFilter.current = options.live; });
+  const subscribed = options.live !== undefined;
+  useEffect(() => {
+    if (!subscribed) return undefined;
+    // 隠れている間に届いた知らせ。戻ったときに1回読む
+    let missed = false;
+    const unsubscribe = subscribeLive((s) => {
+      if (s.type !== 'resync' && !liveFilter.current?.(s)) return;
+      // 見ていない画面では読み直さない。チャットでは、読み直すと届いたメッセージが既読になってしまう
+      if (typeof document !== 'undefined' && document.hidden) { missed = true; return; }
+      background('queue');
+    });
+    const onVisibility = () => {
+      if (document.hidden || !missed) return;
+      missed = false;
+      // 間隔の読み直し（useAutoRefresh）も戻ったときに1回読む。重ねて読まないよう、読んでいる途中なら任せる
+      background('skip');
+    };
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      unsubscribe();
+      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [subscribed, background]);
+
+  // 知らせがつながっている間は、間隔の読み直しを保険に回し、間隔を延ばす
+  const liveConnected = useLiveConnected();
+  const refreshMs = options.refreshMs !== undefined && subscribed && liveConnected
+    ? Math.max(options.refreshMs, LIVE_REFRESH_MS)
+    : options.refreshMs;
+  useAutoRefresh(() => background('skip'), refreshMs);
 
   return { data, error, loading, reload, refresh };
 }
@@ -187,11 +244,15 @@ function scrollParent(el: HTMLElement | null): HTMLElement | null {
 }
 
 /**
- * 新しいメッセージが届いたとき、いちばん下を読んでいた人だけを、いちばん下へ送る。
+ * チャンネルを開いたときは、いちばん下（最新）から見せる。
+ * 開いたあとに新しいメッセージが届いたときは、いちばん下を読んでいた人だけを、いちばん下へ送る。
  * 上へ戻って読んでいる人の位置は動かさない。
  *
- * scope は表示している一覧が何のものか（チャンネル）。scope が変わったとき（チャンネルを
- * 切り替えたとき）は送らない。latest は一覧の最後のメッセージ。これが変わったときだけ見る。
+ * scope は表示している一覧が何のものか（チャンネル）。scope が変わったとき（チャンネルを開いた・
+ * 切り替えたとき）は、そのチャンネルのメッセージが出たところで、いちばん下へ置く。
+ * チャットのメッセージは直近から遡って見せる（基本設計書「一覧表示とページング」(3-7)、図/画面詳細図.md 4-1 No.4）。
+ * 古いものから出すと、最新と、開いている間に届いたものが画面の外に残る（GitHub Issue #172）。
+ * latest は一覧の最後のメッセージ。scope と latest が変わったときだけ見る。
  */
 export function useFollowLatest(target: RefObject<HTMLElement | null>, scope: unknown, latest: unknown): void {
   const prev = useRef<{ scope: unknown; height: number } | null>(null);
@@ -199,8 +260,11 @@ export function useFollowLatest(target: RefObject<HTMLElement | null>, scope: un
     const el = scrollParent(target.current);
     if (!el) { prev.current = null; return; }
     const p = prev.current;
+    // チャンネルのメッセージが初めて出た（開いた・切り替えた）。空のチャンネル（scope が無い）では何もしない
+    const opened = scope !== null && scope !== undefined && (!p || p.scope !== scope);
     // 描き直す前の高さで、いちばん下にいたかを判定する。下に足されても scrollTop は変わらない
-    if (p && p.scope === scope && p.height - el.scrollTop - el.clientHeight <= FOLLOW_SLACK_PX) {
+    const atBottom = !!p && p.scope === scope && p.height - el.scrollTop - el.clientHeight <= FOLLOW_SLACK_PX;
+    if (opened || atBottom) {
       el.scrollTop = el.scrollHeight;
     }
     prev.current = { scope, height: el.scrollHeight };

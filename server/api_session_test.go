@@ -45,14 +45,16 @@ func expectDeadline(t *testing.T, st SessionStatus, want time.Time, remaining in
 	}
 	wantAt := want.In(jst).Format("2006-01-02T15:04:05")
 	if st.ExpiresAt == nil || *st.ExpiresAt != wantAt {
-		t.Fatalf("expires_at = %v, want %s", deref(st.ExpiresAt), wantAt)
+		t.Fatalf("expires_at = %v, want %s", derefStr(st.ExpiresAt), wantAt)
 	}
 	if st.RemainingSeconds == nil || *st.RemainingSeconds != remaining {
 		t.Fatalf("remaining_seconds = %v, want %d", derefInt(st.RemainingSeconds), remaining)
 	}
 }
 
-func deref(s *string) string {
+// derefStr は、失敗の文言に出すための値。nil は "<nil>" と出す。
+// 本線の api_contact.go に同じ名前の deref（nil を空文字にする）があるため、名前を分けた
+func derefStr(s *string) string {
 	if s == nil {
 		return "<nil>"
 	}
@@ -143,7 +145,7 @@ func TestSessionStatusDuringNapCheck(t *testing.T) {
 	clock.t = at(start, 13, 34, 0)
 	st := getSessionStatus(t, h, teacher)
 	if !st.AutoLogout || !st.NapExempt || st.ExpiresAt != nil || st.RemainingSeconds != nil {
-		t.Fatalf("午睡チェックの実施中の期限 = %+v (expires_at=%v), want nap_exempt で期限なし", st, deref(st.ExpiresAt))
+		t.Fatalf("午睡チェックの実施中の期限 = %+v (expires_at=%v), want nap_exempt で期限なし", st, derefStr(st.ExpiresAt))
 	}
 	// 実施を開始していない職員には、ふだんどおりの期限を返す（ログインの 13:05 から30分）
 	expectDeadline(t, getSessionStatus(t, h, admin), start.Add(30*time.Minute), 60)

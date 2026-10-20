@@ -14,7 +14,10 @@
     "test:integration": "vitest run tests/integration.test.ts",
     "review:responsive": "playwright test -c playwright.responsive.config.ts",
     "review:responsive:report": "playwright show-report responsive-report/html",
-    "review:responsive:check": "tsc -p tests/responsive/tsconfig.json"
+    "review:responsive:check": "tsc -p tests/responsive/tsconfig.json",
+    "review:security": "playwright test -c playwright.security.config.ts",
+    "review:security:check": "tsc -p tests/security/tsconfig.json",
+    "test:a11y": "playwright test -c playwright.a11y.config.ts"
   },
   "dependencies": {
     "react": "^19.2.7",
@@ -22,6 +25,7 @@
     "react-router-dom": "^7.18.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
     "@playwright/test": "^1.64.0",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",

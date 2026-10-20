@@ -11,13 +11,13 @@ import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Alert, Modal, Radios } from '../../components/ui';
-import { formatMDHM, now } from '../../api/util';
+import { formatMDHM } from '../../api/util';
 
 export default function MisdeliveryScreen() {
   const { user } = useSession();
   const [tick, setTick] = useState(0);
   const records = useAsync(() => api.misdeliveryRecords(user!), [user?.account_id, tick]);
-  const pending = useAsync(() => api.retractedWithoutRecord(), [tick]);
+  const pending = useAsync(() => api.retractedWithoutRecord(user!), [tick]);
 
   const [target, setTarget] = useState<{ chat_message_id: number; room_name: string; sent_at: string } | null>(null);
   const [wasRead, setWasRead] = useState<'yes' | 'no' | null>(null);
@@ -34,12 +34,14 @@ export default function MisdeliveryScreen() {
   };
 
   const save = async () => {
-    if (!target || wasRead === null) return;
+    if (!target || wasRead === null || !occurredAt) return;
     setError(null);
     try {
       await api.addMisdeliveryRecord(user!, {
         chat_message_id: target.chat_message_id,
-        occurred_at: occurredAt.length === 16 ? `${occurredAt}:00` : now(),
+        // 発生日時は必須。空のときに記録した時刻で埋めない（画面詳細図「誤送信対応記録画面」(4-4) 項目3。GitHub Issue #178 の 1）。
+        // 日時の入力欄は秒を持たないため、秒を 00 として送る
+        occurred_at: occurredAt.length === 16 ? `${occurredAt}:00` : occurredAt,
         was_read: wasRead === 'yes',
         response,
       });
@@ -115,7 +117,7 @@ export default function MisdeliveryScreen() {
         <Modal title="誤送信への対応を記録する" onClose={() => setTarget(null)}
           footer={<>
             <button onClick={() => setTarget(null)}>やめる</button>
-            <button className="btn-primary" onClick={save} disabled={wasRead === null || !response.trim()}>記録する</button>
+            <button className="btn-primary" onClick={save} disabled={!occurredAt || wasRead === null || !response.trim()}>記録する</button>
           </>}>
           <div className="stack">
             {error && <Alert>{error}</Alert>}
