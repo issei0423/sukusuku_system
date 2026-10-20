@@ -112,7 +112,8 @@ test.describe('[staff] 相手の操作で読み上げへ伝えるもの', () => 
 
   test('① チャット画面（職員）：保護者から届いたものだけを role="log" で伝え、自分が送ったものは伝えない', async ({ page }) => {
     const errors = await open(page, 'staff-chat');
-    await page.locator('button.channel', { hasText: '野原 太郎の保護者' }).click();
+    // 職員のチャット一覧は、個人チャットを「〇〇の園とのやりとり」と出す（#198。StaffChatScreen の roomLabel、詳細設計書「チャット」(2-9)）
+    await page.locator('button.channel', { hasText: '野原 太郎の園とのやりとり' }).click();
     await ready(page);
     const said = await watchLive(page);
     await asOther(page, 'send', [guardian, 6, '熱は下がりました。']);
