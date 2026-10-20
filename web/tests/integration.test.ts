@@ -10,6 +10,7 @@
  * ふだんの npm test はブラウザ内のモックだけで完結させる（サーバに依存させない）。
  */
 import { describe, it, expect, beforeAll, vi } from 'vitest';
+import { MSG } from '../src/messages';
 
 // 相手は本物の時計で動くサーバなので、tests/setup-clock.ts で止めた時計を本物に戻す
 vi.useRealTimers();
@@ -288,8 +289,8 @@ run('Go サーバとの結合', () => {
   });
 
   it('招待コードはハイフンを省いても引ける。メールアドレスが空の登録は受け付けない', async () => {
-    // 使用済みのコードをハイフンなし・小文字で入れる。「確認できません」ではなく「使われています」と返る
-    await expect(http.api.verifyInvitationCode('ijkl5678mnop')).rejects.toThrow(/すでに使われています/);
+    // 使用済みのコードをハイフンなし・小文字で入れる。「確認できません」ではなく使用済みの文が返る（基本設計書「メッセージ一覧」(4-12)）
+    await expect(http.api.verifyInvitationCode('ijkl5678mnop')).rejects.toThrow(MSG.invitationUsed);
 
     await switchTo('nohara@hoiku.example.jp', 'pass1234', 'staff');
     const code = await http.api.issueOneInvitationCode(dummy, 'C001', 30);
@@ -568,6 +569,227 @@ run('Go サーバとの結合', () => {
         await send(`/api/nap/sleeps/${sl.nap_sleep_id}/wake`, { method: 'POST', body: '{}' }, staff);
       }
       for (const jar of [staff, guardian, other]) await send('/api/logout', { method: 'POST', body: '{}' }, jar);
+    }
+  });
+});
+
+/*
+ * きょうのようすの記録と、訂正・取り消しも、開いている保護者の画面に3秒以内に出る（詳細設計書「3秒の目標を計る」(6-7)）。
+ * 排せつを記録 → 直す → 取り消すの3つで、知らせが届いて GET /api/contact/children/C001 が新しい内容を返すまでを計る。
+ * ほかの家庭（宮城 美咲の保護者）には知らせが届かない
+ */
+run('結合：きょうのようすの記録・訂正・取り消しが3秒以内に届く', () => {
+  const send = async (path: string, init: RequestInit = {}, jar?: string) => {
+    const headers = new Headers(init.headers);
+    headers.set('Origin', BASE);
+    if (init.body) headers.set('Content-Type', 'application/json');
+    if (jar) headers.set('Cookie', jar);
+    return realFetch(BASE + path, { ...init, headers });
+  };
+  const loginAs = async (email: string, entrance: 'staff' | 'guardian') => {
+    const res = await send('/api/login', { method: 'POST', body: JSON.stringify({ email, password: 'pass1234', entrance }) });
+    expect(res.status).toBe(200);
+    return (res.headers.getSetCookie?.() ?? [])[0].split(';')[0];
+  };
+  type Ev = { contact_event_id: number; toilet_label: string | null; corrected_at: string | null; updated_at?: string };
+
+  it('排せつの記録・訂正・取り消しが、知らせと読み直しで3秒以内に保護者の画面に出る。ほかの家庭には届かない', async () => {
+    const staff = await loginAs('takanashi@hoiku.example.jp', 'staff');
+    const guardian = await loginAs('nohara.i@example.jp', 'guardian');
+    const other = await loginAs('miyagi.r@example.jp', 'guardian');
+    const controller = new AbortController();
+    const open = async (jar: string) => {
+      const res = await send('/api/events', { signal: controller.signal }, jar);
+      expect(res.status).toBe(200);
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      return {
+        /** want を含む知らせが届くまで待つ。待ち始める前に届いたものは数えないよう、確かめたら読み捨てる */
+        async waitFor(want: string, ms: number): Promise<boolean> {
+          const deadline = Date.now() + ms;
+          while (Date.now() < deadline) {
+            if (buffer.includes(want)) { buffer = ''; return true; }
+            const chunk = await Promise.race([
+              reader.read(),
+              new Promise<null>((r) => setTimeout(() => r(null), Math.max(0, deadline - Date.now()))),
+            ]);
+            if (!chunk || chunk.done) break;
+            buffer += decoder.decode(chunk.value, { stream: true });
+          }
+          const hit = buffer.includes(want);
+          buffer = '';
+          return hit;
+        },
+      };
+    };
+    const page = async () => (await (await send('/api/contact/children/C001', {}, guardian)).json()) as { events: Ev[] };
+    const want = 'data: {"type":"contact","child_id":"C001"}';
+    try {
+      const guardianStream = await open(guardian);
+      const otherStream = await open(other);
+      await guardianStream.waitFor(': connected', 3000);
+      await otherStream.waitFor(': connected', 3000);
+
+      let started = Date.now();
+      const recorded = await send('/api/contact/events', { method: 'POST', body: JSON.stringify({ items: [{ child_id: 'C001', event_type: '2', toilet_label: 'おしっこ' }] }) }, staff);
+      expect(recorded.status).toBe(200);
+      const [event] = ((await recorded.json()) as { events: Ev[] }).events;
+      expect(await guardianStream.waitFor(want, 3000)).toBe(true);
+      expect((await page()).events.some((e) => e.contact_event_id === event.contact_event_id)).toBe(true);
+      const recordMs = Date.now() - started;
+
+      started = Date.now();
+      const corrected = await send(`/api/contact/events/${event.contact_event_id}/correct`,
+        { method: 'POST', body: JSON.stringify({ toilet_label: 'うんち', updated_at: event.updated_at }) }, staff);
+      expect(corrected.status).toBe(200);
+      expect(await guardianStream.waitFor(want, 3000)).toBe(true);
+      const fixed = (await page()).events.find((e) => e.contact_event_id === event.contact_event_id);
+      expect([fixed?.toilet_label, !!fixed?.corrected_at]).toEqual(['うんち', true]);
+      const correctMs = Date.now() - started;
+
+      started = Date.now();
+      expect((await send(`/api/contact/events/${event.contact_event_id}/cancel`, { method: 'POST', body: '{}' }, staff)).status).toBe(200);
+      expect(await guardianStream.waitFor(want, 3000)).toBe(true);
+      expect((await page()).events.some((e) => e.contact_event_id === event.contact_event_id)).toBe(false);
+      const cancelMs = Date.now() - started;
+
+      for (const ms of [recordMs, correctMs, cancelMs]) expect(ms).toBeLessThan(3000);
+      console.log(`排せつの記録 ${recordMs}・訂正 ${correctMs}・取り消し ${cancelMs} ミリ秒で保護者の画面の読み直しまで`);
+      // ほかの家庭には、知らせ自体が届かない。保護者の応答に職員の名前と読んだ版は入らない
+      expect(await otherStream.waitFor('"child_id":"C001"', 500)).toBe(false);
+      expect(JSON.stringify(await page())).not.toMatch(/staff_name|updated_at/);
+    } finally {
+      controller.abort();
+      for (const jar of [staff, guardian, other]) await send('/api/logout', { method: 'POST', body: '{}' }, jar);
+    }
+  });
+
+  /*
+   * 写真（段2）：multipart/form-data で送ると、写っている子の家庭だけが実体を読める。見出しは no-store・nosniff。
+   * 取り消すと、だれにも返さない（詳細設計書「きょうのようす」(4-4 (2))・(4-4 (3))）。デモの同意は全員 2（1人の写真は送れる）
+   */
+  it('写真を送ると、写っている子の家庭だけが実体を読める。取り消すと読めなくなる', async () => {
+    // 2×2 の JPEG（サーバは読み直して描き直すため、本物の JPEG が要る）
+    const tinyJpeg = Uint8Array.from(atob(
+      '/9j/2wCEABALDA4MChAODQ4SERATGCgaGBYWGDEjJR0oOjM9PDkzODdASFxOQERXRTc4UG1RV19iZ2hnPk1xeXBkeFxlZ2MBERISGBUYLxoaL2NCOEJjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY//AABEIAAIAAgMBIgACEQEDEQH/xAGiAAABBQEBAQEBAQAAAAAAAAAAAQIDBAUGBwgJCgsQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+gEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoLEQACAQIEBAMEBwUEBAABAncAAQIDEQQFITEGEkFRB2FxEyIygQgUQpGhscEJIzNS8BVictEKFiQ04SXxFxgZGiYnKCkqNTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqCg4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2dri4+Tl5ufo6ery8/T19vf4+fr/2gAMAwEAAhEDEQA/AJaKKK8s9U//2Q==',
+    ), (c) => c.charCodeAt(0));
+    const staff = await loginAs('takanashi@hoiku.example.jp', 'staff');
+    const guardian = await loginAs('nohara.i@example.jp', 'guardian');
+    const other = await loginAs('miyagi.r@example.jp', 'guardian');
+    // multipart は境界の入った Content-Type を fetch に付けさせる（send は JSON の Content-Type を付けるため使わない）
+    const sendForm = (form: FormData, jar: string) =>
+      realFetch(BASE + '/api/contact/photos', { method: 'POST', body: form, headers: { Origin: BASE, Cookie: jar } });
+    try {
+      const form = new FormData();
+      form.append('file', new Blob([tinyJpeg], { type: 'image/jpeg' }), 'photo.jpg');
+      form.append('subject_child_ids', 'C001');
+      form.append('body', '砂場で型抜きをしました。');
+      const res = await sendForm(form, staff);
+      expect(res.status).toBe(200);
+      const sent = (await res.json()) as { photo: { contact_photo_id: number; file_type: string }; events: { contact_event_id: number; child_id: string }[] };
+      expect([sent.photo.file_type, sent.events.map((e) => e.child_id)]).toEqual(['image/jpeg', ['C001']]);
+      const path = `/api/contact/photos/${sent.photo.contact_photo_id}`;
+
+      const mine = await send(path, {}, guardian);
+      expect(mine.status).toBe(200);
+      expect([mine.headers.get('content-type'), mine.headers.get('cache-control'), mine.headers.get('x-content-type-options')])
+        .toEqual(['image/jpeg', 'private, no-store', 'nosniff']);
+      expect((await mine.arrayBuffer()).byteLength).toBeGreaterThan(0);
+      expect((await send(path, {}, other)).status).toBe(403);
+
+      expect((await send(`/api/contact/events/${sent.events[0].contact_event_id}/cancel`, { method: 'POST', body: '{}' }, staff)).status).toBe(200);
+      for (const jar of [staff, guardian]) expect((await send(path, {}, jar)).status).toBe(403);
+    } finally {
+      for (const jar of [staff, guardian, other]) await send('/api/logout', { method: 'POST', body: '{}' }, jar);
+    }
+  });
+
+  /*
+   * 園からのひとこと（段2）：他児の名前が入っていれば 409 other_child_names（names・matches）。承諾を付けて送ると、
+   * 3秒以内に開いている保護者の画面に出る（詳細設計書「園からのひとことと他児の名前」(4-5)・(6-7)）。ほかの家庭には届かない
+   */
+  it('園からのひとことは他児の名前の注意を通り、承諾を付けて送ると3秒以内に保護者の画面に出る', async () => {
+    const staff = await loginAs('takanashi@hoiku.example.jp', 'staff');
+    const guardian = await loginAs('nohara.i@example.jp', 'guardian');
+    const other = await loginAs('miyagi.r@example.jp', 'guardian');
+    const controller = new AbortController();
+    try {
+      // 今日の園からが既にあれば取り消しておく（手での確かめのあとでも回せるように）
+      const before = (await (await send('/api/contact/children/C001', {}, staff)).json()) as { facility: { contact_facility_id: number } | null };
+      if (before.facility) await send(`/api/contact/facility/${before.facility.contact_facility_id}/cancel`, { method: 'POST', body: '{}' }, staff);
+      const stream = async (jar: string) => {
+        const res = await send('/api/events', { signal: controller.signal }, jar);
+        const reader = res.body!.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        return async (want: string, ms: number) => {
+          const deadline = Date.now() + ms;
+          while (Date.now() < deadline && !buffer.includes(want)) {
+            const chunk = await Promise.race([reader.read(), new Promise<null>((r) => setTimeout(() => r(null), Math.max(0, deadline - Date.now())))]);
+            if (!chunk || chunk.done) break;
+            buffer += decoder.decode(chunk.value, { stream: true });
+          }
+          const hit = buffer.includes(want);
+          buffer = '';
+          return hit;
+        };
+      };
+      const guardianWait = await stream(guardian);
+      const otherWait = await stream(other);
+      await guardianWait(': connected', 3000);
+      await otherWait(': connected', 3000);
+      const body = 'あおちゃんとしゃぼん玉を追いかけていました。';
+      const first = await send('/api/contact/children/C001/facility', { method: 'PUT', body: JSON.stringify({ body }) }, staff);
+      expect(first.status).toBe(409);
+      const err = (await first.json()) as { kind: string; names: string[]; matches: { start: number; end: number }[] };
+      expect([err.kind, err.names, err.matches.map((m) => [m.start, m.end])]).toEqual(['other_child_names', ['伊藤 葵'], [[0, 5]]]);
+      const started = Date.now();
+      const sent = await send('/api/contact/children/C001/facility', { method: 'PUT', body: JSON.stringify({ body, acknowledged_names: err.names }) }, staff);
+      expect(sent.status).toBe(200);
+      expect(await guardianWait('data: {"type":"contact","child_id":"C001"}', 3000)).toBe(true);
+      const page = (await (await send('/api/contact/children/C001', {}, guardian)).json()) as { facility: { body: string } | null };
+      const elapsed = Date.now() - started;
+      expect(page.facility?.body).toBe(body);
+      expect(elapsed).toBeLessThan(3000);
+      console.log(`園からのひとことから保護者の画面の読み直しまで ${elapsed} ミリ秒`);
+      expect(await otherWait('"child_id":"C001"', 500)).toBe(false);
+      expect(JSON.stringify(page)).not.toMatch(/staff_name|recipient|高梨/);
+    } finally {
+      controller.abort();
+      for (const jar of [staff, guardian, other]) await send('/api/logout', { method: 'POST', body: '{}' }, jar);
+    }
+  });
+
+  /*
+   * AI 無しで動く（詳細設計書「テストでの差し替え」(8-11) の結合テスト、「キーが無い・無効・有効にしていないときの画面」(8-8)）。
+   * 本物の AI は呼ばない。CI はキーを置かずにサーバを立てる。キーを置いて立てたサーバでは、キーが無いときの確かめを飛ばす
+   */
+  it('API キーが無いサーバでは、園が AI を有効にしてもボタンを出さず（status が偽）、下書きは 403。キーそのものは返さない', async () => {
+    const admin = await loginAs('nohara@hoiku.example.jp', 'staff');
+    const staff = await loginAs('takanashi@hoiku.example.jp', 'staff');
+    type View = { read_at: string; ai_key_present: boolean; ai_key_rejected: boolean; settings: { setting_key: string; setting_value: string }[] };
+    try {
+      const forbidden = await send('/api/settings', {}, staff);
+      expect(forbidden.status).toBe(403);
+      const view = (await (await send('/api/settings', {}, admin)).json()) as View;
+      expect(view.settings.map((x) => x.setting_key)).toEqual(['ai.daily_limit', 'ai.enabled']);
+      expect(JSON.stringify(view)).not.toMatch(/sk-ant/);
+      if (view.ai_key_present) {
+        console.log('API キーを置いたサーバのため、キーが無いときの確かめを飛ばした');
+        return;
+      }
+      const saved = await send('/api/settings', { method: 'POST', body: JSON.stringify({ changes: { 'ai.enabled': '1' }, read_at: view.read_at }) }, admin);
+      expect(saved.status).toBe(200);
+      expect(await (await send('/api/ai/status?child_id=C001', {}, staff)).json()).toEqual({ available: false });
+      const { today } = await import('../src/api/util');
+      const draft = await send('/api/ai/drafts', { method: 'POST', body: JSON.stringify({ purpose: 'facility_note', child_id: 'C001', date: today() }) }, staff);
+      expect(draft.status).toBe(403);
+      expect(((await draft.json()) as { message: string }).message).toBe('AI の下書きは使えません。そのまま書いて送れます。');
+    } finally {
+      const v = (await (await send('/api/settings', {}, admin)).json()) as View;
+      await send('/api/settings', { method: 'POST', body: JSON.stringify({ changes: { 'ai.enabled': '0' }, read_at: v.read_at }) }, admin);
+      for (const jar of [admin, staff]) await send('/api/logout', { method: 'POST', body: '{}' }, jar);
     }
   });
 });

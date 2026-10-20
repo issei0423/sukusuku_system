@@ -14,8 +14,8 @@ ensureContactSchema は、既存の DB に連絡帳の表と列を足す（詳�
 新規作成の DB は schema.sql と seed.sql がすでに持っているため、どの処理も何もしない。
 定義は schema.sql と同じにする（詳細設計書「書き方の対応」(5-1)。既存の ensureHandouts と同じ決まり）。
 
-本版で行うのは (5-4) の表の 1〜4。5（m_phrase の初期の行）と 6（個人チャットの無い在籍園児にルームを作る）は、
-それを使う段（園からのひとこと・園児の登録時の個人チャット）で足す。
+本版で行うのは (5-4) の表の 1〜5。6（個人チャットの無い在籍園児にルームを作る）は、
+それを使う段（園児の登録時の個人チャット）で足す。
 */
 func ensureContactSchema(db *sql.DB) error {
 	// 1. 表と索引（contact_ddl.go。schema.sql の「5-4 連絡帳」の節と同じ定義）
@@ -73,7 +73,49 @@ func ensureContactSchema(db *sql.DB) error {
 			return fmt.Errorf("設定 %s を入れられません: %w", st[0], err)
 		}
 	}
+	// 5. m_phrase が空なら初期の行を入れる（詳細設計書「デモデータ」(5-5 (2))。seed.sql と同じ行）
+	var phrases int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM m_phrase`).Scan(&phrases); err != nil {
+		return fmt.Errorf("定型文を確かめられません: %w", err)
+	}
+	// 更新者には、いる職員の先頭を入れる（外部キー）。職員がいなければ入れない（園が設定画面で登録する）
+	var staffID string
+	if phrases == 0 && db.QueryRow(`SELECT staff_id FROM m_staff ORDER BY staff_id LIMIT 1`).Scan(&staffID) == nil {
+		order := map[string]int{}
+		for _, p := range defaultPhrases {
+			order[p[0]]++
+			if _, err := db.Exec(`INSERT INTO m_phrase (phrase_scope, body, display_order, updated_staff_id, created_at, updated_at)
+				VALUES (?, ?, ?, ?, '2026-04-01T09:00:00', '2026-04-01T09:00:00')`, p[0], p[1], order[p[0]], staffID); err != nil {
+				return fmt.Errorf("定型文を入れられません: %w", err)
+			}
+		}
+		log.Printf("定型文の初期の行を %d 件入れました", len(defaultPhrases))
+	}
 	return nil
+}
+
+/*
+defaultPhrases は、定型文の初期の行（使う場所・文）。seed.sql の m_phrase と mockDb.ts の phrases と同じ順・同じ文
+（db_contact_test.go の TestDefaultPhrasesMatchSeed が確かめる）。
+健康や発達の評価の言葉（「元気に」「順調に」など）を入れない（詳細設計書「デモデータ」(5-5 (2))、原則1）。
+4:日誌には保護者に向けた文を入れない（日誌は園内の記録。詳細設計書「デモデータ」(5-5) 第1.3版、
+ナレッジ/決定事項.md 2026-10-18「「日誌」は園内の保育日誌として連絡帳とは別に持ち、保護者へは連絡帳で届ける」）
+*/
+var defaultPhrases = [][2]string{
+	{"1", "今日も一日ありがとうございました。"},
+	{"1", "お迎えのときに、くわしくお話しします。"},
+	{"1", "おうちでも、今日のことを聞いてみてください。"},
+	{"1", "明日もよろしくお願いします。"},
+	{"2", "園庭で遊びました。"},
+	{"2", "絵本を読みました。"},
+	{"2", "手洗いを自分でしようとしていました。"},
+	{"3", "今日は園庭で遊びました。"},
+	{"3", "今日はお散歩に出かけました。"},
+	{"3", "今日は室内で製作をしました。"},
+	{"4", "よく食べ、おかわりをしていました。"},
+	{"4", "午睡は落ち着いて入眠できました。"},
+	{"4", "園庭で友だちと関わって遊ぶ姿が見られました。"},
+	{"4", "鼻水が出ていたため、こまめに拭き取りました。"},
 }
 
 // contactSettings は、連絡帳・通知・AI の設定の既定値（キー・値・説明）。seed.sql と mockDb.ts の settings と同じ
