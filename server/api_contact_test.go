@@ -440,11 +440,13 @@ func TestGuardianToday(t *testing.T) {
 		t.Fatalf("開いた直後: %+v", before.Today)
 	}
 	s := startFreshNap(t, a, h, teacher)
-	// 開いた時刻と同じ秒に記録すると新しいものと数えないため、開いた時刻を1分前にしておく
+	// 開いた時刻と同じ秒に記録すると新しいものと数えないため、開いた時刻を1分前にしておく。
+	// その1分にデモの記録（seed.sql の 10:15:00 のひとことなど）があると未読に入るので、ずらした後の件数から数える
 	a.db.Exec(`UPDATE t_contact_read SET read_at = strftime('%Y-%m-%dT%H:%M:%S', read_at, '-1 minute') WHERE account_id = ?`, accGuardian)
+	shifted := read().Today.UnreadContact
 	call(t, h, teacher, "POST", "/api/nap/session/"+itoa(s.NapSessionID)+"/sleeps", `{"child_id":"C001"}`)
 	after := read()
-	if after.Today.Nap == nil || after.Today.Nap.WokeAt != nil || after.Today.Nap.SleepTemperature != nil || after.Today.UnreadContact != 1 {
+	if after.Today.Nap == nil || after.Today.Nap.WokeAt != nil || after.Today.Nap.SleepTemperature != nil || after.Today.UnreadContact != shifted+1 {
 		t.Fatalf("ねたのあと: %+v", after.Today)
 	}
 }
