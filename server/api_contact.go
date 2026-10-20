@@ -82,6 +82,8 @@ type contactFacilityOut struct {
 	RecordedAt  string  `json:"recorded_at"`
 	CorrectedAt *string `json:"corrected_at"`
 	IsDeleted   bool    `json:"is_deleted"`
+	// 職員の応答だけ。訂正のときに読んだ版として送り返す（詳細設計書「訂正・取り消し」(4-7 (1))）
+	UpdatedAt string `json:"updated_at,omitempty"`
 }
 
 type napSleepOut struct {
@@ -96,6 +98,8 @@ type napSleepOut struct {
 	// その実施が終わったか（自動の解除を含む）。おきたが無いまま終わった組を「おひるね中」でなく「ねた」と出すため
 	// （詳細設計書「午睡の園児」(3-4) の「ねた（おきた時刻なし）」。図/インタフェース一覧の NapSleep に足した）
 	SessionEnded bool `json:"session_ended"`
+	// 職員の応答だけ。訂正のときに読んだ版として送り返す（詳細設計書「訂正・取り消し」(4-7)・「午睡」(4-6 (4))）
+	UpdatedAt string `json:"updated_at,omitempty"`
 }
 
 type napExclusionOut struct {
@@ -118,6 +122,11 @@ type contactPageOut struct {
 	ClassNotes   []contactClassOut   `json:"class_notes"`
 	Facility     *contactFacilityOut `json:"facility"`
 	CanWriteHome bool                `json:"can_write_home"`
+	// 職員の応答だけ。その園児の記録を書けるか（contactAccess の Write）。画面が記録・直す部品を出すかに使う。
+	// 前の日のページに記録を足せないこと・翌日以降は管理者だけが直せることは、画面とサーバがそれぞれ日付で決める
+	CanWrite *bool `json:"can_write,omitempty"`
+	// 職員の応答だけ。送る直前に示す宛先（詳細設計書「型」(4-1 (4)) の ContactRecipient）
+	Recipient *contactRecipient `json:"recipient,omitempty"`
 	// 保護者の応答だけ。そのページを前に開いた時刻（無ければ null）。画面が「新」の印に使う
 	LastReadAt any `json:"last_read_at,omitempty"`
 }
@@ -205,7 +214,7 @@ func (a *app) loadContactEvents(childID, date string, staff bool) ([]contactEven
 // loadNapSleeps は、その日の実施の、取り消していない「ねた・おきた」。t_nap_record・t_nap_exclusion は読まない（段3）
 func (a *app) loadNapSleeps(childID, date string, staff bool) ([]napSleepOut, error) {
 	rows, err := a.db.Query(`SELECT s.nap_sleep_id, s.child_id, s.slept_at, s.woke_at, s.sleep_temperature, s.nap_session_id,
-		s.corrected_at, s.is_deleted, n.ended_at IS NOT NULL
+		s.corrected_at, s.is_deleted, n.ended_at IS NOT NULL, s.updated_at
 		FROM t_nap_sleep s JOIN t_nap_session n ON n.nap_session_id = s.nap_session_id
 		WHERE s.child_id = ? AND n.session_date = ? AND s.is_deleted = 0
 		ORDER BY s.slept_at, s.nap_sleep_id`, childID, date)
@@ -216,11 +225,11 @@ func (a *app) loadNapSleeps(childID, date string, staff bool) ([]napSleepOut, er
 	out := []napSleepOut{}
 	for rows.Next() {
 		var v napSleepOut
-		if err := rows.Scan(&v.ID, &v.ChildID, &v.SleptAt, &v.WokeAt, &v.SleepTemperature, &v.NapSessionID, &v.CorrectedAt, &v.IsDeleted, &v.SessionEnded); err != nil {
+		if err := rows.Scan(&v.ID, &v.ChildID, &v.SleptAt, &v.WokeAt, &v.SleepTemperature, &v.NapSessionID, &v.CorrectedAt, &v.IsDeleted, &v.SessionEnded, &v.UpdatedAt); err != nil {
 			return nil, err
 		}
 		if !staff {
-			v.SleepTemperature, v.NapSessionID = nil, 0
+			v.SleepTemperature, v.NapSessionID, v.UpdatedAt = nil, 0, ""
 		}
 		out = append(out, v)
 	}
@@ -254,9 +263,9 @@ func (a *app) loadClassNotes(classID int64, date string, staff bool) ([]contactC
 func (a *app) loadFacility(childID, date string, staff bool) (*contactFacilityOut, error) {
 	var f contactFacilityOut
 	var staffID string
-	err := a.db.QueryRow(`SELECT contact_facility_id, child_id, contact_date, body, staff_id, recorded_at, corrected_at, is_deleted
+	err := a.db.QueryRow(`SELECT contact_facility_id, child_id, contact_date, body, staff_id, recorded_at, corrected_at, is_deleted, updated_at
 		FROM t_contact_facility WHERE child_id = ? AND contact_date = ? AND is_deleted = 0`, childID, date).
-		Scan(&f.ID, &f.ChildID, &f.ContactDate, &f.Body, &staffID, &f.RecordedAt, &f.CorrectedAt, &f.IsDeleted)
+		Scan(&f.ID, &f.ChildID, &f.ContactDate, &f.Body, &staffID, &f.RecordedAt, &f.CorrectedAt, &f.IsDeleted, &f.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -265,6 +274,8 @@ func (a *app) loadFacility(childID, date string, staff bool) (*contactFacilityOu
 	}
 	if staff {
 		f.StaffName = a.staffName(staffID)
+	} else {
+		f.UpdatedAt = ""
 	}
 	return &f, nil
 }
@@ -297,6 +308,11 @@ func (a *app) contactPage(u *SessionUser, childID, date string) (*contactPageOut
 	}
 	if p.Facility, err = a.loadFacility(childID, date, staff); err != nil {
 		return nil, err
+	}
+	if staff {
+		canWrite := a.contactAccess(u, childID).Write
+		p.CanWrite = &canWrite
+		p.Recipient = a.recipientOf(childID)
 	}
 	if !staff {
 		// 保護者に出さない種類は、開いた時点の設定で落とす（基本設計書「出す項目と選択肢の設定」(4-5)）
@@ -402,6 +418,7 @@ type contactClassRowOut struct {
 	Sleeps    []napSleepOut       `json:"sleeps"`
 	Exclusion *napExclusionOut    `json:"exclusion"`
 	Facility  *contactFacilityOut `json:"facility"`
+	Recipient *contactRecipient   `json:"recipient"`
 }
 
 // homeState は、家庭からの状態を列から読む（詳細設計書「家庭から」(3-1)）
@@ -477,6 +494,7 @@ func (a *app) handleContactClass(w http.ResponseWriter, r *http.Request) {
 		row.Sleeps, _ = a.loadNapSleeps(c.ChildID, date, true)
 		row.Exclusion = a.loadExclusion(c.ChildID, date)
 		row.Facility, _ = a.loadFacility(c.ChildID, date, true)
+		row.Recipient = a.recipientOf(c.ChildID)
 		out = append(out, row)
 		// 家庭の数は、有効な紐づけの保護者が1人以上いる在籍園児の数（決めたこと D-27）
 		var n int
@@ -564,6 +582,9 @@ type guardianTodayOut struct {
 	UnreadChat     int    `json:"unread_chat"`
 	PersonalRoomID *int64 `json:"personal_room_id"`
 	GrowthNew      bool   `json:"growth_new"`
+	// ログイン中の保護者自身の紐づけの「AI の下書きを使わない」。ほかの家族の値は入れない
+	// （詳細設計書「ダッシュボード」(4-8 (1))・「AI の下書きの利用」(4-15 (3))。保護者のメニューのダイアログの初期値）
+	AiOptOut bool `json:"ai_opt_out"`
 }
 
 // mealAmountText は食事の量の言葉。保護者には「食べない」を「食べていない」と出す（詳細設計書「食事の列」(2-2 (4))）
@@ -622,6 +643,7 @@ func (a *app) guardianToday(u *SessionUser, childID string) (*guardianTodayOut, 
 	a.db.QueryRow(`SELECT grace_ends_on FROM t_guardian_child WHERE guardian_id = ? AND child_id = ? AND link_status = '3'`,
 		u.guardian(), childID).Scan(&grace)
 	t.GraceEndsOn = nullStr(grace)
+	t.AiOptOut = a.guardianAiOptOut(u, childID)
 	if p.Home != nil {
 		t.Home = &struct {
 			SubmittedAt string  `json:"submitted_at"`

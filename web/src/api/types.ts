@@ -122,6 +122,8 @@ export interface Terms {
   document_type: TermsDocumentType;
   body: string;
   published_on: string;
+  /** 外部の AI へ送ることを書いた版か（詳細設計書「使える条件」(8-3) の④）。サーバの GET /api/terms は返さない（モックの判定に使う） */
+  covers_external_ai?: boolean;
 }
 
 /* ---- 園児・クラス（基本設計書 5-3） ---- */
@@ -167,6 +169,13 @@ export interface GuardianChild {
   ended_at: string | null;
   /** 猶予中（3）の終わりの日（詳細設計書「変える表」(5-3)） */
   grace_ends_on?: string | null;
+  /** 保護者が「AI の下書きを使わない」を選んだ（詳細設計書「使える条件」(8-3) の④。無ければ偽） */
+  ai_opt_out?: boolean;
+  /**
+   * 連絡順（緊急時にかける順。管理者が紐づけごとに決める。基本設計書「保護者と園児の紐づけ（t_guardian_child）」(5-3)）。
+   * 無ければ 1（server/schema.sql の既定）。お子さまの追加で、その園児のいまの最大＋1 を入れる（詳細設計書「お子さまの追加」(4-15 (1))）
+   */
+  contact_order?: number;
 }
 
 /** アレルギー（m_allergy）。1園児に複数登録できる（5-3） */
@@ -435,6 +444,19 @@ export interface ContactHomeRecord {
   updated_at: string;
 }
 
+/** 定型文（m_phrase）。連絡帳と日誌で共通（基本設計書「定型文（m_phrase）」(5-9)） */
+export interface PhraseRecord {
+  phrase_id: number;
+  /** 1:園から 2:活動のひとこと 3:クラスのようす 4:日誌 */
+  phrase_scope: '1' | '2' | '3' | '4';
+  body: string;
+  display_order: number;
+  is_deleted: boolean;
+  updated_staff_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
 /** 出来事（t_contact_event）。きょうのようすの1件・園児1人 */
 export interface ContactEventRecord {
   contact_event_id: number;
@@ -494,6 +516,29 @@ export interface ContactReadRecord {
   contact_date: string;
   account_id: number;
   read_at: string;
+}
+
+/**
+ * 連絡帳の写真（t_contact_photo）。取り消したものは配信しない（詳細設計書「写真」(3-3)）。
+ * モックは実体を持たず、file_path に URL.createObjectURL で作った URL を持つ（再読み込みで消える。詳細設計書 (4-4 (2))）
+ */
+export interface ContactPhotoRecord {
+  contact_photo_id: number;
+  class_id: number;
+  contact_date: string;
+  file_path: string;
+  file_type: string;
+  file_size: number;
+  staff_id: string;
+  is_deleted: boolean;
+  created_at: string;
+}
+
+/** 写っている子（t_contact_photo_child）。送った時点の同意を写す（なぜ送れたかを後から示す） */
+export interface ContactPhotoChildRecord {
+  contact_photo_id: number;
+  child_id: string;
+  consent_level: PhotoConsentLevel;
 }
 
 /** ねた・おきた（t_nap_sleep）。sleep_temperature だけは監査の層で保護者へ返さない（基本設計書「午睡チェック」(5-7)） */

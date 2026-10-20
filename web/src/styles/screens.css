@@ -283,8 +283,14 @@ button.guardian-record-link {
 .nap-exclude-button { min-height: 52px; min-width: 88px; }
 .nap-exclusion-choices { display: flex; gap: var(--sp-3); margin-top: var(--sp-3); }
 .nap-exclusion-choices button { flex: 1; min-height: 56px; }
+/*
+ * 対象外の子の行は、5分ごとの確認の欄を薄くする。入力と保存は残す（詳細設計書「午睡チェック画面」(2-4 (2))、決めたこと D-41）。
+ * 押せる部品の文字なので、薄くしても白地に 4.5:1（WCAG 1.4.3）、枠に 3:1（1.4.11）を残す。0.45 では文字が 2.9:1 だった。
+ * 対象外であることは、行の「きょうは対象外」の文字でも示している（薄さだけに頼らない。WCAG 1.4.1）。
+ * 【仮置き】薄さ 0.75（web/仮置き値.md）
+ */
 .nap-card.is-excluded .nap-inline-fields,
-.nap-card.is-excluded .nap-row-actions { opacity: .45; }
+.nap-card.is-excluded .nap-row-actions { opacity: .75; }
 
 /* 保護者：連絡帳画面（幅 360px で1列） */
 .contact-page { max-width: 720px; margin: 0 auto; display: grid; gap: var(--sp-4); }
@@ -292,7 +298,16 @@ button.guardian-record-link {
   position: sticky; top: 0; z-index: 2; display: grid; gap: var(--sp-2);
   padding: var(--sp-2) 0; background: var(--c-bg, var(--c-surface));
 }
+/*
+ * 上に止めた見出しと下に止めた「家庭からを送る」の帯の下に、フォーカスが隠れないよう、スクロールする枠の上下に余白を取る（GitHub Issue #212）。
+ * 高さは GuardianContactScreen・HomeForm が測って --contact-head-h・--contact-actions-h に入れる（src/stickyInset.ts）。
+ * フォーカスの枠（outline 4px・outline-offset 2px）も見えるよう、その幅を足す
+ */
+.guardian-main:has(.contact-page-head) { scroll-padding-top: calc(var(--contact-head-h, 0px) + 6px); }
+.guardian-main:has(.contact-form-actions) { scroll-padding-bottom: calc(var(--contact-actions-h, 0px) + 6px); }
 .contact-page-head h1 { font-size: 22px; margin: 0; }
+/* 「‹ ホームへ」も押せるものとして高さ 44px 以上にする（詳細設計書「全画面に共通する部品と決まり」(2-0) の「タッチの条件」(4)、GitHub Issue #215） */
+.contact-page-head > a { display: flex; align-items: center; min-height: 44px; }
 .contact-date { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .contact-date button { min-height: 44px; min-width: 44px; }
 .contact-section { display: grid; gap: var(--sp-3); }
@@ -304,11 +319,19 @@ button.guardian-record-link {
 .contact-home-lines .is-marked dt { color: var(--c-primary-ink); }
 .contact-confirmed { font-weight: 700; color: var(--dads-green-900); }
 .contact-call { font-weight: 700; }
+/*
+ * 入力欄の近くに常に出す固定の文（職員の体温の一覧の「記録すると保護者に数字が出ます。…」、保護者の連絡事項の「お薬・食事の除去のご依頼は…」）。
+ * 判定の色を付けず、太字だけで目に入るようにする【仮置き】（web/仮置き値.md）
+ */
+.contact-note { margin: 0; font-weight: 700; }
 .contact-wide-button { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 48px; }
 .contact-home-form { display: grid; gap: var(--sp-3); }
-.contact-choice-options { flex-wrap: wrap; }
-.contact-choice-options .nap-choice { flex: 1 1 calc(50% - var(--sp-1)); min-width: 7em; }
+/* 朝ごはん・きげん・お迎えの選択肢どうしの間は 8px（「タッチの条件」(2-0 (4))、GitHub Issue #215）。1行に2つ並べる */
+.contact-choice-options { flex-wrap: wrap; gap: var(--sp-2); }
+.contact-choice-options .nap-choice { flex: 1 1 calc(50% - var(--sp-2)); min-width: 7em; }
 .contact-field { display: grid; gap: var(--sp-1); }
+/* ボタンの並びを2段に重ねた欄（連絡帳（園児）画面の食事の区分と量）は、段の間を 8px にする（「タッチの条件」(2-0 (4))、GitHub Issue #215） */
+.contact-field:has(> .contact-picks + .contact-picks) { gap: var(--sp-2); }
 .contact-field > span:first-child { font-weight: 700; font-size: var(--fs-small); }
 .contact-field select, .contact-field input { min-height: 44px; }
 .contact-field textarea { display: block; width: 100%; min-height: 96px; }
@@ -349,18 +372,158 @@ button.guardian-record-link {
 .contact-inline-field > span { white-space: nowrap; }
 .contact-inline-field select { min-height: 44px; }
 .contact-class-error { margin: var(--sp-2) 0; }
-.contact-table-wrap { overflow-x: auto; }
+/*
+ * 表を横に送ったとき、フォーカスした部品が左に止めた園児名の列の下に隠れないよう、送る先を列の幅ぶんずらす（GitHub Issue #212）。
+ * 列の幅は ContactClassScreen が測って --contact-col-child-w に入れる。フォーカスの枠の幅（6px）を足す
+ */
+.contact-table-wrap { overflow-x: auto; scroll-padding-left: calc(var(--contact-col-child-w, 0px) + 6px); }
 .contact-class-table { min-width: 1080px; }
 .contact-class-table th, .contact-class-table td { vertical-align: top; padding: var(--sp-2) var(--sp-3); height: 56px; }
 .contact-class-table .contact-col-child {
   position: sticky; left: 0; z-index: 1; min-width: 160px; background: var(--c-surface); text-align: left;
 }
+/*
+ * 表の中のリンク（園児名・午睡・ひとこと・写真・園から）は、高さ 44px・幅 44px 以上の押す場所にする
+ * （「タッチの条件」(2-0 (4)) の 44×44px、GitHub Issue #215。直す前は高さ 20px、「―」は 14×20px だった）。
+ * 幅は文字に合わせる（セルいっぱいに広げると、左に止めた園児名の列のリンクへ移ったときに表の送り方が変わり、続く部品が列に半分隠れた）。
+ * 件数の列（右寄せ）は、44px の中でも右に寄せる
+ */
+.contact-class-table :is(th, td) > a { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; }
+.contact-class-table td.num > a { justify-content: flex-end; }
+/*
+ * ひとこと・写真が無いセルと、園からを送っていないセルの文字のボタン「書く」は、セルいっぱい・高さ 44px にする
+ * （GitHub Issue #215。直す前は「―」「未送信」の小さなリンクだった。2026-10-19 に決めた）。
+ * 上の「幅は文字に合わせる」は左に止めた園児名の列のためで、「書く」は列を止めていない右のほうの列にだけある。
+ * 幅の決まっていない列なので、折り返さない（「書」「く」の2行に割れていた）
+ */
+.contact-class-table td > a.contact-write { display: flex; width: 100%; justify-content: center; min-height: 44px; white-space: nowrap; }
 .contact-class-table .contact-col-home { width: 240px; min-width: 240px; }
 .contact-home-cell { display: grid; gap: var(--sp-1); }
 .contact-home-cell p { margin: 0; }
 .contact-home-cell .contact-home-lines > div { grid-template-columns: 5.5em 1fr; }
 .contact-confirm-button { min-height: 44px; }
 .dashboard-count.is-due { font-weight: 700; color: var(--c-alert); }
+
+/*
+ * 連絡帳：きょうのようすの記録（食事・排せつ・体温）と、直す・取り消す、連絡帳（園児）画面
+ * 典拠：詳細設計書「タッチの条件」(2-0 (4))（押せるものは 44×44px 以上、隣り合うボタンの間は 8px 以上）・
+ *      「連絡帳（クラス）画面」(2-2)・「連絡帳（園児）画面」(2-3)・「食事の列の画面の中の状態」(3-2)（仮は点線の枠）
+ * 選んだものは、テーマカラーの塗りに加えて枠を太く黒くする（色だけに頼らない）。体温に判定の色を付けない。
+ */
+.pre-wrap { white-space: pre-wrap; }
+.toast .btn-sm { white-space: nowrap; }
+.contact-picks { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+.contact-pick { min-height: 44px; min-width: 44px; padding: 0 var(--sp-2); font-weight: 700; }
+.contact-pick[aria-pressed="true"] {
+  background: var(--c-primary); border-color: var(--c-primary-ink); color: var(--c-primary-ink);
+  box-shadow: inset 0 0 0 2px var(--c-primary-ink);
+}
+.contact-pick.is-tentative { border: 2px dashed var(--c-primary-ink); background: var(--c-surface); box-shadow: none; }
+.contact-pick-note { flex-basis: 100%; font-size: var(--fs-small); }
+.contact-picks.is-meal .contact-pick, .contact-picks.is-toilet .contact-pick { flex: 1 1 calc(50% - var(--sp-2)); }
+.contact-class-table .contact-col-meal { width: 220px; min-width: 220px; }
+.contact-class-table .contact-col-toilet { width: 240px; min-width: 240px; }
+.contact-class-table .contact-col-temp { width: 120px; min-width: 120px; }
+/* 記録のボタンと、その下の「（時刻）を直す」・「＋体温」との間は 8px（「タッチの条件」(2-0 (4))、GitHub Issue #215。直す前は 4px） */
+.contact-last { min-height: 44px; margin-top: var(--sp-2); text-align: left; white-space: normal; }
+.contact-temp-add { margin-top: var(--sp-2); }
+.contact-meal-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3);
+  margin: var(--sp-2) 0 var(--sp-3); padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--c-border); border-radius: var(--radius); background: var(--c-surface);
+}
+.contact-meal-bar > button { min-height: 44px; }
+.contact-meal-tentative { margin: 0; font-weight: 700; flex: 1 1 320px; }
+.contact-meal-confirm {
+  flex-basis: 100%; display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center;
+  padding: var(--sp-2); background: var(--c-alert-soft); border-radius: var(--radius);
+}
+.contact-meal-confirm button { min-height: 44px; }
+.temperature-picker { display: grid; gap: var(--sp-3); }
+.temperature-grid {
+  display: grid; grid-template-columns: repeat(5, minmax(56px, 1fr)); gap: var(--sp-2);
+  max-height: 50vh; overflow-y: auto; padding: 2px;
+}
+.temperature-grid button { min-height: 48px; font-variant-numeric: tabular-nums; font-weight: 700; }
+.temperature-grid button.is-origin { outline: 2px dashed var(--c-border-strong); outline-offset: -4px; }
+.temperature-manual { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+.temperature-manual input { min-height: 44px; width: 8em; }
+.temperature-manual button { min-height: 44px; }
+.fix-dialog { display: grid; gap: var(--sp-3); }
+.contact-fix-button { min-height: 44px; flex: none; }
+.contact-hidden { margin-left: var(--sp-2); }
+.nap-fix-button { min-height: 52px; }
+.child-avatar {
+  display: inline-flex; align-items: center; justify-content: center; flex: none; width: 40px; height: 40px; border-radius: 50%;
+  background: var(--c-primary-soft); border: 2px solid var(--c-primary-deep); font-weight: 700; color: var(--c-primary-ink);
+}
+.child-avatar.is-lg { width: 56px; height: 56px; font-size: 24px; }
+.contact-temp-row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.contact-temp-value { font-size: 1.1rem; }
+/* 連絡帳（園児）画面：左に1日のページ（約 60%）、右に書く欄（約 40%）。縦向きでも並びを変えず幅だけを詰める */
+.contact-child-head { flex-wrap: wrap; gap: var(--sp-3); align-items: center; }
+.contact-back { min-height: 44px; display: inline-flex; align-items: center; }
+.contact-child-name { display: flex; align-items: center; gap: var(--sp-2); }
+.contact-child-name h1 { margin: 0; font-size: 24px; }
+.contact-child-body { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--sp-4); align-items: start; }
+.contact-child-page { display: grid; gap: var(--sp-4); min-width: 0; }
+.contact-child-record { display: grid; gap: var(--sp-3); position: sticky; top: var(--sp-2); }
+.contact-child-record h2 { font-size: 18px; margin: 0; }
+@media (max-width: 760px) {
+  .contact-child-body { grid-template-columns: 1fr; }
+  .contact-child-record { position: static; }
+}
+
+/*
+ * 段2を送る欄（宛先・他児の名前の注意・定型文）
+ * 典拠：図/画面詳細図「宛先の表示」(1-3 (1))（宛先は「送る」のすぐ上に大きく）・「他児の名前の注意」(1-3 (3))（当たった語を強調）
+ */
+.contact-composer { display: grid; gap: var(--sp-2); }
+.contact-composer textarea { display: block; width: 100%; min-height: 96px; }
+.contact-composer-tools { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.contact-composer-tools .contact-count { margin-left: auto; }
+.contact-composer-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.contact-composer-actions button { min-height: 48px; }
+.contact-composer-actions .btn-primary { flex: 1; }
+/* AI の下書き（components/AiDraftPanel.tsx。詳細設計書「画面」(8-9)）。押せる大きさは 44px 以上 */
+.ai-draft { display: grid; gap: var(--sp-2); }
+.ai-draft-buttons { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.ai-draft-memo { display: grid; gap: var(--sp-1); padding: var(--sp-2); border: 1px solid var(--c-border-weak); border-radius: 8px; background: var(--c-surface-sub); }
+.ai-draft-memo textarea { display: block; width: 100%; min-height: 72px; }
+.ai-draft-memo p { margin: 0; }
+.ai-draft-status { margin: 0; font-weight: 700; }
+.ai-draft-result { display: grid; gap: var(--sp-2); padding: var(--sp-2); border: 1px solid var(--c-border); border-radius: 8px; }
+.ai-draft-result > button { justify-self: start; min-height: var(--tap-min); }
+.ai-draft-candidates { display: grid; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
+.ai-draft-card { display: grid; gap: var(--sp-1); padding: var(--sp-2); border: 1px solid var(--c-border-weak); border-radius: 8px; background: var(--c-surface-sub); }
+.ai-draft-card p { margin: 0; overflow-wrap: anywhere; }
+.ai-draft-card button { justify-self: start; min-height: var(--tap-min); }
+.ai-draft-note { margin: 0; font-size: var(--fs-small); color: var(--c-text-sub); }
+.recipient-badge {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3); border: 2px solid var(--c-primary-deep); border-radius: var(--radius); background: var(--c-primary-soft);
+}
+.recipient-label { font-size: var(--fs-small); font-weight: 700; }
+.recipient-name { font-size: 20px; }
+.recipient-to { font-weight: 700; }
+.recipient-badge.is-unregistered .recipient-to { font-weight: 400; }
+.name-check-message { font-weight: 700; }
+.name-check-text { padding: var(--sp-2) var(--sp-3); border: 1px solid var(--c-border); border-radius: var(--radius); white-space: pre-wrap; overflow-wrap: anywhere; }
+.name-check-text mark { background: var(--c-primary); color: var(--c-primary-ink); font-weight: 700; outline: 2px solid var(--c-primary-ink); }
+.phrase-list { display: grid; gap: var(--sp-2); }
+.phrase-list button { min-height: 48px; text-align: left; justify-content: flex-start; white-space: normal; }
+
+/* 設定画面（screens/admin/settings。詳細設計書「設定画面（管理者）」(2-14)） */
+.settings-screen { max-width: 820px; }
+.settings-section { display: grid; gap: var(--sp-3); }
+.settings-field { display: grid; gap: var(--sp-1); margin: 0; padding: 0; border: 0; }
+.settings-field > label, .settings-field > legend { font-weight: 700; }
+.settings-field input[type="number"] { max-width: 12em; min-height: var(--tap-min); }
+.settings-field p { margin: 0; }
+.settings-choices { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.settings-choice { display: inline-flex; align-items: center; gap: var(--sp-1); min-height: var(--tap-min); min-width: var(--tap-min); padding: 0 var(--sp-3);
+  border: 1px solid var(--c-border); border-radius: 8px; cursor: pointer; }
+.settings-diff { margin: 0 0 var(--sp-2); padding-left: 1.2em; }
 
 /* 保護者：成長の記録画面（幅 360px で1列。詳細設計書「成長の記録画面（保護者）」(2-11 (3))）。
    判定に見える色（赤・緑など）を測った値と項目に付けない */

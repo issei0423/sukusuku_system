@@ -37,6 +37,8 @@ func TestEnsureContactSchemaUpgradesOldDB(t *testing.T) {
 		  operation_type TEXT NOT NULL CHECK (operation_type IN ('1','2','3','4','5')),
 		  target_table TEXT NOT NULL, target_id INTEGER, target_child_id TEXT, before_value TEXT, after_value TEXT)`,
 		`CREATE TABLE m_setting (setting_key TEXT PRIMARY KEY, setting_value TEXT NOT NULL, description TEXT, updated_staff_id TEXT NOT NULL, updated_at TEXT NOT NULL)`,
+		`CREATE TABLE m_staff (staff_id TEXT PRIMARY KEY, staff_name TEXT NOT NULL)`,
+		`INSERT INTO m_staff VALUES ('S001','野原 一誠')`,
 		`INSERT INTO t_guardian_child VALUES ('G001','C001','父','1','2025-06-10T10:00:00',NULL)`,
 		`INSERT INTO m_terms (terms_version, document_type, body, published_on) VALUES ('1.0','1','規約','2025-04-01')`,
 		`INSERT INTO t_operation_log (account_id, operated_at, function_type, operation_type, target_table) VALUES (3,'2026-09-01T09:00:00','1','1','t_diary')`,
@@ -74,6 +76,11 @@ func TestEnsureContactSchemaUpgradesOldDB(t *testing.T) {
 		if err := db.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&n); err != nil {
 			t.Errorf("%s が無い: %v", table, err)
 		}
+	}
+	// 定型文は空のときだけ初期の行を入れる（2回呼んでも増えない）
+	db.QueryRow(`SELECT COUNT(*) FROM m_phrase`).Scan(&n)
+	if n != len(defaultPhrases) {
+		t.Errorf("定型文 = %d, want %d", n, len(defaultPhrases))
 	}
 	// 設定は足りないものだけを入れる。園が変えた値は書き換えない。AI は使わないが既定
 	var mood, ai string
@@ -172,5 +179,47 @@ func TestTrimFutureDemoContacts(t *testing.T) {
 	}
 	if got := count(`SELECT COUNT(*) FROM t_nap_exclusion`); got != 0 {
 		t.Error("未来の対象外が残った")
+	}
+}
+
+// 定型文の初期の行は、新しい DB（seed.sql）と既存の DB の移し（defaultPhrases）で同じ（詳細設計書「既存の DB の移し方」(5-4) の 5）
+func TestDefaultPhrasesMatchSeed(t *testing.T) {
+	a, _ := newTestApp(t)
+	rows, err := a.db.Query(`SELECT phrase_scope, body FROM m_phrase WHERE is_deleted = 0 ORDER BY phrase_id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := [][2]string{}
+	for rows.Next() {
+		var p [2]string
+		rows.Scan(&p[0], &p[1])
+		got = append(got, p)
+	}
+	rows.Close()
+	if len(got) != len(defaultPhrases) {
+		t.Fatalf("seed.sql の定型文 %d 件、defaultPhrases %d 件", len(got), len(defaultPhrases))
+	}
+	for i := range got {
+		if got[i] != defaultPhrases[i] {
+			t.Errorf("%d 行目: seed %v, defaultPhrases %v", i+1, got[i], defaultPhrases[i])
+		}
+	}
+	// 空の m_phrase には、起動のたびの移しが同じ行を入れる。入っていれば何もしない
+	a.db.Exec(`DELETE FROM m_phrase`)
+	if err := ensureContactSchema(a.db); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureContactSchema(a.db); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	a.db.QueryRow(`SELECT COUNT(*) FROM m_phrase`).Scan(&n)
+	if n != len(defaultPhrases) {
+		t.Errorf("移したあとの定型文 = %d", n)
+	}
+	var nick string
+	a.db.QueryRow(`SELECT IFNULL(nickname, '') FROM m_child WHERE child_id = 'C001'`).Scan(&nick)
+	if nick != "たっくん" {
+		t.Errorf("デモの呼び名 = %q", nick)
 	}
 }

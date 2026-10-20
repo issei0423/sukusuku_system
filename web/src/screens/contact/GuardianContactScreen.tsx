@@ -18,6 +18,8 @@ import { onContactChild } from '../../live';
 import { addDays, formatHM, today } from '../../api/util';
 import { ErrorBox, Loading } from '../../components/ui';
 import { notify } from '../../components/feedback';
+import { useStickyInset } from '../../stickyInset';
+import { focusAfter, focusedNow } from '../../focusAfter';
 import { TEXT } from '../../messages';
 import HomeForm from './HomeForm';
 import TodayTimeline from './TodayTimeline';
@@ -37,6 +39,13 @@ export default function GuardianContactScreen() {
     { refreshMs: AUTO_REFRESH_MS, live: onContactChild(childId, classId) });
   const data = page.data;
   useEffect(() => { if (data) setClassId(data.class_id); }, [data]);
+  /*
+   * 上に止めた見出し（園児名と日付）の高さを、スクロールする枠（.guardian-main）へ --contact-head-h として渡す。
+   * 枠はその高さぶんを scroll-padding-top に取り、キーボードで上へ戻ったとき・送ったあとの「直す」へ移ったときに、
+   * フォーカスした部品が見出しの下に隠れないようにする（WCAG 2.4.11 フォーカスの非隠蔽、GitHub Issue #212）
+   */
+  const head = useStickyInset('.guardian-main', '--contact-head-h');
+  const fixButton = useRef<HTMLButtonElement>(null);
 
   /*
    * 「新」の印は、この画面を開く前に読んだ時刻と比べる。開いた直後に開いた時刻を残すため、
@@ -60,18 +69,25 @@ export default function GuardianContactScreen() {
   };
 
   const save = async (input: ContactHomeInput) => {
+    /*
+     * 「家庭からを送る」は送っている間に押せなくなり、送ったあとは書く欄ごと消えて、フォーカスが外れる。
+     * 送れたら送った内容の「直す」へ、送れなかったら（書く欄が残る）押したボタンへ移す（src/focusAfter.ts、WCAG 2.4.3、GitHub Issue #213）
+     */
+    const pressed = focusedNow();
     setBusy(true); setError(null);
     try {
       await api.saveHome(user!, childId, input);
       setEditing(false);
       notify(TEXT.homeSent);
       page.refresh();
+      focusAfter(pressed, () => fixButton.current);
     } catch (e) {
       // 入力は残し、近くと結果の表示に出す。版が古ければ読み直す（詳細設計書「押したときの処理の型」(2-0 (2))）
       const message = (e as Error).message;
       setError(message);
       notify(message);
       page.refresh();
+      focusAfter(pressed);
     } finally {
       setBusy(false);
     }
@@ -85,7 +101,7 @@ export default function GuardianContactScreen() {
 
   return (
     <div className="contact-page">
-      <div className="contact-page-head">
+      <div ref={head} className="contact-page-head">
         <Link to="/guardian">‹ ホームへ</Link>
         <h1>{data.child_name}の連絡帳</h1>
         <nav className="contact-date" aria-label="連絡帳の日付">
@@ -103,11 +119,15 @@ export default function GuardianContactScreen() {
             <dl className="contact-home-lines">
               {homeLines(h).map((l) => <div key={l.label}><dt>{l.label}</dt><dd>{l.text}</dd></div>)}
             </dl>
-            {/* 職員の名前は出さない（詳細設計書「確認の状態の表示」(2-6 (4))） */}
-            <p className={h.confirmed_at ? 'contact-confirmed' : 'contact-call'} role="status">
+            {/*
+              職員の名前は出さない（詳細設計書「確認の状態の表示」(2-6 (4))）。
+              園が確認して書き換わっても読み上げへ伝えない（相手の操作で読むのは3つだけ。詳細設計書 (2-0) の (6)、GitHub Issue #209）。
+              送った結果は notify() で読む
+            */}
+            <p className={h.confirmed_at ? 'contact-confirmed' : 'contact-call'}>
               {h.confirmed_at ? `園が確認しました（${formatHM(h.confirmed_at)}）` : TEXT.callIfUrgent}
             </p>
-            {data.can_write_home && <button type="button" className="contact-wide-button" onClick={() => { setError(null); setEditing(true); }}>直す</button>}
+            {data.can_write_home && <button ref={fixButton} type="button" className="contact-wide-button" onClick={() => { setError(null); setEditing(true); }}>直す</button>}
           </div>
         )}
         {!h && !editing && !data.can_write_home && <p className="empty">{TEXT.noHomeYet}</p>}
