@@ -456,4 +456,34 @@ run('Go サーバとの結合', () => {
       await http.api.logout();
     }
   });
+
+  /*
+   * モック（web/tests/mockServerRules.test.ts）と同じ操作を、サーバに対して確かめる（GitHub Issue #177 の 3・7）。
+   * 前回の発達チェック・当日の下書き・アレルギー一覧・異常時の記録・取消メッセージの一覧は、モックにだけ検査が無かった。
+   * 並び順は web/仮置き値.md「一覧の並び順」
+   */
+  it('職員・管理者だけの一覧は保護者と担当外の職員に返さず、並び順はモックと同じ（GitHub Issue #177）', async () => {
+    const todayJST = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
+
+    await switchTo('nohara.i@example.jp', 'pass1234', 'guardian');
+    await expect(http.api.previousCheck(dummy, 'C001', todayJST)).rejects.toThrow('職員のみが行えます');
+    await expect(http.api.draftFor(dummy, 'C001', todayJST)).rejects.toThrow('職員のみが行えます');
+    await expect(http.api.allAllergies(dummy)).rejects.toThrow('職員のみが行えます');
+    await expect(http.api.abnormals(dummy)).rejects.toThrow('職員のみが行えます');
+    await expect(http.api.retractedWithoutRecord(dummy)).rejects.toThrow('管理者のみ');
+
+    // 金城（ひまわり組）は、さくら組の園児の発達チェックを読めない。アレルギー一覧は全園児をよみ順で返す
+    await switchTo('kinjo@hoiku.example.jp', 'pass1234', 'staff');
+    await expect(http.api.previousCheck(dummy, 'C001', todayJST)).rejects.toThrow('権限がありません');
+    await expect(http.api.draftFor(dummy, 'C001', todayJST)).rejects.toThrow('権限がありません');
+    expect((await http.api.allAllergies(dummy)).map((r) => r.child.child_id)).toEqual(['C013', 'C001', 'C020', 'C004']);
+
+    // 招待コードは園児のよみ順にまとめ、同じ園児の中は発行の古い順（デモデータの 7 枚で見る）
+    await switchTo('nohara@hoiku.example.jp', 'pass1234', 'staff');
+    const codes = (await http.api.invitationCodes(dummy, {})).map((r) => r.invitation_code_id).filter((id) => id <= 7);
+    expect(codes).toEqual([3, 4, 7, 5, 1, 2, 6]);
+    const abnormals = await http.api.abnormals(dummy);
+    for (let i = 1; i < abnormals.length; i++) expect(abnormals[i - 1].found_at >= abnormals[i].found_at).toBe(true);
+    await http.api.logout();
+  });
 });

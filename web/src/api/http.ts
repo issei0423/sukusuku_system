@@ -277,7 +277,7 @@ const apiAuth = {
     get<{ medical_history_id: number; child_id: string; content: string }[]>(
       `/api/children/${childId}/medical-histories`),
   classOf: (_u: SessionUser, childId: string) => get<number | null>(`/api/children/${childId}/class`),
-  allAllergies: () =>
+  allAllergies: (_u: SessionUser) =>
     get<{ child: Child; className: string; allergies: Allergy[] }[]>('/api/children/allergies'),
 
   async saveChild(_u: SessionUser, input: ChildInput, mode: 'create' | 'edit'): Promise<Child> {
@@ -365,7 +365,7 @@ const apiChatNap = {
   updateGroupMembers: (_u: SessionUser, roomId: number, accountIds: number[]) =>
     post<void>(`/api/chat/groups/${roomId}/members`, { account_ids: accountIds }),
   misdeliveryRecords: (_u: SessionUser) => get<MisdeliveryRow[]>('/api/chat/misdelivery'),
-  retractedWithoutRecord: () => get<RetractedRow[]>('/api/chat/misdelivery/pending'),
+  retractedWithoutRecord: (_u: SessionUser) => get<RetractedRow[]>('/api/chat/misdelivery/pending'),
   addMisdeliveryRecord: (
     _u: SessionUser,
     input: { chat_message_id: number; occurred_at: string; was_read: boolean; response: string },
@@ -437,11 +437,12 @@ const apiGrowth = {
   list: (_u: SessionUser, classId: number) =>
     get<DevListRow[]>('/api/development/list' + qs({ class_id: classId })),
 
-  previousCheck: (childId: string, beforeDate: string) =>
+  // 第1引数はモック実装（mock.ts）が権限の判定に使う。サーバはセッションから利用者を引く（GitHub Issue #177 の 3）
+  previousCheck: (_u: SessionUser, childId: string, beforeDate: string) =>
     get<{ check: DevelopmentCheck; results: DevelopmentResultRecord[] } | null>(
       `/api/children/${childId}/development/previous` + qs({ before: beforeDate })),
 
-  draftFor: (childId: string, checkedOn: string) =>
+  draftFor: (_u: SessionUser, childId: string, checkedOn: string) =>
     get<DevDraftView | null>(
       `/api/children/${childId}/development/draft` + qs({ checked_on: checkedOn })),
 

@@ -32,8 +32,8 @@ export default function DevInputScreen() {
   const category = api.categoryFor(ageM);
 
   const items = useAsync(() => api.itemsFor(ageM), [ageM]);
-  const draft = useAsync(() => api.draftFor(childId!, checkedOn), [childId, checkedOn]);
-  const previous = useAsync(() => api.previousCheck(childId!, checkedOn), [childId, checkedOn]);
+  const draft = useAsync(() => api.draftFor(user!, childId!, checkedOn), [childId, checkedOn]);
+  const previous = useAsync(() => api.previousCheck(user!, childId!, checkedOn), [childId, checkedOn]);
 
   const [results, setResults] = useState<Record<number, DevelopmentResult | null>>({});
   const [note, setNote] = useState('');

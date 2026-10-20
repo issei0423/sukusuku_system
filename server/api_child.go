@@ -160,6 +160,8 @@ func (a *app) handleAllAllergies(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.requireStaff(w, r); !ok {
 		return
 	}
+	// 【仮置き】並びは園児のよみ順（web/仮置き値.md「一覧の並び順」）。モック（web/src/api/mock.ts の allAllergies）も
+	// 同じ並びにした（GitHub Issue #177 の 7）
 	rows, err := a.db.Query(`SELECT `+childColumns+`,
 		IFNULL((SELECT class_name FROM m_class c
 		         JOIN t_class_child cc ON cc.class_id = c.class_id
