@@ -36,7 +36,7 @@ export default function ChildInputScreen() {
   // 確認画面から戻ってきたときは、入力していた内容を引き継ぐ。戻るたびに打ち直させない（GitHub Issue #120）
   const restored = (useLocation().state as { form?: ChildInput } | null)?.form;
   const [form, setForm] = useState<ChildInput>(restored ?? {
-    child_id: '', child_name: '', child_name_kana: '', birth_date: '',
+    child_id: '', child_name: '', child_name_kana: '', nickname: '', birth_date: '',
     sex: '1', normal_temperature: null, photo_consent_level: '2',
     class_id: classesForUser[0]?.class_id ?? 1,
     allergies: [], medical_histories: [],
@@ -63,7 +63,7 @@ export default function ChildInputScreen() {
     const c = existing.data;
     if (!c || restored) return;
     setForm({
-      child_id: c.child_id, child_name: c.child_name, child_name_kana: c.child_name_kana,
+      child_id: c.child_id, child_name: c.child_name, child_name_kana: c.child_name_kana, nickname: c.nickname ?? '',
       birth_date: c.birth_date, sex: c.sex, normal_temperature: c.normal_temperature,
       photo_consent_level: c.photo_consent_level,
       class_id: existingClass.data ?? classesForUser[0]?.class_id ?? 1,
@@ -161,6 +161,11 @@ export default function ChildInputScreen() {
           <Field label="よみ" required>
             <input type="text" value={form.child_name_kana} maxLength={50} placeholder="ひらがなで入力"
               onChange={(e) => set('child_name_kana', e.target.value)} />
+          </Field>
+          <Field label="呼び名">
+            <input type="text" value={form.nickname ?? ''} maxLength={20}
+              onChange={(e) => set('nickname', e.target.value)} />
+            <div className="muted">連絡帳やメモでふだん呼んでいる名前（例：たっくん、ゆいちゃん）。ほかのお子さんの名前の注意と、AI へ送る前の置き換えに使います。</div>
           </Field>
           <Field label="生年月日" required>
             <input type="date" value={form.birth_date} max={today()}

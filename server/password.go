@@ -3,7 +3,9 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"log"
 	"strings"
+	"sync"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -78,6 +80,20 @@ func hashPassword(p string) (string, error) {
 	}
 	return string(h), nil
 }
+
+/*
+dummyPasswordHash は、存在しないログインIDでの照合に使うハッシュを返す。
+
+存在しないIDのときも実在のアカウントと同じだけ時間をかけ、応答の速さでIDの有無を見分けさせない
+（api_auth.go の handleLogin。GitHub Issue #236 の 7）。どのパスワードとも一致しないよう、乱数から作る。
+*/
+var dummyPasswordHash = sync.OnceValue(func() string {
+	h, err := hashPassword(randomToken(32))
+	if err != nil {
+		log.Fatalf("照合用のハッシュを作れません: %v", err)
+	}
+	return h
+})
 
 // checkPassword は、保存したハッシュとパスワードを照合する
 func checkPassword(hash, p string) bool {

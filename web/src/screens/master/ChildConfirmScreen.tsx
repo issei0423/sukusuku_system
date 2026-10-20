@@ -46,7 +46,7 @@ export default function ChildConfirmScreen() {
     setBusy(true); setError(null);
     try {
       await api.saveChild(user!, form, mode);
-      notify(mode === 'create' ? `${form.child_name} を登録しました` : `${form.child_name} の情報を更新しました`);
+      notify(mode === 'create' ? `登録しました。${form.child_name}さんの個人チャットも用意しました。` : `${form.child_name} の情報を更新しました`);
       navigate('/staff/children');
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
@@ -83,6 +83,7 @@ export default function ChildConfirmScreen() {
             <tr><th scope="col" style={{ width: 150 }}>園児ID</th><td>{form.child_id}</td></tr>
             <tr><th scope="col">氏名</th><td>{form.child_name}</td></tr>
             <tr><th scope="col">よみ</th><td>{form.child_name_kana || '―'}</td></tr>
+            <tr><th scope="col">呼び名</th><td>{form.nickname || '―'}</td></tr>
             <tr>
               <th scope="col">生年月日</th>
               <td>

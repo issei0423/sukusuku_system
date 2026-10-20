@@ -104,7 +104,7 @@ CREATE TABLE m_child (
   enrollment_status   TEXT    NOT NULL CHECK (enrollment_status IN ('1','2','3')),      -- 1:在籍 2:退園 3:卒園
   photo_consent_level TEXT    NOT NULL CHECK (photo_consent_level IN ('1','2','3')),    -- 1:園内記録 2:自児保護者 3:他保護者
   -- 詳細設計書「変える表」(5-3)。既存の DB には db_contact.go の ensureContactSchema が同じ定義で足す
-  nickname             TEXT,                                                              -- 呼び名
+  nickname             TEXT,                                                              -- 呼び名（任意・20文字。園児情報入力で入れ、他児の名前の注意に使う。NULL も '' も「無し」。読むときは IFNULL で '' にそろえる）
   face_photo_path      TEXT,
   withdrawn_on         TEXT,
   nap_interval_minutes INTEGER CHECK (nap_interval_minutes BETWEEN 1 AND 15),
@@ -260,6 +260,10 @@ CREATE TABLE t_chat_member (
   account_id   INTEGER NOT NULL REFERENCES m_account(account_id),
   joined_at    TEXT    NOT NULL,
   left_at      TEXT,
+  -- 【仮置き】最初に参加した日時。抜けていた行を今の時刻で参加し直す（決めたこと D-48）ときに、書き換える前の joined_at を残す。
+  -- 個人チャットの「保護者がまだ1人もいなかった間の投稿は見せる」境（api_chat.go の firstGuardianJoinedAt）が今へ動かないように。
+  -- 空なら joined_at が最初の参加。既存の DB には db.go の ensureChatMemberFirstJoined が足す（web/仮置き値.md）
+  first_joined_at TEXT,
   PRIMARY KEY (chat_room_id, account_id)
 );
 
@@ -433,6 +437,13 @@ CREATE TABLE t_development_check (
   -- 所見（チェック1件に対する自由記述）。園内限定であり、保護者へは共有しない
   -- （基本設計書「発達チェック・身体測定」(5-7)）
   note                    TEXT,
+  -- 保護者へのひとこと（所見とは別の欄。確定した時点で成長の記録に届く）と、最初に確定した日時（直しても動かさない）
+  -- （詳細設計書「変える表」(5-3)・「成長の記録に届くもの」(3-7)、決めたこと D-31）
+  guardian_message        TEXT,
+  finalized_at            TEXT,
+  -- 確定したあとで保護者へのひとことを別の文に書き換えた時刻。空なら書き換えていない。保護者の成長の記録に
+  -- 「訂正しました（日付）」を出す（詳細設計書「変える表」(5-3)、決めたこと D-51。PR #216 で決まった設計）
+  guardian_message_corrected_at TEXT,
   UNIQUE (child_id, checked_on)
 );
 

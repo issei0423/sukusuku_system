@@ -7,6 +7,7 @@ import { api } from '../src/api/client';
 import * as db from '../src/api/mockDb';
 import type { SessionUser } from '../src/api/types';
 import { today } from '../src/api/util';
+import { MSG } from '../src/messages';
 
 const admin: SessionUser = {
   account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
@@ -15,12 +16,13 @@ const admin: SessionUser = {
 };
 
 describe('招待コード', () => {
+  // 文言は基本設計書「メッセージ一覧」(4-12) の招待コードの4つ（tests/invitationMessages.test.ts）
   it('使用済みのコードは確認できない', async () => {
-    await expect(api.verifyInvitationCode('IJKL-5678-MNOP')).rejects.toThrow('すでに使われています');
+    await expect(api.verifyInvitationCode('IJKL-5678-MNOP')).rejects.toThrow(MSG.invitationUsed);
   });
 
   it('失効したコードは確認できない', async () => {
-    await expect(api.verifyInvitationCode('YZAB-3456-CDEF')).rejects.toThrow('失効');
+    await expect(api.verifyInvitationCode('YZAB-3456-CDEF')).rejects.toThrow(MSG.invitationRevoked);
   });
 
   it('未使用のコードは確認できる（園児名は返さない）', async () => {
@@ -43,10 +45,11 @@ describe('招待コード', () => {
     // 使用と同時に status を使用済みにする
     expect(db.invitationCodes.find((c) => c.code === code)?.status).toBe('2');
 
+    // 使ったコードでの2つ目の登録は、使用済みの文で断る（新規登録の送信も確認と同じ4つの文言。決めたこと D-52）
     await expect(api.signUpGuardian({
       code, email: 'test.parent2@example.jp', password: 'kinjo-pass-5678',
       guardian_name: '金城 花子', relationship: '母', terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION,
-    })).rejects.toThrow('招待コードが確認できません');
+    })).rejects.toThrow(MSG.invitationUsed);
   });
 
   it('一括発行は 園児数 × 枚数 を発行する', async () => {

@@ -68,7 +68,7 @@ func TestMarkReadSkipsMessagesBeforeJoined(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := send(t, h, nil, "POST", "/api/signup", `{"code":"`+issued.Code+`","email":"uezono.haha@example.jp",
-		"password":"uezono-5678","guardian_name":"上園 母","relationship":"母","terms_agreed":true,"terms_version":"1.0"}`)
+		"password":"uezono-5678","guardian_name":"上園 母","relationship":"母","terms_agreed":true,"terms_version":"1.1"}`)
 	expectStatus(t, rec, http.StatusOK)
 	haha := sessionCookieOf(t, rec)
 

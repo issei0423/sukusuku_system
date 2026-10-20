@@ -118,19 +118,11 @@ func TestGuardianCannotReadChildRecords(t *testing.T) {
 		call(t, h, teacher, "GET", path, "")
 	}
 
-	t.Run("身体測定は、保護者には連携済の記録だけを返す。職員には全件", func(t *testing.T) {
-		guardian := loginAs(a, 6, "guardian") // 野原 太郎（C001）。連携済 2 件・未連携 1 件
-		var got []PhysicalRecord
-		if err := json.Unmarshal(call(t, h, guardian, "GET", "/api/children/C001/physical", "").Body.Bytes(), &got); err != nil {
-			t.Fatal(err)
-		}
-		if len(got) != 2 {
-			t.Fatalf("保護者に %d 件返っています。want 2", len(got))
-		}
-		for _, x := range got {
-			if x.ShareStatus != "2" {
-				t.Fatalf("連携していない測定値が返っています: %+v", x)
-			}
+	t.Run("身体測定の経路は、保護者には 403（成長の記録で読む）。職員には全件", func(t *testing.T) {
+		guardian := loginAs(a, 6, "guardian") // 野原 太郎（C001）の保護者
+		body := expectStatus(t, request(t, h, guardian, "GET", "/api/children/C001/physical", ""), http.StatusForbidden)
+		if !strings.Contains(body, msgGrowthForbidden) {
+			t.Fatalf("保護者の応答: %s", body)
 		}
 		var all []PhysicalRecord
 		if err := json.Unmarshal(call(t, h, teacher, "GET", "/api/children/C001/physical", "").Body.Bytes(), &all); err != nil {

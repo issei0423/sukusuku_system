@@ -437,7 +437,7 @@ describe('設計の決定を反映したもの（基本設計書 第2.3版）', 
     expect(db.accounts.find((a) => a.account_id === u.account_id)!.is_temp_password).toBe(true);
   });
 
-  it('後から登録した保護者には、登録より前の個人チャットのやりとりを見せない', async () => {
+  it('後から登録した保護者には、最初の保護者が参加した後のやりとりを見せない', async () => {
     const before = (await api.messages(guardian, 6)).filter((m) => !m.is_deleted).length;
     expect(before).toBeGreaterThan(0);
 
@@ -456,7 +456,7 @@ describe('設計の決定を反映したもの（基本設計書 第2.3版）', 
     // 見せないはずのやりとりが、いつ回しても 1 件はある（3 日前のもの）
     expect(beforeJoined(await api.messages(guardian, 6)).length).toBeGreaterThan(0);
 
-    // 登録した直後は、以前のやりとりが見えず、未読にも数えない
+    // 最初の保護者の参加後で、自分の参加より前のやりとりは見えず、未読にも数えない
     const first = await api.messages(grandma, 6);
     expect(beforeJoined(first)).toEqual([]);
     expect((await api.rooms(grandma)).find((r) => r.room.chat_room_id === 6)!.unread)
