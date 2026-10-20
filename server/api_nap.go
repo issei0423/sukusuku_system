@@ -523,7 +523,7 @@ func incidentSituationResponse(body string) (situation, response string) {
 	sections := map[string][]string{}
 	current := ""
 	for _, line := range strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n") {
-		if t := strings.TrimSpace(line); isIncidentHeading(t) {
+		if t := strings.TrimSpace(line); isBracketHeading(t) {
 			current = t
 			continue
 		}
@@ -537,8 +537,9 @@ func incidentSituationResponse(body string) (situation, response string) {
 	return join("【状況】"), join("【とった対応】")
 }
 
-// isIncidentHeading は、行が「【〇〇】」だけの見出しかを返す
-func isIncidentHeading(t string) bool {
+// isBracketHeading は、行が「【〇〇】」だけの見出しかを返す。
+// api_diary_incident.go（#230）の isIncidentHeading は D-33 の3つの見出しだけを見るので、名前を分けた（#230 × #231）
+func isBracketHeading(t string) bool {
 	if !strings.HasPrefix(t, "【") || !strings.HasSuffix(t, "】") {
 		return false
 	}
