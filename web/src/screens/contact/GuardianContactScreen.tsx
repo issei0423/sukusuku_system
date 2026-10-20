@@ -119,8 +119,12 @@ export default function GuardianContactScreen() {
             <dl className="contact-home-lines">
               {homeLines(h).map((l) => <div key={l.label}><dt>{l.label}</dt><dd>{l.text}</dd></div>)}
             </dl>
-            {/* 職員の名前は出さない（詳細設計書「確認の状態の表示」(2-6 (4))） */}
-            <p className={h.confirmed_at ? 'contact-confirmed' : 'contact-call'} role="status">
+            {/*
+              職員の名前は出さない（詳細設計書「確認の状態の表示」(2-6 (4))）。
+              園が確認して書き換わっても読み上げへ伝えない（相手の操作で読むのは3つだけ。詳細設計書 (2-0) の (6)、GitHub Issue #209）。
+              送った結果は notify() で読む
+            */}
+            <p className={h.confirmed_at ? 'contact-confirmed' : 'contact-call'}>
               {h.confirmed_at ? `園が確認しました（${formatHM(h.confirmed_at)}）` : TEXT.callIfUrgent}
             </p>
             {data.can_write_home && <button ref={fixButton} type="button" className="contact-wide-button" onClick={() => { setError(null); setEditing(true); }}>直す</button>}

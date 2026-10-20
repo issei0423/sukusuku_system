@@ -133,7 +133,8 @@ export default function NapCheckScreen() {
 
   return (
     <div>
-      {s && <NapTimer startedAt={s.started_at} intervalMinutes={intervalMinutes} rows={rows} />}
+      {s && <NapTimer startedAt={s.started_at} intervalMinutes={intervalMinutes} rows={rows}
+        ready={!!state.data && !state.loading} />}
 
       <div className="page-head">
         <h1>午睡チェック</h1>
@@ -207,8 +208,10 @@ export default function NapCheckScreen() {
  * タイマー。次のチェックまでの残り時間を上部に固定して示す（画面詳細図 5-1）
  * 間隔は年齢別のマスタ値を用いる（基本設計書 5-8）
  */
-function NapTimer({ startedAt, intervalMinutes, rows }: {
+function NapTimer({ startedAt, intervalMinutes, rows, ready }: {
   startedAt: string; intervalMinutes: number; rows: { latest: { checked_at: string } | null }[];
+  /** 園児の行を読み込み終えたか。読み込む前の空の一覧を起点にして、開いたときに読まないようにする */
+  ready: boolean;
 }) {
   const [nowMs, setNowMs] = useState(Date.now());
   useEffect(() => {
@@ -235,6 +238,22 @@ function NapTimer({ startedAt, intervalMinutes, rows }: {
   // 確認の時刻を過ぎている園児の数。未記録の園児は開始時刻から数える
   const dueCount = rows.filter((r) =>
     jstMs(r.latest?.checked_at ?? startedAt) + intervalMinutes * 60_000 <= nowMs).length;
+  const overText = `チェックの時刻を過ぎています（未確認 ${dueCount} 名）`;
+
+  /*
+   * 読み上げへは、確認の時刻を過ぎた子が増えたときだけ、そのときの「未確認 n 名」をまとめて1回伝える
+   * （詳細設計書「全画面に共通する部品と決まり」(2-0) の (6) の③、GitHub Issue #209）。
+   * 記録して数が減ったとき・時刻の前に戻ったときは伝えない（数を読み続けると、記録している途中の読み上げが途切れる）。
+   * 見えている文は今までどおり毎秒の数を出す。開いたときは、そのときの数を起点にして読まない
+   */
+  const [said, setSaid] = useState<{ text: string; seq: number } | null>(null);
+  const lastDue = useRef<number | null>(null);
+  useEffect(() => {
+    if (!ready) return;
+    const before = lastDue.current;
+    lastDue.current = dueCount;
+    if (before !== null && dueCount > before) setSaid((s) => ({ text: overText, seq: (s?.seq ?? 0) + 1 }));
+  }, [dueCount, ready, overText]);
 
   // 1時間を超えるときは時も出す。分だけで表すと「66:57」のように読み取りにくくなるため
   const mmss = (sec: number) => {
@@ -250,9 +269,8 @@ function NapTimer({ startedAt, intervalMinutes, rows }: {
   return (
     <div className={`nap-timer${over ? ' over' : ''}`}>
       <div>
-        <div className="muted" role="status" aria-live="polite">
-          {over ? `チェックの時刻を過ぎています（未確認 ${dueCount} 名）` : '次のチェックまで'}
-        </div>
+        <div className="muted">{over ? overText : '次のチェックまで'}</div>
+        <div className="sr-only" role="status">{said && <span key={said.seq}>{said.text}</span>}</div>
         <div className="big">{over ? `+${mmss(remain)}` : mmss(remain)}</div>
       </div>
       <div>
@@ -335,9 +353,17 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved }: {
       aria-label={`${name}の午睡チェック`}>
       <div className="nap-row-head">
         <strong className="name">{name}</strong>
-        <span className={`nap-row-status${!excluded && (!row.latest || due) ? ' due' : ''}`} role="status">
+        {/*
+          行の状態の文（「確認済み」「チェック時刻を過ぎています」など）は読み上げへ伝えない。時刻を過ぎると全員の行が同時に変わり、
+          続けて何度も読むため（詳細設計書 (2-0) の (6) の③、GitHub Issue #209）。過ぎたことはタイマーの欄で読む。
+          自分で記録した結果の「保存しました」だけを、行の見えない role="status" の欄で読む。結果の表示（notify()）は出さない：
+          画面の下に重なり、続けて記録する次の行の体位・顔色・体温のボタンを隠すため（iPad 横 1180×820・縦 820×1180・744×1133・1440×900 で確かめた）。
+          欄は前から置いておき（入れたときに読まれるように）、「保存しました」を出す間だけ中身を入れる。見えている文は二重に読まれないよう、その間は読み上げから外す
+        */}
+        <span className={`nap-row-status${!excluded && (!row.latest || due) ? ' due' : ''}`} aria-hidden={justSaved || undefined}>
           {justSaved ? '保存しました' : excluded ? 'きょうは対象外' : !row.latest ? '未記録' : due ? 'チェック時刻を過ぎています' : '確認済み'}
         </span>
+        <span className="sr-only" role="status">{justSaved ? '保存しました' : ''}</span>
         <span className="last">{row.latest ? `前回 ${formatHM(row.latest.checked_at)} ${BODY_POSITION[row.latest.body_position]}` : '前回の記録なし'}</span>
         {latest && <LatestObservation record={latest} />}
         <span className="last">平熱 {formatTemperature(row.child.normal_temperature)}℃</span>

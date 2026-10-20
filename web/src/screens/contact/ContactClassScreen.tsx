@@ -37,6 +37,8 @@ import FixDialog, { cancelAction, toiletChoices } from './FixDialog';
 import type { FixTarget } from './FixDialog';
 import PhotoSendDialog from './PhotoSendDialog';
 import ClassPhotoStrip from './ClassPhotoStrip';
+import HomeArrivalStatus from './HomeArrival';
+import { useHomeArrival } from './useHomeArrival';
 
 const HOME_STATE_TEXT: Record<HomeState, string> = { none: 'まだ', unconfirmed: '未確認', revised: '更新', confirmed: '確認済み' };
 /** sort=home の並び：「更新」「未確認」「まだ」「確認済み」（詳細設計書 (2-2 (2))） */
@@ -147,6 +149,10 @@ export default function ContactClassScreen() {
     [user?.account_id, classId, date], { refreshMs: AUTO_REFRESH_MS, live: (e) => onContactClass(classId, childIds.current)(e) });
   const data = view.data;
   useEffect(() => { childIds.current = data?.rows.map((r) => r.child.child_id) ?? []; }, [data]);
+  // 「家庭から」の届いた園児が増えたときだけ、読み上げへ伝える（詳細設計書 (2-0) の (6) の②、GitHub Issue #209）。
+  // 範囲は応答のクラスと日付で決める（クラス・日付を替えて読み込んでいる間は、前の応答のまま）
+  const arrival = useHomeArrival(data ? `${data.class_id}:${data.contact_date}` : null,
+    data ? data.rows.filter((r) => r.home).map((r) => ({ id: r.child.child_id, name: r.child.child_name })) : null);
   /*
    * 左に止めた園児名の列の幅を、表を横に送る枠（.contact-table-wrap）へ --contact-col-child-w として渡す。
    * 枠はその幅ぶんを scroll-padding-left に取り、キーボードで表の中を移ったとき（iPad の横向き 1024px など、表が横に送られる幅）に、
@@ -275,6 +281,7 @@ export default function ContactClassScreen() {
 
   return (
     <div className="contact-class">
+      <HomeArrivalStatus said={arrival} />
       <div className="page-head contact-class-head">
         <h1>連絡帳</h1>
         <label className="contact-inline-field">
