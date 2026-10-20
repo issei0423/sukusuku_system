@@ -708,7 +708,9 @@ func (a *app) handleChatMembers(w http.ResponseWriter, r *http.Request) {
 	// 参加していないチャンネルのメンバーは返さない。ほかの家庭の保護者の氏名や続柄が読めてしまう
 	// （GitHub Issue #95）。外れた人にも、いまの参加者は返さない（外れたあとのことは見せない。#161）。
 	// 管理者は、グループ編成のために全チャンネルを参照できる
-	if !u.isAdmin() && !a.isParticipant(u, roomID) {
+	// 要件定義書「チャットツール」(4-3)：メンバー一覧は管理者・一般のみ。
+	// 保護者が参加中でも、ほかの家庭の氏名を返さない。
+	if !u.isStaff() || (!u.isAdmin() && !a.isParticipant(u, roomID)) {
 		writeForbidden(w, "このチャンネルを参照する権限がありません")
 		return
 	}

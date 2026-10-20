@@ -78,6 +78,10 @@
 }
 .sidenav hr { margin: var(--sp-3) var(--sp-4); border: 0; border-top: 1px solid var(--c-border); }
 .sidenav .group-label { padding: var(--sp-1) var(--sp-4); font-size: var(--fs-small); font-weight: 700; color: var(--c-text-sub); }
+.sidenav-hint { display: none; }
+@media (max-height: 900px) {
+  .sidenav-hint { display: block; position: sticky; bottom: 0; padding: 6px 10px; background: var(--c-surface); border-top: 1px solid var(--c-border); color: var(--c-text-sub); font-size: var(--fs-small); text-align: center; }
+}
 
 .main { flex: 1; min-width: 0; overflow-y: auto; padding: var(--main-pad); background: var(--c-bg); }
 

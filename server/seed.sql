@@ -417,4 +417,4 @@ INSERT INTO m_setting (setting_key, setting_value, description, updated_staff_id
 
 -- 編集ロック。デモで「他の職員が編集中」の状態を見せるため、起動時に現在時刻へ更新する
 INSERT INTO t_diary_lock (diary_id, lock_token, locked_staff_id, locked_at, last_active_at) VALUES
- (2,'lock-demo-0001','S004','2026-09-01T09:20:00','2026-09-01T09:35:00');
+ (3,'lock-demo-0001','S004','2026-09-01T09:20:00','2026-09-01T09:35:00');

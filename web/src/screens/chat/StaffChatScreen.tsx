@@ -261,7 +261,11 @@ export default function StaffChatScreen() {
             {current?.canPost && current.guardianCount > 0 && (
               <Alert soft>この投稿は、保護者 {current.guardianCount} 名にも届きます。</Alert>
             )}
-            {current?.canPost && current.guardianCount === 0 && (
+            {/* 【仮置き】停止中の保護者は再開後に過去の投稿を読める。web/仮置き値.md */}
+            {current?.canPost && current.guardianCount === 0 && current.room.room_type === '4' && (
+              <Alert soft>現在、この家庭で読める保護者はいません。停止中の保護者が再開すると、この投稿を読めます。</Alert>
+            )}
+            {current?.canPost && current.guardianCount === 0 && current.room.room_type !== '4' && (
               <div className="muted">このチャンネルは職員だけが読みます。</div>
             )}
             {current?.canPost ? (

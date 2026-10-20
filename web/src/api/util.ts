@@ -277,7 +277,7 @@ export function isRealDate(v: string): boolean {
  * （GitHub Issue #160。直す前の CSV 一括登録で平熱に inf が入ったデータベースがありうる）
  */
 export function formatTemperature(t: number | null | undefined): string {
-  return t != null && Number.isFinite(t) ? String(t) : '―';
+  return t != null && Number.isFinite(t) ? t.toFixed(1) : '―';
 }
 
 /** 'YYYY-MM' を '2026年10月' の形に整える */

@@ -341,6 +341,7 @@ CREATE TABLE t_nap_abnormal (
   nap_session_id  INTEGER NOT NULL REFERENCES t_nap_session(nap_session_id),
   child_id        TEXT    NOT NULL REFERENCES m_child(child_id),
   found_at        TEXT    NOT NULL,
+  recorded_at     TEXT,
   situation       TEXT    NOT NULL,
   response        TEXT    NOT NULL,
   staff_id        TEXT    NOT NULL REFERENCES m_staff(staff_id),

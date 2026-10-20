@@ -101,7 +101,7 @@ run('Go サーバとの結合', () => {
   });
 
   it('編集ロックを保持している日誌は、保持者の氏名が返る', async () => {
-    const r = await http.api.acquireLock(dummy, 2);
+    const r = await http.api.acquireLock(dummy, 3);
     expect(r).toHaveProperty('heldBy', '宮城 蓮');
   });
 

@@ -6,7 +6,32 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestAbnormalKeepsDiscoveryAndRecordingTimesSeparately(t *testing.T) {
+	a, h := newTestApp(t)
+	staff := loginAs(a, 3, "staff")
+	day, _ := time.Parse("2006-01-02", today())
+	tomorrow := day.AddDate(0, 0, 1).Format("2006-01-02")
+	// テストを走らせる時間帯によらず、実施が自動終了しないよう翌日の実施にする。
+	if _, err := a.db.Exec(`UPDATE t_nap_session SET session_date = ?, started_at = ? WHERE nap_session_id = 1`, tomorrow, tomorrow+"T13:00:00"); err != nil {
+		t.Fatal(err)
+	}
+	instant, _ := time.Parse("2006-01-02T15:04:05", now())
+	found := instant.Add(-5 * time.Minute).Format("2006-01-02T15:04:05")
+	r := chatReq(h, staff, "POST", "/api/nap/session/1/abnormals", `{"child_id":"C001","found_at":"`+found+`","situation":"呼吸を確認できず","response":"再確認した"}`)
+	if r.Code != http.StatusOK {
+		t.Fatalf("異常時の記録を保存できません: %d %s", r.Code, r.Body.String())
+	}
+	var got struct{ FoundAt, RecordedAt string }
+	if err := a.db.QueryRow(`SELECT found_at, recorded_at FROM t_nap_abnormal ORDER BY nap_abnormal_id DESC LIMIT 1`).Scan(&got.FoundAt, &got.RecordedAt); err != nil {
+		t.Fatal(err)
+	}
+	if got.FoundAt != found || got.RecordedAt <= found {
+		t.Fatalf("発見時刻と保存時刻が別になっていません: %+v", got)
+	}
+}
 
 /*
  * 午睡チェックの終了と異常時の記録（GitHub Issue #158）

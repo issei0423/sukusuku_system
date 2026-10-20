@@ -274,7 +274,7 @@ export const diaries: Diary[] = [
  * デモで常にロック中の状態を見せるため、取得時刻は読み込み時の現在時刻にしている
  */
 export const diaryLocks: DiaryLock[] = [
-  { diary_id: 2, lock_token: 'lock-demo-0001', locked_staff_id: 'S004', locked_at: now(), last_active_at: now() },
+  { diary_id: 3, lock_token: 'lock-demo-0001', locked_staff_id: 'S004', locked_at: now(), last_active_at: now() },
 ];
 
 /** 添付（t_diary_attachment）。1〜3枚（基本設計書 5-4） */
@@ -714,6 +714,8 @@ function shiftRows(rows: Record<string, unknown>[], days: number): void {
     // 記録の配列だけを対象にする。マスタ（children・classes など）は含めない
     const recordSets: Record<string, unknown>[][] = [
       invitationCodes as unknown as Record<string, unknown>[],
+      guardianChildren as unknown as Record<string, unknown>[],
+      termsAgreements as unknown as Record<string, unknown>[],
       diaries as unknown as Record<string, unknown>[],
       diaryLocks as unknown as Record<string, unknown>[],
       chatMembers as unknown as Record<string, unknown>[],

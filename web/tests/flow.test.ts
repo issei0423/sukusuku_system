@@ -505,8 +505,7 @@ describe('設計の決定を反映したもの（基本設計書 第2.3版）', 
     // 保護者の野原 一誠は、職員（園長）の野原 一誠と同じ氏名なので、ロールで見分ける
     expect(forStaff.find((m) => m.role === '3' && m.name === '野原 一誠')!.relationship).toBe('父');
     expect(forStaff.find((m) => m.name === '野原 和子')!.relationship).toBe('祖母');
-    const forGuardian = await api.members(6, guardian);
-    expect(forGuardian.every((m) => m.relationship === null)).toBe(true);
+    await expect(api.members(6, guardian)).rejects.toThrow('権限がありません');
   });
 
   it('園の電話番号は設定マスタから引ける', () => {

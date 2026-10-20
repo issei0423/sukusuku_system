@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -72,6 +73,17 @@ func lockRowCount(t *testing.T, a *app, id int) int {
 	var n int
 	a.db.QueryRow(`SELECT COUNT(*) FROM t_diary_lock WHERE diary_id = ?`, id).Scan(&n)
 	return n
+}
+
+func TestApprovedDiaryCannotBeLocked(t *testing.T) {
+	a, h := newTestApp(t)
+	staff := loginAs(a, 3, "staff")
+	for _, id := range []int{2, 5} {
+		r := chatReq(h, staff, "POST", "/api/diaries/"+strconv.Itoa(id)+"/lock", "")
+		if r.Code == http.StatusOK || lockRowCount(t, a, id) != 0 {
+			t.Fatalf("申請中・承認済みの日誌にロックを取得できました: diary=%d status=%d %s", id, r.Code, r.Body.String())
+		}
+	}
 }
 
 func TestForceUnlockedEditorCannotSave(t *testing.T) {

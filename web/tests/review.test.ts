@@ -46,8 +46,8 @@ describe('チャットのメンバー一覧（GitHub Issue #95）', () => {
     await expect(api.members(6, otherTeacher)).rejects.toThrow('このチャンネルを参照する権限がありません');
   });
 
-  it('参加している人と管理者は取得できる', async () => {
-    expect((await api.members(6, guardian)).length).toBeGreaterThan(0);
+  it('参加している職員と管理者は取得できる。保護者には返さない', async () => {
+    await expect(api.members(6, guardian)).rejects.toThrow('権限がありません');
     expect((await api.members(6, teacher)).length).toBeGreaterThan(0);
     expect((await api.members(6, admin)).length).toBeGreaterThan(0);
   });
