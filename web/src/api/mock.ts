@@ -2693,8 +2693,12 @@ const adminApi3 = {
     } else if (kind === 'nap_record') {
       log(user.account_id, '3', '5', 't_nap_record', null, null, null, `午睡記録をCSV出力（${period}）`);
     } else if (kind === 'allergy_list') {
-      // 要配慮個人情報の一覧。出力できるのは管理者のみ（画面詳細図「アレルギー一覧画面」(7-4)）
-      if (user.role !== '1') return fail('アレルギー一覧の印刷は管理者のみが行えます');
+      /*
+       * 要配慮個人情報の一覧。印刷できるのは管理者・一般（保護者は上で断る）。担任でない職員も、受け入れや
+       * 合同保育で子を見る場面で配膳に使うため（基本設計書「権限と利用可能機能」(6-1)「アレルギー一覧の印刷」、
+       * 画面詳細図「アレルギー一覧画面」(7-4) の項目2。設計の直しは PR #216 の直-16・直-24）。
+       * サーバ側は server/api_audit.go の handleRecordExport
+       */
       log(user.account_id, '6', '5', 'm_allergy', null, null, null, `アレルギー一覧を印刷（${count} 名）`);
     } else {
       if (user.role !== '1') return fail('招待コードの出力は管理者のみが行えます');

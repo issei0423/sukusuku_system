@@ -67,13 +67,29 @@ describe('発達チェックの予定日', () => {
 });
 
 describe('出力の記録', () => {
-  it('アレルギー一覧の印刷は管理者に限り、操作ログに残る', async () => {
-    await expect(api.recordExport(teacher, 'allergy_list', '', '', 4)).rejects.toThrow('管理者のみ');
+  /*
+   * アレルギー一覧の印刷は管理者・一般ができ、保護者はできない。誰が印刷しても操作ログに残る
+   * （基本設計書「権限と利用可能機能」(6-1)、画面詳細図「アレルギー一覧画面」(7-4) の項目2。
+   * 設計の直し PR #216 の直-16・直-24 で「管理者のみ」から改めた。サーバ側は server/api_audit_test.go）
+   */
+  it('アレルギー一覧の印刷は管理者・一般ができ、保護者はできない。操作ログに残る', async () => {
+    for (const staff of [teacher, admin]) {
+      const before = db.operationLogs.length;
+      await api.recordExport(staff, 'allergy_list', '', '', 4);
+      expect(db.operationLogs.length).toBe(before + 1);
+      expect(db.operationLogs[0].account_id).toBe(staff.account_id);
+      expect(db.operationLogs[0].after_value).toBe('アレルギー一覧を印刷（4 名）');
+      expect(db.operationLogs[0].operation_type).toBe('5');
+    }
+
+    const guardian: SessionUser = {
+      account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
+      staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
+      is_temp_password: false, terms_agreed: true,
+    };
     const before = db.operationLogs.length;
-    await api.recordExport(admin, 'allergy_list', '', '', 4);
-    expect(db.operationLogs.length).toBe(before + 1);
-    expect(db.operationLogs[0].after_value).toBe('アレルギー一覧を印刷（4 名）');
-    expect(db.operationLogs[0].operation_type).toBe('5');
+    await expect(api.recordExport(guardian, 'allergy_list', '', '', 4)).rejects.toThrow('職員のみ');
+    expect(db.operationLogs.length).toBe(before);
   });
 
   it('招待コードの配布用の出力も、操作ログに残る', async () => {
