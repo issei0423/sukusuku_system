@@ -21,11 +21,12 @@ import type {
   ChatRoom, ChatMember, ChatMessage, ChatRead, ChatReaction, TermsAgreement, MisdeliveryRecord, Handout,
   NapSession, NapRecord, NapAbnormal,
   ContactHomeRecord, ContactEventRecord, ContactClassRecord, ContactFacilityRecord, ContactReadRecord,
-  NapSleepRecord, NapExclusionRecord,
+  NapSleepRecord, NapExclusionRecord, PhraseRecord,
   DevelopmentCategory, DevelopmentItem, DevelopmentFrequency, ShareSetting,
   DevelopmentSchedule, DevelopmentCheck, DevelopmentResultRecord,
   PhysicalRecord, GrowthStandard, OperationLog, Setting,
 } from './types';
+import type { ContactPhotoRecord, ContactPhotoChildRecord } from './types';
 
 /** 演習用の固定基準日。デモデータの日付はこの日を軸に組み立てている */
 export const DEMO_TODAY = '2026-09-01';
@@ -66,22 +67,25 @@ export const guardians: Guardian[] = [
  */
 const T0 = '2024-04-01T09:00:00';
 export const accounts: Account[] = [
-  { account_id: 1, email: 'nohara@hoiku.example.jp', password_hash: 'pass1234', role: '1', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
-  { account_id: 2, email: 'uezono@hoiku.example.jp',    password_hash: 'pass1234', role: '1', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
-  { account_id: 3, email: 'takanashi@hoiku.example.jp',    password_hash: 'pass1234', role: '2', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
+  { account_id: 1, email: 'nohara@hoiku.example.jp', password_hash: 'pass1234', role: '1', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
+  { account_id: 2, email: 'uezono@hoiku.example.jp',    password_hash: 'pass1234', role: '1', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
+  { account_id: 3, email: 'takanashi@hoiku.example.jp',    password_hash: 'pass1234', role: '2', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
   // 一時パスワードでログインした状態を再現する。真の間は他機能を使わせない（基本設計書 5-2）
-  { account_id: 4, email: 'miyagi@hoiku.example.jp',      password_hash: 'temp0901', role: '2', status: '1', is_temp_password: true,  temp_password_expires_at: '2026-09-03T09:00:00', failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
-  { account_id: 5, email: 'kinjo@hoiku.example.jp',    password_hash: 'pass1234', role: '2', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
-  { account_id: 6, email: 'nohara.i@example.jp',        password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: '2025-06-10T10:00:00', created_at: '2025-06-10T10:00:00', updated_at: '2025-06-10T10:00:00' },
+  { account_id: 4, email: 'miyagi@hoiku.example.jp',      password_hash: 'temp0901', role: '2', status: '1', is_temp_password: true,  temp_password_expires_at: '2026-09-03T09:00:00', failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
+  { account_id: 5, email: 'kinjo@hoiku.example.jp',    password_hash: 'pass1234', role: '2', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
+  { account_id: 6, email: 'nohara.i@example.jp',        password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: '2025-06-10T10:00:00', created_at: '2025-06-10T10:00:00', updated_at: '2025-06-10T10:00:00' },
   // 規約の改定後、まだ再同意していない状態を再現する。次回ログインで同意画面を出す（基本設計書 3-4）
   { account_id: 7, email: 'uezono.k@example.jp',        password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '0.9', terms_agreed_at: '2025-04-05T10:00:00', created_at: '2025-04-05T10:00:00', updated_at: '2025-04-05T10:00:00' },
-  { account_id: 8, email: 'takanashi.r@example.jp',          password_hash: 'pass1234', role: '3', status: '2', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: '2025-06-20T10:00:00', created_at: '2025-06-20T10:00:00', updated_at: '2026-08-20T10:00:00' },
-  { account_id: 9, email: 'miyagi.r@example.jp', password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: '2025-07-01T10:00:00', created_at: '2025-07-01T10:00:00', updated_at: '2025-07-01T10:00:00' },
-  { account_id: 10, email: 'kinjo.s@example.jp', password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: '2025-07-05T10:00:00', created_at: '2025-07-05T10:00:00', updated_at: '2025-07-05T10:00:00' },
+  { account_id: 8, email: 'takanashi.r@example.jp',          password_hash: 'pass1234', role: '3', status: '2', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: '2025-06-20T10:00:00', created_at: '2025-06-20T10:00:00', updated_at: '2026-08-20T10:00:00' },
+  { account_id: 9, email: 'miyagi.r@example.jp', password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: '2025-07-01T10:00:00', created_at: '2025-07-01T10:00:00', updated_at: '2025-07-01T10:00:00' },
+  { account_id: 10, email: 'kinjo.s@example.jp', password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: '2025-07-05T10:00:00', created_at: '2025-07-05T10:00:00', updated_at: '2025-07-05T10:00:00' },
 ];
 
-/** 最新版の利用規約。これと異なる terms_version のアカウントには再同意を求める */
-export const CURRENT_TERMS_VERSION = '1.0';
+/**
+ * 最新版の利用規約。これと異なる terms_version のアカウントには再同意を求める。
+ * 第1.1版は、文章の下書きに外部の AI を使うことの条を足した版（詳細設計書「デモデータ」(5-5 (2))。server/seed.sql と同じ）
+ */
+export const CURRENT_TERMS_VERSION = '1.1';
 
 /* ============ 園児（m_child） ============ */
 function child(
@@ -186,7 +190,7 @@ export const invitationCodes: InvitationCode[] = [
  */
 export const termsDocs: Terms[] = [
   {
-    terms_id: 1, terms_version: '1.0', document_type: '1', published_on: '2026-09-01',
+    terms_id: 1, terms_version: '1.0', document_type: '1', published_on: '2026-09-01', covers_external_ai: false,
     body: [
       '第1条（本規約について）',
       '本規約は、当園が提供する保育支援システム（以下「本システム」）の利用条件を定めるものです。本システムを利用する職員および保護者の双方に適用します。',
@@ -210,8 +214,52 @@ export const termsDocs: Terms[] = [
     ].join('\n'),
   },
   {
-    terms_id: 2, terms_version: '0.9', document_type: '1', published_on: '2025-04-01',
+    terms_id: 2, terms_version: '0.9', document_type: '1', published_on: '2025-04-01', covers_external_ai: false,
     body: '（旧版）第1条（本規約について）本規約は、当園が提供する保育支援システムの利用条件を定めるものです。',
+  },
+  {
+    terms_id: 3, terms_version: '1.1', document_type: '1', published_on: '2026-09-01', covers_external_ai: true,
+    body: [
+      '第1条（本規約について）',
+      '本規約は、当園が提供する保育支援システム（以下「本システム」）の利用条件を定めるものです。本システムを利用する職員および保護者の双方に適用します。',
+      '',
+      '第2条（アカウント）',
+      '職員のアカウントは、当園が発行します。保護者のアカウントは、当園が発行する招待コードによって登録します。招待コードは1枚につき1アカウントの登録にのみ使用できます。',
+      'アカウントの情報は第三者に共有しないでください。',
+      '',
+      '第3条（本システムが行わないこと）',
+      '本システムは、お子さまの発達の遅速の判定、医療的な診断、療育の要否の判断を一切行いません。',
+      '記録および可視化は、保育士が気づくための支援であり、評価と判断の責任は当園にあります。',
+      '',
+      '第4条（緊急時の連絡）',
+      '緊急を要する連絡は、本システムのチャットではなく電話で行います。',
+      'チャットの通知は、端末の設定や通信の状況により届かない場合があります。',
+      '',
+      '第5条（記録の取り扱い）',
+      '保護者への記録の共有範囲は、当園が項目ごとに設定します。',
+      '',
+      '第6条（文章の下書きに外部の AI を使うこと）',
+      '当園は、連絡帳の文の下書きを作るために、外部の AI（Anthropic 社の Claude）を使うことがあります。当園が使うと決めたときだけ動きます。',
+      '送るのは、その日のできごと（時刻・食事の量・活動のようす）と、担任のメモと、年齢（何歳）だけです。お子さまの名前は置き換えて送り、名前・体温・写真・「家庭から」に書いた内容は送りません。',
+      '下書きは担任が読んで直してから送ります。AI が保護者へ自動で送ることはありません。',
+      '保護者は、お子さまごとに AI の下書きを使わないことを選べます。選んでも、連絡帳の届き方は変わりません。',
+      '',
+      '※本文は演習用の草案です。',
+    ].join('\n'),
+  },
+  {
+    terms_id: 4, terms_version: '1.1', document_type: '2', published_on: '2026-09-01', covers_external_ai: true,
+    body: [
+      '第1条（外部の AI へ送る情報）',
+      '当園は、連絡帳の文の下書きを作るために、記録の一部を外部の AI（Anthropic 社の Claude）へ送ることがあります。送るのは、その日のできごと（時刻・食事の量・活動のようす）、担任のメモ、年齢（何歳）だけです。',
+      '氏名・よみ・呼び名・生年月日・体温・アレルギー・既往歴・排せつの内容・写真・「家庭から」の内容・チャットの本文・発達の記録は送りません。名前は「〇〇ちゃん」「おともだち」に置き換えて送ります。',
+      '送った文と返った文は、本システムに残しません。',
+      '',
+      '第2条（使わないことを選ぶ）',
+      '保護者は、お子さまごとに AI の下書きを使わないことを選べます。紐づく保護者の1人でも選べば、そのお子さまには使いません。',
+      '',
+      '※本文は演習用の草案です。',
+    ].join('\n'),
   },
 ];
 
@@ -423,7 +471,8 @@ function contactEvent(id: number, childId: string, at: string, staffId: string, 
 const lunch = (amount: '1' | '2' | '3' | '4') => ({ event_type: '1' as const, meal_kind: '1' as const, meal_amount: amount });
 export const contactEvents: ContactEventRecord[] = [
   contactEvent(1, 'C001', '2026-09-01T09:40:00', 'S004', { event_type: '2', toilet_label: 'おしっこ' }),
-  contactEvent(2, 'C001', '2026-09-01T10:15:00', 'S003', { event_type: '4', body: '園庭の砂場で、スコップの型抜きを何度もくり返していました。' }),
+  // 「成長の記録に残す」を付けてある（詳細設計書「デモデータ」(5-5) の成長の記録の行。server/seed.sql と同じ）
+  contactEvent(2, 'C001', '2026-09-01T10:15:00', 'S003', { event_type: '4', body: '園庭の砂場で、スコップの型抜きを何度もくり返していました。', keep_in_growth: true }),
   contactEvent(3, 'C001', '2026-09-01T11:40:00', 'S003', lunch('1')),
   contactEvent(4, 'C002', '2026-09-01T11:40:00', 'S003', lunch('1')),
   contactEvent(5, 'C004', '2026-09-01T11:40:00', 'S003', lunch('2')),
@@ -452,6 +501,13 @@ export const contactReads: ContactReadRecord[] = [
   { child_id: 'C001', contact_date: '2026-08-31', account_id: 6, read_at: '2026-08-31T20:10:00' },
 ];
 
+/**
+ * 連絡帳の写真（t_contact_photo）と写っている子（t_contact_photo_child）。デモデータには入れない
+ * （詳細設計書「デモデータ」(5-5 (1))、決めたこと D-22。実在の子の写真を使わない。server/seed.sql にも入れていない）
+ */
+export const contactPhotos: ContactPhotoRecord[] = [];
+export const contactPhotoChildren: ContactPhotoChildRecord[] = [];
+
 function sleep(id: number, sessionId: number, childId: string, at: string, staffId: string, woke?: { at: string; staff: string }): NapSleepRecord {
   return {
     nap_sleep_id: id, nap_session_id: sessionId, child_id: childId, slept_at: at, woke_at: woke?.at ?? null, sleep_temperature: null,
@@ -474,6 +530,44 @@ export const napSleeps: NapSleepRecord[] = [
 export const napExclusions: NapExclusionRecord[] = [
   { nap_exclusion_id: 1, nap_session_id: 1, child_id: 'C003', reason: '1', staff_id: 'S003', is_deleted: false, created_at: '2026-09-01T13:01:00' },
 ];
+
+/* ============ 園からのひとことと他児の名前（詳細設計書「デモデータ」(5-5 (2))。server/seed.sql と同じ） ============ */
+
+/**
+ * 呼び名（m_child.nickname）。他児の名前の注意を見せるため。
+ * モックでは画面へ返す園児の形（Child）を変えないよう、列を別に持つ（サーバは園児の応答に呼び名を入れていない）
+ */
+export const childNicknames: { child_id: string; nickname: string }[] = [
+  { child_id: 'C001', nickname: 'たっくん' },
+  { child_id: 'C006', nickname: 'あおちゃん' },
+  { child_id: 'C008', nickname: 'ゆいちゃん' },
+];
+
+/**
+ * 定型文（m_phrase）。server/seed.sql と server/db_contact.go の defaultPhrases と同じ順・同じ文。
+ * 健康や発達の評価の言葉（「元気に」「順調に」など）を入れない（原則1）。4:日誌は server/api_diary.go の fixedPhrases の5つから、
+ * 保護者に向けた「ご家庭でも様子を見ていただけますと幸いです。」を除いた4つ（日誌は園内の記録。詳細設計書「デモデータ」(5-5) 第1.3版）
+ */
+export const phrases: PhraseRecord[] = ([
+  ['1', '今日も一日ありがとうございました。'],
+  ['1', 'お迎えのときに、くわしくお話しします。'],
+  ['1', 'おうちでも、今日のことを聞いてみてください。'],
+  ['1', '明日もよろしくお願いします。'],
+  ['2', '園庭で遊びました。'],
+  ['2', '絵本を読みました。'],
+  ['2', '手洗いを自分でしようとしていました。'],
+  ['3', '今日は園庭で遊びました。'],
+  ['3', '今日はお散歩に出かけました。'],
+  ['3', '今日は室内で製作をしました。'],
+  ['4', 'よく食べ、おかわりをしていました。'],
+  ['4', '午睡は落ち着いて入眠できました。'],
+  ['4', '園庭で友だちと関わって遊ぶ姿が見られました。'],
+  ['4', '鼻水が出ていたため、こまめに拭き取りました。'],
+] as const).map(([scope, body], i, all) => ({
+  phrase_id: i + 1, phrase_scope: scope, body,
+  display_order: all.slice(0, i + 1).filter(([x]) => x === scope).length,
+  is_deleted: false, updated_staff_id: 'S001', created_at: '2026-04-01T09:00:00', updated_at: '2026-04-01T09:00:00',
+}));
 
 /* ============ 発達チェック（基本設計書 5-7） ============
  * 発達過程区分はマスタ化して指針改定に追従する。区分の粒度は
@@ -592,9 +686,14 @@ export const developmentSchedules: DevelopmentSchedule[] = [
  * サーバ側（server/seed.sql）も同じ
  */
 export const developmentChecks: DevelopmentCheck[] = [
-  { development_check_id: 1, child_id: 'C001', development_schedule_id: null, checked_on: '2026-05-15', status: '2', staff_id: 'S003', share_status: '2' },
-  { development_check_id: 2, child_id: 'C002', development_schedule_id: null, checked_on: '2026-05-10', status: '2', staff_id: 'S003', share_status: '2' },
-  { development_check_id: 3, child_id: 'C004', development_schedule_id: null, checked_on: '2026-06-05', status: '2', staff_id: 'S004', share_status: '1' },
+  // 成長の記録（詳細設計書「デモデータ」(5-5)）：野原 太郎の確定に、確定した日時と保護者へのひとこと（評価の言葉を入れない）。
+  // ほかの確定は「いまのデータの移し方」と同じく実施日の 00:00 を確定した日時とした（server/seed.sql と同じ）
+  { development_check_id: 1, child_id: 'C001', development_schedule_id: null, checked_on: '2026-05-15', status: '2', staff_id: 'S003', share_status: '2',
+    guardian_message: 'ボールを転がすと、追いかけて両手でつかもうとしていました。', finalized_at: '2026-05-15T16:00:00' },
+  { development_check_id: 2, child_id: 'C002', development_schedule_id: null, checked_on: '2026-05-10', status: '2', staff_id: 'S003', share_status: '2',
+    finalized_at: '2026-05-10T00:00:00' },
+  { development_check_id: 3, child_id: 'C004', development_schedule_id: null, checked_on: '2026-06-05', status: '2', staff_id: 'S004', share_status: '1',
+    finalized_at: '2026-06-05T00:00:00' },
 ];
 
 /**

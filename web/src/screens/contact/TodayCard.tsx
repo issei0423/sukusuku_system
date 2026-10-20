@@ -10,6 +10,7 @@ import type { GuardianToday } from '../../api/shapes';
 import { formatHM, formatMD } from '../../api/util';
 import { TEXT } from '../../messages';
 import { dayLabel, latestSleepText } from './contactText';
+import ContactPhotoImage from './ContactPhotoImage';
 
 export default function TodayCard({ today: t, newCount }: {
   today: GuardianToday;
@@ -51,7 +52,8 @@ export default function TodayCard({ today: t, newCount }: {
         {nothing && <p className="empty">{TEXT.noRecordToday}</p>}
         {nap && (
           <>
-            <p className="contact-nap" role="status">{nap}</p>
+            {/* 保護者ホームの「きょう」は、園の記録で書き換わっても読み上げへ伝えない（詳細設計書 (2-0) の (6)「読まないもの」、GitHub Issue #209） */}
+            <p className="contact-nap">{nap}</p>
             <p className="muted contact-nap-note">{TEXT.napAlwaysNote}</p>
           </>
         )}
@@ -60,6 +62,12 @@ export default function TodayCard({ today: t, newCount }: {
             {t.latest.map((item) => (
               <li key={`${item.kind}-${item.recorded_at}-${item.text}`}>
                 <time dateTime={item.recorded_at}>{formatHM(item.recorded_at)}</time> {item.kind === 'class_note' ? `クラスのようす：${item.text}` : item.text}
+                {/* 写真は 56px の小さな絵（詳細設計書「保護者ホーム」(2-5 (2))） */}
+                {item.contact_photo_id !== null && (
+                  <span className="contact-latest-photo">
+                    <ContactPhotoImage photoId={item.contact_photo_id} label={`${formatHM(item.recorded_at)} の写真`} size="thumb" />
+                  </span>
+                )}
               </li>
             ))}
           </ul>
@@ -76,6 +84,11 @@ export default function TodayCard({ today: t, newCount }: {
 
       <div className="contact-today-links">
         <Link className="guardian-panel-link" to={contactPath}><span>連絡帳を開く</span><span aria-hidden="true">→</span></Link>
+        {/* 成長の記録（詳細設計書「保護者ホーム（「きょう」）」(2-5) の入口。きょう届いたものがあれば添える） */}
+        <Link className="guardian-panel-link" to={`/guardian/growth/${encodeURIComponent(t.child_id)}`}>
+          <span>成長の記録{t.growth_new && <span className="guardian-unread growth-new">新しい記録があります</span>}</span>
+          <span aria-hidden="true">→</span>
+        </Link>
         {t.personal_room_id !== null && (
           <Link className="guardian-panel-link" to="/guardian/chat">
             <span>{t.child_name}の園とのやりとり{t.unread_chat > 0 ? `（未読 ${t.unread_chat}）` : ''}</span><span aria-hidden="true">→</span>

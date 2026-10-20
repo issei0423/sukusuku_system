@@ -78,6 +78,9 @@ func openDB(path string) (*sql.DB, error) {
 	if err := ensureContactSchema(db); err != nil {
 		return nil, err
 	}
+	if err := ensureGrowthSchema(db); err != nil {
+		return nil, err
+	}
 	// 日誌を園内の記録の形へ移す（詳細設計書「既存の DB の移し方」(5-4) の 7。db_diary.go）
 	if err := ensureInternalDiary(db); err != nil {
 		return nil, fmt.Errorf("日誌を園内の記録の形へ移せません: %w", err)
@@ -163,11 +166,11 @@ func ensurePersonalRoomChild(db *sql.DB) error {
 /*
 ensureHandouts は配布物（t_handout）まわりを用意する。
 
-- 表が無ければ作る
-- チャットのメッセージの種別に「4:配布物の掲載」を足す。SQLite は CHECK 制約をあとから
-  変えられないため、古い定義のときは表を作り直して中身を移す
-- 1件も無ければデモデータを入れる。対象の月は起動した日から決める（今月と先月）。
-  固定の月で持つと、日が経ったときに「今月の献立表」が今月のものでなくなるため
+  - 表が無ければ作る
+  - チャットのメッセージの種別に「4:配布物の掲載」を足す。SQLite は CHECK 制約をあとから
+    変えられないため、古い定義のときは表を作り直して中身を移す
+  - 1件も無ければデモデータを入れる。対象の月は起動した日から決める（今月と先月）。
+    固定の月で持つと、日が経ったときに「今月の献立表」が今月のものでなくなるため
 
 以前に作られたデータベースでも、ファイルを消さずに使い続けられるようにするため、起動のたびに確かめる。
 */

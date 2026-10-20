@@ -108,10 +108,8 @@ describe('園児情報・既往歴・アレルギーは保護者に見せない�
     await expect(api.allergiesOf(otherTeacher, 'C005')).rejects.toThrow('権限がありません');
   });
 
-  it('身体測定は、保護者には連携済の記録だけを返す。職員には全件', async () => {
-    const mine = await api.recordsOf(guardian, 'C001');
-    expect(mine).toHaveLength(2);
-    expect(mine.every((r) => r.share_status === '2')).toBe(true);
+  it('身体測定の経路は、保護者には断る（成長の記録で読む）。職員には全件', async () => {
+    await expect(api.recordsOf(guardian, 'C001')).rejects.toThrow('この園児の成長の記録は開けません。');
     expect(await api.recordsOf(teacher, 'C001')).toHaveLength(3);
   });
 });

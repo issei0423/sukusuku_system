@@ -71,7 +71,7 @@ export default function StaffDashboard() {
         {/*
           届ける（詳細設計書「職員ダッシュボード（「届ける」の項目）」(2-1)）。デモの道に要る項目を先頭に置く。
           一般は自クラス、管理者は全クラスの数。0 のときも項目を消さず「ありません」と出す。
-          園からのひとことを送っていない園児の数は、園からを送る画面を作る段で足す
+          園からのひとことを送っていない園児は、今日の午睡で「きょうは対象外（欠席）」にした子を数えない
         */}
         <section className="card col-12 dashboard-deliver" aria-labelledby="dashboard-deliver-title">
           <h2 id="dashboard-deliver-title">届ける</h2>
@@ -89,6 +89,11 @@ export default function StaffDashboard() {
                   )}
                 </td>
                 <td className="nowrap"><Link className="btn btn-sm" to="/staff/contact?sort=home">開く</Link></td>
+              </tr>
+              <tr>
+                <td>園からのひとことを送っていない園児</td>
+                <td className="nowrap">{data.facilityUnsent === 0 ? 'ありません' : `${data.facilityUnsent} 名`}</td>
+                <td className="nowrap"><Link className="btn btn-sm" to="/staff/contact?sort=facility">開く</Link></td>
               </tr>
               <tr>
                 <td>午睡中の園児</td>
