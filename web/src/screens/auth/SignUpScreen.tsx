@@ -35,7 +35,12 @@ export default function SignUpScreen() {
   const [agreedVersion, setAgreedVersion] = useState<string | null>(null);
   const agreed = agreedVersion !== null;
   const [name, setName] = useState('');
-  const [relationship, setRelationship] = useState('母');
+  /*
+   * 続柄の初期値は未選択（空）。職員がお迎えの人を確かめる手がかりになるため、初期値で埋めない
+   * （画面詳細図「新規登録画面（保護者）」(2-3) 項目11「初期値：未選択」。第2.3版、PR #216）。
+   * 「母」を初期値にしておくと、父や祖母が選び忘れたまま登録しても通ってしまう
+   */
+  const [relationship, setRelationship] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
@@ -60,6 +65,8 @@ export default function SignUpScreen() {
     // 送る前に画面でも確かめる。検査の担保はサーバ側が行う（基本設計書「入力項目の制約値」(4-9)）
     if (!name.trim()) { setError('保護者の氏名を入力してください'); return; }
     if ([...name.trim()].length > NAME_MAX) { setError(`保護者の氏名は${NAME_MAX}文字以内で入力してください`); return; }
+    // 続柄は必須（画面詳細図 2-3 項目11「選ばないと登録できない」）。文言はサーバ（server/api_auth.go）と同じ
+    if (!relationship) { setError('続柄は 母・父・祖母・祖父・その他 から選んでください'); return; }
     const emailError = validateEmail(email);
     if (emailError) { setError(emailError); return; }
     // 8〜128文字（文字数で数える）。よく使われるパスワードは使えない（基本設計書 4-9・6-3。GitHub Issue #159）
@@ -151,6 +158,7 @@ export default function SignUpScreen() {
           <div className="muted" aria-live="polite">残り {NAME_MAX - [...name].length} 文字</div>
           <Field label="続柄" required>
             <select value={relationship} onChange={(e) => setRelationship(e.target.value)}>
+              <option value="">選んでください</option>
               <option>母</option><option>父</option><option>祖母</option><option>祖父</option><option>その他</option>
             </select>
           </Field>
