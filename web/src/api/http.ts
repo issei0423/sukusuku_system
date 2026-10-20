@@ -26,6 +26,7 @@ import type {
   ContactEvent, ContactEventInput, RecordEventsResult, ContactEventCorrection, NapSleepCorrection, CancelResult, Readers,
   ContactFacility, FacilityCorrection, Phrase, NameMatch, AiTarget, AiDraftInput, AiDraftResult, SettingsView,
 } from './shapes';
+import type { InvitationPreview, AddChildResult } from './shapes';
 import {
   ProcedureRequiredError, isProcedureKind, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
 } from './procedure';
@@ -308,7 +309,11 @@ const apiAuth = {
 
   currentTerms: () => get<{ terms_version: string; body: string; published_on: string }>('/api/terms'),
 
-  verifyInvitationCode: (code: string) => post<{ ok: true }>('/api/invitation/verify', { code }),
+  /**
+   * 招待コードの確認。ログインしている保護者（お子さまの追加）には園児名も返る（詳細設計書「お子さまの追加」(4-15 (1))）。
+   * だれが呼んだかはサーバがセッションで見るため、利用者は使わない（モックと同じ形にするための引数）
+   */
+  verifyInvitationCode: (code: string, _u?: SessionUser | null) => post<InvitationPreview>('/api/invitation/verify', { code }),
 
   async signUpGuardian(input: {
     code: string; email: string; password: string; guardian_name: string; relationship: string;
@@ -750,4 +755,20 @@ const contactApi = {
     post<SettingsView>('/api/settings', { changes, read_at: readAt }),
 };
 
-export const api = { ...apiAuth, ...apiChatNap, ...apiGrowth, ...apiAdmin, ...apiHandout, ...contactApi };
+/* 保護者のメニュー（詳細設計書「保護者のメニュー」(4-15)。名前はモック（api/mock.ts の guardianApi）と同じ） */
+const guardianApi = {
+  /**
+   * お子さまの追加（詳細設計書「お子さまの追加」(4-15 (1))）。紐づけ・招待コードの使用済み・個人チャットとクラスグループへの参加を1つの処理で行う。
+   * 参照表（園児名・自児の一覧）に加わった園児が載るよう、園児の登録と同じく読み直す
+   */
+  async addChild(_u: SessionUser, code: string, relationship: string): Promise<AddChildResult> {
+    const r = await post<AddChildResult>('/api/guardian/children', { code, relationship });
+    await loadReference();
+    return r;
+  },
+  /** AI の下書きを使わない・使う（4-15 (3)）。自分の紐づけの値だけを変える */
+  aiOptOut: (_u: SessionUser, childId: string, optOut: boolean) =>
+    post<{ ok: true }>(`/api/guardian/children/${encodeURIComponent(childId)}/ai-opt-out`, { opt_out: optOut }),
+};
+
+export const api = { ...apiAuth, ...apiChatNap, ...apiGrowth, ...apiAdmin, ...apiHandout, ...contactApi, ...guardianApi };

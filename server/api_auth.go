@@ -380,7 +380,12 @@ func validateEmail(email string) string {
 	return ""
 }
 
-// lookupUsableCode は使える招待コードを引く。使えない理由はそのまま画面へ出す。
+/*
+lookupUsableCode は使える招待コードを引く。使えない理由はそのまま画面へ出す。
+
+文言は基本設計書「メッセージ一覧」(4-12) の招待コードの4つ（server/messages.go の msgInvitation…。決めたこと D-52）。
+新規登録のコードの確認・新規登録の送信・お子さまの追加（確認と追加）のどれもがこれを通し、同じ文を返す
+*/
 func (a *app) lookupUsableCode(code string) (usableCode, error) {
 	var out usableCode
 	normalized := normalizeInvitationCode(code)
@@ -390,30 +395,32 @@ func (a *app) lookupUsableCode(code string) (usableCode, error) {
 	                        FROM t_invitation_code WHERE REPLACE(UPPER(code), '-', '') = ?`, normalized).
 		Scan(&out.ID, &out.ChildID, &status, &expiresOn)
 	if errors.Is(err, sql.ErrNoRows) {
-		return out, errors.New("招待コードが確認できません。園から配布されたコードをお確かめください")
+		return out, errors.New(msgInvitationNotFound)
 	}
 	if err != nil {
 		return out, errors.New("招待コードの確認に失敗しました")
 	}
 	switch {
 	case status == "2":
-		return out, errors.New("この招待コードはすでに使われています")
+		return out, errors.New(msgInvitationUsed)
 	case status == "3":
-		return out, errors.New("この招待コードは失効しています")
+		return out, errors.New(msgInvitationRevoked)
 	case expiresOn < today():
-		return out, errors.New("この招待コードは有効期限が切れています")
+		return out, errors.New(msgInvitationExpired)
 	}
 	// 取り消した（誤登録）・在籍していない園児のコードでは登録させない。発行のあとで園児を取り消しても、
 	// 配ったコードで、その園児に紐づく保護者アカウントができてしまうため（GitHub Issue #166 の 4）。
 	// 園児の状態は言わず、無いコードと同じ文言にする
 	if _, issuable := a.childIssuable(out.ChildID); !issuable {
-		return out, errors.New("招待コードが確認できません。園から配布されたコードをお確かめください")
+		return out, errors.New(msgInvitationNotFound)
 	}
 	return out, nil
 }
 
 // handleVerifyInvitationCode は招待コードの有効性だけを返す。
-// 園児名を返さない。誰の保護者かを名乗る前の段階であるため（画面詳細図 2-3）。
+// ログインしていない人（新規登録の途中）には園児名を返さない。誰の保護者かを名乗る前の段階であるため（画面詳細図 2-3）。
+// ログインしている保護者（お子さまの追加）には園児名を返す（api_guardian.go の writeAddChildPreview。
+// 詳細設計書「お子さまの追加」(4-15 (1))、決めたこと D-47）
 func (a *app) handleVerifyInvitationCode(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Code string `json:"code"`
@@ -426,9 +433,14 @@ func (a *app) handleVerifyInvitationCode(w http.ResponseWriter, r *http.Request)
 		writeTooManyAttempts(w)
 		return
 	}
-	if _, err := a.lookupUsableCode(req.Code); err != nil {
+	code, err := a.lookupUsableCode(req.Code)
+	if err != nil {
 		a.guard().failed(r)
 		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if g := a.loggedInGuardian(r); g != nil {
+		a.writeAddChildPreview(w, g, code)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -472,10 +484,12 @@ func (a *app) handleSignUpGuardian(w http.ResponseWriter, r *http.Request) {
 		writeTooManyAttempts(w)
 		return
 	}
+	// 招待コードの検査は、コードの確認と同じ。通らなければ同じ4つの文言を返す（基本設計書「保護者アカウントの自己登録」(4-3) の
+	// 手順6、詳細設計書「お子さまの追加」(4-15 (1))・決めたこと D-52）
 	code, err := a.lookupUsableCode(req.Code)
 	if err != nil {
 		a.guard().failed(r)
-		writeErr(w, http.StatusBadRequest, "招待コードが確認できません")
+		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	/*
@@ -561,8 +575,8 @@ func (a *app) handleSignUpGuardian(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if n, _ := res.RowsAffected(); n != 1 {
-		// 文言は基本設計書「メッセージ一覧」(4-9)「招待コードが使用済み」による
-		writeErr(w, http.StatusBadRequest, "この招待コードは既に使用されています。")
+		// 同じコードを同時に送ったときの2つ目。文言は基本設計書「メッセージ一覧」(4-12)「招待コードが使用済み」による
+		writeErr(w, http.StatusBadRequest, msgInvitationUsed)
 		return
 	}
 

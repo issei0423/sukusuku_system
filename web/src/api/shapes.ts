@@ -607,6 +607,28 @@ export interface GuardianToday {
   personal_room_id: number | null;
   /** 成長の記録を作るまでは常に偽 */
   growth_new: boolean;
+  /**
+   * ログイン中の保護者自身の紐づけの「AI の下書きを使わない」。ほかの家族の値は入れない
+   * （詳細設計書「ダッシュボード」(4-8 (1))・「AI の下書きの利用」(4-15 (3))。保護者のメニューのダイアログの初期値）
+   */
+  ai_opt_out: boolean;
+}
+
+/**
+ * POST /api/invitation/verify の応答（詳細設計書「お子さまの追加」(4-15 (1))）。
+ * child_name・relationship は、ログインしている保護者が呼んだときだけ入る（決めたこと D-47）
+ */
+export interface InvitationPreview {
+  ok: true;
+  child_name?: string;
+  /** 【仮置き】ダイアログの続柄の初期値（最初に登録したときの続柄。設計は渡し方を決めていない。web/仮置き値.md） */
+  relationship?: string;
+}
+
+/** POST /api/guardian/children の応答（詳細設計書「お子さまの追加」(4-15 (1))） */
+export interface AddChildResult {
+  ok: true;
+  child_id: string;
 }
 
 /* ============ 文章の下書き（AI）（詳細設計書「経路」(8-2)） ============ */

@@ -19,13 +19,21 @@ import { api, settingText } from '../api/client';
 import { BellIcon } from '../components/ui';
 import { ConfirmDialog, ToastHost } from '../components/feedback';
 import ConnectionBanner from '../components/ConnectionBanner';
+import AiOptOutDialog from '../components/AiOptOutDialog';
+import AddChildDialog from '../components/AddChildDialog';
+import { AI_OPT_OUT_TEXT, ADD_CHILD_TEXT } from '../messages';
 import { UnsavedInputContext, useUnsavedInputTracker } from '../unsavedInput';
 
-/** メニューの行き先。スマートフォンのメニュー（ドロワー）と、PC の幅で常に出すメニューで同じものを並べる */
-const MENU = [
+/**
+ * メニューの行き先。スマートフォンのメニュー（ドロワー）と、PC の幅で常に出すメニューで同じものを並べる。
+ * あいだに、ダイアログを開く項目（お子さまの追加・AI の下書きの利用）を挟む（dialogItems）
+ */
+const MENU_PAGES = [
   { to: '/guardian', label: 'ホーム' },
   { to: '/guardian/chat', label: 'チャット・お知らせ' },
   { to: '/guardian/handouts', label: '園からの配布物' },
+];
+const MENU_ACCOUNT = [
   { to: '/guardian/password', label: 'パスワードの変更' },
   { to: '/guardian/terms', label: '利用規約' },
 ];
@@ -37,6 +45,12 @@ export default function GuardianLayout() {
   const { user, logout } = useSession();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  // 「AI の下書きの利用」のダイアログ（詳細設計書「AI の下書きの利用」(2-15 (4))）
+  const [aiOptOutOpen, setAiOptOutOpen] = useState(false);
+  // 「お子さまの追加」のダイアログ（詳細設計書「お子さまの追加」(2-15 (2))）
+  const [addChildOpen, setAddChildOpen] = useState(false);
+  // 画面を開き直すための番号。お子さまを追加したら進め、保護者ホームを読み直させる（その園児の区画が増える）
+  const [screenKey, setScreenKey] = useState(0);
   // 保存していない入力があるときに出す、ログアウトの確認（基本設計書「ログアウト」(4-3)。GitHub Issue #170）
   const [confirmLogout, setConfirmLogout] = useState(false);
   const unsaved = useUnsavedInputTracker();
@@ -77,6 +91,8 @@ export default function GuardianLayout() {
   if (!user) return null;
   const unread = home.data?.[0]?.unread ?? 0;
   const phone = settingText('facility.phone_number', '');
+  // 園が AI を有効にしているときだけ、メニューに「AI の下書きの利用」を置く（GET /api/reference の ai.enabled。詳細設計書「メニューの項目」(2-15 (1))）
+  const aiEnabled = settingText('ai.enabled', '0') === '1';
 
   const doLogout = async () => {
     await logout();
@@ -84,6 +100,23 @@ export default function GuardianLayout() {
   };
   // 誰の保護者かを示す。「園児の氏名 保護者」と表す（図/画面詳細図.md の保護者の表し方）
   const who = `${home.data?.map((h) => h.child.child_name).join('・') || user.display_name} 保護者`;
+  /*
+   * ダイアログを開く項目。画面は移らない（図/画面詳細図「保護者（スマートフォン）」(1-2) の項目15・18）。
+   * 並びは設計の「お子さまの追加・連絡先の変更・通知の設定・AI の下書きの利用」の位置（連絡先の変更は
+   * 実装の順番の 15 の残り、通知の設定は【要決定】Web Push を作るかどうか）。
+   * お子さまの追加は常に置く。AI の下書きの利用は、区画を読めるまでは押させない（ダイアログの園児と初期値は区画から作る）。
+   * ドロワーでは、メニューを閉じてから開く（close）
+   */
+  const dialogItems = (close: () => void) => (
+    <>
+      <button type="button" className="drawer-item" aria-haspopup="dialog"
+        onClick={() => { close(); setAddChildOpen(true); }}>{ADD_CHILD_TEXT.title}</button>
+      {aiEnabled && (
+        <button type="button" className="drawer-item" aria-haspopup="dialog" disabled={!home.data}
+          onClick={() => { close(); setAiOptOutOpen(true); }}>{AI_OPT_OUT_TEXT.title}</button>
+      )}
+    </>
+  );
   /*
    * 保存していない入力（書きかけのメッセージなど）があれば、破棄される旨を表示して確認する
    * （基本設計書「ログアウト」(4-3)）。メニューは閉じてから確認を出す（メニューとダイアログを重ねない）
@@ -95,6 +128,18 @@ export default function GuardianLayout() {
       return;
     }
     void doLogout();
+  };
+  /*
+   * お子さまを追加したら、ダイアログを閉じ、保護者ホームを開き直して読み直す（詳細設計書「お子さまの追加」(2-15 (2)) の③）。
+   * メニューの園児名も読み直す。【仮置き】保存していない入力のある画面からは移らない（入力を捨てない。
+   * 次に保護者ホームを開けば読み直される。web/仮置き値.md）
+   */
+  const onChildAdded = () => {
+    setAddChildOpen(false);
+    home.refresh();
+    if (unsaved.hasUnsavedInput()) return;
+    setScreenKey((k) => k + 1);
+    navigate('/guardian');
   };
 
   return (
@@ -133,12 +178,22 @@ export default function GuardianLayout() {
                 <span aria-hidden="true">×</span> 閉じる
               </button>
             </div>
-            {MENU.map((m) => <Link key={m.to} to={m.to} onClick={() => setOpen(false)}>{m.label}</Link>)}
+            {MENU_PAGES.map((m) => <Link key={m.to} to={m.to} onClick={() => setOpen(false)}>{m.label}</Link>)}
+            {dialogItems(() => setOpen(false))}
+            {MENU_ACCOUNT.map((m) => <Link key={m.to} to={m.to} onClick={() => setOpen(false)}>{m.label}</Link>)}
             <div className="spacer" />
             {/* 保護者のログアウトはメニュー内（基本設計書 3-5） */}
             <button className="btn-block" onClick={onLogout}>ログアウト</button>
           </nav>
         </>
+      )}
+
+      {aiOptOutOpen && home.data && (
+        <AiOptOutDialog user={user} rows={home.data} onChanged={home.refresh} onClose={() => setAiOptOutOpen(false)} />
+      )}
+
+      {addChildOpen && (
+        <AddChildDialog user={user} onAdded={onChildAdded} onClose={() => setAddChildOpen(false)} />
       )}
 
       {confirmLogout && (
@@ -153,7 +208,9 @@ export default function GuardianLayout() {
         {/* PC の幅で常に出すメニュー。スマートフォン・タブレットの幅では CSS で隠し、上のメニューから開く */}
         <nav className="guardian-sidebar" aria-label="メニュー">
           <div className="who">{who}</div>
-          {MENU.map((m) => <NavLink key={m.to} to={m.to} end>{m.label}</NavLink>)}
+          {MENU_PAGES.map((m) => <NavLink key={m.to} to={m.to} end>{m.label}</NavLink>)}
+          {dialogItems(() => {})}
+          {MENU_ACCOUNT.map((m) => <NavLink key={m.to} to={m.to} end>{m.label}</NavLink>)}
           <div className="spacer" />
           <button className="btn-block" onClick={onLogout}>ログアウト</button>
         </nav>
@@ -161,7 +218,7 @@ export default function GuardianLayout() {
           {/* 知らせが切れている・サーバに届かないときの帯（詳細設計書「つながっているかの表示」(2-8)） */}
           <ConnectionBanner audience="guardian" />
           <UnsavedInputContext.Provider value={unsaved.report}>
-            <Outlet />
+            <Outlet key={screenKey} />
           </UnsavedInputContext.Provider>
         </main>
       </div>
