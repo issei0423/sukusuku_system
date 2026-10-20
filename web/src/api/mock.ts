@@ -45,6 +45,7 @@ import type {
   ContactRecipient, Phrase, NameMatch, FacilityCorrection,
   AiPurpose, AiField, AiTarget, AiDraftInput, AiDraftResult, SettingRow, SettingsView,
 } from './shapes';
+import type { InvitationPreview, AddChildResult } from './shapes';
 
 // 画面はこれまでどおり client 経由で型を参照する。定義の実体は shapes.ts が持つ
 export type {
@@ -2753,19 +2754,35 @@ function randomCode(): string {
   return `${randomFrom(alphabet, 4)}-${randomFrom(alphabet, 4)}-${randomFrom(alphabet, 4)}`;
 }
 
+/**
+ * 使える招待コードを引く。使えないときは、画面へ出す文言を返す（server/api_auth.go の lookupUsableCode と同じ規則・同じ文言）。
+ * 新規登録の確認と送信、お子さまの追加（確認と追加）が使う。文言は基本設計書「メッセージ一覧」(4-12) の招待コードの4つ
+ * （MSG.invitation…。決めたこと D-52）。待たずに（await を挟まずに）答えを返す
+ */
+function usableInvitationCode(code: string): InvitationCode | string {
+  const normalized = normalizeInvitationCode(code);
+  const c = db.invitationCodes.find((x) => normalizeInvitationCode(x.code) === normalized);
+  if (!c) return MSG.invitationNotFound;
+  if (c.status === '2') return MSG.invitationUsed;
+  if (c.status === '3') return MSG.invitationRevoked;
+  if (c.expires_on < today()) return MSG.invitationExpired;
+  // 取り消した・在籍していない園児のコードでは登録させない。園児の状態は言わず、無いコードと同じ文言にする
+  // （GitHub Issue #166 の 4。サーバ側は server/api_auth.go の lookupUsableCode）
+  if (!childIssuable(c.child_id).issuable) return MSG.invitationNotFound;
+  return c;
+}
+
 const adminApi3 = {
-  /** 保護者アカウントの自己登録（基本設計書「保護者アカウントの自己登録」(4-3)） */
-  async verifyInvitationCode(code: string): Promise<{ ok: true } | never> {
-    // 園児名を返さない。誰の保護者かを名乗る前の段階であるため（画面詳細図 2-3）
-    const normalized = normalizeInvitationCode(code);
-    const c = db.invitationCodes.find((x) => normalizeInvitationCode(x.code) === normalized);
-    if (!c) return fail('招待コードが確認できません。園から配布されたコードをお確かめください');
-    if (c.status === '2') return fail('この招待コードはすでに使われています');
-    if (c.status === '3') return fail('この招待コードは失効しています');
-    if (c.expires_on < today()) return fail('この招待コードは有効期限が切れています');
-    // 取り消した・在籍していない園児のコードでは登録させない。園児の状態は言わず、無いコードと同じ文言にする
-    // （GitHub Issue #166 の 4。サーバ側は server/api_auth.go の lookupUsableCode）
-    if (!childIssuable(c.child_id).issuable) return fail('招待コードが確認できません。園から配布されたコードをお確かめください');
+  /**
+   * 保護者アカウントの自己登録（基本設計書「保護者アカウントの自己登録」(4-3)）と、お子さまの追加の招待コードの確認。
+   * サーバはセッションでログインしているかを見る。モックはセッションを持たないため、ログインしている保護者が呼ぶときは利用者を渡す
+   */
+  async verifyInvitationCode(code: string, user?: SessionUser | null): Promise<InvitationPreview> {
+    const c = usableInvitationCode(code);
+    if (typeof c === 'string') return fail(c);
+    // ログインしている保護者（お子さまの追加）には園児名を返す（server/api_guardian.go の writeAddChildPreview。決めたこと D-47）
+    if (user && user.role === '3' && user.guardian_id && sessionAlive(user)) return addChildPreview(user.guardian_id, c);
+    // ログインしていない人（新規登録の途中）には園児名を返さない。誰の保護者かを名乗る前の段階であるため（画面詳細図 2-3）
     return ok({ ok: true as const });
   },
 
@@ -2781,11 +2798,10 @@ const adminApi3 = {
      * あいだに同じコードでの別の登録が割り込まないようにするため。1枚のコードは1アカウントの登録にのみ使える
      * （基本設計書 5-2。GitHub Issue #163）。サーバ側は取引の中の条件付きの更新で同じことを守る（server/api_auth.go）
      */
-    const normalized = normalizeInvitationCode(input.code);
-    const c = db.invitationCodes.find((x) => normalizeInvitationCode(x.code) === normalized);
-    if (!c || c.status !== '1' || c.expires_on < today() || !childIssuable(c.child_id).issuable) {
-      return fail('招待コードが確認できません');
-    }
+    // 招待コードの検査は、コードの確認と同じ。通らなければ同じ4つの文言を返す（基本設計書「保護者アカウントの自己登録」(4-3) の
+    // 手順6、決めたこと D-52。server/api_auth.go の handleSignUpGuardian と同じ）
+    const c = usableInvitationCode(input.code);
+    if (typeof c === 'string') return fail(c);
     /*
      * 規約への同意を受け取ってから登録する。同意しなかった場合は登録を完了しない
      * （基本設計書「保護者アカウントの自己登録」(4-3)、画面詳細図 2-3 項目5。GitHub Issue #170）。
@@ -3592,6 +3608,8 @@ function guardianTodayOf(user: SessionUser, child: Child): GuardianToday {
     nap, latest: items,
     facility: p.facility ? { recorded_at: p.facility.recorded_at, corrected_at: p.facility.corrected_at, excerpt: excerpt(p.facility.body, 60) } : null,
     unread_contact: unread, unread_chat: unreadChat, personal_room_id: room?.chat_room_id ?? null, growth_new: false,
+    // 自分の紐づけの値だけ（ほかの家族の値は入れない。server/api_guardian.go の guardianAiOptOut）
+    ai_opt_out: !!db.guardianChildren.find((g) => g.guardian_id === user.guardian_id && g.child_id === child.child_id)?.ai_opt_out,
   };
 }
 
@@ -5108,6 +5126,152 @@ const settingsApi = {
   },
 };
 
+/* ============ 保護者のメニュー（詳細設計書「保護者のメニュー」(4-15)。server/api_guardian.go と同じ規則） ============
+ * どれも保護者だけ。本版は「お子さまの追加」(4-15 (1)) と「AI の下書きの利用」(4-15 (3)) を置く
+ */
+
+/** 操作ログの変更前後に入れる項目の名前（server/api_guardian.go の aiOptOutLogField） */
+const AI_OPT_OUT_LOG_FIELD = 'AI の下書きを使わない';
+const aiOptOutLogValue = (optOut: boolean) => (optOut ? '使わない' : '使う');
+
+/** 続柄の上限の文字数（詳細設計書「お子さまの追加」(4-15 (1))。server/api_guardian.go の relationshipMax） */
+const RELATIONSHIP_MAX = 20;
+
+/** そのアカウントにすでに紐づいている園児か（有効・猶予中）。終了（2）は招待コードで追加し直せる（server/api_guardian.go の alreadyAdded） */
+const alreadyAdded = (status: string | undefined) => status === '1' || status === '3';
+
+/**
+ * その保護者が最初に登録したときの続柄（ダイアログの続柄の初期値。詳細設計書「お子さまの追加」(2-15 (2))）。
+ * 【仮置き】設計は初期値を渡す経路の項目を決めていない。招待コードの確認の応答に relationship として足し、
+ * 紐づけた日時のいちばん古い行の続柄を返す（web/仮置き値.md。server/api_guardian.go の firstRelationship と同じ）
+ */
+function firstRelationship(guardianId: string): string {
+  return db.guardianChildren
+    .filter((g) => g.guardian_id === guardianId && g.relationship)
+    .sort((a, b) => a.linked_at.localeCompare(b.linked_at) || a.child_id.localeCompare(b.child_id))[0]?.relationship ?? '';
+}
+
+/**
+ * ログインしている保護者に、招待コードの園児名を返す（server/api_guardian.go の writeAddChildPreview と同じ）。
+ * そのアカウントにすでに紐づいている園児なら「このお子さまはすでに追加されています。」
+ */
+function addChildPreview(guardianId: string, c: InvitationCode): Promise<InvitationPreview> {
+  const link = db.guardianChildren.find((g) => g.guardian_id === guardianId && g.child_id === c.child_id);
+  if (alreadyAdded(link?.link_status)) return fail(MSG.childAlreadyAdded);
+  return ok({ ok: true as const, child_name: findChild(c.child_id)?.child_name ?? '', relationship: firstRelationship(guardianId) });
+}
+
+/**
+ * お子さまの追加の途中で失敗させる（テストだけが使う）。サーバの同じテストは DB のトリガーで同じところを止める
+ * （server/api_guardian_add_test.go の TestAddChildRollsBack）。null のあいだは何もしない
+ */
+export const mockAddChildFault: { at: null | 'code' | 'link' | 'join' } = { at: null };
+function addChildStep(step: 'code' | 'link' | 'join'): void {
+  if (mockAddChildFault.at === step) throw new Error(`テストで止める（${step}）`);
+}
+
+const guardianApi = {
+  /**
+   * お子さまの追加（POST /api/guardian/children）。検査の順と書き込みは server/api_guardian.go の handleAddChild・addChildTx と同じ。
+   * 招待コードの検査は確認と同じ。すでに紐づいている園児なら断る。続柄は前後の空白を落として1〜20文字。
+   * 書き込み（コードを使用済みに・紐づけ（終了の行は有効へ戻す）・個人チャットといまのクラスのクラスグループへ今の時刻で参加）は
+   * 1つの処理にし、途中で失敗したら書いたものを全部戻す。操作ログは 7・1、知らせは参加したルームへ chat
+   */
+  async addChild(user: SessionUser, code: string, relationship: string): Promise<AddChildResult> {
+    if (user.role !== '3' || !user.guardian_id) return fail(MSG.guardianOnly);
+    const guardianId = user.guardian_id;
+    const c = usableInvitationCode(code);
+    if (typeof c === 'string') return fail(c);
+    const existing = db.guardianChildren.find((g) => g.guardian_id === guardianId && g.child_id === c.child_id);
+    if (alreadyAdded(existing?.link_status)) return fail(MSG.childAlreadyAdded);
+    const rel = typeof relationship === 'string' ? relationship.trim() : '';
+    if (!rel || tooLong(rel, RELATIONSHIP_MAX)) return fail(MSG.relationshipRequired);
+
+    const at = now();
+    const undo: (() => void)[] = [];
+    const joined: number[] = [];
+    try {
+      // 1. 招待コードを使用済みにする
+      const codeBefore = { status: c.status, used_account_id: c.used_account_id, used_at: c.used_at };
+      undo.push(() => { Object.assign(c, codeBefore); });
+      Object.assign(c, { status: '2', used_account_id: user.account_id, used_at: at });
+      addChildStep('code');
+
+      // 2. 紐づけ。連絡順は、その園児のほかの有効・猶予中の紐づけの最大＋1（【仮置き】終了した紐づけは数えない。web/仮置き値.md）
+      const order = 1 + Math.max(0, ...db.guardianChildren
+        .filter((g) => g.child_id === c.child_id && g.guardian_id !== guardianId && alreadyAdded(g.link_status))
+        .map((g) => g.contact_order ?? 1));
+      if (existing) {
+        // 終了（2）の行を有効へ戻す（決めたこと D-48）。【仮置き】続柄はいま選んだもの、AI の下書きを断ったかは前の値のまま（web/仮置き値.md）
+        const linkBefore = { ...existing };
+        undo.push(() => { Object.assign(existing, linkBefore); });
+        Object.assign(existing, { link_status: '1', linked_at: at, ended_at: null, grace_ends_on: null, relationship: rel, contact_order: order });
+      } else {
+        const row = { guardian_id: guardianId, child_id: c.child_id, relationship: rel, link_status: '1' as const, linked_at: at,
+          ended_at: null, ai_opt_out: false, contact_order: order };
+        db.guardianChildren.push(row);
+        undo.push(() => { db.guardianChildren.splice(db.guardianChildren.indexOf(row), 1); });
+      }
+      addChildStep('link');
+
+      // 3・4. 個人チャットと、いまのクラスのクラスグループ。参加中ならそのまま、抜けていたら今の時刻で参加し直す。
+      // 【仮置き】ルームが無ければ飛ばす。知らせは参加の変わったルームへだけ（web/仮置き値.md。server/api_guardian.go と同じ）
+      const classId = contactClassOf(c.child_id);
+      const rooms = db.chatRooms
+        .filter((r) => !r.is_archived && ((r.room_type === '4' && r.child_id === c.child_id)
+          || (r.room_type === '2' && classId !== null && r.class_id === classId)))
+        .sort((a, b) => a.chat_room_id - b.chat_room_id);
+      for (const r of rooms) {
+        addChildStep('join');
+        const m = db.chatMembers.find((x) => x.chat_room_id === r.chat_room_id && x.account_id === user.account_id);
+        if (m && m.left_at === null) continue;
+        if (m) {
+          const memberBefore = { ...m };
+          undo.push(() => { Object.assign(m, memberBefore); });
+          Object.assign(m, { joined_at: at, left_at: null });
+        } else {
+          const row = { chat_room_id: r.chat_room_id, account_id: user.account_id, joined_at: at, left_at: null };
+          db.chatMembers.push(row);
+          undo.push(() => { db.chatMembers.splice(db.chatMembers.indexOf(row), 1); });
+        }
+        joined.push(r.chat_room_id);
+      }
+    } catch {
+      undo.reverse().forEach((f) => f());
+      return fail(MSG.addChildFailed);
+    }
+    // 【仮置き】変更後の値の文（web/仮置き値.md。server/api_guardian.go と同じ）
+    log(user.account_id, '7', '1', 't_guardian_child', user.account_id, c.child_id, null,
+      existing ? '招待コードでお子さまを追加（終了していた紐づけを有効へ戻した）' : '招待コードでお子さまを追加');
+    // 参加したルームの参加者へ（server/events.go の notifyRoomMembers）。保護者が参加したことを知らせる文は送らない
+    joined.forEach((roomId) => publish({ type: 'chat', room_id: roomId }, (u) => isRoomMember(u, roomId)));
+    return ok({ ok: true as const, child_id: c.child_id });
+  },
+
+  /**
+   * AI の下書きを使わない・使う（POST /api/guardian/children/{childID}/ai-opt-out）。検査の順は server/api_guardian.go の handleAiOptOut と同じ。
+   * 紐づけが有効（1）な自児だけ。無い・終了は「この園児の連絡帳は開けません。」、猶予中は「卒園・退園したお子さまの設定は変えられません。」。
+   * 自分の紐づけの値だけを変え、ほかの家族の値は変えない・返さない（決めたこと D-49）。変わったときだけ操作ログ（7・2）に残す
+   */
+  async aiOptOut(user: SessionUser, childId: string, optOut: boolean): Promise<{ ok: true }> {
+    if (user.role !== '3' || !user.guardian_id) return fail(MSG.guardianOnly);
+    const link = db.guardianChildren.find((g) => g.guardian_id === user.guardian_id && g.child_id === childId);
+    const child = findChild(childId);
+    if (!link || !child || child.is_deleted || (link.link_status !== '1' && link.link_status !== '3')) return fail(MSG.contactForbidden);
+    if (link.link_status === '3') return fail(MSG.guardianSettingGrace);
+    if (settingText('ai.enabled', '0') !== '1') return fail(MSG.aiNotEnabled);
+    if (typeof optOut !== 'boolean') return fail(MSG.badRequest);
+    const before = !!link.ai_opt_out;
+    link.ai_opt_out = optOut;
+    // 【仮置き】変わったときだけ操作ログに残す（web/仮置き値.md。server/api_guardian.go と同じ）
+    if (before !== optOut) {
+      log(user.account_id, '7', '2', 't_guardian_child', user.account_id, childId,
+        fieldsJSON([[AI_OPT_OUT_LOG_FIELD, aiOptOutLogValue(before)]]), fieldsJSON([[AI_OPT_OUT_LOG_FIELD, aiOptOutLogValue(optOut)]]));
+    }
+    return ok({ ok: true });
+  },
+};
+
 /* ============ 画面が使う入口 ============ */
 export const api = guardProcedure({
   ...authApi, ...childApi, ...diaryApi, ...diaryApi2,
@@ -5120,6 +5284,7 @@ export const api = guardProcedure({
   ...contactFacilityApi,
   ...aiApi,
   ...settingsApi,
+  ...guardianApi,
 });
 
 /* ============ 入力の検査の補助（Go サーバの httpx.go と同じ規則） ============ */

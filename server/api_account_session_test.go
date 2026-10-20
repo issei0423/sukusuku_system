@@ -438,12 +438,15 @@ func TestSignUpJoinsPersonalRoomOfThatChild(t *testing.T) {
 
 /*
  * ---- #163 の 2：招待コード 1 枚を同時に使っても、1 アカウントしか作らない ----
- * 1枚のコードは1アカウントの登録にのみ使える。使用と同時に status を使用済みにする（基本設計書 5-2）
+ * 1枚のコードは1アカウントの登録にのみ使える。使用と同時に status を使用済みにする（基本設計書 5-2）。
+ * 登録できなかったものは、どれも使用済みの文を受け取る（同じコードを同時に送ったときの2つ目も同じ。
+ * 基本設計書「メッセージ一覧」(4-12)・「保護者アカウントの自己登録」(4-3)、決めたこと D-52）
  */
 func TestInvitationCodeIsSingleUseUnderConcurrency(t *testing.T) {
 	a, h := newTestApp(t)
 	const attempts = 5
 	codes := make([]int, attempts)
+	messages := make([]string, attempts)
 	var wg sync.WaitGroup
 	start := make(chan struct{})
 	for i := 0; i < attempts; i++ {
@@ -461,15 +464,22 @@ func TestInvitationCodeIsSingleUseUnderConcurrency(t *testing.T) {
 			rec := httptest.NewRecorder()
 			h.ServeHTTP(rec, req)
 			codes[i] = rec.Code
+			var e apiError
+			json.Unmarshal(rec.Body.Bytes(), &e)
+			messages[i] = e.Message
 		}(i)
 	}
 	close(start)
 	wg.Wait()
 
 	ok := 0
-	for _, c := range codes {
+	for i, c := range codes {
 		if c == http.StatusOK {
 			ok++
+			continue
+		}
+		if c != http.StatusBadRequest || messages[i] != wantInvitationUsed {
+			t.Errorf("登録できなかった %d 件目: %d %q, want 400 %q", i+1, c, messages[i], wantInvitationUsed)
 		}
 	}
 	if ok != 1 {

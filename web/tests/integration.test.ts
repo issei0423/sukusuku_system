@@ -10,6 +10,7 @@
  * ふだんの npm test はブラウザ内のモックだけで完結させる（サーバに依存させない）。
  */
 import { describe, it, expect, beforeAll, vi } from 'vitest';
+import { MSG } from '../src/messages';
 
 // 相手は本物の時計で動くサーバなので、tests/setup-clock.ts で止めた時計を本物に戻す
 vi.useRealTimers();
@@ -288,8 +289,8 @@ run('Go サーバとの結合', () => {
   });
 
   it('招待コードはハイフンを省いても引ける。メールアドレスが空の登録は受け付けない', async () => {
-    // 使用済みのコードをハイフンなし・小文字で入れる。「確認できません」ではなく「使われています」と返る
-    await expect(http.api.verifyInvitationCode('ijkl5678mnop')).rejects.toThrow(/すでに使われています/);
+    // 使用済みのコードをハイフンなし・小文字で入れる。「確認できません」ではなく使用済みの文が返る（基本設計書「メッセージ一覧」(4-12)）
+    await expect(http.api.verifyInvitationCode('ijkl5678mnop')).rejects.toThrow(MSG.invitationUsed);
 
     await switchTo('nohara@hoiku.example.jp', 'pass1234', 'staff');
     const code = await http.api.issueOneInvitationCode(dummy, 'C001', 30);

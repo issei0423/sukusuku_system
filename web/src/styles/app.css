@@ -284,6 +284,15 @@
 @media (hover: hover) {
   .drawer a:hover { background: var(--c-surface-sub); color: var(--c-text); text-decoration: underline; text-decoration-thickness: 1px; }
 }
+/* メニューの中でダイアログを開く項目（保護者のメニューの「AI の下書きの利用」）。ボタンでも、となりのリンクと同じ行の見た目にそろえる */
+.drawer button.drawer-item {
+  justify-content: flex-start; width: 100%; padding: 0 var(--sp-2); background: none;
+  border: 0; border-bottom: 1px solid var(--c-border-weak); border-radius: 0;
+  font-weight: inherit; letter-spacing: inherit; text-align: left;
+}
+@media (hover: hover) {
+  .drawer button.drawer-item:hover:not(:disabled) { background: var(--c-surface-sub); border-color: var(--c-border-weak); text-decoration-thickness: 1px; }
+}
 /* 移る先の並びと、ログアウトのあいだを空ける。並びの続きに見えないようにする */
 .drawer .spacer { flex: none; height: var(--sp-5); }
 
