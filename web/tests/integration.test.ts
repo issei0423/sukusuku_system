@@ -571,3 +571,96 @@ run('Go サーバとの結合', () => {
     }
   });
 });
+
+/*
+ * きょうのようすの記録と、訂正・取り消しも、開いている保護者の画面に3秒以内に出る（詳細設計書「3秒の目標を計る」(6-7)）。
+ * 排せつを記録 → 直す → 取り消すの3つで、知らせが届いて GET /api/contact/children/C001 が新しい内容を返すまでを計る。
+ * ほかの家庭（宮城 美咲の保護者）には知らせが届かない
+ */
+run('結合：きょうのようすの記録・訂正・取り消しが3秒以内に届く', () => {
+  const send = async (path: string, init: RequestInit = {}, jar?: string) => {
+    const headers = new Headers(init.headers);
+    headers.set('Origin', BASE);
+    if (init.body) headers.set('Content-Type', 'application/json');
+    if (jar) headers.set('Cookie', jar);
+    return realFetch(BASE + path, { ...init, headers });
+  };
+  const loginAs = async (email: string, entrance: 'staff' | 'guardian') => {
+    const res = await send('/api/login', { method: 'POST', body: JSON.stringify({ email, password: 'pass1234', entrance }) });
+    expect(res.status).toBe(200);
+    return (res.headers.getSetCookie?.() ?? [])[0].split(';')[0];
+  };
+  type Ev = { contact_event_id: number; toilet_label: string | null; corrected_at: string | null; updated_at?: string };
+
+  it('排せつの記録・訂正・取り消しが、知らせと読み直しで3秒以内に保護者の画面に出る。ほかの家庭には届かない', async () => {
+    const staff = await loginAs('takanashi@hoiku.example.jp', 'staff');
+    const guardian = await loginAs('nohara.i@example.jp', 'guardian');
+    const other = await loginAs('miyagi.r@example.jp', 'guardian');
+    const controller = new AbortController();
+    const open = async (jar: string) => {
+      const res = await send('/api/events', { signal: controller.signal }, jar);
+      expect(res.status).toBe(200);
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      return {
+        /** want を含む知らせが届くまで待つ。待ち始める前に届いたものは数えないよう、確かめたら読み捨てる */
+        async waitFor(want: string, ms: number): Promise<boolean> {
+          const deadline = Date.now() + ms;
+          while (Date.now() < deadline) {
+            if (buffer.includes(want)) { buffer = ''; return true; }
+            const chunk = await Promise.race([
+              reader.read(),
+              new Promise<null>((r) => setTimeout(() => r(null), Math.max(0, deadline - Date.now()))),
+            ]);
+            if (!chunk || chunk.done) break;
+            buffer += decoder.decode(chunk.value, { stream: true });
+          }
+          const hit = buffer.includes(want);
+          buffer = '';
+          return hit;
+        },
+      };
+    };
+    const page = async () => (await (await send('/api/contact/children/C001', {}, guardian)).json()) as { events: Ev[] };
+    const want = 'data: {"type":"contact","child_id":"C001"}';
+    try {
+      const guardianStream = await open(guardian);
+      const otherStream = await open(other);
+      await guardianStream.waitFor(': connected', 3000);
+      await otherStream.waitFor(': connected', 3000);
+
+      let started = Date.now();
+      const recorded = await send('/api/contact/events', { method: 'POST', body: JSON.stringify({ items: [{ child_id: 'C001', event_type: '2', toilet_label: 'おしっこ' }] }) }, staff);
+      expect(recorded.status).toBe(200);
+      const [event] = ((await recorded.json()) as { events: Ev[] }).events;
+      expect(await guardianStream.waitFor(want, 3000)).toBe(true);
+      expect((await page()).events.some((e) => e.contact_event_id === event.contact_event_id)).toBe(true);
+      const recordMs = Date.now() - started;
+
+      started = Date.now();
+      const corrected = await send(`/api/contact/events/${event.contact_event_id}/correct`,
+        { method: 'POST', body: JSON.stringify({ toilet_label: 'うんち', updated_at: event.updated_at }) }, staff);
+      expect(corrected.status).toBe(200);
+      expect(await guardianStream.waitFor(want, 3000)).toBe(true);
+      const fixed = (await page()).events.find((e) => e.contact_event_id === event.contact_event_id);
+      expect([fixed?.toilet_label, !!fixed?.corrected_at]).toEqual(['うんち', true]);
+      const correctMs = Date.now() - started;
+
+      started = Date.now();
+      expect((await send(`/api/contact/events/${event.contact_event_id}/cancel`, { method: 'POST', body: '{}' }, staff)).status).toBe(200);
+      expect(await guardianStream.waitFor(want, 3000)).toBe(true);
+      expect((await page()).events.some((e) => e.contact_event_id === event.contact_event_id)).toBe(false);
+      const cancelMs = Date.now() - started;
+
+      for (const ms of [recordMs, correctMs, cancelMs]) expect(ms).toBeLessThan(3000);
+      console.log(`排せつの記録 ${recordMs}・訂正 ${correctMs}・取り消し ${cancelMs} ミリ秒で保護者の画面の読み直しまで`);
+      // ほかの家庭には、知らせ自体が届かない。保護者の応答に職員の名前と読んだ版は入らない
+      expect(await otherStream.waitFor('"child_id":"C001"', 500)).toBe(false);
+      expect(JSON.stringify(await page())).not.toMatch(/staff_name|updated_at/);
+    } finally {
+      controller.abort();
+      for (const jar of [staff, guardian, other]) await send('/api/logout', { method: 'POST', body: '{}' }, jar);
+    }
+  });
+});

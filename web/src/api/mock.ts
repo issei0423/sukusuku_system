@@ -37,6 +37,9 @@ import type {
   NapSleep, NapExclusion, HomeState, GuardianToday, TodayItem, MealAmount,
 } from './shapes';
 import { MSG, MEAL_AMOUNT_TEXT, MEAL_KIND_TEXT } from '../messages';
+import type {
+  ContactEventInput, RecordEventsResult, ContactEventCorrection, NapSleepCorrection, CancelResult, Readers,
+} from './shapes';
 
 // 画面はこれまでどおり client 経由で型を参照する。定義の実体は shapes.ts が持つ
 export type {
@@ -3395,7 +3398,7 @@ function eventView(e: ContactEventRecord, staff: boolean): ContactEvent {
     temperature: e.temperature, body: e.body, contact_photo_id: e.contact_photo_id, keep_in_growth: e.keep_in_growth,
     corrected_at: e.corrected_at, is_deleted: e.is_deleted,
   };
-  if (staff) view.staff_name = staffName(e.staff_id);
+  if (staff) { view.staff_name = staffName(e.staff_id); view.updated_at = e.updated_at; }
   return view;
 }
 
@@ -3408,6 +3411,7 @@ function sleepView(s: NapSleepRecord, staff: boolean): NapSleep {
   if (staff) {
     if (s.sleep_temperature !== null) view.sleep_temperature = s.sleep_temperature;
     view.nap_session_id = s.nap_session_id;
+    view.updated_at = s.updated_at;
   }
   return view;
 }
@@ -3470,6 +3474,7 @@ function contactPageOf(user: SessionUser, childId: string, date: string): Contac
     facility: facilityView(db.contactFacilities.find((f) => f.child_id === childId && f.contact_date === date && !f.is_deleted), staff),
     can_write_home: false,
   };
+  if (staff) page.can_write = contactAccess(user, childId).write;
   if (!staff) {
     // 保護者に出さない種類は、開いた時点の設定で落とす
     events = events.filter((e) => guardianSeesItem(EVENT_ITEM[e.event_type]));
@@ -3850,6 +3855,290 @@ function guardProcedure<T extends Record<string, unknown>>(apis: T): T {
   return out as T;
 }
 
+/* ============ きょうのようすの記録と、訂正・取り消し（詳細設計書「きょうのようす」(4-4 (1))・「訂正・取り消し」(4-7)・「午睡」(4-6 (4))） ============
+ * 規則は server/api_contact_events.go・api_nap_sleep_fix.go と同じ。関数の名前もそろえる（9-2）。
+ * 食事・排せつ・体温は段1（記録した時点で保護者が読める）。時刻はモックの今。体温は判定しない（範囲の外も保存する）。
+ * 活動のひとこと（種類 4）は段2の守り（他児の名前の注意）を通すため、園からのひとことと同じ段で受け付ける。
+ */
+
+/** 排せつの選択肢の既定（基本設計書「出す項目と選択肢の設定」(4-5)） */
+const DEFAULT_TOILET_CHOICES = 'おしっこ,うんち,おむつ交換,トイレでできた';
+
+/** 時刻がその日の 00:00:00 からモックの今までにあるか（server/api_contact_events.go の inDayUntilNow） */
+function inDayUntilNow(at: string, day: string): boolean {
+  return isISODateTime(at) && at.slice(0, 10) === day && at <= now();
+}
+
+/**
+ * その園児のその日の記録を直せる・取り消せるか（server/api_contact_events.go の canFixContact）。
+ * その日はその園児のクラスの担任（contactAccess の Write。記録した職員に限らない）、管理者はいつでも
+ * （基本設計書「取り消し・訂正」(4-2)。詳細設計書 (3-5) の「記録した職員」とは食い違い、基本設計書を正とした）
+ */
+export function canFixContact(user: SessionUser, childId: string, contactDate: string): boolean {
+  if (!isStaffUser(user) || !contactAccess(user, childId).write) return false;
+  return user.role === '1' || contactDate === today();
+}
+
+/**
+ * そのページを since 以降に開いた保護者の家庭の数と人数（server/api_contact_events.go の readersOf）。
+ * since は記録を保存した時刻（created_at）。時刻を後から付けた記録でも、届く前に開いた家庭を数えない
+ */
+function readersOf(childIds: string[], date: string, since: string): Readers {
+  let families = 0;
+  let guardians = 0;
+  for (const childId of childIds) {
+    const n = new Set(db.contactReads.filter((r) => r.child_id === childId && r.contact_date === date && r.read_at >= since
+      && db.guardianChildren.some((g) => g.child_id === childId && (g.link_status === '1' || g.link_status === '3')
+        && db.guardians.find((x) => x.guardian_id === g.guardian_id)?.account_id === r.account_id))
+      .map((r) => r.account_id)).size;
+    if (n > 0) { families++; guardians += n; }
+  }
+  return { family_count: families, guardian_count: guardians };
+}
+
+type EventValues = Pick<ContactEventRecord, 'meal_kind' | 'meal_amount' | 'toilet_label' | 'temperature' | 'body' | 'recorded_at'> & { round: number };
+
+/** 1件の入力を検査する（server/api_contact_events.go の checkEventInput と同じ順） */
+function checkEventInput(input: ContactEventInput, day: string): { value?: EventValues; error?: string } {
+  const v: EventValues = { meal_kind: null, meal_amount: null, toilet_label: null, temperature: null, body: null, recorded_at: now(), round: 1 };
+  switch (input.event_type) {
+    case '1':
+      if (!input.meal_kind || !(input.meal_kind in MEAL_KIND_TEXT) || !input.meal_amount || !(input.meal_amount in MEAL_AMOUNT_TEXT)) {
+        return { error: MSG.badChoice };
+      }
+      if (input.meal_round !== undefined && input.meal_round !== null) {
+        if (input.meal_round !== 1 && input.meal_round !== 2) return { error: MSG.badChoice };
+        v.round = input.meal_round;
+      }
+      v.meal_kind = input.meal_kind;
+      v.meal_amount = input.meal_amount;
+      break;
+    case '2': {
+      const label = trimmedOrNull(input.toilet_label);
+      if (label === null || !settingList('contact.toilet_choices', DEFAULT_TOILET_CHOICES).includes(label)) return { error: MSG.badChoice };
+      v.toilet_label = label;
+      break;
+    }
+    case '3':
+      if (typeof input.temperature !== 'number' || !isOneDecimal(input.temperature)) return { error: MSG.temperatureFormat };
+      v.temperature = input.temperature;
+      break;
+    default:
+      // 活動のひとこと（4）は段2の守りと一緒に受け付ける。写真（5）はこの経路では受け付けない
+      return { error: MSG.badChoice };
+  }
+  if ((input.event_type === '2' || input.event_type === '3') && input.recorded_at != null) {
+    if (!inDayUntilNow(input.recorded_at, day)) return { error: MSG.eventTimeRange };
+    v.recorded_at = input.recorded_at;
+  }
+  return { value: v };
+}
+
+/** 操作ログに残す出来事の値（server/api_contact_events.go の eventLogFields） */
+function eventLogFields(e: Pick<ContactEventRecord, 'event_type' | 'meal_kind' | 'meal_amount' | 'toilet_label' | 'temperature' | 'body' | 'recorded_at'>): Field[] {
+  const out: Field[] = [['event_type', e.event_type], ['recorded_at', e.recorded_at]];
+  if (e.event_type === '1') out.push(['meal_kind', e.meal_kind], ['meal_amount', e.meal_amount]);
+  else if (e.event_type === '2') out.push(['toilet_label', e.toilet_label]);
+  else if (e.event_type === '3') out.push(['temperature', e.temperature]);
+  else out.push(['body', e.body]);
+  return out;
+}
+
+/** 1つの書き込みで変わった園児ごとに1回だけ知らせる。保護者には、変わった種類のどれかを出しているときだけ */
+function publishContactChildItems(byChild: Map<string, string[]>): void {
+  for (const [childId, items] of byChild) publishContactChild(childId, items.find((it) => guardianSeesItem(it)) ?? items[0]);
+}
+
+/** 訂正・取り消しの相手の出来事（server/api_contact_events.go の eventTarget）。だめなら誤りの文 */
+function eventTarget(user: SessionUser, eventId: number): { event?: ContactEventRecord; error?: string } {
+  const e = db.contactEvents.find((x) => x.contact_event_id === eventId);
+  if (!e || e.is_deleted || !contactAccess(user, e.child_id).read) return { error: MSG.contactForbidden };
+  if (!canFixContact(user, e.child_id, e.contact_date)) return { error: MSG.fixForbidden };
+  return { event: e };
+}
+
+/** 訂正・取り消しの相手の組と、その実施（server/api_nap_sleep_fix.go の sleepTarget） */
+function sleepTarget(user: SessionUser, sleepId: number): { sleep?: NapSleepRecord; session?: NapSession; error?: string } {
+  const sleep = db.napSleeps.find((x) => x.nap_sleep_id === sleepId);
+  const session = sleep && db.napSessions.find((x) => x.nap_session_id === sleep.nap_session_id);
+  if (!sleep || sleep.is_deleted || !session || !contactAccess(user, sleep.child_id).read) return { error: MSG.contactForbidden };
+  if (!canFixContact(user, sleep.child_id, session.session_date)) return { error: MSG.fixForbidden };
+  return { sleep, session };
+}
+
+const contactEventsApi = {
+  /** きょうのようすを記録する（POST /api/contact/events）。全件を1つの処理で保存し、1件でも誤りがあれば何も保存しない */
+  async recordEvents(user: SessionUser, items: ContactEventInput[]): Promise<RecordEventsResult> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    if (!Array.isArray(items) || items.length === 0 || items.length > 50) return fail(MSG.badRequest);
+    const day = today();
+    const classOf = new Map<string, number>();
+    for (const it of items) {
+      if (classOf.has(it.child_id)) continue;
+      const classId = contactClassOf(it.child_id);
+      if (!contactAccess(user, it.child_id).write || classId === null) return fail(MSG.contactForbidden);
+      classOf.set(it.child_id, classId);
+    }
+    const values: EventValues[] = [];
+    for (const it of items) {
+      const checked = checkEventInput(it, day);
+      if (!checked.value) return fail(checked.error ?? MSG.badChoice);
+      values.push(checked.value);
+    }
+    const at = now();
+    const created: ContactEventRecord[] = [];
+    const skipped: string[] = [];
+    items.forEach((it, i) => {
+      const v = values[i];
+      if (it.event_type === '1') {
+        // 「全員ぜんぶ」で記録のある子を上書きしない：その回の数の記録が既にあれば飛ばす（決めたこと D-5）
+        const n = db.contactEvents.filter((e) => e.child_id === it.child_id && e.contact_date === day && e.event_type === '1'
+          && e.meal_kind === v.meal_kind && !e.is_deleted).length;
+        if (n >= v.round) {
+          if (!skipped.includes(it.child_id)) skipped.push(it.child_id);
+          return;
+        }
+      }
+      const row: ContactEventRecord = {
+        contact_event_id: nextId(), child_id: it.child_id, class_id: classOf.get(it.child_id)!, contact_date: day,
+        event_type: it.event_type, recorded_at: v.recorded_at, meal_kind: v.meal_kind, meal_amount: v.meal_amount,
+        toilet_label: v.toilet_label, temperature: v.temperature, body: v.body, contact_photo_id: null, keep_in_growth: false,
+        staff_id: user.staff_id ?? '', corrected_at: null, is_deleted: false, created_at: at, updated_at: at,
+      };
+      db.contactEvents.push(row);
+      created.push(row);
+    });
+    const byChild = new Map<string, string[]>();
+    for (const row of created) {
+      log(user.account_id, '8', '1', 't_contact_event', row.contact_event_id, row.child_id, null, fieldsJSON(eventLogFields(row)));
+      byChild.set(row.child_id, [...(byChild.get(row.child_id) ?? []), EVENT_ITEM[row.event_type]]);
+    }
+    publishContactChildItems(byChild);
+    return ok({ events: created.map((e) => eventView(e, true)), skipped });
+  },
+
+  /** 出来事を直す（POST /api/contact/events/{id}/correct）。値の検査は記録するときと同じ */
+  async correctEvent(user: SessionUser, eventId: number, input: ContactEventCorrection): Promise<ContactEvent> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    const target = eventTarget(user, eventId);
+    if (!target.event) return fail(target.error ?? MSG.contactForbidden);
+    const e = target.event;
+    const next = { meal_amount: e.meal_amount, toilet_label: e.toilet_label, temperature: e.temperature, recorded_at: e.recorded_at };
+    let changed = false;
+    if (e.event_type === '1' && input.meal_amount !== undefined) {
+      if (!(input.meal_amount in MEAL_AMOUNT_TEXT)) return fail(MSG.badChoice);
+      next.meal_amount = input.meal_amount;
+      changed = true;
+    }
+    if (e.event_type === '2' && input.toilet_label !== undefined) {
+      const label = trimmedOrNull(input.toilet_label);
+      if (label === null || !settingList('contact.toilet_choices', DEFAULT_TOILET_CHOICES).includes(label)) return fail(MSG.badChoice);
+      next.toilet_label = label;
+      changed = true;
+    }
+    if (e.event_type === '3' && input.temperature !== undefined) {
+      if (typeof input.temperature !== 'number' || !isOneDecimal(input.temperature)) return fail(MSG.temperatureFormat);
+      next.temperature = input.temperature;
+      changed = true;
+    }
+    if ((e.event_type === '2' || e.event_type === '3') && input.recorded_at !== undefined) {
+      if (!inDayUntilNow(input.recorded_at, e.contact_date)) return fail(MSG.eventTimeRange);
+      next.recorded_at = input.recorded_at;
+      changed = true;
+    }
+    if (!changed) return fail(MSG.badChoice);
+    if (input.updated_at !== e.updated_at) return fail(MSG.fixConflict);
+    const [before, after] = changedFields(eventLogFields(e), eventLogFields({ ...e, ...next }));
+    const at = now();
+    Object.assign(e, next, { corrected_at: at, updated_at: at });
+    log(user.account_id, '8', '2', 't_contact_event', e.contact_event_id, e.child_id, before, after);
+    publishContactChild(e.child_id, EVENT_ITEM[e.event_type]);
+    return ok(eventView(e, true));
+  },
+
+  /** 出来事を取り消す（POST /api/contact/events/{id}/cancel）。写真は同じ写真を指す出来事をまとめて取り消す */
+  async cancelEvent(user: SessionUser, eventId: number): Promise<CancelResult> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    const target = eventTarget(user, eventId);
+    if (!target.event) return fail(target.error ?? MSG.contactForbidden);
+    const e = target.event;
+    const targets = e.contact_photo_id === null ? [e]
+      : db.contactEvents.filter((x) => x.contact_photo_id === e.contact_photo_id && !x.is_deleted);
+    // 写っているほかの園児の分も、その園児を直せる人でなければ取り消さない
+    if (targets.some((t) => !canFixContact(user, t.child_id, t.contact_date))) return fail(MSG.fixForbidden);
+    const childIds = [...new Set(targets.map((t) => t.child_id))];
+    const { family_count } = readersOf(childIds, e.contact_date, e.created_at);
+    const at = now();
+    for (const t of targets) {
+      t.is_deleted = true;
+      t.updated_at = at;
+      log(user.account_id, '8', '4', 't_contact_event', t.contact_event_id, t.child_id, fieldsJSON(eventLogFields(t)), null);
+    }
+    for (const childId of childIds) publishContactChild(childId, EVENT_ITEM[e.event_type]);
+    return ok({ ok: true, read_family_count: family_count });
+  },
+
+  /** 取り消しの確認に出す数（GET /api/contact/events/{id}/readers） */
+  async eventReaders(user: SessionUser, eventId: number): Promise<Readers> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    const e = db.contactEvents.find((x) => x.contact_event_id === eventId);
+    if (!e || e.is_deleted || !contactAccess(user, e.child_id).read) return fail(MSG.contactForbidden);
+    const childIds = e.contact_photo_id === null ? [e.child_id]
+      : [...new Set(db.contactEvents.filter((x) => x.contact_photo_id === e.contact_photo_id && !x.is_deleted).map((x) => x.child_id))];
+    return ok(readersOf(childIds, e.contact_date, e.created_at));
+  },
+
+  /** ねた・おきたを直す（POST /api/nap/sleeps/{id}/correct）。実施の後も直せる。slept_at < woke_at ≦ 今、実施の日の中 */
+  async correctSleep(user: SessionUser, sleepId: number, input: NapSleepCorrection): Promise<NapSleep> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    const target = sleepTarget(user, sleepId);
+    if (!target.sleep || !target.session) return fail(target.error ?? MSG.contactForbidden);
+    const { sleep, session } = target;
+    if (input.slept_at === undefined && input.woke_at === undefined) return fail(MSG.badChoice);
+    const sleptAt = input.slept_at ?? sleep.slept_at;
+    const wokeAt = input.woke_at ?? sleep.woke_at;
+    if (!inDayUntilNow(sleptAt, session.session_date) || (wokeAt !== null && !inDayUntilNow(wokeAt, session.session_date))) {
+      return fail(MSG.eventTimeRange);
+    }
+    if (wokeAt !== null && wokeAt <= sleptAt) return fail(MSG.wakeBeforeSleep);
+    if (input.updated_at !== sleep.updated_at) return fail(MSG.fixConflict);
+    const [before, after] = changedFields([['slept_at', sleep.slept_at], ['woke_at', sleep.woke_at]], [['slept_at', sleptAt], ['woke_at', wokeAt]]);
+    const at = now();
+    // おきたを新しく入れたときは、入れた職員を残す
+    if (sleep.woke_staff_id === null && wokeAt !== null) sleep.woke_staff_id = user.staff_id;
+    Object.assign(sleep, { slept_at: sleptAt, woke_at: wokeAt, corrected_at: at, updated_at: at });
+    log(user.account_id, '3', '2', 't_nap_sleep', sleep.nap_sleep_id, sleep.child_id, before, after);
+    publishNapChild(session.class_id, sleep.child_id);
+    publishContactChild(sleep.child_id, 'nap');
+    return ok(sleepView(sleep, true));
+  },
+
+  /** ねた・おきたを取り消す（POST /api/nap/sleeps/{id}/cancel） */
+  async cancelSleep(user: SessionUser, sleepId: number): Promise<CancelResult> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    const target = sleepTarget(user, sleepId);
+    if (!target.sleep || !target.session) return fail(target.error ?? MSG.contactForbidden);
+    const { sleep, session } = target;
+    const { family_count } = readersOf([sleep.child_id], session.session_date, sleep.created_at);
+    sleep.is_deleted = true;
+    sleep.updated_at = now();
+    log(user.account_id, '3', '4', 't_nap_sleep', sleep.nap_sleep_id, sleep.child_id,
+      fieldsJSON([['slept_at', sleep.slept_at], ['woke_at', sleep.woke_at]]), null);
+    publishNapChild(session.class_id, sleep.child_id);
+    publishContactChild(sleep.child_id, 'nap');
+    return ok({ ok: true, read_family_count: family_count });
+  },
+
+  /** ねた・おきたの取り消しの確認に出す数（GET /api/nap/sleeps/{id}/readers） */
+  async sleepReaders(user: SessionUser, sleepId: number): Promise<Readers> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    const sleep = db.napSleeps.find((x) => x.nap_sleep_id === sleepId);
+    const session = sleep && db.napSessions.find((x) => x.nap_session_id === sleep.nap_session_id);
+    if (!sleep || sleep.is_deleted || !session || !contactAccess(user, sleep.child_id).read) return fail(MSG.contactForbidden);
+    return ok(readersOf([sleep.child_id], session.session_date, sleep.created_at));
+  },
+};
+
 /* ============ 画面が使う入口 ============ */
 export const api = guardProcedure({
   ...authApi, ...childApi, ...diaryApi, ...diaryApi2,
@@ -3857,6 +4146,7 @@ export const api = guardProcedure({
   ...devApi, ...devApi2, ...physicalApi, ...adminApi, ...adminApi2, ...adminApi3,
   ...bulkApi, ...dashboardApi, ...handoutApi,
   ...contactApi,
+  ...contactEventsApi,
 });
 
 /* ============ 入力の検査の補助（Go サーバの httpx.go と同じ規則） ============ */
