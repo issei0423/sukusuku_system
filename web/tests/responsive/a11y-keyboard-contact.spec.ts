@@ -366,6 +366,8 @@ test.describe('[staff] contact キーボードだけで通す', () => {
 
     test('連絡帳（クラス）画面の表を Tab で最後まで進み、Shift+Tab で戻っても、左に止めた園児名の列の下に隠れない', async ({ page }) => {
       // WCAG 2.4.11 フォーカスの非隠蔽（最低限）。GitHub Issue #212（直す前は Tab で 20 か所、Shift+Tab で 22 か所がすっかり隠れた）
+      // 表の押せるものを全部たどるので、CI では通るときでも 25 秒ほどかかる。上限を 60 秒にする（設定の既定は 30 秒）
+      test.setTimeout(60_000);
       const errors = await open(page, 'contact-class');
       const wrap = page.locator('.contact-table-wrap');
       expect(await wrap.evaluate((el) => el.scrollWidth > el.clientWidth), 'この幅では表が横に送られる').toBe(true);
