@@ -180,6 +180,66 @@ func (a *app) handleChildIDExists(w http.ResponseWriter, r *http.Request) {
 }
 
 /*
+sameNameBirthChildren は、氏名と生年月日が同じ園児を返す。同じ子を重ねて登録しようとしていないかを
+知らせるために使う（GitHub Issue #144 の 2）。園児IDは使われている番号の次が自動で入るため、
+同じ子の二重登録は園児IDの重複では防げない。
+
+【仮置き】設計に定めが無い（web/仮置き値.md「同じ氏名・生年月日の園児の知らせ」）。
+  - 知らせるだけで、登録は止めない。同じ氏名・生年月日の別の子もありうる
+  - 氏名は空白（半角・全角）とタブを除いて比べる。打ち方の違いで見逃さないため
+  - 取り消した園児（誤登録の取消。基本設計書「園児（m_child）」(5-3) の is_deleted）は比べない。
+    退園・卒園した園児は比べる
+
+画面側のモック（web/src/api/mock.ts の findSameNameBirthChildren）と同じ規則
+*/
+func (a *app) sameNameBirthChildren(name, birthDate string) ([]Child, error) {
+	key := childNameKey(name)
+	if key == "" || birthDate == "" {
+		return []Child{}, nil
+	}
+	rows, err := a.db.Query(`SELECT `+childColumns+` FROM m_child
+		WHERE is_deleted = 0 AND birth_date = ? ORDER BY child_id`, birthDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Child{}
+	for rows.Next() {
+		c, err := scanChild(rows)
+		if err != nil {
+			return nil, err
+		}
+		if childNameKey(c.ChildName) == key {
+			out = append(out, c)
+		}
+	}
+	return out, rows.Err()
+}
+
+// childNameKeyReplacer は、氏名を比べるときに除く文字（半角・全角の空白とタブ）
+var childNameKeyReplacer = strings.NewReplacer(" ", "", "\u3000", "", "\t", "")
+
+// childNameKey は、氏名を比べるための形にする。「大城 ひなた」を、全角の空白で書いても空白なしで書いても同じに扱う
+func childNameKey(name string) string {
+	return childNameKeyReplacer.Replace(name)
+}
+
+// handleSameNameBirthChildren は、氏名と生年月日が同じ園児を返す。登録の確認画面で知らせるために使う
+// （GitHub Issue #144 の 2）。園児の登録は管理者の操作のため、管理者に限る
+func (a *app) handleSameNameBirthChildren(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireAdmin(w, r); !ok {
+		return
+	}
+	q := r.URL.Query()
+	rows, err := a.sameNameBirthChildren(q.Get("child_name"), strings.TrimSpace(q.Get("birth_date")))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "園児の一覧を取得できませんでした")
+		return
+	}
+	writeJSON(w, http.StatusOK, rows)
+}
+
+/*
 childFieldsOf は、操作ログに残す園児の項目を、いま保存されている値で並べる。
 
 区分値は表示名にする（操作ログ参照画面でそのまま読めるように）。クラスは当年度の在籍クラス、

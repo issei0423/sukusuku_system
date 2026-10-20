@@ -464,6 +464,26 @@ export const authApi = {
 
 /* ============ 園児マスター（基本設計書「共通基盤：園児マスターの管理」(4-4)） ============ */
 
+/**
+ * 氏名と生年月日が同じ園児。同じ子を重ねて登録しようとしていないかを知らせるために使う（GitHub Issue #144 の 2）。
+ * 園児IDは使われている番号の次が自動で入るため、同じ子の二重登録は園児IDの重複では防げない。
+ * 【仮置き】知らせるだけで、登録は止めない。氏名は空白（半角・全角）とタブを除いて比べる。取り消した園児
+ * （誤登録の取消）は比べず、退園・卒園した園児は比べる（web/仮置き値.md「同じ氏名・生年月日の園児の知らせ」）。
+ * サーバ側（server/api_child_write.go の sameNameBirthChildren）と同じ規則
+ */
+function findSameNameBirthChildren(childName: string, birthDate: string): Child[] {
+  const key = childNameKey(childName);
+  if (!key || !birthDate) return [];
+  return db.children
+    .filter((c) => !c.is_deleted && c.birth_date === birthDate && childNameKey(c.child_name) === key)
+    .sort((a, b) => (a.child_id < b.child_id ? -1 : a.child_id > b.child_id ? 1 : 0));
+}
+
+/** 氏名を比べるための形。「大城 ひなた」を、全角の空白で書いても空白なしで書いても同じに扱う（server/api_child_write.go の childNameKey） */
+function childNameKey(name: string): string {
+  return name.replace(/[ \u3000\t]/g, '');
+}
+
 export const childApi = {
   async listChildren(user: SessionUser, filter: { classId?: number; name?: string } = {}): Promise<Child[]> {
     let rows = visibleChildren(user);
@@ -606,6 +626,15 @@ export const childApi = {
   async childIdExists(user: SessionUser, childId: string): Promise<boolean> {
     if (user.role !== '1') return fail('園児情報の登録・編集は管理者のみが行えます');
     return ok(db.children.some((c) => c.child_id === childId.trim()));
+  },
+
+  /**
+   * 氏名と生年月日が同じ園児。登録の確認画面で、重ねて登録していないかを知らせるために使う（GitHub Issue #144 の 2）。
+   * サーバ側は server/api_child_write.go の handleSameNameBirthChildren
+   */
+  async sameNameBirthChildren(user: SessionUser, childName: string, birthDate: string): Promise<Child[]> {
+    if (user.role !== '1') return fail('園児情報の登録・編集は管理者のみが行えます');
+    return ok(findSameNameBirthChildren(childName, birthDate.trim()));
   },
 
   /** 誤登録の取消。論理削除とする（基本設計書 5-1）。サーバ側は server/api_child_write.go の handleRemoveChild */
@@ -2810,11 +2839,15 @@ const bulkApi = {
 
     // 同じ取込の中での重複も弾く。ファイル内で同じ園児IDが2度出ることがある
     const seen = new Set<string>();
+    // 同じ氏名・生年月日の行が、このファイルの何行目に先に出たか。重ねて登録していないかを知らせる（GitHub Issue #144 の 2）
+    const seenPerson = new Map<string, number>();
     const rows: CsvRow[] = body.map((line, i) => {
       const values = line.split(',').map((v) => v.trim());
       // 誤りは1行の中でまとめて示す。1つ直すたびに次の誤りが出る作りにしない（GitHub Issue #121）
       const errors: string[] = [];
-      let warning: string | null = null;
+      // 取り込みは妨げないが、確かめてほしいこと。誤りと同じく1行の中でまとめて示す
+      const warnings: string[] = [];
+      let personKey = '';
 
       if (values.length < 6) {
         errors.push('列が足りません（園児ID,氏名,氏名かな,生年月日,性別,クラス名,平熱）');
@@ -2836,12 +2869,35 @@ const bulkApi = {
           // Number() は Infinity・0x24・1e2 も数にする。数字と小数点だけの書き方に限る（TEMPERATURE_FORMAT）
           const t = Number(values[6]);
           if (!TEMPERATURE_FORMAT.test(values[6]) || !Number.isFinite(t)) errors.push('平熱は数値（小数第1位まで。例：36.5）で入力してください');
-          else if (t < TEMPERATURE_MIN || t > TEMPERATURE_MAX) warning = '平熱が想定の範囲（30.0〜43.0℃）の外です。値を確かめてください';
+          else if (t < TEMPERATURE_MIN || t > TEMPERATURE_MAX) warnings.push('平熱が想定の範囲（30.0〜43.0℃）の外です。値を確かめてください');
+        }
+
+        /*
+         * 同じ氏名・生年月日の園児が登録済みか、このファイルの前の行にあれば、確認を促す。止めはしない
+         * （GitHub Issue #144 の 2。【仮置き】web/仮置き値.md「同じ氏名・生年月日の園児の知らせ」）。
+         * 園児IDは別の番号が振られるため、ID の重複では同じ子の二重登録に気づけない。server/api_bulk.go と同じ
+         */
+        if (childNameKey(values[1]) && isRealDate(values[3])) {
+          personKey = `${childNameKey(values[1])}|${values[3]}`;
+          const same = findSameNameBirthChildren(values[1], values[3]);
+          if (same.length > 0) {
+            warnings.push(`同じ氏名・生年月日の園児がいます（${same.map((c) => c.child_id).join('・')}）。同じ子を重ねて登録していないか確かめてください`);
+          }
+          const first = seenPerson.get(personKey);
+          if (first !== undefined) {
+            warnings.push(`同じ氏名・生年月日の行がこのファイル内にあります（${first} 行目）。同じ子を重ねて登録していないか確かめてください`);
+          }
         }
       }
-      if (errors.length === 0) seen.add(values[0]);
+      if (errors.length === 0) {
+        seen.add(values[0]);
+        if (personKey && !seenPerson.has(personKey)) seenPerson.set(personKey, i + 1);
+      }
 
-      return { line: i + 1, values, error: errors.length > 0 ? errors.join('／') : null, warning };
+      return {
+        line: i + 1, values, error: errors.length > 0 ? errors.join('／') : null,
+        warning: warnings.length > 0 ? warnings.join('／') : null,
+      };
     });
     return { header, rows };
   },

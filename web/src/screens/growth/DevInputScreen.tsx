@@ -172,8 +172,9 @@ export default function DevInputScreen() {
 
       <section className="card card-sub">
         <div className="muted">
+          {/* 「未確認」は結果として残す状態で、チェック漏れの対象にしない（基本設計書「発達チェック・身体測定」(5-7)） */}
           未入力の項目：{unfilled} 件。未入力のままにするとチェック漏れの対象になります。
-          確認できなかった項目は「未確認」を選んで残してください（基本設計書 5-7）。
+          確認できなかった項目は「未確認」を選んで残してください。
         </div>
       </section>
 
