@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -403,6 +403,12 @@ func (a *app) lookupUsableCode(code string) (usableCode, error) {
 	case expiresOn < today():
 		return out, errors.New("この招待コードは有効期限が切れています")
 	}
+	// 取り消した（誤登録）・在籍していない園児のコードでは登録させない。発行のあとで園児を取り消しても、
+	// 配ったコードで、その園児に紐づく保護者アカウントができてしまうため（GitHub Issue #166 の 4）。
+	// 園児の状態は言わず、無いコードと同じ文言にする
+	if _, issuable := a.childIssuable(out.ChildID); !issuable {
+		return out, errors.New("招待コードが確認できません。園から配布されたコードをお確かめください")
+	}
 	return out, nil
 }
 
@@ -434,7 +440,21 @@ type signUpRequest struct {
 	Password     string `json:"password"`
 	GuardianName string `json:"guardian_name"`
 	Relationship string `json:"relationship"`
+	// 利用規約に同意したか（画面の「利用規約に同意します」）と、画面に出して同意を得た規約の版。
+	// 同意は要配慮個人情報を取り扱う根拠であり、いつ・どの版に同意したかを後から示せる必要がある
+	// （基本設計書「同意履歴（t_terms_agreement）」(5-2)。GitHub Issue #170）
+	TermsAgreed  bool   `json:"terms_agreed"`
+	TermsVersion string `json:"terms_version"`
 }
+
+// guardianRelationships は続柄の選択肢（画面詳細図「新規登録画面（保護者）」(2-3) 項目11）
+var guardianRelationships = map[string]bool{"母": true, "父": true, "祖母": true, "祖父": true, "その他": true}
+
+// termsNotAgreedMessage は規約に同意しないときの文言（基本設計書「メッセージ一覧」(4-9)「規約に同意しない」）
+const termsNotAgreedMessage = "利用規約に同意いただけない場合、ご利用いただけません。"
+
+// 【仮置き】画面に出していた規約が、送るまでのあいだに改定されたときの文言（web/仮置き値.md）
+const termsOutdatedMessage = "利用規約が改定されました。改定後の利用規約をお読みいただき、あらためて同意してください。"
 
 func (a *app) handleSignUpGuardian(w http.ResponseWriter, r *http.Request) {
 	// ログイン中は新しいアカウントを作らせない。登録が成立するとセッションが新しい保護者に置き換わり、
@@ -458,16 +478,33 @@ func (a *app) handleSignUpGuardian(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "招待コードが確認できません")
 		return
 	}
+	/*
+	 * 規約への同意を受け取ってから登録する。同意しなかった場合は登録を完了しない
+	 * （基本設計書「保護者アカウントの自己登録」(4-3)、画面詳細図 2-3 項目5「未チェックのままでは登録できない」）。
+	 * 画面のチェックだけで止めると、API を直接呼んだ登録にも同意の記録が付いてしまう（GitHub Issue #170）。
+	 * 同意した版は、画面に出した版と、いま有効な版が同じときだけ記録する。送るまでのあいだに規約が改定されていたら、
+	 * 読んでいない版に同意したことになるため、改定後の規約を読み直してもらう
+	 */
+	if !req.TermsAgreed {
+		writeErr(w, http.StatusBadRequest, termsNotAgreedMessage)
+		return
+	}
+	if req.TermsVersion != a.currentTermsVersion {
+		writeErr(w, http.StatusBadRequest, termsOutdatedMessage)
+		return
+	}
 	// ログインIDはメールアドレス。空や形式の誤りを受け付けない（要件定義書「ログインIDの定義」(4-1-1)）
 	req.Email = strings.TrimSpace(req.Email)
 	if msg := validateEmail(req.Email); msg != "" {
 		writeErr(w, http.StatusBadRequest, msg)
 		return
 	}
-	// ログインIDはロールをまたいで園内で一意（基本設計書 5-2）
-	var dup int
-	a.db.QueryRow(`SELECT COUNT(*) FROM m_account WHERE email = ?`, req.Email).Scan(&dup)
-	if dup > 0 {
+	/*
+	 * ログインIDはロールをまたいで園内で一意（基本設計書 5-2）。
+	 * 大文字・小文字だけが違うメールアドレスは同じ宛先に届くため、同じものとして重複を判定する（GitHub Issue #170）。
+	 * 判定は職員アカウントの発行と同じ api_admin.go の emailTaken を使う（GitHub Issue #167 の 1）
+	 */
+	if a.emailTaken(req.Email) {
 		writeErr(w, http.StatusBadRequest, "このメールアドレスはすでに登録されています")
 		return
 	}
@@ -476,8 +513,19 @@ func (a *app) handleSignUpGuardian(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, msg)
 		return
 	}
-	if strings.TrimSpace(req.GuardianName) == "" {
+	// 氏名は前後の空白を落として、50文字以内（基本設計書「入力項目の制約値」(4-9)「氏名・かな（園児・職員・保護者）」）
+	req.GuardianName = strings.TrimSpace(req.GuardianName)
+	if req.GuardianName == "" {
 		writeErr(w, http.StatusBadRequest, "保護者の氏名を入力してください")
+		return
+	}
+	if tooLong(req.GuardianName, 50) {
+		writeErr(w, http.StatusBadRequest, "保護者の氏名は50文字以内で入力してください")
+		return
+	}
+	// 続柄は必須で、選択肢のどれか（画面詳細図 2-3 項目11）。お迎えに来る人が誰かを職員が確かめる手がかりになる（基本設計書 5-5）
+	if !guardianRelationships[req.Relationship] {
+		writeErr(w, http.StatusBadRequest, "続柄は 母・父・祖母・祖父・その他 から選んでください")
 		return
 	}
 

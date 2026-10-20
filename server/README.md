@@ -24,6 +24,7 @@ go run . -web ../web/dist     # 配信する静的ファイルの場所
 | `oplog.go` | 操作ログ。追記のみ |
 | `api_*.go` | 機能ごとのハンドラ |
 | `routes.go` | エンドポイントの配線 |
+| `events.go` | 開いている画面への知らせ（`GET /api/events`、Server-Sent Events）。変化を見てよい人へ種類と ID だけを送る。知らせと接続はメモリに持つため、サーバ1台の前提 |
 
 ## 選定の理由
 
@@ -56,6 +57,7 @@ go run . -web ../web/dist     # 配信する静的ファイルの場所
 | アカウント管理 | `staffAccounts` / `reissueTempPassword` / `unlock` / `setAccountStatus` / `createStaffAccount` / `invitationCodes` / `issueInvitationCodes` / `issueOneInvitationCode` / `revokeInvitationCode` / `guardianAccounts` / `endGuardianLink` / `verifyInvitationCode` / `signUpGuardian` / `operationLogs` / `allAccounts` |
 | 一括処理 | `parseChildCsv` / `importChildCsv` / `previewFiscalYearUpdate` |
 | ダッシュボード | `staffSummary` / `guardianHome` |
+| 開いている画面への知らせ | `connectLive`（`GET /api/events`。書き込みの API が送り先を決めて知らせる。`events.go`） |
 
 ## Go 側で必ず担保すること
 

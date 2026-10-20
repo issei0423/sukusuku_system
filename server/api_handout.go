@@ -244,6 +244,11 @@ func (a *app) handlePostHandout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.log(u.AccountID, fnChat, opCreate, "t_handout", i64(id), nil, nil, s("配布物を掲載（"+req.Title+"）"))
+	// 見られる人の配布物の一覧と、掲載の知らせを流したチャンネルを読み直させる（events.go）
+	a.notifyHandout(id, req.ClassID)
+	if roomID.Valid {
+		a.notifyRoomPost(roomID.Int64)
+	}
 	writeJSON(w, http.StatusOK, map[string]int64{"handout_id": id})
 }
 
@@ -258,11 +263,20 @@ func (a *app) handleWithdrawHandout(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "配布物の指定が正しくありません")
 		return
 	}
-	var title string
-	if err := a.db.QueryRow(`SELECT title FROM t_handout WHERE handout_id = ? AND is_deleted = 0`, id).Scan(&title); err != nil {
+	var (
+		title   string
+		classID sql.NullInt64
+	)
+	if err := a.db.QueryRow(`SELECT title, class_id FROM t_handout WHERE handout_id = ? AND is_deleted = 0`, id).
+		Scan(&title, &classID); err != nil {
 		writeErr(w, http.StatusNotFound, "配布物が見つかりません")
 		return
 	}
+	// 掲載の知らせ。取り下げると知らせも取り消すため、そのメッセージを見られる人にも知らせる（events.go）
+	var noticeID, noticeRoom sql.NullInt64
+	a.db.QueryRow(`SELECT chat_message_id, chat_room_id FROM t_chat_message
+		WHERE source_type = '4' AND source_id = ? AND is_deleted = 0
+		ORDER BY chat_message_id LIMIT 1`, id).Scan(&noticeID, &noticeRoom)
 	// 配布物の取り下げと、掲載の知らせの取り消しは、ひとまとまりで書く（GitHub Issue #99）
 	tx, err := a.db.Begin()
 	if err != nil {
@@ -286,5 +300,9 @@ func (a *app) handleWithdrawHandout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.log(u.AccountID, fnChat, opDelete, "t_handout", i64(id), nil, s(title), s("取り下げ"))
+	a.notifyHandout(id, nullInt(classID))
+	if noticeID.Valid && noticeRoom.Valid {
+		a.notifyMessage(noticeRoom.Int64, noticeID.Int64)
+	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

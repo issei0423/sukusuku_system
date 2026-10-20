@@ -20,6 +20,8 @@ import type {
   Diary, DiaryLock, DiaryTemplate, DiaryAttachment,
   ChatRoom, ChatMember, ChatMessage, ChatRead, ChatReaction, TermsAgreement, MisdeliveryRecord, Handout,
   NapSession, NapRecord, NapAbnormal,
+  ContactHomeRecord, ContactEventRecord, ContactClassRecord, ContactFacilityRecord, ContactReadRecord,
+  NapSleepRecord, NapExclusionRecord, PhraseRecord,
   DevelopmentCategory, DevelopmentItem, DevelopmentFrequency, ShareSetting,
   DevelopmentSchedule, DevelopmentCheck, DevelopmentResultRecord,
   PhysicalRecord, GrowthStandard, OperationLog, Setting,
@@ -101,7 +103,8 @@ export const children: Child[] = [
   child('C005', '金城 陸',   'きんじょう りく', '2025-07-15', '1', 36.4),
   child('C006', '伊藤 葵',   'いとう あおい', '2025-02-28', '2', 36.6),
   child('C007', '中村 蓮',   'なかむら れん', '2025-08-03', '1', 36.9),
-  // 月末生まれ。応当日が存在しない月の扱いを確かめるための例（要件定義書 7-1 No.6）
+  // 月末生まれ。応当日が存在しない月の扱いを確かめるための例（要件定義書 7-1 No.6）。
+  // 生年月日も末尾の日付ずらしで動くため、月末になるのは基準日（2026-09-01）に起動したときだけ
   child('C008', '小林 結衣', 'こばやし ゆい', '2025-01-31', '2', 36.5),
   child('C009', '加藤 大和', 'かとう やまと', '2025-06-22', '1', 36.6),
   child('C010', '吉田 心春', 'よしだ こはる', '2025-03-30', '2', 36.7),
@@ -273,7 +276,7 @@ export const diaries: Diary[] = [
  * デモで常にロック中の状態を見せるため、取得時刻は読み込み時の現在時刻にしている
  */
 export const diaryLocks: DiaryLock[] = [
-  { diary_id: 2, lock_token: 'lock-demo-0001', locked_staff_id: 'S004', locked_at: now(), last_active_at: now() },
+  { diary_id: 3, lock_token: 'lock-demo-0001', locked_staff_id: 'S004', locked_at: now(), last_active_at: now() },
 ];
 
 /** 添付（t_diary_attachment）。1〜3枚（基本設計書 5-4） */
@@ -382,6 +385,133 @@ export const napAbnormals: NapAbnormal[] = [
     response: '別室で休ませ、保護者へ連絡した。', staff_id: 'S003', diary_id: null },
 ];
 
+/* ============ 連絡帳と、ねた・おきた（詳細設計書「デモデータ」(5-5)） ============
+ * Go の server/seed.sql と同じ ID・同じ内容。野原 太郎（C001）の今日は「家庭から」「ねた」「園から」を空けておき、
+ * デモで押して見せる。起動した時刻より後の今日の記録は、下の日付ずらしのあとで外す（詳細設計書「未来の出来事を入れない」(5-5)）
+ */
+function home(id: number, childId: string, date: string, guardianId: string, v: Partial<ContactHomeRecord> & { submitted_at: string }): ContactHomeRecord {
+  return {
+    contact_home_id: id, child_id: childId, contact_date: date, guardian_id: guardianId,
+    temperature: null, night_sleep_from: null, night_sleep_to: null, breakfast: null, mood_label: null,
+    pickup_type: null, pickup_person: null, pickup_time: null, message: null,
+    confirmed_staff_id: null, confirmed_at: null, revised_at: null,
+    created_at: v.submitted_at, updated_at: v.confirmed_at ?? v.submitted_at, ...v,
+  };
+}
+export const contactHomes: ContactHomeRecord[] = [
+  home(1, 'C004', '2026-09-01', 'G004', { temperature: 36.5, night_sleep_from: '20:30', night_sleep_to: '06:30', breakfast: '1', mood_label: 'ごきげん', pickup_type: '1',
+    message: '朝から絵本を読んでほしいと言っていました。', submitted_at: '2026-09-01T07:40:00', confirmed_staff_id: 'S003', confirmed_at: '2026-09-01T08:52:00' }),
+  home(2, 'C005', '2026-09-01', 'G005', { temperature: 36.7, night_sleep_from: '21:00', night_sleep_to: '06:40', breakfast: '2', mood_label: 'ふつう', pickup_type: '2',
+    pickup_person: '祖母', pickup_time: '17:00', message: 'きょうは祖母が迎えに行きます。', submitted_at: '2026-09-01T07:45:00' }),
+  // 7:35 に送り、7:50 に園が確認したあと、8:05 に送り直した（確認が外れて「更新」）
+  home(3, 'C002', '2026-09-01', 'G002', { temperature: 36.9, night_sleep_from: '21:10', night_sleep_to: '06:50', breakfast: '3', mood_label: 'ふつう', pickup_type: '1',
+    message: '少し眠そうです。お昼寝のときによろしくお願いします。', submitted_at: '2026-09-01T08:05:00', revised_at: '2026-09-01T08:05:00',
+    created_at: '2026-09-01T07:35:00', updated_at: '2026-09-01T08:05:00' }),
+  home(4, 'C001', '2026-08-31', 'G001', { temperature: 36.6, breakfast: '1', mood_label: 'ごきげん',
+    submitted_at: '2026-08-31T07:42:00', confirmed_staff_id: 'S003', confirmed_at: '2026-08-31T08:50:00' }),
+];
+
+function contactEvent(id: number, childId: string, at: string, staffId: string, v: Partial<ContactEventRecord> & Pick<ContactEventRecord, 'event_type'>): ContactEventRecord {
+  return {
+    contact_event_id: id, child_id: childId, class_id: 1, contact_date: at.slice(0, 10), recorded_at: at,
+    meal_kind: null, meal_amount: null, toilet_label: null, temperature: null, body: null, contact_photo_id: null,
+    keep_in_growth: false, staff_id: staffId, corrected_at: null, is_deleted: false, created_at: at, updated_at: at, ...v,
+  };
+}
+/** 給食（meal_kind 1）の量 */
+const lunch = (amount: '1' | '2' | '3' | '4') => ({ event_type: '1' as const, meal_kind: '1' as const, meal_amount: amount });
+export const contactEvents: ContactEventRecord[] = [
+  contactEvent(1, 'C001', '2026-09-01T09:40:00', 'S004', { event_type: '2', toilet_label: 'おしっこ' }),
+  contactEvent(2, 'C001', '2026-09-01T10:15:00', 'S003', { event_type: '4', body: '園庭の砂場で、スコップの型抜きを何度もくり返していました。' }),
+  contactEvent(3, 'C001', '2026-09-01T11:40:00', 'S003', lunch('1')),
+  contactEvent(4, 'C002', '2026-09-01T11:40:00', 'S003', lunch('1')),
+  contactEvent(5, 'C004', '2026-09-01T11:40:00', 'S003', lunch('2')),
+  contactEvent(6, 'C005', '2026-09-01T11:40:00', 'S003', lunch('1')),
+  contactEvent(7, 'C006', '2026-09-01T11:40:00', 'S003', lunch('3')),
+  contactEvent(8, 'C007', '2026-09-01T11:40:00', 'S003', lunch('1')),
+  contactEvent(9, 'C009', '2026-09-01T11:40:00', 'S004', lunch('2')),
+  contactEvent(10, 'C010', '2026-09-01T11:40:00', 'S004', lunch('1')),
+  contactEvent(11, 'C001', '2026-08-31T09:30:00', 'S004', { event_type: '2', toilet_label: 'おしっこ' }),
+  contactEvent(12, 'C001', '2026-08-31T11:40:00', 'S003', lunch('1')),
+  contactEvent(13, 'C001', '2026-08-31T15:10:00', 'S003', { event_type: '1', meal_kind: '2', meal_amount: '2' }),
+];
+
+export const contactClasses: ContactClassRecord[] = [
+  { contact_class_id: 1, class_id: 1, contact_date: '2026-09-01', body: '園庭で砂場あそびと、しゃぼん玉をしました。', contact_photo_id: null, source_diary_id: null,
+    staff_id: 'S003', recorded_at: '2026-09-01T10:30:00', corrected_at: null, is_deleted: false, created_at: '2026-09-01T10:30:00', updated_at: '2026-09-01T10:30:00' },
+];
+
+export const contactFacilities: ContactFacilityRecord[] = [
+  { contact_facility_id: 1, child_id: 'C001', class_id: 1, contact_date: '2026-08-31',
+    body: 'しゃぼん玉を追いかけて、園庭をたくさん走っていました。給食はぜんぶ食べて、おひるねは1時間30分でした。',
+    staff_id: 'S003', recorded_at: '2026-08-31T17:05:00', corrected_at: null, is_deleted: false, created_at: '2026-08-31T17:05:00', updated_at: '2026-08-31T17:05:00' },
+];
+
+export const contactReads: ContactReadRecord[] = [
+  { child_id: 'C001', contact_date: '2026-08-31', account_id: 6, read_at: '2026-08-31T20:10:00' },
+];
+
+function sleep(id: number, sessionId: number, childId: string, at: string, staffId: string, woke?: { at: string; staff: string }): NapSleepRecord {
+  return {
+    nap_sleep_id: id, nap_session_id: sessionId, child_id: childId, slept_at: at, woke_at: woke?.at ?? null, sleep_temperature: null,
+    slept_staff_id: staffId, woke_staff_id: woke?.staff ?? null, corrected_at: null, is_deleted: false, created_at: at, updated_at: woke?.at ?? at,
+  };
+}
+/** 今日の実施 1（さくら組）は C001 を空けておく（デモ②）。昨日の実施 2 は C001 が 13:02〜14:35 */
+export const napSleeps: NapSleepRecord[] = [
+  sleep(1, 1, 'C002', '2026-09-01T13:05:00', 'S003'),
+  sleep(2, 1, 'C004', '2026-09-01T13:08:00', 'S003'),
+  sleep(3, 1, 'C005', '2026-09-01T13:10:00', 'S003'),
+  sleep(4, 1, 'C006', '2026-09-01T13:06:00', 'S003'),
+  sleep(5, 1, 'C007', '2026-09-01T13:12:00', 'S004'),
+  sleep(6, 1, 'C009', '2026-09-01T13:05:00', 'S004'),
+  sleep(7, 1, 'C010', '2026-09-01T13:07:00', 'S004'),
+  sleep(8, 2, 'C001', '2026-08-31T13:02:00', 'S003', { at: '2026-08-31T14:35:00', staff: 'S003' }),
+];
+
+/** 今日の実施 1 で C003 は欠席（ダッシュボードの「園から未送信」から外れることを見せる） */
+export const napExclusions: NapExclusionRecord[] = [
+  { nap_exclusion_id: 1, nap_session_id: 1, child_id: 'C003', reason: '1', staff_id: 'S003', is_deleted: false, created_at: '2026-09-01T13:01:00' },
+];
+
+/* ============ 園からのひとことと他児の名前（詳細設計書「デモデータ」(5-5 (2))。server/seed.sql と同じ） ============ */
+
+/**
+ * 呼び名（m_child.nickname）。他児の名前の注意を見せるため。
+ * モックでは画面へ返す園児の形（Child）を変えないよう、列を別に持つ（サーバは園児の応答に呼び名を入れていない）
+ */
+export const childNicknames: { child_id: string; nickname: string }[] = [
+  { child_id: 'C001', nickname: 'たっくん' },
+  { child_id: 'C006', nickname: 'あおちゃん' },
+  { child_id: 'C008', nickname: 'ゆいちゃん' },
+];
+
+/**
+ * 定型文（m_phrase）。server/seed.sql と server/db_contact.go の defaultPhrases と同じ順・同じ文。
+ * 健康や発達の評価の言葉（「元気に」「順調に」など）を入れない（原則1）。4:日誌は server/api_diary.go の fixedPhrases と同じ5つ
+ */
+export const phrases: PhraseRecord[] = ([
+  ['1', '今日も一日ありがとうございました。'],
+  ['1', 'お迎えのときに、くわしくお話しします。'],
+  ['1', 'おうちでも、今日のことを聞いてみてください。'],
+  ['1', '明日もよろしくお願いします。'],
+  ['2', '園庭で遊びました。'],
+  ['2', '絵本を読みました。'],
+  ['2', '手洗いを自分でしようとしていました。'],
+  ['3', '今日は園庭で遊びました。'],
+  ['3', '今日はお散歩に出かけました。'],
+  ['3', '今日は室内で製作をしました。'],
+  ['4', 'よく食べ、おかわりをしていました。'],
+  ['4', '午睡は落ち着いて入眠できました。'],
+  ['4', '園庭で友だちと関わって遊ぶ姿が見られました。'],
+  ['4', '鼻水が出ていたため、こまめに拭き取りました。'],
+  ['4', 'ご家庭でも様子を見ていただけますと幸いです。'],
+] as const).map(([scope, body], i, all) => ({
+  phrase_id: i + 1, phrase_scope: scope, body,
+  display_order: all.slice(0, i + 1).filter(([x]) => x === scope).length,
+  is_deleted: false, updated_staff_id: 'S001', created_at: '2026-04-01T09:00:00', updated_at: '2026-04-01T09:00:00',
+}));
+
 /* ============ 発達チェック（基本設計書 5-7） ============
  * 発達過程区分はマスタ化して指針改定に追従する。区分の粒度は
  * 0歳児~2歳児までの機能発達について.md「発達区分一覧」に合わせた
@@ -489,9 +619,17 @@ export const developmentSchedules: DevelopmentSchedule[] = [
   { development_schedule_id: 8, child_id: 'C008', scheduled_on: '2026-09-15', is_manual_override: false, created_staff_id: 'S001' },
 ];
 
-/** 発達チェック（t_development_check） */
+/**
+ * 発達チェック（t_development_check）
+ *
+ * 結果は、実施日の月齢の区分の項目で入れる（基本設計書「月齢の算出」(4-8)。基準日は実施日）。
+ * 末尾の日付ずらしは生年月日と実施日を同じ日数だけ動かすが、月の長さの違いで応当日基準の月齢が 1 か月ずれることがある。
+ * 区分の境目（誕生日のちょうど 1 年後など）に置くと隣の区分へ移り、一覧に「未入力」が出るため、境目から離して置く
+ * （GitHub Issue #143・#164。もとの 2026-06-01 は 1歳0か月ちょうどで、結果の区分と合っていなかった）。
+ * サーバ側（server/seed.sql）も同じ
+ */
 export const developmentChecks: DevelopmentCheck[] = [
-  { development_check_id: 1, child_id: 'C001', development_schedule_id: null, checked_on: '2026-06-01', status: '2', staff_id: 'S003', share_status: '2' },
+  { development_check_id: 1, child_id: 'C001', development_schedule_id: null, checked_on: '2026-05-15', status: '2', staff_id: 'S003', share_status: '2' },
   { development_check_id: 2, child_id: 'C002', development_schedule_id: null, checked_on: '2026-05-10', status: '2', staff_id: 'S003', share_status: '2' },
   { development_check_id: 3, child_id: 'C004', development_schedule_id: null, checked_on: '2026-06-05', status: '2', staff_id: 'S004', share_status: '1' },
 ];
@@ -501,16 +639,16 @@ export const developmentChecks: DevelopmentCheck[] = [
  * 「未入力」はレコードが存在しない状態で表す。「未確認」は result='3' として保持する（基本設計書 5-7）
  */
 export const developmentResults: DevelopmentResultRecord[] = [
-  // C001 の前回（2026-06-01・0歳11か月）。9か月頃〜12か月頃の区分
+  // C001 の前回（2026-05-15・0歳11か月）。9か月頃〜12か月頃の区分
   { development_result_id: 1, development_check_id: 1, development_item_id: 141, result: '1', note: null },
   { development_result_id: 2, development_check_id: 1, development_item_id: 142, result: '1', note: null },
   { development_result_id: 3, development_check_id: 1, development_item_id: 143, result: '3', note: null },
   { development_result_id: 4, development_check_id: 1, development_item_id: 144, result: '2', note: null },
-  // C002 の前回
+  // C002 の前回（2026-05-10・1歳1か月）。1歳頃〜1歳3か月頃の区分
   { development_result_id: 5, development_check_id: 2, development_item_id: 151, result: '1', note: null },
   { development_result_id: 6, development_check_id: 2, development_item_id: 152, result: '2', note: null },
   { development_result_id: 7, development_check_id: 2, development_item_id: 153, result: '1', note: null },
-  // C004 の前回
+  // C004 の前回（2026-06-05・1歳1か月）。1歳頃〜1歳3か月頃の区分
   { development_result_id: 8, development_check_id: 3, development_item_id: 151, result: '1', note: null },
   { development_result_id: 9, development_check_id: 3, development_item_id: 152, result: '1', note: '絵本を指差して名前を言う場面があった' },
   { development_result_id: 10, development_check_id: 3, development_item_id: 153, result: '3', note: null },
@@ -612,7 +750,7 @@ export const settings: Setting[] = [
   setting('scope.handover_grace_days', '14', '引き継ぎ猶予期間（日）'),
   setting('scope.fiscal_year_update_date', '04-01', '年度更新の実行日'),
   // 身体測定
-  setting('physical.measure_months', '4,7,10,1', '測定を行う月'),
+  setting('physical.measure_months', '4,8,12', '測定を行う月'),
   setting('physical.height_min', '40', '身長の下限（cm）'),
   setting('physical.height_max', '140', '身長の上限（cm）'),
   setting('physical.weight_min', '2', '体重の下限（kg）'),
@@ -630,6 +768,18 @@ export const settings: Setting[] = [
   setting('paging.nap_search_per_page', '50', '午睡記録検索の既定件数'),
   setting('paging.operation_log_per_page', '100', '操作ログの既定件数'),
   setting('paging.physical_history_count', '12', '過去測定値一覧の既定表示件数'),
+  // 連絡帳・通知・AI（基本設計書「設定マスタ」(5-9)、詳細設計書「デモデータ」(5-5)。server/seed.sql と同じ）
+  setting('contact.show_items', 'nap,meal,toilet,temperature,comment,photo,class', '保護者へ出すきょうのようすの項目'),
+  setting('contact.home_items', 'temperature,night_sleep,breakfast,mood,pickup,message', '「家庭から」の入力欄に出す項目'),
+  setting('contact.toilet_choices', 'おしっこ,うんち,おむつ交換,トイレでできた', '排せつの選択肢'),
+  setting('contact.mood_choices', 'ごきげん,ふつう,ごきげんななめ', '「家庭から」のきげんの選択肢'),
+  setting('push.quiet_hours', '21:00-07:00', '通知を送らない時間帯'),
+  setting('ai.enabled', '0', '文章の下書き（AI）を使うか'),
+  setting('ai.daily_limit', '300', 'AI の下書きの1日の上限回数'),
+  setting('scope.guardian_grace_days', '30', '保護者の猶予期間（日）'),
+  setting('nap.temperature_required', '入眠時', '午睡で体温を求める時点'),
+  setting('growth.share_physical', '1', '身体測定を成長の記録に出すか'),
+  setting('retention.contact_years', '5', '連絡帳の保持年数（要決定。決まるまでは記録の保持年数と同じ）'),
 ];
 
 /**
@@ -658,12 +808,13 @@ export const termsAgreements: TermsAgreement[] = accounts
  * ずらす。記録どうしの前後関係（昨日・3日前）がそのまま保たれるため。
  * サーバ側（server/seed_shift.go）も同じ扱いにしてある。片方だけ直すと食い違う。
  *
- * ずらすのは記録だけである。園児の生年月日や年度の開始日は絶対の日付であり、
- * 動かしてはならない。マスタの配列は下の対象に含めず、記録の中に混ざる
- * birth_date は名前で除外する。
+ * ずらすのは記録だけである。年度の開始日などの絶対の日付は動かしてはならない。
+ * マスタの配列は下の対象に含めず、記録の中に混ざる birth_date は名前で除外する。
+ * ただしマスタにあっても、デモの「今日」から決めた値（一時パスワードの有効期限・園児の生年月日）は、
+ * 下で明示的にずらす。
  */
 
-/** ずらしの対象から外す項目名。生年月日は照合に使う値であり動かせない */
+/** ずらしの対象から外す項目名。記録の中に混ざる生年月日は動かさない（園児の生年月日は、下で園児の配列をずらす） */
 const SHIFT_EXCLUDED_KEYS = new Set(['birth_date']);
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
@@ -704,6 +855,8 @@ function shiftRows(rows: Record<string, unknown>[], days: number): void {
     // 記録の配列だけを対象にする。マスタ（children・classes など）は含めない
     const recordSets: Record<string, unknown>[][] = [
       invitationCodes as unknown as Record<string, unknown>[],
+      guardianChildren as unknown as Record<string, unknown>[],
+      termsAgreements as unknown as Record<string, unknown>[],
       diaries as unknown as Record<string, unknown>[],
       diaryLocks as unknown as Record<string, unknown>[],
       chatMembers as unknown as Record<string, unknown>[],
@@ -718,6 +871,13 @@ function shiftRows(rows: Record<string, unknown>[], days: number): void {
       developmentResults as unknown as Record<string, unknown>[],
       physicalRecords as unknown as Record<string, unknown>[],
       operationLogs as unknown as Record<string, unknown>[],
+      contactHomes as unknown as Record<string, unknown>[],
+      contactEvents as unknown as Record<string, unknown>[],
+      contactClasses as unknown as Record<string, unknown>[],
+      contactFacilities as unknown as Record<string, unknown>[],
+      contactReads as unknown as Record<string, unknown>[],
+      napSleeps as unknown as Record<string, unknown>[],
+      napExclusions as unknown as Record<string, unknown>[],
     ];
     for (const rows of recordSets) shiftRows(rows, offset);
 
@@ -729,7 +889,42 @@ function shiftRows(rows: Record<string, unknown>[], days: number): void {
     for (const a of accounts) {
       if (a.temp_password_expires_at) a.temp_password_expires_at = shiftValue(a.temp_password_expires_at, offset);
     }
+
+    /*
+     * 園児の生年月日も、デモの「今日」に何か月の子かを決めて入れてある。記録と同じ日数だけずらし、
+     * 起動した日にもデモの園児の月齢（今日の時点・実施日の時点・測定日の時点）を保つ。ずらさないと、実施日だけが動いて
+     * 上園 花子・宮城 美咲の前回の発達チェックが別の発達過程区分になり、一覧に「未入力 5 件」と出る（GitHub Issue #164）。
+     * 日付をずらすので、月末生まれ（小林 結衣）は起動した日によって月末でなくなる。
+     * サーバ側は server/seed_shift.go の seedShiftMasterColumns
+     */
+    for (const c of children) c.birth_date = shiftValue(c.birth_date, offset);
   }
+  trimFutureDemoContacts();
+}
+
+/**
+ * 今日のページで、起動した時刻より後の連絡帳の記録を入れない（詳細設計書「未来の出来事を入れない」(5-5)、決めたこと D-8）。
+ * 朝に起動すると、まだ起きていない給食やおひるねが保護者の画面に出るため。Go は server/db_contact.go の trimFutureDemoContacts。
+ * 既存の午睡の実施と5分ごとの確認にはかけない（今までどおり）
+ */
+function trimFutureDemoContacts(): void {
+  const day = today();
+  const at = now();
+  const future = (v: string | null) => v !== null && v.slice(0, 10) === day && v > at;
+  const drop = <T,>(rows: T[], when: (r: T) => boolean) => {
+    for (let i = rows.length - 1; i >= 0; i--) if (when(rows[i])) rows.splice(i, 1);
+  };
+  drop(contactEvents, (r) => r.contact_date === day && future(r.recorded_at));
+  drop(contactClasses, (r) => r.contact_date === day && future(r.recorded_at));
+  drop(contactFacilities, (r) => r.contact_date === day && future(r.recorded_at));
+  drop(contactHomes, (r) => r.contact_date === day && future(r.submitted_at));
+  for (const h of contactHomes) {
+    if (future(h.confirmed_at)) { h.confirmed_at = null; h.confirmed_staff_id = null; }
+    if (future(h.revised_at)) h.revised_at = null;
+  }
+  drop(napSleeps, (r) => future(r.slept_at));
+  for (const s of napSleeps) if (future(s.woke_at)) { s.woke_at = null; s.woke_staff_id = null; }
+  drop(napExclusions, (r) => future(r.created_at));
 }
 
 /* ============ 配布物（t_handout） ============

@@ -347,9 +347,10 @@ func TestPasswordRules(t *testing.T) {
 
 	t.Run("新規登録でも同じ規則にする", func(t *testing.T) {
 		signUp := func(email, password string) *httptest.ResponseRecorder {
-			body, _ := json.Marshal(map[string]string{
+			body, _ := json.Marshal(map[string]any{
 				"code": "GHIJ-7890-KLMN", "email": email, "password": password,
 				"guardian_name": "高梨 次郎", "relationship": "父",
+				"terms_agreed": true, "terms_version": "1.0", // 規約への同意（GitHub Issue #170）
 			})
 			return send(t, h, nil, "POST", "/api/signup", string(body))
 		}
@@ -402,7 +403,7 @@ func TestSignUpJoinsPersonalRoomOfThatChild(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := send(t, h, nil, "POST", "/api/signup", `{"code":"`+issued.Code+`","email":"other.nohara@example.jp",
-		"password":"hanako-5678","guardian_name":"野原 花子","relationship":"母"}`)
+		"password":"hanako-5678","guardian_name":"野原 花子","relationship":"母","terms_agreed":true,"terms_version":"1.0"}`)
 	expectStatus(t, rec, http.StatusOK)
 	hanako := sessionCookieOf(t, rec)
 
@@ -427,7 +428,7 @@ func TestSignUpJoinsPersonalRoomOfThatChild(t *testing.T) {
 
 	t.Run("元の家庭（C001）の新しい保護者は、これまでどおり C001 の個人チャットへ入る", func(t *testing.T) {
 		rec := send(t, h, nil, "POST", "/api/signup", `{"code":"ABCD-1234-EFGH","email":"nohara.m@example.jp",
-			"password":"mama-5678-x","guardian_name":"野原 みさえ","relationship":"母"}`)
+			"password":"mama-5678-x","guardian_name":"野原 みさえ","relationship":"母","terms_agreed":true,"terms_version":"1.0"}`)
 		expectStatus(t, rec, http.StatusOK)
 		if rooms := roomIDsOf(t, h, sessionCookieOf(t, rec)); !rooms[otherFamilyRoom] {
 			t.Fatalf("自児の個人チャットに入っていない: %v", rooms)
@@ -450,9 +451,10 @@ func TestInvitationCodeIsSingleUseUnderConcurrency(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			<-start
-			body, _ := json.Marshal(map[string]string{
+			body, _ := json.Marshal(map[string]any{
 				"code": "OPQR-1234-STUV", "email": "dup" + string(rune('a'+i)) + "@example.jp",
 				"password": "dup-pass-5678", "guardian_name": "宮城 次郎", "relationship": "父",
+				"terms_agreed": true, "terms_version": "1.0",
 			})
 			req := httptest.NewRequest("POST", "/api/signup", strings.NewReader(string(body)))
 			req.Header.Set("Content-Type", "application/json")

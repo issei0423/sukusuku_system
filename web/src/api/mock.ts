@@ -18,17 +18,28 @@ import type {
   InvitationCode, NapRecord, NapSession, NapAbnormal, PhysicalRecord, GrowthStandard,
   DevelopmentCheck, DevelopmentResultRecord, DevelopmentItem, ChatRoom, ChatMessage,
   OperationLog, Allergy, FunctionType, OperationType, Paged, Handout,
+  ContactHomeRecord, ContactEventRecord, ContactClassRecord, ContactFacilityRecord, NapSleepRecord, NapExclusionRecord,
 } from './types';
 import {
   ageInMonths, now, today, addDays, plusMinutes, fromNowMinutes, napAutoCloseAt, normalizeInvitationCode, validateEmail,
-  validateNewPassword, isRealDate,
+  validateNewPassword, isRealDate, validateStaffAccountInput, formatYM, isOneDecimal,
 } from './util';
-import { BODY_POSITION, BREATHING, COMPLEXION, REACTION, HANDOUT_TYPE } from './codes';
+import { BODY_POSITION, BREATHING, COMPLEXION, REACTION, HANDOUT_TYPE, SEX, PHOTO_CONSENT } from './codes';
 import {
   ProcedureRequiredError, SESSION_ENDED_MESSAGE, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
 } from './procedure';
+import { emitLive } from '../live';
+import type { LiveEvent } from '../live';
 import type {
-  LoginError, ChildInput, DiaryFilter, DiaryInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
+  LoginError, ChildInput, DiaryFilter, DiaryInput, DiaryAttachmentInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
+  DevDraftView,
+  ContactHome, ContactHomeInput, ContactPage, ContactClassView, ContactClassRow, ContactEvent, ContactClass, ContactFacility,
+  NapSleep, NapExclusion, HomeState, GuardianToday, TodayItem, MealAmount,
+} from './shapes';
+import { MSG, MEAL_AMOUNT_TEXT, MEAL_KIND_TEXT, otherNamesMessage } from '../messages';
+import type {
+  ContactEventInput, RecordEventsResult, ContactEventCorrection, NapSleepCorrection, CancelResult, Readers,
+  ContactRecipient, Phrase, NameMatch, FacilityCorrection,
 } from './shapes';
 
 // 画面はこれまでどおり client 経由で型を参照する。定義の実体は shapes.ts が持つ
@@ -116,6 +127,72 @@ function log(
   });
 }
 
+/*
+ * 変更前後の値（基本設計書「操作ログ（t_operation_log）」(5-8)）
+ * 「変更前後の値は JSON 文字列で保持する。変更のあった項目だけを {"項目名": 値} の形で入れる」。
+ * 項目は並べた順に書く。サーバ側（server/oplog.go の fieldsJSON・changedFields）と同じ項目名・同じ順。
+ * 【仮置き】ほかの操作の記録（日誌の「申請」、アカウントの「停止」など）は、まだ文で残している（web/仮置き値.md）
+ */
+type Field = [name: string, value: unknown];
+
+function fieldsJSON(fields: Field[]): string {
+  return JSON.stringify(Object.fromEntries(fields));
+}
+
+/** 変わった項目だけを、変更前と変更後の JSON 文字列にする。before と after は同じ項目を同じ順に並べて渡す */
+function changedFields(before: Field[], after: Field[]): [string, string] {
+  const changed = after.map((_, i) => i).filter((i) => JSON.stringify(before[i]?.[1]) !== JSON.stringify(after[i][1]));
+  return [fieldsJSON(changed.map((i) => before[i])), fieldsJSON(changed.map((i) => after[i]))];
+}
+
+/**
+ * 操作ログに残す園児の項目を、いま保存されている値で並べる。区分値は表示名にする。
+ * サーバ側（server/api_child_write.go の childFieldsOf）と同じ項目・同じ順
+ */
+function childFields(childId: string): Field[] {
+  const c = findChild(childId)!;
+  const cc = db.classChildren.find((x) => x.child_id === childId
+    && db.classes.some((k) => k.class_id === x.class_id && k.fiscal_year === db.FISCAL_YEAR));
+  return [
+    ['氏名', c.child_name],
+    ['よみ', c.child_name_kana],
+    ['生年月日', c.birth_date],
+    ['性別', SEX[c.sex]],
+    ['平熱', c.normal_temperature],
+    ['写真の利用同意', PHOTO_CONSENT[c.photo_consent_level]],
+    ['クラス', cc ? className(cc.class_id) : '所属クラスなし'],
+    ['アレルギー', db.allergies.filter((a) => a.child_id === childId)
+      .map((a) => `${a.target_food}（${a.symptom ?? ''}／${a.response ?? ''}）`)],
+    ['既往歴', db.medicalHistories.filter((m) => m.child_id === childId).map((m) => m.content)],
+  ];
+}
+
+/**
+ * 日誌・午睡チェック・発達チェック・身体測定・チャットのいずれかの記録が紐づいているか
+ * （基本設計書「園児情報の取消（誤登録の削除）」(4-4)）。論理削除した記録も、残っていて園児に紐づくため数える。
+ * チャットは、その園児の個人チャットのメッセージ（取消したものを含む）を数える（【仮置き】web/仮置き値.md）。
+ * サーバ側は server/api_child_write.go の childHasRecords
+ */
+function childHasRecords(childId: string): boolean {
+  const personalRooms = new Set(db.chatRooms.filter((r) => r.room_type === '4' && r.child_id === childId)
+    .map((r) => r.chat_room_id));
+  return db.diaries.some((d) => d.child_id === childId)
+    || db.napRecords.some((r) => r.child_id === childId)
+    || db.napAbnormals.some((r) => r.child_id === childId)
+    || db.developmentChecks.some((r) => r.child_id === childId)
+    || db.physicalRecords.some((r) => r.child_id === childId)
+    || db.chatMessages.some((m) => personalRooms.has(m.chat_room_id));
+}
+
+/**
+ * 招待コードを発行できる園児か（取り消していない・在籍中）。一括発行の対象と同じ条件。
+ * サーバ側は server/api_admin.go の childIssuable
+ */
+function childIssuable(childId: string): { found: boolean; issuable: boolean } {
+  const c = findChild(childId);
+  return { found: !!c, issuable: !!c && !c.is_deleted && c.enrollment_status === '1' };
+}
+
 /**
  * 操作の相手を、人が読める名前にする。園児に紐づかない操作（アカウントの停止、クラス日誌の承認など）は、
  * 対象園児の列だけでは誰・何に対する操作かが分からない（GitHub Issue #114）。
@@ -149,6 +226,9 @@ function canUseClass(user: SessionUser, classId: number): boolean {
  */
 const INVITATION_DAYS_MESSAGE = '有効期限は 1〜365 日で指定してください';
 const validInvitationDays = (days: number) => Number.isInteger(days) && days >= 1 && days <= 365;
+// 一括発行の、園児1名あたりの枚数は 1〜5 枚（図/画面詳細図.md「招待コード管理画面」(7-7) 項目10）
+const PER_CHILD_MESSAGE = '1名あたりの枚数は1〜5枚で指定してください';
+const validPerChild = (n: number) => Number.isInteger(n) && n >= 1 && n <= 5;
 
 /** ログイン中の職員。ログアウトのときに、保持している編集ロックを外すために持つ */
 let loggedInStaffId: string | null = null;
@@ -183,7 +263,9 @@ export function childrenOfGuardian(guardianId: string): Child[] {
 
 /** 職員が参照できる園児の一覧 */
 export function visibleChildren(user: SessionUser): Child[] {
-  const alive = db.children.filter((c) => !c.is_deleted && c.enrollment_status === '1');
+  // server/scope.go の visibleChildren と同じよみ順にする。
+  const alive = db.children.filter((c) => !c.is_deleted && c.enrollment_status === '1')
+    .sort((a, b) => a.child_name_kana.localeCompare(b.child_name_kana, 'ja') || a.child_id.localeCompare(b.child_id));
   if (user.role === '1') return alive;
   if (user.role === '2') {
     if (user.class_id == null) return [];
@@ -216,6 +298,23 @@ function canSeeDiary(user: SessionUser, d: Diary): boolean {
   }
   return d.record_type === '1' && d.status === '3' && d.is_shared_to_guardian
     && !!d.child_id && canSeeChild(user, d.child_id);
+}
+
+/*
+ * 申請したことを残す操作ログの「変更後」の文言。最後に申請した職員は、これで操作ログから引く（diaryApplicant）。
+ * 申請と差し戻しの往復の経緯は操作ログで追うと定めているため（基本設計書「日誌（t_diary）」(5-4)）。
+ * サーバ側（server/api_diary_write.go の diaryLogApply・diaryLogCreateAndApply）と同じ文言
+ */
+const DIARY_LOG_APPLY = '申請';
+const DIARY_LOG_CREATE_AND_APPLY = '作成して申請';
+
+/** その日誌を最後に申請した職員の職員ID。申請の記録が無ければ null（サーバ側は diaryApplicant） */
+function diaryApplicant(diaryId: number): string | null {
+  // 操作ログは新しいものが先頭（log が unshift する）
+  const l = db.operationLogs.find((x) => x.function_type === '1' && x.target_table === 't_diary'
+    && x.target_id === diaryId && (x.after_value === DIARY_LOG_APPLY || x.after_value === DIARY_LOG_CREATE_AND_APPLY));
+  if (!l) return null;
+  return db.staff.find((st) => st.account_id === l.account_id)?.staff_id ?? null;
 }
 
 /**
@@ -398,6 +497,26 @@ export const authApi = {
 
 /* ============ 園児マスター（基本設計書「共通基盤：園児マスターの管理」(4-4)） ============ */
 
+/**
+ * 氏名と生年月日が同じ園児。同じ子を重ねて登録しようとしていないかを知らせるために使う（GitHub Issue #144 の 2）。
+ * 園児IDは使われている番号の次が自動で入るため、同じ子の二重登録は園児IDの重複では防げない。
+ * 【仮置き】知らせるだけで、登録は止めない。氏名は空白（半角・全角）とタブを除いて比べる。取り消した園児
+ * （誤登録の取消）は比べず、退園・卒園した園児は比べる（web/仮置き値.md「同じ氏名・生年月日の園児の知らせ」）。
+ * サーバ側（server/api_child_write.go の sameNameBirthChildren）と同じ規則
+ */
+function findSameNameBirthChildren(childName: string, birthDate: string): Child[] {
+  const key = childNameKey(childName);
+  if (!key || !birthDate) return [];
+  return db.children
+    .filter((c) => !c.is_deleted && c.birth_date === birthDate && childNameKey(c.child_name) === key)
+    .sort((a, b) => (a.child_id < b.child_id ? -1 : a.child_id > b.child_id ? 1 : 0));
+}
+
+/** 氏名を比べるための形。「大城 ひなた」を、全角の空白で書いても空白なしで書いても同じに扱う（server/api_child_write.go の childNameKey） */
+function childNameKey(name: string): string {
+  return name.replace(/[ \u3000\t]/g, '');
+}
+
 export const childApi = {
   async listChildren(user: SessionUser, filter: { classId?: number; name?: string } = {}): Promise<Child[]> {
     let rows = visibleChildren(user);
@@ -430,10 +549,17 @@ export const childApi = {
     return ok(db.allergies.filter((a) => a.child_id === childId));
   },
 
-  /** アレルギー一覧画面は全園児が対象（画面詳細図 7-1 の補足） */
-  async allAllergies(): Promise<{ child: Child; className: string; allergies: Allergy[] }[]> {
+  /**
+   * アレルギー一覧画面は全園児が対象（画面詳細図 7-1 の補足）。一般にも自クラスの制限をかけないが、保護者には返さない
+   * （基本設計書「権限と利用可能機能」(6-1)「アレルギー一覧の参照｜保護者 ×・一般 ○※2」。GitHub Issue #177 の 3）。
+   * 【仮置き】並びは園児のよみ順（web/仮置き値.md「一覧の並び順」。GitHub Issue #177 の 7）。
+   * サーバ側は server/api_child.go の handleAllAllergies
+   */
+  async allAllergies(user: SessionUser): Promise<{ child: Child; className: string; allergies: Allergy[] }[]> {
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
     const rows = db.children
       .filter((c) => !c.is_deleted && c.enrollment_status === '1')
+      .sort((a, b) => a.child_name_kana.localeCompare(b.child_name_kana, 'ja'))
       .map((c) => ({
         child: c,
         className: className(db.classChildren.find((cc) => cc.child_id === c.child_id)?.class_id ?? null),
@@ -478,7 +604,7 @@ export const childApi = {
     if (mode === 'create' && existing) return fail('その園児IDはすでに使われています');
     if (mode === 'edit' && !existing) return fail('園児が見つかりません');
 
-    const before = existing ? `${existing.child_name} / ${existing.birth_date}` : null;
+    const before = existing ? childFields(input.child_id) : null;
     const row: Child = {
       child_id: input.child_id,
       child_name: input.child_name,
@@ -514,8 +640,18 @@ export const childApi = {
       db.medicalHistories.push({ medical_history_id: nextId(), child_id: input.child_id, content });
     });
 
-    log(user.account_id, '6', mode === 'create' ? '1' : '2', 'm_child', null, input.child_id,
-      before, `${row.child_name} / ${row.birth_date}`);
+    /*
+     * 操作ログには、変更のあった項目だけを {"項目名": 値} の JSON で残す（基本設計書「操作ログ（t_operation_log）」(5-8)）。
+     * 氏名と生年月日だけを残すと、クラス・アレルギー・平熱を変えても前後が同じに見える（GitHub Issue #166 の 5）。
+     * サーバ側は server/api_child_write.go の handleSaveChild
+     */
+    const after = childFields(input.child_id);
+    if (before) {
+      const [b, a] = changedFields(before, after);
+      log(user.account_id, '6', '2', 'm_child', null, input.child_id, b, a);
+    } else {
+      log(user.account_id, '6', '1', 'm_child', null, input.child_id, null, fieldsJSON(after));
+    }
     return ok(row);
   },
 
@@ -525,11 +661,24 @@ export const childApi = {
     return ok(db.children.some((c) => c.child_id === childId.trim()));
   },
 
-  /** 誤登録の取消。論理削除とする（基本設計書 5-1） */
+  /**
+   * 氏名と生年月日が同じ園児。登録の確認画面で、重ねて登録していないかを知らせるために使う（GitHub Issue #144 の 2）。
+   * サーバ側は server/api_child_write.go の handleSameNameBirthChildren
+   */
+  async sameNameBirthChildren(user: SessionUser, childName: string, birthDate: string): Promise<Child[]> {
+    if (user.role !== '1') return fail('園児情報の登録・編集は管理者のみが行えます');
+    return ok(findSameNameBirthChildren(childName, birthDate.trim()));
+  },
+
+  /** 誤登録の取消。論理削除とする（基本設計書 5-1）。サーバ側は server/api_child_write.go の handleRemoveChild */
   async removeChild(user: SessionUser, childId: string): Promise<void> {
     if (user.role !== '1') return fail('園児情報の取消は管理者のみが行えます');
     const c = findChild(childId);
-    if (!c) return fail('園児が見つかりません');
+    // 取り消した園児は「見つからない」として扱う。同じ取消を重ねて受けて、操作ログに 2 行残さない（GitHub Issue #166 の 4）
+    if (!c || c.is_deleted) return fail('園児が見つかりません');
+    // 記録のある園児は取り消せない。在籍の終了（退園・卒園）は在籍状態の変更で行う
+    // （基本設計書「園児情報の取消（誤登録の削除）」(4-4)、文言は「メッセージ一覧」(4-9)「取消の不可」）
+    if (childHasRecords(childId)) return fail('記録が登録されている園児は取り消せません。在籍状態を変更してください。');
     c.is_deleted = true;
     c.updated_at = now();
     log(user.account_id, '6', '4', 'm_child', null, childId, c.child_name, '取消（論理削除）');
@@ -542,20 +691,25 @@ export const childApi = {
 export const diaryApi = {
   async listDiaries(user: SessionUser, f: DiaryFilter = {}): Promise<Paged<Diary>> {
     const perPage = settingNumber('paging.diary_per_page', 50);
-    const visible = new Set(visibleChildren(user).map((c) => c.child_id));
-    const myClasses = new Set(selectableClasses(user).map((c) => c.class_id));
 
-    let rows = db.diaries.filter((d) => !d.is_deleted).filter((d) => {
-      // 保護者は、承認済みかつ共有した自児の個人日誌だけ（サーバ側の visibleDiaryCondition と同じ。GitHub Issue #157）
-      if (user.role === '3') return canSeeDiary(user, d);
-      // 個人日誌・ヒヤリハットは対象園児で、クラス日誌・週案は対象クラスで参照範囲を判定する
-      if (d.child_id) return visible.has(d.child_id);
-      return d.class_id != null && myClasses.has(d.class_id);
-    });
+    // 個人日誌・ヒヤリハットは対象園児で、クラス日誌・週案は対象クラスで参照範囲を判定する。
+    // 保護者は、承認済みかつ共有した自児の個人日誌だけ（サーバ側の visibleDiaryCondition と同じ。GitHub Issue #157）
+    let rows = db.diaries.filter((d) => canSeeDiary(user, d));
 
     if (f.recordType) rows = rows.filter((d) => d.record_type === f.recordType);
-    if (f.classId) rows = rows.filter((d) => d.class_id === f.classId);
+    // 個人日誌・ヒヤリハットは対象園児の在籍クラスで、クラス日誌・週案は対象クラスで絞る。参照範囲と同じ考え方にする。
+    // 対象のクラスで絞ると、以前の版でクラスを空けて保存した個人日誌が、見られるのに一覧に出なかった
+    // （GitHub Issue #174。サーバ側は server/api_diary.go の handleListDiaries）
+    if (f.classId) {
+      const classId = f.classId;
+      rows = rows.filter((d) => (d.child_id
+        ? db.classChildren.some((cc) => cc.class_id === classId && cc.child_id === d.child_id)
+        : d.class_id === classId));
+    }
     if (f.status) rows = rows.filter((d) => d.status === f.status);
+    // 【仮置き】自分が書いた日誌に絞る。職員ダッシュボードの「差し戻された日誌」（自分が書いたものを数える）から
+    // 開いた一覧を、数えた日誌と一致させるため（図/画面詳細図.md「職員ダッシュボード」(2-6) 項目2。GitHub Issue #174）
+    if (f.mine && user.staff_id) rows = rows.filter((d) => d.created_staff_id === user.staff_id);
     if (f.from) rows = rows.filter((d) => d.diary_date >= f.from!);
     if (f.to) rows = rows.filter((d) => d.diary_date <= f.to!);
 
@@ -571,10 +725,13 @@ export const diaryApi = {
     if (!d) return fail('日誌が見つかりません');
     if (!canSeeDiary(user, d)) return fail('この日誌を参照する権限がありません');
     // 記入した職員・確認した職員の氏名を載せる。Go サーバ（server/api_diary.go の enrich）と同じ
+    // 最後に申請した職員は、職員にだけ返す（承認画面が使う。サーバ側の handleGetDiary と同じ）
+    const applied = user.role === '3' ? null : diaryApplicant(d.diary_id);
     return ok({
       ...d,
       staff_name: staffName(d.created_staff_id),
       approved_staff_name: d.approved_staff_id ? staffName(d.approved_staff_id) : null,
+      ...(applied ? { applied_staff_id: applied } : {}),
     });
   },
 
@@ -612,6 +769,8 @@ export const diaryApi = {
     // ロックを取れるのは、その日誌を参照できる職員に限る（サーバ側は server/api_diary_write.go の handleAcquireLock）
     const d = db.diaries.find((x) => x.diary_id === diaryId);
     if (!d || !canSeeDiary(user, d)) return fail('この日誌を編集する権限がありません');
+    // 基本設計書「編集ロックの解除」(4-5)：申請中・承認済みは編集しない。
+    if (d.status === '2' || d.status === '3') return fail('この日誌は編集できません');
     const idle = settingNumber('ui.diary_lock_minutes', 15);
     const held = db.diaryLocks.find((l) => l.diary_id === diaryId);
     if (held && held.locked_staff_id !== user.staff_id) {
@@ -624,41 +783,125 @@ export const diaryApi = {
     return ok({ token });
   },
 
-  /** 管理者による強制解除。レコードを削除する（基本設計書「編集ロックの解除」(4-5)） */
-  async releaseLock(user: SessionUser, diaryId: number, force = false): Promise<void> {
+  /**
+   * ロックの解除。管理者による強制解除はレコードを削除する（基本設計書「編集ロックの解除」(4-5)）。
+   * 本人の解除は、取得のときに渡した識別子が一致するときだけ外す。同じ職員が取り直したあとに、古い識別子の解除が
+   * 遅れて届いても、取り直したロックを外さないため（GitHub Issue #166。サーバ側は handleReleaseLock）
+   */
+  async releaseLock(user: SessionUser, diaryId: number, force = false, token?: string): Promise<void> {
     const i = db.diaryLocks.findIndex((l) => l.diary_id === diaryId);
     if (i < 0) return ok(undefined);
     if (force && user.role !== '1') return fail('ロックの強制解除は管理者のみが行えます');
-    if (!force && db.diaryLocks[i].locked_staff_id !== user.staff_id) return ok(undefined);
+    if (!force && (db.diaryLocks[i].locked_staff_id !== user.staff_id || db.diaryLocks[i].lock_token !== token)) {
+      return ok(undefined);
+    }
     db.diaryLocks.splice(i, 1);
     if (force) log(user.account_id, '1', '2', 't_diary_lock', diaryId, null, 'ロックあり', '管理者が強制解除');
     return ok(undefined);
   },
 
-  /** 編集ロックの状態。誰が編集中かは日誌の中身と同じ範囲で見せる（サーバ側は handleLockOf） */
+  /**
+   * 編集画面での操作を知らせ、ロックの最終操作時刻を進める。無操作の判定は最後の操作から数える
+   * （基本設計書「編集ロックの解除」(4-5)、5-4 last_active_at「無操作の判定に用いる」。GitHub Issue #166 の 3）。
+   * ロックが外れた・ほかの職員へ移ったときは断り、画面に解除を知らせる。サーバ側は handleTouchLock
+   */
+  async touchLock(user: SessionUser, diaryId: number, token: string): Promise<void> {
+    const l = heldDiaryLock(user, diaryId, token);
+    if (!l) return fail(LOCK_RELEASED_MESSAGE);
+    l.last_active_at = now();
+    return ok(undefined);
+  },
+
+  /**
+   * 編集ロックの状態。誰が編集中かは日誌の中身と同じ範囲で見せる（サーバ側は handleLockOf）。
+   * ロックの識別子は返さない。識別子は取得した本人だけが持ち、保存のときに照合するもの（GitHub Issue #166 の 2）
+   */
   async lockOf(user: SessionUser, diaryId: number) {
     const d = db.diaries.find((x) => x.diary_id === diaryId);
     if (!d || !canSeeDiary(user, d)) return fail('この日誌を参照する権限がありません');
     const l = db.diaryLocks.find((x) => x.diary_id === diaryId);
-    return ok(l ? { ...l, staff_name: staffName(l.locked_staff_id) } : null);
+    return ok(l ? {
+      diary_id: l.diary_id, locked_staff_id: l.locked_staff_id, locked_at: l.locked_at,
+      last_active_at: l.last_active_at, staff_name: staffName(l.locked_staff_id),
+    } : null);
   },
 };
+
+// 文言は基本設計書「メッセージ一覧」(4-9)「ロックの解除」による
+const LOCK_RELEASED_MESSAGE = '編集ロックが解除されました。内容を再読み込みしてください';
+
+/**
+ * その職員が、渡した識別子のロックをいま持っていれば、そのロックを返す。
+ * 無操作の時間を過ぎていても、ほかの職員が取り直すまでは本人の識別子を有効とみなす（【仮置き】web/仮置き値.md）。
+ * サーバ側は server/api_diary_write.go の holdsDiaryLock
+ */
+function heldDiaryLock(user: SessionUser, diaryId: number, token: string | undefined) {
+  if (!token) return undefined;
+  return db.diaryLocks.find((l) => l.diary_id === diaryId && l.lock_token === token
+    && l.locked_staff_id === user.staff_id);
+}
+
+/**
+ * 日誌に付ける写真を確かめ、断る理由を返す（問題が無ければ null）。
+ * 写真は設定マスタの上限（attachment.max_count_diary、既定 3 枚）まで、形式は attachment.allowed_types（JPEG・PNG）に限る
+ * （基本設計書「雛形・添付」(5-4)「t_diary_attachment｜1〜3枚」・「設定マスタ」(5-8)、
+ * 図/画面詳細図.md「日誌作成・編集画面」(3-2) 項目10）。文言は【仮置き】。
+ * サーバ側は server/api_diary_write.go の checkDiaryAttachments
+ */
+function diaryAttachmentError(photos: DiaryAttachmentInput[]): string | null {
+  const max = settingNumber('attachment.max_count_diary', 3);
+  if (photos.length > max) return `写真は${max}枚までです`;
+  // 設定マスタの並びに空白が混じっていても（「image/jpeg, image/png」）、並べた形式を受け付ける
+  const allowed = settingText('attachment.allowed_types', 'image/jpeg,image/png').split(',').map((x) => x.trim());
+  for (const p of photos) {
+    if (!p.file_path.trim()) return '写真のファイルを選んでください';
+    if (!allowed.includes(p.file_type)) return '添付できる写真は JPEG・PNG のファイルです';
+  }
+  return null;
+}
+
+/** 日誌の写真を、渡した並びで置き換える（サーバ側は server/api_diary_write.go の replaceDiaryAttachments） */
+function replaceDiaryAttachments(diaryId: number, photos: DiaryAttachmentInput[]): void {
+  for (let i = db.diaryAttachments.length - 1; i >= 0; i--) {
+    if (db.diaryAttachments[i].diary_id === diaryId) db.diaryAttachments.splice(i, 1);
+  }
+  photos.forEach((p) => {
+    db.diaryAttachments.push({
+      diary_attachment_id: nextId(), diary_id: diaryId, file_path: p.file_path.trim(), file_type: p.file_type,
+    });
+  });
+}
 
 const diaryApi2 = {
   /** 下書き保存・申請。status は呼び出し側が指定する */
   async saveDiary(user: SessionUser, input: DiaryInput, status: '1' | '2'): Promise<Diary> {
     if (!input.body.trim()) return fail('本文を入力してください');
     if (tooLong(input.body, 2000)) return fail('本文は2,000文字以内で入力してください');
-    if (input.record_type === '1' || input.record_type === '4') {
+    // 記録日は当日まで。形の崩れた値も断る（基本設計書「入力項目の制約値」(4-9)、
+    // 図/画面詳細図.md「日誌作成・編集画面」(3-2) 項目6。GitHub Issue #174）
+    if (!isISODate(input.diary_date)) return fail('記録日の形式が正しくありません');
+    if (input.diary_date > today()) return fail('記録日に未来日は指定できません');
+    const needsChild = input.record_type === '1' || input.record_type === '4';
+    if (needsChild) {
       if (!input.child_id) return fail('対象の園児を選んでください');
       if (!canSeeChild(user, input.child_id)) return fail('この園児の日誌を作成する権限がありません');
-    } else {
-      // クラス日誌・週案は対象クラスで参照範囲を判定する。一般が扱えるのは自クラスに限る
-      // （要件定義書「参照範囲の全体規定」(4-1-5)）。サーバ側は server/api_diary_write.go の handleSaveDiary
-      if (input.class_id == null && user.role !== '1') return fail('対象のクラスを選んでください');
-      if (input.class_id != null && !canUseClass(user, input.class_id)) {
-        return fail('このクラスの日誌を作成する権限がありません');
-      }
+    }
+    // 対象のクラスは、記録種別によらず必須とする（図/画面詳細図.md「日誌作成・編集画面」(3-2) 項目5。GitHub Issue #174）。
+    // クラス日誌・週案は対象クラスで参照範囲を判定する。一般が扱えるのは自クラスに限る
+    // （要件定義書「参照範囲の全体規定」(4-1-5)）。サーバ側は server/api_diary_write.go の handleSaveDiary
+    if (input.class_id == null) return fail('対象のクラスを選んでください');
+    if (!canUseClass(user, input.class_id)) return fail('このクラスの日誌を作成する権限がありません');
+    // 【仮置き】個人日誌・ヒヤリハットの対象のクラスは、対象の園児が在籍するクラスに限る（web/仮置き値.md）
+    const classId = input.class_id;
+    if (needsChild && !db.classChildren.some((cc) => cc.class_id === classId && cc.child_id === input.child_id)) {
+      return fail('対象のクラスは、対象の園児が在籍するクラスを選んでください');
+    }
+    // 写真は、日誌と一緒に保存する。画面で足した写真が日誌に付かず、確認画面の「写真 n 枚」と承認画面が
+    // 食い違っていた（GitHub Issue #175 の 2）。サーバ側は server/api_diary_write.go の checkDiaryAttachments
+    const photos = input.attachments;
+    if (photos) {
+      const msg = diaryAttachmentError(photos);
+      if (msg) return fail(msg);
     }
 
     if (input.diary_id) {
@@ -666,22 +909,34 @@ const diaryApi2 = {
       if (!d) return fail('日誌が見つかりません');
       // 書き換える日誌そのものも参照範囲の内に限る。他クラスの日誌を日誌IDで指定して書き換えさせない
       if (!canSeeDiary(user, d)) return fail('この日誌を編集する権限がありません');
-      // 保存時にロックのトークンを照合する（基本設計書 5-4）
-      const lock = db.diaryLocks.find((l) => l.diary_id === d.diary_id);
-      if (lock && lock.lock_token !== input.lock_token) {
-        return fail('他の職員が編集中のため保存できません。日誌一覧へ戻って開き直してください');
-      }
+      // 申請中・承認済みは編集できない（サーバ側の updateDiary と同じ。GitHub Issue #174 の「確かめていないこと」）
+      if (d.status === '2' || d.status === '3') return fail('申請中または承認済みの日誌は編集できません');
+      /*
+       * 保存時のロック識別子が、現在有効なロックと一致するかを照合する。ロックが無いときも一致しないとみなし、
+       * 他者の更新の有無にかかわらず拒否する。識別子が一致しても、ロックを持つ本人でなければ通さない
+       * （基本設計書「同時編集の検出」(4-2)・「編集ロックの解除」(4-5)、GitHub Issue #166 の 1・2）。
+       * サーバ側は server/api_diary_write.go の updateDiary
+       */
+      const lock = heldDiaryLock(user, d.diary_id, input.lock_token);
+      if (!lock) return fail(LOCK_RELEASED_MESSAGE);
       const before = `${d.status}`;
+      if (photos) replaceDiaryAttachments(d.diary_id, photos);
       d.record_type = input.record_type;
       d.child_id = input.child_id;
       d.class_id = input.class_id;
       d.diary_date = input.diary_date;
       d.body = input.body;
       d.status = status;
-      // 再申請したら差し戻し理由を消す
-      if (status === '2') d.returned_reason = null;
+      // 差し戻す理由は、再申請しても消さない。承認されるまで残し、次に差し戻されたときに上書きする
+      // （基本設計書「日誌（t_diary）」(5-4)。GitHub Issue #174）
       d.updated_at = now();
-      log(user.account_id, '1', '2', 't_diary', d.diary_id, d.child_id, before, status === '2' ? '申請' : '下書き保存');
+      // 申請したらロックを外す（申請中の日誌は編集できない）。下書き保存は編集画面に残って書き続けるため外さず、
+      // 操作として最終操作時刻を進める（【仮置き】web/仮置き値.md「日誌の編集ロックの動き」）
+      if (status === '2') db.diaryLocks.splice(db.diaryLocks.indexOf(lock), 1);
+      else lock.last_active_at = now();
+      log(user.account_id, '1', '2', 't_diary', d.diary_id, d.child_id, before,
+        status === '2' ? DIARY_LOG_APPLY : '下書き保存');
+      publishDiary(d);
       return ok(d);
     }
 
@@ -700,7 +955,10 @@ const diaryApi2 = {
       is_deleted: false, created_at: now(), updated_at: now(),
     };
     db.diaries.unshift(row);
-    log(user.account_id, '1', '1', 't_diary', row.diary_id, row.child_id, null, status === '2' ? '作成して申請' : '下書き作成');
+    if (photos) replaceDiaryAttachments(row.diary_id, photos);
+    log(user.account_id, '1', '1', 't_diary', row.diary_id, row.child_id, null,
+      status === '2' ? DIARY_LOG_CREATE_AND_APPLY : '下書き作成');
+    publishDiary(row);
     return ok(row);
   },
 
@@ -725,9 +983,10 @@ const diaryApi2 = {
     if (shareToGuardian && d.record_type !== '1') {
       return fail('保護者へ共有できるのは個人日誌だけです。共有しないで承認してください');
     }
-    // 【仮置き】承認は、作成者とは別の管理者による確認として扱う（GitHub Issue #106）。
-    // 申請者と承認者が同じでよいかは設計に定めが無い（web/仮置き値.md）
-    if (d.created_staff_id === user.staff_id) {
+    // 自分が申請した日誌は承認できない（基本設計書「日誌の作成から保護者への共有」(4-5)。演習上の想定。GitHub Issue #106）。
+    // 作成者だけでなく、最後に申請した職員も見る。担任の下書きを書き直して申請した管理者が、
+    // 自分で承認して保護者へ共有できていた（GitHub Issue #174）。サーバ側は server/api_diary_write.go の handleApproveDiary
+    if (d.created_staff_id === user.staff_id || diaryApplicant(d.diary_id) === user.staff_id) {
       return fail('自分が申請した日誌は承認できません。ほかの管理者に承認を依頼してください');
     }
 
@@ -751,8 +1010,10 @@ const diaryApi2 = {
           body: '日誌を共有しました。', source_type: '2', source_id: d.diary_id, sent_at: now(),
           edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null,
         });
+        publishRoomPost(room.chat_room_id);
       }
     }
+    publishDiary(d);
     return ok(d);
   },
 
@@ -769,6 +1030,7 @@ const diaryApi2 = {
     d.approved_staff_id = user.staff_id;
     d.updated_at = now();
     log(user.account_id, '1', '3', 't_diary', d.diary_id, d.child_id, '申請中', `差し戻し：${reason}`);
+    publishDiary(d);
     return ok(d);
   },
 
@@ -816,10 +1078,10 @@ export const chatApi = {
       const left = m.left_at !== null;
       if (left) canPost = false;
 
-      // 参加している保護者の人数。投稿が保護者にも届くことを入力欄の近くで示すために使う
+      // 参加している保護者の人数。投稿が保護者にも届くことを入力欄の近くで示すために使う。
+      // 実際に読める保護者の数なので、停止中の保護者は数えない（GitHub Issue #171。api_chat.go の activeGuardianWhere）
       const guardianCount = db.chatMembers.filter((x) =>
-        x.chat_room_id === room.chat_room_id && x.left_at === null
-        && findAccount(x.account_id)?.role === '3').length;
+        x.chat_room_id === room.chat_room_id && x.left_at === null && isActiveGuardian(x.account_id)).length;
 
       return { room, unread, canPost, guardianCount, left };
     });
@@ -838,6 +1100,7 @@ export const chatApi = {
     // 送信者名を添える。保護者はアカウントの名簿を参照できないため、画面側では引けない
     // （サーバ側の api_chat.go も同じ扱い。片方だけ直すと食い違う）
     const isStaff = user.role === '1' || user.role === '2';
+    const roomType = db.chatRooms.find((r) => r.chat_room_id === roomId)?.room_type ?? '';
     // 外れた職員には、外れたあとの投稿を返さない（GitHub Issue #161）
     return ok(db.chatMessages.filter((m) => m.chat_room_id === roomId
       && !hiddenBeforeJoined(user, m) && !hiddenAfterLeft(user, m))
@@ -845,8 +1108,10 @@ export const chatApi = {
       .map((m) => ({
         ...m,
         sender_name: accountName(m.sender_account_id),
+        // 職員か保護者かを吹き出しに添えるために返す（GitHub Issue #141。api_chat.go の SenderRole と同じ）
+        sender_role: findAccount(m.sender_account_id)?.role,
         // 既読の人数は職員にだけ添える。保護者側には表示しないため、そもそも返さない（基本設計書 5-5。api_chat.go と同じ）
-        ...(isStaff ? { read_count: db.chatReads.filter((r) => r.chat_message_id === m.chat_message_id).length } : {}),
+        ...(isStaff ? { read_count: readCountOf(m.chat_message_id, roomType) } : {}),
         reactions: reactionSummary(m.chat_message_id, user.account_id),
       })));
   },
@@ -877,6 +1142,7 @@ export const chatApi = {
         account_id: user.account_id, reaction_type: reactionType,
       });
     }
+    publishMessage(m);
     return ok(undefined);
   },
 
@@ -897,27 +1163,37 @@ export const chatApi = {
     room.thread_status = status;
     log(user.account_id, '2', '2', 'm_chat_room', roomId, null,
       before === '1' ? '未対応' : before === '2' ? '対応済み' : null, status === '1' ? '未対応' : '対応済み');
+    // 未対応／対応済みは職員の画面にだけ出る
+    publish({ type: 'chat', room_id: roomId }, (u) => isStaffUser(u) && isRoomMember(u, roomId));
     return ok(undefined);
   },
 
-  /** 既読は人数で示す。保護者側には表示しない（基本設計書 5-5） */
+  /** 既読は人数で示す。保護者側には表示しない（基本設計書 5-5）。数え方は messages の read_count と同じ */
   async readCount(messageId: number): Promise<number> {
-    return ok(db.chatReads.filter((r) => r.chat_message_id === messageId).length);
+    const m = db.chatMessages.find((x) => x.chat_message_id === messageId);
+    const roomType = db.chatRooms.find((r) => r.chat_room_id === m?.chat_room_id)?.room_type ?? '';
+    return ok(readCountOf(messageId, roomType));
   },
 
   async markRead(user: SessionUser, roomId: number): Promise<void> {
     const member = db.chatMembers.find((x) => x.chat_room_id === roomId && x.account_id === user.account_id);
     if (!member || (user.role === '3' && member.left_at)) return fail('このチャンネルを参照する権限がありません');
-    // 既読にするのは読めるメッセージだけ。外れた職員の、外れたあとの投稿は含めない（GitHub Issue #161）
+    // 既読にするのは読めるメッセージだけ。外れた職員の、外れたあとの投稿は含めない（GitHub Issue #161）。
+    // 後から登録した保護者の、登録より前のやりとりも含めない。見えていないものを既読にすると、誤送信のときに
+    // 既読が付いていたかの判断を誤らせる（基本設計書「既読確認」(4-6)・「チャット」(5-5)。GitHub Issue #171）
+    let added = 0;
     db.chatMessages
       .filter((m) => m.chat_room_id === roomId && m.sender_account_id !== user.account_id && !m.is_deleted
-        && !hiddenAfterLeft(user, m))
+        && !hiddenAfterLeft(user, m) && !hiddenBeforeJoined(user, m))
       .forEach((m) => {
         const already = db.chatReads.some((r) => r.chat_message_id === m.chat_message_id && r.account_id === user.account_id);
         if (!already) {
           db.chatReads.push({ chat_read_id: nextId(), chat_message_id: m.chat_message_id, account_id: user.account_id, read_at: now() });
+          added += 1;
         }
       });
+    // 新しく既読にしたものがあれば知らせる。何も増えなかったときは送らない（server/api_chat.go の handleMarkRead）
+    if (added > 0) publishRead(roomId, user);
     return ok(undefined);
   },
 
@@ -942,6 +1218,7 @@ export const chatApi = {
     // 保護者から新しく受信した個人チャットは、自動で未対応へ戻す（要件定義書「チャットツール」(4-3)）
     if (user.role === '3' && view.room.room_type === '4') view.room.thread_status = '1';
     log(user.account_id, '2', '1', 't_chat_message', msg.chat_message_id, null, null, '送信');
+    publishRoomPost(roomId);
     return ok(msg);
   },
 
@@ -963,6 +1240,7 @@ export const chatApi = {
     m.deleted_at = now();
     m.deleted_account_id = user.account_id;
     log(user.account_id, '2', '4', 't_chat_message', messageId, null, before, '取消');
+    publishMessage(m);
     return ok(undefined);
   },
 
@@ -992,6 +1270,7 @@ export const chatApi = {
     m.body = body;
     m.edited_at = now();
     log(user.account_id, '2', '2', 't_chat_message', messageId, null, before, body);
+    publishMessage(m);
     return ok(undefined);
   },
 
@@ -1004,11 +1283,15 @@ export const chatApi = {
     // （GitHub Issue #95）。外れた人にも、いまの参加者は返さない（外れたあとのことは見せない。#161）。
     // 管理者は、グループ編成のために全チャンネルを参照できる。
     // 画面からは必ず viewer を渡す。渡さない呼び出しはテストのためだけに残している
-    if (viewer && viewer.role !== '1' && !isParticipant(viewer, roomId)) {
+    // 要件定義書「チャットツール」(4-3)：メンバー一覧は管理者・一般のみ。
+    if (viewer && (viewer.role === '3' || (viewer.role !== '1' && !isParticipant(viewer, roomId)))) {
       return fail('このチャンネルを参照する権限がありません');
     }
     const forStaff = !!viewer && viewer.role !== '3';
-    return ok(db.chatMembers.filter((m) => m.chat_room_id === roomId && m.left_at === null)
+    // 停止中の保護者は、読めないため並べない（GitHub Issue #171・#141）。停止中の職員は除かない
+    // （目的別グループの編成は、いまの参加者を初期値にして送るため。api_chat.go の handleChatMembers と同じ）
+    return ok(db.chatMembers.filter((m) => m.chat_room_id === roomId && m.left_at === null
+      && !(findAccount(m.account_id)?.role === '3' && !isActiveGuardian(m.account_id)))
       .map((m) => {
         const role = findAccount(m.account_id)?.role ?? '2';
         return {
@@ -1018,6 +1301,30 @@ export const chatApi = {
       }));
   },
 };
+
+/**
+ * 読める保護者か。停止中の保護者（紐づけを終えて有効な紐づけがゼロになった人など）は、参加の行が残っていても
+ * ログインできず読めないため、「保護者 n 名にも届きます」の n とメンバー欄に入れない（GitHub Issue #171・#141）。
+ * 【仮置き】参加の行（left_at）は動かさず、数えるときに除く。Go サーバ（server/api_chat.go の activeGuardianWhere）と同じ
+ */
+function isActiveGuardian(accountId: number): boolean {
+  const a = findAccount(accountId);
+  return a?.role === '3' && a.status === '1';
+}
+
+/**
+ * 既読の人数。保護者が参加するチャンネル（園全体・クラスグループ・個人チャット）では保護者の既読だけを数える。
+ * 既読確認は、園が送ったものを保護者が開いたかを職員が確かめるためのもの（要件定義書「チャットツール」(4-3)
+ * 「既読確認」、基本設計書「既読確認」(4-6)）。職員の既読を混ぜると「保護者 n 名にも届きます」と並んだ人数が
+ * 読んだ家庭の数に見える（GitHub Issue #171）。
+ * 【仮置き】職員だけのチャンネル（職員チャット・目的別グループ）は職員の既読を数える。
+ * Go サーバ（server/api_chat.go の readCountRoles）と同じ規則にしてある
+ */
+function readCountOf(messageId: number, roomType: string): number {
+  const guardianRoom = roomType === '1' || roomType === '2' || roomType === '4';
+  return db.chatReads.filter((r) => r.chat_message_id === messageId
+    && (findAccount(r.account_id)?.role === '3') === guardianRoom).length;
+}
 
 /**
  * 保護者に見せないメッセージか
@@ -1157,6 +1464,7 @@ const chatApi2 = {
       chat_room_id: room.chat_room_id, account_id, joined_at: now(), left_at: null,
     }));
     log(user.account_id, '2', '1', 'm_chat_room', room.chat_room_id, null, null, `グループ「${name}」を作成`);
+    publish({ type: 'chat', room_id: room.chat_room_id }, (u) => isRoomMember(u, room.chat_room_id));
     return ok(room);
   },
 
@@ -1190,11 +1498,21 @@ const chatApi2 = {
       else if (cur.left_at) { cur.left_at = null; cur.joined_at = now(); }
     });
     log(user.account_id, '2', '2', 't_chat_member', roomId, null, null, 'メンバーを編成');
+    // 加わった人・外れた人の一覧を読み直させる。外れた職員の一覧にも、閲覧のみとして残る
+    publish({ type: 'chat', room_id: roomId }, (u) => isRoomMember(u, roomId));
     return ok(undefined);
   },
 
-  async groups(): Promise<ChatRoom[]> {
-    return ok(db.chatRooms.filter((r) => r.room_type === '3'));
+  /**
+   * グループ編成画面に並べる目的別グループ。管理者にはすべて（要件定義書「チャットツール」(4-3) (c)）、
+   * 一般には、いま参加しているグループだけを返す。編成できるのはそれだけであり、参加していないグループの
+   * メンバーは返さないため（図/画面詳細図.md「グループ編成画面」(4-3)。GitHub Issue #172）。
+   * server/api_chat.go の handleChatGroups と同じ規則
+   */
+  async groups(user: SessionUser): Promise<ChatRoom[]> {
+    if (user.role === '3') return fail('グループの編成は職員のみが行えます');
+    return ok(db.chatRooms.filter((r) => r.room_type === '3'
+      && (user.role === '1' || isParticipant(user, r.chat_room_id))));
   },
 
   /**
@@ -1225,6 +1543,10 @@ const chatApi2 = {
     if (user.role !== '1') return fail('誤送信対応の記録は管理者のみが行えます');
     if (!input.response.trim()) return fail('とった対応を入力してください');
     if (tooLong(input.response, 1000)) return fail('とった対応は1,000文字以内で入力してください');
+    // 発生日時は必須（図/画面詳細図.md「誤送信対応記録画面（管理者）」(4-4) 項目3）。記録した時刻で埋めない
+    // （GitHub Issue #178 の 1。server/api_chat.go の handleAddMisdeliveryRecord と同じ）
+    if (!input.occurred_at) return fail('発生日時を入力してください');
+    if (!isISODateTime(input.occurred_at)) return fail('発生日時の形式が正しくありません');
     db.misdeliveryRecords.unshift({
       misdelivery_record_id: nextId(), staff_id: user.staff_id!, ...input,
     });
@@ -1232,13 +1554,23 @@ const chatApi2 = {
     return ok(undefined);
   },
 
-  /** 取消済みで、まだ対応を記録していないメッセージ */
-  async retractedWithoutRecord() {
+  /**
+   * 取消済みで、まだ対応を記録していないメッセージ。誤送信への対応の記録と同じく管理者に限る
+   * （基本設計書「権限と利用可能機能」(6-1)「誤送信への対応の記録｜管理者のみ」。GitHub Issue #177 の 3）。
+   * 【仮置き】並びは送信の新しい順、同じ時刻はあとで送ったもの（メッセージの番号の大きいもの）を先にする
+   * （web/仮置き値.md「一覧の並び順」。サーバ側の server/api_chat.go の handleRetractedWithoutRecord と同じ。GitHub Issue #177 の 7）
+   */
+  async retractedWithoutRecord(user: SessionUser) {
+    if (user.role !== '1') return fail('誤送信対応の記録は管理者のみが参照できます');
     const recorded = new Set(db.misdeliveryRecords.map((r) => r.chat_message_id));
-    return ok(db.chatMessages
-      // 【仮置き】配布物の掲載の知らせ（source_type = 4）は対象にしない。取り下げとして操作ログに残る
-      // （GitHub Issue #98）
-      .filter((m) => m.is_deleted && m.source_type !== '4' && !recorded.has(m.chat_message_id))
+    return ok([...db.chatMessages]
+      .sort((a, b) => b.sent_at.localeCompare(a.sent_at) || b.chat_message_id - a.chat_message_id)
+      // 配布物の掲載の知らせ（source_type = 4）は対象にしない。取り下げとして操作ログに残る
+      // （基本設計書「誤送信への対応」(4-6)。GitHub Issue #98）
+      // 【仮置き】保護者が送ったメッセージも対象にしない。誤送信への対応は、園が誤って送ったときのもの（同 (4-6) の
+      // 利用タイミング）であり、保護者の打ちまちがいの取消は当たらない（GitHub Issue #171。api_chat.go と同じ）
+      .filter((m) => m.is_deleted && m.source_type !== '4' && findAccount(m.sender_account_id)?.role !== '3'
+        && !recorded.has(m.chat_message_id))
       .map((m) => ({
         chat_message_id: m.chat_message_id,
         room_name: db.chatRooms.find((r) => r.chat_room_id === m.chat_room_id)?.room_name ?? '―',
@@ -1291,6 +1623,7 @@ export const napApi = {
     };
     db.napSessions.push(s);
     log(user.account_id, '3', '1', 't_nap_session', s.nap_session_id, null, null, `午睡チェックを開始（${className(classId)}）`);
+    publishNapSession(classId);
     return ok(s);
   },
 
@@ -1309,6 +1642,7 @@ export const napApi = {
     s.ended_staff_id = user.staff_id;
     s.ended_at = now();
     log(user.account_id, '3', '2', 't_nap_session', sessionId, null, '実施中', '終了');
+    publishNapSession(s.class_id);
     return ok(undefined);
   },
 
@@ -1326,7 +1660,15 @@ export const napApi = {
           ? db.napRecords.filter((r) => r.nap_session_id === sessionId && r.child_id === child.child_id)
           : [];
         recs.sort((a, b) => b.checked_at.localeCompare(a.checked_at));
-        return { child, latest: recs[0] ?? null };
+        // その実施の「ねた・おきた」（入眠時の体温を含む）と対象外（詳細設計書「午睡（ねた・おきた・対象外）」(4-6 (6))）
+        const sleeps = sessionId
+          ? db.napSleeps.filter((s) => s.nap_session_id === sessionId && s.child_id === child.child_id && !s.is_deleted)
+            .sort((a, b) => a.slept_at.localeCompare(b.slept_at)).map((s) => sleepView(s, true))
+          : [];
+        const exclusion = sessionId
+          ? exclusionView(db.napExclusions.find((x) => x.nap_session_id === sessionId && x.child_id === child.child_id && !x.is_deleted))
+          : null;
+        return { child, latest: recs[0] ?? null, sleeps, exclusion };
       });
     return ok(rows);
   },
@@ -1345,6 +1687,9 @@ export const napApi = {
     if (!(input.body_position in BODY_POSITION)) return fail('体位を選んでください');
     if (!(input.breathing in BREATHING)) return fail('呼吸を選んでください');
     if (!(input.complexion in COMPLEXION)) return fail('顔色を選んでください');
+    // 体温は小数第1位まで。範囲（30.0〜43.0℃）の外は画面で確かめるだけで、記録は妨げない
+    // （基本設計書「入力項目の制約値」(4-9)。GitHub Issue #165）。サーバ側は server/api_nap.go の handleNapRecord
+    if (input.temperature !== null && !isOneDecimal(input.temperature)) return fail('体温は小数第1位までで入力してください');
     if (!canSeeChild(user, input.child_id)) return fail('この園児を記録する権限がありません');
     // 終了した実施へは記録しない。自動で解除された直後に、開いたままの画面から記録が付くのを防ぐ
     // （GitHub Issue #97）
@@ -1352,6 +1697,10 @@ export const napApi = {
     const session = db.napSessions.find((x) => x.nap_session_id === sessionId);
     if (!session) return fail('午睡チェックが見つかりません');
     if (!canUseClass(user, session.class_id)) return fail('このクラスの午睡チェックを記録する権限がありません');
+    // 記録は、その園児のクラスの実施に付ける。管理者でも、ほかのクラスの園児を付けさせない（異常時の記録と同じ。GitHub Issue #158）
+    if (!db.classChildren.some((cc) => cc.class_id === session.class_id && cc.child_id === input.child_id)) {
+      return fail('この園児のクラスの午睡チェックではありません。園児のクラスの午睡チェックへ記録してください');
+    }
     if (session.ended_at !== null) return fail('この午睡チェックは終了しています。画面を読み込み直してください');
     const r: NapRecord = {
       nap_record_id: nextId(), nap_session_id: sessionId, child_id: input.child_id,
@@ -1362,6 +1711,7 @@ export const napApi = {
     db.napRecords.push(r);
     log(user.account_id, '3', '1', 't_nap_record', r.nap_record_id, input.child_id, null,
       `体位=${input.body_position} 呼吸=${input.breathing} 顔色=${input.complexion}`);
+    publishNapChild(session.class_id, input.child_id);
     return ok(r);
   },
 
@@ -1396,10 +1746,12 @@ export const napApi = {
     if (session.ended_at !== null) return fail('この午睡チェックは終了しています。画面を読み込み直してください');
     const a: NapAbnormal = {
       nap_abnormal_id: nextId(), nap_session_id: sessionId, staff_id: user.staff_id!,
-      diary_id: null, ...input, found_at: foundAt,
+      diary_id: null, ...input, found_at: foundAt, recorded_at: now(),
     };
     db.napAbnormals.unshift(a);
     log(user.account_id, '3', '1', 't_nap_abnormal', a.nap_abnormal_id, input.child_id, null, '異常時の記録');
+    // 園内の記録のため保護者には送らない
+    publishNapChild(session.class_id, input.child_id);
     return ok(a);
   },
 
@@ -1428,12 +1780,22 @@ export const napApi = {
     db.diaries.unshift(d);
     a.diary_id = d.diary_id;
     log(user.account_id, '1', '1', 't_diary', d.diary_id, a.child_id, null, '異常時の記録からヒヤリハットを起票');
+    if (session) publishNapChild(session.class_id, a.child_id);
+    publishDiary(d);
     return ok(d);
   },
 
+  /**
+   * 異常時の記録の一覧。職員に限り、一般は自クラスの園児の記録に限る
+   * （基本設計書「権限と利用可能機能」(6-1)「異常時の記録｜保護者 ×・一般 ※1」。GitHub Issue #177 の 3）。
+   * 【仮置き】並びは発見時刻の新しい順、同じ時刻はあとで記録したものを先にする
+   * （web/仮置き値.md「一覧の並び順」。GitHub Issue #177 の 7）。サーバ側は server/api_nap.go の handleNapAbnormals
+   */
   async abnormals(user: SessionUser) {
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
     return ok(db.napAbnormals
       .filter((a) => canSeeChild(user, a.child_id))
+      .sort((a, b) => b.found_at.localeCompare(a.found_at) || b.nap_abnormal_id - a.nap_abnormal_id)
       .map((a) => ({ ...a, child_name: childName(a.child_id), staff_name: staffName(a.staff_id) })));
   },
 };
@@ -1444,6 +1806,9 @@ const napApi2 = {
     user: SessionUser,
     f: { from?: string; to?: string; classId?: number | ''; childName?: string; page?: number },
   ): Promise<Paged<NapRecord & { child_name: string; class_name: string; staff_name: string; session_date: string }>> {
+    // 職員に限る（基本設計書「権限と利用可能機能」(6-1)「午睡チェックの実施・記録｜保護者 ×」。
+    // サーバ側の server/api_nap.go の handleSearchNapRecords と同じ。GitHub Issue #177 の 3）
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
     const perPage = settingNumber('paging.nap_search_per_page', 50);
     const visible = new Set(visibleChildren(user).map((c) => c.child_id));
 
@@ -1527,6 +1892,31 @@ function lastConfirmedCheck(childId: string) {
     .sort((a, b) => b.checked_on.localeCompare(a.checked_on))[0] ?? null;
 }
 
+/** 園児の、いちばん新しい記録（下書きを含む） */
+function latestCheck(childId: string) {
+  return db.developmentChecks
+    .filter((c) => c.child_id === childId)
+    .sort((a, b) => b.checked_on.localeCompare(a.checked_on))[0] ?? null;
+}
+
+/**
+ * 確定した記録を最後に確定した日時。下書きのときは null。
+ *
+ * 確定したあとに開き直したとき、確定済みであることと、いつ・誰が確定したかを入力画面に出すために使う
+ * （GitHub Issue #143）。誰が確定したかは記録の staff_id（確定した記録は確定でしか保存できないため、最後に確定した職員）。
+ * 【仮置き】確定の日時を持つ列は基本設計書「発達チェック・身体測定」(5-7) の定義に無いため、
+ * 操作ログ（基本設計書「操作ログ」(5-8)）の「確定」から引く（web/仮置き値.md）。操作ログの無い記録（デモデータ）は null。
+ * サーバ側は server/api_dev.go の confirmedAt
+ */
+function confirmedAt(check: DevelopmentCheck): string | null {
+  if (check.status !== '2') return null;
+  const logs = db.operationLogs
+    .filter((l) => l.target_table === 't_development_check' && l.target_id === check.development_check_id
+      && l.after_value === '確定')
+    .sort((a, b) => b.operated_at.localeCompare(a.operated_at) || b.operation_log_id - a.operation_log_id);
+  return logs[0]?.operated_at ?? null;
+}
+
 /**
  * 発達チェックが「未実施」か。園児の最新の予定日を過ぎていて、その予定日以降に確定した実施が無ければ未実施とする。
  * 予定日の当日は、まだ未実施にしない（基本設計書「発達チェックの実施」(4-8)「実施予定日を過ぎて」。GitHub Issue #164）。
@@ -1554,24 +1944,35 @@ export const devApi = {
 
   /** 一覧。チェック漏れを強調するため未実施を判定して返す（基本設計書「画面の一覧」(3-2)） */
   async list(user: SessionUser, classId: number): Promise<DevListRow[]> {
+    // 職員に限る（基本設計書「権限と利用可能機能」(6-1)「発達チェックの入力｜保護者 ×」。
+    // サーバ側の server/api_dev.go の handleDevelopmentList と同じ。GitHub Issue #177 の 3）
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
     const ids = new Set(db.classChildren.filter((cc) => cc.class_id === classId).map((cc) => cc.child_id));
     const rows = visibleChildren(user)
       .filter((c) => ids.has(c.child_id))
       .sort((a, b) => a.child_name_kana.localeCompare(b.child_name_kana, 'ja'))
       .map((child) => {
         const sch = latestSchedule(child.child_id);
+        // 前回の実施日と「未実施」の判定は、確定した記録で見る。下書きは実施にならない
         const last = lastConfirmedCheck(child.child_id);
         const scheduledOn = sch?.scheduled_on ?? null;
         const overdue = isDevOverdue(scheduledOn, last?.checked_on ?? null);
-        // 未入力は、その実施日の月齢に対応する項目のうち、結果のレコードが無いものを数える
+        /*
+         * 未入力は、いちばん新しい記録（下書きを含む）について、その実施日の月齢に対応する項目のうち、
+         * 結果のレコードが無いものを数える。入力画面の「未入力の項目」と同じ数になる。
+         * 典拠：要件定義書「チェック漏れの強調」(4-5-2)「下書き保存された記録は、保存されていない項目を未入力として扱う」。
+         * 確定した記録だけで数えていたため、下書きを保存しても一覧の件数が変わらず、入力画面と食い違っていた（GitHub Issue #143）。
+         * サーバ側は server/api_dev.go の handleDevelopmentList
+         */
+        const latest = latestCheck(child.child_id);
         let unfilled = 0;
-        if (last) {
-          const cat = devApi.categoryFor(ageInMonths(child.birth_date, last.checked_on));
+        if (latest) {
+          const cat = devApi.categoryFor(ageInMonths(child.birth_date, latest.checked_on));
           const itemIds = db.developmentItems
             .filter((i) => i.development_category_id === cat?.development_category_id)
             .map((i) => i.development_item_id);
           const filled = db.developmentResults.filter((r) =>
-            r.development_check_id === last.development_check_id && itemIds.includes(r.development_item_id)).length;
+            r.development_check_id === latest.development_check_id && itemIds.includes(r.development_item_id)).length;
           unfilled = Math.max(0, itemIds.length - filled);
         }
         return {
@@ -1586,8 +1987,15 @@ export const devApi = {
     return ok(rows);
   },
 
-  /** 前回の記録。並べて表示するために使う（画面詳細図 6-1） */
-  async previousCheck(childId: string, beforeDate: string) {
+  /**
+   * 前回の記録。並べて表示するために使う（画面詳細図 6-1）。
+   * その園児を参照できる職員に限る。一般は自クラスの園児に限る（要件定義書「対象権限列の読み方」(4-2 冒頭)、
+   * 基本設計書「権限と利用可能機能」(6-1)「発達チェックの入力｜保護者 ×・一般 ※1」。GitHub Issue #177 の 3）。
+   * サーバ側は server/api_dev.go の handlePreviousCheck
+   */
+  async previousCheck(user: SessionUser, childId: string, beforeDate: string) {
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
+    if (!canSeeChild(user, childId)) return fail('この園児を参照する権限がありません');
     const prev = db.developmentChecks
       .filter((c) => c.child_id === childId && c.status === '2' && c.checked_on < beforeDate)
       .sort((a, b) => b.checked_on.localeCompare(a.checked_on))[0];
@@ -1598,11 +2006,20 @@ export const devApi = {
     });
   },
 
-  /** 当日の下書き。あれば読み直す */
-  async draftFor(childId: string, checkedOn: string) {
+  /**
+   * 当日の下書き。あれば読み直す。確定した記録なら、いつ確定したか（confirmedAt）も返す。
+   * 参照できる人は previousCheck と同じ（GitHub Issue #177 の 3。サーバ側は server/api_dev.go の handleDraftCheck）
+   */
+  async draftFor(user: SessionUser, childId: string, checkedOn: string): Promise<DevDraftView | null> {
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
+    if (!canSeeChild(user, childId)) return fail('この園児を参照する権限がありません');
     const c = db.developmentChecks.find((x) => x.child_id === childId && x.checked_on === checkedOn);
     if (!c) return ok(null);
-    return ok({ check: c, results: db.developmentResults.filter((r) => r.development_check_id === c.development_check_id) });
+    return ok({
+      check: c,
+      results: db.developmentResults.filter((r) => r.development_check_id === c.development_check_id),
+      confirmedAt: confirmedAt(c),
+    });
   },
 
   /**
@@ -1623,6 +2040,10 @@ export const devApi = {
     if (checkedOn > today()) return fail('実施日に未来日は指定できません');
 
     let check = db.developmentChecks.find((c) => c.child_id === childId && c.checked_on === checkedOn);
+    // 初めての保存か。操作ログの操作区分（1:作成 2:変更）に使う（基本設計書「操作ログ（t_operation_log）」(5-8)）。
+    // 下で記録を作ったあとに check を見ると、いつも「変更」になっていた（GitHub Issue #177 の 6。
+    // サーバ側は server/api_dev_write.go の handleSaveDevelopmentCheck の isNew）
+    const isNew = !check;
     // 確定した記録は、下書きに戻さない。確定のまま直すことはできる。下書きに戻すと、確定で作った次回の予定日だけが残り、
     // 一覧とダッシュボードの「未実施」が食い違うため（GitHub Issue #164）。【仮置き】確定を取り消す操作は設けない
     if (check && check.status === '2' && status === '1') {
@@ -1661,19 +2082,27 @@ export const devApi = {
         note: null,
       });
     });
-    log(user.account_id, '4', check ? '2' : '1', 't_development_check', check.development_check_id, childId,
+    log(user.account_id, '4', isNew ? '1' : '2', 't_development_check', check.development_check_id, childId,
       null, status === '2' ? '確定' : '下書き保存');
 
     if (status === '2') advanceDevelopmentSchedule(user, check, childId, checkedOn);
+    // 下書きでも、一覧の未入力の数が変わる
+    publishDevelopment(childId);
     return ok(check);
   },
 };
 
 const devApi2 = {
-  /** 園児単位の推奨スケジュールの上書き（スケジュール設定画面。管理者のみ） */
+  /**
+   * 園児単位の推奨スケジュールの上書き（スケジュール設定画面。上書きは管理者のみ）。
+   * 一覧の取得は職員に限る（サーバ側の server/api_dev.go の handleDevelopmentSchedules と同じ。GitHub Issue #177 の 3）。
+   * 【仮置き】並びは園児のよみ順。発達チェック一覧と同じ（web/仮置き値.md「一覧の並び順」。GitHub Issue #177 の 7）
+   */
   async schedules(user: SessionUser, classId: number) {
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
     const ids = new Set(db.classChildren.filter((cc) => cc.class_id === classId).map((cc) => cc.child_id));
-    return ok(visibleChildren(user).filter((c) => ids.has(c.child_id)).map((child) => {
+    return ok(visibleChildren(user).filter((c) => ids.has(c.child_id))
+      .sort((a, b) => a.child_name_kana.localeCompare(b.child_name_kana, 'ja')).map((child) => {
       const sch = db.developmentSchedules
         .filter((s) => s.child_id === child.child_id)
         .sort((a, b) => b.scheduled_on.localeCompare(a.scheduled_on))[0] ?? null;
@@ -1715,6 +2144,7 @@ const devApi2 = {
     }
     log(user.account_id, '4', '2', 't_development_schedule', null, childId, null,
       `次回予定日=${scheduledOn}${manual ? '（手動上書き）' : ''}`);
+    publishDevelopment(childId);
     return ok(undefined);
   },
 
@@ -1751,14 +2181,25 @@ const devApi2 = {
 /* ============ 身体測定（基本設計書「身体測定の記録」(4-8)） ============ */
 
 export const physicalApi = {
-  /** クラスの実施状況。誰が残っているかを数えさせない（画面詳細図 6-2） */
+  /**
+   * クラスの実施状況。誰が残っているかを数えさせない（画面詳細図 6-2）
+   * 入力済みは、選んだ測定日と同じ年月に未削除の記録があるかで見る。測定日が数日ずれても同じ回として扱う
+   * （基本設計書「身体測定の記録」(4-8)「選択中の測定日と同一の年月」・「測定回の単位は年月とする」。GitHub Issue #47・#165）。
+   * サーバ側は server/api_physical.go の handlePhysicalClassStatus
+   */
   async classStatus(user: SessionUser, classId: number, measuredOn: string) {
+    // 職員に限る（基本設計書「権限と利用可能機能」(6-1)「身体測定の記録｜保護者 ×」。
+    // サーバ側の handlePhysicalClassStatus と同じ。GitHub Issue #177 の 3）
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
+    const day = measuredOn || today();
+    if (!isISODate(day)) return fail('測定日の形式が正しくありません');
     const ids = new Set(db.classChildren.filter((cc) => cc.class_id === classId).map((cc) => cc.child_id));
     const target = visibleChildren(user)
       .filter((c) => ids.has(c.child_id))
       .sort((a, b) => a.child_name_kana.localeCompare(b.child_name_kana, 'ja'));
+    const month = day.slice(0, 7);
     const done = target.filter((c) => db.physicalRecords.some(
-      (r) => !r.is_deleted && r.child_id === c.child_id && r.measured_on === measuredOn));
+      (r) => !r.is_deleted && r.child_id === c.child_id && r.measured_on.slice(0, 7) === month));
     const pending = target.filter((c) => !done.includes(c));
     return ok({ target, done, pending });
   },
@@ -1778,19 +2219,44 @@ export const physicalApi = {
   /**
    * 登録・修正。確認画面を挟まず連続して入力できる（画面詳細図 6-2）
    * 範囲外の値は警告して確認を求めるが、記録自体は妨げない（判定ではないため）
+   *
+   * 登録済みの記録を黙って書き換えない。同一園児・同一測定日の記録は、上書きの承諾（confirm_overwrite）があるときだけ
+   * 書き換える（基本設計書「身体測定の記録」(4-8)「上書き確認を表示する」）。
+   * 【仮置き】同じ年月の別の測定日に記録があるときは、同じ月の別の記録としての承諾（confirm_same_month）があるときだけ
+   * 登録する（web/仮置き値.md、GitHub Issue #165）。承諾は確認の種類ごとに受け付け、一方の承諾で他方を通さない
+   * （同 (4-8)「確認の種類ごとに、対応する承諾だけを受け付ける」）。サーバ側は server/api_physical.go の handleSavePhysical
    */
   async save(
     user: SessionUser,
-    input: { child_id: string; measured_on: string; height_cm: number; weight_kg: number },
+    input: {
+      child_id: string; measured_on: string; height_cm: number; weight_kg: number;
+      confirm_overwrite?: boolean; confirm_same_month?: boolean;
+    },
   ): Promise<PhysicalRecord> {
     if (user.role === '3') return fail('身体測定の記録は職員のみが行えます');
     if (!canSeeChild(user, input.child_id)) return fail('この園児を記録する権限がありません');
+    // 崩れた測定日を保存すると、年月で数える実施状況や月齢の計算が狂う（基本設計書「入力項目の制約値」(4-9)）
+    if (!input.measured_on) return fail('測定日は必須項目です');
+    if (!isISODate(input.measured_on)) return fail('測定日の形式が正しくありません');
     if (input.measured_on > today()) return fail('測定日に未来日は指定できません');
     if (!(input.height_cm > 0) || !(input.weight_kg > 0)) return fail('身長と体重を入力してください');
 
     // child_id + measured_on は is_deleted=false の行のみを対象に一意（基本設計書 5-7）
     const existing = db.physicalRecords.find(
       (r) => !r.is_deleted && r.child_id === input.child_id && r.measured_on === input.measured_on);
+    if (existing && !input.confirm_overwrite) {
+      return fail('この測定日の記録は登録済みです。内容を確かめ、上書きするときはもう一度「登録する」を押してください');
+    }
+    if (!existing && !input.confirm_same_month) {
+      const month = input.measured_on.slice(0, 7);
+      const other = db.physicalRecords
+        .filter((r) => !r.is_deleted && r.child_id === input.child_id && r.measured_on.slice(0, 7) === month)
+        .sort((a, b) => b.measured_on.localeCompare(a.measured_on))[0];
+      if (other) {
+        return fail(`${formatYM(input.measured_on)}の記録は登録済みです（測定日 ${other.measured_on.replace(/-/g, '/')}）。`
+          + '内容を確かめ、別の記録として登録するときはもう一度「登録する」を押してください');
+      }
+    }
 
     if (existing) {
       const before = `身長=${existing.height_cm} 体重=${existing.weight_kg}`;
@@ -1800,6 +2266,7 @@ export const physicalApi = {
       existing.updated_at = now();
       log(user.account_id, '5', '2', 't_physical_record', existing.physical_record_id, input.child_id,
         before, `身長=${input.height_cm} 体重=${input.weight_kg}`);
+      publishPhysical(existing);
       return ok(existing);
     }
 
@@ -1811,6 +2278,7 @@ export const physicalApi = {
     db.physicalRecords.push(row);
     log(user.account_id, '5', '1', 't_physical_record', row.physical_record_id, input.child_id,
       null, `身長=${input.height_cm} 体重=${input.weight_kg}`);
+    publishPhysical(row);
     return ok(row);
   },
 
@@ -1845,6 +2313,7 @@ export const physicalApi = {
     r.updated_at = now();
     log(user.account_id, '5', '4', 't_physical_record', recordId, r.child_id,
       `身長=${r.height_cm} 体重=${r.weight_kg}`, '削除');
+    publishPhysical(r);
     return ok(undefined);
   },
 
@@ -1897,6 +2366,8 @@ export const adminApi = {
     if (user.role !== '1') return fail('ロックの解除は管理者のみが行えます');
     const a = findAccount(accountId);
     if (!a) return fail('アカウントが見つかりません');
+    // ロックされていないアカウントの解除を通すと、操作ログに事実と違う「変更前：ロック中」が残る（GitHub Issue #166 の 6）
+    if (!a.locked_until || a.locked_until <= now()) return fail('このアカウントはロックされていません');
     a.locked_until = null;
     a.failed_login_count = 0;
     log(user.account_id, '7', '2', 'm_account', accountId, null, 'ロック中', 'ロックを解除');
@@ -1934,8 +2405,16 @@ export const adminApi = {
   ): Promise<string> {
     if (user.role !== '1') return fail('職員アカウントの発行は管理者のみが行えます');
     if (input.role === '3') return fail('保護者アカウントは招待コードによる自己登録で作成します');
-    // ログインIDはロールをまたいで園内で一意（基本設計書 5-2）
-    if (db.accounts.some((a) => a.email === input.email)) return fail('そのログインIDはすでに使われています');
+    /*
+     * 前後の空白を除いてから、必須・桁数・形式を確かめる（基本設計書「入力項目の制約値」(4-9)。GitHub Issue #167 の 1）。
+     * サーバ側は server/api_admin.go の handleCreateStaffAccount・validateStaffAccountInput
+     */
+    input = { ...input, staff_id: input.staff_id.trim(), staff_name: input.staff_name.trim(), email: input.email.trim() };
+    const inputError = validateStaffAccountInput(input.staff_id, input.staff_name, input.email, input.role);
+    if (inputError) return fail(inputError);
+    if (input.class_id !== null && !currentClassExists(input.class_id)) return fail('担当クラスの指定が正しくありません');
+    // ログインIDはロールをまたいで園内で一意（基本設計書 5-2）。大文字・小文字だけが違うものも同じとみなす
+    if (emailTaken(input.email)) return fail('そのログインIDはすでに使われています');
     if (db.staff.some((s) => s.staff_id === input.staff_id)) return fail('その職員IDはすでに使われています');
 
     const hours = settingNumber('auth.temp_password_hours', 48);
@@ -1952,7 +2431,14 @@ export const adminApi = {
     // 園全体・職員チャットと、担当クラスのチャンネルへ入れる。職員チャットは作成に連動する
     // （基本設計書「チャット」(5-5)、GitHub Issue #162）
     syncStaffChatRooms(accountId);
-    log(user.account_id, '7', '1', 'm_account', accountId, null, null, `職員アカウントを発行（${input.staff_name}）`);
+    // 何を発行したか（ロール・担当クラスを含む）を {"項目名": 値} で残す（GitHub Issue #166 の 5）。一時パスワードは残さない
+    log(user.account_id, '7', '1', 'm_account', accountId, null, null, fieldsJSON([
+      ['職員ID', input.staff_id],
+      ['氏名', input.staff_name],
+      ['ログインID', input.email],
+      ['ロール', roleLabel(input.role)],
+      ['担当クラス', staffClassName(input.staff_id)],
+    ]));
     return ok(temp);
   },
 
@@ -1968,20 +2454,19 @@ export const adminApi = {
     if (user.role !== '1') return fail('職員アカウントの変更は管理者のみが行えます');
     const name = input.staff_name.trim();
     if (!name) return fail('氏名を入力してください');
+    if (tooLong(name, 50)) return fail('氏名は50文字以内で入力してください');
     if (input.role !== '1' && input.role !== '2') return fail('ロールの指定が正しくありません');
+    if (input.class_id !== null && !currentClassExists(input.class_id)) return fail('担当クラスの指定が正しくありません');
     const s = findStaff(staffId);
     const a = s ? findAccount(s.account_id) : undefined;
     if (!s || !a) return fail('職員が見つかりません');
     // 自分のロールは変えられない。管理者が自分を一般へ下げると、戻せる人がいなくなることがある
     if (a.account_id === user.account_id && input.role !== a.role) return fail('自分のロールは変更できません');
 
-    const roleLabel = (r: Role) => (r === '1' ? '管理者' : '一般');
-    const currentClass = () => {
-      const cs = db.classStaff.find((x) => x.staff_id === staffId
-        && db.classes.some((c) => c.class_id === x.class_id && c.fiscal_year === db.FISCAL_YEAR));
-      return cs ? className(cs.class_id) : '担当クラスなし';
-    };
-    const before = `${s.staff_name} / ${roleLabel(a.role)} / ${currentClass()}`;
+    const fields = (): Field[] => [
+      ['氏名', s.staff_name], ['ロール', roleLabel(a.role)], ['担当クラス', staffClassName(staffId)],
+    ];
+    const before = fields();
 
     s.staff_name = name;
     s.updated_at = now();
@@ -1999,11 +2484,33 @@ export const adminApi = {
     // 外れるまでの過去ログだけを読める（要件定義書「チャットツール」(4-3) (a)、GitHub Issue #162）
     syncStaffChatRooms(a.account_id);
 
-    log(user.account_id, '7', '2', 'm_account', a.account_id, null, before,
-      `${name} / ${roleLabel(input.role)} / ${currentClass()}`);
+    // 変更のあった項目だけを {"項目名": 値} で残す（基本設計書「操作ログ（t_operation_log）」(5-8)、GitHub Issue #166 の 5）
+    const [b, af] = changedFields(before, fields());
+    log(user.account_id, '7', '2', 'm_account', a.account_id, null, b, af);
     return ok(undefined);
   },
 };
+
+/** ロールの表示名（操作ログ用） */
+const roleLabel = (r: Role) => (r === '1' ? '管理者' : '一般');
+
+/** 当年度の担当クラス名。無ければ「担当クラスなし」（サーバ側は server/api_admin.go の staffClassName） */
+function staffClassName(staffId: string): string {
+  const cs = db.classStaff.find((x) => x.staff_id === staffId
+    && db.classes.some((c) => c.class_id === x.class_id && c.fiscal_year === db.FISCAL_YEAR));
+  return cs ? className(cs.class_id) : '担当クラスなし';
+}
+
+/** 当年度のクラスか。担当クラスに割り当てられるのは当年度のクラスだけ */
+const currentClassExists = (classId: number) =>
+  db.classes.some((c) => c.class_id === classId && c.fiscal_year === db.FISCAL_YEAR);
+
+/**
+ * ログインIDがすでに使われているか。ロールをまたいで園内で一意（基本設計書 5-2）。
+ * 【仮置き】大文字・小文字だけが違うものも同じとみなす（web/仮置き値.md。GitHub Issue #167 の 1）。
+ * 保護者の自己登録も同じ判定を使う。サーバ側は server/api_admin.go の emailTaken
+ */
+const emailTaken = (email: string) => db.accounts.some((a) => a.email.toLowerCase() === email.toLowerCase());
 
 const adminApi2 = {
   /** 招待コードの一覧。同じ園児に複数枚が並ぶため園児名でまとめて見せる（画面詳細図 7-3） */
@@ -2018,7 +2525,13 @@ const adminApi2 = {
     }));
     if (f.classId) rows = rows.filter((r) => r.class_id === f.classId);
     if (f.status) rows = rows.filter((r) => r.status === f.status);
-    rows.sort((a, b) => a.child_name.localeCompare(b.child_name, 'ja') || a.code.localeCompare(b.code));
+    // 【仮置き】園児のよみ順にまとめ（よみが同じなら園児IDの順）、同じ園児の中は発行の古い順にする
+    // （web/仮置き値.md「一覧の並び順」）。漢字の氏名の順では、よみの順にも発行の順にもならず、
+    // サーバ（並びを決めていなかった）とも食い違っていた（GitHub Issue #177 の 7）。
+    // サーバ側は server/api_admin.go の handleInvitationCodes
+    const kanaOf = (childId: string) => findChild(childId)?.child_name_kana ?? '';
+    rows.sort((a, b) => kanaOf(a.child_id).localeCompare(kanaOf(b.child_id), 'ja')
+      || a.child_id.localeCompare(b.child_id) || a.invitation_code_id - b.invitation_code_id);
     return ok(rows);
   },
 
@@ -2031,7 +2544,8 @@ const adminApi2 = {
     user: SessionUser, classId: number, perChild: number, validDays: number, includeExisting = false,
   ): Promise<{ issued: number; skipped: number }> {
     if (user.role !== '1') return fail('招待コードの発行は管理者のみが行えます');
-    if (perChild < 1) return fail('1名あたりの枚数は1以上で指定してください');
+    // 園児1名あたりの枚数は 1〜5 枚（図/画面詳細図.md「招待コード管理画面」(7-7) 項目10。GitHub Issue #167 の 3）
+    if (!validPerChild(perChild)) return fail(PER_CHILD_MESSAGE);
     if (!validInvitationDays(validDays)) return fail(INVITATION_DAYS_MESSAGE);
     const ids = db.classChildren.filter((cc) => cc.class_id === classId).map((cc) => cc.child_id)
       .filter((id) => { const c = findChild(id); return c && !c.is_deleted && c.enrollment_status === '1'; });
@@ -2061,6 +2575,10 @@ const adminApi2 = {
   async issueOneInvitationCode(user: SessionUser, childId: string, validDays: number): Promise<string> {
     if (user.role !== '1') return fail('招待コードの発行は管理者のみが行えます');
     if (!validInvitationDays(validDays)) return fail(INVITATION_DAYS_MESSAGE);
+    // 取り消した・在籍していない園児には発行しない。一括発行と同じ条件（GitHub Issue #166 の 4）
+    const target = childIssuable(childId);
+    if (!target.found) return fail('園児が見つかりません');
+    if (!target.issuable) return fail('在籍していない園児には招待コードを発行できません');
     const code = randomCode();
     db.invitationCodes.push({
       invitation_code_id: nextId(), code, child_id: childId,
@@ -2076,6 +2594,8 @@ const adminApi2 = {
     const c = db.invitationCodes.find((x) => x.invitation_code_id === codeId);
     if (!c) return fail('招待コードが見つかりません');
     if (c.status === '2') return fail('使用済みの招待コードは失効できません');
+    // 失効済みのコードを重ねて失効させない。操作ログに事実と違う「変更前：未使用」が残る（GitHub Issue #166 の 6）
+    if (c.status === '3') return fail('この招待コードはすでに失効しています');
     c.status = '3';
     log(user.account_id, '7', '2', 't_invitation_code', codeId, c.child_id, '未使用', '失効');
     return ok(undefined);
@@ -2220,6 +2740,9 @@ function randomPassword(): string {
   return `${randomFrom(alphabet, 4)}-${randomFrom(alphabet, 4)}-${randomFrom(alphabet, 4)}`;
 }
 
+/** 続柄の選択肢（画面詳細図「新規登録画面（保護者）」(2-3) 項目11。server/api_auth.go の guardianRelationships） */
+const GUARDIAN_RELATIONSHIPS: readonly string[] = ['母', '父', '祖母', '祖父', 'その他'];
+
 /** 推測困難な値とする（基本設計書 5-2） */
 function randomCode(): string {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -2236,11 +2759,18 @@ const adminApi3 = {
     if (c.status === '2') return fail('この招待コードはすでに使われています');
     if (c.status === '3') return fail('この招待コードは失効しています');
     if (c.expires_on < today()) return fail('この招待コードは有効期限が切れています');
+    // 取り消した・在籍していない園児のコードでは登録させない。園児の状態は言わず、無いコードと同じ文言にする
+    // （GitHub Issue #166 の 4。サーバ側は server/api_auth.go の lookupUsableCode）
+    if (!childIssuable(c.child_id).issuable) return fail('招待コードが確認できません。園から配布されたコードをお確かめください');
     return ok({ ok: true as const });
   },
 
   async signUpGuardian(
-    input: { code: string; email: string; password: string; guardian_name: string; relationship: string },
+    input: {
+      code: string; email: string; password: string; guardian_name: string; relationship: string;
+      /** 利用規約に同意したか（画面の「利用規約に同意します」）と、画面に出して同意を得た規約の版 */
+      terms_agreed: boolean; terms_version: string;
+    },
   ): Promise<SessionUser> {
     /*
      * この関数は、コードが未使用かを確かめてから使用済みにするまで、待たずに（await を挟まずに）進める。
@@ -2249,16 +2779,37 @@ const adminApi3 = {
      */
     const normalized = normalizeInvitationCode(input.code);
     const c = db.invitationCodes.find((x) => normalizeInvitationCode(x.code) === normalized);
-    if (!c || c.status !== '1' || c.expires_on < today()) return fail('招待コードが確認できません');
+    if (!c || c.status !== '1' || c.expires_on < today() || !childIssuable(c.child_id).issuable) {
+      return fail('招待コードが確認できません');
+    }
+    /*
+     * 規約への同意を受け取ってから登録する。同意しなかった場合は登録を完了しない
+     * （基本設計書「保護者アカウントの自己登録」(4-3)、画面詳細図 2-3 項目5。GitHub Issue #170）。
+     * 同意した版は、画面に出した版といま有効な版が同じときだけ記録する（同「同意履歴（t_terms_agreement）」(5-2)）。
+     * 文言は server/api_auth.go と同じ
+     */
+    if (input.terms_agreed !== true) return fail('利用規約に同意いただけない場合、ご利用いただけません。');
+    // 【仮置き】画面に出していた規約が、送るまでのあいだに改定されたときの文言（web/仮置き値.md）
+    if (input.terms_version !== CURRENT_TERMS_VERSION) {
+      return fail('利用規約が改定されました。改定後の利用規約をお読みいただき、あらためて同意してください。');
+    }
     // ログインIDはメールアドレス。空や形式の誤りを受け付けない（要件定義書「ログインIDの定義」(4-1-1)）
-    input = { ...input, email: input.email.trim() };
+    input = { ...input, email: input.email.trim(), guardian_name: (input.guardian_name ?? '').trim() };
     const emailError = validateEmail(input.email);
     if (emailError) return fail(emailError);
-    if (db.accounts.some((a) => a.email === input.email)) return fail('このメールアドレスはすでに登録されています');
+    // ログインIDはロールをまたいで園内で一意（基本設計書 5-2）。大文字・小文字だけの違いは同じ宛先として扱う
+    // （GitHub Issue #170。判定は職員アカウントの発行と同じ emailTaken。GitHub Issue #167 の 1）
+    if (emailTaken(input.email)) return fail('このメールアドレスはすでに登録されています');
     // 8〜128文字（文字数で数える）。よく使われるパスワードは拒否する（server/password.go と同じ規則。GitHub Issue #159）
     const passwordError = validateNewPassword(input.password);
     if (passwordError) return fail(passwordError);
-    if (!input.guardian_name.trim()) return fail('保護者の氏名を入力してください');
+    // 氏名は前後の空白を落として、50文字以内（基本設計書「入力項目の制約値」(4-9)）
+    if (!input.guardian_name) return fail('保護者の氏名を入力してください');
+    if (tooLong(input.guardian_name, 50)) return fail('保護者の氏名は50文字以内で入力してください');
+    // 続柄は必須で、選択肢のどれか（画面詳細図 2-3 項目11）
+    if (!GUARDIAN_RELATIONSHIPS.includes(input.relationship)) {
+      return fail('続柄は 母・父・祖母・祖父・その他 から選んでください');
+    }
 
     const accountId = nextId();
     db.accounts.push({
@@ -2334,8 +2885,12 @@ const adminApi3 = {
     } else if (kind === 'nap_record') {
       log(user.account_id, '3', '5', 't_nap_record', null, null, null, `午睡記録をCSV出力（${period}）`);
     } else if (kind === 'allergy_list') {
-      // 要配慮個人情報の一覧。出力できるのは管理者のみ（画面詳細図「アレルギー一覧画面」(7-4)）
-      if (user.role !== '1') return fail('アレルギー一覧の印刷は管理者のみが行えます');
+      /*
+       * 要配慮個人情報の一覧。印刷できるのは管理者・一般（保護者は上で断る）。担任でない職員も、受け入れや
+       * 合同保育で子を見る場面で配膳に使うため（基本設計書「権限と利用可能機能」(6-1)「アレルギー一覧の印刷」、
+       * 画面詳細図「アレルギー一覧画面」(7-4) の項目2。設計の直しは PR #216 の直-16・直-24）。
+       * サーバ側は server/api_audit.go の handleRecordExport
+       */
       log(user.account_id, '6', '5', 'm_allergy', null, null, null, `アレルギー一覧を印刷（${count} 名）`);
     } else {
       if (user.role !== '1') return fail('招待コードの出力は管理者のみが行えます');
@@ -2384,11 +2939,15 @@ const bulkApi = {
 
     // 同じ取込の中での重複も弾く。ファイル内で同じ園児IDが2度出ることがある
     const seen = new Set<string>();
+    // 同じ氏名・生年月日の行が、このファイルの何行目に先に出たか。重ねて登録していないかを知らせる（GitHub Issue #144 の 2）
+    const seenPerson = new Map<string, number>();
     const rows: CsvRow[] = body.map((line, i) => {
       const values = line.split(',').map((v) => v.trim());
       // 誤りは1行の中でまとめて示す。1つ直すたびに次の誤りが出る作りにしない（GitHub Issue #121）
       const errors: string[] = [];
-      let warning: string | null = null;
+      // 取り込みは妨げないが、確かめてほしいこと。誤りと同じく1行の中でまとめて示す
+      const warnings: string[] = [];
+      let personKey = '';
 
       if (values.length < 6) {
         errors.push('列が足りません（園児ID,氏名,氏名かな,生年月日,性別,クラス名,平熱）');
@@ -2410,12 +2969,35 @@ const bulkApi = {
           // Number() は Infinity・0x24・1e2 も数にする。数字と小数点だけの書き方に限る（TEMPERATURE_FORMAT）
           const t = Number(values[6]);
           if (!TEMPERATURE_FORMAT.test(values[6]) || !Number.isFinite(t)) errors.push('平熱は数値（小数第1位まで。例：36.5）で入力してください');
-          else if (t < TEMPERATURE_MIN || t > TEMPERATURE_MAX) warning = '平熱が想定の範囲（30.0〜43.0℃）の外です。値を確かめてください';
+          else if (t < TEMPERATURE_MIN || t > TEMPERATURE_MAX) warnings.push('平熱が想定の範囲（30.0〜43.0℃）の外です。値を確かめてください');
+        }
+
+        /*
+         * 同じ氏名・生年月日の園児が登録済みか、このファイルの前の行にあれば、確認を促す。止めはしない
+         * （GitHub Issue #144 の 2。【仮置き】web/仮置き値.md「同じ氏名・生年月日の園児の知らせ」）。
+         * 園児IDは別の番号が振られるため、ID の重複では同じ子の二重登録に気づけない。server/api_bulk.go と同じ
+         */
+        if (childNameKey(values[1]) && isRealDate(values[3])) {
+          personKey = `${childNameKey(values[1])}|${values[3]}`;
+          const same = findSameNameBirthChildren(values[1], values[3]);
+          if (same.length > 0) {
+            warnings.push(`同じ氏名・生年月日の園児がいます（${same.map((c) => c.child_id).join('・')}）。同じ子を重ねて登録していないか確かめてください`);
+          }
+          const first = seenPerson.get(personKey);
+          if (first !== undefined) {
+            warnings.push(`同じ氏名・生年月日の行がこのファイル内にあります（${first} 行目）。同じ子を重ねて登録していないか確かめてください`);
+          }
         }
       }
-      if (errors.length === 0) seen.add(values[0]);
+      if (errors.length === 0) {
+        seen.add(values[0]);
+        if (personKey && !seenPerson.has(personKey)) seenPerson.set(personKey, i + 1);
+      }
 
-      return { line: i + 1, values, error: errors.length > 0 ? errors.join('／') : null, warning };
+      return {
+        line: i + 1, values, error: errors.length > 0 ? errors.join('／') : null,
+        warning: warnings.length > 0 ? warnings.join('／') : null,
+      };
     });
     return { header, rows };
   },
@@ -2447,7 +3029,13 @@ const bulkApi = {
       const cls = db.classes.find((c) => c.fiscal_year === db.FISCAL_YEAR && c.class_name === clsName)!;
       db.classChildren.push({ class_id: cls.class_id, child_id: id });
     });
-    log(user.account_id, '6', '1', 'm_child', null, null, null, `CSV一括登録 ${rows.length} 件`);
+    // 登録した園児ごとに、対象園児つきで残す。件数だけの 1 行では、対象園児で絞り込んだときに出ない
+    // （基本設計書「操作ログ（t_operation_log）」(5-8)、GitHub Issue #166 の 5。サーバ側は handleImportChildCsv）
+    rows.forEach((r) => {
+      const id = r.values[0];
+      log(user.account_id, '6', '1', 'm_child', null, id, null,
+        fieldsJSON([['登録', 'CSV一括登録'], ...childFields(id)]));
+    });
     return ok(rows.length);
   },
 
@@ -2474,10 +3062,14 @@ const bulkApi = {
 const dashboardApi = {
   /** 未対応の件数を最上部に置く。出勤直後に何が残っているかを1画面で把握させる */
   async staffSummary(user: SessionUser) {
+    // 職員ダッシュボードは職員に限る（サーバ側の server/api_dashboard.go の handleStaffSummary と同じ。GitHub Issue #177 の 3）
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
     const visible = new Set(visibleChildren(user).map((c) => c.child_id));
     const myClasses = new Set(selectableClasses(user).map((c) => c.class_id));
 
-    const returned = db.diaries.filter((d) => !d.is_deleted && d.status === '4'
+    // 自分が書いて差し戻された日誌。開いた先の日誌一覧（状態＝差し戻し・自分が書いたもの）と同じ範囲を数える
+    // （GitHub Issue #174。サーバ側は server/api_dashboard.go）
+    const returned = db.diaries.filter((d) => canSeeDiary(user, d) && d.status === '4'
       && d.created_staff_id === user.staff_id).length;
 
     const rooms = db.chatMembers.filter((m) => m.account_id === user.account_id).map((m) => m.chat_room_id);
@@ -2513,7 +3105,19 @@ const dashboardApi = {
     autoCloseNapSessions();
     const activeNap = db.napSessions.find((s) => s.ended_at === null && myClasses.has(s.class_id)) ?? null;
 
-    return ok({ returned, unreadChat, unhandledChat, unhandledChatRoom, devOverdue, pending, abnormalWithoutDiary, activeNap });
+    // 家庭からの「未確認」「更新」と、おひるね中の園児。今日のページだけを数える（詳細設計書「ダッシュボード」(4-8 (2))）
+    const states = [...visible].map((id) => homeState(db.contactHomes.find((h) => h.child_id === id && h.contact_date === today())));
+    const openSessions = new Set(db.napSessions.filter((s) => s.ended_at === null && s.session_date === today()).map((s) => s.nap_session_id));
+    const napSleeping = [...visible].filter((id) => db.napSleeps.some((s) =>
+      s.child_id === id && s.woke_at === null && !s.is_deleted && openSessions.has(s.nap_session_id))).length;
+    // 園からのひとことを送っていない在籍園児。今日の午睡で欠席にした子は数えない（server/api_dashboard.go と同じ）
+    const todaySessions = new Set(db.napSessions.filter((s) => s.session_date === today()).map((s) => s.nap_session_id));
+    const facilityUnsent = [...visible].filter((id) => findChild(id)?.enrollment_status === '1'
+      && !db.contactFacilities.some((f) => f.child_id === id && f.contact_date === today() && !f.is_deleted)
+      && !db.napExclusions.some((x) => x.child_id === id && x.reason === '1' && !x.is_deleted && todaySessions.has(x.nap_session_id))).length;
+    return ok({ returned, unreadChat, unhandledChat, unhandledChatRoom, devOverdue, pending, abnormalWithoutDiary, activeNap,
+      homeUnconfirmed: states.filter((x) => x === 'unconfirmed').length, homeRevised: states.filter((x) => x === 'revised').length, napSleeping,
+      facilityUnsent });
   },
 
   /** 保護者ホーム。自児の情報とチャットへの導線（基本設計書「画面の一覧」(3-2)） */
@@ -2521,7 +3125,8 @@ const dashboardApi = {
     // 保護者ホームは保護者のためのもの。職員が呼ぶと、参照範囲の園児すべてが「自児」として並ぶ
     // （GitHub Issue #159 の 3。server/api_dashboard.go の handleGuardianHome と同じ）
     if (user.role !== '3') return fail('保護者ホームは保護者のみが利用できます');
-    const mine = user.guardian_id ? childrenOfGuardian(user.guardian_id) : [];
+    // 「きょう」は連絡帳を読める自児ごとに1件（猶予中を含む）。日誌は canSeeDiary が有効な紐づけの自児に絞る
+    const mine = guardianContactChildren(user);
     const rooms = db.chatMembers.filter((m) => m.account_id === user.account_id && m.left_at === null).map((m) => m.chat_room_id);
     const unread = db.chatMessages.filter((m) =>
       rooms.includes(m.chat_room_id) && !m.is_deleted && m.sender_account_id !== user.account_id
@@ -2537,6 +3142,8 @@ const dashboardApi = {
         .filter((d) => d.child_id === child.child_id && canSeeDiary(user, d))
         .sort((a, b) => b.diary_date.localeCompare(a.diary_date)),
       unread,
+      // 園児1人の「きょう」（詳細設計書「ダッシュボード」(4-8 (1))。server/api_contact.go の guardianToday）
+      today: guardianTodayOf(user, child),
     })));
   },
 };
@@ -2621,6 +3228,9 @@ const handoutApi = {
         edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null,
       });
     }
+    // 見られる人の配布物の一覧と、掲載の知らせを流したチャンネルを読み直させる
+    publish({ type: 'handout', handout_id: h.handout_id }, (u) => canSeeHandout(u, h));
+    if (room) publishRoomPost(room.chat_room_id);
     return ok(h);
   },
 
@@ -2631,13 +3241,628 @@ const handoutApi = {
     if (!h) return fail('配布物が見つかりません');
     h.is_deleted = true;
     // 掲載の知らせも取り消す。知らせだけが残ると、開いても見つからない配布物へ案内し続けることになる
-    db.chatMessages
-      .filter((m) => m.source_type === '4' && m.source_id === handoutId && !m.is_deleted)
-      .forEach((m) => { m.is_deleted = true; m.body = ''; m.deleted_at = now(); m.deleted_account_id = user.account_id; });
+    const notices = db.chatMessages
+      .filter((m) => m.source_type === '4' && m.source_id === handoutId && !m.is_deleted);
+    notices.forEach((m) => { m.is_deleted = true; m.body = ''; m.deleted_at = now(); m.deleted_account_id = user.account_id; });
     log(user.account_id, '2', '4', 't_handout', handoutId, null, h.title, '取り下げ');
+    publish({ type: 'handout', handout_id: handoutId }, (u) => canSeeHandout(u, h));
+    if (notices[0]) publishMessage(notices[0]);
     return ok(undefined);
   },
 };
+
+/* ============ 開いている画面への知らせ（server/events.go） ============
+ *
+ * サーバは、書き込みのあとに、その変化を見てよい人へ「変わった」とだけ知らせる（SSE）。モックはサーバが
+ * 無いため、同じ書き込みのあとに、同じ知らせをブラウザの中で出す（live.ts の emitLive）。開いている画面は
+ * サーバのときと同じように、知らせを受けて読み直す。
+ *
+ * モックは1つのタブの中で動くため、受け取るのは、そのタブでログインしている人（connectLive で渡す）だけである。
+ * 送るかどうかは、サーバ（server/events.go の notify*）と同じ判定で、その人について決める。
+ * 【注意】送る範囲を変えるときは、サーバとモックの両方を直す。
+ */
+
+/** そのタブでログインしている人。知らせを受け取る人 */
+let liveViewer: number | null = null;
+
+/**
+ * 知らせを受け取る人を決める。返す関数で受け取りをやめる。App.tsx がログイン中に1か所で呼ぶ。
+ * サーバへはつながない（接続の状態は「つないでいない」のまま。live.ts）
+ */
+export function connectLive(accountId: number): () => void {
+  liveViewer = accountId;
+  return () => { if (liveViewer === accountId) liveViewer = null; };
+}
+
+/**
+ * see が真を返すとき、そのタブへ知らせを出す。停止中・手続きの途中の人には出さない
+ * （サーバの notify と同じ。その人はほかの API を使えないため）
+ */
+function publish(ev: LiveEvent, see: (u: SessionUser) => boolean): void {
+  if (liveViewer === null) return;
+  const account = findAccount(liveViewer);
+  if (!account || account.status === '2') return;
+  const viewer = buildSessionUser(account);
+  if (pendingProcedure(viewer)) return;
+  if (see(viewer)) emitLive(ev);
+}
+
+const isStaffUser = (u: SessionUser) => u.role === '1' || u.role === '2';
+
+/** そのチャンネルを参照できるか。職員は外れたあとも過去ログを読める。保護者は外れた時点で読めない（server/api_chat.go の isMember） */
+function isRoomMember(u: SessionUser, roomId: number): boolean {
+  const m = db.chatMembers.find((x) => x.chat_room_id === roomId && x.account_id === u.account_id);
+  return !!m && !(m.left_at !== null && u.role === '3');
+}
+
+/** 新しいメッセージは、いまの参加者へ（server/events.go の notifyRoomPost） */
+function publishRoomPost(roomId: number): void {
+  publish({ type: 'chat', room_id: roomId }, (u) => isParticipant(u, roomId));
+}
+
+/** 編集・取消・リアクションは、そのメッセージを見られる人へ（server/events.go の notifyMessage） */
+function publishMessage(m: ChatMessage): void {
+  publish({ type: 'chat', room_id: m.chat_room_id },
+    (u) => isRoomMember(u, m.chat_room_id) && !hiddenBeforeJoined(u, m) && !hiddenAfterLeft(u, m));
+}
+
+/**
+ * 既読は、本人（ほかのタブの未読の件数）と、既読の人数が変わるときはそのチャンネルの職員へ
+ * （server/events.go の notifyRead。数えるロールは readCountOf と同じ）
+ */
+function publishRead(roomId: number, reader: SessionUser): void {
+  const roomType = db.chatRooms.find((r) => r.chat_room_id === roomId)?.room_type ?? '';
+  const guardianRoom = roomType === '1' || roomType === '2' || roomType === '4';
+  const counted = (reader.role === '3') === guardianRoom;
+  publish({ type: 'chat', room_id: roomId },
+    (u) => u.account_id === reader.account_id || (counted && isStaffUser(u) && isRoomMember(u, roomId)));
+}
+
+/** 日誌は、その日誌を参照できる人へ（server/events.go の notifyDiary） */
+function publishDiary(d: Diary): void {
+  publish({ type: 'diary', diary_id: d.diary_id }, (u) => isStaffUser(u) && canSeeDiary(u, d));
+}
+
+/**
+ * 午睡チェックの開始・終了は、そのクラスを扱える職員へ。保護者へは送らない
+ * （server/events.go の notifyNapSession。詳細設計書「PR #196 からの変更」(6-1)）
+ */
+function publishNapSession(classId: number): void {
+  publish({ type: 'nap', class_id: classId },
+    (u) => isStaffUser(u) && canUseClass(u, classId));
+}
+
+/**
+ * 園児1人の午睡の記録は、その園児を参照できる職員へ。保護者へは送らない（server/events.go の notifyNapChild）。
+ * 「ねた」「おきた」は、あわせて publishContactChild で保護者へも届ける
+ */
+function publishNapChild(classId: number, childId: string): void {
+  publish({ type: 'nap', class_id: classId, child_id: childId },
+    (u) => isStaffUser(u) && canSeeChild(u, childId));
+}
+
+/* ============ 連絡帳（詳細設計書「連絡帳の1ページと家庭から」(4-3)・「午睡（ねた・おきた・対象外）」(4-6)） ============
+ * 規則は server/contact_scope.go・api_contact.go・api_contact_write.go・api_nap_sleep.go と同じ。関数の名前もそろえる（9-2）
+ */
+
+type Access = { read: boolean; write: boolean };
+
+/** その職員の今年度の担任クラス（server/contact_scope.go の staffClassIDs） */
+function staffClassIds(user: SessionUser): number[] {
+  return db.classStaff
+    .filter((s) => s.staff_id === user.staff_id && db.classes.some((c) => c.class_id === s.class_id && c.fiscal_year === db.FISCAL_YEAR))
+    .map((s) => s.class_id);
+}
+
+/**
+ * その利用者がその園児の連絡帳を読めるか・書けるか（詳細設計書「判定の関数」(4-1 (2))、決めたこと D-18）。
+ * 管理者は全園児。一般は今年度の担任クラスの園児（担任クラスが無いフリーは全園児を読むだけ）。
+ * 保護者は紐づけが 1:有効 か 3:猶予中 の自児を読め、書けるのは 1:有効 のときだけ。linked_at で切らない
+ */
+export function contactAccess(user: SessionUser, childId: string): Access {
+  if (!db.children.some((c) => c.child_id === childId && !c.is_deleted)) return { read: false, write: false };
+  if (user.role === '1') return { read: true, write: true };
+  if (user.role === '2') {
+    const classes = staffClassIds(user);
+    if (classes.length === 0) return { read: true, write: false };
+    const hit = db.classChildren.some((cc) => cc.child_id === childId && classes.includes(cc.class_id));
+    return { read: hit, write: hit };
+  }
+  const link = db.guardianChildren.find((g) => g.guardian_id === user.guardian_id && g.child_id === childId);
+  return { read: link?.link_status === '1' || link?.link_status === '3', write: link?.link_status === '1' };
+}
+
+/** そのクラスの連絡帳を読めるか・書けるか。職員だけ（server/contact_scope.go の classContactAccess） */
+export function classContactAccess(user: SessionUser, classId: number): Access {
+  if (user.role === '3') return { read: false, write: false };
+  if (!db.classes.some((c) => c.class_id === classId && c.fiscal_year === db.FISCAL_YEAR)) return { read: false, write: false };
+  if (user.role === '1') return { read: true, write: true };
+  const classes = staffClassIds(user);
+  if (classes.length === 0) return { read: true, write: false };
+  const mine = classes.includes(classId);
+  return { read: mine, write: mine };
+}
+
+/**
+ * 保護者ホームの「きょう」に並べる自児（server/contact_scope.go の guardianContactChildren。詳細設計書「ダッシュボード」(4-8 (1))）。
+ * contactAccess の read と同じ条件（紐づけが 1:有効 か 3:猶予中、取り消していない園児）で選び、年上の子から並べる。
+ * 卒園・退園して猶予中の子も「〇月〇日まで読むことができます」として出す（同「保護者ホーム（「きょう」）」(2-5 (2))）
+ */
+export function guardianContactChildren(user: SessionUser): Child[] {
+  if (user.role !== '3' || !user.guardian_id) return [];
+  const ids = new Set(db.guardianChildren
+    .filter((g) => g.guardian_id === user.guardian_id && (g.link_status === '1' || g.link_status === '3')).map((g) => g.child_id));
+  return db.children.filter((c) => ids.has(c.child_id) && !c.is_deleted)
+    .sort((a, b) => a.birth_date.localeCompare(b.birth_date) || a.child_id.localeCompare(b.child_id));
+}
+
+/** その園児の今年度のクラス（無ければ null） */
+function contactClassOf(childId: string): number | null {
+  return db.classChildren.find((cc) => cc.child_id === childId
+    && db.classes.some((c) => c.class_id === cc.class_id && c.fiscal_year === db.FISCAL_YEAR))?.class_id ?? null;
+}
+
+/** カンマ区切りの設定の値を分ける（詳細設計書「検査の共通の規則」(4-1 (5))） */
+function settingList(key: string, fallback: string): string[] {
+  return settingText(key, fallback).split(',').map((v) => v.trim()).filter(Boolean);
+}
+/** 保護者へ出すきょうのようすの項目・家庭からの項目の既定（基本設計書「設定マスタ」(5-9)） */
+const DEFAULT_SHOW_ITEMS = 'nap,meal,toilet,temperature,comment,photo,class';
+const DEFAULT_HOME_ITEMS = 'temperature,night_sleep,breakfast,mood,pickup,message';
+const EVENT_ITEM: Record<string, string> = { '1': 'meal', '2': 'toilet', '3': 'temperature', '4': 'comment', '5': 'photo' };
+/** 保護者にその項目を出すか（開いた時点の設定）。家庭からと園からは常に出す */
+function guardianSeesItem(item: string): boolean {
+  return item === 'home' || item === 'facility' || settingList('contact.show_items', DEFAULT_SHOW_ITEMS).includes(item);
+}
+
+/**
+ * 園児1人の連絡帳が変わったことを送る（server/events.go の notifyContactChild）。
+ * 相手は contactAccess の Read。保護者には、その種類を contact.show_items で外していれば送らない
+ */
+function publishContactChild(childId: string, item: string): void {
+  const guardianSees = guardianSeesItem(item);
+  publish({ type: 'contact', child_id: childId },
+    (u) => contactAccess(u, childId).read && (isStaffUser(u) || guardianSees));
+}
+
+/* ---- 返す形。職員の応答だけの項目は、保護者には入れない（段3） ---- */
+
+function homeView(h: ContactHomeRecord | undefined, staff: boolean): ContactHome | null {
+  if (!h) return null;
+  const view: ContactHome = {
+    contact_home_id: h.contact_home_id, child_id: h.child_id, contact_date: h.contact_date, guardian_id: h.guardian_id,
+    temperature: h.temperature, night_sleep_from: h.night_sleep_from, night_sleep_to: h.night_sleep_to,
+    breakfast: h.breakfast, mood_label: h.mood_label, pickup_type: h.pickup_type, pickup_person: h.pickup_person,
+    pickup_time: h.pickup_time, message: h.message, submitted_at: h.submitted_at, confirmed_at: h.confirmed_at,
+    revised_at: h.revised_at, updated_at: h.updated_at,
+  };
+  if (staff) {
+    view.guardian_name = db.guardians.find((g) => g.guardian_id === h.guardian_id)?.guardian_name ?? '';
+    view.guardian_relationship = db.guardianChildren.find((g) => g.guardian_id === h.guardian_id && g.child_id === h.child_id)?.relationship ?? '';
+    if (h.confirmed_staff_id) view.confirmed_staff_name = staffName(h.confirmed_staff_id);
+  }
+  return view;
+}
+
+function eventView(e: ContactEventRecord, staff: boolean): ContactEvent {
+  const view: ContactEvent = {
+    contact_event_id: e.contact_event_id, child_id: e.child_id, contact_date: e.contact_date, event_type: e.event_type,
+    recorded_at: e.recorded_at, meal_kind: e.meal_kind, meal_amount: e.meal_amount, toilet_label: e.toilet_label,
+    temperature: e.temperature, body: e.body, contact_photo_id: e.contact_photo_id, keep_in_growth: e.keep_in_growth,
+    corrected_at: e.corrected_at, is_deleted: e.is_deleted,
+  };
+  if (staff) { view.staff_name = staffName(e.staff_id); view.updated_at = e.updated_at; }
+  return view;
+}
+
+function sleepView(s: NapSleepRecord, staff: boolean): NapSleep {
+  const view: NapSleep = {
+    nap_sleep_id: s.nap_sleep_id, child_id: s.child_id, slept_at: s.slept_at, woke_at: s.woke_at,
+    corrected_at: s.corrected_at, is_deleted: s.is_deleted,
+    session_ended: !!db.napSessions.find((x) => x.nap_session_id === s.nap_session_id)?.ended_at,
+  };
+  if (staff) {
+    if (s.sleep_temperature !== null) view.sleep_temperature = s.sleep_temperature;
+    view.nap_session_id = s.nap_session_id;
+    view.updated_at = s.updated_at;
+  }
+  return view;
+}
+
+function classNoteView(c: ContactClassRecord, staff: boolean): ContactClass {
+  const view: ContactClass = {
+    contact_class_id: c.contact_class_id, class_id: c.class_id, contact_date: c.contact_date, body: c.body,
+    contact_photo_id: c.contact_photo_id, recorded_at: c.recorded_at, corrected_at: c.corrected_at, is_deleted: c.is_deleted,
+  };
+  if (staff) view.source_diary_id = c.source_diary_id;
+  return view;
+}
+
+function facilityView(f: ContactFacilityRecord | undefined, staff: boolean): ContactFacility | null {
+  if (!f) return null;
+  const view: ContactFacility = {
+    contact_facility_id: f.contact_facility_id, child_id: f.child_id, contact_date: f.contact_date, body: f.body,
+    recorded_at: f.recorded_at, corrected_at: f.corrected_at, is_deleted: f.is_deleted,
+  };
+  if (staff) { view.staff_name = staffName(f.staff_id); view.updated_at = f.updated_at; }
+  return view;
+}
+
+function exclusionView(x: NapExclusionRecord | undefined): NapExclusion | null {
+  if (!x) return null;
+  return { nap_exclusion_id: x.nap_exclusion_id, nap_session_id: x.nap_session_id, child_id: x.child_id,
+    reason: x.reason, staff_id: x.staff_id, is_deleted: x.is_deleted };
+}
+
+const sessionDateOf = (sessionId: number) => db.napSessions.find((s) => s.nap_session_id === sessionId)?.session_date ?? '';
+const byTime = <T,>(at: (v: T) => string) => (a: T, b: T) => at(a).localeCompare(at(b));
+
+/** その日の実施の、取り消していない「ねた・おきた」。5分ごとの確認・対象外は読まない（段3） */
+function sleepsOf(childId: string, date: string): NapSleepRecord[] {
+  return db.napSleeps.filter((s) => s.child_id === childId && !s.is_deleted && sessionDateOf(s.nap_session_id) === date)
+    .sort(byTime((s) => s.slept_at));
+}
+
+function homeState(h: ContactHomeRecord | undefined): HomeState {
+  if (!h) return 'none';
+  if (h.confirmed_at) return 'confirmed';
+  return h.revised_at ? 'revised' : 'unconfirmed';
+}
+
+/** 連絡帳の1ページを、見る人に合わせて組み立てる。権限は呼ぶ側で確かめておく（server/api_contact.go の contactPage） */
+function contactPageOf(user: SessionUser, childId: string, date: string): ContactPage {
+  // 午睡の時間帯を過ぎた実施を先に終えておく（「おひるね中」のまま出さないため）
+  autoCloseNapSessions();
+  const staff = isStaffUser(user);
+  const classId = contactClassOf(childId);
+  let events = db.contactEvents.filter((e) => e.child_id === childId && e.contact_date === date && !e.is_deleted)
+    .sort(byTime((e) => e.recorded_at));
+  let sleeps = sleepsOf(childId, date);
+  let notes = classId === null ? [] : db.contactClasses.filter((c) => c.class_id === classId && c.contact_date === date && !c.is_deleted)
+    .sort(byTime((c) => c.recorded_at));
+  const page: ContactPage = {
+    child_id: childId, child_name: childName(childId), contact_date: date, class_id: classId,
+    home: homeView(db.contactHomes.find((h) => h.child_id === childId && h.contact_date === date), staff),
+    events: [], sleeps: [], class_notes: [],
+    facility: facilityView(db.contactFacilities.find((f) => f.child_id === childId && f.contact_date === date && !f.is_deleted), staff),
+    can_write_home: false,
+  };
+  if (staff) { page.can_write = contactAccess(user, childId).write; page.recipient = recipientOf(childId); }
+  if (!staff) {
+    // 保護者に出さない種類は、開いた時点の設定で落とす
+    events = events.filter((e) => guardianSeesItem(EVENT_ITEM[e.event_type]));
+    if (!guardianSeesItem('nap')) sleeps = [];
+    if (!guardianSeesItem('class')) notes = [];
+    page.can_write_home = contactAccess(user, childId).write && date === today();
+    page.last_read_at = db.contactReads.find((r) => r.child_id === childId && r.contact_date === date && r.account_id === user.account_id)?.read_at ?? null;
+  }
+  page.events = events.map((e) => eventView(e, staff));
+  page.sleeps = sleeps.map((s) => sleepView(s, staff));
+  page.class_notes = notes.map((c) => classNoteView(c, staff));
+  return page;
+}
+
+/** 日付の受け取り。省略時は今日。今日より後・形の崩れた値は誤り */
+function contactDate(date: string | undefined): string | null {
+  const d = date || today();
+  return isISODate(d) && d <= today() ? d : null;
+}
+
+const excerpt = (s: string, n: number) => ([...s].length <= n ? s : [...s].slice(0, n).join('') + '…');
+
+/** 保護者ホームの園児1人の「きょう」（server/api_contact.go の guardianToday） */
+function guardianTodayOf(user: SessionUser, child: Child): GuardianToday {
+  const day = today();
+  const p = contactPageOf(user, child.child_id, day);
+  const items: TodayItem[] = [
+    ...p.events.map((e): TodayItem => ({
+      kind: (EVENT_ITEM[e.event_type] ?? 'comment') as TodayItem['kind'], recorded_at: e.recorded_at, corrected_at: e.corrected_at,
+      contact_photo_id: e.contact_photo_id,
+      text: e.event_type === '1' ? `${MEAL_KIND_TEXT[e.meal_kind ?? '1']} ${MEAL_AMOUNT_TEXT[e.meal_amount ?? '1']}`
+        : e.event_type === '2' ? e.toilet_label ?? ''
+          : e.event_type === '3' ? `${(e.temperature ?? 0).toFixed(1)}℃`
+            : e.event_type === '5' ? '写真' : excerpt(e.body ?? '', 40),
+    })),
+    ...p.class_notes.map((c): TodayItem => ({ kind: 'class_note', recorded_at: c.recorded_at, corrected_at: c.corrected_at,
+      contact_photo_id: c.contact_photo_id, text: excerpt(c.body, 40) })),
+  ].sort((a, b) => b.recorded_at.localeCompare(a.recorded_at)).slice(0, 3);
+  const nap = [...p.sleeps].sort((a, b) => b.slept_at.localeCompare(a.slept_at))[0] ?? null;
+  const read = p.last_read_at ?? `${day}T00:00:00`;
+  const after = (at: string, corrected: string | null) => at > read || (corrected !== null && corrected > read);
+  let unread = p.events.filter((e) => after(e.recorded_at, e.corrected_at)).length
+    + p.class_notes.filter((c) => after(c.recorded_at, c.corrected_at)).length
+    + (p.facility && after(p.facility.recorded_at, p.facility.corrected_at) ? 1 : 0)
+    + (p.home?.confirmed_at && p.home.confirmed_at > read ? 1 : 0);
+  for (const s of p.sleeps) unread += (after(s.slept_at, s.corrected_at) ? 1 : 0) + (s.woke_at && s.woke_at > read ? 1 : 0);
+  const room = db.chatRooms.filter((r) => r.room_type === '4' && r.child_id === child.child_id)
+    .sort((a, b) => a.chat_room_id - b.chat_room_id)[0];
+  const member = room && db.chatMembers.some((m) => m.chat_room_id === room.chat_room_id && m.account_id === user.account_id && m.left_at === null);
+  const unreadChat = room && member ? db.chatMessages.filter((m) => m.chat_room_id === room.chat_room_id && !m.is_deleted
+    && m.sender_account_id !== user.account_id && !hiddenBeforeJoined(user, m)
+    && !db.chatReads.some((r) => r.chat_message_id === m.chat_message_id && r.account_id === user.account_id)).length : 0;
+  return {
+    child_id: child.child_id, child_name: child.child_name, class_name: className(p.class_id), contact_date: day,
+    can_write_home: p.can_write_home,
+    grace_ends_on: db.guardianChildren.find((g) => g.guardian_id === user.guardian_id && g.child_id === child.child_id && g.link_status === '3')?.grace_ends_on ?? null,
+    home: p.home ? { submitted_at: p.home.submitted_at, confirmed_at: p.home.confirmed_at, revised_at: p.home.revised_at } : null,
+    nap, latest: items,
+    facility: p.facility ? { recorded_at: p.facility.recorded_at, corrected_at: p.facility.corrected_at, excerpt: excerpt(p.facility.body, 60) } : null,
+    unread_contact: unread, unread_chat: unreadChat, personal_room_id: room?.chat_room_id ?? null, growth_new: false,
+  };
+}
+
+/** 'HH:mm' で、分が 10 の倍数か（server/api_contact_write.go の isHHmm10） */
+function isHHmm10(v: string): boolean {
+  const m = /^(\d{2}):(\d{2})$/.exec(v);
+  return !!m && Number(m[1]) < 24 && Number(m[2]) < 60 && Number(m[2]) % 10 === 0;
+}
+const trimmedOrNull = (v: string | null | undefined) => (v == null || v.trim() === '' ? null : v.trim());
+
+/**
+ * 家庭からの入力を検査し、保存する値を返す（server/api_contact_write.go の checkHomeInput と同じ順）。
+ * contact.home_items に無い項目は送られても書き換えず、今の値を残す
+ */
+function checkHomeInput(input: ContactHomeInput, old: ContactHomeRecord | undefined): { value?: Omit<ContactHomeInput, 'updated_at'>; error?: string } {
+  const items = settingList('contact.home_items', DEFAULT_HOME_ITEMS);
+  const on = (item: string) => items.includes(item);
+  const out: Omit<ContactHomeInput, 'updated_at'> = old
+    ? { temperature: old.temperature, night_sleep_from: old.night_sleep_from, night_sleep_to: old.night_sleep_to, breakfast: old.breakfast,
+      mood_label: old.mood_label, pickup_type: old.pickup_type, pickup_person: old.pickup_person, pickup_time: old.pickup_time, message: old.message }
+    : { temperature: null, night_sleep_from: null, night_sleep_to: null, breakfast: null, mood_label: null,
+      pickup_type: null, pickup_person: null, pickup_time: null, message: null };
+  const v = {
+    temperature: input.temperature ?? null,
+    night_sleep_from: trimmedOrNull(input.night_sleep_from), night_sleep_to: trimmedOrNull(input.night_sleep_to),
+    breakfast: trimmedOrNull(input.breakfast) as MealAmount | null, mood_label: trimmedOrNull(input.mood_label),
+    pickup_type: trimmedOrNull(input.pickup_type) as '1' | '2' | null, pickup_person: trimmedOrNull(input.pickup_person),
+    pickup_time: trimmedOrNull(input.pickup_time), message: trimmedOrNull(input.message),
+  };
+  const entered = (on('temperature') && v.temperature !== null) || (on('night_sleep') && (v.night_sleep_from !== null || v.night_sleep_to !== null))
+    || (on('breakfast') && v.breakfast !== null) || (on('mood') && v.mood_label !== null)
+    || (on('pickup') && v.pickup_type !== null) || (on('message') && v.message !== null);
+  if (!entered) return { error: MSG.homeEmpty };
+  if (on('temperature')) {
+    if (v.temperature !== null && !isOneDecimal(v.temperature)) return { error: MSG.temperatureFormat };
+    out.temperature = v.temperature;
+  }
+  if (on('night_sleep')) {
+    if ([v.night_sleep_from, v.night_sleep_to].some((t) => t !== null && !isHHmm10(t))) return { error: MSG.badChoice };
+    out.night_sleep_from = v.night_sleep_from; out.night_sleep_to = v.night_sleep_to;
+  }
+  if (on('breakfast')) {
+    if (v.breakfast !== null && !(v.breakfast in MEAL_AMOUNT_TEXT)) return { error: MSG.badChoice };
+    out.breakfast = v.breakfast;
+  }
+  if (on('mood')) {
+    if (v.mood_label !== null && !settingList('contact.mood_choices', '').includes(v.mood_label)) return { error: MSG.badChoice };
+    out.mood_label = v.mood_label;
+  }
+  if (on('pickup')) {
+    out.pickup_type = v.pickup_type; out.pickup_person = null; out.pickup_time = null;
+    if (v.pickup_type === '2') {
+      if (v.pickup_person === null || v.pickup_time === null) return { error: MSG.pickupRequired };
+      if (tooLong(v.pickup_person, 50)) return { error: MSG.pickupPersonTooLong };
+      if (!isHHmm10(v.pickup_time)) return { error: MSG.badChoice };
+      out.pickup_person = v.pickup_person; out.pickup_time = v.pickup_time;
+    } else if (v.pickup_type !== null && v.pickup_type !== '1') {
+      return { error: MSG.badChoice };
+    }
+  }
+  if (on('message')) {
+    if (v.message !== null && tooLong(v.message, 500)) return { error: MSG.homeMessageTooLong };
+    out.message = v.message;
+  }
+  return { value: out };
+}
+
+/** 操作ログに残す家庭からの値（確認した職員の ID を含む。server/api_contact_write.go の homeLogValue） */
+function homeLogValue(h: ContactHomeRecord): string {
+  return JSON.stringify({
+    guardian_id: h.guardian_id, temperature: h.temperature, night_sleep_from: h.night_sleep_from, night_sleep_to: h.night_sleep_to,
+    breakfast: h.breakfast, mood_label: h.mood_label, pickup_type: h.pickup_type, pickup_person: h.pickup_person,
+    pickup_time: h.pickup_time, message: h.message, submitted_at: h.submitted_at,
+    confirmed_staff_id: h.confirmed_staff_id, confirmed_at: h.confirmed_at, revised_at: h.revised_at,
+  });
+}
+
+/** ねた・おきたの相手を確かめる（server/api_nap_sleep.go の napSleepTarget）。だめなら誤りの文を返す */
+function napSleepTarget(user: SessionUser, sessionId: number, childId: string): { session?: NapSession; error?: string } {
+  autoCloseNapSessions();
+  const session = db.napSessions.find((s) => s.nap_session_id === sessionId);
+  if (!session) return { error: MSG.napNotStarted };
+  const enrolled = db.classChildren.some((cc) => cc.class_id === session.class_id && cc.child_id === childId);
+  if (!canUseClass(user, session.class_id) || !enrolled || !contactAccess(user, childId).write) return { error: MSG.contactForbidden };
+  if (session.ended_at) return { error: MSG.sessionEnded };
+  return { session };
+}
+
+const contactApi = {
+  /** 連絡帳の1ページ（GET /api/contact/children/{childID}） */
+  async contactPage(user: SessionUser, childId: string, date?: string): Promise<ContactPage> {
+    if (!contactAccess(user, childId).read) return fail(MSG.contactForbidden);
+    const d = contactDate(date);
+    if (d === null) return fail(MSG.contactBadDate);
+    return ok(contactPageOf(user, childId, d));
+  },
+
+  /** 保護者が開いた時刻を残す（POST /api/contact/children/{childID}/read）。知らせは送らない */
+  async markContactRead(user: SessionUser, childId: string, date: string): Promise<{ ok: true }> {
+    if (user.role !== '3') return fail(MSG.guardianOnly);
+    if (!contactAccess(user, childId).read) return fail(MSG.contactForbidden);
+    if (!isISODate(date) || date > today()) return fail(MSG.contactBadDate);
+    const row = db.contactReads.find((r) => r.child_id === childId && r.contact_date === date && r.account_id === user.account_id);
+    if (row) row.read_at = now();
+    else db.contactReads.push({ child_id: childId, contact_date: date, account_id: user.account_id, read_at: now() });
+    return ok({ ok: true });
+  },
+
+  /** 連絡帳（クラス）画面で選べるクラス（GET /api/contact/classes） */
+  async contactClasses(user: SessionUser): Promise<{ class_id: number; class_name: string }[]> {
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
+    return ok(db.classes.filter((c) => c.fiscal_year === db.FISCAL_YEAR && classContactAccess(user, c.class_id).read)
+      .sort((a, b) => a.class_id - b.class_id).map((c) => ({ class_id: c.class_id, class_name: c.class_name })));
+  },
+
+  /** 連絡帳（クラス）画面（GET /api/contact/classes/{classID}）。職員だけ */
+  async contactClass(user: SessionUser, classId: number, date?: string): Promise<ContactClassView> {
+    if (!classContactAccess(user, classId).read) return fail(MSG.contactClassForbidden);
+    const d = contactDate(date);
+    if (d === null) return fail(MSG.contactBadDate);
+    const ids = new Set(db.classChildren.filter((cc) => cc.class_id === classId).map((cc) => cc.child_id));
+    const children = db.children.filter((c) => ids.has(c.child_id) && !c.is_deleted && c.enrollment_status === '1')
+      .sort((a, b) => a.child_name_kana.localeCompare(b.child_name_kana, 'ja') || a.child_id.localeCompare(b.child_id));
+    const rows: ContactClassRow[] = children.map((child) => {
+      const h = db.contactHomes.find((x) => x.child_id === child.child_id && x.contact_date === d);
+      return {
+        child, home_state: homeState(h), home: homeView(h, true),
+        events: db.contactEvents.filter((e) => e.child_id === child.child_id && e.contact_date === d && !e.is_deleted)
+          .sort(byTime((e) => e.recorded_at)).map((e) => eventView(e, true)),
+        sleeps: sleepsOf(child.child_id, d).map((s) => sleepView(s, true)),
+        exclusion: exclusionView(db.napExclusions.filter((x) => x.child_id === child.child_id && !x.is_deleted && sessionDateOf(x.nap_session_id) === d)
+          .sort((a, b) => b.nap_exclusion_id - a.nap_exclusion_id)[0]),
+        facility: facilityView(db.contactFacilities.find((f) => f.child_id === child.child_id && f.contact_date === d && !f.is_deleted), true),
+        recipient: recipientOf(child.child_id),
+      };
+    });
+    // 家庭の数は、有効な紐づけの保護者が1人以上いる在籍園児の数（決めたこと D-27）
+    const families = children.filter((c) => db.guardianChildren.some((g) => g.child_id === c.child_id && g.link_status === '1')).length;
+    return ok({
+      class_id: classId, class_name: className(classId), contact_date: d, family_count: families, unregistered_count: rows.length - families,
+      can_write: classContactAccess(user, classId).write, rows,
+      class_notes: db.contactClasses.filter((c) => c.class_id === classId && c.contact_date === d && !c.is_deleted)
+        .sort(byTime((c) => c.recorded_at)).map((c) => classNoteView(c, true)),
+    });
+  },
+
+  /** 家庭から（PUT /api/contact/children/{childID}/home）。ページはモックの今日 */
+  async saveHome(user: SessionUser, childId: string, input: ContactHomeInput): Promise<ContactHome> {
+    const access = contactAccess(user, childId);
+    if (user.role !== '3' || !access.read) return fail(MSG.contactForbidden);
+    if (!access.write) return fail(MSG.contactGraceReadOnly);
+    const day = today();
+    const old = db.contactHomes.find((h) => h.child_id === childId && h.contact_date === day);
+    const checked = checkHomeInput(input, old);
+    if (checked.error || !checked.value) return fail(checked.error ?? MSG.badChoice);
+    // 父母が同時に直したとき（読んだ版が今の行と違う）
+    if (old && input.updated_at !== old.updated_at) return fail(MSG.homeConflict);
+    const at = now();
+    let saved: ContactHomeRecord;
+    if (!old) {
+      saved = { contact_home_id: nextId(), child_id: childId, contact_date: day, guardian_id: user.guardian_id ?? '', ...checked.value,
+        submitted_at: at, confirmed_staff_id: null, confirmed_at: null, revised_at: null, created_at: at, updated_at: at };
+      db.contactHomes.push(saved);
+      log(user.account_id, '8', '1', 't_contact_home', saved.contact_home_id, childId, null, homeLogValue(saved));
+    } else {
+      const before = homeLogValue(old);
+      // 確認済み・更新の行を送り直すと「更新」。未確認のままなら未確認（詳細設計書「家庭から」(3-1)）
+      const revised = old.confirmed_at || old.revised_at ? at : old.revised_at;
+      Object.assign(old, checked.value, { guardian_id: user.guardian_id ?? old.guardian_id, submitted_at: at,
+        confirmed_staff_id: null, confirmed_at: null, revised_at: revised, updated_at: at });
+      saved = old;
+      log(user.account_id, '8', '2', 't_contact_home', saved.contact_home_id, childId, before, homeLogValue(saved));
+    }
+    publishContactChild(childId, 'home');
+    return ok(homeView(saved, false)!);
+  },
+
+  /** 確認しました（POST /api/contact/home/{id}/confirm）。読んだ版を付けて送る（決めたこと D-16）。前の日のページでも押せる */
+  async confirmHome(user: SessionUser, homeId: number, updatedAt: string): Promise<ContactHome> {
+    const h = db.contactHomes.find((x) => x.contact_home_id === homeId);
+    if (!h || user.role === '3' || !contactAccess(user, h.child_id).write) return fail(MSG.contactForbidden);
+    // すでに確認済みなら書き換えない。知らせも送らない（二重の確認）
+    if (h.confirmed_at) return ok(homeView(h, true)!);
+    if (h.updated_at !== updatedAt) return fail(MSG.confirmConflict);
+    const at = now();
+    h.confirmed_staff_id = user.staff_id; h.confirmed_at = at; h.updated_at = at;
+    log(user.account_id, '8', '2', 't_contact_home', h.contact_home_id, h.child_id, null, JSON.stringify({ 確認: '確認しました' }));
+    publishContactChild(h.child_id, 'home');
+    return ok(homeView(h, true)!);
+  },
+
+  /** ねた（POST /api/nap/session/{id}/sleeps）。時刻はモックの今。体温は求めない（決めたこと D-7） */
+  async sleep(user: SessionUser, sessionId: number, childId: string): Promise<NapSleep> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    const target = napSleepTarget(user, sessionId, childId);
+    if (!target.session) return fail(target.error ?? MSG.contactForbidden);
+    if (db.napExclusions.some((x) => x.nap_session_id === sessionId && x.child_id === childId && !x.is_deleted)) return fail(MSG.sleepExcluded);
+    if (db.napSleeps.some((s) => s.nap_session_id === sessionId && s.child_id === childId && s.woke_at === null && !s.is_deleted)) return fail(MSG.sleepTwice);
+    const at = now();
+    const row: NapSleepRecord = { nap_sleep_id: nextId(), nap_session_id: sessionId, child_id: childId, slept_at: at, woke_at: null,
+      sleep_temperature: null, slept_staff_id: user.staff_id ?? '', woke_staff_id: null, corrected_at: null, is_deleted: false,
+      created_at: at, updated_at: at };
+    db.napSleeps.push(row);
+    log(user.account_id, '3', '1', 't_nap_sleep', row.nap_sleep_id, childId, null, JSON.stringify({ slept_at: at }));
+    publishNapChild(target.session.class_id, childId);
+    publishContactChild(childId, 'nap');
+    return ok(sleepView(row, true));
+  },
+
+  /** おきた（POST /api/nap/sleeps/{id}/wake）。woke_at は slept_at より後（同じ秒なら1秒足す） */
+  async wake(user: SessionUser, sleepId: number): Promise<NapSleep> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    const row = db.napSleeps.find((s) => s.nap_sleep_id === sleepId && !s.is_deleted);
+    if (!row) return fail(MSG.contactForbidden);
+    const target = napSleepTarget(user, row.nap_session_id, row.child_id);
+    if (!target.session) return fail(target.error ?? MSG.contactForbidden);
+    if (row.woke_at) return fail(MSG.wokeTwice);
+    let at = now();
+    if (at <= row.slept_at) at = plusSeconds(row.slept_at, 1);
+    row.woke_at = at; row.woke_staff_id = user.staff_id; row.updated_at = now();
+    log(user.account_id, '3', '2', 't_nap_sleep', row.nap_sleep_id, row.child_id, JSON.stringify({ woke_at: null }), JSON.stringify({ woke_at: at }));
+    publishNapChild(target.session.class_id, row.child_id);
+    publishContactChild(row.child_id, 'nap');
+    return ok(sleepView(row, true));
+  },
+
+  /** きょうは対象外（POST /api/nap/session/{id}/exclusions）。監査の層で、知らせは nap だけ（保護者へは送らない） */
+  async exclude(user: SessionUser, sessionId: number, childId: string, reason: '1' | '2'): Promise<NapExclusion> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    if (reason !== '1' && reason !== '2') return fail(MSG.badChoice);
+    const target = napSleepTarget(user, sessionId, childId);
+    if (!target.session) return fail(target.error ?? MSG.contactForbidden);
+    if (db.napSleeps.some((s) => s.nap_session_id === sessionId && s.child_id === childId && !s.is_deleted)) return fail(MSG.excludeAfterSleep);
+    if (db.napExclusions.some((x) => x.nap_session_id === sessionId && x.child_id === childId && !x.is_deleted)) return fail(MSG.excludedTwice);
+    const row: NapExclusionRecord = { nap_exclusion_id: nextId(), nap_session_id: sessionId, child_id: childId, reason,
+      staff_id: user.staff_id ?? '', is_deleted: false, created_at: now() };
+    db.napExclusions.push(row);
+    log(user.account_id, '3', '1', 't_nap_exclusion', row.nap_exclusion_id, childId, null, JSON.stringify({ reason }));
+    publishNapChild(target.session.class_id, childId);
+    return ok(exclusionView(row)!);
+  },
+
+  /** 戻す（POST /api/nap/exclusions/{id}/cancel）。実施中だけ */
+  async cancelExclusion(user: SessionUser, exclusionId: number): Promise<{ ok: true }> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    const row = db.napExclusions.find((x) => x.nap_exclusion_id === exclusionId && !x.is_deleted);
+    if (!row) return fail(MSG.contactForbidden);
+    const target = napSleepTarget(user, row.nap_session_id, row.child_id);
+    if (!target.session) return fail(target.error ?? MSG.contactForbidden);
+    row.is_deleted = true;
+    log(user.account_id, '3', '4', 't_nap_exclusion', row.nap_exclusion_id, row.child_id, JSON.stringify({ reason: row.reason }), null);
+    publishNapChild(target.session.class_id, row.child_id);
+    return ok({ ok: true });
+  },
+};
+
+/** 'YYYY-MM-DDTHH:MM:SS' に秒を足す */
+function plusSeconds(at: string, seconds: number): string {
+  const [d, t] = at.split('T');
+  const [h, m, s] = t.split(':').map(Number);
+  const total = h * 3600 + m * 60 + s + seconds;
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d}T${p(Math.floor(total / 3600) % 24)}:${p(Math.floor(total / 60) % 60)}:${p(total % 60)}`;
+}
+
+/** 発達チェックは、その園児を参照できる職員へ（server/events.go の notifyDevelopment） */
+function publishDevelopment(childId: string): void {
+  publish({ type: 'development', child_id: childId }, (u) => isStaffUser(u) && canSeeChild(u, childId));
+}
+
+/** 身体測定は、その園児を参照できる職員と、共有済みの測定値なら紐づく保護者へ（server/events.go の notifyPhysical） */
+function publishPhysical(r: PhysicalRecord): void {
+  publish({ type: 'physical', child_id: r.child_id },
+    (u) => (u.role !== '3' || r.share_status === '2') && canSeeChild(u, r.child_id));
+}
 
 /* ============ 手続きを終えるまでの拒否（基本設計書「画面遷移」(3-4)） ============
  *
@@ -2684,12 +3909,598 @@ function guardProcedure<T extends Record<string, unknown>>(apis: T): T {
   return out as T;
 }
 
+/* ============ きょうのようすの記録と、訂正・取り消し（詳細設計書「きょうのようす」(4-4 (1))・「訂正・取り消し」(4-7)・「午睡」(4-6 (4))） ============
+ * 規則は server/api_contact_events.go・api_nap_sleep_fix.go と同じ。関数の名前もそろえる（9-2）。
+ * 食事・排せつ・体温は段1（記録した時点で保護者が読める）。時刻はモックの今。体温は判定しない（範囲の外も保存する）。
+ * 活動のひとこと（種類 4）は段2：文を1〜200文字、他児の名前の照合（findOtherNames）を通し、承諾があれば保存する。
+ */
+
+/** 排せつの選択肢の既定（基本設計書「出す項目と選択肢の設定」(4-5)） */
+const DEFAULT_TOILET_CHOICES = 'おしっこ,うんち,おむつ交換,トイレでできた';
+
+/** 時刻がその日の 00:00:00 からモックの今までにあるか（server/api_contact_events.go の inDayUntilNow） */
+function inDayUntilNow(at: string, day: string): boolean {
+  return isISODateTime(at) && at.slice(0, 10) === day && at <= now();
+}
+
+/**
+ * その園児のその日の記録を直せる・取り消せるか（server/api_contact_events.go の canFixContact）。
+ * その日はその園児のクラスの担任（contactAccess の Write。記録した職員に限らない）、管理者はいつでも
+ * （基本設計書「取り消し・訂正」(4-2)。詳細設計書 (3-5) の「記録した職員」とは食い違い、基本設計書を正とした）
+ */
+export function canFixContact(user: SessionUser, childId: string, contactDate: string): boolean {
+  if (!isStaffUser(user) || !contactAccess(user, childId).write) return false;
+  return user.role === '1' || contactDate === today();
+}
+
+/**
+ * そのページを since 以降に開いた保護者の家庭の数と人数（server/api_contact_events.go の readersOf）。
+ * since は記録を保存した時刻（created_at）。時刻を後から付けた記録でも、届く前に開いた家庭を数えない
+ */
+function readersOf(childIds: string[], date: string, since: string): Readers {
+  let families = 0;
+  let guardians = 0;
+  for (const childId of childIds) {
+    const n = new Set(db.contactReads.filter((r) => r.child_id === childId && r.contact_date === date && r.read_at >= since
+      && db.guardianChildren.some((g) => g.child_id === childId && (g.link_status === '1' || g.link_status === '3')
+        && db.guardians.find((x) => x.guardian_id === g.guardian_id)?.account_id === r.account_id))
+      .map((r) => r.account_id)).size;
+    if (n > 0) { families++; guardians += n; }
+  }
+  return { family_count: families, guardian_count: guardians };
+}
+
+type EventValues = Pick<ContactEventRecord, 'meal_kind' | 'meal_amount' | 'toilet_label' | 'temperature' | 'body' | 'recorded_at'> & { round: number };
+
+/** 1件の入力を検査する（server/api_contact_events.go の checkEventInput と同じ順） */
+function checkEventInput(input: ContactEventInput, day: string): { value?: EventValues; error?: string } {
+  const v: EventValues = { meal_kind: null, meal_amount: null, toilet_label: null, temperature: null, body: null, recorded_at: now(), round: 1 };
+  switch (input.event_type) {
+    case '1':
+      if (!input.meal_kind || !(input.meal_kind in MEAL_KIND_TEXT) || !input.meal_amount || !(input.meal_amount in MEAL_AMOUNT_TEXT)) {
+        return { error: MSG.badChoice };
+      }
+      if (input.meal_round !== undefined && input.meal_round !== null) {
+        if (input.meal_round !== 1 && input.meal_round !== 2) return { error: MSG.badChoice };
+        v.round = input.meal_round;
+      }
+      v.meal_kind = input.meal_kind;
+      v.meal_amount = input.meal_amount;
+      break;
+    case '2': {
+      const label = trimmedOrNull(input.toilet_label);
+      if (label === null || !settingList('contact.toilet_choices', DEFAULT_TOILET_CHOICES).includes(label)) return { error: MSG.badChoice };
+      v.toilet_label = label;
+      break;
+    }
+    case '3':
+      if (typeof input.temperature !== 'number' || !isOneDecimal(input.temperature)) return { error: MSG.temperatureFormat };
+      v.temperature = input.temperature;
+      break;
+    case '4': {
+      // 活動のひとこと（段2）。他児の名前の照合は呼ぶ側で行う
+      const body = trimmedOrNull(input.body);
+      if (body === null) return { error: MSG.badChoice };
+      if (tooLong(body, 200)) return { error: MSG.commentTooLong };
+      v.body = body;
+      break;
+    }
+    default:
+      // 写真（5）はこの経路では受け付けない
+      return { error: MSG.badChoice };
+  }
+  if ((input.event_type === '2' || input.event_type === '3') && input.recorded_at != null) {
+    if (!inDayUntilNow(input.recorded_at, day)) return { error: MSG.eventTimeRange };
+    v.recorded_at = input.recorded_at;
+  }
+  return { value: v };
+}
+
+/** 操作ログに残す出来事の値（server/api_contact_events.go の eventLogFields） */
+function eventLogFields(e: Pick<ContactEventRecord, 'event_type' | 'meal_kind' | 'meal_amount' | 'toilet_label' | 'temperature' | 'body' | 'recorded_at'>): Field[] {
+  const out: Field[] = [['event_type', e.event_type], ['recorded_at', e.recorded_at]];
+  if (e.event_type === '1') out.push(['meal_kind', e.meal_kind], ['meal_amount', e.meal_amount]);
+  else if (e.event_type === '2') out.push(['toilet_label', e.toilet_label]);
+  else if (e.event_type === '3') out.push(['temperature', e.temperature]);
+  else out.push(['body', e.body]);
+  return out;
+}
+
+/** 1つの書き込みで変わった園児ごとに1回だけ知らせる。保護者には、変わった種類のどれかを出しているときだけ */
+function publishContactChildItems(byChild: Map<string, string[]>): void {
+  for (const [childId, items] of byChild) publishContactChild(childId, items.find((it) => guardianSeesItem(it)) ?? items[0]);
+}
+
+/** 訂正・取り消しの相手の出来事（server/api_contact_events.go の eventTarget）。だめなら誤りの文 */
+function eventTarget(user: SessionUser, eventId: number): { event?: ContactEventRecord; error?: string } {
+  const e = db.contactEvents.find((x) => x.contact_event_id === eventId);
+  if (!e || e.is_deleted || !contactAccess(user, e.child_id).read) return { error: MSG.contactForbidden };
+  if (!canFixContact(user, e.child_id, e.contact_date)) return { error: MSG.fixForbidden };
+  return { event: e };
+}
+
+/** 訂正・取り消しの相手の組と、その実施（server/api_nap_sleep_fix.go の sleepTarget） */
+function sleepTarget(user: SessionUser, sleepId: number): { sleep?: NapSleepRecord; session?: NapSession; error?: string } {
+  const sleep = db.napSleeps.find((x) => x.nap_sleep_id === sleepId);
+  const session = sleep && db.napSessions.find((x) => x.nap_session_id === sleep.nap_session_id);
+  if (!sleep || sleep.is_deleted || !session || !contactAccess(user, sleep.child_id).read) return { error: MSG.contactForbidden };
+  if (!canFixContact(user, sleep.child_id, session.session_date)) return { error: MSG.fixForbidden };
+  return { sleep, session };
+}
+
+const contactEventsApi = {
+  /** きょうのようすを記録する（POST /api/contact/events）。全件を1つの処理で保存し、1件でも誤りがあれば何も保存しない */
+  async recordEvents(user: SessionUser, items: ContactEventInput[], acknowledgedNames?: string[]): Promise<RecordEventsResult> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    if (!Array.isArray(items) || items.length === 0 || items.length > 50) return fail(MSG.badRequest);
+    const day = today();
+    const classOf = new Map<string, number>();
+    for (const it of items) {
+      if (classOf.has(it.child_id)) continue;
+      const classId = contactClassOf(it.child_id);
+      if (!contactAccess(user, it.child_id).write || classId === null) return fail(MSG.contactForbidden);
+      classOf.set(it.child_id, classId);
+    }
+    const values: EventValues[] = [];
+    for (const it of items) {
+      const checked = checkEventInput(it, day);
+      if (!checked.value) return fail(checked.error ?? MSG.badChoice);
+      values.push(checked.value);
+    }
+    // 活動のひとことは、宛先の子（その item の園児）以外の在籍園児の名前を照合する
+    let other: OtherNames | null = null;
+    items.forEach((it, i) => {
+      if (it.event_type !== '4') return;
+      const hit = checkOtherNames(values[i].body ?? '', 'body', [it.child_id], false, acknowledgedNames);
+      if (!hit) return;
+      if (!other) { other = hit; return; }
+      const merged: OtherNames = other;
+      for (const n of hit.names) if (!merged.names.includes(n)) merged.names.push(n);
+      merged.matches.push(...hit.matches);
+    });
+    if (other) return failOtherNames(other);
+    const at = now();
+    const created: ContactEventRecord[] = [];
+    const skipped: string[] = [];
+    items.forEach((it, i) => {
+      const v = values[i];
+      if (it.event_type === '1') {
+        // 「全員ぜんぶ」で記録のある子を上書きしない：その回の数の記録が既にあれば飛ばす（決めたこと D-5）
+        const n = db.contactEvents.filter((e) => e.child_id === it.child_id && e.contact_date === day && e.event_type === '1'
+          && e.meal_kind === v.meal_kind && !e.is_deleted).length;
+        if (n >= v.round) {
+          if (!skipped.includes(it.child_id)) skipped.push(it.child_id);
+          return;
+        }
+      }
+      const row: ContactEventRecord = {
+        contact_event_id: nextId(), child_id: it.child_id, class_id: classOf.get(it.child_id)!, contact_date: day,
+        event_type: it.event_type, recorded_at: v.recorded_at, meal_kind: v.meal_kind, meal_amount: v.meal_amount,
+        toilet_label: v.toilet_label, temperature: v.temperature, body: v.body, contact_photo_id: null, keep_in_growth: false,
+        staff_id: user.staff_id ?? '', corrected_at: null, is_deleted: false, created_at: at, updated_at: at,
+      };
+      db.contactEvents.push(row);
+      created.push(row);
+    });
+    const byChild = new Map<string, string[]>();
+    for (const row of created) {
+      log(user.account_id, '8', '1', 't_contact_event', row.contact_event_id, row.child_id, null, fieldsJSON(eventLogFields(row)));
+      byChild.set(row.child_id, [...(byChild.get(row.child_id) ?? []), EVENT_ITEM[row.event_type]]);
+    }
+    publishContactChildItems(byChild);
+    return ok({ events: created.map((e) => eventView(e, true)), skipped });
+  },
+
+  /** 出来事を直す（POST /api/contact/events/{id}/correct）。値の検査は記録するときと同じ */
+  async correctEvent(user: SessionUser, eventId: number, input: ContactEventCorrection): Promise<ContactEvent> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    const target = eventTarget(user, eventId);
+    if (!target.event) return fail(target.error ?? MSG.contactForbidden);
+    const e = target.event;
+    const next = { meal_amount: e.meal_amount, toilet_label: e.toilet_label, temperature: e.temperature, recorded_at: e.recorded_at, body: e.body };
+    let changed = false;
+    if (e.event_type === '1' && input.meal_amount !== undefined) {
+      if (!(input.meal_amount in MEAL_AMOUNT_TEXT)) return fail(MSG.badChoice);
+      next.meal_amount = input.meal_amount;
+      changed = true;
+    }
+    if (e.event_type === '2' && input.toilet_label !== undefined) {
+      const label = trimmedOrNull(input.toilet_label);
+      if (label === null || !settingList('contact.toilet_choices', DEFAULT_TOILET_CHOICES).includes(label)) return fail(MSG.badChoice);
+      next.toilet_label = label;
+      changed = true;
+    }
+    if (e.event_type === '3' && input.temperature !== undefined) {
+      if (typeof input.temperature !== 'number' || !isOneDecimal(input.temperature)) return fail(MSG.temperatureFormat);
+      next.temperature = input.temperature;
+      changed = true;
+    }
+    if ((e.event_type === '4' || e.event_type === '5') && input.body !== undefined) {
+      // 活動のひとことの文・写真に添える文。訂正も他児の名前の照合を通る
+      const body = trimmedOrNull(input.body);
+      if (body === null && e.event_type === '4') return fail(MSG.badChoice);
+      if (body !== null && tooLong(body, 200)) return fail(MSG.commentTooLong);
+      const hit = body === null ? null : checkOtherNames(body, 'body', [e.child_id], false, input.acknowledged_names);
+      if (hit) return failOtherNames(hit);
+      next.body = body;
+      changed = true;
+    }
+    if ((e.event_type === '2' || e.event_type === '3') && input.recorded_at !== undefined) {
+      if (!inDayUntilNow(input.recorded_at, e.contact_date)) return fail(MSG.eventTimeRange);
+      next.recorded_at = input.recorded_at;
+      changed = true;
+    }
+    if (!changed) return fail(MSG.badChoice);
+    if (input.updated_at !== e.updated_at) return fail(MSG.fixConflict);
+    const [before, after] = changedFields(eventLogFields(e), eventLogFields({ ...e, ...next }));
+    const at = now();
+    Object.assign(e, next, { corrected_at: at, updated_at: at });
+    log(user.account_id, '8', '2', 't_contact_event', e.contact_event_id, e.child_id, before, after);
+    publishContactChild(e.child_id, EVENT_ITEM[e.event_type]);
+    return ok(eventView(e, true));
+  },
+
+  /** 出来事を取り消す（POST /api/contact/events/{id}/cancel）。写真は同じ写真を指す出来事をまとめて取り消す */
+  async cancelEvent(user: SessionUser, eventId: number): Promise<CancelResult> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    const target = eventTarget(user, eventId);
+    if (!target.event) return fail(target.error ?? MSG.contactForbidden);
+    const e = target.event;
+    const targets = e.contact_photo_id === null ? [e]
+      : db.contactEvents.filter((x) => x.contact_photo_id === e.contact_photo_id && !x.is_deleted);
+    // 写っているほかの園児の分も、その園児を直せる人でなければ取り消さない
+    if (targets.some((t) => !canFixContact(user, t.child_id, t.contact_date))) return fail(MSG.fixForbidden);
+    const childIds = [...new Set(targets.map((t) => t.child_id))];
+    const { family_count } = readersOf(childIds, e.contact_date, e.created_at);
+    const at = now();
+    for (const t of targets) {
+      t.is_deleted = true;
+      t.updated_at = at;
+      log(user.account_id, '8', '4', 't_contact_event', t.contact_event_id, t.child_id, fieldsJSON(eventLogFields(t)), null);
+    }
+    for (const childId of childIds) publishContactChild(childId, EVENT_ITEM[e.event_type]);
+    return ok({ ok: true, read_family_count: family_count });
+  },
+
+  /** 取り消しの確認に出す数（GET /api/contact/events/{id}/readers） */
+  async eventReaders(user: SessionUser, eventId: number): Promise<Readers> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    const e = db.contactEvents.find((x) => x.contact_event_id === eventId);
+    if (!e || e.is_deleted || !contactAccess(user, e.child_id).read) return fail(MSG.contactForbidden);
+    const childIds = e.contact_photo_id === null ? [e.child_id]
+      : [...new Set(db.contactEvents.filter((x) => x.contact_photo_id === e.contact_photo_id && !x.is_deleted).map((x) => x.child_id))];
+    return ok(readersOf(childIds, e.contact_date, e.created_at));
+  },
+
+  /** ねた・おきたを直す（POST /api/nap/sleeps/{id}/correct）。実施の後も直せる。slept_at < woke_at ≦ 今、実施の日の中 */
+  async correctSleep(user: SessionUser, sleepId: number, input: NapSleepCorrection): Promise<NapSleep> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    const target = sleepTarget(user, sleepId);
+    if (!target.sleep || !target.session) return fail(target.error ?? MSG.contactForbidden);
+    const { sleep, session } = target;
+    if (input.slept_at === undefined && input.woke_at === undefined) return fail(MSG.badChoice);
+    const sleptAt = input.slept_at ?? sleep.slept_at;
+    const wokeAt = input.woke_at ?? sleep.woke_at;
+    if (!inDayUntilNow(sleptAt, session.session_date) || (wokeAt !== null && !inDayUntilNow(wokeAt, session.session_date))) {
+      return fail(MSG.eventTimeRange);
+    }
+    if (wokeAt !== null && wokeAt <= sleptAt) return fail(MSG.wakeBeforeSleep);
+    if (input.updated_at !== sleep.updated_at) return fail(MSG.fixConflict);
+    const [before, after] = changedFields([['slept_at', sleep.slept_at], ['woke_at', sleep.woke_at]], [['slept_at', sleptAt], ['woke_at', wokeAt]]);
+    const at = now();
+    // おきたを新しく入れたときは、入れた職員を残す
+    if (sleep.woke_staff_id === null && wokeAt !== null) sleep.woke_staff_id = user.staff_id;
+    Object.assign(sleep, { slept_at: sleptAt, woke_at: wokeAt, corrected_at: at, updated_at: at });
+    log(user.account_id, '3', '2', 't_nap_sleep', sleep.nap_sleep_id, sleep.child_id, before, after);
+    publishNapChild(session.class_id, sleep.child_id);
+    publishContactChild(sleep.child_id, 'nap');
+    return ok(sleepView(sleep, true));
+  },
+
+  /** ねた・おきたを取り消す（POST /api/nap/sleeps/{id}/cancel） */
+  async cancelSleep(user: SessionUser, sleepId: number): Promise<CancelResult> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    const target = sleepTarget(user, sleepId);
+    if (!target.sleep || !target.session) return fail(target.error ?? MSG.contactForbidden);
+    const { sleep, session } = target;
+    const { family_count } = readersOf([sleep.child_id], session.session_date, sleep.created_at);
+    sleep.is_deleted = true;
+    sleep.updated_at = now();
+    log(user.account_id, '3', '4', 't_nap_sleep', sleep.nap_sleep_id, sleep.child_id,
+      fieldsJSON([['slept_at', sleep.slept_at], ['woke_at', sleep.woke_at]]), null);
+    publishNapChild(session.class_id, sleep.child_id);
+    publishContactChild(sleep.child_id, 'nap');
+    return ok({ ok: true, read_family_count: family_count });
+  },
+
+  /** ねた・おきたの取り消しの確認に出す数（GET /api/nap/sleeps/{id}/readers） */
+  async sleepReaders(user: SessionUser, sleepId: number): Promise<Readers> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    const sleep = db.napSleeps.find((x) => x.nap_sleep_id === sleepId);
+    const session = sleep && db.napSessions.find((x) => x.nap_session_id === sleep.nap_session_id);
+    if (!sleep || sleep.is_deleted || !session || !contactAccess(user, sleep.child_id).read) return fail(MSG.contactForbidden);
+    return ok(readersOf([sleep.child_id], session.session_date, sleep.created_at));
+  },
+};
+
+/* ============ 他児の名前の照合・園からのひとこと・定型文・宛先（詳細設計書「園からのひとことと他児の名前」(4-5)） ============
+ * 規則は server/namecheck.go・api_contact_facility.go と同じ。関数の名前もそろえる（9-2）。
+ * 段2：送る人が確かめて届く。管理者の事前の承認は置かない。宛先を大きく示し（画面）、他児の名前を照合する。
+ * 当たった名前を承諾（acknowledged_names）すれば送れる。機械的な文字の照合であり、判断ではない。
+ */
+
+/** 誤りの応答に、画面が分岐に使う kind・当たった名前・位置を持たせる（http.ts の ApiError と同じ持ち方） */
+class MockApiError extends Error {
+  kind?: string;
+  names?: string[];
+  matches?: NameMatch[];
+  constructor(body: { message: string; kind?: string; names?: string[]; matches?: NameMatch[] }) {
+    super(body.message);
+    this.kind = body.kind;
+    this.names = body.names;
+    this.matches = body.matches;
+  }
+}
+
+type OtherNames = { names: string[]; matches: NameMatch[] };
+
+/** 409 other_child_names（他児の名前の注意）で返す */
+function failOtherNames<T = never>(hit: OtherNames): Promise<T> {
+  const err = new MockApiError({ message: otherNamesMessage(hit.names), kind: 'other_child_names', names: hit.names, matches: hit.matches });
+  return new Promise((_, reject) => setTimeout(() => reject(err), 60));
+}
+
+/** 照合に使う園児の名前（氏名・よみ・呼び名） */
+export interface NameChild { id: string; name: string; kana: string; nickname: string }
+
+const HONORIFICS = ['ちゃん', 'くん', 'さん', '君'];
+const isKanaChar = (c: string) => /^[ぁ-ゖァ-ヶー]$/.test(c);
+const allKana = (s: string) => s !== '' && [...s].every(isKanaChar);
+const toKatakana = (s: string) => s.replace(/[ぁ-ゖ]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x60));
+const toHiragana = (s: string) => s.replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60));
+const splitName = (s: string) => s.split(/[ 　\t]+/).filter(Boolean);
+
+type NameVariant = { text: string[]; short: boolean };
+
+/** 園児1人の照合する書き方（server/namecheck.go の nameVariants と同じ） */
+function nameVariants(c: NameChild): NameVariant[] {
+  const seen = new Set<string>();
+  const out: NameVariant[] = [];
+  const add = (raw: string) => {
+    const s = raw.trim();
+    if (!s) return;
+    for (const f of allKana(s) ? [toHiragana(s), toKatakana(s)] : [s]) {
+      if (seen.has(f)) continue;
+      seen.add(f);
+      const n = [...f].length;
+      out.push({ text: [...f], short: n === 1 || (allKana(f) && n <= 2) });
+    }
+  };
+  for (const full of [c.name, c.kana]) {
+    const parts = splitName(full);
+    if (parts.length === 0) continue;
+    add(parts.join(''));
+    if (parts.length >= 2) {
+      add(parts.join(' '));
+      add(parts.join('　'));
+      parts.forEach(add);
+    }
+  }
+  const nick = c.nickname.trim();
+  if (nick) {
+    add(nick);
+    for (const h of ['ちゃん', 'くん', 'さん']) if (nick.endsWith(h)) add(nick.slice(0, -h.length));
+  }
+  return out;
+}
+
+/** 本文の中の書き方の位置（符号位置）。短い名前は敬称が続くときだけ */
+function occurrences(text: string[], v: NameVariant): [number, number][] {
+  const out: [number, number][] = [];
+  const n = v.text.length;
+  for (let i = 0; i + n <= text.length; i++) {
+    if (text.slice(i, i + n).join('') !== v.text.join('')) continue;
+    if (v.short) {
+      const rest = text.slice(i + n).join('');
+      if (!HONORIFICS.some((h) => rest.startsWith(h))) continue;
+    }
+    out.push([i, i + n]);
+  }
+  return out;
+}
+
+/**
+ * 他児の名前の照合（server/namecheck.go の findOtherNames と同じ規則）。宛先の子の名前に当たった部分を先に除き（D-17。
+ * ほかの子の当たりが、その部分にすべて入るときだけ除く）、
+ * 宛先以外の候補の名前を探す。names は当たった園児の氏名（候補の並び順）、matches は当たった位置（強調の表示に使う）
+ */
+export function findOtherNames(text: string, field: string, recipients: NameChild[], all: NameChild[]): OtherNames {
+  const runes = [...text];
+  const masked = new Array<boolean>(runes.length).fill(false);
+  const recipientIds = new Set(recipients.map((r) => r.id));
+  for (const r of recipients) {
+    const vs = nameVariants(r).sort((a, b) => b.text.length - a.text.length);
+    for (const v of vs) {
+      for (const [s, e] of occurrences(runes, v)) {
+        // すぐ後ろの敬称も宛先の子の名前の部分に含める（server/namecheck.go と同じ）
+        const h = HONORIFICS.find((x) => runes.slice(e).join('').startsWith(x));
+        for (let k = s; k < e + (h ? [...h].length : 0); k++) masked[k] = true;
+      }
+    }
+  }
+  const names: string[] = [];
+  let matches: NameMatch[] = [];
+  for (const c of all) {
+    if (recipientIds.has(c.id)) continue;
+    const found: [number, number][] = [];
+    for (const v of nameVariants(c)) {
+      for (const o of occurrences(runes, v)) {
+        // 除くのは、印（宛先の子の名前の部分）の中にすべて入るときだけ。同じ姓のきょうだいの氏名は当てる
+        let inside = true;
+        for (let k = o[0]; k < o[1]; k++) if (!masked[k]) { inside = false; break; }
+        if (!inside) found.push(o);
+      }
+    }
+    if (found.length === 0) continue;
+    names.push(c.name);
+    for (const o of found) {
+      if (!found.some((p) => p !== o && p[0] <= o[0] && o[1] <= p[1])) matches.push({ field, start: o[0], end: o[1] });
+    }
+  }
+  matches.sort((a, b) => a.start - b.start || b.end - a.end);
+  // 同じ位置・ほかの当たりに含まれる位置は1つにまとめる（名前はまとめない）
+  const uniq: NameMatch[] = [];
+  for (const m of matches) if (!uniq.some((u) => u.start <= m.start && m.end <= u.end)) uniq.push(m);
+  matches = uniq;
+  return { names, matches };
+}
+
+const nicknameOf = (childId: string) => db.childNicknames.find((n) => n.child_id === childId)?.nickname ?? '';
+const nameChildOf = (c: Child): NameChild => ({ id: c.child_id, name: c.child_name, kana: c.child_name_kana, nickname: nicknameOf(c.child_id) });
+
+/** 照合の候補：在籍・取り消していない園児（よみの順） */
+function enrolledNameChildren(): NameChild[] {
+  return db.children.filter((c) => c.enrollment_status === '1' && !c.is_deleted)
+    .sort((a, b) => a.child_name_kana.localeCompare(b.child_name_kana, 'ja') || a.child_id.localeCompare(b.child_id))
+    .map(nameChildOf);
+}
+
+/** 段2の送信の照合。承諾が当たった名前をすべて含めば null（server/namecheck.go の checkOtherNames） */
+function checkOtherNames(text: string, field: string, recipientIds: string[], everyone: boolean, acknowledged?: string[]): OtherNames | null {
+  const recipients = everyone ? [] : recipientIds.map((id) => findChild(id)).filter((c): c is Child => !!c).map(nameChildOf);
+  const hit = findOtherNames(text, field, recipients, enrolledNameChildren());
+  if (hit.names.length === 0 || hit.names.every((n) => (acknowledged ?? []).includes(n))) return null;
+  return hit;
+}
+
+/** 送る直前に示す宛先。続柄は有効な紐づけ（1）の保護者だけ（server/api_contact_facility.go の recipientOf） */
+function recipientOf(childId: string): ContactRecipient {
+  return {
+    child_id: childId, child_name: childName(childId), has_face_photo: false,
+    relationships: db.guardianChildren.filter((g) => g.child_id === childId && g.link_status === '1')
+      .sort((a, b) => a.guardian_id.localeCompare(b.guardian_id)).map((g) => g.relationship || '保護者'),
+  };
+}
+
+/** 園からの本文の検査（前後の空白を除いてから。空は送れない・500文字以内） */
+function checkFacilityBody(body: string): { value?: string; error?: string } {
+  const v = (body ?? '').trim();
+  if (!v) return { error: MSG.facilityEmpty };
+  if (tooLong(v, 500)) return { error: MSG.facilityTooLong };
+  return { value: v };
+}
+
+/** 訂正・取り消しの相手の園から（server/api_contact_facility.go の facilityTarget） */
+function facilityTarget(user: SessionUser, facilityId: number): { facility?: ContactFacilityRecord; error?: string } {
+  const f = db.contactFacilities.find((x) => x.contact_facility_id === facilityId);
+  if (!f || f.is_deleted || !contactAccess(user, f.child_id).read) return { error: MSG.contactForbidden };
+  if (!canFixContact(user, f.child_id, f.contact_date)) return { error: MSG.fixForbidden };
+  return { facility: f };
+}
+
+const contactFacilityApi = {
+  /** 園からのひとことを送る（PUT /api/contact/children/{childID}/facility）。園児・日に1件 */
+  async sendFacility(user: SessionUser, childId: string, body: string, acknowledgedNames?: string[]): Promise<ContactFacility> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    const classId = contactClassOf(childId);
+    if (!contactAccess(user, childId).write || classId === null) return fail(MSG.contactForbidden);
+    const checked = checkFacilityBody(body);
+    if (checked.value === undefined) return fail(checked.error ?? MSG.facilityEmpty);
+    const day = today();
+    if (db.contactFacilities.some((f) => f.child_id === childId && f.contact_date === day && !f.is_deleted)) {
+      return Promise.reject(new MockApiError({ message: MSG.facilitySent, kind: 'already_exists' }));
+    }
+    const hit = checkOtherNames(checked.value, 'body', [childId], false, acknowledgedNames);
+    if (hit) return failOtherNames(hit);
+    const at = now();
+    const row: ContactFacilityRecord = {
+      contact_facility_id: nextId(), child_id: childId, class_id: classId, contact_date: day, body: checked.value,
+      staff_id: user.staff_id ?? '', recorded_at: at, corrected_at: null, is_deleted: false, created_at: at, updated_at: at,
+    };
+    db.contactFacilities.push(row);
+    log(user.account_id, '8', '1', 't_contact_facility', row.contact_facility_id, childId, null, fieldsJSON([['body', row.body]]));
+    publishContactChild(childId, 'facility');
+    return ok(facilityView(row, true)!);
+  },
+
+  /** 園からを直す（POST /api/contact/facility/{id}/correct）。訂正も他児の名前の照合を通る */
+  async correctFacility(user: SessionUser, facilityId: number, input: FacilityCorrection): Promise<ContactFacility> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    const target = facilityTarget(user, facilityId);
+    if (!target.facility) return fail(target.error ?? MSG.contactForbidden);
+    const f = target.facility;
+    const checked = checkFacilityBody(input.body);
+    if (checked.value === undefined) return fail(checked.error ?? MSG.facilityEmpty);
+    const hit = checkOtherNames(checked.value, 'body', [f.child_id], false, input.acknowledged_names);
+    if (hit) return failOtherNames(hit);
+    if (input.updated_at !== f.updated_at) return fail(MSG.fixConflict);
+    const [before, after] = changedFields([['body', f.body]], [['body', checked.value]]);
+    const at = now();
+    Object.assign(f, { body: checked.value, corrected_at: at, updated_at: at });
+    log(user.account_id, '8', '2', 't_contact_facility', f.contact_facility_id, f.child_id, before, after);
+    publishContactChild(f.child_id, 'facility');
+    return ok(facilityView(f, true)!);
+  },
+
+  /** 園からを取り消す（POST /api/contact/facility/{id}/cancel）。未送信に戻り、送り直せる */
+  async cancelFacility(user: SessionUser, facilityId: number): Promise<CancelResult> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    const target = facilityTarget(user, facilityId);
+    if (!target.facility) return fail(target.error ?? MSG.contactForbidden);
+    const f = target.facility;
+    const { family_count } = readersOf([f.child_id], f.contact_date, f.recorded_at);
+    f.is_deleted = true;
+    f.updated_at = now();
+    log(user.account_id, '8', '4', 't_contact_facility', f.contact_facility_id, f.child_id, fieldsJSON([['body', f.body]]), null);
+    publishContactChild(f.child_id, 'facility');
+    return ok({ ok: true, read_family_count: family_count });
+  },
+
+  /** 取り消しの確認に出す数（GET /api/contact/facility/{id}/readers） */
+  async facilityReaders(user: SessionUser, facilityId: number): Promise<Readers> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    const f = db.contactFacilities.find((x) => x.contact_facility_id === facilityId);
+    if (!f || f.is_deleted || !contactAccess(user, f.child_id).read) return fail(MSG.contactForbidden);
+    return ok(readersOf([f.child_id], f.contact_date, f.recorded_at));
+  },
+
+  /**
+   * 他児の名前の照合だけを行う（POST /api/contact/name-check）。本版の画面は呼ばない（送る経路が照合する。決めたこと D-4）。
+   * 宛先は書ける園児・クラスだけを指せる
+   */
+  async nameCheck(user: SessionUser, input: { child_ids?: string[]; class_id?: number; text: string }): Promise<{ names: string[] }> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    // 照合する文の上限（server/api_contact_facility.go の nameCheckMaxRunes と同じ）
+    if (typeof input.text !== 'string' || tooLong(input.text, 1000)) return fail(MSG.badRequest);
+    const everyone = input.class_id !== undefined && input.class_id !== null;
+    if (everyone && !classContactAccess(user, input.class_id!).write) return fail(MSG.contactClassForbidden);
+    for (const id of input.child_ids ?? []) if (!contactAccess(user, id).write) return fail(MSG.contactForbidden);
+    const recipients = everyone ? [] : (input.child_ids ?? []).map((id) => findChild(id)).filter((c): c is Child => !!c).map(nameChildOf);
+    return ok({ names: findOtherNames(input.text, 'text', recipients, enrolledNameChildren()).names });
+  },
+
+  /**
+   * 定型文（GET /api/phrases?scope=）。職員だけ。取り消していない行を並び順に。
+   * 詳細設計書 (4-2) の名前は phrases だが、日誌の定型文（GET /api/diaries/phrases）がその名前を使っているため contactPhrases とした
+   */
+  async contactPhrases(user: SessionUser, scope: Phrase['phrase_scope']): Promise<Phrase[]> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    if (!['1', '2', '3', '4'].includes(scope)) return fail(MSG.badRequest);
+    return ok(db.phrases.filter((p) => p.phrase_scope === scope && !p.is_deleted)
+      .sort((a, b) => a.display_order - b.display_order || a.phrase_id - b.phrase_id)
+      .map((p) => ({ phrase_id: p.phrase_id, phrase_scope: p.phrase_scope, body: p.body, display_order: p.display_order })));
+  },
+};
+
 /* ============ 画面が使う入口 ============ */
 export const api = guardProcedure({
   ...authApi, ...childApi, ...diaryApi, ...diaryApi2,
   ...chatApi, ...chatApi2, ...napApi, ...napApi2,
   ...devApi, ...devApi2, ...physicalApi, ...adminApi, ...adminApi2, ...adminApi3,
   ...bulkApi, ...dashboardApi, ...handoutApi,
+  ...contactApi,
+  ...contactEventsApi,
+  ...contactFacilityApi,
 });
 
 /* ============ 入力の検査の補助（Go サーバの httpx.go と同じ規則） ============ */

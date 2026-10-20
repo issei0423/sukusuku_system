@@ -6,7 +6,32 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestAbnormalKeepsDiscoveryAndRecordingTimesSeparately(t *testing.T) {
+	a, h := newTestApp(t)
+	staff := loginAs(a, 3, "staff")
+	day, _ := time.Parse("2006-01-02", today())
+	tomorrow := day.AddDate(0, 0, 1).Format("2006-01-02")
+	// テストを走らせる時間帯によらず、実施が自動終了しないよう翌日の実施にする。
+	if _, err := a.db.Exec(`UPDATE t_nap_session SET session_date = ?, started_at = ? WHERE nap_session_id = 1`, tomorrow, tomorrow+"T13:00:00"); err != nil {
+		t.Fatal(err)
+	}
+	instant, _ := time.Parse("2006-01-02T15:04:05", now())
+	found := instant.Add(-5 * time.Minute).Format("2006-01-02T15:04:05")
+	r := chatReq(h, staff, "POST", "/api/nap/session/1/abnormals", `{"child_id":"C001","found_at":"`+found+`","situation":"呼吸を確認できず","response":"再確認した"}`)
+	if r.Code != http.StatusOK {
+		t.Fatalf("異常時の記録を保存できません: %d %s", r.Code, r.Body.String())
+	}
+	var got struct{ FoundAt, RecordedAt string }
+	if err := a.db.QueryRow(`SELECT found_at, recorded_at FROM t_nap_abnormal ORDER BY nap_abnormal_id DESC LIMIT 1`).Scan(&got.FoundAt, &got.RecordedAt); err != nil {
+		t.Fatal(err)
+	}
+	if got.FoundAt != found || got.RecordedAt <= found {
+		t.Fatalf("発見時刻と保存時刻が別になっていません: %+v", got)
+	}
+}
 
 /*
  * 午睡チェックの終了と異常時の記録（GitHub Issue #158）
@@ -174,5 +199,67 @@ func TestRaiseIncidentWithBrokenFoundAt(t *testing.T) {
 	a.db.QueryRow(`SELECT session_date FROM t_nap_session WHERE nap_session_id = 2`).Scan(&sessionDate)
 	if d.DiaryDate != sessionDate {
 		t.Fatalf("diary_date = %q, want %q", d.DiaryDate, sessionDate)
+	}
+}
+
+/*
+ * 午睡の記録の体温の桁と、記録する実施のクラス（GitHub Issue #165 の 4）
+ * 典拠：基本設計書.md「入力項目の制約値」(4-9)「体温　30.0〜43.0℃、小数第1位まで」「範囲外でも入力を妨げず、確認を促すだけ」、
+ *      図/画面詳細図.md「午睡チェック画面」(5-1) 項目12
+ */
+func TestNapRecordTemperatureOneDecimal(t *testing.T) {
+	a, h := newTestApp(t)
+	takanashi := loginAs(a, 3, "staff")
+	s := startOwnNap(t, h, takanashi)
+	path := "/api/nap/session/" + itoa(s.NapSessionID) + "/records"
+	body := func(temperature string) string {
+		return `{"child_id":"C006","body_position":"1","breathing":"1","complexion":"1","temperature":` + temperature + `}`
+	}
+	count := func() int {
+		var n int
+		a.db.QueryRow(`SELECT COUNT(*) FROM t_nap_record WHERE nap_session_id = ? AND child_id = 'C006'`, s.NapSessionID).Scan(&n)
+		return n
+	}
+	before := count()
+
+	t.Run("小数第2位までの体温は断る", func(t *testing.T) {
+		for _, v := range []string{"36.55", "36.05", "37.123"} {
+			got := expectStatus(t, request(t, h, takanashi, "POST", path, body(v)), http.StatusBadRequest)
+			if !strings.Contains(got, "小数第1位") {
+				t.Fatalf("%s: 桁の誤りとして断っていません: %s", v, got)
+			}
+		}
+		if n := count(); n != before {
+			t.Fatalf("断ったはずの記録が %d 件できています", n-before)
+		}
+	})
+
+	t.Run("小数第1位までの体温・範囲の外の体温・体温なしは記録できる（範囲の外は確かめるだけで妨げない）", func(t *testing.T) {
+		for _, v := range []string{"36.5", "37", "25.0", "null"} {
+			call(t, h, takanashi, "POST", path, body(v))
+		}
+		var got float64
+		a.db.QueryRow(`SELECT temperature FROM t_nap_record WHERE nap_session_id = ? AND child_id = 'C006'
+			AND temperature IS NOT NULL ORDER BY nap_record_id LIMIT 1`, s.NapSessionID).Scan(&got)
+		if got != 36.5 {
+			t.Fatalf("temperature = %v, want 36.5", got)
+		}
+	})
+}
+
+// 午睡の記録は、その園児のクラスの実施に付ける。管理者でも、ほかのクラスの園児を付けさせない（異常時の記録と同じ。GitHub Issue #158）
+func TestNapRecordFollowsChildClass(t *testing.T) {
+	a, h := newTestApp(t)
+	takanashi := loginAs(a, 3, "staff")
+	admin := loginAs(a, 1, "staff")
+	s := startOwnNap(t, h, takanashi)
+	path := "/api/nap/session/" + itoa(s.NapSessionID) + "/records"
+	body := `{"child_id":"C013","body_position":"1","breathing":"1","complexion":"1","temperature":null}` // C013 はひまわり組
+
+	expectStatus(t, request(t, h, admin, "POST", path, body), http.StatusBadRequest)
+	var n int
+	a.db.QueryRow(`SELECT COUNT(*) FROM t_nap_record WHERE nap_session_id = ? AND child_id = 'C013'`, s.NapSessionID).Scan(&n)
+	if n != 0 {
+		t.Fatalf("ほかのクラスの園児の記録が %d 件付いています", n)
 	}
 }

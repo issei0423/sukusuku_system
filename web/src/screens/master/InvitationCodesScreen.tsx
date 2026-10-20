@@ -3,13 +3,13 @@
  * 典拠：図/画面詳細図.md「招待コード管理画面（管理者）」(7-3)
  *
  * 1枚＝1アカウントであり、園児ごとに必要枚数を発行する。両親それぞれに配るなら2枚。
- * 同じ園児に複数枚が並ぶため、園児名でまとめて見られるようにする。
+ * 同じ園児に複数枚が並ぶため、園児 ID でまとめて見られるようにする。
  * 配布用の出力は、コードと園児名の対応を取り違えないことを優先した様式にする。
  */
 import { useState } from 'react';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
-import { api, selectableClasses } from '../../api/client';
+import { api, selectableClasses, findChild, className } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Alert, Modal, Tag } from '../../components/ui';
 import { ConfirmDialog, notify } from '../../components/feedback';
 import { INVITATION_STATUS } from '../../api/codes';
@@ -18,8 +18,15 @@ import type { InvitationStatus } from '../../api/types';
 
 // 有効期限は 1〜365 日。欄を空にすると 0 になり、当日期限のコードができる（GitHub Issue #100）
 const validDaysInput = (days: number) => Number.isInteger(days) && days >= 1 && days <= 365;
+// 園児1名あたりの枚数は 1〜5 枚（図/画面詳細図.md「招待コード管理画面」(7-7) 項目10「上限は5枚」）。
+// 入力欄の max は打ち込みを止めないため、発行の前に確かめる（GitHub Issue #167 の 3）
+const PER_CHILD_MAX = 5;
+const validPerChildInput = (n: number) => Number.isInteger(n) && n >= 1 && n <= PER_CHILD_MAX;
 
 export default function InvitationCodesScreen() {
+  // 【仮置き】同姓同名を識別する表示（web/仮置き値.md）。
+  const childLabel = (id: string, name: string, classId?: number | null) =>
+    `${name}（${id}・${findChild(id)?.birth_date ?? '生年月日不明'}${classId ? `・${className(classId)}` : ''}）`;
   const { user } = useSession();
   const classesForUser = selectableClasses(user!);
   const [tick, setTick] = useState(0);
@@ -58,7 +65,7 @@ export default function InvitationCodesScreen() {
     setError(null);
     try {
       const code = await api.issueOneInvitationCode(user!, oneChild, oneDays);
-      const childName = oneChildren.data?.find((c) => c.child_id === oneChild)?.child_name ?? '';
+      const childName = childLabel(oneChild, oneChildren.data?.find((c) => c.child_id === oneChild)?.child_name ?? '', oneClass);
       setOneOpen(false);
       setOneChild('');
       setIssuedCode({ code, childName });
@@ -110,14 +117,14 @@ export default function InvitationCodesScreen() {
 
   // 配布用の出力は園児ごとにまとめる。同じ園児のコードが離れて並ぶと、切り分けるときに数え間違える
   const printable = (data ?? []).filter((r) => r.status === '1' && !r.expired)
-    .sort((a, b) => a.child_name.localeCompare(b.child_name, 'ja') || a.created_at.localeCompare(b.created_at));
+    .sort((a, b) => a.child_name.localeCompare(b.child_name, 'ja') || a.child_id.localeCompare(b.child_id) || a.created_at.localeCompare(b.created_at));
 
-  // 園児名でまとめる
+  // 園児 ID でまとめる。同姓同名の別の園児のコードを混ぜない。
   const grouped = new Map<string, NonNullable<typeof data>>();
   data?.forEach((r) => {
-    const list = grouped.get(r.child_name) ?? [];
+    const list = grouped.get(r.child_id) ?? [];
     list.push(r);
-    grouped.set(r.child_name, list);
+    grouped.set(r.child_id, list);
   });
 
   return (
@@ -169,11 +176,11 @@ export default function InvitationCodesScreen() {
               <tr><th scope="col">園児</th><th scope="col">コード</th><th scope="col">発行日</th><th scope="col">有効期限</th><th scope="col">状態</th><th scope="col">操作</th></tr>
             </thead>
             <tbody>
-              {Array.from(grouped.entries()).map(([childName, rows]) =>
+              {Array.from(grouped.entries()).map(([childId, rows]) =>
                 rows.map((r, i) => (
                   <tr key={r.invitation_code_id}>
-                    {/* 同じ園児に複数枚が並ぶため、園児名をまとめて見せる */}
-                    {i === 0 && <td className="nowrap" rowSpan={rows.length}><strong>{childName}</strong></td>}
+                    {/* 同じ園児に複数枚が並ぶため、園児 ID ごとにまとめて見せる */}
+                    {i === 0 && <td className="nowrap" rowSpan={rows.length}><strong>{childLabel(childId, r.child_name, r.class_id)}</strong></td>}
                     <td className="nowrap" style={{ fontFamily: 'monospace' }}>{r.code}</td>
                     <td className="nowrap">{r.created_at.slice(0, 10).replace(/-/g, '/')}</td>
                     <td className="nowrap">{formatYMD(r.expires_on)}</td>
@@ -200,8 +207,9 @@ export default function InvitationCodesScreen() {
 
       <section className="card card-sub">
         <div className="muted">
+          {/* 1枚＝1アカウント。園児ごとに必要枚数を発行する（要件定義書「招待コードの発行」(4-1-2)） */}
           1枚のコードは1つのアカウントの登録にのみ使えます。両親それぞれに配る場合は、
-          その園児に2枚を発行してください（要件定義書「招待コードの発行」(4-1-2)）。
+          その園児に2枚を発行してください。
           <br />
           コードは推測しにくい値にしています。配布物の取り違えにご注意ください。
         </div>
@@ -223,7 +231,7 @@ export default function InvitationCodesScreen() {
             <Field label="園児" required>
               <select value={oneChild} onChange={(e) => setOneChild(e.target.value)}>
                 <option value="">選んでください</option>
-                {oneChildren.data?.map((c) => <option key={c.child_id} value={c.child_id}>{c.child_name}</option>)}
+                {oneChildren.data?.map((c) => <option key={c.child_id} value={c.child_id}>{childLabel(c.child_id, c.child_name, oneClass)}</option>)}
               </select>
             </Field>
             <Field label="有効期限" required>
@@ -246,7 +254,7 @@ export default function InvitationCodesScreen() {
           footer={<>
             <button onClick={() => setBulkOpen(false)}>やめる</button>
             <button className="btn-primary" onClick={bulkIssue}
-              disabled={bulkTargets === 0 || !validDaysInput(validDays) || perChild < 1}>発行する</button>
+              disabled={bulkTargets === 0 || !validDaysInput(validDays) || !validPerChildInput(perChild)}>発行する</button>
           </>}>
           {bulkError && <Alert>{bulkError}</Alert>}
           <div className="stack">
@@ -257,11 +265,14 @@ export default function InvitationCodesScreen() {
             </Field>
             <Field label="園児1名あたりの枚数" required>
               <div className="row">
-                <input type="number" min={1} max={5} value={perChild} style={{ maxWidth: 100 }}
-                  aria-label="園児1名あたりの枚数" aria-required="true"
+                <input type="number" min={1} max={PER_CHILD_MAX} value={perChild} style={{ maxWidth: 100 }}
+                  aria-label="園児1名あたりの枚数" aria-required="true" aria-invalid={!validPerChildInput(perChild)}
                   onChange={(e) => setPerChild(Number(e.target.value))} />
                 <span>枚</span>
               </div>
+              {!validPerChildInput(perChild) && (
+                <div className="muted" role="alert">1名あたりの枚数は1〜{PER_CHILD_MAX}枚で指定してください。</div>
+              )}
             </Field>
             <Field label="有効期限" required>
               <div className="row">
@@ -278,12 +289,14 @@ export default function InvitationCodesScreen() {
                 使えるコードをすでに持つ {bulkHolding} 名にも発行する（配り直すとき）
               </label>
             )}
-            <Alert soft>
-              {classesForUser.find((c) => c.class_id === bulkClass)?.class_name}
-              {' '}{bulkTotal} 名
-              {bulkHolding > 0 && !includeExisting && `のうち、使えるコードをすでに持つ ${bulkHolding} 名を除く ${bulkTargets} 名`}
-              {' '}× {perChild} 枚 ＝ {bulkTargets * perChild} 枚を発行します
-            </Alert>
+            {validPerChildInput(perChild) && (
+              <Alert soft>
+                {classesForUser.find((c) => c.class_id === bulkClass)?.class_name}
+                {' '}{bulkTotal} 名
+                {bulkHolding > 0 && !includeExisting && `のうち、使えるコードをすでに持つ ${bulkHolding} 名を除く ${bulkTargets} 名`}
+                {' '}× {perChild} 枚 ＝ {bulkTargets * perChild} 枚を発行します
+              </Alert>
+            )}
           </div>
         </Modal>
       )}
@@ -302,7 +315,7 @@ export default function InvitationCodesScreen() {
             {printable.map((r) => (
               <div key={r.invitation_code_id} className="card" style={{ margin: 0 }}>
                 <div style={{ fontSize: 13, color: 'var(--c-text-sub)' }}>お子さまのお名前</div>
-                <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>{r.child_name}</div>
+                <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>{childLabel(r.child_id, r.child_name, r.class_id)}</div>
                 <div style={{ fontSize: 13, color: 'var(--c-text-sub)' }}>招待コード</div>
                 <div style={{ fontSize: 22, fontFamily: 'monospace', letterSpacing: '.08em' }}>{r.code}</div>
                 <div className="muted" style={{ marginTop: 8 }}>

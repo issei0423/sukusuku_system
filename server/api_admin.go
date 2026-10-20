@@ -195,6 +195,20 @@ func (a *app) handleUnlockAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, _ := pathInt64(r, "id")
+	/*
+	 * 相手の状態を確かめてから解除する。無いアカウント・ロックされていないアカウントへの解除を通すと、
+	 * 操作ログに事実と違う「変更前：ロック中」が残る（GitHub Issue #166 の 6）。画面は、ロック中の行にだけ
+	 * 「ロック解除」を出す（職員アカウント管理画面）
+	 */
+	var lockedUntil sql.NullString
+	if err := a.db.QueryRow(`SELECT locked_until FROM m_account WHERE account_id = ?`, id).Scan(&lockedUntil); err != nil {
+		writeErr(w, http.StatusNotFound, "アカウントが見つかりません")
+		return
+	}
+	if !lockedUntil.Valid || lockedUntil.String <= now() {
+		writeErr(w, http.StatusBadRequest, "このアカウントはロックされていません")
+		return
+	}
 	if _, err := a.db.Exec(`UPDATE m_account SET locked_until = NULL, failed_login_count = 0
 		WHERE account_id = ?`, id); err != nil {
 		writeErr(w, http.StatusInternalServerError, "解除に失敗しました")
@@ -299,13 +313,29 @@ func (a *app) handleCreateStaffAccount(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "保護者アカウントは招待コードによる自己登録で作成します")
 		return
 	}
+	/*
+	 * 入力の検証。保護者の自己登録（api_auth.go の handleSignUpGuardian）と同じく、前後の空白を除いてから
+	 * 必須・桁数・形式を確かめる（基本設計書「入力項目の制約値」(4-9)「ログインID（メールアドレス）254文字以内、
+	 * メールアドレス形式」「氏名 各50文字以内」「園児ID・職員ID 20文字以内」）。前後の空白を残すと、空白なしで
+	 * 打ってもログインできないアカウントができる（GitHub Issue #167 の 1）
+	 */
+	req.StaffID = strings.TrimSpace(req.StaffID)
+	req.StaffName = strings.TrimSpace(req.StaffName)
+	req.Email = strings.TrimSpace(req.Email)
+	if msg := validateStaffAccountInput(req.StaffID, req.StaffName, req.Email, req.Role); msg != "" {
+		writeErr(w, http.StatusBadRequest, msg)
+		return
+	}
+	if req.ClassID != nil && !a.currentClassExists(*req.ClassID) {
+		writeErr(w, http.StatusBadRequest, "担当クラスの指定が正しくありません")
+		return
+	}
 	// ログインIDはロールをまたいで園内で一意（基本設計書 5-2）
-	var dup int
-	a.db.QueryRow(`SELECT COUNT(*) FROM m_account WHERE email = ?`, req.Email).Scan(&dup)
-	if dup > 0 {
+	if a.emailTaken(req.Email) {
 		writeErr(w, http.StatusBadRequest, "そのログインIDはすでに使われています")
 		return
 	}
+	var dup int
 	a.db.QueryRow(`SELECT COUNT(*) FROM m_staff WHERE staff_id = ?`, req.StaffID).Scan(&dup)
 	if dup > 0 {
 		writeErr(w, http.StatusBadRequest, "その職員IDはすでに使われています")
@@ -344,7 +374,11 @@ func (a *app) handleCreateStaffAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.ClassID != nil {
-		tx.Exec(`INSERT OR IGNORE INTO t_class_staff (class_id, staff_id) VALUES (?, ?)`, *req.ClassID, req.StaffID)
+		// 担当クラスの割り当てに失敗したら、発行ごと取り消す。黙って外すと、担当クラスの無い一般ができる
+		if _, err := tx.Exec(`INSERT INTO t_class_staff (class_id, staff_id) VALUES (?, ?)`, *req.ClassID, req.StaffID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "担当クラスの割り当てに失敗しました")
+			return
+		}
 	}
 	// 園全体・職員チャットと、担当クラスのチャンネルへ入れる。職員チャットは作成に連動する
 	// （基本設計書「チャット」(5-5)、GitHub Issue #162。chat_membership.go）
@@ -357,9 +391,64 @@ func (a *app) handleCreateStaffAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.log(u.AccountID, fnAccount, opCreate, "m_account", i64(accountID), nil, nil,
-		s("職員アカウントを発行（"+req.StaffName+"）"))
+	// 何を発行したか（ロール・担当クラスを含む）を {"項目名": 値} で残す（基本設計書「操作ログ（t_operation_log）」(5-8)、
+	// GitHub Issue #166 の 5）。一時パスワードは残さない
+	a.log(u.AccountID, fnAccount, opCreate, "m_account", i64(accountID), nil, nil, s(fieldsJSON([]field{
+		{"職員ID", req.StaffID},
+		{"氏名", req.StaffName},
+		{"ログインID", req.Email},
+		{"ロール", roleLabel(req.Role)},
+		{"担当クラス", a.staffClassName(req.StaffID)},
+	})))
 	writeJSON(w, http.StatusOK, map[string]string{"password": temp})
+}
+
+// validateStaffAccountInput は、職員アカウントの発行の入力を確かめ、誤りがあれば利用者に見せる文言を返す。
+// 値は前後の空白を除いてから渡す（基本設計書「入力項目の制約値」(4-9)）
+func validateStaffAccountInput(staffID, staffName, email, role string) string {
+	switch {
+	case staffID == "":
+		return "職員IDを入力してください"
+	case tooLong(staffID, 20):
+		return "職員IDは20文字以内で入力してください"
+	case staffName == "":
+		return "氏名を入力してください"
+	case tooLong(staffName, 50):
+		return "氏名は50文字以内で入力してください"
+	case role != roleAdmin && role != roleGeneralStaff:
+		return "ロールの指定が正しくありません"
+	}
+	if msg := validateEmail(email); msg != "" {
+		return strings.Replace(msg, "メールアドレス", "ログインID（メールアドレス）", 1)
+	}
+	return ""
+}
+
+// currentClassExists は、当年度のクラスかを返す。担当クラスに割り当てられるのは当年度のクラスだけ
+func (a *app) currentClassExists(classID int64) bool {
+	var n int
+	a.db.QueryRow(`SELECT COUNT(*) FROM m_class WHERE class_id = ? AND fiscal_year = ?`, classID, fiscalYear).Scan(&n)
+	return n > 0
+}
+
+/*
+emailTaken は、ログインIDがすでに使われているかを返す。
+
+ログインIDはロールをまたいで園内で一意（基本設計書 5-2）。【仮置き】大文字・小文字だけが違うものも
+同じとみなす（web/仮置き値.md）。NOHARA@… と nohara@… が別のアカウントになると、打ち方しだいで
+別の人のアカウントに入ろうとすることになる（GitHub Issue #167 の 1）。保護者の自己登録も同じ判定を使う
+*/
+func (a *app) emailTaken(email string) bool {
+	var n int
+	a.db.QueryRow(`SELECT COUNT(*) FROM m_account WHERE lower(email) = lower(?)`, email).Scan(&n)
+	return n > 0
+}
+
+func roleLabel(v string) string {
+	if v == roleAdmin {
+		return "管理者"
+	}
+	return "一般"
 }
 
 /*
@@ -387,8 +476,16 @@ func (a *app) handleUpdateStaffAccount(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "氏名を入力してください")
 		return
 	}
+	if tooLong(req.StaffName, 50) {
+		writeErr(w, http.StatusBadRequest, "氏名は50文字以内で入力してください")
+		return
+	}
 	if req.Role != roleAdmin && req.Role != roleGeneralStaff {
 		writeErr(w, http.StatusBadRequest, "ロールの指定が正しくありません")
+		return
+	}
+	if req.ClassID != nil && !a.currentClassExists(*req.ClassID) {
+		writeErr(w, http.StatusBadRequest, "担当クラスの指定が正しくありません")
 		return
 	}
 
@@ -450,15 +547,12 @@ func (a *app) handleUpdateStaffAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	roleLabel := func(v string) string {
-		if v == roleAdmin {
-			return "管理者"
-		}
-		return "一般"
-	}
-	a.log(u.AccountID, fnAccount, opUpdate, "m_account", i64(accountID), nil,
-		s(oldName+" / "+roleLabel(oldRole)+" / "+oldClass),
-		s(req.StaffName+" / "+roleLabel(req.Role)+" / "+a.staffClassName(staffID)))
+	// 変更のあった項目だけを {"項目名": 値} で残す（基本設計書「操作ログ（t_operation_log）」(5-8)、GitHub Issue #166 の 5）
+	before, after := changedFields(
+		[]field{{"氏名", oldName}, {"ロール", roleLabel(oldRole)}, {"担当クラス", oldClass}},
+		[]field{{"氏名", req.StaffName}, {"ロール", roleLabel(req.Role)}, {"担当クラス", a.staffClassName(staffID)}},
+	)
+	a.log(u.AccountID, fnAccount, opUpdate, "m_account", i64(accountID), nil, s(before), s(after))
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -527,6 +621,14 @@ func (a *app) handleInvitationCodes(w http.ResponseWriter, r *http.Request) {
 		q += ` AND c.status = ?`
 		args = append(args, v)
 	}
+	/*
+	 * 【仮置き】園児のよみ順にまとめ（よみが同じなら園児IDの順）、同じ園児の中は発行の古い順にする
+	 * （web/仮置き値.md「一覧の並び順」）。画面は返した順に園児ごとにまとめる（図/画面詳細図.md「招待コード管理画面」(7-7)
+	 * 「同じ園児の複数枚をまとめて見られる」）。並びを決めていなかったため、モック（園児の氏名の順）と、
+	 * まとまりの並びが食い違っていた（GitHub Issue #177 の 7）。画面側のモックは web/src/api/mock.ts の invitationCodes
+	 */
+	q += ` ORDER BY IFNULL((SELECT child_name_kana FROM m_child WHERE child_id = c.child_id), ''),
+		c.child_id, c.invitation_code_id`
 	rows, err := a.db.Query(q, args...)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "招待コードを取得できませんでした")
@@ -589,8 +691,9 @@ func (a *app) handleIssueInvitationCodes(w http.ResponseWriter, r *http.Request)
 	if !readJSON(w, r, &req) {
 		return
 	}
-	if req.PerChild < 1 {
-		writeErr(w, http.StatusBadRequest, "1名あたりの枚数は1以上で指定してください")
+	// 園児1名あたりの枚数は 1〜5 枚（図/画面詳細図.md「招待コード管理画面」(7-7) 項目10「上限は5枚」、GitHub Issue #167 の 3）
+	if !validPerChild(req.PerChild) {
+		writeErr(w, http.StatusBadRequest, perChildMessage)
 		return
 	}
 	if !validInvitationDays(req.ValidDays) {
@@ -645,6 +748,29 @@ func validInvitationDays(days int) bool {
 	return days >= invitationDaysMin && days <= invitationDaysMax
 }
 
+// 一括発行の、園児1名あたりの枚数の範囲（図/画面詳細図.md「招待コード管理画面」(7-7) 項目10）
+const (
+	perChildMin     = 1
+	perChildMax     = 5
+	perChildMessage = "1名あたりの枚数は1〜5枚で指定してください"
+)
+
+func validPerChild(n int) bool {
+	return n >= perChildMin && n <= perChildMax
+}
+
+// childIssuable は、招待コードを発行できる園児か（取り消していない・在籍中）を返す。
+// 一括発行の対象（handleIssueInvitationCodes）と同じ条件。園児が無ければ found を false にする
+func (a *app) childIssuable(childID string) (found, issuable bool) {
+	var deleted bool
+	var enrollment string
+	if err := a.db.QueryRow(`SELECT is_deleted, enrollment_status FROM m_child WHERE child_id = ?`, childID).
+		Scan(&deleted, &enrollment); err != nil {
+		return false, false
+	}
+	return true, !deleted && enrollment == "1"
+}
+
 // usableCodeCount は、その園児がいま使えるコード（未使用・期限内）の枚数を返す
 func (a *app) usableCodeCount(childID string) int {
 	var n int
@@ -667,6 +793,17 @@ func (a *app) handleIssueOneInvitationCode(w http.ResponseWriter, r *http.Reques
 	}
 	if !validInvitationDays(req.ValidDays) {
 		writeErr(w, http.StatusBadRequest, invitationDaysMessage)
+		return
+	}
+	// 取り消した・在籍していない園児には発行しない。一括発行と同じ条件にする。取り消した園児に発行すると、
+	// その園児に紐づく保護者アカウントができてしまう（GitHub Issue #166 の 4）
+	found, issuable := a.childIssuable(req.ChildID)
+	if !found {
+		writeErr(w, http.StatusNotFound, "園児が見つかりません")
+		return
+	}
+	if !issuable {
+		writeErr(w, http.StatusBadRequest, "在籍していない園児には招待コードを発行できません")
 		return
 	}
 	code := randomCode()
@@ -697,7 +834,15 @@ func (a *app) handleRevokeInvitationCode(w http.ResponseWriter, r *http.Request)
 		writeErr(w, http.StatusBadRequest, "使用済みの招待コードは失効できません")
 		return
 	}
-	a.db.Exec(`UPDATE t_invitation_code SET status = '3' WHERE invitation_code_id = ?`, id)
+	// 失効済みのコードを重ねて失効させない。操作ログに事実と違う「変更前：未使用」が残る（GitHub Issue #166 の 6）
+	if status == "3" {
+		writeErr(w, http.StatusBadRequest, "この招待コードはすでに失効しています")
+		return
+	}
+	if _, err := a.db.Exec(`UPDATE t_invitation_code SET status = '3' WHERE invitation_code_id = ? AND status = '1'`, id); err != nil {
+		writeErr(w, http.StatusInternalServerError, "失効に失敗しました")
+		return
+	}
 	a.log(u.AccountID, fnAccount, opUpdate, "t_invitation_code", i64(id), s(childID), s("未使用"), s("失効"))
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
