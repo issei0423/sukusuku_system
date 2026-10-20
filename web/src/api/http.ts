@@ -72,7 +72,7 @@ const REQUEST_TIMEOUT_MS = 15_000;
 const UNREACHABLE_MESSAGE = `${TEXT.unreachableBanner}。つながったら、もう一度送ってください。`;
 
 /** ログインの失敗理由（LoginError）。画面（TopScreen）が JSON にして分岐に使う */
-const LOGIN_KINDS = new Set(['credential', 'locked', 'suspended', 'wrong_entrance', 'temp_expired', 'already_logged_in']);
+const LOGIN_KINDS = new Set(['credential', 'locked', 'suspended', 'wrong_entrance', 'temp_expired', 'already_logged_in', 'too_many_attempts']);
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   let res: Response;
@@ -124,6 +124,11 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     if (res.status === 401 && path !== '/api/login') {
       clearReference();
       notifySessionEnded();
+    }
+    // 送信元の失敗が続いて止めているとき（server/attempts.go。GitHub Issue #236 の 6）。
+    // 招待コードの確認・新規登録の画面は文言をそのまま出すので、ログイン以外では文言で投げる
+    if (err.kind === 'too_many_attempts' && path !== '/api/login') {
+      throw new Error(err.message);
     }
     // ログインの失敗理由は画面が分岐に使う。mock 実装と同じ形（JSON 文字列）で投げる。
     // ほかの kind（version_conflict など）は文言をそのまま見せる
