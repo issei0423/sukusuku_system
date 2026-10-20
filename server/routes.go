@@ -49,6 +49,9 @@ func (a *app) routeContact(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/nap/sleeps/{id}/correct", a.handleCorrectSleep)
 	mux.HandleFunc("POST /api/nap/sleeps/{id}/cancel", a.handleCancelSleep)
 	mux.HandleFunc("GET /api/nap/sleeps/{id}/readers", a.handleSleepReaders)
+	// 写真を送る・写真の実体（詳細設計書「きょうのようす」(4-4 (2))・(4-4 (3))）
+	mux.HandleFunc("POST /api/contact/photos", a.handleSendPhoto)
+	mux.HandleFunc("GET /api/contact/photos/{id}", a.handlePhotoFile)
 	// 園からのひとこと・他児の名前の照合・定型文（詳細設計書「園からのひとことと他児の名前」(4-5)）
 	mux.HandleFunc("PUT /api/contact/children/{childID}/facility", a.handleSendFacility)
 	mux.HandleFunc("POST /api/contact/facility/{id}/correct", a.handleCorrectFacility)

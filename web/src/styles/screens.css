@@ -304,6 +304,11 @@ button.guardian-record-link {
 .contact-home-lines .is-marked dt { color: var(--c-primary-ink); }
 .contact-confirmed { font-weight: 700; color: var(--dads-green-900); }
 .contact-call { font-weight: 700; }
+/*
+ * 入力欄の近くに常に出す固定の文（職員の体温の一覧の「記録すると保護者に数字が出ます。…」、保護者の連絡事項の「お薬・食事の除去のご依頼は…」）。
+ * 判定の色を付けず、太字だけで目に入るようにする【仮置き】（web/仮置き値.md）
+ */
+.contact-note { margin: 0; font-weight: 700; }
 .contact-wide-button { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 48px; }
 .contact-home-form { display: grid; gap: var(--sp-3); }
 .contact-choice-options { flex-wrap: wrap; }

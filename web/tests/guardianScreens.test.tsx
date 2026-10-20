@@ -51,8 +51,10 @@ async function verifyAndAgree(code: string) {
   fireEvent.click(screen.getByRole('checkbox', { name: '利用規約に同意します' }));
 }
 
-function fillAccount(email: string) {
+/** アカウント情報を埋める。続柄は初期値が未選択なので、ここで選ぶ（relationship に空を渡すと選ばない） */
+function fillAccount(email: string, relationship = '父') {
   fireEvent.change(screen.getByRole('textbox', { name: '保護者の氏名' }), { target: { value: '中村 一郎' } });
+  if (relationship) fireEvent.change(screen.getByRole('combobox', { name: '続柄' }), { target: { value: relationship } });
   fireEvent.change(screen.getByRole('textbox', { name: 'メールアドレス' }), { target: { value: email } });
   fireEvent.change(screen.getByLabelText('パスワード', { selector: 'input' }), { target: { value: 'nakamura-5678' } });
   fireEvent.change(screen.getByLabelText('パスワード（確認）'), { target: { value: 'nakamura-5678' } });
@@ -72,6 +74,9 @@ describe('新規登録画面：規約への同意を送る（#170 の 1）', () 
     const rows = db.termsAgreements.filter((x) => x.account_id === account.account_id);
     expect(rows).toHaveLength(1);
     expect(db.termsDocs.find((t) => t.terms_id === rows[0].terms_id)?.terms_version).toBe(db.CURRENT_TERMS_VERSION);
+    // 画面で選んだ続柄が紐づけに残る
+    const guardianId = db.guardians.find((g) => g.account_id === account.account_id)!.guardian_id;
+    expect(db.guardianChildren.find((gc) => gc.guardian_id === guardianId)?.relationship).toBe('父');
   });
 
   it('送るまでのあいだに規約が改定されていたら、改定後の本文を出し直し、同意をやり直させる', async () => {
@@ -106,6 +111,28 @@ describe('新規登録画面：氏名の上限（#170 の 4）', () => {
     expect(screen.getByText('残り 50 文字')).toBeTruthy();
     fireEvent.change(name, { target: { value: 'あ'.repeat(48) } });
     expect(screen.getByText('残り 2 文字')).toBeTruthy();
+  });
+});
+
+describe('新規登録画面：続柄の初期値は未選択（画面詳細図 2-3 項目11）', () => {
+  it('続柄は「選んでください」から始まり、選ばずに送ると画面で止めて登録しない', async () => {
+    const code = await api.issueOneInvitationCode(admin, 'C010', 30);
+    const signUp = vi.spyOn(api, 'signUpGuardian');
+    open('/signup', null);
+    await verifyAndAgree(code);
+    const relationship = screen.getByRole('combobox', { name: '続柄' }) as HTMLSelectElement;
+    expect(relationship.value).toBe('');
+    expect(relationship.selectedOptions[0].textContent).toBe('選んでください');
+
+    fillAccount('tsuzukigara@example.jp', '');
+    fireEvent.click(screen.getByRole('button', { name: '登録する' }));
+
+    // 文言はサーバが空の続柄に返すものと同じ（server/api_auth.go の handleSignUpGuardian）
+    await screen.findByText('続柄は 母・父・祖母・祖父・その他 から選んでください');
+    expect(signUp).not.toHaveBeenCalled();
+    expect(db.accounts.some((a) => a.email === 'tsuzukigara@example.jp')).toBe(false);
+    // 招待コードは使われないまま
+    expect(db.invitationCodes.find((c) => c.code === code)?.status).toBe('1');
   });
 });
 

@@ -183,10 +183,16 @@ func TestPhrases(t *testing.T) {
 	if len(list) != 4 || list[0].Body != "今日も一日ありがとうございました。" {
 		t.Fatalf("園からの定型文: %+v", list)
 	}
-	for scope, want := range map[string]int{"2": 3, "3": 3, "4": 5} {
+	// 4:日誌は4つ。保護者に向けた文を入れない（日誌は園内の記録。詳細設計書「デモデータ」(5-5) 第1.3版）
+	for scope, want := range map[string]int{"2": 3, "3": 3, "4": 4} {
 		decode(t, call(t, h, teacher, "GET", "/api/phrases?scope="+scope, ""), &list)
 		if len(list) != want {
 			t.Errorf("scope %s: %d 件", scope, len(list))
+		}
+		for _, p := range list {
+			if scope == "4" && strings.Contains(p.Body, "ご家庭でも") {
+				t.Errorf("日誌の定型文に保護者に向けた文: %s", p.Body)
+			}
 		}
 	}
 	expectStatus(t, request(t, h, teacher, "GET", "/api/phrases", ""), http.StatusBadRequest)

@@ -518,6 +518,29 @@ export interface ContactReadRecord {
   read_at: string;
 }
 
+/**
+ * 連絡帳の写真（t_contact_photo）。取り消したものは配信しない（詳細設計書「写真」(3-3)）。
+ * モックは実体を持たず、file_path に URL.createObjectURL で作った URL を持つ（再読み込みで消える。詳細設計書 (4-4 (2))）
+ */
+export interface ContactPhotoRecord {
+  contact_photo_id: number;
+  class_id: number;
+  contact_date: string;
+  file_path: string;
+  file_type: string;
+  file_size: number;
+  staff_id: string;
+  is_deleted: boolean;
+  created_at: string;
+}
+
+/** 写っている子（t_contact_photo_child）。送った時点の同意を写す（なぜ送れたかを後から示す） */
+export interface ContactPhotoChildRecord {
+  contact_photo_id: number;
+  child_id: string;
+  consent_level: PhotoConsentLevel;
+}
+
 /** ねた・おきた（t_nap_sleep）。sleep_temperature だけは監査の層で保護者へ返さない（基本設計書「午睡チェック」(5-7)） */
 export interface NapSleepRecord {
   nap_sleep_id: number;
