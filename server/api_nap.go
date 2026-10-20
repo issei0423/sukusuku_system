@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"log"
+	"math"
 	"net/http"
 	"strings"
 )
@@ -181,6 +182,8 @@ func (a *app) handleStartNapSession(w http.ResponseWriter, r *http.Request) {
 	id, _ := res.LastInsertId()
 	a.log(u.AccountID, fnNap, opCreate, "t_nap_session", i64(id), nil, nil,
 		s("午睡チェックを開始（"+a.className(req.ClassID)+"）"))
+	// そのクラスを扱える職員の画面へ知らせる。保護者へは送らない（events.go。詳細設計書「PR #196 からの変更」(6-1)）
+	a.notifyNapSession(req.ClassID)
 
 	got, _ := a.napSession(req.ClassID, req.Date)
 	writeJSON(w, http.StatusOK, got)
@@ -227,13 +230,17 @@ func (a *app) handleEndNapSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.log(u.AccountID, fnNap, opUpdate, "t_nap_session", i64(id), nil, s("実施中"), s("終了"))
+	a.notifyNapSession(classID)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 // NapChildState は園児カードの状態。直近の記録が無ければ latest は null（画面詳細図 5-1）
+// sleeps・exclusion は、ねた・おきたと「きょうは対象外」（詳細設計書「午睡（ねた・おきた・対象外）」(4-6 (6))）
 type NapChildState struct {
-	Child  Child      `json:"child"`
-	Latest *NapRecord `json:"latest"`
+	Child     Child            `json:"child"`
+	Latest    *NapRecord       `json:"latest"`
+	Sleeps    []napSleepOut    `json:"sleeps"`
+	Exclusion *napExclusionOut `json:"exclusion"`
 }
 
 func (a *app) handleNapClassState(w http.ResponseWriter, r *http.Request) {
@@ -270,7 +277,7 @@ func (a *app) handleNapClassState(w http.ResponseWriter, r *http.Request) {
 		if !inClass[c.ChildID] {
 			continue
 		}
-		out = append(out, NapChildState{Child: c})
+		out = append(out, NapChildState{Child: c, Sleeps: []napSleepOut{}})
 	}
 	if !hasSession {
 		writeJSON(w, http.StatusOK, out)
@@ -279,6 +286,8 @@ func (a *app) handleNapClassState(w http.ResponseWriter, r *http.Request) {
 	// 直近の記録はカーソルを閉じたあとに引く
 	for i := range out {
 		out[i].Latest = a.latestNapRecord(sessionID, out[i].Child.ChildID)
+		out[i].Sleeps = a.napSessionSleeps(sessionID, out[i].Child.ChildID)
+		out[i].Exclusion = a.napSessionExclusion(sessionID, out[i].Child.ChildID)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -341,6 +350,13 @@ func (a *app) handleNapRecord(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "顔色を選んでください")
 		return
 	}
+	// 体温は小数第1位まで。範囲（30.0〜43.0℃）の外は画面で確かめるだけで、記録は妨げない
+	// （基本設計書「入力項目の制約値」(4-9)「体温　30.0〜43.0℃、小数第1位まで」「範囲外でも入力を妨げず、確認を促すだけ」。
+	// GitHub Issue #165）。画面側のモック（web/src/api/mock.ts の record）と同じ規則
+	if req.Temperature != nil && !oneDecimal(*req.Temperature) {
+		writeErr(w, http.StatusBadRequest, "体温は小数第1位までで入力してください")
+		return
+	}
 	if !a.canSeeChild(u, req.ChildID) {
 		writeForbidden(w, "この園児を記録する権限がありません")
 		return
@@ -361,6 +377,18 @@ func (a *app) handleNapRecord(w http.ResponseWriter, r *http.Request) {
 		writeForbidden(w, "このクラスの午睡チェックを記録する権限がありません")
 		return
 	}
+	// 記録は、その園児のクラスの実施に付ける。管理者でも、ほかのクラスの園児を付けさせない
+	// （異常時の記録と同じ。GitHub Issue #158・#165）
+	var inClass int
+	if err := a.db.QueryRow(`SELECT COUNT(*) FROM t_class_child WHERE class_id = ? AND child_id = ?`,
+		sessionClass, req.ChildID).Scan(&inClass); err != nil {
+		writeErr(w, http.StatusInternalServerError, "記録に失敗しました")
+		return
+	}
+	if inClass == 0 {
+		writeErr(w, http.StatusBadRequest, "この園児のクラスの午睡チェックではありません。園児のクラスの午睡チェックへ記録してください")
+		return
+	}
 	if endedAt.Valid {
 		writeErr(w, http.StatusConflict, "この午睡チェックは終了しています。画面を読み込み直してください")
 		return
@@ -377,8 +405,18 @@ func (a *app) handleNapRecord(w http.ResponseWriter, r *http.Request) {
 	id, _ := res.LastInsertId()
 	a.log(u.AccountID, fnNap, opCreate, "t_nap_record", i64(id), s(req.ChildID), nil,
 		s("体位="+req.BodyPosition+" 呼吸="+req.Breathing+" 顔色="+req.Complexion))
+	// その園児を参照できる職員の画面へ知らせる。5分ごとの確認は監査の層で、保護者へは送らない（events.go）
+	a.notifyNapChild(sessionClass, req.ChildID)
 
 	writeJSON(w, http.StatusOK, a.latestNapRecord(sessionID, req.ChildID))
+}
+
+// oneDecimal は、値が小数第1位までで表せるかを返す。浮動小数の誤差（36.7 が 36.700000000000003 になるなど）は許す
+func oneDecimal(v float64) bool {
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return false
+	}
+	return math.Abs(v*10-math.Round(v*10)) < 1e-6
 }
 
 // oneOf は値が選択肢のいずれかであるかを返す
@@ -420,6 +458,7 @@ type napAbnormalView struct {
 	NapSessionID  int64  `json:"nap_session_id"`
 	ChildID       string `json:"child_id"`
 	FoundAt       string `json:"found_at"`
+	RecordedAt    string `json:"recorded_at"`
 	Situation     string `json:"situation"`
 	Response      string `json:"response"`
 	StaffID       string `json:"staff_id"`
@@ -433,9 +472,11 @@ func (a *app) handleNapAbnormals(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	rows, err := a.db.Query(`SELECT nap_abnormal_id, nap_session_id, child_id, found_at,
+	// 【仮置き】並びは発見時刻の新しい順、同じ時刻はあとで記録したものを先にする（web/仮置き値.md「一覧の並び順」）。
+	// 同じ時刻の並びを決めておかないと、モック（web/src/api/mock.ts の abnormals）と食い違う（GitHub Issue #177 の 7）
+	rows, err := a.db.Query(`SELECT nap_abnormal_id, nap_session_id, child_id, found_at, recorded_at,
 		situation, response, staff_id, diary_id
-		FROM t_nap_abnormal ORDER BY found_at DESC`)
+		FROM t_nap_abnormal ORDER BY found_at DESC, nap_abnormal_id DESC`)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "異常時の記録を取得できませんでした")
 		return
@@ -446,7 +487,7 @@ func (a *app) handleNapAbnormals(w http.ResponseWriter, r *http.Request) {
 			x       napAbnormalView
 			diaryID sql.NullInt64
 		)
-		if rows.Scan(&x.NapAbnormalID, &x.NapSessionID, &x.ChildID, &x.FoundAt,
+		if rows.Scan(&x.NapAbnormalID, &x.NapSessionID, &x.ChildID, &x.FoundAt, &x.RecordedAt,
 			&x.Situation, &x.Response, &x.StaffID, &diaryID) == nil {
 			x.DiaryID = nullInt(diaryID)
 			all = append(all, x)
@@ -543,15 +584,18 @@ func (a *app) handleRecordNapAbnormal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := a.db.Exec(`INSERT INTO t_nap_abnormal
-		(nap_session_id, child_id, found_at, situation, response, staff_id)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		sessionID, req.ChildID, req.FoundAt, req.Situation, req.Response, u.staff())
+		(nap_session_id, child_id, found_at, recorded_at, situation, response, staff_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		sessionID, req.ChildID, req.FoundAt, now(), req.Situation, req.Response, u.staff())
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "記録に失敗しました")
 		return
 	}
 	id, _ := res.LastInsertId()
 	a.log(u.AccountID, fnNap, opCreate, "t_nap_abnormal", i64(id), s(req.ChildID), nil, s("異常時の記録"))
+	// 職員の画面（午睡チェック画面の強調・ダッシュボードの「ヒヤリハット未起票」）へ知らせる。
+	// 園内の記録のため保護者には送らない（events.go）
+	a.notifyNapChild(sessionClass, req.ChildID)
 	writeJSON(w, http.StatusOK, map[string]int64{"nap_abnormal_id": id})
 }
 
@@ -649,6 +693,9 @@ func (a *app) handleRaiseIncidentDiary(w http.ResponseWriter, r *http.Request) {
 
 	a.log(u.AccountID, fnDiary, opCreate, "t_diary", i64(newDiaryID), s(childID), nil,
 		s("異常時の記録からヒヤリハットを起票"))
+	// 「ヒヤリハット未起票の異常時の記録」が減り、日誌（下書き）が増える（events.go）
+	a.notifyNapChild(classID.Int64, childID)
+	a.notifyDiary(newDiaryID)
 	a.writeDiaryByID(w, newDiaryID)
 }
 

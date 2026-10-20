@@ -58,19 +58,19 @@ describe('編集ロック', () => {
 
     await api.logout();
     expect(db.diaryLocks.some((l) => l.locked_staff_id === 'S001')).toBe(false);
-    // ほかの職員のロックは残る（日誌2は S004 が保持している）
-    expect(db.diaryLocks.some((l) => l.diary_id === 2 && l.locked_staff_id === 'S004')).toBe(true);
+    // ほかの職員のロックは残る（日誌3は S004 が保持している）
+    expect(db.diaryLocks.some((l) => l.diary_id === 3 && l.locked_staff_id === 'S004')).toBe(true);
   });
 
   it('管理者の強制解除は操作ログに残り、どの日誌かが分かる', async () => {
-    await api.releaseLock(admin, 2, true);
-    expect(db.diaryLocks.some((l) => l.diary_id === 2)).toBe(false);
+    await api.releaseLock(admin, 3, true);
+    expect(db.diaryLocks.some((l) => l.diary_id === 3)).toBe(false);
 
     const logs = await api.operationLogs(admin, {});
-    const row = logs.rows.find((l) => l.target_table === 't_diary_lock' && l.target_id === 2);
+    const row = logs.rows.find((l) => l.target_table === 't_diary_lock' && l.target_id === 3);
     expect(row?.after_value).toBe('管理者が強制解除');
-    expect(row?.target_label).toContain('クラス日誌');
-    expect(row?.target_label).toContain('さくら組');
+    expect(row?.target_label).toContain('ヒヤリハット');
+    expect(row?.target_label).toContain('高梨 健');
   });
 });
 

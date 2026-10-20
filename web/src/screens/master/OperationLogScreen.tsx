@@ -29,38 +29,45 @@ export default function OperationLogScreen() {
   const children = visibleChildren(user!);
   const [page, setPage] = useState(1);
   const [applied, setApplied] = useState(0);
+  const [filters, setFilters] = useState({ from, to, accountId, functionType, childId });
   const [exportError, setExportError] = useState<string | null>(null);
   const [rangeError, setRangeError] = useState<string | null>(null);
   const search = () => {
     if (from && to && from > to) { setRangeError('期間の開始は、終了より後の日にできません'); return; }
-    setRangeError(null); setPage(1); setApplied((n) => n + 1);
+    setRangeError(null); setPage(1); setFilters({ from, to, accountId, functionType, childId }); setApplied((n) => n + 1);
   };
 
   const { data, error, loading } = useAsync(
-    () => api.operationLogs(user!, { from, to, accountId, functionType, childId, page }),
+    () => api.operationLogs(user!, { ...filters, page }),
     [page, applied],
   );
 
   const exportCsv = async () => {
     if (!data) return;
-    // 出力したことを先に操作ログへ残す。残せなかったときは出力しない（GitHub Issue #115）
     try {
-      await api.recordExport(user!, 'operation_log', from, to, data.rows.length);
+      // 画面詳細図「操作ログ参照画面（管理者）」(7-9)：絞り込んだ全件を出す。
+      const first = await api.operationLogs(user!, { ...filters, page: 1 });
+      const all = [...first.rows];
+      for (let p = 2; all.length < first.total; p++) {
+        const next = await api.operationLogs(user!, { ...filters, page: p });
+        if (next.rows.length === 0) break;
+        all.push(...next.rows);
+      }
+      // 出力したことを先に操作ログへ残す。残せなかったときは出力しない（GitHub Issue #115）
+      await api.recordExport(user!, 'operation_log', filters.from, filters.to, all.length);
+      const header = ['操作日時', '操作者', '機能', '操作', '対象テーブル', '対象', '対象園児', '変更前', '変更後'];
+      const rows = all.map((l) => [
+        l.operated_at, l.account_name, FUNCTION_TYPE[l.function_type], OPERATION_TYPE[l.operation_type],
+        l.target_table, l.target_label, l.child_name, l.before_value ?? '', l.after_value ?? '',
+      ]);
+      downloadCsv(`操作ログ_${filters.from}_${filters.to}.csv`, header, rows);
+      notify('操作ログを CSV で出力しました。出力したことは操作ログに残ります');
+      setApplied((n) => n + 1);
     } catch (e) {
       setExportError((e as Error).message);
       return;
     }
     setExportError(null);
-    // 操作者の氏名には保護者の自己登録の入力がそのまま入る。式として開かれないよう csv.ts を通す（GitHub Issue #153）
-    const header = ['操作日時', '操作者', '機能', '操作', '対象テーブル', '対象', '対象園児', '変更前', '変更後'];
-    const rows = data.rows.map((l) => [
-      l.operated_at, l.account_name, FUNCTION_TYPE[l.function_type], OPERATION_TYPE[l.operation_type],
-      l.target_table, l.target_label, l.child_name, l.before_value ?? '', l.after_value ?? '',
-    ]);
-    downloadCsv(`操作ログ_${from}_${to}.csv`, header, rows);
-    notify('操作ログを CSV で出力しました。出力したことは操作ログに残ります');
-    // いま残した出力の行を一覧に反映する
-    setApplied((n) => n + 1);
   };
 
   return (
@@ -141,10 +148,11 @@ export default function OperationLogScreen() {
 
       <section className="card card-sub">
         <div className="muted">
-          操作ログは追記のみで、更新・削除の手段を設けていません（基本設計書 5-8）。
+          {/* 追記のみ。更新・削除の手段を設けない（基本設計書「操作ログ（t_operation_log）」(5-8)） */}
+          操作ログは追記のみで、更新・削除の手段を設けていません。
           操作日時にはサーバの時刻を入れます。
           <br />
-          CSV 出力は、いま表示しているページの行を出します。出力したことも操作ログに残ります。
+          CSV 出力は、絞り込んだ結果の全件を出します。出力したことも操作ログに残ります。
           「対象」は、いまの名前で表示しています（記録した時点の名前ではありません）。
         </div>
       </section>

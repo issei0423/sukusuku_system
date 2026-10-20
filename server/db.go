@@ -52,6 +52,9 @@ func openDB(path string) (*sql.DB, error) {
 		if err := shiftSeedDates(db); err != nil {
 			return nil, err
 		}
+		if err := trimFutureDemoContacts(db); err != nil {
+			return nil, err
+		}
 		log.Printf("デモデータを投入しました")
 	}
 	if err := upgradeGrowthStandards(db); err != nil {
@@ -69,7 +72,28 @@ func openDB(path string) (*sql.DB, error) {
 	if err := ensurePersonalRoomChild(db); err != nil {
 		return nil, err
 	}
+	if err := ensureNapAbnormalRecordedAt(db); err != nil {
+		return nil, err
+	}
+	if err := ensureContactSchema(db); err != nil {
+		return nil, err
+	}
 	return db, nil
+}
+
+// 発見時刻と保存時刻を分ける（図/画面詳細図「異常時記録画面」(5-2)）。
+func ensureNapAbnormalRecordedAt(db *sql.DB) error {
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('t_nap_abnormal') WHERE name = 'recorded_at'`).Scan(&n); err != nil {
+		return err
+	}
+	if n == 0 {
+		if _, err := db.Exec(`ALTER TABLE t_nap_abnormal ADD COLUMN recorded_at TEXT`); err != nil {
+			return err
+		}
+	}
+	_, err := db.Exec(`UPDATE t_nap_abnormal SET recorded_at = found_at WHERE recorded_at IS NULL`)
+	return err
 }
 
 /*
@@ -135,11 +159,11 @@ func ensurePersonalRoomChild(db *sql.DB) error {
 /*
 ensureHandouts は配布物（t_handout）まわりを用意する。
 
-- 表が無ければ作る
-- チャットのメッセージの種別に「4:配布物の掲載」を足す。SQLite は CHECK 制約をあとから
-  変えられないため、古い定義のときは表を作り直して中身を移す
-- 1件も無ければデモデータを入れる。対象の月は起動した日から決める（今月と先月）。
-  固定の月で持つと、日が経ったときに「今月の献立表」が今月のものでなくなるため
+  - 表が無ければ作る
+  - チャットのメッセージの種別に「4:配布物の掲載」を足す。SQLite は CHECK 制約をあとから
+    変えられないため、古い定義のときは表を作り直して中身を移す
+  - 1件も無ければデモデータを入れる。対象の月は起動した日から決める（今月と先月）。
+    固定の月で持つと、日が経ったときに「今月の献立表」が今月のものでなくなるため
 
 以前に作られたデータベースでも、ファイルを消さずに使い続けられるようにするため、起動のたびに確かめる。
 */

@@ -7,14 +7,14 @@
  * 「未入力」と「未確認」は別の状態。未確認は結果として保持し、未入力はチェック漏れの対象となる。
  * 区分は月齢から自動で表示するが、項目はマスタから読む。園が調整できるため。
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
-import { api } from '../../api/client';
+import { api, staffName } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Alert, Disclaimer, Modal } from '../../components/ui';
 import { DEVELOPMENT_RESULT } from '../../api/codes';
-import { ageInMonths, formatAge, formatYMD, today } from '../../api/util';
+import { ageInMonths, formatAge, formatHM, formatYMD, today } from '../../api/util';
 import type { DevelopmentResult } from '../../api/types';
 
 const DISCLAIMER = '本機能は発達の判定・診断を行うものではありません。';
@@ -32,8 +32,8 @@ export default function DevInputScreen() {
   const category = api.categoryFor(ageM);
 
   const items = useAsync(() => api.itemsFor(ageM), [ageM]);
-  const draft = useAsync(() => api.draftFor(childId!, checkedOn), [childId, checkedOn]);
-  const previous = useAsync(() => api.previousCheck(childId!, checkedOn), [childId, checkedOn]);
+  const draft = useAsync(() => api.draftFor(user!, childId!, checkedOn), [childId, checkedOn]);
+  const previous = useAsync(() => api.previousCheck(user!, childId!, checkedOn), [childId, checkedOn]);
 
   const [results, setResults] = useState<Record<number, DevelopmentResult | null>>({});
   const [note, setNote] = useState('');
@@ -41,6 +41,7 @@ export default function DevInputScreen() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const noteHintId = useId();
 
   // 下書きがあれば読み直す
   useEffect(() => {
@@ -146,9 +147,17 @@ export default function DevInputScreen() {
 
       <section className="card">
         <Field label="所見">
-          <textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000}
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} aria-describedby={noteHintId}
             placeholder="気づいたことを記録してください（判定ではありません）" />
         </Field>
+        {/*
+          所見は園内限定であり、保護者へは共有しない（画面詳細図「発達チェック入力画面」(6-2) 項目6、
+          基本設計書「発達チェック・身体測定」(5-7)）。書く前に分かるよう、欄に添える（GitHub Issue #178 の 8）。
+          【仮置き】文言（web/仮置き値.md）
+        */}
+        <div className="muted" id={noteHintId} style={{ marginTop: 4 }}>
+          所見は園内限定の記録です。保護者へは共有しません。
+        </div>
         <label style={{ marginTop: 8 }}>
           <input type="checkbox" checked={compare} onChange={(e) => setCompare(e.target.checked)} />
           前回の記録と並べて表示する
@@ -163,17 +172,32 @@ export default function DevInputScreen() {
 
       <section className="card card-sub">
         <div className="muted">
+          {/* 「未確認」は結果として残す状態で、チェック漏れの対象にしない（基本設計書「発達チェック・身体測定」(5-7)） */}
           未入力の項目：{unfilled} 件。未入力のままにするとチェック漏れの対象になります。
-          確認できなかった項目は「未確認」を選んで残してください（基本設計書 5-7）。
+          確認できなかった項目は「未確認」を選んで残してください。
         </div>
       </section>
 
       {/* 免責表示を保存操作の直上に固定する（画面詳細図 6-1） */}
       <Disclaimer text={DISCLAIMER} />
 
-      {confirmed && (
+      {/*
+        確定したあとに開き直したとき、確定済みであることと、誰が・いつ確定したか、「確定する」で何が起きるかを示す
+        （GitHub Issue #143）。記録は園児と実施日で1件であり、「確定する」は同じ記録を書き換える。
+        確定の前に確かめるダイアログは、未入力が残るときだけ出す（基本設計書「画面の洗い出しの考え方」(3-1)。
+        連続入力を前提とする発達チェックには、1件ごとの確認を挟まない）
+      */}
+      {confirmed && draft.data && (
         <div className="muted" style={{ marginTop: 12 }}>
-          この日の記録は確定しています。直すときは「確定する」で保存してください（下書きには戻せません）。
+          <div>
+            この日の記録は確定しています（確定した職員：{staffName(draft.data.check.staff_id)}
+            {draft.data.confirmedAt && (
+              <>、確定した日時：{formatYMD(draft.data.confirmedAt.slice(0, 10))} {formatHM(draft.data.confirmedAt)}</>
+            )}）。
+          </div>
+          <div>
+            直すときは、内容を変えて「確定する」を押すと、この記録を書き換えます（新しい記録は増えません。下書きには戻せません）。
+          </div>
         </div>
       )}
       <div className="row-end" style={{ marginTop: 12 }}>

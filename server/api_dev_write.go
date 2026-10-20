@@ -152,6 +152,9 @@ func (a *app) handleSaveDevelopmentCheck(w http.ResponseWriter, r *http.Request)
 	if req.Status == "2" {
 		a.advanceDevelopmentSchedule(u, checkID, req.ChildID, req.CheckedOn)
 	}
+	// 発達チェック一覧（未入力の数・最後の実施日）とダッシュボードの「未実施」が変わりうる。
+	// 下書きでも未入力の数が変わる（events.go）
+	a.notifyDevelopment(req.ChildID)
 
 	row := a.db.QueryRow(`SELECT `+checkColumns+` FROM t_development_check WHERE development_check_id = ?`, checkID)
 	c, _ := a.scanCheck(row)

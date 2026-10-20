@@ -2,11 +2,14 @@
  * 職員（タブレット／PC）の共通レイアウト
  * 典拠：図/画面詳細図.md「職員（タブレット／PC）」(1-1)、基本設計書.md「画面基本構成」(3-5)
  */
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useSession } from '../session';
 import { useAsync, AUTO_REFRESH_MS } from '../hooks';
+import { onLive } from '../live';
 import { api } from '../api/client';
 import { BellIcon, Alert } from '../components/ui';
+import LiveIndicator from '../components/LiveIndicator';
+import ConnectionBanner from '../components/ConnectionBanner';
 import { ToastHost } from '../components/feedback';
 
 const NAV = [
@@ -14,8 +17,20 @@ const NAV = [
   { to: '/staff/diary', label: '日誌', end: false, adminOnly: false },
   { to: '/staff/chat', label: 'チャット', end: false, adminOnly: false },
   { to: '/staff/nap', label: '午睡チェック', end: false, adminOnly: false },
+  { to: '/staff/contact', label: '連絡帳', end: false, adminOnly: false },
   { to: '/staff/growth', label: '発達・身体', end: false, adminOnly: false },
   { to: '/staff/children', label: '園児', end: false, adminOnly: false },
+];
+
+/*
+ * 自分のアカウントにかかわる画面。メニューからパスワードの変更・利用規約の参照へ移る
+ * （図/画面遷移図.md「共通・認証」(2) の「職員ダッシュボード／保護者ホーム｜メニューからパスワードの変更・利用規約」。
+ * GitHub Issue #178 の 3）。図/画面詳細図.md「職員（タブレット／PC）」(1-1) 項目5 のサイドナビの列挙には無く、
+ * 設計書どうしでそろっていない。【仮置き】職員のメニューであるサイドナビの末尾に置く（web/仮置き値.md）
+ */
+const ACCOUNT_NAV = [
+  { to: '/staff/password', label: 'パスワードの変更' },
+  { to: '/staff/terms', label: '利用規約' },
 ];
 
 const ADMIN_NAV = [
@@ -26,13 +41,20 @@ const ADMIN_NAV = [
   { to: '/staff/admin/fiscal-year', label: '年度更新' },
   { to: '/staff/admin/logs', label: '操作ログ' },
   { to: '/staff/admin/misdelivery', label: '誤送信対応' },
+  { to: '/staff/admin/settings', label: '設定' },
 ];
 
 export default function StaffLayout() {
   const { user, logout } = useSession();
   const navigate = useNavigate();
-  // どの画面を開いていても、保護者からのチャットなどが数秒で通知の件数に表れるよう、裏で読み直す
-  const summary = useAsync(() => api.staffSummary(user!), [user?.account_id], { refreshMs: AUTO_REFRESH_MS });
+  const { pathname } = useLocation();
+  /*
+   * どの画面を開いていても、保護者からのチャットなどがすぐに通知の件数に表れるよう、知らせ（live.ts）を受けて
+   * 読み直す。件数はダッシュボードと同じもの（チャット・日誌・午睡・発達チェック）を足している。
+   * 知らせが切れている間は数秒ごとに読み直す
+   */
+  const summary = useAsync(() => api.staffSummary(user!), [user?.account_id],
+    { refreshMs: AUTO_REFRESH_MS, live: onLive('chat', 'diary', 'nap', 'development', 'contact') });
 
   if (!user) return null;
   const isAdmin = user.role === '1';
@@ -40,7 +62,7 @@ export default function StaffLayout() {
   // 未対応の総数をヘッダの通知に添える（画面詳細図 1-1）。ダッシュボードに並ぶ件数の合計
   const s = summary.data;
   const pending = s
-    ? s.returned + s.unreadChat + s.unhandledChat + s.devOverdue + s.pending + s.abnormalWithoutDiary
+    ? s.returned + s.unreadChat + s.unhandledChat + s.devOverdue + s.pending + s.abnormalWithoutDiary + s.homeUnconfirmed + s.homeRevised
     : 0;
 
   const onLogout = async () => {
@@ -58,6 +80,8 @@ export default function StaffLayout() {
           <img className="header-wordmark" src="/login-wordmark-crayon.png" alt="すくすく" />
         </div>
         <div className="spacer" />
+        {/* 相手の操作がすぐに出る状態か。切れている間は自動で読み直していることを示す（live.ts） */}
+        <LiveIndicator />
         <button className="notify-btn" title="通知" aria-label={`通知 ${pending}件`} onClick={() => navigate('/staff')}>
           <BellIcon />
           {pending > 0 && <span className="notify-badge">{pending}</span>}
@@ -95,8 +119,19 @@ export default function StaffLayout() {
               ))}
             </>
           )}
+          <hr />
+          {ACCOUNT_NAV.map((n) => (
+            <NavLink key={n.to} to={n.to}
+              className={({ isActive }) => (isActive ? 'current' : '')}>
+              {n.label}
+            </NavLink>
+          ))}
+          {/* 【仮置き】小さい画面で下の項目があることを示す（web/仮置き値.md）。 */}
+          {isAdmin && <div className="sidenav-hint">↕ メニューはスクロールできます</div>}
         </nav>
         <main className="main" id="staff-main" tabIndex={-1}>
+          {/* サーバに届かないときの帯。午睡チェック画面では大きく出す（詳細設計書「つながっているかの表示」(2-8)） */}
+          <ConnectionBanner audience="staff" large={pathname.startsWith('/staff/nap')} />
           {/*
             担当クラスの無い一般の職員は、園児も日誌も1件も見えない。
             何も出ない理由が画面から分からないため、ここで伝える（GitHub Issue #127）
