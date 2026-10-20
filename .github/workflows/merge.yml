@@ -1,0 +1,172 @@
+name: マージ係（ラベル「マージ」）
+
+# 持ち主が決めたマージを、決めた順に 1 本ずつ入れる。マージするかを決めるのは持ち主のまま（AGENTS.md の「ブランチと PR」）。
+#
+# 使い方:
+# - 持ち主（issei0423）が、入れたい PR にラベル「マージ」を付ける。付けた順（同じ時刻なら番号の小さい順）に 1 本ずつ見る。
+#   積み重ねた組（base が本線でない PR）は、まとめて上から順に付けてよい。土台が入ると base を本線へ向け直し、続けて見る。
+# - PR ごとに、GitHub が作る試しのマージ commit（本線の先頭 ＋ PR の head）で ci.yml を回し、ジョブが全部緑なら
+#   merge commit で入れる（--match-head-commit を付ける。--admin・--delete-branch は付けない）。入れたら自分を dispatch して次へ進む。
+# - 持ち主でない人が付けた「マージ」は、reject のジョブが外してコメントする。
+# - 中身は .github/scripts/merge-queue.sh。手元で `DRY_RUN=1 bash .github/scripts/merge-queue.sh pick` や
+#   `bash .github/scripts/merge-queue.sh check <番号>` で、書き込まずに試せる。
+#
+# 止まる場合:
+# - その PR だけ止める（「マージ」を外して「マージ止め」を付け、理由と直し方をコメント）。列は次の PR へ進む:
+#   下書き・フォークからの PR・.github/ を変える PR・変更を求めるレビュー・head の CI が赤・本線とぶつかる・
+#   本線と合わせた形の CI が赤（本線の先頭では緑のとき）
+# - 待つ（ラベルはそのまま、コメントもしない。run の Summary にだけ書く）: base が本線でない PR
+# - 列を止める（run が赤で終わり、次へ進まない）: 本線の先頭の CI が赤、ci.yml の checkout に ref: ${{ inputs.ref }} の付け忘れ、
+#   GitHub がぶつかりや試しのマージ commit を 1 分で作り終えない、gh pr merge の失敗
+# - 入れずに試し直す（次の run へ）: CI のあいだに本線か head が動いた、ラベルが外された
+#
+# 続きの回し方: 止めた PR を直したら「マージ止め」を外し、「マージ」を付け直す。
+#   手でマージや向け直しをしたあと・列が止まったあとは `gh workflow run merge.yml --ref mockup-go-react` で回す。
+#   書き込まずに試すときは `gh workflow run merge.yml --ref mockup-go-react -f dry_run=true -f pr="218 232"`
+#   （pr は dry_run のときだけ効く。試しの run は次を dispatch しない）。
+#
+# GITHUB_TOKEN の件: このワークフローは GITHUB_TOKEN だけを使う（新しい秘密は無い）。GITHUB_TOKEN で入れた本線の push や、
+#   向け直し（edited）では、ほかのワークフロー（ci.yml の push・pull_request）が走らない。そのため
+#   (1) 入れる木そのもの（試しのマージ commit）を入れる前に CI で確かめる
+#   (2) 列の終わりに、本線の先頭に ci.yml の run が無ければ gh workflow run ci.yml で回す（workflow_dispatch は GITHUB_TOKEN からでも run を作る）
+#   (3) 列を進める前に、本線の先頭の CI が赤ならそこで止める
+#   向け直した子の PR の CI も、マージ係が合わせた形で自分で回す。
+#
+# 守り: 書き込みの権限を持つジョブ（reject・pick・finish）は本線のスクリプトだけを取り出し、PR のコードを動かさない
+#   （pull_request_target の既定の checkout は base の commit）。PR のコードを動かすのは、読み取り専用（contents: read）で
+#   秘密を渡さない CI のジョブだけ。外から持ち込む action は actions/checkout だけ。
+#
+# pull_request_target と workflow_dispatch はデフォルトブランチ（mockup-go-react）のワークフローで動くので、このファイルはデフォルトブランチに置く。
+
+on:
+  pull_request_target:
+    types: [labeled]
+    branches: [mockup-go-react]
+  workflow_dispatch:        # 続けて回すとき・手で回すとき（Actions の画面や gh workflow run）
+    inputs:
+      dry_run:
+        description: 書き込まずに試す（ラベル・コメント・マージ・向け直し・dispatch をしない）
+        type: boolean
+        default: false
+      pr:
+        description: 試す PR の番号（空白で区切って複数。dry_run のときだけ効く）
+        type: string
+        default: ''
+
+permissions: {}             # ジョブごとに最小の権限を付ける
+
+# 列を進める run（持ち主の「マージ」と、dry_run でない dispatch）は 1 つずつ。走っている run は取り消さない。
+# ほかのラベルの run や試しの run が、待っている「次」の run を押し出して列を止めないよう、別の組にする
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && (inputs.dry_run && 'merge-queue-dry' || 'merge-queue') || (github.event.label.name == 'マージ' && github.event.sender.login == github.repository_owner) && 'merge-queue' || format('merge-queue-other-{0}', github.run_id) }}
+  cancel-in-progress: false
+
+jobs:
+  reject:
+    name: 持ち主でない人のラベルを外す
+    if: github.event_name == 'pull_request_target' && github.event.label.name == 'マージ' && github.event.sender.login != github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write  # ラベルを外す・コメントする
+      issues: write
+    steps:
+      - name: 本線のスクリプトを取り出す
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: .github
+
+      - name: ラベルを外してコメントする
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: bash .github/scripts/merge-queue.sh reject "$PR"
+
+  pick:
+    name: 候補を選ぶ（pick）
+    if: |
+      (github.event_name == 'pull_request_target' && github.event.label.name == 'マージ' && github.event.sender.login == github.repository_owner) ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/mockup-go-react')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10     # ふだんは 1 分ほど。GitHub の計算を待つ分の余裕
+    permissions:
+      contents: write
+      pull-requests: write  # 止めた PR のラベル・コメント
+      issues: write
+      actions: write        # 列の終わりに ci.yml を dispatch する
+    outputs:
+      pr: ${{ steps.pick.outputs.pr }}
+      ref: ${{ steps.pick.outputs.ref }}
+      base_sha: ${{ steps.pick.outputs.base_sha }}
+      head_sha: ${{ steps.pick.outputs.head_sha }}
+    steps:
+      # pull_request_target でも workflow_dispatch でも、取り出すのは本線の commit（PR のコードは取り出さない）
+      - name: 本線のスクリプトを取り出す
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: .github
+
+      - name: 候補を選ぶ
+        id: pick
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+          CANDIDATES: ${{ inputs.dry_run && inputs.pr || '' }}
+        run: bash .github/scripts/merge-queue.sh pick
+
+  ci-pr:
+    name: CI（本線と合わせた形）
+    needs: pick
+    if: needs.pick.outputs.pr != ''
+    permissions:
+      contents: read        # PR のコードを動かすのはこのジョブだけ。読み取り専用で、秘密は渡さない
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.pick.outputs.ref }}
+
+  ci-main:
+    name: CI（本線の先頭。合わせた形が赤のときだけ）
+    needs: [pick, ci-pr]
+    if: ${{ !cancelled() && needs.ci-pr.result == 'failure' }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.pick.outputs.base_sha }}
+
+  finish:
+    name: 入れる・止める（finish）
+    needs: [pick, ci-pr, ci-main]
+    if: ${{ !cancelled() && needs.pick.result == 'success' && needs.pick.outputs.pr != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write       # merge commit で入れる
+      pull-requests: write  # マージ・向け直し・ラベル・コメント
+      issues: write
+      actions: write        # 次の run を dispatch する
+    steps:
+      - name: 本線のスクリプトを取り出す
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: .github
+
+      - name: 入れる・止める
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+          CANDIDATES: ${{ inputs.dry_run && inputs.pr || '' }}
+          PR: ${{ needs.pick.outputs.pr }}
+          MERGE_SHA: ${{ needs.pick.outputs.ref }}
+          BASE_SHA: ${{ needs.pick.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.pick.outputs.head_sha }}
+          CI_PR_RESULT: ${{ needs.ci-pr.result }}
+          CI_MAIN_RESULT: ${{ needs.ci-main.result }}
+        run: bash .github/scripts/merge-queue.sh finish

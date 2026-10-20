@@ -109,13 +109,20 @@ describe('メッセージの取消とリアクション（GitHub Issue #98・#10
 
   it('登録と同じ秒に送られたメッセージは、後から登録した保護者に見せない', async () => {
     // 送信と登録を続けて行う。時刻は秒の単位のため、同じ秒に入ることがある（GitHub Issue #102）
-    await api.send(teacher, 6, '登録の直前のメッセージ');
+    const sent = await api.send(teacher, 6, '登録の直前のメッセージ');
     const code = await api.issueOneInvitationCode(admin, 'C001', 30);
     const late = await api.signUpGuardian({
       code, email: 'late.same@example.jp', password: 'pass12345', guardian_name: '野原 茂', relationship: '祖父',
       terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION,
     });
-    expect(await api.messages(late, 6)).toHaveLength(0);
+    // テストの時計は止めてあるので、送信と登録は必ず同じ秒になる（tests/setup-clock.ts）
+    const joinedAt = db.chatMembers.find((x) => x.chat_room_id === 6 && x.account_id === late.account_id)!.joined_at;
+    expect(sent.sent_at).toBe(joinedAt);
+    // 件数は決め打ちしない。デモデータの「今日の 07:40」のやりとりは、時計が 07:40 より前だと
+    // 登録より後の出来事になり、見えてよい（SUKUSUKU_TEST_CLOCK=03:00 など。GitHub Issue #152）
+    const seen = await api.messages(late, 6);
+    expect(seen.map((m) => m.chat_message_id)).not.toContain(sent.chat_message_id);
+    expect(seen.filter((m) => m.sent_at <= joinedAt)).toEqual([]);
   });
 
   it('配布物を取り下げても、誤送信対応の「対応の記録がない取消メッセージ」には出ない', async () => {
