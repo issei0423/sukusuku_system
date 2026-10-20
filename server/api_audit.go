@@ -109,11 +109,11 @@ func (a *app) handleRecordExport(w http.ResponseWriter, r *http.Request) {
 		}
 		a.log(u.AccountID, fnAccount, opExport, "t_operation_log", nil, nil, nil, s("操作ログをCSV出力（"+period+"）"))
 	case "allergy_list":
-		// 要配慮個人情報の一覧。出力できるのは管理者のみ（画面詳細図「アレルギー一覧画面」(7-4)）
-		if !u.isAdmin() {
-			writeForbidden(w, "アレルギー一覧の印刷は管理者のみが行えます")
-			return
-		}
+		// 要配慮個人情報の一覧。印刷できるのは管理者・一般（保護者は上の requireStaff で断る）。
+		// 担任でない職員も、受け入れや合同保育で子を見る場面で配膳に使うため
+		// （基本設計書「権限と利用可能機能」(6-1)「アレルギー一覧の印刷｜一般 ○※2・管理者 ○」、
+		// 図/画面詳細図.md「アレルギー一覧画面」(7-4) の項目2。設計の直しは PR #216 の直-16・直-24）。
+		// 出力したことは、誰が印刷しても操作ログに残す
 		a.log(u.AccountID, fnChild, opExport, "m_allergy", nil, nil, nil,
 			s("アレルギー一覧を印刷（"+strconv.Itoa(req.Count)+" 名）"))
 	case "invitation_sheet":

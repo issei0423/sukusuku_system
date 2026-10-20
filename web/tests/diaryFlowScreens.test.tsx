@@ -138,7 +138,7 @@ describe('日誌作成・編集画面（#174 の 2・5）', () => {
     db.diaries.unshift({
       diary_id: id, record_type: '1', child_id: 'C004', class_id: 2, diary_date: today(), body: '前のクラスで書いた下書き',
       status: '1', created_staff_id: 'S005', approved_staff_id: null, approved_at: null,
-      is_shared_to_guardian: false, shared_at: null, nap_abnormal_id: null, returned_reason: null,
+      applied_staff_id: null, applied_at: null, nap_abnormal_id: null, returned_reason: null,
       is_deleted: false, created_at: now(), updated_at: now(),
     });
     open(`/staff/diary/${id}`, teacher);

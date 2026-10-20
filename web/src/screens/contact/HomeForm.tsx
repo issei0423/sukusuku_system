@@ -7,12 +7,14 @@
  * 押したらサーバの応答を待って結果を出す（楽観的更新をしない。決めたこと D-3）。
  * 送れなかったときは入力を残し、何が違うかと次にすることを出す。
  */
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { ContactHome, ContactHomeInput, MealAmount } from '../../api/shapes';
 import { settingText } from '../../api/client';
 import { useUnsavedInput } from '../../unsavedInput';
 import { MEAL_AMOUNT_TEXT, TEXT } from '../../messages';
 import { useReachable } from '../../api/reachability';
+import { useStickyInset } from '../../stickyInset';
+import TemperaturePicker from '../../components/TemperaturePicker';
 
 /** 基本設計書「設定マスタ」(5-9) の既定（サーバの defaultHomeItems と同じ） */
 const DEFAULT_HOME_ITEMS = 'temperature,night_sleep,breakfast,mood,pickup,message';
@@ -32,8 +34,6 @@ function times(fromHour: number, toHour: number): string[] {
   }
   return out;
 }
-/** 体温の一覧 35.0〜39.9℃（詳細設計書 (2-6 (3))） */
-const TEMPERATURES = Array.from({ length: 50 }, (_, i) => (350 + i) / 10);
 
 function list(key: string, fallback: string): string[] {
   return settingText(key, fallback).split(',').map((v) => v.trim()).filter(Boolean);
@@ -69,6 +69,7 @@ export default function HomeForm({ home, busy, error, onSubmit, onCancel }: {
   const items = list('contact.home_items', DEFAULT_HOME_ITEMS);
   const moods = list('contact.mood_choices', '');
   const [temperature, setTemperature] = useState<number | null>(home?.temperature ?? null);
+  const [temperatureOpen, setTemperatureOpen] = useState(false);
   const [sleepFrom, setSleepFrom] = useState(home?.night_sleep_from ?? '');
   const [sleepTo, setSleepTo] = useState(home?.night_sleep_to ?? '');
   const [breakfast, setBreakfast] = useState<MealAmount | null>(home?.breakfast ?? null);
@@ -78,11 +79,17 @@ export default function HomeForm({ home, busy, error, onSubmit, onCancel }: {
   const [pickupOther, setPickupOther] = useState(!!home?.pickup_person && !PICKUP_PEOPLE.includes(home.pickup_person));
   const [pickupTime, setPickupTime] = useState(home?.pickup_time ?? '');
   const [message, setMessage] = useState(home?.message ?? '');
+  const messageNoteId = useId();
   const [dirty, setDirty] = useState(false);
   useUnsavedInput(dirty);
   // サーバに届かないときは「もう一度送る」にする。入力は残す（詳細設計書「押したときの処理の型」(2-0 (2))）
   const reachable = useReachable();
   const touch = <T,>(set: (v: T) => void) => (v: T) => { set(v); setDirty(true); };
+  /*
+   * 下に止めた「家庭からを送る」の帯の高さを、スクロールする枠（.guardian-main）へ --contact-actions-h として渡す。
+   * 枠はその高さぶんを scroll-padding-bottom に取り、Tab で下へ進んだときに選択肢が帯の下に隠れないようにする（GitHub Issue #212）
+   */
+  const actions = useStickyInset('.guardian-main', '--contact-actions-h');
 
   const submit = () => {
     onSubmit({
@@ -103,13 +110,21 @@ export default function HomeForm({ home, busy, error, onSubmit, onCancel }: {
     <form className="contact-home-form" onSubmit={(e) => { e.preventDefault(); submit(); }} aria-busy={busy}>
       {home?.confirmed_at && <p className="muted">{TEXT.homeResendNote}</p>}
       {items.includes('temperature') && (
-        <label className="contact-field">
+        <div className="contact-field">
           <span>体温</span>
-          <select value={temperature ?? ''} onChange={(e) => touch(setTemperature)(e.target.value === '' ? null : Number(e.target.value))}>
-            <option value="">入れない</option>
-            {TEMPERATURES.map((t) => <option key={t} value={t}>{t.toFixed(1)}℃</option>)}
-          </select>
-        </label>
+          {/* 一覧（35.0〜39.9℃）を 36.5 の位置から開き、値を押す（2タップ）。判定はしない（詳細設計書 (2-6 (3))） */}
+          <div className="contact-temp-row">
+            {temperature !== null && <strong className="contact-temp-value">{temperature.toFixed(1)}℃</strong>}
+            <button type="button" className="contact-pick" onClick={() => setTemperatureOpen(true)}>
+              {temperature === null ? '体温を入れる' : '入れ直す'}
+            </button>
+            {temperature !== null && <button type="button" className="btn-quiet" onClick={() => touch(setTemperature)(null)}>体温を消す</button>}
+          </div>
+          {temperatureOpen && (
+            <TemperaturePicker title="体温" start={null} onClose={() => setTemperatureOpen(false)}
+              onSelect={(v) => { touch(setTemperature)(v); setTemperatureOpen(false); }} />
+          )}
+        </div>
       )}
       {items.includes('night_sleep') && (
         <div className="contact-field-row">
@@ -165,14 +180,21 @@ export default function HomeForm({ home, busy, error, onSubmit, onCancel }: {
         </>
       )}
       {items.includes('message') && (
-        <label className="contact-field">
-          <span>連絡事項（任意）</span>
-          <textarea value={message} maxLength={MESSAGE_MAX} onChange={(e) => touch(setMessage)(e.target.value)} />
-          <span className="muted contact-count">あと {MESSAGE_MAX - [...message].length} 文字</span>
-        </label>
+        <>
+          <label className="contact-field">
+            <span>連絡事項（任意）</span>
+            <textarea value={message} maxLength={MESSAGE_MAX} onChange={(e) => touch(setMessage)(e.target.value)} aria-describedby={messageNoteId} />
+            <span className="muted contact-count">あと {MESSAGE_MAX - [...message].length} 文字</span>
+          </label>
+          {/*
+            欄の近くに常に出す【仮置き】（図/画面詳細図「連絡帳画面」(8-3) 項目10、要件定義書「家庭から」(4-2-2)。web/仮置き値.md）。
+            読み上げでも欄の説明として届くよう、入力欄の説明（aria-describedby）にする
+          */}
+          <p id={messageNoteId} className="contact-note">{TEXT.homeWrittenRequest}</p>
+        </>
       )}
       {error && <p className="contact-error" role="alert">{error}</p>}
-      <div className="contact-form-actions">
+      <div ref={actions} className="contact-form-actions">
         <button type="submit" className="btn-primary" disabled={busy} aria-busy={busy}>
           {busy ? TEXT.sending : !reachable ? TEXT.resend : '家庭からを送る'}
         </button>

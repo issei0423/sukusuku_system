@@ -713,16 +713,20 @@ func (a *app) handleRaiseIncidentDiary(w http.ResponseWriter, r *http.Request) {
 		diaryDate = sessionDate.String
 	}
 
-	body := "【発生日時】\n" + strings.Replace(foundAt, "T", " ", 1) +
-		"\n\n【状況】\n" + situation +
-		"\n\n【とった対応】\n" + response +
-		"\n\n【今後の対策】\n"
-
+	/*
+	 * 発生日時（発見時刻）・状況・とった対応を引き継ぎ、本文はヒヤリハットの欄と同じ見出しの形で作る
+	 * （基本設計書「ヒヤリハットの記録」(4-6)、詳細設計書「日誌の画面（作り直し）」(2-13 (8))・「日誌」(4-13 (1))、D-33）。
+	 * 今後の対策は人が書く欄であり、空のまま起票する（見出しも付けない）。
+	 * 場所は異常時の記録が持たないため空で起票し、作成者が日誌作成・編集画面で入れる（保存のときに必須の検査を通る）。
+	 * 列の CHECK は NULL だけを断り、空の文字列は通す
+	 */
+	body := incidentBody(strings.TrimSpace(situation), strings.TrimSpace(response), "")
+	occurredAt, place := foundAt, ""
 	res, err := a.db.Exec(`INSERT INTO t_diary
 		(record_type, child_id, class_id, diary_date, body, status, created_staff_id,
-		 is_shared_to_guardian, nap_abnormal_id, is_deleted, created_at, updated_at)
-		VALUES ('4', ?, ?, ?, ?, '1', ?, 0, ?, 0, ?, ?)`,
-		childID, classID, diaryDate, body, u.staff(), abnormalID, now(), now())
+		 occurred_at, place, nap_abnormal_id, is_deleted, created_at, updated_at)
+		VALUES ('4', ?, ?, ?, ?, '1', ?, ?, ?, ?, 0, ?, ?)`,
+		childID, classID, diaryDate, body, u.staff(), occurredAt, place, abnormalID, now(), now())
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "起票に失敗しました")
 		return

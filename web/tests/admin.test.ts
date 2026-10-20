@@ -33,10 +33,10 @@ describe('日誌の承認', () => {
       record_type: '2', child_id: null, class_id: 3, diary_date: today(), body: '室内でふれあい遊び。',
     }, '2');
 
-    await expect(api.approveDiary(admin, d.diary_id, false)).rejects.toThrow('自分が申請した日誌は承認できません');
+    await expect(api.approveDiary(admin, d.diary_id)).rejects.toThrow('自分が申請した日誌は承認できません');
     expect(db.diaries.find((x) => x.diary_id === d.diary_id)?.status).toBe('2');
 
-    const approved = await api.approveDiary(admin2, d.diary_id, false);
+    const approved = await api.approveDiary(admin2, d.diary_id);
     expect(approved.status).toBe('3');
     expect(approved.approved_staff_id).toBe('S002');
   });
