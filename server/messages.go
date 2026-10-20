@@ -1,5 +1,7 @@
 package main
 
+import "strconv"
+
 /*
 連絡帳と「ねた・おきた」の文言（詳細設計書「全章に共通する実装の決まり」(1-5) の決めたこと D-1）。
 
@@ -102,4 +104,32 @@ const (
 	msgFacilityTooLong = "園からのひとことは500文字以内で入力してください。"
 	msgFacilitySent    = "この日の園からは、もう送られています。直すときは送られた文の「直す」から行ってください。"
 	msgCommentTooLong  = "ひとことは200文字以内で入力してください。"
+)
+
+// 文章の下書き（AI）と設定（詳細設計書「経路」(8-2)・「キーが無い・無効・有効にしていないときの画面」(8-8)・「設定」(4-10)・
+// 「本書で足す文言」(4-1 (6))、基本設計書「メッセージ一覧」(4-12)）。画面とモックは web/src/messages.ts の MSG に同じ文言を持つ
+const (
+	msgAiUnavailableForTarget = "AI の下書きは使えません。そのまま書いて送れます。"
+	msgAiMemoTooLong          = "メモは500文字以内で入力してください。"
+	msgAiExcludedName         = "AI を使わないお子さんの名前が入っています。このまま書いて送ってください。"
+	msgAiLimit                = "きょうの AI の下書きの回数を使い切りました。そのまま書いて送れます。"
+	msgAiFailed               = "いまは下書きを作れません。そのまま書いて送れます。"
+	// 【仮置き】続きを足す空きが無い（web/仮置き値.md）
+	msgAiNoRoom = "文字数の上限に達しているため、続きは作れません。"
+	// 設定画面（詳細設計書「設定」(4-10 (2))）。AI の区画のキーだけを受け付ける（決めたこと D-15）
+	msgSettingNotEditable  = "この設定は画面から変えられません。"
+	msgSettingConflict     = "ほかの管理者が設定を変えました。読み直してから変えてください。"
+	msgSettingAiDailyLimit = "1日の上限回数は1〜10000の整数で入力してください。"
+)
+
+// aiTextTooLong は「文は〇〇文字以内で入力してください。」（詳細設計書「経路」(8-2)）
+func aiTextTooLong(max int) string {
+	return "文は" + strconv.Itoa(max) + "文字以内で入力してください。"
+}
+
+// AI の誤りの kind（詳細設計書「経路」(8-2)）
+const (
+	kindAiExcludedName = "ai_excluded_name"
+	kindAiLimit        = "ai_limit"
+	kindAiUnavailable  = "ai_unavailable"
 )

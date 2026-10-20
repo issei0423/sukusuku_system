@@ -51,6 +51,9 @@ func (a *app) routeContact(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/contact/facility/{id}/readers", a.handleFacilityReaders)
 	mux.HandleFunc("POST /api/contact/name-check", a.handleNameCheck)
 	mux.HandleFunc("GET /api/phrases", a.handlePhrases)
+	// 文章の下書き（AI）（詳細設計書「経路」(8-2)）
+	mux.HandleFunc("GET /api/ai/status", a.handleAiStatus)
+	mux.HandleFunc("POST /api/ai/drafts", a.handleAiDrafts)
 }
 
 // 共通基盤：ログインとアカウント（基本設計書 4-3）
@@ -183,4 +186,7 @@ func (a *app) routeAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/invitations/{id}/revoke", a.handleRevokeInvitationCode)
 	mux.HandleFunc("GET /api/admin/logs", a.handleOperationLogs)
 	mux.HandleFunc("POST /api/exports", a.handleRecordExport)
+	// 設定画面（詳細設計書「設定」(4-10)。本版は AI の区画だけ）
+	mux.HandleFunc("GET /api/settings", a.handleSettings)
+	mux.HandleFunc("POST /api/settings", a.handleSaveSettings)
 }

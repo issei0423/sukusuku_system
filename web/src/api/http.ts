@@ -24,7 +24,7 @@ import type {
 import type { SendPhotoInput, SendPhotoResult } from './shapes';
 import type {
   ContactEvent, ContactEventInput, RecordEventsResult, ContactEventCorrection, NapSleepCorrection, CancelResult, Readers,
-  ContactFacility, FacilityCorrection, Phrase, NameMatch,
+  ContactFacility, FacilityCorrection, Phrase, NameMatch, AiTarget, AiDraftInput, AiDraftResult, SettingsView,
 } from './shapes';
 import {
   ProcedureRequiredError, isProcedureKind, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
@@ -57,25 +57,30 @@ class ApiError extends Error {
   /** 他児の名前の注意（409 other_child_names）の、当たった園児の氏名と本文の中の位置（詳細設計書「誤りの応答」(4-1 (3))） */
   names?: string[];
   matches?: NameMatch[];
-  constructor(body: { message: string; kind?: string; remaining?: number; correct?: string; names?: string[]; matches?: NameMatch[] }) {
+  /** 設定の保存で、誤りのあった設定のキー（詳細設計書「設定」(4-10 (2))） */
+  field?: string;
+  constructor(body: { message: string; kind?: string; remaining?: number; correct?: string; names?: string[]; matches?: NameMatch[]; field?: string }) {
     super(body.message);
     this.kind = body.kind;
     this.remaining = body.remaining;
     this.correct = body.correct;
     this.names = body.names;
     this.matches = body.matches;
+    this.field = body.field;
   }
 }
 
 /** 画面からサーバへの要求の上限（詳細設計書「押したときの処理の型」(2-0 (2))、決めたこと D-19） */
 const REQUEST_TIMEOUT_MS = 15_000;
+/** AI の下書きの要求の上限（決めたこと D-19。サーバは再試行を含めて10秒で諦める） */
+const AI_REQUEST_TIMEOUT_MS = 20_000;
 /** 画面に出す文（サーバに届かないとき。詳細設計書「つながっているかの表示」(2-8)） */
 const UNREACHABLE_MESSAGE = `${TEXT.unreachableBanner}。つながったら、もう一度送ってください。`;
 
 /** ログインの失敗理由（LoginError）。画面（TopScreen）が JSON にして分岐に使う */
 const LOGIN_KINDS = new Set(['credential', 'locked', 'suspended', 'wrong_entrance', 'temp_expired', 'already_logged_in', 'too_many_attempts']);
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, timeoutMs = REQUEST_TIMEOUT_MS): Promise<T> {
   let res: Response;
   // 写真（multipart/form-data）は FormData のまま送る。境界の入った Content-Type はブラウザが付ける
   const form = typeof FormData !== 'undefined' && body instanceof FormData;
@@ -88,7 +93,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       keepalive: method === 'DELETE',
       headers: body === undefined || form ? undefined : { 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : form ? body : JSON.stringify(body),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch {
     // 通信の失敗・時間切れは「サーバに届かない」（詳細設計書「画面の受け取り」(6-4)）。貯めて後から送ることはしない
@@ -734,6 +739,15 @@ const contactApi = {
   nameCheck: (_u: SessionUser, input: { child_ids?: string[]; class_id?: number; text: string }) =>
     post<{ names: string[] }>('/api/contact/name-check', input),
   contactPhrases: (_u: SessionUser, scope: Phrase['phrase_scope']) => get<Phrase[]>(`/api/phrases${qs({ scope })}`),
+  /* 文章の下書き（AI）（詳細設計書「経路」(8-2)。名前はモック（api/mock.ts の aiApi）と同じ） */
+  aiStatus: (_u: SessionUser, target: AiTarget) =>
+    get<{ available: boolean }>(`/api/ai/status${qs({ child_id: target.child_id, class_id: target.class_id })}`),
+  aiDrafts: (_u: SessionUser, input: AiDraftInput) =>
+    request<AiDraftResult>('POST', '/api/ai/drafts', input, AI_REQUEST_TIMEOUT_MS),
+  /* 設定画面（詳細設計書「設定」(4-10)。本版は AI の区画だけ。名前はモックの settingsApi と同じ） */
+  settings: (_u: SessionUser) => get<SettingsView>('/api/settings'),
+  saveSettings: (_u: SessionUser, changes: Record<string, string>, readAt: string) =>
+    post<SettingsView>('/api/settings', { changes, read_at: readAt }),
 };
 
 export const api = { ...apiAuth, ...apiChatNap, ...apiGrowth, ...apiAdmin, ...apiHandout, ...contactApi };

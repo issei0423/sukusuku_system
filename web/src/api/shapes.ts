@@ -8,7 +8,7 @@
 import type {
   Account, Child, ChatRoom, Diary, DevelopmentItem, GuardianChild, NapRecord, NapSession,
   DiaryRecordType, DiaryStatus, InvitationStatus, Role, FunctionType, OperationType,
-  DevelopmentCheck, DevelopmentResultRecord, MealAmount, ContactEventType,
+  DevelopmentCheck, DevelopmentResultRecord, MealAmount, ContactEventType, Setting,
 } from './types';
 
 /** ログインの失敗理由。画面が分岐に使う（図/画面詳細図.md「職員用トップ／保護者用トップ」(2-1)） */
@@ -607,6 +607,52 @@ export interface GuardianToday {
   personal_room_id: number | null;
   /** 成長の記録を作るまでは常に偽 */
   growth_new: boolean;
+}
+
+/* ============ 文章の下書き（AI）（詳細設計書「経路」(8-2)） ============ */
+
+/** 用途。facility_note：園からのひとことの下書き（1つ）、rephrase：言い換え（候補3つ）、continue：続きの候補（3つ） */
+export type AiPurpose = 'facility_note' | 'rephrase' | 'continue';
+/** 下書きを入れる欄（文字数の上限と操作ログの表を決める）。facility：園から 500、comment：活動のひとこと 200、class：クラスのようす 500 */
+export type AiField = 'facility' | 'comment' | 'class';
+
+/** GET /api/ai/status の宛先（どちらか一方） */
+export type AiTarget = { child_id: string; class_id?: undefined } | { class_id: number; child_id?: undefined };
+
+/** POST /api/ai/drafts の要求。画面は「何の下書きか」「宛先」「メモ」「欄の文」だけを送り、送る項目はサーバが決める */
+export type AiDraftInput = AiTarget & {
+  purpose: AiPurpose;
+  date: string;
+  memo?: string;
+  text?: string;
+  field?: AiField;
+};
+
+/** POST /api/ai/drafts の応答 */
+export interface AiDraftResult {
+  drafts: string[];
+  /** メモ・欄の文の中のほかの園児の名前を「おともだち」に置き換えて送った */
+  replaced_other_names: boolean;
+}
+
+/* ============ 設定画面（詳細設計書「設定」(4-10)。本版は AI の区画だけ） ============ */
+
+export interface SettingRow extends Setting {
+  group: 'contact' | 'notify' | 'ai' | 'other';
+  /** 基本設計書「設定マスタ（m_setting）」(5-9) の既定値 */
+  default_value: string;
+  /** 画面から変えられるか */
+  editable: boolean;
+}
+
+/** GET /api/settings の応答。API キーそのものは返さない（あるか・無効と分かったかの真偽だけ。詳細設計書 (8-8)） */
+export interface SettingsView {
+  settings: SettingRow[];
+  /** サーバの今。保存のときに送り返す（ほかの管理者の変更を見つけるため） */
+  read_at: string;
+  ai_key_present: boolean;
+  ai_key_rejected: boolean;
+  push_available: boolean;
 }
 
 /** 参照のみに使う型の再輸出。画面が types.ts を直接読まなくて済むようにする */

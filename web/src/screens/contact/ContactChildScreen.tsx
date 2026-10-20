@@ -12,6 +12,8 @@
  *
  * 活動のひとことと園からのひとことは段2：「送る」のすぐ上に宛先を大きく示し、サーバが他児の名前を照合する
  * （詳細設計書「園からのひとことを送る」(2-3 (3))）。園からは園児・日に1件。送ったあとは送った文と「直す」「取り消す」。
+ * 今日のページでは、使えるときだけ AI の下書き（園からは「AI で下書き」「言い換え」「続き」、ひとことは「言い換え」「続き」）を出す
+ * （詳細設計書「画面」(8-9)）。下書きは欄に入るだけで、送るのは職員。
  */
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
@@ -224,7 +226,8 @@ export default function ContactChildScreen() {
               <Composer key={editingFacility ? `fix-${data.facility?.contact_facility_id}` : 'new'} label={editingFacility ? '園から（直して送る）' : '園からのひとこと'}
                 max={500} scope="1" recipient={data.recipient} className={childClass} initial={editingFacility ? data.facility?.body : ''}
                 submitLabel={editingFacility ? '直して送る' : '送る'} onSend={sendFacility}
-                onCancel={editingFacility ? () => setEditingFacility(false) : undefined} />
+                onCancel={editingFacility ? () => setEditingFacility(false) : undefined}
+                ai={isToday ? { childId, date, field: 'facility', allowDraft: true } : undefined} />
             )}
           </section>
         </div>
@@ -285,7 +288,8 @@ export default function ContactChildScreen() {
                 </div>
               )}
               <Composer label="活動のひとこと" max={200} scope="2" recipient={data.recipient} className={childClass}
-                submitLabel="ひとことを送る" onSend={sendComment} />
+                submitLabel="ひとことを送る" onSend={sendComment}
+                ai={{ childId, date, field: 'comment', allowDraft: false }} />
             </>
           )}
         </aside>

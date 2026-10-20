@@ -447,6 +447,20 @@ button.guardian-record-link {
 .contact-composer-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
 .contact-composer-actions button { min-height: 48px; }
 .contact-composer-actions .btn-primary { flex: 1; }
+/* AI の下書き（components/AiDraftPanel.tsx。詳細設計書「画面」(8-9)）。押せる大きさは 44px 以上 */
+.ai-draft { display: grid; gap: var(--sp-2); }
+.ai-draft-buttons { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.ai-draft-memo { display: grid; gap: var(--sp-1); padding: var(--sp-2); border: 1px solid var(--c-border-weak); border-radius: 8px; background: var(--c-surface-sub); }
+.ai-draft-memo textarea { display: block; width: 100%; min-height: 72px; }
+.ai-draft-memo p { margin: 0; }
+.ai-draft-status { margin: 0; font-weight: 700; }
+.ai-draft-result { display: grid; gap: var(--sp-2); padding: var(--sp-2); border: 1px solid var(--c-border); border-radius: 8px; }
+.ai-draft-result > button { justify-self: start; min-height: var(--tap-min); }
+.ai-draft-candidates { display: grid; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
+.ai-draft-card { display: grid; gap: var(--sp-1); padding: var(--sp-2); border: 1px solid var(--c-border-weak); border-radius: 8px; background: var(--c-surface-sub); }
+.ai-draft-card p { margin: 0; overflow-wrap: anywhere; }
+.ai-draft-card button { justify-self: start; min-height: var(--tap-min); }
+.ai-draft-note { margin: 0; font-size: var(--fs-small); color: var(--c-text-sub); }
 .recipient-badge {
   display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2);
   padding: var(--sp-2) var(--sp-3); border: 2px solid var(--c-primary-deep); border-radius: var(--radius); background: var(--c-primary-soft);
@@ -461,3 +475,15 @@ button.guardian-record-link {
 .phrase-list { display: grid; gap: var(--sp-2); }
 .phrase-list button { min-height: 48px; text-align: left; justify-content: flex-start; white-space: normal; }
 .contact-unsent { font-weight: 700; color: var(--c-alert); }
+
+/* 設定画面（screens/admin/settings。詳細設計書「設定画面（管理者）」(2-14)） */
+.settings-screen { max-width: 820px; }
+.settings-section { display: grid; gap: var(--sp-3); }
+.settings-field { display: grid; gap: var(--sp-1); margin: 0; padding: 0; border: 0; }
+.settings-field > label, .settings-field > legend { font-weight: 700; }
+.settings-field input[type="number"] { max-width: 12em; min-height: var(--tap-min); }
+.settings-field p { margin: 0; }
+.settings-choices { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.settings-choice { display: inline-flex; align-items: center; gap: var(--sp-1); min-height: var(--tap-min); min-width: var(--tap-min); padding: 0 var(--sp-3);
+  border: 1px solid var(--c-border); border-radius: 8px; cursor: pointer; }
+.settings-diff { margin: 0 0 var(--sp-2); padding-left: 1.2em; }

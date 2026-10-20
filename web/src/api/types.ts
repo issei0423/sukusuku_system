@@ -122,6 +122,8 @@ export interface Terms {
   document_type: TermsDocumentType;
   body: string;
   published_on: string;
+  /** 外部の AI へ送ることを書いた版か（詳細設計書「使える条件」(8-3) の④）。サーバの GET /api/terms は返さない（モックの判定に使う） */
+  covers_external_ai?: boolean;
 }
 
 /* ---- 園児・クラス（基本設計書 5-3） ---- */
@@ -167,6 +169,8 @@ export interface GuardianChild {
   ended_at: string | null;
   /** 猶予中（3）の終わりの日（詳細設計書「変える表」(5-3)） */
   grace_ends_on?: string | null;
+  /** 保護者が「AI の下書きを使わない」を選んだ（詳細設計書「使える条件」(8-3) の④。無ければ偽） */
+  ai_opt_out?: boolean;
 }
 
 /** アレルギー（m_allergy）。1園児に複数登録できる（5-3） */

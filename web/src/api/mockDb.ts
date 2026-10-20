@@ -67,22 +67,25 @@ export const guardians: Guardian[] = [
  */
 const T0 = '2024-04-01T09:00:00';
 export const accounts: Account[] = [
-  { account_id: 1, email: 'nohara@hoiku.example.jp', password_hash: 'pass1234', role: '1', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
-  { account_id: 2, email: 'uezono@hoiku.example.jp',    password_hash: 'pass1234', role: '1', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
-  { account_id: 3, email: 'takanashi@hoiku.example.jp',    password_hash: 'pass1234', role: '2', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
+  { account_id: 1, email: 'nohara@hoiku.example.jp', password_hash: 'pass1234', role: '1', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
+  { account_id: 2, email: 'uezono@hoiku.example.jp',    password_hash: 'pass1234', role: '1', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
+  { account_id: 3, email: 'takanashi@hoiku.example.jp',    password_hash: 'pass1234', role: '2', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
   // 一時パスワードでログインした状態を再現する。真の間は他機能を使わせない（基本設計書 5-2）
-  { account_id: 4, email: 'miyagi@hoiku.example.jp',      password_hash: 'temp0901', role: '2', status: '1', is_temp_password: true,  temp_password_expires_at: '2026-09-03T09:00:00', failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
-  { account_id: 5, email: 'kinjo@hoiku.example.jp',    password_hash: 'pass1234', role: '2', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
-  { account_id: 6, email: 'nohara.i@example.jp',        password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: '2025-06-10T10:00:00', created_at: '2025-06-10T10:00:00', updated_at: '2025-06-10T10:00:00' },
+  { account_id: 4, email: 'miyagi@hoiku.example.jp',      password_hash: 'temp0901', role: '2', status: '1', is_temp_password: true,  temp_password_expires_at: '2026-09-03T09:00:00', failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
+  { account_id: 5, email: 'kinjo@hoiku.example.jp',    password_hash: 'pass1234', role: '2', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
+  { account_id: 6, email: 'nohara.i@example.jp',        password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: '2025-06-10T10:00:00', created_at: '2025-06-10T10:00:00', updated_at: '2025-06-10T10:00:00' },
   // 規約の改定後、まだ再同意していない状態を再現する。次回ログインで同意画面を出す（基本設計書 3-4）
   { account_id: 7, email: 'uezono.k@example.jp',        password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '0.9', terms_agreed_at: '2025-04-05T10:00:00', created_at: '2025-04-05T10:00:00', updated_at: '2025-04-05T10:00:00' },
-  { account_id: 8, email: 'takanashi.r@example.jp',          password_hash: 'pass1234', role: '3', status: '2', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: '2025-06-20T10:00:00', created_at: '2025-06-20T10:00:00', updated_at: '2026-08-20T10:00:00' },
-  { account_id: 9, email: 'miyagi.r@example.jp', password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: '2025-07-01T10:00:00', created_at: '2025-07-01T10:00:00', updated_at: '2025-07-01T10:00:00' },
-  { account_id: 10, email: 'kinjo.s@example.jp', password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: '2025-07-05T10:00:00', created_at: '2025-07-05T10:00:00', updated_at: '2025-07-05T10:00:00' },
+  { account_id: 8, email: 'takanashi.r@example.jp',          password_hash: 'pass1234', role: '3', status: '2', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: '2025-06-20T10:00:00', created_at: '2025-06-20T10:00:00', updated_at: '2026-08-20T10:00:00' },
+  { account_id: 9, email: 'miyagi.r@example.jp', password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: '2025-07-01T10:00:00', created_at: '2025-07-01T10:00:00', updated_at: '2025-07-01T10:00:00' },
+  { account_id: 10, email: 'kinjo.s@example.jp', password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: '2025-07-05T10:00:00', created_at: '2025-07-05T10:00:00', updated_at: '2025-07-05T10:00:00' },
 ];
 
-/** 最新版の利用規約。これと異なる terms_version のアカウントには再同意を求める */
-export const CURRENT_TERMS_VERSION = '1.0';
+/**
+ * 最新版の利用規約。これと異なる terms_version のアカウントには再同意を求める。
+ * 第1.1版は、文章の下書きに外部の AI を使うことの条を足した版（詳細設計書「デモデータ」(5-5 (2))。server/seed.sql と同じ）
+ */
+export const CURRENT_TERMS_VERSION = '1.1';
 
 /* ============ 園児（m_child） ============ */
 function child(
@@ -187,7 +190,7 @@ export const invitationCodes: InvitationCode[] = [
  */
 export const termsDocs: Terms[] = [
   {
-    terms_id: 1, terms_version: '1.0', document_type: '1', published_on: '2026-09-01',
+    terms_id: 1, terms_version: '1.0', document_type: '1', published_on: '2026-09-01', covers_external_ai: false,
     body: [
       '第1条（本規約について）',
       '本規約は、当園が提供する保育支援システム（以下「本システム」）の利用条件を定めるものです。本システムを利用する職員および保護者の双方に適用します。',
@@ -211,8 +214,52 @@ export const termsDocs: Terms[] = [
     ].join('\n'),
   },
   {
-    terms_id: 2, terms_version: '0.9', document_type: '1', published_on: '2025-04-01',
+    terms_id: 2, terms_version: '0.9', document_type: '1', published_on: '2025-04-01', covers_external_ai: false,
     body: '（旧版）第1条（本規約について）本規約は、当園が提供する保育支援システムの利用条件を定めるものです。',
+  },
+  {
+    terms_id: 3, terms_version: '1.1', document_type: '1', published_on: '2026-09-01', covers_external_ai: true,
+    body: [
+      '第1条（本規約について）',
+      '本規約は、当園が提供する保育支援システム（以下「本システム」）の利用条件を定めるものです。本システムを利用する職員および保護者の双方に適用します。',
+      '',
+      '第2条（アカウント）',
+      '職員のアカウントは、当園が発行します。保護者のアカウントは、当園が発行する招待コードによって登録します。招待コードは1枚につき1アカウントの登録にのみ使用できます。',
+      'アカウントの情報は第三者に共有しないでください。',
+      '',
+      '第3条（本システムが行わないこと）',
+      '本システムは、お子さまの発達の遅速の判定、医療的な診断、療育の要否の判断を一切行いません。',
+      '記録および可視化は、保育士が気づくための支援であり、評価と判断の責任は当園にあります。',
+      '',
+      '第4条（緊急時の連絡）',
+      '緊急を要する連絡は、本システムのチャットではなく電話で行います。',
+      'チャットの通知は、端末の設定や通信の状況により届かない場合があります。',
+      '',
+      '第5条（記録の取り扱い）',
+      '保護者への記録の共有範囲は、当園が項目ごとに設定します。',
+      '',
+      '第6条（文章の下書きに外部の AI を使うこと）',
+      '当園は、連絡帳の文の下書きを作るために、外部の AI（Anthropic 社の Claude）を使うことがあります。当園が使うと決めたときだけ動きます。',
+      '送るのは、その日のできごと（時刻・食事の量・活動のようす）と、担任のメモと、年齢（何歳）だけです。お子さまの名前は置き換えて送り、名前・体温・写真・「家庭から」に書いた内容は送りません。',
+      '下書きは担任が読んで直してから送ります。AI が保護者へ自動で送ることはありません。',
+      '保護者は、お子さまごとに AI の下書きを使わないことを選べます。選んでも、連絡帳の届き方は変わりません。',
+      '',
+      '※本文は演習用の草案です。',
+    ].join('\n'),
+  },
+  {
+    terms_id: 4, terms_version: '1.1', document_type: '2', published_on: '2026-09-01', covers_external_ai: true,
+    body: [
+      '第1条（外部の AI へ送る情報）',
+      '当園は、連絡帳の文の下書きを作るために、記録の一部を外部の AI（Anthropic 社の Claude）へ送ることがあります。送るのは、その日のできごと（時刻・食事の量・活動のようす）、担任のメモ、年齢（何歳）だけです。',
+      '氏名・よみ・呼び名・生年月日・体温・アレルギー・既往歴・排せつの内容・写真・「家庭から」の内容・チャットの本文・発達の記録は送りません。名前は「〇〇ちゃん」「おともだち」に置き換えて送ります。',
+      '送った文と返った文は、本システムに残しません。',
+      '',
+      '第2条（使わないことを選ぶ）',
+      '保護者は、お子さまごとに AI の下書きを使わないことを選べます。紐づく保護者の1人でも選べば、そのお子さまには使いません。',
+      '',
+      '※本文は演習用の草案です。',
+    ].join('\n'),
   },
 ];
 

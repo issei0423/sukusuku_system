@@ -289,7 +289,7 @@ type Terms struct {
 func (a *app) handleCurrentTerms(w http.ResponseWriter, r *http.Request) {
 	var t Terms
 	err := a.db.QueryRow(`SELECT terms_id, terms_version, document_type, body, published_on
-	                        FROM m_terms WHERE terms_version = ?`, a.currentTermsVersion).
+	                        FROM m_terms WHERE terms_id = ?`, a.currentTermsID).
 		Scan(&t.TermsID, &t.TermsVersion, &t.DocumentType, &t.Body, &t.PublishedOn)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "利用規約を読み込めませんでした")
