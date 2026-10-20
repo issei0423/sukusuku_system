@@ -102,20 +102,6 @@ func (a *app) handleKeepInGrowth(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, msgContactLoadFailed)
 		return
 	}
-	writeJSON(w, http.StatusOK, e)
+	writeJSON(w, http.StatusOK, e.contactEventOut)
 }
 
-// loadContactEvent は、出来事1件を職員の形で読む
-func (a *app) loadContactEvent(id int64) (*contactEventOut, error) {
-	var e contactEventOut
-	var staffID string
-	if err := a.db.QueryRow(`SELECT contact_event_id, child_id, contact_date, event_type, recorded_at, meal_kind, meal_amount,
-		toilet_label, temperature, body, contact_photo_id, keep_in_growth, staff_id, corrected_at, is_deleted, updated_at
-		FROM t_contact_event WHERE contact_event_id = ?`, id).Scan(&e.ID, &e.ChildID, &e.ContactDate, &e.EventType, &e.RecordedAt,
-		&e.MealKind, &e.MealAmount, &e.ToiletLabel, &e.Temperature, &e.Body, &e.ContactPhotoID, &e.KeepInGrowth, &staffID,
-		&e.CorrectedAt, &e.IsDeleted, &e.UpdatedAt); err != nil {
-		return nil, err
-	}
-	e.StaffName = a.staffName(staffID)
-	return &e, nil
-}

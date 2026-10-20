@@ -19,7 +19,7 @@ import type {
   DevListRow, DevScheduleRow, CsvRow, FiscalClassRow, StaffAccountRow,
   GuardianAccountRow, InvitationCodeRow, OperationLogRow, StaffSummary, GuardianHomeRow,
   DevDraftView,
-  ContactPage, ContactClassView, ContactHome, ContactHomeInput, NapSleep, NapExclusion, GrowthRecord, ContactEvent,
+  ContactPage, ContactClassView, ContactHome, ContactHomeInput, NapSleep, NapExclusion, GrowthRecord,
 } from './shapes';
 import type { SendPhotoInput, SendPhotoResult } from './shapes';
 import type {
