@@ -309,9 +309,12 @@ describe('写真の表示（詳細設計書 (2-5 (2))・(2-6 (5))）', () => {
     const { photo } = await api.sendPhoto(teacher, { file: new Blob([jpegBytes()], { type: 'image/jpeg' }), subject_child_ids: ['C001'] });
     const url = await api.photoUrl(taroGuardian, photo.contact_photo_id);
     open('/guardian/contact/C001', taroGuardian);
-    const buttons = await screen.findAllByRole('button', { name: /^\d\d:\d\d の写真を大きく見る$/ }, { timeout: 3000 });
-    const mine = buttons.find((b) => b.querySelector('img')?.getAttribute('src') === url)!;
-    expect(mine).toBeTruthy();
+    // ボタンは写真ごとに URL が届いてから出るので、送った写真のボタンが出るまで待つ
+    const mine = await waitFor(() => {
+      const found = screen.getAllByRole('button', { name: /^\d\d:\d\d の写真を大きく見る$/ }).find((b) => b.querySelector('img')?.getAttribute('src') === url);
+      expect(found).toBeTruthy();
+      return found!;
+    }, { timeout: 3000 });
     mine.focus();
     fireEvent.click(mine);
     const viewer = await screen.findByRole('dialog', { name: /^\d\d:\d\d の写真$/ });
@@ -321,8 +324,10 @@ describe('写真の表示（詳細設計書 (2-5 (2))・(2-6 (5))）', () => {
     cleanup();
 
     open('/guardian', taroGuardian);
-    const thumb = await screen.findAllByRole('button', { name: /^\d\d:\d\d の写真を大きく見る$/ }, { timeout: 3000 });
-    expect(thumb.some((b) => b.querySelector('img.contact-photo.is-thumb')?.getAttribute('src') === url)).toBe(true);
+    await waitFor(() => {
+      const thumb = screen.getAllByRole('button', { name: /^\d\d:\d\d の写真を大きく見る$/ });
+      expect(thumb.some((b) => b.querySelector('img.contact-photo.is-thumb')?.getAttribute('src') === url)).toBe(true);
+    }, { timeout: 3000 });
   });
 
   it('見られない写真は「この写真は開けません。」と出す（ほかの家庭・取り消した写真）', async () => {
