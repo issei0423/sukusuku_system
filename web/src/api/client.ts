@@ -42,5 +42,5 @@ export { onSessionEnded } from './procedure';
 export const backend: 'http' | 'mock' = useMock ? 'mock' : 'http';
 
 export type {
-  LoginError, ChildInput, DiaryFilter, DiaryInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
+  LoginError, ChildInput, DiaryFilter, DiaryInput, DiaryAttachmentInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
 } from './shapes';

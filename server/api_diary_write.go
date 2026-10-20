@@ -23,6 +23,62 @@ type diaryInput struct {
 	LockToken  string  `json:"lock_token"`
 	// "1" 下書き / "2" 申請
 	Status string `json:"status"`
+	/*
+	 * 日誌に付ける写真。保存のたびに、この並びで日誌の写真（t_diary_attachment）を置き換える。
+	 * 送られなかった（null）ときは、付いている写真に触らない。空の並びは「写真なし」として、すべて外す
+	 * （【仮置き】web/仮置き値.md「日誌作成・編集画面の動き」。GitHub Issue #175 の 2）
+	 */
+	Attachments *[]diaryAttachmentInput `json:"attachments"`
+}
+
+// diaryAttachmentInput は、日誌に付ける写真 1 枚。実体は持たず、ファイルの名前と形式だけを受け取る
+// （web/仮置き値.md 7「添付ファイルの実体」）
+type diaryAttachmentInput struct {
+	FilePath string `json:"file_path"`
+	FileType string `json:"file_type"`
+}
+
+/*
+checkDiaryAttachments は、日誌に付ける写真を確かめ、断る理由を返す（問題が無ければ空を返す）。
+
+写真は設定マスタの上限（attachment.max_count_diary、既定 3 枚）まで、形式は attachment.allowed_types（JPEG・PNG）に限る
+（基本設計書「雛形・添付」(5-4)「t_diary_attachment｜1〜3枚」・「設定マスタ」(5-8)、
+図/画面詳細図.md「日誌作成・編集画面」(3-2) 項目10）。文言は【仮置き】（メッセージ一覧 (4-9) に写真の行が無い）。
+画面側のモック（web/src/api/mock.ts の diaryAttachmentError）と同じ規則
+*/
+func (a *app) checkDiaryAttachments(list []diaryAttachmentInput) string {
+	max := a.settingInt("attachment.max_count_diary", 3)
+	if len(list) > max {
+		return "写真は" + itoa64(int64(max)) + "枚までです"
+	}
+	// 設定マスタの並びに空白が混じっていても（「image/jpeg, image/png」）、並べた形式を受け付ける
+	allowed := strings.Split(a.settingText("attachment.allowed_types", "image/jpeg,image/png"), ",")
+	for i := range allowed {
+		allowed[i] = strings.TrimSpace(allowed[i])
+	}
+	for _, p := range list {
+		if strings.TrimSpace(p.FilePath) == "" {
+			return "写真のファイルを選んでください"
+		}
+		if !oneOf(p.FileType, allowed...) {
+			return "添付できる写真は JPEG・PNG のファイルです"
+		}
+	}
+	return ""
+}
+
+// replaceDiaryAttachments は、日誌の写真を渡した並びで置き換える。日誌の保存と同じトランザクションの中で呼ぶ
+func replaceDiaryAttachments(tx *sql.Tx, diaryID int64, list []diaryAttachmentInput) error {
+	if _, err := tx.Exec(`DELETE FROM t_diary_attachment WHERE diary_id = ?`, diaryID); err != nil {
+		return err
+	}
+	for _, p := range list {
+		if _, err := tx.Exec(`INSERT INTO t_diary_attachment (diary_id, file_path, file_type) VALUES (?, ?, ?)`,
+			diaryID, strings.TrimSpace(p.FilePath), p.FileType); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (a *app) handleSaveDiary(w http.ResponseWriter, r *http.Request) {
@@ -98,13 +154,29 @@ func (a *app) handleSaveDiary(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "対象のクラスは、対象の園児が在籍するクラスを選んでください")
 		return
 	}
+	// 写真は、日誌と一緒に保存する。画面で足した写真が日誌に付かず、確認画面の「写真 n 枚」と承認画面が
+	// 食い違っていた（GitHub Issue #175 の 2）
+	if in.Attachments != nil {
+		if msg := a.checkDiaryAttachments(*in.Attachments); msg != "" {
+			writeErr(w, http.StatusBadRequest, msg)
+			return
+		}
+	}
 
 	if in.DiaryID != nil {
 		a.updateDiary(w, u, in)
 		return
 	}
 
-	res, err := a.db.Exec(`INSERT INTO t_diary
+	// 日誌と写真は、ひとまとまりで書く。片方だけが残る状態を作らない。
+	// 接続は1本のため、トランザクションの中では tx だけを使う
+	tx, err := a.db.Begin()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "日誌の保存に失敗しました")
+		return
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`INSERT INTO t_diary
 		(record_type, child_id, class_id, diary_date, body, status, created_staff_id,
 		 is_shared_to_guardian, is_deleted, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
@@ -114,6 +186,16 @@ func (a *app) handleSaveDiary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, _ := res.LastInsertId()
+	if in.Attachments != nil {
+		if err := replaceDiaryAttachments(tx, id, *in.Attachments); err != nil {
+			writeErr(w, http.StatusInternalServerError, "日誌の保存に失敗しました")
+			return
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		writeErr(w, http.StatusInternalServerError, "日誌の保存に失敗しました")
+		return
+	}
 
 	after := "下書き作成"
 	if in.Status == "2" {
@@ -157,13 +239,25 @@ func (a *app) updateDiary(w http.ResponseWriter, u *SessionUser, in diaryInput) 
 
 	// 差し戻す理由は、再申請しても消さない。承認されるまで残し、次に差し戻されたときに上書きする。
 	// 承認者が前回の指摘を見ながら確かめられるようにするため（基本設計書「日誌（t_diary）」(5-4)。GitHub Issue #174）
-	_, err := a.db.Exec(`UPDATE t_diary
-		SET record_type = ?, child_id = ?, class_id = ?, diary_date = ?, body = ?, status = ?, updated_at = ?
-		WHERE diary_id = ?`,
-		in.RecordType, in.ChildID, in.ClassID, in.DiaryDate, in.Body, in.Status, now(), *in.DiaryID)
+	// 日誌と写真は、ひとまとまりで書く。接続は1本のため、トランザクションの中では tx だけを使う
+	tx, err := a.db.Begin()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "日誌の保存に失敗しました")
 		return
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`UPDATE t_diary
+		SET record_type = ?, child_id = ?, class_id = ?, diary_date = ?, body = ?, status = ?, updated_at = ?
+		WHERE diary_id = ?`,
+		in.RecordType, in.ChildID, in.ClassID, in.DiaryDate, in.Body, in.Status, now(), *in.DiaryID); err != nil {
+		writeErr(w, http.StatusInternalServerError, "日誌の保存に失敗しました")
+		return
+	}
+	if in.Attachments != nil {
+		if err := replaceDiaryAttachments(tx, *in.DiaryID, *in.Attachments); err != nil {
+			writeErr(w, http.StatusInternalServerError, "日誌の保存に失敗しました")
+			return
+		}
 	}
 
 	/*
@@ -172,9 +266,13 @@ func (a *app) updateDiary(w http.ResponseWriter, u *SessionUser, in diaryInput) 
 	 * （【仮置き】web/仮置き値.md「日誌の編集ロックの動き」）
 	 */
 	if in.Status == "2" {
-		a.db.Exec(`DELETE FROM t_diary_lock WHERE diary_id = ?`, *in.DiaryID)
+		tx.Exec(`DELETE FROM t_diary_lock WHERE diary_id = ?`, *in.DiaryID)
 	} else {
-		a.db.Exec(`UPDATE t_diary_lock SET last_active_at = ? WHERE diary_id = ?`, now(), *in.DiaryID)
+		tx.Exec(`UPDATE t_diary_lock SET last_active_at = ? WHERE diary_id = ?`, now(), *in.DiaryID)
+	}
+	if err := tx.Commit(); err != nil {
+		writeErr(w, http.StatusInternalServerError, "日誌の保存に失敗しました")
+		return
 	}
 
 	after := "下書き保存"

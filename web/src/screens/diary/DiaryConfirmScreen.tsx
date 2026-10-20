@@ -10,6 +10,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { keepDiaryLock, releaseDiaryLockLater, releaseDiaryLockNow } from './diaryLock';
 import { useSession } from '../../session';
 import { api, childName, className } from '../../api/client';
+import type { DiaryAttachmentInput } from '../../api/client';
 import { Alert, Empty } from '../../components/ui';
 import { clearNotice, notify } from '../../components/feedback';
 import { DIARY_RECORD_TYPE } from '../../api/codes';
@@ -24,7 +25,7 @@ interface ConfirmState {
   body: string;
   diaryId: number | null;
   lockToken?: string;
-  photos: string[];
+  photos: DiaryAttachmentInput[];
 }
 
 export default function DiaryConfirmScreen() {
@@ -73,6 +74,8 @@ export default function DiaryConfirmScreen() {
         diary_date: state.date,
         body: state.body,
         lock_token: state.lockToken,
+        // ここで示した写真を、そのまま日誌に付ける（画面詳細図「日誌確認画面」(3-3) 項目3。GitHub Issue #175 の 2）
+        attachments: state.photos,
       }, '2');
       notify('日誌を申請しました。管理者の承認待ちになります');
       navigate('/staff/diary');
