@@ -305,7 +305,7 @@ describe('発達チェックの確定（基本設計書「発達チェックの�
 
   it('所見は、確定したあとに開き直しても残っている', async () => {
     await api.saveCheck(teacher, childId, checkedOn, [], '歩き始めが安定してきた', '2');
-    const again = await api.draftFor(childId, checkedOn);
+    const again = await api.draftFor(teacher, childId, checkedOn);
     expect(again?.check.note).toBe('歩き始めが安定してきた');
   });
 

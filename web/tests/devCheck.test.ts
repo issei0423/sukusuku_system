@@ -152,9 +152,9 @@ describe('一覧の「未入力」は、下書きも含めた最新の記録で�
 describe('確定した記録は、いつ確定したかを返す', () => {
   it('下書きのあいだは null、確定すると操作ログの日時', async () => {
     await api.saveCheck(teacher, 'C012', today(), [], '', '1'); // 松本 咲良
-    expect((await api.draftFor('C012', today()))!.confirmedAt).toBeNull();
+    expect((await api.draftFor(teacher, 'C012', today()))!.confirmedAt).toBeNull();
     await api.saveCheck(teacher, 'C012', today(), [], '', '2');
-    const v = (await api.draftFor('C012', today()))!;
+    const v = (await api.draftFor(teacher, 'C012', today()))!;
     expect(v.check.status).toBe('2');
     expect(v.check.staff_id).toBe('S003');
     expect(v.confirmedAt?.slice(0, 10)).toBe(today());
