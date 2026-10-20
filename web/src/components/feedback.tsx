@@ -181,15 +181,15 @@ export function ToastHost() {
 }
 
 /** 確定する前に、何が起きるかを確かめる */
-export function ConfirmDialog({ title, children, confirmLabel, danger, busy, onConfirm, onCancel }: {
-  title: string; children: ReactNode; confirmLabel: string; danger?: boolean; busy?: boolean;
+export function ConfirmDialog({ title, children, confirmLabel, danger, busy, confirmDisabled, onConfirm, onCancel }: {
+  title: string; children: ReactNode; confirmLabel: string; danger?: boolean; busy?: boolean; confirmDisabled?: boolean;
   onConfirm: () => void; onCancel: () => void;
 }) {
   return (
     <Modal title={title} onClose={onCancel}
       footer={<>
         <button onClick={onCancel} disabled={busy}>やめる</button>
-        <button className={danger ? 'btn-danger' : 'btn-primary'} onClick={onConfirm} disabled={busy}>
+        <button className={danger ? 'btn-danger' : 'btn-primary'} onClick={onConfirm} disabled={busy || confirmDisabled}>
           {confirmLabel}
         </button>
       </>}>

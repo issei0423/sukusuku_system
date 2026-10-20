@@ -417,22 +417,32 @@ func TestNotifyDiaryAudience(t *testing.T) {
 	}
 	diary := func(id int64) liveEvent { return liveEvent{Type: evDiary, DiaryID: id} }
 
-	// 日誌 7 は宮城 美咲（さくら組）の個人日誌（申請中）。承認と同時に保護者へ共有する。
-	// 日誌の知らせは保護者へ送らない（詳細設計書「PR #196 からの変更」(6-1)）。共有のメッセージ（チャット）は今までどおり届く
-	call(t, h, admin, "POST", "/api/diaries/7/approve", `{"share_to_guardian":true}`)
-	expect(t, "承認して保護者へ共有（日誌の知らせは職員だけ。野原 太郎の保護者には何も届かない）", clients, map[string][]liveEvent{
-		"管理者（承認する人）": {diary(7), chatEv(roomOtherPerson)},
-		"ほかの管理者":     {diary(7), chatEv(roomOtherPerson)},
-		"さくら組の担任":    {diary(7), chatEv(roomOtherPerson)},
-		"宮城 美咲の保護者":  {chatEv(roomOtherPerson)},
-	})
+	sakuraStaff := who("管理者（承認する人）", "ほかの管理者", "さくら組の担任")
+
+	// 日誌 7 は宮城 美咲（さくら組）の個人日誌（申請中）。承認は園内の確認で、保護者へは何も届かない。
+	// 以前の版の共有の指定が送られても読まず、個人チャットへも流さない（詳細設計書「日誌」(4-13 (2))・「PR #196 からの変更」(6-1)）
+	rec := call(t, h, admin, "POST", "/api/diaries/7/approve", `{"share_to_guardian":true}`)
+	var approved Diary
+	decode(t, rec, &approved)
+	expect(t, "承認（日誌の知らせは職員だけ。宮城 美咲の保護者にも何も届かない）", clients, to(sakuraStaff, diary(7)))
+
+	call(t, h, admin, "POST", "/api/diaries/7/revoke-approval",
+		`{"reason":"確かめ直します","updated_at":"`+approved.UpdatedAt+`"}`)
+	expect(t, "承認の取り消し（職員だけ）", clients, to(sakuraStaff, diary(7)))
+
+	// 日誌 2 はさくら組のクラス日誌（高梨が申請中）。申請した本人が取り下げる
+	teacher := loginAs(a, accTeacher, "staff")
+	var applied Diary
+	decode(t, call(t, h, teacher, "GET", "/api/diaries/2", ""), &applied)
+	call(t, h, teacher, "POST", "/api/diaries/2/withdraw", `{"updated_at":"`+applied.UpdatedAt+`"}`)
+	expect(t, "申請の取り下げ（職員だけ）", clients, to(sakuraStaff, diary(2)))
 
 	// 日誌 6 はひまわり組のクラス日誌（申請中）
 	call(t, h, admin, "POST", "/api/diaries/6/return", `{"reason":"活動のねらいを具体的に書いてください。"}`)
 	expect(t, "差し戻し（クラス日誌は保護者に見えない）", clients,
 		to(who("管理者（承認する人）", "ほかの管理者", "ひまわり組の担任"), diary(6)))
 
-	rec := call(t, h, otherTeacher, "POST", "/api/diaries",
+	rec = call(t, h, otherTeacher, "POST", "/api/diaries",
 		`{"record_type":"2","class_id":2,"diary_date":"`+today()+`","body":"散歩に出かけた。","status":"1"}`)
 	var saved struct {
 		DiaryID int64 `json:"diary_id"`

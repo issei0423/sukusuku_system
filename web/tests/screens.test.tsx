@@ -163,12 +163,14 @@ describe('日誌システム（6画面）', () => {
     expect(screen.queryByText('承認待ち')).toBeNull();
   });
 
-  it('日誌承認画面：共有の指定を同じ画面に置く', async () => {
+  it('日誌承認画面：承認と差し戻しを置き、保護者への共有の指定は置かない', async () => {
+    // 日誌は園内の記録で、承認しても保護者へは届かない（詳細設計書「日誌の画面（作り直し）」(2-13 (1))）
     open('/staff/admin/approval/2', admin);
     await settled();
-    expect(screen.getByText('保護者への共有')).toBeTruthy();
     expect(screen.getByText('承認する')).toBeTruthy();
     expect(screen.getByText('差し戻す')).toBeTruthy();
+    expect(screen.queryByText('保護者への共有')).toBeNull();
+    expect(document.body.textContent).not.toContain('共有する');
   });
 
   it('園児タイムライン画面', async () => {
@@ -629,17 +631,12 @@ describe('保護者から見える範囲', () => {
     expect(screen.queryByText('記録日')).toBeNull();
   });
 
-  it('共有された日誌は開ける', async () => {
-    open('/guardian/diary/4', guardian);
-    await settled();
-    // 日誌4は C002（上園 花子）のもの。野原 一誠は参照できない。
-    // 保護者には、見られない日誌を「この記録は共有されていません」と示す（画面詳細図 2-8。GitHub Issue #157）
-    expect(document.body.textContent).toContain('この記録は共有されていません');
-  });
-
-  it('自児の共有済みの日誌は開ける', async () => {
+  it('共有日誌閲覧画面は無い。以前の経路を開いても日誌は出ない', async () => {
+    // 日誌は園内の記録（詳細設計書「日誌の画面（作り直し）」(2-13 (1))「共有日誌閲覧画面は画面ごと外す」）。
+    // 日誌 5 は野原 太郎（自児）の承認済みの個人日誌。経路が無いため入口へ戻る
     open('/guardian/diary/5', guardian);
     await settled();
-    expect(document.body.textContent).toContain('砂場でスコップ');
+    expect(document.body.textContent).not.toContain('砂場でスコップ');
+    expect(document.body.textContent).not.toContain('共有された');
   });
 });

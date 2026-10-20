@@ -250,7 +250,7 @@
 
 /* 園からの配布物 */
 .handout-row { justify-content: space-between; text-align: left; gap: var(--sp-2); }
-/* 保護者の画面では、共有された記録と同じ行の見た目にそろえる。ボタンでもリンクでも同じに見せる */
+/* 保護者の画面では、保護者ホームの配布物と同じ行の見た目にそろえる。ボタンでもリンクでも同じに見せる */
 button.guardian-record-link {
   width: 100%; padding: var(--sp-1) 0; background: none; border: 0; border-bottom: 1px solid var(--c-border);
   border-radius: 0; font: inherit; font-weight: 400; cursor: pointer;

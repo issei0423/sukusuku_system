@@ -30,7 +30,10 @@ export type DiaryStatus = '1' | '2' | '3' | '4';
 export type LinkStatus = '1' | '2' | '3';
 /** チャットルーム種別 1:園 2:クラスグループ 3:目的別グループ 4:個人 5:職員（m_chat_room.room_type） */
 export type ChatRoomType = '1' | '2' | '3' | '4' | '5';
-/** メッセージの出所 1:手入力 2:日誌の共有 3:発達身体測定の共有（t_chat_message.source_type） */
+/**
+ * メッセージの出所 1:手入力 2:日誌の共有 3:発達身体測定の共有 4:配布物の掲載（t_chat_message.source_type）。
+ * 2・3 は以前の版の知らせで、日誌を園内の記録にしたときに取り消し済みにした（詳細設計書「変える表」(5-3)）。いまは作らない
+ */
 export type MessageSourceType = '1' | '2' | '3' | '4';
 /** 体位 1:仰向け 2:うつ伏せ 3:左向き 4:右向き（t_nap_record.body_position） */
 export type BodyPosition = '1' | '2' | '3' | '4';
@@ -208,9 +211,12 @@ export interface Diary {
   created_staff_id: string;
   approved_staff_id: string | null;
   approved_at: string | null;
-  /** 承認とは別の指定（5-4） */
-  is_shared_to_guardian: boolean;
-  shared_at: string | null;
+  /**
+   * 申請した職員と日時。取り下げると空になる（詳細設計書「日誌の状態」(3-6)）。
+   * 「自分が申請した日誌は承認できない」と「取り下げは申請した本人だけ」は、この値で判定する
+   */
+  applied_staff_id: string | null;
+  applied_at: string | null;
   /** 起票元。ヒヤリハットのみ。異常時の記録と相互に参照する（5-4） */
   nap_abnormal_id: number | null;
   /** 差し戻す理由。差し戻しは理由の入力を必須とする（画面詳細図 3-3） */
@@ -218,17 +224,10 @@ export interface Diary {
   is_deleted: boolean;
   created_at: string;
   updated_at: string;
-  /*
-   * 記入した職員・確認（承認）した職員の氏名。画面が使う導出値。
-   * 保護者には職員の名簿を渡さないため、IDから引かずにこの値を出す。
-   */
+  /* 作成した職員・承認した職員・申請した職員の氏名。承認の経緯に出す導出値（詳細設計書「日誌」(4-13 (6))） */
   staff_name?: string;
   approved_staff_name?: string | null;
-  /**
-   * 最後に申請した職員。日誌を1件開いたときに、職員へだけ返す導出値。
-   * 承認画面が「自分が申請した日誌」を見分けて、承認のボタンを押せなくするため（GitHub Issue #174）
-   */
-  applied_staff_id?: string | null;
+  applied_staff_name?: string | null;
 }
 
 /** 編集ロック（t_diary_lock）。1件の日誌に1つ（5-4） */
@@ -240,13 +239,13 @@ export interface DiaryLock {
   last_active_at: string;
 }
 
-/** 雛形（m_diary_template）。保護者共有の既定値を雛形側に持つ（5-4） */
+/** 雛形（m_diary_template）。 */
 export interface DiaryTemplate {
   diary_template_id: number;
   record_type: DiaryRecordType;
   template_name: string;
   body: string;
-  default_share_to_guardian: boolean;
+  is_deleted: boolean;
 }
 
 /** 添付（t_diary_attachment）。1〜3枚（5-4） */

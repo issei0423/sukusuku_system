@@ -512,16 +512,10 @@ function MessageRow({ message, mine, canEdit, canDelete, showRole, readOnly, onR
           message.body
         )}
         {/*
-          * 日誌の共有（source_type=2）は、本文ではなく記録へのリンクとして出す。
-          * 編集できるのは添え書きの本文だけで、リンク先の記録は変わらない（基本設計書 4-6）。
-          * そのため編集中もリンクは出したままにする
+          * 配布物の掲載の知らせ（source_type=4）は、本文ではなく配布物の一覧へのリンクとして出す。
+          * 編集できるのは添え書きの本文だけで、リンク先は変わらない（基本設計書 4-6）。そのため編集中もリンクは出したままにする。
+          * 日誌の共有の知らせ（source_type=2）のカードは出さない（詳細設計書「日誌の画面（作り直し）」(2-13 (1))）
           */}
-        {message.source_type === '2' && message.source_id && (
-          <Link className="shared-card" to={`/staff/diary/${message.source_id}`}>
-            日誌を開く
-          </Link>
-        )}
-        {/* 配布物の掲載の知らせ（source_type=4）。現物は配布物の一覧から開く */}
         {message.source_type === '4' && (
           <Link className="shared-card" to="/staff/handouts">園からの配布物を開く</Link>
         )}

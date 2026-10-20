@@ -33,6 +33,13 @@ const stops: (() => void)[] = [];
 afterEach(() => { stops.splice(0).forEach((s) => s()); });
 
 /** viewer がこのタブでログインしているとして、届いた知らせを集める */
+/** 既存の日誌の保存に要る、本人の編集ロックの識別子（GitHub Issue #166） */
+async function lockTokenOf(u: SessionUser, diaryId: number): Promise<string> {
+  const r = await api.acquireLock(u, diaryId);
+  if (!('token' in r)) throw new Error(`ロックを取れませんでした（${r.heldBy}さんが編集中）`);
+  return r.token;
+}
+
 function watch(viewer: SessionUser): LiveSignal[] {
   const got: LiveSignal[] = [];
   stops.push(connectLive(viewer.account_id));
@@ -76,19 +83,54 @@ describe('チャット', () => {
 });
 
 describe('日誌', () => {
-  it('承認して共有すると、その園児の保護者には個人チャットの知らせだけが届く（日誌の知らせは職員だけ）', async () => {
-    // 日誌 7 は宮城 美咲（C004）の個人日誌（申請中）。日誌の知らせは保護者へ送らない（詳細設計書「PR #196 からの変更」(6-1)）
+  it('承認は園内の確認で、その園児の保護者にも何も届かない（チャットの知らせも無い）', async () => {
+    // 日誌 7 は宮城 美咲（C004）の個人日誌（申請中）。日誌の知らせは保護者へ送らない
+    // （詳細設計書「PR #196 からの変更」(6-1)・「日誌」(4-13 (2))）
     const misakiGot = watch(misakiGuardian);
-    await api.approveDiary(admin, 7, true);
-    expect(misakiGot).toEqual([{ type: 'chat', room_id: 8 }]);
+    const approved = { ...(await api.approveDiary(admin, 7)) };
+    expect(misakiGot).toEqual([]);
+
+    // 承認の取り消しも、保護者には知らせず、職員にだけ知らせる（このタブは1人ずつしか見張れない）
+    await api.revokeDiaryApproval(admin, 7, '確かめ直します', approved.updated_at);
+    expect(misakiGot).toEqual([]);
+    stops.splice(0).forEach((s) => s());
+    const adminGot = watch(admin2);
+    const again = await api.saveDiary(admin, {
+      diary_id: 7, record_type: '1', child_id: 'C004', class_id: 1, diary_date: today(), body: '確かめ直した本文',
+      lock_token: await lockTokenOf(admin, 7),
+    }, '2');
+    adminGot.length = 0;
+    await api.approveDiary(admin2, again.diary_id);
+    const approvedAgain = db.diaries.find((x) => x.diary_id === 7)!;
+    await api.revokeDiaryApproval(admin, 7, 'もう一度確かめます', approvedAgain.updated_at);
+    expect(adminGot).toEqual([{ type: 'diary', diary_id: 7 }, { type: 'diary', diary_id: 7 }]);
   });
 
-  it('ほかの家庭の日誌の申請・承認・共有は、保護者に届かない', async () => {
+  it('申請の取り下げは、参照できる職員に届き、保護者には届かない', async () => {
+    // 日誌 2 はさくら組のクラス日誌（高梨が申請中）
+    const taroGot = watch(taroGuardian);
+    const d = { ...(await api.getDiary(teacher, 2)) };
+    await api.withdrawDiary(teacher, 2, d.updated_at);
+    expect(taroGot).toEqual([]);
+    stops.splice(0).forEach((s) => s());
+
+    // 申請し直して、もう一度取り下げる。管理者には届く
+    const adminGot = watch(admin);
+    const again = { ...(await api.saveDiary(teacher, {
+      diary_id: 2, record_type: '2', child_id: null, class_id: 1, diary_date: d.diary_date, body: d.body,
+      lock_token: await lockTokenOf(teacher, 2),
+    }, '2')) };
+    adminGot.length = 0;
+    await api.withdrawDiary(teacher, 2, again.updated_at);
+    expect(adminGot).toEqual([{ type: 'diary', diary_id: 2 }]);
+  });
+
+  it('ほかの家庭の日誌の申請・承認は、保護者に届かない', async () => {
     const taroGot = watch(taroGuardian);
     const d = await api.saveDiary(teacher, {
       record_type: '1', child_id: 'C004', class_id: 1, diary_date: today(), body: '砂場で遊んだ。',
     }, '2');
-    await api.approveDiary(admin, d.diary_id, true);
+    await api.approveDiary(admin, d.diary_id);
     expect(taroGot).toEqual([]);
   });
 

@@ -382,8 +382,12 @@ const apiAuth = {
   saveDiary: (_u: SessionUser, input: DiaryInput, status: '1' | '2') =>
     post<Diary>('/api/diaries', { ...input, status }),
 
-  approveDiary: (_u: SessionUser, diaryId: number, shareToGuardian: boolean) =>
-    post<Diary>(`/api/diaries/${diaryId}/approve`, { share_to_guardian: shareToGuardian }),
+  approveDiary: (_u: SessionUser, diaryId: number) =>
+    post<Diary>(`/api/diaries/${diaryId}/approve`, {}),
+  withdrawDiary: (_u: SessionUser, diaryId: number, updatedAt: string) =>
+    post<Diary>(`/api/diaries/${diaryId}/withdraw`, { updated_at: updatedAt }),
+  revokeDiaryApproval: (_u: SessionUser, diaryId: number, reason: string, updatedAt: string) =>
+    post<Diary>(`/api/diaries/${diaryId}/revoke-approval`, { reason, updated_at: updatedAt }),
 
   returnDiary: (_u: SessionUser, diaryId: number, reason: string) =>
     post<Diary>(`/api/diaries/${diaryId}/return`, { reason }),
