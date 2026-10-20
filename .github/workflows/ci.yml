@@ -18,12 +18,22 @@ on:
   push:
     branches: [mockup-go-react]
   workflow_dispatch:        # Actions の画面から手で走らせる
+  # マージ係（merge.yml）が呼ぶ。ref に渡した commit（PR と本線を合わせた試しのマージ commit や、本線の先頭）を取り出して回す。
+  # ref が空なら、今までと同じく起きたイベントの commit を取り出す。
+  # ジョブを足すときは、actions/checkout に ref: ${{ inputs.ref }} を付ける（付け忘れるとマージ係が列を止める）。
+  workflow_call:
+    inputs:
+      ref:
+        description: 取り出す commit（空ならイベントの commit）
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
 
-concurrency:                # 同じ PR（同じブランチ）で走っている古い実行は止める
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+concurrency:                # 同じ PR（同じブランチ）で走っている古い実行は止める。マージ係から呼ばれたときは ref ごとに分ける（PR 自身の CI と取り消し合わない）
+  group: ci-${{ inputs.ref || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -37,11 +47,15 @@ jobs:
     steps:
       - name: ソースを取り出す
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}   # 空なら起きたイベントの commit（マージ係が呼ぶときは試しのマージ commit）
+          persist-credentials: false # CI は git push しないので、取り出した後に認証情報を残さない
 
       - name: Go を入れる（server/go.mod の版）
         uses: actions/setup-go@v7
         with:
           go-version-file: server/go.mod
+          cache: ${{ inputs.ref == '' }} # マージ係から呼ばれたときは、本線のキャッシュを汚さない
           cache-dependency-path: server/go.sum
 
       - name: go vet
@@ -60,13 +74,16 @@ jobs:
     steps:
       - name: ソースを取り出す
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}   # 空なら起きたイベントの commit（マージ係が呼ぶときは試しのマージ commit）
+          persist-credentials: false # CI は git push しないので、取り出した後に認証情報を残さない
 
       # Vite 8 が求める版（20.19 以上か 22.12 以上）を満たす LTS
       - name: Node.js を入れる
         uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: npm
+          cache: ${{ inputs.ref == '' && 'npm' || '' }} # マージ係から呼ばれたときは、本線のキャッシュを汚さない
           cache-dependency-path: web/package-lock.json
 
       - name: 依存を入れる（package-lock.json のとおり）
@@ -94,18 +111,22 @@ jobs:
     steps:
       - name: ソースを取り出す
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}   # 空なら起きたイベントの commit（マージ係が呼ぶときは試しのマージ commit）
+          persist-credentials: false # CI は git push しないので、取り出した後に認証情報を残さない
 
       - name: Go を入れる（server/go.mod の版）
         uses: actions/setup-go@v7
         with:
           go-version-file: server/go.mod
+          cache: ${{ inputs.ref == '' }} # マージ係から呼ばれたときは、本線のキャッシュを汚さない
           cache-dependency-path: server/go.sum
 
       - name: Node.js を入れる
         uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: npm
+          cache: ${{ inputs.ref == '' && 'npm' || '' }} # マージ係から呼ばれたときは、本線のキャッシュを汚さない
           cache-dependency-path: web/package-lock.json
 
       - name: 依存を入れる（web）
@@ -146,18 +167,22 @@ jobs:
     steps:
       - name: ソースを取り出す
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}   # 空なら起きたイベントの commit（マージ係が呼ぶときは試しのマージ commit）
+          persist-credentials: false # CI は git push しないので、取り出した後に認証情報を残さない
 
       - name: Go を入れる（server/go.mod の版）
         uses: actions/setup-go@v7
         with:
           go-version-file: server/go.mod
+          cache: ${{ inputs.ref == '' }} # マージ係から呼ばれたときは、本線のキャッシュを汚さない
           cache-dependency-path: server/go.sum
 
       - name: Node.js を入れる
         uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: npm
+          cache: ${{ inputs.ref == '' && 'npm' || '' }} # マージ係から呼ばれたときは、本線のキャッシュを汚さない
           cache-dependency-path: web/package-lock.json
 
       - name: 依存を入れる（web）
