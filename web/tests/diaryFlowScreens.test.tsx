@@ -59,8 +59,11 @@ describe('日誌承認画面（#174 の 1・4）', () => {
   it('書き直して申請した管理者には承認できない旨を出し、承認のボタンを押せなくする。前回の差し戻しの理由を出す', async () => {
     // 日誌 7 は宮城（S004）が書いた申請中の個人日誌（C004・さくら組）。上園が差し戻し、園長が書き直して申請する
     await api.returnDiary(admin2, 7, '午睡の様子を書き足してください');
+    // 既存の日誌の保存には、本人の編集ロックの識別子が要る（GitHub Issue #166）
+    const lock = await api.acquireLock(admin, 7);
     await api.saveDiary(admin, {
       diary_id: 7, record_type: '1', child_id: 'C004', class_id: 1, diary_date: today(), body: '園長が書き直した本文です。',
+      lock_token: 'token' in lock ? lock.token : undefined,
     }, '2');
 
     open('/staff/admin/approval/7', admin);

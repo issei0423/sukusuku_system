@@ -105,6 +105,30 @@ run('Go サーバとの結合', () => {
     expect(r).toHaveProperty('heldBy', '宮城 蓮');
   });
 
+  it('編集ロックは本人の識別子でだけ保存・操作の知らせ・解除ができ、状態に識別子は返らない（GitHub Issue #166）', async () => {
+    // 日誌 1 は高梨（さくら組）の下書き。いまは高梨でログインしている
+    const r = await http.api.acquireLock(dummy, 1);
+    if (!('token' in r)) throw new Error(`ロックを取れませんでした（${r.heldBy}さんが編集中）`);
+    expect(await http.api.lockOf(dummy, 1)).not.toHaveProperty('lock_token');
+
+    await expect(http.api.touchLock(dummy, 1, 'lock-1-wrong')).rejects.toThrow(/編集ロックが解除されました/);
+    await http.api.touchLock(dummy, 1, r.token);
+
+    const d = await http.api.getDiary(dummy, 1);
+    const input = {
+      diary_id: 1, record_type: d.record_type, child_id: d.child_id, class_id: d.class_id,
+      diary_date: d.diary_date, body: d.body,
+    };
+    await expect(http.api.saveDiary(dummy, input, '1')).rejects.toThrow(/編集ロックが解除されました/);
+    await expect(http.api.saveDiary(dummy, { ...input, lock_token: r.token }, '1')).resolves.toMatchObject({ diary_id: 1 });
+
+    // 識別子を添えない解除では外れず、本人の識別子で外れる
+    await http.api.releaseLock(dummy, 1);
+    expect(await http.api.lockOf(dummy, 1)).toMatchObject({ staff_name: '高梨 倫太朗' });
+    await http.api.releaseLock(dummy, 1, false, r.token);
+    expect(await http.api.lockOf(dummy, 1)).toBeNull();
+  });
+
   it('一般は園児を登録できない', async () => {
     await expect(http.api.saveChild(dummy, {
       child_id: 'C901', child_name: 'テスト', child_name_kana: 'てすと',

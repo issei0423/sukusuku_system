@@ -382,6 +382,12 @@ func (a *app) lookupUsableCode(code string) (usableCode, error) {
 	case expiresOn < today():
 		return out, errors.New("この招待コードは有効期限が切れています")
 	}
+	// 取り消した（誤登録）・在籍していない園児のコードでは登録させない。発行のあとで園児を取り消しても、
+	// 配ったコードで、その園児に紐づく保護者アカウントができてしまうため（GitHub Issue #166 の 4）。
+	// 園児の状態は言わず、無いコードと同じ文言にする
+	if _, issuable := a.childIssuable(out.ChildID); !issuable {
+		return out, errors.New("招待コードが確認できません。園から配布されたコードをお確かめください")
+	}
 	return out, nil
 }
 
@@ -463,11 +469,10 @@ func (a *app) handleSignUpGuardian(w http.ResponseWriter, r *http.Request) {
 	}
 	/*
 	 * ログインIDはロールをまたいで園内で一意（基本設計書 5-2）。
-	 * 大文字・小文字だけが違うメールアドレスは同じ宛先に届くため、同じものとして重複を判定する（GitHub Issue #170）
+	 * 大文字・小文字だけが違うメールアドレスは同じ宛先に届くため、同じものとして重複を判定する（GitHub Issue #170）。
+	 * 判定は職員アカウントの発行と同じ api_admin.go の emailTaken を使う（GitHub Issue #167 の 1）
 	 */
-	var dup int
-	a.db.QueryRow(`SELECT COUNT(*) FROM m_account WHERE LOWER(email) = LOWER(?)`, req.Email).Scan(&dup)
-	if dup > 0 {
+	if a.emailTaken(req.Email) {
 		writeErr(w, http.StatusBadRequest, "このメールアドレスはすでに登録されています")
 		return
 	}

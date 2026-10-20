@@ -152,7 +152,10 @@ describe('クラス日誌・週案のクラス（要件定義書「参照範囲�
       .rejects.toThrow('この日誌を編集する権限がありません');
     expect(db.diaries.find((d) => d.diary_id === others.diary_id)).toMatchObject({ class_id: 2, body: 'クラスの様子' });
 
-    await expect(api.saveDiary(teacher, { ...classDiary(1), diary_id: own.diary_id, body: '書き直し' }, '1'))
+    // 自分の日誌は、編集ロックを取れば書き直せる（保存には本人のロックの識別子が要る。GitHub Issue #166）
+    const lock = await api.acquireLock(teacher, own.diary_id);
+    const lockToken = 'token' in lock ? lock.token : undefined;
+    await expect(api.saveDiary(teacher, { ...classDiary(1), diary_id: own.diary_id, body: '書き直し', lock_token: lockToken }, '1'))
       .resolves.toMatchObject({ body: '書き直し' });
   });
 });

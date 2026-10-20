@@ -16,6 +16,7 @@ import { api, selectableClasses } from '../../api/client';
 import { Loading, ErrorBox, Field, Alert, Modal, Tag } from '../../components/ui';
 import { ConfirmDialog, notify } from '../../components/feedback';
 import { ROLE, ACCOUNT_STATUS } from '../../api/codes';
+import { validateStaffAccountInput } from '../../api/util';
 import type { Role } from '../../api/types';
 
 type Row = Awaited<ReturnType<typeof api.staffAccounts>>[number];
@@ -63,17 +64,36 @@ export default function StaffAccountsScreen() {
   };
 
   const create = async () => {
-    setFormError(null); setBusy(true);
+    setFormError(null);
+    // 前後の空白を除いてから、必須・桁数・ログインIDの形式を確かめる。サーバも同じ規則で断る
+    // （基本設計書「入力項目の制約値」(4-9)、GitHub Issue #167 の 1）
+    const staffId = form.staff_id.trim();
+    const staffName = form.staff_name.trim();
+    const email = form.email.trim();
+    const inputError = validateStaffAccountInput(staffId, staffName, email, form.role);
+    if (inputError) { setFormError(inputError); return; }
+    setBusy(true);
     try {
       const temp = await api.createStaffAccount(user!, {
-        ...form, class_id: form.class_id === '' ? null : form.class_id,
+        ...form, staff_id: staffId, staff_name: staffName, email,
+        class_id: form.class_id === '' ? null : form.class_id,
       });
-      remember(form.staff_name, temp);
+      remember(staffName, temp);
       setCreating(false);
-      notify(`${form.staff_name} さんのアカウントを発行しました`);
+      notify(`${staffName} さんのアカウントを発行しました`);
       reload();
     } catch (e) { setFormError((e as Error).message); } finally { setBusy(false); }
   };
+
+  /*
+   * 管理者が1名になる操作か。停止・ロールの変更のどちらにも警告を出す（要件定義書「管理者が1名になる操作（停止・削除・
+   * ロールの変更）に対して、システムは警告を表示する」、画面詳細図「職員アカウント管理画面」(7-6)。GitHub Issue #167 の 2）。
+   * 対象が有効な管理者で、有効な管理者が2名以下なら、操作のあとに1名以下になる
+   */
+  const leavesOneAdmin = (accountId: number) =>
+    data?.find((r) => r.account.account_id === accountId)?.account.role === '1'
+    && data.find((r) => r.account.account_id === accountId)?.account.status === '1'
+    && data.filter((r) => r.account.role === '1' && r.account.status === '1').length <= 2;
 
   const openEdit = (r: Row) => {
     setEditError(null);
@@ -207,15 +227,18 @@ export default function StaffAccountsScreen() {
           </>}>
           {formError && <Alert>{formError}</Alert>}
           <div className="stack">
+            {/* 桁数は基本設計書「入力項目の制約値」(4-9)：職員ID 20文字・氏名 50文字・ログインID 254文字 */}
             <Field label="職員ID" required>
-              <input type="text" value={form.staff_id}
+              <input type="text" value={form.staff_id} maxLength={20}
                 onChange={(e) => setForm({ ...form, staff_id: e.target.value })} />
             </Field>
             <Field label="氏名" required>
-              <input type="text" value={form.staff_name} onChange={(e) => setForm({ ...form, staff_name: e.target.value })} />
+              <input type="text" value={form.staff_name} maxLength={50}
+                onChange={(e) => setForm({ ...form, staff_name: e.target.value })} />
             </Field>
             <Field label="ログインID（メールアドレス）" required>
-              <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+              <input type="email" value={form.email} maxLength={254}
+                onChange={(e) => setForm({ ...form, email: e.target.value })} />
             </Field>
             <Field label="ロール" required>
               <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Role })}>
@@ -256,7 +279,8 @@ export default function StaffAccountsScreen() {
               <input type="text" value={editing.staffId} disabled />
             </Field>
             <Field label="氏名" required>
-              <input type="text" value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
+              <input type="text" value={editing.name} maxLength={50}
+                onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
             </Field>
             <Field label="ロール" required>
               <select value={editing.role} disabled={editing.accountId === user!.account_id}
@@ -269,9 +293,7 @@ export default function StaffAccountsScreen() {
               <div className="muted">自分のロールは変更できません。</div>
             )}
             {/* 管理者が1名になる操作には警告する（画面詳細図「職員アカウント管理画面」(7-6)） */}
-            {editing.role === '2'
-              && data?.find((r) => r.account.account_id === editing.accountId)?.account.role === '1'
-              && data.filter((r) => r.account.role === '1' && r.account.status === '1').length <= 2 && (
+            {editing.role === '2' && leavesOneAdmin(editing.accountId) && (
               <Alert>
                 この変更で、管理者が1名になります。管理者がパスワードを忘れたときに、再発行できる人が居なくなります。
                 管理者は2名以上にしておいてください。
@@ -297,9 +319,14 @@ export default function StaffAccountsScreen() {
           onConfirm={run} onCancel={() => setPending(null)}>
           <p>{pending.row.staff.staff_name} さん（{ROLE[pending.row.account.role]}）のアカウントを停止します。</p>
           <p className="muted">停止すると、{pending.row.staff.staff_name} さんはログインできなくなります。「再開」で戻せます。</p>
-          {pending.row.account.role === '1' && (
+          {pending.row.account.role === '1' && (leavesOneAdmin(pending.row.account.account_id) ? (
+            <Alert>
+              管理者のアカウントです。この停止で、管理者が1名になります。管理者がパスワードを忘れたときに、再発行できる人が居なくなります。
+              管理者は2名以上にしておいてください。
+            </Alert>
+          ) : (
             <Alert soft>管理者のアカウントです。停止すると、承認やアカウント管理を行える人が1人減ります。</Alert>
-          )}
+          ))}
         </ConfirmDialog>
       )}
       {pending?.kind === 'resume' && (

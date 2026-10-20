@@ -88,6 +88,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 const get = <T>(path: string) => request<T>('GET', path);
 const post = <T>(path: string, body?: unknown) => request<T>('POST', path, body ?? {});
 const del = <T>(path: string) => request<T>('DELETE', path);
+const put = <T>(path: string, body?: unknown) => request<T>('PUT', path, body ?? {});
 
 /** クエリ文字列を組み立てる。空の値は落とす */
 function qs(params: Record<string, string | number | boolean | null | undefined>): string {
@@ -319,11 +320,17 @@ const apiAuth = {
     return r.token ? { token: r.token } : { heldBy: r.held_by! };
   },
 
-  releaseLock: (_u: SessionUser, diaryId: number, force = false) =>
-    del<void>(`/api/diaries/${diaryId}/lock${force ? '?force=true' : ''}`),
+  // 本人の解除は、取得のときに受け取った識別子を添える。一致するときだけ外れる（GitHub Issue #166）
+  releaseLock: (_u: SessionUser, diaryId: number, force = false, token?: string) =>
+    del<void>(`/api/diaries/${diaryId}/lock${force ? '?force=true' : token ? `?token=${encodeURIComponent(token)}` : ''}`),
 
+  // 編集画面での操作を知らせ、無操作の判定を最後の操作から数えさせる（GitHub Issue #166 の 3）
+  touchLock: (_u: SessionUser, diaryId: number, token: string) =>
+    put<void>(`/api/diaries/${diaryId}/lock`, { lock_token: token }),
+
+  // ロックの識別子は返らない。誰が編集中かと最終操作時刻だけ（GitHub Issue #166 の 2）
   lockOf: (_u: SessionUser, diaryId: number) =>
-    get<{ diary_id: number; lock_token: string; locked_staff_id: string; last_active_at: string; staff_name: string } | null>(
+    get<{ diary_id: number; locked_staff_id: string; locked_at: string; last_active_at: string; staff_name: string } | null>(
       `/api/diaries/${diaryId}/lock`),
 };
 

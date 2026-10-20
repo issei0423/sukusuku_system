@@ -5,8 +5,9 @@
  * 入力→確認の段階を設ける（同「画面の洗い出しの考え方」(3-1) 基準2）。
  * ここで確定するのは「申請」であり、承認ではない。
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { keepDiaryLock, releaseDiaryLockLater, releaseDiaryLockNow } from './diaryLock';
 import { useSession } from '../../session';
 import { api, childName, className } from '../../api/client';
 import { Alert, Empty } from '../../components/ui';
@@ -32,6 +33,26 @@ export default function DiaryConfirmScreen() {
   const state = useLocation().state as ConfirmState | null;
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // 編集画面へ戻るときは、ロックを編集画面へ返す（外さない。編集画面が取り直す）
+  const handBackRef = useRef(false);
+
+  /*
+   * 編集画面から引き継いだ編集ロックを、申請するか画面を離れるまで持つ（基本設計書「編集ロックの解除」(4-5)）。
+   * 確認画面へ移った時点で外すと、確認画面にいる間にほかの職員が開いて直せてしまい、申請がその直しを
+   * 黙って上書きする（GitHub Issue #166 の 1 の手順 B）。申請するとサーバが外す
+   */
+  const lockDiaryId = state?.diaryId ?? null;
+  const lockToken = state?.lockToken;
+  useEffect(() => {
+    if (!lockDiaryId || !lockToken) return;
+    keepDiaryLock(lockDiaryId, lockToken);
+    const onPageHide = () => { void releaseDiaryLockNow(user!, lockDiaryId, lockToken); };
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      window.removeEventListener('pagehide', onPageHide);
+      if (!handBackRef.current) releaseDiaryLockLater(user!, lockDiaryId, lockToken);
+    };
+  }, [user, lockDiaryId, lockToken]);
 
   // 申請の直前に、前の画面の「下書きを保存しました」を残さない（GitHub Issue #139 の 2）
   useEffect(() => { clearNotice(); }, []);
@@ -91,10 +112,13 @@ export default function DiaryConfirmScreen() {
 
       <div className="row-end">
         {/* 入力していた内容を持って戻る。履歴を戻るだけでは、保存していない入力が消える */}
-        <button disabled={busy} onClick={() => navigate(
-          state.diaryId ? `/staff/diary/${state.diaryId}` : '/staff/diary/new',
-          { state: { draft: state }, replace: true },
-        )}>戻る</button>
+        <button disabled={busy} onClick={() => {
+          handBackRef.current = true;
+          navigate(
+            state.diaryId ? `/staff/diary/${state.diaryId}` : '/staff/diary/new',
+            { state: { draft: state }, replace: true },
+          );
+        }}>戻る</button>
         <button className="btn-primary" onClick={submit} disabled={busy}>
           {busy ? '申請しています…' : '申請する'}
         </button>

@@ -21,9 +21,9 @@ import type {
 } from './types';
 import {
   ageInMonths, now, today, addDays, plusMinutes, fromNowMinutes, napAutoCloseAt, normalizeInvitationCode, validateEmail,
-  validateNewPassword, isRealDate, formatYM, isOneDecimal,
+  validateNewPassword, isRealDate, validateStaffAccountInput, formatYM, isOneDecimal,
 } from './util';
-import { BODY_POSITION, BREATHING, COMPLEXION, REACTION, HANDOUT_TYPE } from './codes';
+import { BODY_POSITION, BREATHING, COMPLEXION, REACTION, HANDOUT_TYPE, SEX, PHOTO_CONSENT } from './codes';
 import {
   ProcedureRequiredError, SESSION_ENDED_MESSAGE, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
 } from './procedure';
@@ -117,6 +117,72 @@ function log(
   });
 }
 
+/*
+ * 変更前後の値（基本設計書「操作ログ（t_operation_log）」(5-8)）
+ * 「変更前後の値は JSON 文字列で保持する。変更のあった項目だけを {"項目名": 値} の形で入れる」。
+ * 項目は並べた順に書く。サーバ側（server/oplog.go の fieldsJSON・changedFields）と同じ項目名・同じ順。
+ * 【仮置き】ほかの操作の記録（日誌の「申請」、アカウントの「停止」など）は、まだ文で残している（web/仮置き値.md）
+ */
+type Field = [name: string, value: unknown];
+
+function fieldsJSON(fields: Field[]): string {
+  return JSON.stringify(Object.fromEntries(fields));
+}
+
+/** 変わった項目だけを、変更前と変更後の JSON 文字列にする。before と after は同じ項目を同じ順に並べて渡す */
+function changedFields(before: Field[], after: Field[]): [string, string] {
+  const changed = after.map((_, i) => i).filter((i) => JSON.stringify(before[i]?.[1]) !== JSON.stringify(after[i][1]));
+  return [fieldsJSON(changed.map((i) => before[i])), fieldsJSON(changed.map((i) => after[i]))];
+}
+
+/**
+ * 操作ログに残す園児の項目を、いま保存されている値で並べる。区分値は表示名にする。
+ * サーバ側（server/api_child_write.go の childFieldsOf）と同じ項目・同じ順
+ */
+function childFields(childId: string): Field[] {
+  const c = findChild(childId)!;
+  const cc = db.classChildren.find((x) => x.child_id === childId
+    && db.classes.some((k) => k.class_id === x.class_id && k.fiscal_year === db.FISCAL_YEAR));
+  return [
+    ['氏名', c.child_name],
+    ['よみ', c.child_name_kana],
+    ['生年月日', c.birth_date],
+    ['性別', SEX[c.sex]],
+    ['平熱', c.normal_temperature],
+    ['写真の利用同意', PHOTO_CONSENT[c.photo_consent_level]],
+    ['クラス', cc ? className(cc.class_id) : '所属クラスなし'],
+    ['アレルギー', db.allergies.filter((a) => a.child_id === childId)
+      .map((a) => `${a.target_food}（${a.symptom ?? ''}／${a.response ?? ''}）`)],
+    ['既往歴', db.medicalHistories.filter((m) => m.child_id === childId).map((m) => m.content)],
+  ];
+}
+
+/**
+ * 日誌・午睡チェック・発達チェック・身体測定・チャットのいずれかの記録が紐づいているか
+ * （基本設計書「園児情報の取消（誤登録の削除）」(4-4)）。論理削除した記録も、残っていて園児に紐づくため数える。
+ * チャットは、その園児の個人チャットのメッセージ（取消したものを含む）を数える（【仮置き】web/仮置き値.md）。
+ * サーバ側は server/api_child_write.go の childHasRecords
+ */
+function childHasRecords(childId: string): boolean {
+  const personalRooms = new Set(db.chatRooms.filter((r) => r.room_type === '4' && r.child_id === childId)
+    .map((r) => r.chat_room_id));
+  return db.diaries.some((d) => d.child_id === childId)
+    || db.napRecords.some((r) => r.child_id === childId)
+    || db.napAbnormals.some((r) => r.child_id === childId)
+    || db.developmentChecks.some((r) => r.child_id === childId)
+    || db.physicalRecords.some((r) => r.child_id === childId)
+    || db.chatMessages.some((m) => personalRooms.has(m.chat_room_id));
+}
+
+/**
+ * 招待コードを発行できる園児か（取り消していない・在籍中）。一括発行の対象と同じ条件。
+ * サーバ側は server/api_admin.go の childIssuable
+ */
+function childIssuable(childId: string): { found: boolean; issuable: boolean } {
+  const c = findChild(childId);
+  return { found: !!c, issuable: !!c && !c.is_deleted && c.enrollment_status === '1' };
+}
+
 /**
  * 操作の相手を、人が読める名前にする。園児に紐づかない操作（アカウントの停止、クラス日誌の承認など）は、
  * 対象園児の列だけでは誰・何に対する操作かが分からない（GitHub Issue #114）。
@@ -150,6 +216,9 @@ function canUseClass(user: SessionUser, classId: number): boolean {
  */
 const INVITATION_DAYS_MESSAGE = '有効期限は 1〜365 日で指定してください';
 const validInvitationDays = (days: number) => Number.isInteger(days) && days >= 1 && days <= 365;
+// 一括発行の、園児1名あたりの枚数は 1〜5 枚（図/画面詳細図.md「招待コード管理画面」(7-7) 項目10）
+const PER_CHILD_MESSAGE = '1名あたりの枚数は1〜5枚で指定してください';
+const validPerChild = (n: number) => Number.isInteger(n) && n >= 1 && n <= 5;
 
 /** ログイン中の職員。ログアウトのときに、保持している編集ロックを外すために持つ */
 let loggedInStaffId: string | null = null;
@@ -475,7 +544,7 @@ export const childApi = {
     if (mode === 'create' && existing) return fail('その園児IDはすでに使われています');
     if (mode === 'edit' && !existing) return fail('園児が見つかりません');
 
-    const before = existing ? `${existing.child_name} / ${existing.birth_date}` : null;
+    const before = existing ? childFields(input.child_id) : null;
     const row: Child = {
       child_id: input.child_id,
       child_name: input.child_name,
@@ -511,8 +580,18 @@ export const childApi = {
       db.medicalHistories.push({ medical_history_id: nextId(), child_id: input.child_id, content });
     });
 
-    log(user.account_id, '6', mode === 'create' ? '1' : '2', 'm_child', null, input.child_id,
-      before, `${row.child_name} / ${row.birth_date}`);
+    /*
+     * 操作ログには、変更のあった項目だけを {"項目名": 値} の JSON で残す（基本設計書「操作ログ（t_operation_log）」(5-8)）。
+     * 氏名と生年月日だけを残すと、クラス・アレルギー・平熱を変えても前後が同じに見える（GitHub Issue #166 の 5）。
+     * サーバ側は server/api_child_write.go の handleSaveChild
+     */
+    const after = childFields(input.child_id);
+    if (before) {
+      const [b, a] = changedFields(before, after);
+      log(user.account_id, '6', '2', 'm_child', null, input.child_id, b, a);
+    } else {
+      log(user.account_id, '6', '1', 'm_child', null, input.child_id, null, fieldsJSON(after));
+    }
     return ok(row);
   },
 
@@ -522,11 +601,15 @@ export const childApi = {
     return ok(db.children.some((c) => c.child_id === childId.trim()));
   },
 
-  /** 誤登録の取消。論理削除とする（基本設計書 5-1） */
+  /** 誤登録の取消。論理削除とする（基本設計書 5-1）。サーバ側は server/api_child_write.go の handleRemoveChild */
   async removeChild(user: SessionUser, childId: string): Promise<void> {
     if (user.role !== '1') return fail('園児情報の取消は管理者のみが行えます');
     const c = findChild(childId);
-    if (!c) return fail('園児が見つかりません');
+    // 取り消した園児は「見つからない」として扱う。同じ取消を重ねて受けて、操作ログに 2 行残さない（GitHub Issue #166 の 4）
+    if (!c || c.is_deleted) return fail('園児が見つかりません');
+    // 記録のある園児は取り消せない。在籍の終了（退園・卒園）は在籍状態の変更で行う
+    // （基本設計書「園児情報の取消（誤登録の削除）」(4-4)、文言は「メッセージ一覧」(4-9)「取消の不可」）
+    if (childHasRecords(childId)) return fail('記録が登録されている園児は取り消せません。在籍状態を変更してください。');
     c.is_deleted = true;
     c.updated_at = now();
     log(user.account_id, '6', '4', 'm_child', null, childId, c.child_name, '取消（論理削除）');
@@ -629,25 +712,63 @@ export const diaryApi = {
     return ok({ token });
   },
 
-  /** 管理者による強制解除。レコードを削除する（基本設計書「編集ロックの解除」(4-5)） */
-  async releaseLock(user: SessionUser, diaryId: number, force = false): Promise<void> {
+  /**
+   * ロックの解除。管理者による強制解除はレコードを削除する（基本設計書「編集ロックの解除」(4-5)）。
+   * 本人の解除は、取得のときに渡した識別子が一致するときだけ外す。同じ職員が取り直したあとに、古い識別子の解除が
+   * 遅れて届いても、取り直したロックを外さないため（GitHub Issue #166。サーバ側は handleReleaseLock）
+   */
+  async releaseLock(user: SessionUser, diaryId: number, force = false, token?: string): Promise<void> {
     const i = db.diaryLocks.findIndex((l) => l.diary_id === diaryId);
     if (i < 0) return ok(undefined);
     if (force && user.role !== '1') return fail('ロックの強制解除は管理者のみが行えます');
-    if (!force && db.diaryLocks[i].locked_staff_id !== user.staff_id) return ok(undefined);
+    if (!force && (db.diaryLocks[i].locked_staff_id !== user.staff_id || db.diaryLocks[i].lock_token !== token)) {
+      return ok(undefined);
+    }
     db.diaryLocks.splice(i, 1);
     if (force) log(user.account_id, '1', '2', 't_diary_lock', diaryId, null, 'ロックあり', '管理者が強制解除');
     return ok(undefined);
   },
 
-  /** 編集ロックの状態。誰が編集中かは日誌の中身と同じ範囲で見せる（サーバ側は handleLockOf） */
+  /**
+   * 編集画面での操作を知らせ、ロックの最終操作時刻を進める。無操作の判定は最後の操作から数える
+   * （基本設計書「編集ロックの解除」(4-5)、5-4 last_active_at「無操作の判定に用いる」。GitHub Issue #166 の 3）。
+   * ロックが外れた・ほかの職員へ移ったときは断り、画面に解除を知らせる。サーバ側は handleTouchLock
+   */
+  async touchLock(user: SessionUser, diaryId: number, token: string): Promise<void> {
+    const l = heldDiaryLock(user, diaryId, token);
+    if (!l) return fail(LOCK_RELEASED_MESSAGE);
+    l.last_active_at = now();
+    return ok(undefined);
+  },
+
+  /**
+   * 編集ロックの状態。誰が編集中かは日誌の中身と同じ範囲で見せる（サーバ側は handleLockOf）。
+   * ロックの識別子は返さない。識別子は取得した本人だけが持ち、保存のときに照合するもの（GitHub Issue #166 の 2）
+   */
   async lockOf(user: SessionUser, diaryId: number) {
     const d = db.diaries.find((x) => x.diary_id === diaryId);
     if (!d || !canSeeDiary(user, d)) return fail('この日誌を参照する権限がありません');
     const l = db.diaryLocks.find((x) => x.diary_id === diaryId);
-    return ok(l ? { ...l, staff_name: staffName(l.locked_staff_id) } : null);
+    return ok(l ? {
+      diary_id: l.diary_id, locked_staff_id: l.locked_staff_id, locked_at: l.locked_at,
+      last_active_at: l.last_active_at, staff_name: staffName(l.locked_staff_id),
+    } : null);
   },
 };
+
+// 文言は基本設計書「メッセージ一覧」(4-9)「ロックの解除」による
+const LOCK_RELEASED_MESSAGE = '編集ロックが解除されました。内容を再読み込みしてください';
+
+/**
+ * その職員が、渡した識別子のロックをいま持っていれば、そのロックを返す。
+ * 無操作の時間を過ぎていても、ほかの職員が取り直すまでは本人の識別子を有効とみなす（【仮置き】web/仮置き値.md）。
+ * サーバ側は server/api_diary_write.go の holdsDiaryLock
+ */
+function heldDiaryLock(user: SessionUser, diaryId: number, token: string | undefined) {
+  if (!token) return undefined;
+  return db.diaryLocks.find((l) => l.diary_id === diaryId && l.lock_token === token
+    && l.locked_staff_id === user.staff_id);
+}
 
 const diaryApi2 = {
   /** 下書き保存・申請。status は呼び出し側が指定する */
@@ -681,11 +802,14 @@ const diaryApi2 = {
       if (!canSeeDiary(user, d)) return fail('この日誌を編集する権限がありません');
       // 申請中・承認済みは編集できない（サーバ側の updateDiary と同じ。GitHub Issue #174 の「確かめていないこと」）
       if (d.status === '2' || d.status === '3') return fail('申請中または承認済みの日誌は編集できません');
-      // 保存時にロックのトークンを照合する（基本設計書 5-4）
-      const lock = db.diaryLocks.find((l) => l.diary_id === d.diary_id);
-      if (lock && lock.lock_token !== input.lock_token) {
-        return fail('他の職員が編集中のため保存できません。日誌一覧へ戻って開き直してください');
-      }
+      /*
+       * 保存時のロック識別子が、現在有効なロックと一致するかを照合する。ロックが無いときも一致しないとみなし、
+       * 他者の更新の有無にかかわらず拒否する。識別子が一致しても、ロックを持つ本人でなければ通さない
+       * （基本設計書「同時編集の検出」(4-2)・「編集ロックの解除」(4-5)、GitHub Issue #166 の 1・2）。
+       * サーバ側は server/api_diary_write.go の updateDiary
+       */
+      const lock = heldDiaryLock(user, d.diary_id, input.lock_token);
+      if (!lock) return fail(LOCK_RELEASED_MESSAGE);
       const before = `${d.status}`;
       d.record_type = input.record_type;
       d.child_id = input.child_id;
@@ -696,6 +820,10 @@ const diaryApi2 = {
       // 差し戻す理由は、再申請しても消さない。承認されるまで残し、次に差し戻されたときに上書きする
       // （基本設計書「日誌（t_diary）」(5-4)。GitHub Issue #174）
       d.updated_at = now();
+      // 申請したらロックを外す（申請中の日誌は編集できない）。下書き保存は編集画面に残って書き続けるため外さず、
+      // 操作として最終操作時刻を進める（【仮置き】web/仮置き値.md「日誌の編集ロックの動き」）
+      if (status === '2') db.diaryLocks.splice(db.diaryLocks.indexOf(lock), 1);
+      else lock.last_active_at = now();
       log(user.account_id, '1', '2', 't_diary', d.diary_id, d.child_id, before,
         status === '2' ? DIARY_LOG_APPLY : '下書き保存');
       return ok(d);
@@ -2037,6 +2165,8 @@ export const adminApi = {
     if (user.role !== '1') return fail('ロックの解除は管理者のみが行えます');
     const a = findAccount(accountId);
     if (!a) return fail('アカウントが見つかりません');
+    // ロックされていないアカウントの解除を通すと、操作ログに事実と違う「変更前：ロック中」が残る（GitHub Issue #166 の 6）
+    if (!a.locked_until || a.locked_until <= now()) return fail('このアカウントはロックされていません');
     a.locked_until = null;
     a.failed_login_count = 0;
     log(user.account_id, '7', '2', 'm_account', accountId, null, 'ロック中', 'ロックを解除');
@@ -2074,8 +2204,16 @@ export const adminApi = {
   ): Promise<string> {
     if (user.role !== '1') return fail('職員アカウントの発行は管理者のみが行えます');
     if (input.role === '3') return fail('保護者アカウントは招待コードによる自己登録で作成します');
-    // ログインIDはロールをまたいで園内で一意（基本設計書 5-2）
-    if (db.accounts.some((a) => a.email === input.email)) return fail('そのログインIDはすでに使われています');
+    /*
+     * 前後の空白を除いてから、必須・桁数・形式を確かめる（基本設計書「入力項目の制約値」(4-9)。GitHub Issue #167 の 1）。
+     * サーバ側は server/api_admin.go の handleCreateStaffAccount・validateStaffAccountInput
+     */
+    input = { ...input, staff_id: input.staff_id.trim(), staff_name: input.staff_name.trim(), email: input.email.trim() };
+    const inputError = validateStaffAccountInput(input.staff_id, input.staff_name, input.email, input.role);
+    if (inputError) return fail(inputError);
+    if (input.class_id !== null && !currentClassExists(input.class_id)) return fail('担当クラスの指定が正しくありません');
+    // ログインIDはロールをまたいで園内で一意（基本設計書 5-2）。大文字・小文字だけが違うものも同じとみなす
+    if (emailTaken(input.email)) return fail('そのログインIDはすでに使われています');
     if (db.staff.some((s) => s.staff_id === input.staff_id)) return fail('その職員IDはすでに使われています');
 
     const hours = settingNumber('auth.temp_password_hours', 48);
@@ -2092,7 +2230,14 @@ export const adminApi = {
     // 園全体・職員チャットと、担当クラスのチャンネルへ入れる。職員チャットは作成に連動する
     // （基本設計書「チャット」(5-5)、GitHub Issue #162）
     syncStaffChatRooms(accountId);
-    log(user.account_id, '7', '1', 'm_account', accountId, null, null, `職員アカウントを発行（${input.staff_name}）`);
+    // 何を発行したか（ロール・担当クラスを含む）を {"項目名": 値} で残す（GitHub Issue #166 の 5）。一時パスワードは残さない
+    log(user.account_id, '7', '1', 'm_account', accountId, null, null, fieldsJSON([
+      ['職員ID', input.staff_id],
+      ['氏名', input.staff_name],
+      ['ログインID', input.email],
+      ['ロール', roleLabel(input.role)],
+      ['担当クラス', staffClassName(input.staff_id)],
+    ]));
     return ok(temp);
   },
 
@@ -2108,20 +2253,19 @@ export const adminApi = {
     if (user.role !== '1') return fail('職員アカウントの変更は管理者のみが行えます');
     const name = input.staff_name.trim();
     if (!name) return fail('氏名を入力してください');
+    if (tooLong(name, 50)) return fail('氏名は50文字以内で入力してください');
     if (input.role !== '1' && input.role !== '2') return fail('ロールの指定が正しくありません');
+    if (input.class_id !== null && !currentClassExists(input.class_id)) return fail('担当クラスの指定が正しくありません');
     const s = findStaff(staffId);
     const a = s ? findAccount(s.account_id) : undefined;
     if (!s || !a) return fail('職員が見つかりません');
     // 自分のロールは変えられない。管理者が自分を一般へ下げると、戻せる人がいなくなることがある
     if (a.account_id === user.account_id && input.role !== a.role) return fail('自分のロールは変更できません');
 
-    const roleLabel = (r: Role) => (r === '1' ? '管理者' : '一般');
-    const currentClass = () => {
-      const cs = db.classStaff.find((x) => x.staff_id === staffId
-        && db.classes.some((c) => c.class_id === x.class_id && c.fiscal_year === db.FISCAL_YEAR));
-      return cs ? className(cs.class_id) : '担当クラスなし';
-    };
-    const before = `${s.staff_name} / ${roleLabel(a.role)} / ${currentClass()}`;
+    const fields = (): Field[] => [
+      ['氏名', s.staff_name], ['ロール', roleLabel(a.role)], ['担当クラス', staffClassName(staffId)],
+    ];
+    const before = fields();
 
     s.staff_name = name;
     s.updated_at = now();
@@ -2139,11 +2283,33 @@ export const adminApi = {
     // 外れるまでの過去ログだけを読める（要件定義書「チャットツール」(4-3) (a)、GitHub Issue #162）
     syncStaffChatRooms(a.account_id);
 
-    log(user.account_id, '7', '2', 'm_account', a.account_id, null, before,
-      `${name} / ${roleLabel(input.role)} / ${currentClass()}`);
+    // 変更のあった項目だけを {"項目名": 値} で残す（基本設計書「操作ログ（t_operation_log）」(5-8)、GitHub Issue #166 の 5）
+    const [b, af] = changedFields(before, fields());
+    log(user.account_id, '7', '2', 'm_account', a.account_id, null, b, af);
     return ok(undefined);
   },
 };
+
+/** ロールの表示名（操作ログ用） */
+const roleLabel = (r: Role) => (r === '1' ? '管理者' : '一般');
+
+/** 当年度の担当クラス名。無ければ「担当クラスなし」（サーバ側は server/api_admin.go の staffClassName） */
+function staffClassName(staffId: string): string {
+  const cs = db.classStaff.find((x) => x.staff_id === staffId
+    && db.classes.some((c) => c.class_id === x.class_id && c.fiscal_year === db.FISCAL_YEAR));
+  return cs ? className(cs.class_id) : '担当クラスなし';
+}
+
+/** 当年度のクラスか。担当クラスに割り当てられるのは当年度のクラスだけ */
+const currentClassExists = (classId: number) =>
+  db.classes.some((c) => c.class_id === classId && c.fiscal_year === db.FISCAL_YEAR);
+
+/**
+ * ログインIDがすでに使われているか。ロールをまたいで園内で一意（基本設計書 5-2）。
+ * 【仮置き】大文字・小文字だけが違うものも同じとみなす（web/仮置き値.md。GitHub Issue #167 の 1）。
+ * 保護者の自己登録も同じ判定を使う。サーバ側は server/api_admin.go の emailTaken
+ */
+const emailTaken = (email: string) => db.accounts.some((a) => a.email.toLowerCase() === email.toLowerCase());
 
 const adminApi2 = {
   /** 招待コードの一覧。同じ園児に複数枚が並ぶため園児名でまとめて見せる（画面詳細図 7-3） */
@@ -2171,7 +2337,8 @@ const adminApi2 = {
     user: SessionUser, classId: number, perChild: number, validDays: number, includeExisting = false,
   ): Promise<{ issued: number; skipped: number }> {
     if (user.role !== '1') return fail('招待コードの発行は管理者のみが行えます');
-    if (perChild < 1) return fail('1名あたりの枚数は1以上で指定してください');
+    // 園児1名あたりの枚数は 1〜5 枚（図/画面詳細図.md「招待コード管理画面」(7-7) 項目10。GitHub Issue #167 の 3）
+    if (!validPerChild(perChild)) return fail(PER_CHILD_MESSAGE);
     if (!validInvitationDays(validDays)) return fail(INVITATION_DAYS_MESSAGE);
     const ids = db.classChildren.filter((cc) => cc.class_id === classId).map((cc) => cc.child_id)
       .filter((id) => { const c = findChild(id); return c && !c.is_deleted && c.enrollment_status === '1'; });
@@ -2201,6 +2368,10 @@ const adminApi2 = {
   async issueOneInvitationCode(user: SessionUser, childId: string, validDays: number): Promise<string> {
     if (user.role !== '1') return fail('招待コードの発行は管理者のみが行えます');
     if (!validInvitationDays(validDays)) return fail(INVITATION_DAYS_MESSAGE);
+    // 取り消した・在籍していない園児には発行しない。一括発行と同じ条件（GitHub Issue #166 の 4）
+    const target = childIssuable(childId);
+    if (!target.found) return fail('園児が見つかりません');
+    if (!target.issuable) return fail('在籍していない園児には招待コードを発行できません');
     const code = randomCode();
     db.invitationCodes.push({
       invitation_code_id: nextId(), code, child_id: childId,
@@ -2216,6 +2387,8 @@ const adminApi2 = {
     const c = db.invitationCodes.find((x) => x.invitation_code_id === codeId);
     if (!c) return fail('招待コードが見つかりません');
     if (c.status === '2') return fail('使用済みの招待コードは失効できません');
+    // 失効済みのコードを重ねて失効させない。操作ログに事実と違う「変更前：未使用」が残る（GitHub Issue #166 の 6）
+    if (c.status === '3') return fail('この招待コードはすでに失効しています');
     c.status = '3';
     log(user.account_id, '7', '2', 't_invitation_code', codeId, c.child_id, '未使用', '失効');
     return ok(undefined);
@@ -2354,6 +2527,9 @@ const adminApi3 = {
     if (c.status === '2') return fail('この招待コードはすでに使われています');
     if (c.status === '3') return fail('この招待コードは失効しています');
     if (c.expires_on < today()) return fail('この招待コードは有効期限が切れています');
+    // 取り消した・在籍していない園児のコードでは登録させない。園児の状態は言わず、無いコードと同じ文言にする
+    // （GitHub Issue #166 の 4。サーバ側は server/api_auth.go の lookupUsableCode）
+    if (!childIssuable(c.child_id).issuable) return fail('招待コードが確認できません。園から配布されたコードをお確かめください');
     return ok({ ok: true as const });
   },
 
@@ -2371,7 +2547,9 @@ const adminApi3 = {
      */
     const normalized = normalizeInvitationCode(input.code);
     const c = db.invitationCodes.find((x) => normalizeInvitationCode(x.code) === normalized);
-    if (!c || c.status !== '1' || c.expires_on < today()) return fail('招待コードが確認できません');
+    if (!c || c.status !== '1' || c.expires_on < today() || !childIssuable(c.child_id).issuable) {
+      return fail('招待コードが確認できません');
+    }
     /*
      * 規約への同意を受け取ってから登録する。同意しなかった場合は登録を完了しない
      * （基本設計書「保護者アカウントの自己登録」(4-3)、画面詳細図 2-3 項目5。GitHub Issue #170）。
@@ -2387,9 +2565,9 @@ const adminApi3 = {
     input = { ...input, email: input.email.trim(), guardian_name: (input.guardian_name ?? '').trim() };
     const emailError = validateEmail(input.email);
     if (emailError) return fail(emailError);
-    // ログインIDはロールをまたいで園内で一意（基本設計書 5-2）。大文字・小文字だけの違いは同じ宛先として扱う（GitHub Issue #170）
-    const email = input.email.toLowerCase();
-    if (db.accounts.some((a) => a.email.toLowerCase() === email)) return fail('このメールアドレスはすでに登録されています');
+    // ログインIDはロールをまたいで園内で一意（基本設計書 5-2）。大文字・小文字だけの違いは同じ宛先として扱う
+    // （GitHub Issue #170。判定は職員アカウントの発行と同じ emailTaken。GitHub Issue #167 の 1）
+    if (emailTaken(input.email)) return fail('このメールアドレスはすでに登録されています');
     // 8〜128文字（文字数で数える）。よく使われるパスワードは拒否する（server/password.go と同じ規則。GitHub Issue #159）
     const passwordError = validateNewPassword(input.password);
     if (passwordError) return fail(passwordError);
@@ -2592,7 +2770,13 @@ const bulkApi = {
       const cls = db.classes.find((c) => c.fiscal_year === db.FISCAL_YEAR && c.class_name === clsName)!;
       db.classChildren.push({ class_id: cls.class_id, child_id: id });
     });
-    log(user.account_id, '6', '1', 'm_child', null, null, null, `CSV一括登録 ${rows.length} 件`);
+    // 登録した園児ごとに、対象園児つきで残す。件数だけの 1 行では、対象園児で絞り込んだときに出ない
+    // （基本設計書「操作ログ（t_operation_log）」(5-8)、GitHub Issue #166 の 5。サーバ側は handleImportChildCsv）
+    rows.forEach((r) => {
+      const id = r.values[0];
+      log(user.account_id, '6', '1', 'm_child', null, id, null,
+        fieldsJSON([['登録', 'CSV一括登録'], ...childFields(id)]));
+    });
     return ok(rows.length);
   },
 

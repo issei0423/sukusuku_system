@@ -34,6 +34,12 @@ func personalDiary(diaryID int64, childID, classID, date, body, status string) s
 		`,"diary_date":"` + date + `","body":"` + body + `","status":"` + status + `"}`
 }
 
+// withLock は、保存の本文に編集ロックの識別子を添える。既存の日誌の保存には、本人のロックの識別子が要る
+// （基本設計書「同時編集の検出」(4-2)。GitHub Issue #166）。ロックは acquireToken（api_diary_lock_test.go）で取る
+func withLock(body, token string) string {
+	return strings.Replace(body, `"status"`, `"lock_token":"`+token+`","status"`, 1)
+}
+
 func statusOfDiary(t *testing.T, a *app, id int64) string {
 	t.Helper()
 	var status string
@@ -52,7 +58,8 @@ func TestApplicantCannotApproveRewrittenDiary(t *testing.T) {
 	teacher := loginAs(a, 3, "staff") // 高梨 倫太朗（S003・さくら組）
 
 	// 日誌 1 は高梨が書いた野原 太郎（C001）の下書き。園長が本文を書き直して申請する
-	call(t, h, admin, "POST", "/api/diaries", personalDiary(1, "C001", "1", today(), "園長が書き直した本文です。", "2"))
+	call(t, h, admin, "POST", "/api/diaries", withLock(
+		personalDiary(1, "C001", "1", today(), "園長が書き直した本文です。", "2"), acquireToken(t, h, admin, "1")))
 
 	t.Run("書き直して申請した管理者は、承認できない（共有もしない）", func(t *testing.T) {
 		body := expectStatus(t, request(t, h, admin, "POST", "/api/diaries/1/approve", `{"share_to_guardian":true}`),
@@ -79,7 +86,8 @@ func TestApplicantCannotApproveRewrittenDiary(t *testing.T) {
 
 	t.Run("差し戻され、作成者が直して申請し直したものは、最後に申請した人で判定する", func(t *testing.T) {
 		call(t, h, admin2, "POST", "/api/diaries/1/return", `{"reason":"作成者が直してください"}`)
-		call(t, h, teacher, "POST", "/api/diaries", personalDiary(1, "C001", "1", today(), "高梨が直した本文です。", "2"))
+		call(t, h, teacher, "POST", "/api/diaries", withLock(
+			personalDiary(1, "C001", "1", today(), "高梨が直した本文です。", "2"), acquireToken(t, h, teacher, "1")))
 		d := diaryOf(t, call(t, h, admin, "GET", "/api/diaries/1", "").Body.Bytes())
 		if d.AppliedStaffID == nil || *d.AppliedStaffID != "S003" {
 			t.Fatalf("applied_staff_id = %v, want S003", d.AppliedStaffID)
@@ -90,7 +98,8 @@ func TestApplicantCannotApproveRewrittenDiary(t *testing.T) {
 	t.Run("ほかの管理者が書き直して申請したものは、別の管理者が承認できる", func(t *testing.T) {
 		// 日誌 7 は宮城（S004）が書いた申請中の個人日誌。差し戻して、上園が書き直して申請する
 		call(t, h, admin, "POST", "/api/diaries/7/return", `{"reason":"書き直します"}`)
-		call(t, h, admin2, "POST", "/api/diaries", personalDiary(7, "C004", "1", today(), "上園が書き直した本文です。", "2"))
+		call(t, h, admin2, "POST", "/api/diaries", withLock(
+			personalDiary(7, "C004", "1", today(), "上園が書き直した本文です。", "2"), acquireToken(t, h, admin2, "7")))
 		expectStatus(t, request(t, h, admin2, "POST", "/api/diaries/7/approve", `{"share_to_guardian":false}`),
 			http.StatusBadRequest)
 		call(t, h, admin, "POST", "/api/diaries/7/approve", `{"share_to_guardian":false}`)
@@ -206,11 +215,15 @@ func TestResubmitKeepsReturnedReason(t *testing.T) {
 		return diaryOf(t, call(t, h, admin, "GET", "/api/diaries/"+itoa(d.DiaryID), "").Body.Bytes()).ReturnedReason
 	}
 
-	call(t, h, teacher, "POST", "/api/diaries", personalDiary(d.DiaryID, "C004", "1", today(), "書き足しました（下書き）", "1"))
+	// 下書き保存ではロックを外さないので、同じ識別子のまま申請する
+	token := acquireToken(t, h, teacher, itoa(d.DiaryID))
+	call(t, h, teacher, "POST", "/api/diaries", withLock(
+		personalDiary(d.DiaryID, "C004", "1", today(), "書き足しました（下書き）", "1"), token))
 	if got := reasonOf(); got == nil || *got != reason {
 		t.Fatalf("下書き保存のあと: returned_reason = %v, want %q", got, reason)
 	}
-	call(t, h, teacher, "POST", "/api/diaries", personalDiary(d.DiaryID, "C004", "1", today(), "書き足しました", "2"))
+	call(t, h, teacher, "POST", "/api/diaries", withLock(
+		personalDiary(d.DiaryID, "C004", "1", today(), "書き足しました", "2"), token))
 	if got := reasonOf(); got == nil || *got != reason {
 		t.Fatalf("再申請のあと: returned_reason = %v, want %q", got, reason)
 	}
@@ -219,7 +232,8 @@ func TestResubmitKeepsReturnedReason(t *testing.T) {
 	if got := reasonOf(); got == nil || *got != "もう少し" {
 		t.Fatalf("2度目の差し戻しで上書きされていません: %v", got)
 	}
-	call(t, h, teacher, "POST", "/api/diaries", personalDiary(d.DiaryID, "C004", "1", today(), "直しました", "2"))
+	call(t, h, teacher, "POST", "/api/diaries", withLock(
+		personalDiary(d.DiaryID, "C004", "1", today(), "直しました", "2"), acquireToken(t, h, teacher, itoa(d.DiaryID))))
 	call(t, h, admin, "POST", "/api/diaries/"+itoa(d.DiaryID)+"/approve", `{"share_to_guardian":false}`)
 	if got := reasonOf(); got != nil {
 		t.Fatalf("承認のあと: returned_reason = %q, want null", *got)

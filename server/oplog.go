@@ -1,6 +1,11 @@
 package main
 
-import "log"
+import (
+	"bytes"
+	"encoding/json"
+	"log"
+	"strings"
+)
 
 /*
  * 操作ログ（t_operation_log）
@@ -41,3 +46,61 @@ func (a *app) log(accountID int64, functionType, operationType, table string,
 
 func i64(v int64) *int64 { return &v }
 func s(v string) *string { return &v }
+
+/*
+ * 変更前後の値（基本設計書「操作ログ（t_operation_log）」(5-8)）
+ *
+ * 「変更前後の値は JSON 文字列で保持する。変更のあった項目だけを {"項目名": 値} の形で入れる」。
+ * 項目は並べた順に書く（Go の map は順が決まらないため使わない）。画面側のモック（web/src/api/mock.ts の
+ * changedFields）も同じ項目名・同じ順で書く。
+ * 【仮置き】ほかの操作の記録（日誌の「申請」、アカウントの「停止」など）は、まだ文で残している（web/仮置き値.md）
+ */
+
+// field は、操作ログの変更前後に入れる 1 項目
+type field struct {
+	name  string
+	value any
+}
+
+// jsonText は値を JSON にする。< > & を < などに置き換えない（操作ログの画面でそのまま読めるように）
+func jsonText(v any) string {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return "null"
+	}
+	return strings.TrimSuffix(buf.String(), "\n")
+}
+
+// fieldsJSON は、項目を並べた順に {"項目名": 値} の JSON 文字列にする
+func fieldsJSON(fields []field) string {
+	var b strings.Builder
+	b.WriteByte('{')
+	for i, f := range fields {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(jsonText(f.name))
+		b.WriteByte(':')
+		b.WriteString(jsonText(f.value))
+	}
+	b.WriteByte('}')
+	return b.String()
+}
+
+// changedFields は、変わった項目だけを、変更前と変更後の JSON 文字列にする。
+// before と after は、同じ項目を同じ順に並べて渡す
+func changedFields(before, after []field) (string, string) {
+	var b, a []field
+	for i := range after {
+		if i < len(before) && jsonText(before[i].value) == jsonText(after[i].value) {
+			continue
+		}
+		if i < len(before) {
+			b = append(b, before[i])
+		}
+		a = append(a, after[i])
+	}
+	return fieldsJSON(b), fieldsJSON(a)
+}

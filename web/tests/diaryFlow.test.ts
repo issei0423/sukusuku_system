@@ -34,12 +34,21 @@ const personal = (patch: Partial<DiaryInput> = {}): DiaryInput => ({
   record_type: '1', child_id: 'C004', class_id: 1, diary_date: today(), body: '個人日誌の本文', ...patch,
 });
 
+/** 既存の日誌を保存する前に、編集ロックを取る。保存には本人のロックの識別子が要る（基本設計書「同時編集の検出」(4-2)。GitHub Issue #166） */
+async function lockOf(user: SessionUser, diaryId: number): Promise<string> {
+  const lock = await api.acquireLock(user, diaryId);
+  if (!('token' in lock)) throw new Error(`ロックを取れませんでした（${lock.heldBy}さんが編集中）`);
+  return lock.token;
+}
+
 const statusOf = (id: number) => db.diaries.find((d) => d.diary_id === id)?.status;
 
 describe('自分が申請した日誌は承認できない（基本設計書「日誌の作成から保護者への共有」(4-5)。#174 の 1）', () => {
   it('担任の下書きを書き直して申請した管理者は承認できず、日誌を開くと申請した職員が分かる', async () => {
     // 日誌 1 は高梨（S003）が書いた野原 太郎（C001）の下書き。園長が本文を書き直して申請する
-    await api.saveDiary(admin, personal({ diary_id: 1, child_id: 'C001', body: '園長が書き直した本文です。' }), '2');
+    await api.saveDiary(admin, personal({
+      diary_id: 1, child_id: 'C001', body: '園長が書き直した本文です。', lock_token: await lockOf(admin, 1),
+    }), '2');
     const before = db.chatMessages.length;
 
     await expect(api.approveDiary(admin, 1, true)).rejects.toThrow('自分が申請した日誌は承認できません');
@@ -50,7 +59,9 @@ describe('自分が申請した日誌は承認できない（基本設計書「�
 
   it('差し戻され、作成者が直して申請し直したものは、最後に申請した人で判定する', async () => {
     await api.returnDiary(admin2, 1, '作成者が直してください');
-    await api.saveDiary(teacher, personal({ diary_id: 1, child_id: 'C001', body: '高梨が直した本文です。' }), '2');
+    await api.saveDiary(teacher, personal({
+      diary_id: 1, child_id: 'C001', body: '高梨が直した本文です。', lock_token: await lockOf(teacher, 1),
+    }), '2');
     expect((await api.getDiary(admin, 1)).applied_staff_id).toBe('S003');
     await expect(api.approveDiary(admin, 1, false)).resolves.toMatchObject({ status: '3' });
   });
@@ -58,7 +69,9 @@ describe('自分が申請した日誌は承認できない（基本設計書「�
   it('ほかの管理者が書き直して申請したものは、別の管理者が承認できる', async () => {
     // 日誌 7 は宮城（S004）が書いた申請中の個人日誌。差し戻して、上園が書き直して申請する
     await api.returnDiary(admin, 7, '書き直します');
-    await api.saveDiary(admin2, personal({ diary_id: 7, body: '上園が書き直した本文です。' }), '2');
+    await api.saveDiary(admin2, personal({
+      diary_id: 7, body: '上園が書き直した本文です。', lock_token: await lockOf(admin2, 7),
+    }), '2');
     await expect(api.approveDiary(admin2, 7, false)).rejects.toThrow('自分が申請した日誌は承認できません');
     await expect(api.approveDiary(admin, 7, false)).resolves.toMatchObject({ status: '3' });
   });
@@ -120,14 +133,18 @@ describe('差し戻す理由は承認されるまで残す（基本設計書「�
     const d = await api.saveDiary(teacher, personal(), '2');
     await api.returnDiary(admin, d.diary_id, reason);
 
-    await api.saveDiary(teacher, personal({ diary_id: d.diary_id, body: '書き足しました（下書き）' }), '1');
+    // 下書き保存ではロックを外さないので、同じ識別子のまま申請する
+    const lock_token = await lockOf(teacher, d.diary_id);
+    await api.saveDiary(teacher, personal({ diary_id: d.diary_id, body: '書き足しました（下書き）', lock_token }), '1');
     expect((await api.getDiary(admin, d.diary_id)).returned_reason).toBe(reason);
-    await api.saveDiary(teacher, personal({ diary_id: d.diary_id, body: '書き足しました' }), '2');
+    await api.saveDiary(teacher, personal({ diary_id: d.diary_id, body: '書き足しました', lock_token }), '2');
     expect((await api.getDiary(admin, d.diary_id)).returned_reason).toBe(reason);
 
     await api.returnDiary(admin, d.diary_id, 'もう少し');
     expect((await api.getDiary(admin, d.diary_id)).returned_reason).toBe('もう少し');
-    await api.saveDiary(teacher, personal({ diary_id: d.diary_id, body: '直しました' }), '2');
+    await api.saveDiary(teacher, personal({
+      diary_id: d.diary_id, body: '直しました', lock_token: await lockOf(teacher, d.diary_id),
+    }), '2');
     await api.approveDiary(admin, d.diary_id, false);
     expect((await api.getDiary(admin, d.diary_id)).returned_reason).toBeNull();
   });

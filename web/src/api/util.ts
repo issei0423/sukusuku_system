@@ -148,9 +148,13 @@ export function plusMinutes(isoDateTime: string, minutes: number): string {
   return formatLocal(new Date(new Date(isoDateTime).getTime() + minutes * 60_000));
 }
 
-/** 現在時刻に分を足す（現地時刻） */
+/**
+ * 現在時刻（now() と同じ JST）に分を足す。
+ * 端末の時計の時刻のまま作ると、JST でない端末（UTC で回る CI など）では now() と時差のぶんずれ、
+ * ロックの期限（locked_until）がはじめから過ぎていることになる（GitHub Issue #166 の 6 の確かめで見つけた）
+ */
 export function fromNowMinutes(minutes: number): string {
-  return formatLocal(new Date(Date.now() + minutes * 60_000));
+  return plusMinutes(now(), minutes);
 }
 
 function formatLocal(d: Date): string {
@@ -211,6 +215,23 @@ export function validateEmail(email: string): string | null {
   if ([...v].length > 254) return 'メールアドレスは254文字以内で入力してください';
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return 'メールアドレスの形式が正しくありません';
   return null;
+}
+
+/**
+ * 職員アカウントの発行の入力を確かめ、誤りがあれば利用者に見せる文言を返す。問題が無ければ null。
+ * 値は前後の空白を除いてから渡す（基本設計書「入力項目の制約値」(4-9)「ログインID（メールアドレス）254文字以内、
+ * メールアドレス形式」「氏名 各50文字以内」「園児ID・職員ID 20文字以内」。GitHub Issue #167 の 1）。
+ * 画面（職員アカウント管理画面）とモックが使う。サーバ側は server/api_admin.go の validateStaffAccountInput
+ */
+export function validateStaffAccountInput(staffId: string, staffName: string, email: string, role: string): string | null {
+  const length = (v: string) => [...v].length;
+  if (!staffId) return '職員IDを入力してください';
+  if (length(staffId) > 20) return '職員IDは20文字以内で入力してください';
+  if (!staffName) return '氏名を入力してください';
+  if (length(staffName) > 50) return '氏名は50文字以内で入力してください';
+  if (role !== '1' && role !== '2') return 'ロールの指定が正しくありません';
+  const emailError = validateEmail(email);
+  return emailError ? emailError.replace('メールアドレス', 'ログインID（メールアドレス）') : null;
 }
 
 /**

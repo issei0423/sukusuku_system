@@ -6,7 +6,7 @@
  * 過去の記録を同じ画面に並べる。前回の記述を見ながら書けるようにするため。
  * 写真は3枚まで。上限に達したら追加を無効にする。
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
@@ -16,6 +16,7 @@ import { ConfirmDialog, notify } from '../../components/feedback';
 import { DIARY_RECORD_TYPE, DIARY_STATUS, DIARY_STATUS_CLASS } from '../../api/codes';
 import { formatMD, formatMDHM, today, now, plusMinutes } from '../../api/util';
 import type { DiaryRecordType } from '../../api/types';
+import { acquireDiaryLock, releaseDiaryLock, releaseDiaryLockNow, LOCK_TOUCH_MS } from './diaryLock';
 
 // 本文の上限（基本設計書「入力項目の制約値」(4-9)）
 const BODY_MAX = 2000;
@@ -60,6 +61,11 @@ export default function DiaryEditScreen() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [unlocking, setUnlocking] = useState(false);
+  // いま持っているロックの識別子。画面を離れるときの解除に使う（描画を待たずに読めるよう ref にも持つ）
+  const lockRef = useRef<string | undefined>(undefined);
+  // 確認画面へ進むときは、ロックを確認画面へ引き継ぐ（外さない。./diaryLock.ts）
+  const handOverRef = useRef(false);
+  const lastTouchRef = useRef(0);
 
   const children = visibleChildren(user!);
   const classesForUser = selectableClasses(user!);
@@ -96,15 +102,45 @@ export default function DiaryEditScreen() {
       });
       return;
     }
-    api.acquireLock(user!, d.diary_id).then((r) => {
-      if ('token' in r) { setLockToken(r.token); setHeldBy(null); }
+    let active = true;
+    acquireDiaryLock(user!, d.diary_id).then((r) => {
+      if (!active) {
+        // 取りにいっている間に画面を離れた。取れたロックは外す
+        if ('token' in r) void releaseDiaryLock(user!, d.diary_id, r.token);
+        return;
+      }
+      // 取ったこと自体が操作にあたる（サーバは取得の時刻を最終操作時刻にする）。続けて知らせを送らない
+      if ('token' in r) { lockRef.current = r.token; lastTouchRef.current = Date.now(); setLockToken(r.token); setHeldBy(null); }
       else setHeldBy(r.heldBy);
-    });
-    // 画面を移るときだけでなく、タブを閉じる・読み込み直すときにもロックを外す
-    const release = () => { void api.releaseLock(user!, d.diary_id); };
-    window.addEventListener('pagehide', release);
-    return () => { window.removeEventListener('pagehide', release); release(); };
+    }).catch((e) => { if (active) setError((e as Error).message); });
+    // 画面を移るときだけでなく、タブを閉じる・読み込み直すときにもロックを外す。解除は識別子を添えて送る
+    const onPageHide = () => {
+      if (lockRef.current) void releaseDiaryLockNow(user!, d.diary_id, lockRef.current);
+    };
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      active = false;
+      window.removeEventListener('pagehide', onPageHide);
+      const token = lockRef.current;
+      lockRef.current = undefined;
+      // 確認画面へ進むときは外さない。確認画面が、申請する（サーバが外す）か離れるときに外す（GitHub Issue #166 の 1）
+      if (token && !handOverRef.current) void releaseDiaryLock(user!, d.diary_id, token);
+    };
   }, [existing.data?.diary_id]);
+
+  /*
+   * 編集画面での操作（入力の変化）をサーバへ知らせ、無操作の判定を最後の操作から数えさせる
+   * （基本設計書「編集ロックの解除」(4-5)、5-4 last_active_at。GitHub Issue #166 の 3）。
+   * 知らせないと、書き続けていても取った時刻から無操作の時間で切れ、ほかの職員に取られる。
+   * ロックが外れていたら（強制解除・無操作で引き取られた）、その場で知らせる。入力中の内容は画面に残す
+   */
+  useEffect(() => {
+    if (!diaryId || !lockToken) return;
+    const t = Date.now();
+    if (t - lastTouchRef.current < LOCK_TOUCH_MS) return;
+    lastTouchRef.current = t;
+    api.touchLock(user!, diaryId, lockToken).catch((e) => setError((e as Error).message));
+  }, [user, diaryId, lockToken, body, recordType, childId, classId, date, photos]);
 
   // 管理者による強制解除（基本設計書「編集ロックの解除」(4-5)）。解除したあと、自分がロックを取り直す
   const forceUnlock = async () => {
@@ -118,8 +154,11 @@ export default function DiaryEditScreen() {
         notify('編集ロックを解除しました');
         return;
       }
-      const r = await api.acquireLock(user!, diaryId);
-      if ('token' in r) { setLockToken(r.token); setHeldBy(null); notify('編集ロックを解除しました'); }
+      const r = await acquireDiaryLock(user!, diaryId);
+      if ('token' in r) {
+        lockRef.current = r.token; lastTouchRef.current = Date.now();
+        setLockToken(r.token); setHeldBy(null); notify('編集ロックを解除しました');
+      }
       else setHeldBy(r.heldBy);
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); setUnlocking(false); }
   };
@@ -164,6 +203,7 @@ export default function DiaryEditScreen() {
   const needsChild = recordType === '1' || recordType === '4';
   const d = existing.data;
   const readOnly = !!d && (d.status === '2' || d.status === '3');
+  const lockPending = !!diaryId && !lockToken && !heldBy;
 
   /*
    * 園児を選んだら、その園児の在籍クラスを対象のクラスに入れる。個人日誌・ヒヤリハットの対象のクラスは、
@@ -184,6 +224,9 @@ export default function DiaryEditScreen() {
   const goConfirm = () => {
     if (!date) { setError('記録日を入力してください'); return; }
     if (date > today()) { setError('記録日に未来日は指定できません（当日まで）'); return; }
+    // ロックは確認画面へ引き継ぐ。確認画面にいる間に、ほかの職員が開いて直せないようにする（GitHub Issue #166 の 1）。
+    // 記録日で止めたときは編集画面に残るので、引き継ぎの印は進むと決まってから付ける
+    handOverRef.current = true;
     navigate('/staff/diary/confirm', {
       state: { recordType, childId: needsChild ? childId : null, classId: classId === '' ? null : classId,
                date, body, diaryId, lockToken, photos },
@@ -330,9 +373,10 @@ export default function DiaryEditScreen() {
             )}
 
             <div className="row-end">
-              <button onClick={() => save('1')} disabled={busy || readOnly || !!heldBy}>下書き保存</button>
+              {/* 既存の日誌は、ロックを取れるまで保存させない。ロックの無い保存はサーバが断る（GitHub Issue #166） */}
+              <button onClick={() => save('1')} disabled={busy || readOnly || !!heldBy || lockPending}>下書き保存</button>
               <button className="btn-primary" onClick={goConfirm}
-                disabled={busy || readOnly || !!heldBy || !body.trim() || (needsChild && !childId) || classId === ''}>
+                disabled={busy || readOnly || !!heldBy || lockPending || !body.trim() || (needsChild && !childId) || classId === ''}>
                 確認へ進む
               </button>
             </div>
