@@ -72,10 +72,12 @@ CREATE TABLE t_invitation_code (
 -- 利用規約（m_terms）
 CREATE TABLE m_terms (
   terms_id      INTEGER PRIMARY KEY AUTOINCREMENT,
-  terms_version TEXT    NOT NULL UNIQUE,
+  terms_version TEXT    NOT NULL,
   document_type TEXT    NOT NULL CHECK (document_type IN ('1','2')),  -- 1:利用規約 2:プライバシーポリシー
   body          TEXT    NOT NULL,
-  published_on  TEXT    NOT NULL
+  published_on  TEXT    NOT NULL,
+  covers_external_ai INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (terms_version, document_type)
 );
 
 -- 同意履歴（t_terms_agreement）。追記のみとし、更新・削除の手段を設けない。
@@ -101,6 +103,11 @@ CREATE TABLE m_child (
   normal_temperature  REAL,
   enrollment_status   TEXT    NOT NULL CHECK (enrollment_status IN ('1','2','3')),      -- 1:在籍 2:退園 3:卒園
   photo_consent_level TEXT    NOT NULL CHECK (photo_consent_level IN ('1','2','3')),    -- 1:園内記録 2:自児保護者 3:他保護者
+  -- 詳細設計書「変える表」(5-3)。既存の DB には db_contact.go の ensureContactSchema が同じ定義で足す
+  nickname             TEXT,                                                              -- 呼び名（任意・20文字。園児情報入力で入れ、他児の名前の注意に使う。NULL も '' も「無し」。読むときは IFNULL で '' にそろえる）
+  face_photo_path      TEXT,
+  withdrawn_on         TEXT,
+  nap_interval_minutes INTEGER CHECK (nap_interval_minutes BETWEEN 1 AND 15),
   is_deleted          INTEGER NOT NULL DEFAULT 0,
   created_at          TEXT    NOT NULL,
   updated_at          TEXT    NOT NULL
@@ -135,9 +142,12 @@ CREATE TABLE t_guardian_child (
   guardian_id  TEXT NOT NULL REFERENCES m_guardian(guardian_id),
   child_id     TEXT NOT NULL REFERENCES m_child(child_id),
   relationship TEXT,
-  link_status  TEXT NOT NULL CHECK (link_status IN ('1','2')),  -- 1:有効 2:終了
+  link_status  TEXT NOT NULL CHECK (link_status IN ('1','2','3')),  -- 1:有効 2:終了 3:猶予中
   linked_at    TEXT NOT NULL,
   ended_at     TEXT,
+  grace_ends_on TEXT,
+  ai_opt_out INTEGER NOT NULL DEFAULT 0,
+  contact_order INTEGER NOT NULL DEFAULT 1,
   PRIMARY KEY (guardian_id, child_id)
 );
 
@@ -159,31 +169,47 @@ CREATE TABLE m_medical_history (
 
 -- ============ 5-4 日誌 ============
 
--- 日誌（t_diary）。記録種別でテーブルを分けない
+-- 日誌（t_diary）。記録種別でテーブルを分けない。園内の記録で、どの状態でも保護者には届かない
+-- （基本設計書「日誌システム（園内の記録）」(4-6)、詳細設計書「変える表」(5-3)）。
+-- 既存の DB は db_diary.go の ensureInternalDiary が同じ定義に作り直す（定義は2か所で同じにする）
 CREATE TABLE t_diary (
   diary_id              INTEGER PRIMARY KEY AUTOINCREMENT,
   record_type           TEXT    NOT NULL CHECK (record_type IN ('1','2','3','4')),  -- 1:個人 2:クラス 3:週案月案 4:ヒヤリハット
   child_id              TEXT    REFERENCES m_child(child_id),
-  class_id              INTEGER REFERENCES m_class(class_id),
+  class_id              INTEGER NOT NULL REFERENCES m_class(class_id),
   diary_date            TEXT    NOT NULL,
   body                  TEXT    NOT NULL,
   status                TEXT    NOT NULL CHECK (status IN ('1','2','3','4')),       -- 1:下書き 2:申請中 3:承認済み 4:差し戻し
   created_staff_id      TEXT    NOT NULL REFERENCES m_staff(staff_id),
+  -- 申請した職員と日時。取り下げると空になる。「自分が申請した日誌は承認できない」はこの列で判定する
+  applied_staff_id      TEXT    REFERENCES m_staff(staff_id),
+  applied_at            TEXT,
+  -- 承認した職員と日時。差し戻しでは書かない。承認を取り消すと空になる（詳細設計書「日誌の状態」(3-6)）
   approved_staff_id     TEXT    REFERENCES m_staff(staff_id),
   approved_at           TEXT,
-  -- 承認とは別の指定
-  is_shared_to_guardian INTEGER NOT NULL DEFAULT 0,
-  shared_at             TEXT,
+  -- ヒヤリハットの欄（発生日時・場所・保護者へ伝えたこと）。状況・とった対応は本文に見出しを付けて持つ
+  occurred_at           TEXT,
+  place                 TEXT,
+  guardian_notice       TEXT    CHECK (guardian_notice IN ('1','2')),                 -- 1:伝えた 2:伝えていない
+  guardian_noticed_at   TEXT,
+  guardian_notice_method TEXT   CHECK (guardian_notice_method IN ('1','2','3','9')),  -- 1:電話 2:お迎えのとき 3:連絡帳・個人チャット 9:その他
+  guardian_notice_person TEXT,
   -- 起票元。ヒヤリハットのみ。異常時の記録と相互に参照する
   nap_abnormal_id       INTEGER REFERENCES t_nap_abnormal(nap_abnormal_id),
   -- 差し戻す理由。差し戻しは理由の入力を必須とする（画面詳細図 3-3）
   returned_reason       TEXT,
   is_deleted            INTEGER NOT NULL DEFAULT 0,
   created_at            TEXT    NOT NULL,
-  updated_at            TEXT    NOT NULL
+  updated_at            TEXT    NOT NULL,
+  -- 日付の前後を比べる CHECK は置かない（日付ずらしが列を1つずつ書き換えるため。詳細設計書の決めたこと D-25）
+  CHECK (status NOT IN ('2','3') OR (applied_staff_id IS NOT NULL AND applied_at IS NOT NULL)),
+  CHECK (record_type <> '4' OR (occurred_at IS NOT NULL AND place IS NOT NULL)),
+  CHECK (guardian_notice IS NOT '1' OR (guardian_noticed_at IS NOT NULL AND guardian_notice_method IS NOT NULL AND guardian_notice_person IS NOT NULL))
 );
-CREATE INDEX ix_diary_date  ON t_diary (diary_date);
-CREATE INDEX ix_diary_child ON t_diary (child_id, diary_date);
+CREATE INDEX ix_diary_date   ON t_diary (diary_date);
+CREATE INDEX ix_diary_child  ON t_diary (child_id, diary_date);
+CREATE INDEX ix_diary_class  ON t_diary (class_id, diary_date);
+CREATE INDEX ix_diary_status ON t_diary (status, applied_at);
 
 -- 編集ロック（t_diary_lock）。取得のたびにトークンを発行し、保存時に照合する
 CREATE TABLE t_diary_lock (
@@ -194,13 +220,13 @@ CREATE TABLE t_diary_lock (
   last_active_at  TEXT    NOT NULL
 );
 
--- 雛形（m_diary_template）。保護者共有の既定値を雛形側に持ち、コードに書かない
+-- 雛形（m_diary_template）。保護者への共有の既定は持たない（日誌は共有しない。詳細設計書「変える表」(5-3)）
 CREATE TABLE m_diary_template (
-  diary_template_id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  record_type               TEXT    NOT NULL CHECK (record_type IN ('1','2','3','4')),
-  template_name             TEXT    NOT NULL,
-  body                      TEXT    NOT NULL,
-  default_share_to_guardian INTEGER NOT NULL DEFAULT 0
+  diary_template_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  record_type       TEXT    NOT NULL CHECK (record_type IN ('1','2','3','4')),
+  template_name     TEXT    NOT NULL,
+  body              TEXT    NOT NULL,
+  is_deleted        INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE t_diary_attachment (
@@ -234,6 +260,10 @@ CREATE TABLE t_chat_member (
   account_id   INTEGER NOT NULL REFERENCES m_account(account_id),
   joined_at    TEXT    NOT NULL,
   left_at      TEXT,
+  -- 【仮置き】最初に参加した日時。抜けていた行を今の時刻で参加し直す（決めたこと D-48）ときに、書き換える前の joined_at を残す。
+  -- 個人チャットの「保護者がまだ1人もいなかった間の投稿は見せる」境（api_chat.go の firstGuardianJoinedAt）が今へ動かないように。
+  -- 空なら joined_at が最初の参加。既存の DB には db.go の ensureChatMemberFirstJoined が足す（web/仮置き値.md）
+  first_joined_at TEXT,
   PRIMARY KEY (chat_room_id, account_id)
 );
 
@@ -248,7 +278,12 @@ CREATE TABLE t_chat_message (
   edited_at          TEXT,
   is_deleted         INTEGER NOT NULL DEFAULT 0,
   deleted_at         TEXT,
-  deleted_account_id INTEGER REFERENCES m_account(account_id)
+  deleted_account_id INTEGER REFERENCES m_account(account_id),
+  -- 詳細設計書「変える表」(5-3)。既存の DB には ensureContactSchema が足す
+  confirmed_staff_id TEXT,
+  confirmed_at       TEXT,
+  quote_message_id   INTEGER,
+  quote_contact_date TEXT
 );
 CREATE INDEX ix_chat_message_room ON t_chat_message (chat_room_id, sent_at);
 
@@ -331,7 +366,10 @@ CREATE TABLE t_nap_record (
   breathing      TEXT    NOT NULL CHECK (breathing IN ('1','2')),              -- 1:あり 2:確認できず
   complexion     TEXT    NOT NULL CHECK (complexion IN ('1','2','3','4')),     -- 1:通常 2:蒼白 3:紅潮 4:その他
   temperature    REAL,
-  staff_id       TEXT    NOT NULL REFERENCES m_staff(staff_id)
+  staff_id       TEXT    NOT NULL REFERENCES m_staff(staff_id),
+  -- 最後に修正した時刻。空なら修正なし。帳票の「修正あり」の印に使う。修正者・修正前の値・修正後の値・理由は操作ログが持つ
+  -- （基本設計書「足した列」(5-7)・「記録の修正と改ざん防止」(4-8)）。既存の DB には api_nap_correct.go の ensureNapRecordCorrectedAt が足す
+  corrected_at   TEXT
 );
 CREATE INDEX ix_nap_record_child ON t_nap_record (child_id, checked_at);
 
@@ -341,6 +379,7 @@ CREATE TABLE t_nap_abnormal (
   nap_session_id  INTEGER NOT NULL REFERENCES t_nap_session(nap_session_id),
   child_id        TEXT    NOT NULL REFERENCES m_child(child_id),
   found_at        TEXT    NOT NULL,
+  recorded_at     TEXT,
   situation       TEXT    NOT NULL,
   response        TEXT    NOT NULL,
   staff_id        TEXT    NOT NULL REFERENCES m_staff(staff_id),
@@ -407,6 +446,13 @@ CREATE TABLE t_development_check (
   -- 所見（チェック1件に対する自由記述）。園内限定であり、保護者へは共有しない
   -- （基本設計書「発達チェック・身体測定」(5-7)）
   note                    TEXT,
+  -- 保護者へのひとこと（所見とは別の欄。確定した時点で成長の記録に届く）と、最初に確定した日時（直しても動かさない）
+  -- （詳細設計書「変える表」(5-3)・「成長の記録に届くもの」(3-7)、決めたこと D-31）
+  guardian_message        TEXT,
+  finalized_at            TEXT,
+  -- 確定したあとで保護者へのひとことを別の文に書き換えた時刻。空なら書き換えていない。保護者の成長の記録に
+  -- 「訂正しました（日付）」を出す（詳細設計書「変える表」(5-3)、決めたこと D-51。PR #216 で決まった設計）
+  guardian_message_corrected_at TEXT,
   UNIQUE (child_id, checked_on)
 );
 
@@ -460,15 +506,18 @@ CREATE TABLE m_growth_standard (
 -- updated_at を持たないのはこのため。
 CREATE TABLE t_operation_log (
   operation_log_id INTEGER PRIMARY KEY AUTOINCREMENT,
-  account_id       INTEGER NOT NULL REFERENCES m_account(account_id),
+  -- 詳細設計書「変える表」(5-3)。システムの操作（operator_type = '2'）は account_id を持たない
+  account_id       INTEGER REFERENCES m_account(account_id),
   operated_at      TEXT    NOT NULL,
-  function_type    TEXT    NOT NULL CHECK (function_type IN ('1','2','3','4','5','6','7')),
-  operation_type   TEXT    NOT NULL CHECK (operation_type IN ('1','2','3','4','5')),
+  function_type    TEXT    NOT NULL CHECK (function_type IN ('1','2','3','4','5','6','7','8','9')),
+  operation_type   TEXT    NOT NULL CHECK (operation_type IN ('1','2','3','4','5','6')),
   target_table     TEXT    NOT NULL,
   target_id        INTEGER,
   target_child_id  TEXT,
   before_value     TEXT,
-  after_value      TEXT
+  after_value      TEXT,
+  operator_type    TEXT NOT NULL DEFAULT '1' CHECK (operator_type IN ('1','2')),
+  CHECK (operator_type = '2' OR account_id IS NOT NULL)
 );
 CREATE INDEX ix_operation_log_at    ON t_operation_log (operated_at);
 CREATE INDEX ix_operation_log_child ON t_operation_log (target_child_id, operated_at);
@@ -481,4 +530,173 @@ CREATE TABLE m_setting (
   description      TEXT,
   updated_staff_id TEXT NOT NULL REFERENCES m_staff(staff_id),
   updated_at       TEXT NOT NULL
+);
+
+-- ============ 5-4 連絡帳（基本設計書「連絡帳」(5-4)） ============
+
+-- 写真（t_contact_photo）。実体はファイルシステム（-files の下）。取り消したものは配信しない
+CREATE TABLE t_contact_photo (
+  contact_photo_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  class_id         INTEGER NOT NULL REFERENCES m_class(class_id),
+  contact_date     TEXT    NOT NULL,
+  file_path        TEXT    NOT NULL,
+  file_type        TEXT    NOT NULL,
+  file_size        INTEGER NOT NULL,
+  staff_id         TEXT    NOT NULL REFERENCES m_staff(staff_id),
+  is_deleted       INTEGER NOT NULL DEFAULT 0,
+  created_at       TEXT    NOT NULL
+);
+
+-- 写っている子（t_contact_photo_child）。送った時点の同意を写す（なぜ送れたかを後から示す）
+CREATE TABLE t_contact_photo_child (
+  contact_photo_id INTEGER NOT NULL REFERENCES t_contact_photo(contact_photo_id),
+  child_id         TEXT    NOT NULL REFERENCES m_child(child_id),
+  consent_level    TEXT    NOT NULL CHECK (consent_level IN ('1','2','3')),
+  PRIMARY KEY (contact_photo_id, child_id)
+);
+
+-- 家庭から（t_contact_home）。園児×日に1行。状態は列から読む（詳細設計書「家庭から」(3-1)）
+CREATE TABLE t_contact_home (
+  contact_home_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+  child_id           TEXT    NOT NULL REFERENCES m_child(child_id),
+  contact_date       TEXT    NOT NULL,
+  guardian_id        TEXT    NOT NULL REFERENCES m_guardian(guardian_id),   -- 最後に送った保護者
+  temperature        REAL,                                                  -- 判定しない。範囲の外も保存する
+  night_sleep_from   TEXT,                                                  -- 'HH:mm'
+  night_sleep_to     TEXT,
+  breakfast          TEXT    CHECK (breakfast IN ('1','2','3','4')),
+  mood_label         TEXT,                                                  -- 選んだ時点の選択肢の文字
+  pickup_type        TEXT    CHECK (pickup_type IN ('1','2')),              -- 1:いつもどおり 2:変更あり
+  pickup_person      TEXT,
+  pickup_time        TEXT,
+  message            TEXT,
+  submitted_at       TEXT    NOT NULL,
+  confirmed_staff_id TEXT    REFERENCES m_staff(staff_id),
+  confirmed_at       TEXT,
+  revised_at         TEXT,
+  created_at         TEXT    NOT NULL,
+  updated_at         TEXT    NOT NULL,
+  UNIQUE (child_id, contact_date),
+  CHECK (pickup_type IS NOT '2' OR (pickup_person IS NOT NULL AND pickup_time IS NOT NULL))
+);
+
+-- 出来事（t_contact_event）。きょうのようすの1件・園児1人。種類ごとに必須の列を縛る
+CREATE TABLE t_contact_event (
+  contact_event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  child_id         TEXT    NOT NULL REFERENCES m_child(child_id),          -- 届く先。参照の判定はこの列1つ
+  class_id         INTEGER NOT NULL REFERENCES m_class(class_id),
+  contact_date     TEXT    NOT NULL,
+  event_type       TEXT    NOT NULL CHECK (event_type IN ('1','2','3','4','5')),  -- 1:食事 2:排せつ 3:体温 4:ひとこと 5:写真
+  recorded_at      TEXT    NOT NULL,
+  meal_kind        TEXT    CHECK (meal_kind IN ('1','2')),                  -- 1:給食 2:おやつ
+  meal_amount      TEXT    CHECK (meal_amount IN ('1','2','3','4')),
+  toilet_label     TEXT,                                                   -- 選んだ時点の選択肢の文字
+  temperature      REAL,
+  body             TEXT,
+  contact_photo_id INTEGER REFERENCES t_contact_photo(contact_photo_id),
+  keep_in_growth   INTEGER NOT NULL DEFAULT 0,
+  staff_id         TEXT    NOT NULL REFERENCES m_staff(staff_id),          -- その日に直せる人
+  corrected_at     TEXT,
+  is_deleted       INTEGER NOT NULL DEFAULT 0,
+  created_at       TEXT    NOT NULL,
+  updated_at       TEXT    NOT NULL,
+  CHECK ((meal_kind IS NOT NULL AND meal_amount IS NOT NULL) = (event_type = '1')),
+  CHECK ((meal_kind IS NULL) = (meal_amount IS NULL)),
+  CHECK ((toilet_label IS NOT NULL) = (event_type = '2')),
+  CHECK ((temperature IS NOT NULL) = (event_type = '3')),
+  CHECK ((contact_photo_id IS NOT NULL) = (event_type = '5')),
+  CHECK (event_type <> '4' OR body IS NOT NULL),
+  CHECK (event_type NOT IN ('1','2','3') OR body IS NULL),
+  CHECK (keep_in_growth = 0 OR event_type IN ('4','5'))
+);
+CREATE INDEX ix_contact_event_child ON t_contact_event (child_id, contact_date);
+CREATE INDEX ix_contact_event_class ON t_contact_event (class_id, contact_date);
+CREATE INDEX ix_contact_event_photo ON t_contact_event (contact_photo_id);
+
+-- クラスのようす（t_contact_class）。クラスに1行。一意にしない（1日1回は目安）
+CREATE TABLE t_contact_class (
+  contact_class_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  class_id         INTEGER NOT NULL REFERENCES m_class(class_id),
+  contact_date     TEXT    NOT NULL,
+  body             TEXT    NOT NULL,
+  contact_photo_id INTEGER REFERENCES t_contact_photo(contact_photo_id),
+  source_diary_id  INTEGER REFERENCES t_diary(diary_id),                   -- 引き写すだけで、日誌は保護者に見えない
+  staff_id         TEXT    NOT NULL REFERENCES m_staff(staff_id),
+  recorded_at      TEXT    NOT NULL,
+  corrected_at     TEXT,
+  is_deleted       INTEGER NOT NULL DEFAULT 0,
+  created_at       TEXT    NOT NULL,
+  updated_at       TEXT    NOT NULL
+);
+CREATE INDEX ix_contact_class ON t_contact_class (class_id, contact_date);
+
+-- 園から（t_contact_facility）。取り消していない行は園児×日に1つ
+CREATE TABLE t_contact_facility (
+  contact_facility_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  child_id            TEXT    NOT NULL REFERENCES m_child(child_id),
+  class_id            INTEGER NOT NULL REFERENCES m_class(class_id),
+  contact_date        TEXT    NOT NULL,
+  body                TEXT    NOT NULL,
+  staff_id            TEXT    NOT NULL REFERENCES m_staff(staff_id),
+  recorded_at         TEXT    NOT NULL,
+  corrected_at        TEXT,
+  is_deleted          INTEGER NOT NULL DEFAULT 0,
+  created_at          TEXT    NOT NULL,
+  updated_at          TEXT    NOT NULL
+);
+CREATE UNIQUE INDEX ux_contact_facility_alive ON t_contact_facility (child_id, contact_date) WHERE is_deleted = 0;
+
+-- 保護者が開いた時刻（t_contact_read）。1件ずつの既読は持たない
+CREATE TABLE t_contact_read (
+  child_id     TEXT    NOT NULL REFERENCES m_child(child_id),
+  contact_date TEXT    NOT NULL,
+  account_id   INTEGER NOT NULL REFERENCES m_account(account_id),
+  read_at      TEXT    NOT NULL,
+  PRIMARY KEY (child_id, contact_date, account_id)
+);
+
+-- ============ 5-7 午睡チェック（足した表） ============
+
+-- ねた・おきた（t_nap_sleep）。伝える層。sleep_temperature だけは監査の層で保護者へ返さない
+CREATE TABLE t_nap_sleep (
+  nap_sleep_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+  nap_session_id    INTEGER NOT NULL REFERENCES t_nap_session(nap_session_id),
+  child_id          TEXT    NOT NULL REFERENCES m_child(child_id),
+  slept_at          TEXT    NOT NULL,                                       -- 入眠
+  woke_at           TEXT,                                                   -- slept_at より後（検査で守る）
+  sleep_temperature REAL,
+  slept_staff_id    TEXT    NOT NULL REFERENCES m_staff(staff_id),
+  woke_staff_id     TEXT    REFERENCES m_staff(staff_id),
+  corrected_at      TEXT,
+  is_deleted        INTEGER NOT NULL DEFAULT 0,
+  created_at        TEXT    NOT NULL,
+  updated_at        TEXT    NOT NULL
+);
+CREATE UNIQUE INDEX ux_nap_sleep_open ON t_nap_sleep (nap_session_id, child_id) WHERE woke_at IS NULL AND is_deleted = 0;
+CREATE INDEX ix_nap_sleep_child ON t_nap_sleep (child_id, slept_at);
+
+-- きょうは対象外（t_nap_exclusion）。監査の層。出欠の記録ではない
+CREATE TABLE t_nap_exclusion (
+  nap_exclusion_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  nap_session_id   INTEGER NOT NULL REFERENCES t_nap_session(nap_session_id),
+  child_id         TEXT    NOT NULL REFERENCES m_child(child_id),
+  reason           TEXT    NOT NULL CHECK (reason IN ('1','2')),            -- 1:欠席 2:午睡なし
+  staff_id         TEXT    NOT NULL REFERENCES m_staff(staff_id),
+  is_deleted       INTEGER NOT NULL DEFAULT 0,
+  created_at       TEXT    NOT NULL
+);
+CREATE UNIQUE INDEX ux_nap_exclusion_alive ON t_nap_exclusion (nap_session_id, child_id) WHERE is_deleted = 0;
+
+-- ============ 5-9 共通（足した表） ============
+
+-- 定型文（m_phrase）。連絡帳と日誌で共通。園が設定画面で直す
+CREATE TABLE m_phrase (
+  phrase_id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  phrase_scope     TEXT    NOT NULL CHECK (phrase_scope IN ('1','2','3','4')),  -- 1:園から 2:ひとこと 3:クラスのようす 4:日誌
+  body             TEXT    NOT NULL,
+  display_order    INTEGER NOT NULL,
+  is_deleted       INTEGER NOT NULL DEFAULT 0,
+  updated_staff_id TEXT    NOT NULL REFERENCES m_staff(staff_id),
+  created_at       TEXT    NOT NULL,
+  updated_at       TEXT    NOT NULL
 );

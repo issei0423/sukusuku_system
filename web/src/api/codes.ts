@@ -32,6 +32,14 @@ export const DIARY_STATUS_CLASS: Record<DiaryStatus, string> = {
 export const CHAT_ROOM_TYPE: Record<ChatRoomType, string> = {
   '1': '園全体', '2': 'クラス', '3': '目的別グループ', '4': '個人', '5': '職員',
 };
+/** 保護者が参加するチャンネル（園全体・クラスグループ・個人チャット。基本設計書「チャット」(5-5)） */
+export const GUARDIAN_ROOM_TYPES: readonly ChatRoomType[] = ['1', '2', '4'];
+/**
+ * 吹き出しに添える、送信者が職員か保護者か。
+ * 【仮置き】職員と保護者に同じ氏名の人がいると、氏名だけでは誰の発言か分からない（GitHub Issue #141。web/仮置き値.md）。
+ * 管理者と一般は分けない。保護者に園の中の権限の区分を見せる必要がないため
+ */
+export const SENDER_KIND: Record<Role, string> = { '1': '職員', '2': '職員', '3': '保護者' };
 export const BODY_POSITION: Record<BodyPosition, string> = {
   '1': '仰向け', '2': 'うつ伏せ', '3': '左向き', '4': '右向き',
 };
@@ -42,12 +50,12 @@ export const DEVELOPMENT_RESULT: Record<DevelopmentResult, string> = {
 };
 export const SHARE_STATUS: Record<ShareStatus, string> = { '0': '対象外', '1': '未連携', '2': '連携済' };
 export const MEASURE_TYPE: Record<MeasureType, string> = { '1': '身長', '2': '体重' };
-export const LINK_STATUS: Record<LinkStatus, string> = { '1': '有効', '2': '終了' };
+export const LINK_STATUS: Record<LinkStatus, string> = { '1': '有効', '2': '終了', '3': '猶予中' };
 export const FUNCTION_TYPE: Record<FunctionType, string> = {
-  '1': '日誌', '2': 'チャット', '3': '午睡', '4': '発達', '5': '身体測定', '6': '園児', '7': 'アカウント',
+  '1': '日誌', '2': 'チャット', '3': '午睡', '4': '発達', '5': '身体測定', '6': '園児', '7': 'アカウント', '8': '連絡帳', '9': '設定',
 };
 export const OPERATION_TYPE: Record<OperationType, string> = {
-  '1': '作成', '2': '変更', '3': '承認', '4': '削除', '5': '出力',
+  '1': '作成', '2': '変更', '3': '承認', '4': '削除', '5': '出力', '6': 'AIの下書き',
 };
 
 /*

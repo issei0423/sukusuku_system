@@ -9,6 +9,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAsync } from '../../hooks';
+import { onLive } from '../../live';
 import { useSession } from '../../session';
 import { api, selectableClasses } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Alert, Tag } from '../../components/ui';
@@ -22,7 +23,9 @@ export default function DevScheduleScreen() {
   const [error, setError] = useState<string | null>(null);
   const [edits, setEdits] = useState<Record<string, string>>({});
 
-  const { data, error: loadError, loading } = useAsync(() => api.schedules(user!, classId), [classId, tick]);
+  // ほかの職員の確定・ほかの管理者の予定日の変更があったら、開いたままでも読み直す（live.ts）
+  const { data, error: loadError, loading } = useAsync(() => api.schedules(user!, classId), [classId, tick],
+    { live: onLive('development') });
 
   const apply = async (childId: string, date: string, manual: boolean) => {
     setError(null);
@@ -62,8 +65,14 @@ export default function DevScheduleScreen() {
             </thead>
             <tbody>
               {data.map((r) => {
-                const value = edits[r.child.child_id] ?? r.scheduledOn ?? r.suggested;
-                const changed = value !== (r.scheduledOn ?? '');
+                /*
+                 * 次回の予定日の初期値は、設定中の予定日。無ければシステムの提案（間隔から算出した日）。
+                 * 「上書きする」は日付を変えるまで押せない（画面詳細図「スケジュール設定画面」(6-3) 項目5・8）。
+                 * 予定の無い園児では、提案の日を初期値に出しながら空と比べていたため、初めから押せた（GitHub Issue #178 の 7）
+                 */
+                const initial = r.scheduledOn ?? r.suggested;
+                const value = edits[r.child.child_id] ?? initial;
+                const changed = value !== '' && value !== initial;
                 return (
                   <tr key={r.child.child_id}>
                     <td className="nowrap">{r.child.child_name}</td>

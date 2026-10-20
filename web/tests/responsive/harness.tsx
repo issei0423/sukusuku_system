@@ -54,7 +54,7 @@ function ReviewLocation() {
 }
 createRoot(document.getElementById('root')!).render(
   <MemoryRouter initialEntries={[{ pathname: scenario.path, state: scenario.state }]}>
-    <SessionProvider initialUser={scenario.role === 'public' ? null : users[scenario.role]}>
+    <SessionProvider initialUser={scenario.role === 'public' ? null : { ...users[scenario.role], ...scenario.user }}>
       <ReviewLocation /><App />
     </SessionProvider>
   </MemoryRouter>,

@@ -14,8 +14,9 @@
  * 経過を書く手段である（PR #216 の版の項目13。基本設計書「異常時の記録」(4-8)）。
  */
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAsync } from '../../hooks';
+import { onLive } from '../../live';
 import { useSession } from '../../session';
 import { api, visibleChildren } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Alert, Radios } from '../../components/ui';
@@ -28,10 +29,19 @@ export default function NapAbnormalScreen() {
   const navigate = useNavigate();
   const [tick, setTick] = useState(0);
 
-  const list = useAsync(() => api.abnormals(user!), [user?.account_id, tick]);
+  // ほかの職員の記録・起票があったら、開いたままでも読み直す（live.ts）
+  const list = useAsync(() => api.abnormals(user!), [user?.account_id, tick], { live: onLive('nap') });
   const children = visibleChildren(user!);
 
-  const [childId, setChildId] = useState('');
+  /*
+   * 午睡チェック画面の園児カードから移ったときは、その園児を選んだ状態で開く（画面詳細図 5-2 項目2
+   * 「初期値：午睡チェック画面で選んでいた園児」。GitHub Issue #142）。状況の初期値は空のまま（同 項目5）。
+   * 午睡チェックで記録した内容は、書くときの手がかりとして添えるだけにする
+   */
+  const from = (useLocation().state ?? null) as { childId?: string; observed?: string } | null;
+  const [childId, setChildId] = useState(
+    from?.childId && children.some((c) => c.child_id === from.childId) ? from.childId : '');
+  const [observed, setObserved] = useState(from?.observed ?? null);
   const [foundAt, setFoundAt] = useState(now().slice(0, 16));
   const [situation, setSituation] = useState('');
   const [response, setResponse] = useState('');
@@ -59,7 +69,7 @@ export default function NapAbnormalScreen() {
         guardian_notice: notice ?? '', guardian_noticed_at: noticedAt ? `${noticedAt}:00` : '',
         guardian_notice_method: method, guardian_notice_person: person,
       });
-      setChildId(''); setSituation(''); setResponse('');
+      setChildId(''); setSituation(''); setResponse(''); setObserved(null);
       setTick((n) => n + 1);
       setNotice(null); setNoticedAt(''); setMethod(''); setPerson('');
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
@@ -86,7 +96,7 @@ export default function NapAbnormalScreen() {
         <div className="stack">
           <div className="row">
             <Field label="園児" required style={{ flex: 1 }}>
-              <select value={childId} onChange={(e) => setChildId(e.target.value)}>
+              <select value={childId} onChange={(e) => { setChildId(e.target.value); setObserved(null); }}>
                 <option value="">選んでください</option>
                 {children.map((c) => <option key={c.child_id} value={c.child_id}>{c.child_name}</option>)}
               </select>
@@ -97,6 +107,7 @@ export default function NapAbnormalScreen() {
                 onChange={(e) => setFoundAt(e.target.value)} />
             </Field>
           </div>
+          {observed && <div className="muted">{observed}</div>}
           <Field label="発見時の状況" required>
             <textarea value={situation} onChange={(e) => setSituation(e.target.value)} maxLength={1000}
               placeholder="体位・呼吸・顔色・体温など、見たままを書いてください" />
