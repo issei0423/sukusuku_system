@@ -23,6 +23,7 @@ import type {
 import {
   ProcedureRequiredError, isProcedureKind, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
 } from './procedure';
+import { startLive } from '../live';
 
 // 画面はこれまでどおり client 経由で型を参照する。定義の実体は shapes.ts が持つ
 export type {
@@ -30,6 +31,16 @@ export type {
 };
 
 /* ============ 通信 ============ */
+
+/**
+ * 開いている画面への知らせ（server/events.go の GET /api/events。SSE）につなぐ。返す関数で切る。
+ * App.tsx がログイン中に1か所で呼ぶ。だれの知らせかはサーバがセッションで決めるため、引数は使わない
+ * （モック（api/mock.ts の connectLive）と同じ形にしてある）
+ */
+export function connectLive(accountId: number): () => void {
+  void accountId;
+  return startLive('/api/events');
+}
 
 class ApiError extends Error {
   kind?: string;

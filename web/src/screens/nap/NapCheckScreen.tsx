@@ -11,6 +11,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAsync } from '../../hooks';
+import { onNapClass } from '../../live';
 import { useSession } from '../../session';
 import { api, selectableClasses } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Alert, Modal } from '../../components/ui';
@@ -32,10 +33,16 @@ export default function NapCheckScreen() {
   // 選べるクラスが無い（担当クラスの無い一般の職員）ときは、問い合わせない。
   // ほかのクラスを指定することになり、権限の誤りが返る（GitHub Issue #96・#127）
   const hasClass = classesForUser.length > 0;
-  const session = useAsync(async () => (hasClass ? api.activeSession(classId, today(), user!) : null), [classId, tick]);
+  /*
+   * 同じクラスのほかの職員（別のタブレット）の開始・記録・終了は、知らせ（live.ts）を受けて開いたままで読み直す。
+   * 読み直しでは読み込み中の表示を出さず、園児の行の入力中の値は残す（保存のあとの読み直しと同じ）
+   */
+  const session = useAsync(async () => (hasClass ? api.activeSession(classId, today(), user!) : null), [classId, tick],
+    { live: onNapClass(classId) });
   const state = useAsync(
     async () => (hasClass ? api.classState(user!, classId, session.data?.nap_session_id ?? null) : []),
     [classId, session.data?.nap_session_id, tick],
+    { live: onNapClass(classId) },
   );
 
   const [error, setError] = useState<string | null>(null);
@@ -98,7 +105,8 @@ export default function NapCheckScreen() {
    * 強調表示する」、図/画面詳細図.md「異常時記録画面」(5-2) 項目7。GitHub Issue #142）。
    * 【仮置き】強調の形（カードの印と枠）は設計が定めていない（web/仮置き値.md）
    */
-  const abnormals = useAsync(async () => (activeId !== null ? api.abnormals(user!) : []), [activeId, tick]);
+  const abnormals = useAsync(async () => (activeId !== null ? api.abnormals(user!) : []), [activeId, tick],
+    { live: onNapClass(classId) });
   const abnormalAt = new Map<string, { found: string; recorded: string }>();
   for (const a of abnormals.data ?? []) {
     if (a.nap_session_id !== activeId) continue;

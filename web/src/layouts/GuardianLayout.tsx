@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, Outlet, useNavigate } from 'react-router-dom';
 import { useSession } from '../session';
 import { useAsync, AUTO_REFRESH_MS } from '../hooks';
+import { onLive } from '../live';
 import { api, settingText } from '../api/client';
 import { BellIcon } from '../components/ui';
 import { ConfirmDialog } from '../components/feedback';
@@ -23,8 +24,10 @@ export default function GuardianLayout() {
   const unsaved = useUnsavedInputTracker();
   const drawer = useRef<HTMLElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
-  // 園からの返信が、どの画面を開いていても数秒で通知の件数に表れるよう、裏で読み直す
-  const home = useAsync(() => api.guardianHome(user!), [user?.account_id], { refreshMs: AUTO_REFRESH_MS });
+  // 園からの返信が、どの画面を開いていてもすぐに通知の件数に表れるよう、知らせ（live.ts）を受けて読み直す
+  // （知らせが切れている間は数秒ごとに読み直す）。ここで使うのは未読の件数だけ
+  const home = useAsync(() => api.guardianHome(user!), [user?.account_id],
+    { refreshMs: AUTO_REFRESH_MS, live: onLive('chat') });
 
   // 開いたらメニューに入り、閉じたら開いたボタンへ戻る
   useEffect(() => {

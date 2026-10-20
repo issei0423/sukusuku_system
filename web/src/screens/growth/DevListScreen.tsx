@@ -9,6 +9,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAsync } from '../../hooks';
+import { onLive } from '../../live';
 import { useSession } from '../../session';
 import { api, selectableClasses } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Tag } from '../../components/ui';
@@ -22,12 +23,13 @@ export default function DevListScreen() {
   const [classId, setClassId] = useState<number | 'all'>(
     isAdmin ? 'all' : (user!.class_id ?? classesForUser[0]?.class_id ?? 1));
 
+  // ほかの職員の入力・確定、予定日の変更があったら、開いたままでも読み直す（live.ts）
   const { data, error, loading } = useAsync(async () => {
     if (classId !== 'all') return (await api.list(user!, classId)).map((r) => ({ ...r, className: '' }));
     const perClass = await Promise.all(classesForUser.map(async (c) =>
       (await api.list(user!, c.class_id)).map((r) => ({ ...r, className: c.class_name }))));
     return perClass.flat();
-  }, [classId]);
+  }, [classId], { live: onLive('development') });
   const showClass = classId === 'all';
   const overdue = data?.filter((r) => r.overdue) ?? [];
 

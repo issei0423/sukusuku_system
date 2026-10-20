@@ -452,6 +452,8 @@ func (a *app) handleSetSchedule(w http.ResponseWriter, r *http.Request) {
 	}
 	a.log(u.AccountID, fnDev, opUpdate, "t_development_schedule", nil, s(req.ChildID), nil,
 		s("次回予定日="+req.ScheduledOn+suffix))
+	// 発達チェック一覧の予定日と、ダッシュボードの「未実施」が変わりうる（events.go）
+	a.notifyDevelopment(req.ChildID)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 

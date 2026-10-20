@@ -4,6 +4,7 @@
  */
 import { Link } from 'react-router-dom';
 import { useAsync } from '../../hooks';
+import { onLive } from '../../live';
 import { useSession } from '../../session';
 import { api, childName, className, staffName } from '../../api/client';
 import { Loading, ErrorBox, Empty } from '../../components/ui';
@@ -12,7 +13,9 @@ import { formatMD, formatMDHM } from '../../api/util';
 
 export default function ApprovalListScreen() {
   const { user } = useSession();
-  const { data, error, loading } = useAsync(() => api.pendingDiaries(user!), [user?.account_id]);
+  // 申請・承認・差し戻しがあったら、開いたままでも読み直す（live.ts）
+  const { data, error, loading } = useAsync(() => api.pendingDiaries(user!), [user?.account_id],
+    { live: onLive('diary') });
 
   return (
     <div>

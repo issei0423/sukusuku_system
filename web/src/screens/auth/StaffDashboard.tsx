@@ -7,6 +7,7 @@
  */
 import { Link, useLocation } from 'react-router-dom';
 import { useAsync, AUTO_REFRESH_MS } from '../../hooks';
+import { onLive } from '../../live';
 import { useSession } from '../../session';
 import { api } from '../../api/client';
 import { Loading, ErrorBox, Alert } from '../../components/ui';
@@ -14,9 +15,10 @@ import { formatYMD, today } from '../../api/util';
 
 export default function StaffDashboard() {
   const { user } = useSession();
-  // 開いたままでも、保護者からのチャットや承認の結果が数秒で件数に表れるよう、裏で読み直す
+  // 開いたままでも、保護者からのチャットや承認の結果がすぐに件数に表れるよう、知らせ（live.ts）を受けて読み直す
+  // （知らせが切れている間は数秒ごとに読み直す）
   const { data, error, loading } = useAsync(() => api.staffSummary(user!), [user?.account_id],
-    { refreshMs: AUTO_REFRESH_MS });
+    { refreshMs: AUTO_REFRESH_MS, live: onLive('chat', 'diary', 'nap', 'development') });
   // 管理者に限る画面を開こうとして戻されたとき（App.tsx の RequireAdmin）
   const denied = (useLocation().state as { denied?: string } | null)?.denied === 'admin';
 

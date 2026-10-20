@@ -436,6 +436,8 @@ func (a *app) handleToggleReaction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// そのメッセージを見られる人の画面へ知らせる（events.go）
+	a.notifyMessage(roomID, id)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -487,6 +489,8 @@ func (a *app) handleSetThreadStatus(w http.ResponseWriter, r *http.Request) {
 		after = "未対応"
 	}
 	a.log(u.AccountID, fnChat, opUpdate, "m_chat_room", i64(roomID), nil, nil, s(after))
+	// 未対応／対応済みは職員の画面にだけ出る。保護者には送らない（events.go）
+	a.notifyThreadStatus(roomID)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -514,7 +518,14 @@ func (a *app) handleMarkRead(w http.ResponseWriter, r *http.Request) {
 		q += beforeJoinedClause
 		args = append(args, u.AccountID)
 	}
-	a.db.Exec(q, args...)
+	res, err := a.db.Exec(q, args...)
+	// 新しく既読にしたものがあれば知らせる（events.go）。何も増えなかったときは送らない。
+	// 画面はチャンネルを開くたび・メッセージが届くたびに既読にするため
+	if err == nil {
+		if n, _ := res.RowsAffected(); n > 0 {
+			a.notifyRead(roomID, u)
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -575,6 +586,8 @@ func (a *app) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		a.db.Exec(`UPDATE m_chat_room SET thread_status = '1' WHERE chat_room_id = ?`, roomID)
 	}
 	a.log(u.AccountID, fnChat, opCreate, "t_chat_message", i64(id), nil, nil, s("送信"))
+	// いまの参加者の画面へ知らせる（events.go）
+	a.notifyRoomPost(roomID)
 	writeJSON(w, http.StatusOK, map[string]int64{"chat_message_id": id})
 }
 
@@ -620,6 +633,7 @@ func (a *app) handleRetractMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.log(u.AccountID, fnChat, opDelete, "t_chat_message", i64(id), nil, s(body), s("取消"))
+	a.notifyMessage(roomID, id)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -686,6 +700,7 @@ func (a *app) handleEditMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.log(u.AccountID, fnChat, opUpdate, "t_chat_message", i64(id), nil, s(before), s(req.Body))
+	a.notifyMessage(roomID, id)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -904,6 +919,8 @@ func (a *app) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	a.log(u.AccountID, fnChat, opCreate, "m_chat_room", i64(roomID), nil, nil,
 		s("グループ「"+req.Name+"」を作成"))
+	// 加えた人のチャンネルの一覧に出す（events.go）
+	a.notifyRoomMembers(roomID)
 	writeJSON(w, http.StatusOK, map[string]int64{"chat_room_id": roomID})
 }
 
@@ -1036,6 +1053,8 @@ func (a *app) handleUpdateGroupMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.log(u.AccountID, fnChat, opUpdate, "t_chat_member", i64(roomID), nil, nil, s("メンバーを編成"))
+	// 加わった人・外れた人の一覧を読み直させる。外れた職員の一覧にも、閲覧のみとして残る（isMember。events.go）
+	a.notifyRoomMembers(roomID)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 

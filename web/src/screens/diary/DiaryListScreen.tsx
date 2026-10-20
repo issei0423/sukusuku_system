@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAsync } from '../../hooks';
+import { onLive } from '../../live';
 import { useSession } from '../../session';
 import { api, selectableClasses, childName, className, staffName } from '../../api/client';
 import { Loading, ErrorBox, Empty, Pager, Field, Tag } from '../../components/ui';
@@ -48,9 +49,11 @@ export default function DiaryListScreen() {
     setApplied((n) => n + 1);
   }, [params]);
 
+  // ほかの職員の保存・申請・承認・差し戻しがあったら、開いたままでも読み直す（live.ts）
   const { data, error, loading } = useAsync(
     () => api.listDiaries(user!, { recordType, classId, status, from, to, page, mine }),
     [user?.account_id, page, applied],
+    { live: onLive('diary') },
   );
 
   const [rangeError, setRangeError] = useState<string | null>(null);

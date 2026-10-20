@@ -9,6 +9,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAsync } from '../../hooks';
+import { onLive } from '../../live';
 import { useSession } from '../../session';
 import { api, selectableClasses, settingNumber, settingText } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Alert, Modal, Tag } from '../../components/ui';
@@ -25,7 +26,9 @@ export default function StaffHandoutsScreen() {
 
   const [type, setType] = useState('');
   const [tick, setTick] = useState(0);
-  const { data, error: loadError, loading } = useAsync(() => api.handouts(user!, { type }), [type, tick]);
+  // ほかの管理者の掲載・取り下げも、開いたままで読み直す（live.ts）
+  const { data, error: loadError, loading } = useAsync(() => api.handouts(user!, { type }), [type, tick],
+    { live: onLive('handout') });
 
   const [error, setError] = useState<string | null>(null);
   const [opened, setOpened] = useState<Handout | null>(null);

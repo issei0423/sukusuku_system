@@ -38,6 +38,12 @@ export { onProcedureRequired } from './procedure';
 /** ログイン中のセッションがサーバに切られたことの知らせ（停止・紐づけの解除など。GitHub Issue #159） */
 export { onSessionEnded } from './procedure';
 
+/**
+ * 開いている画面への知らせにつなぐ（live.ts）。返す関数で切る。
+ * http はサーバ（GET /api/events）へつなぎ、mock はブラウザの中で同じ知らせを出す相手を決める
+ */
+export const connectLive = impl.connectLive;
+
 /** いまどちらの実装で動いているか。画面の注記に使う */
 export const backend: 'http' | 'mock' = useMock ? 'mock' : 'http';
 

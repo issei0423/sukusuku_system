@@ -352,6 +352,8 @@ func (a *app) handleSavePhysical(w http.ResponseWriter, r *http.Request) {
 		FROM t_physical_record WHERE physical_record_id = ?`, id).
 		Scan(&out.PhysicalRecordID, &out.ChildID, &out.MeasuredOn, &out.HeightCm, &out.WeightKg,
 			&out.StaffID, &out.ShareStatus, &out.IsDeleted, &out.CreatedAt, &out.UpdatedAt)
+	// その園児を参照できる職員へ知らせる。保護者へは、共有した（連携済の）測定値が変わったときだけ（events.go）
+	a.notifyPhysical(req.ChildID, out.ShareStatus == "2")
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -371,9 +373,10 @@ func (a *app) handleRemovePhysical(w http.ResponseWriter, r *http.Request) {
 		childID string
 		height  float64
 		weight  float64
+		share   string
 	)
-	if err := a.db.QueryRow(`SELECT child_id, height_cm, weight_kg FROM t_physical_record
-		WHERE physical_record_id = ?`, id).Scan(&childID, &height, &weight); err != nil {
+	if err := a.db.QueryRow(`SELECT child_id, height_cm, weight_kg, share_status FROM t_physical_record
+		WHERE physical_record_id = ?`, id).Scan(&childID, &height, &weight, &share); err != nil {
 		writeErr(w, http.StatusNotFound, "記録が見つかりません")
 		return
 	}
@@ -385,6 +388,7 @@ func (a *app) handleRemovePhysical(w http.ResponseWriter, r *http.Request) {
 	a.log(u.AccountID, fnPhysical, opDelete, "t_physical_record", i64(id), s(childID),
 		s("身長="+strconv.FormatFloat(height, 'f', -1, 64)+" 体重="+strconv.FormatFloat(weight, 'f', -1, 64)),
 		s("削除"))
+	a.notifyPhysical(childID, share == "2")
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 

@@ -7,6 +7,7 @@
  */
 import { Link } from 'react-router-dom';
 import { useAsync, AUTO_REFRESH_MS } from '../../hooks';
+import { onLive } from '../../live';
 import { useSession } from '../../session';
 import { api } from '../../api/client';
 import { Loading, ErrorBox, Empty, Tag } from '../../components/ui';
@@ -15,11 +16,17 @@ import { DIARY_RECORD_TYPE, HANDOUT_TYPE } from '../../api/codes';
 
 export default function GuardianHome() {
   const { user } = useSession();
-  // 開いたままでも、園が共有した記録・掲載した配布物・チャットの未読が数秒で表れるよう、裏で読み直す
+  /*
+   * 開いたままでも、園が共有した記録・掲載した配布物・チャットの未読がすぐに表れるよう、知らせ（live.ts）を
+   * 受けて読み直す（知らせが切れている間は数秒ごとに読み直す）。
+   * 午睡の知らせでも読み直す。午睡の「ねた・おきた」は保護者ホームに出すものになる（設計方針（作り直しの案）
+   * 「きょうのようす」(3-1)）ため、出したときにそのまま即時になるよう、知らせの道を先に通しておく
+   */
   const { data, error, loading } = useAsync(() => api.guardianHome(user!), [user?.account_id],
-    { refreshMs: AUTO_REFRESH_MS });
+    { refreshMs: AUTO_REFRESH_MS, live: onLive('chat', 'diary', 'nap') });
   // 園からの配布物。園だより・献立表など、あとから見返すもの
-  const handouts = useAsync(() => api.handouts(user!), [user?.account_id], { refreshMs: AUTO_REFRESH_MS });
+  const handouts = useAsync(() => api.handouts(user!), [user?.account_id],
+    { refreshMs: AUTO_REFRESH_MS, live: onLive('handout') });
   /*
    * ホームに出す「新しいもの」3件は、掲載した日時の新しい順に選ぶ（画面詳細図「保護者ホーム」(2-7) 項目7）。
    * 【仮置き】「新しい」が対象の月か掲載した日時かは設計に定めが無い（web/仮置き値.md）。

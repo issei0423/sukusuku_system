@@ -33,6 +33,8 @@ func (a *app) routeAuth(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/signup", a.handleSignUpGuardian)
 	mux.HandleFunc("GET /api/dashboard/staff", a.handleStaffSummary)
 	mux.HandleFunc("GET /api/dashboard/guardian", a.handleGuardianHome)
+	// 開いている画面への知らせ（Server-Sent Events。events.go）
+	mux.HandleFunc("GET /api/events", a.handleEvents)
 }
 
 // 共通基盤：園児マスターの管理（基本設計書 4-4）

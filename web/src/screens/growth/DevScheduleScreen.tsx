@@ -9,6 +9,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAsync } from '../../hooks';
+import { onLive } from '../../live';
 import { useSession } from '../../session';
 import { api, selectableClasses } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Alert, Tag } from '../../components/ui';
@@ -22,7 +23,9 @@ export default function DevScheduleScreen() {
   const [error, setError] = useState<string | null>(null);
   const [edits, setEdits] = useState<Record<string, string>>({});
 
-  const { data, error: loadError, loading } = useAsync(() => api.schedules(user!, classId), [classId, tick]);
+  // ほかの職員の確定・ほかの管理者の予定日の変更があったら、開いたままでも読み直す（live.ts）
+  const { data, error: loadError, loading } = useAsync(() => api.schedules(user!, classId), [classId, tick],
+    { live: onLive('development') });
 
   const apply = async (childId: string, date: string, manual: boolean) => {
     setError(null);

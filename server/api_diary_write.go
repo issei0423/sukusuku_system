@@ -202,6 +202,8 @@ func (a *app) handleSaveDiary(w http.ResponseWriter, r *http.Request) {
 		after = diaryLogCreateAndApply
 	}
 	a.log(u.AccountID, fnDiary, opCreate, "t_diary", i64(id), in.ChildID, nil, s(after))
+	// その日誌を参照できる人の画面（日誌一覧・ダッシュボードの承認待ちなど）へ知らせる（events.go）
+	a.notifyDiary(id)
 
 	a.writeDiaryByID(w, id)
 }
@@ -280,6 +282,8 @@ func (a *app) updateDiary(w http.ResponseWriter, u *SessionUser, in diaryInput) 
 		after = diaryLogApply
 	}
 	a.log(u.AccountID, fnDiary, opUpdate, "t_diary", in.DiaryID, in.ChildID, s(status), s(after))
+	// 差し戻された日誌の件数・承認待ちの件数が変わりうる（events.go）
+	a.notifyDiary(*in.DiaryID)
 
 	a.writeDiaryByID(w, *in.DiaryID)
 }
@@ -418,25 +422,33 @@ func (a *app) handleApproveDiary(w http.ResponseWriter, r *http.Request) {
 
 	// 共有する場合、対象園児に紐づく保護者との個人チャットへ送る（基本設計書 4-5）
 	if req.ShareToGuardian && childID.Valid {
-		a.shareDiaryToGuardian(u, id, childID.String)
+		if roomID, ok := a.shareDiaryToGuardian(u, id, childID.String); ok {
+			a.notifyRoomPost(roomID)
+		}
 	}
+	// 承認待ちが減る。共有したら、紐づけのある保護者のホームに出る（canSeeDiary。events.go）
+	a.notifyDiary(id)
 	a.writeDiaryByID(w, id)
 }
 
 // shareDiaryToGuardian は個人チャットへ日誌の共有として流す（t_chat_message.source_type = 2）。
-// 個人チャットは園児ID で引く。部屋の名前で探すと、同じ氏名の別の園児の家庭へ流れる（GitHub Issue #163）
-func (a *app) shareDiaryToGuardian(u *SessionUser, diaryID int64, childID string) {
+// 個人チャットは園児ID で引く。部屋の名前で探すと、同じ氏名の別の園児の家庭へ流れる（GitHub Issue #163）。
+// 流したチャンネルを返す。流せなかったときは偽（開いている画面への知らせに使う。events.go）
+func (a *app) shareDiaryToGuardian(u *SessionUser, diaryID int64, childID string) (int64, bool) {
 	var roomID int64
 	err := a.db.QueryRow(`SELECT chat_room_id FROM m_chat_room
 		WHERE room_type = '4' AND child_id = ?`, childID).Scan(&roomID)
 	if err != nil {
 		// 【要確認】個人チャットが無い場合の共有先が定義されていない（GitHub Issue #61 と同じ論点）
-		return
+		return 0, false
 	}
-	a.db.Exec(`INSERT INTO t_chat_message
+	if _, err := a.db.Exec(`INSERT INTO t_chat_message
 		(chat_room_id, sender_account_id, body, source_type, source_id, sent_at, is_deleted)
 		VALUES (?, ?, '日誌を共有しました。', '2', ?, ?, 0)`,
-		roomID, u.AccountID, diaryID, now())
+		roomID, u.AccountID, diaryID, now()); err != nil {
+		return 0, false
+	}
+	return roomID, true
 }
 
 // handleReturnDiary は差し戻す。理由の入力を必須とする（画面詳細図 3-3）
@@ -487,6 +499,8 @@ func (a *app) handleReturnDiary(w http.ResponseWriter, r *http.Request) {
 	}
 	a.log(u.AccountID, fnDiary, opApprove, "t_diary", i64(id), nullStr(childID),
 		s("申請中"), s("差し戻し："+req.Reason))
+	// 承認待ちが減り、作成者の「差し戻された日誌」が増える（events.go）
+	a.notifyDiary(id)
 
 	a.writeDiaryByID(w, id)
 }

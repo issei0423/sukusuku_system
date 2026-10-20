@@ -64,7 +64,15 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date(`${day}T13:30:00+09:00`));
 });
-afterEach(() => { vi.useRealTimers(); });
+/*
+ * 画面を片付けてから時計を戻す。片付ける前に戻すと、その間に届いた応答（チャンネルを開いたときの既読など）の
+ * 知らせ（src/live.ts）で、開いたままのヘッダが本物の時計のまま読み直し、午睡の実施が自動で解除されてしまう
+ * （after 系は登録の逆順に走り、上の afterEach(cleanup) は最後になるため、ここで先に片付ける）
+ */
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe('共通・認証（7画面）', () => {
   it('保護者用トップ：新規登録の導線を置く', async () => {
