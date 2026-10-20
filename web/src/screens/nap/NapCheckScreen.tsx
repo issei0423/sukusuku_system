@@ -20,6 +20,7 @@ import { BODY_POSITION, BREATHING, COMPLEXION } from '../../api/codes';
 import { formatHM, formatTemperature, today, now, napTimerBase, plusMinutes, jstMs, isOneDecimal } from '../../api/util';
 import type { BodyPosition, Breathing, Complexion, NapRecord } from '../../api/types';
 import type { NapChildState } from '../../api/shapes';
+import SleepControls from './SleepControls';
 
 /** 園児の行に「保存しました」を出しておく時間（仮置き値.md「午睡チェックの動き」） */
 const SAVED_NOTICE_MS = 5000;
@@ -68,8 +69,12 @@ export default function NapCheckScreen() {
   };
 
   const s = session.data;
-  const rows = state.data ?? [];
+  const allRows = state.data ?? [];
+  // 「きょうは対象外」の子は、タイマーと未記録の数から外す（詳細設計書「タイマー」(2-4 (3))）
+  const rows = allRows.filter((r) => !r.exclusion);
   const recorded = rows.filter((r) => r.latest).length;
+  // 「ねた」のまま「おきた」が無い子（終了の前に確かめる。詳細設計書 (2-4 (2))）
+  const stillSleeping = allRows.filter((r) => r.sleeps.some((x) => !x.woke_at)).map((r) => r.child.child_name);
   const intervalMinutes = api.intervalMinutesFor(classId);
 
   /*
@@ -171,12 +176,13 @@ export default function NapCheckScreen() {
             <span>記録済み {recorded} / {rows.length} 名</span>
             <div className="spacer" />
             <Link className="btn" to="/staff/nap/abnormal">異常を記録する</Link>
-            <button onClick={() => (recorded < rows.length ? setEnding(true) : end())}>午睡チェックを終了</button>
+            <button onClick={() => (recorded < rows.length || stillSleeping.length > 0 ? setEnding(true) : end())}>午睡チェックを終了</button>
           </div>
           {ending && (
-            <ConfirmDialog title="記録していない園児がいます" confirmLabel="このまま終了する" danger
-              onConfirm={end} onCancel={() => setEnding(false)}>
-              <p>{rows.length - recorded} 名の記録がありません。このまま午睡チェックを終了しますか。</p>
+            <ConfirmDialog title={recorded < rows.length ? '記録していない園児がいます' : '「おきた」が記録されていない園児がいます'}
+              confirmLabel="このまま終了する" danger onConfirm={end} onCancel={() => setEnding(false)}>
+              {recorded < rows.length && <p>{rows.length - recorded} 名の記録がありません。このまま午睡チェックを終了しますか。</p>}
+              {stillSleeping.length > 0 && <p>「おきた」が記録されていない園児がいます（{stillSleeping.join('、')}）。このまま終了しますか。</p>}
               <p className="muted">終了したあとは、この実施へ記録を足せません。</p>
             </ConfirmDialog>
           )}
@@ -185,7 +191,7 @@ export default function NapCheckScreen() {
           {state.error && <ErrorBox text={state.error} />}
 
           <div className="nap-grid">
-            {rows.map((r) => (
+            {allRows.map((r) => (
               <NapRecordRow key={r.child.child_id} row={r} sessionId={s.nap_session_id}
                 due={isDue(r.latest?.checked_at ?? null)} abnormal={abnormalAt.get(r.child.child_id) ?? null}
                 onSaved={() => setTick((n) => n + 1)} />
@@ -282,6 +288,8 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved }: {
   const [justSaved, setJustSaved] = useState(false);
   const id = row.child.child_id;
   const name = row.child.child_name;
+  // 対象外の子は、5分ごとの確認の欄を薄くする（詳細設計書「行の状態ごとの表示」(2-4 (2))）
+  const excluded = !!row.exclusion;
 
   // 「保存しました」は確認の画面を出さない記録の、唯一の手応え。保存後の読み直しで前回の記録が
   // 新しくなっても消さず、一定時間たつか、次の入力を始めたときに消す（仮置き値.md）
@@ -323,18 +331,20 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved }: {
     && !(abnormal && abnormal.recorded.slice(0, 16) >= latest.checked_at.slice(0, 16));
 
   return (
-    <section className={`nap-card nap-record-row${!row.latest || due ? ' unrecorded' : ''}${abnormal ? ' has-abnormal' : ''}`}
+    <section className={`nap-card nap-record-row${!excluded && (!row.latest || due) ? ' unrecorded' : ''}${abnormal ? ' has-abnormal' : ''}${excluded ? ' is-excluded' : ''}`}
       aria-label={`${name}の午睡チェック`}>
       <div className="nap-row-head">
         <strong className="name">{name}</strong>
-        <span className={`nap-row-status${!row.latest || due ? ' due' : ''}`} role="status">
-          {justSaved ? '保存しました' : !row.latest ? '未記録' : due ? 'チェック時刻を過ぎています' : '確認済み'}
+        <span className={`nap-row-status${!excluded && (!row.latest || due) ? ' due' : ''}`} role="status">
+          {justSaved ? '保存しました' : excluded ? 'きょうは対象外' : !row.latest ? '未記録' : due ? 'チェック時刻を過ぎています' : '確認済み'}
         </span>
         <span className="last">{row.latest ? `前回 ${formatHM(row.latest.checked_at)} ${BODY_POSITION[row.latest.body_position]}` : '前回の記録なし'}</span>
         {latest && <LatestObservation record={latest} />}
         <span className="last">平熱 {formatTemperature(row.child.normal_temperature)}℃</span>
         {abnormal && <span className="tag tag-returned">異常時の記録あり {formatHM(abnormal.found)}</span>}
       </div>
+      {/* ねた・おきた（保護者に届く）。5分ごとの確認と同じ行に置く */}
+      <SleepControls row={row} sessionId={sessionId} onSaved={onSaved} />
 
       {needsAbnormal && latest && (
         <div className="row">

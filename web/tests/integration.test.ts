@@ -25,6 +25,8 @@ const run = BASE ? describe : describe.skip;
  * （server/csrf.go）、ブラウザが自動で付けるものをここでは手で付ける。
  */
 let cookie = '';
+/** 2つの端末（職員と保護者）を同時に動かすときに使う、手を加えていない fetch */
+const realFetch = globalThis.fetch;
 function useCookieJar() {
   const real = globalThis.fetch;
   globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -485,5 +487,87 @@ run('Go サーバとの結合', () => {
     const abnormals = await http.api.abnormals(dummy);
     for (let i = 1; i < abnormals.length; i++) expect(abnormals[i - 1].found_at >= abnormals[i].found_at).toBe(true);
     await http.api.logout();
+  });
+
+  /*
+   * 記録してから、開いている保護者の画面に出るまで3秒以内（詳細設計書「3秒の目標を計る」(6-7)、決めたこと D-20）。
+   * 保護者のセッションで GET /api/events を開いたまま、職員のセッションで「ねた」を押し、
+   * 知らせ（contact）が届くまでと、続けて GET /api/contact/children/C001 が「おひるね中」を返すまでを計る。
+   * ほかの家庭（宮城 美咲の保護者）には知らせが届かないことも確かめる
+   */
+  it('「ねた」を押してから3秒以内に、開いている保護者の画面に「おひるね中」が出る。ほかの家庭には届かない', async () => {
+    const send = async (path: string, init: RequestInit = {}, jar?: string) => {
+      const headers = new Headers(init.headers);
+      headers.set('Origin', BASE);
+      if (init.body) headers.set('Content-Type', 'application/json');
+      if (jar) headers.set('Cookie', jar);
+      return realFetch(BASE + path, { ...init, headers });
+    };
+    const loginAs = async (email: string, entrance: 'staff' | 'guardian') => {
+      const res = await send('/api/login', { method: 'POST', body: JSON.stringify({ email, password: 'pass1234', entrance }) });
+      expect(res.status).toBe(200);
+      return (res.headers.getSetCookie?.() ?? [])[0].split(';')[0];
+    };
+    const staff = await loginAs('takanashi@hoiku.example.jp', 'staff');
+    const guardian = await loginAs('nohara.i@example.jp', 'guardian');
+    const other = await loginAs('miyagi.r@example.jp', 'guardian');
+
+    // さくら組の実施（無ければ始める）。野原 太郎がおひるね中なら、先に「おきた」にしておく
+    const session = await (await send('/api/nap/session', { method: 'POST', body: JSON.stringify({ class_id: 1 }) }, staff)).json() as { nap_session_id: number };
+    const before = await (await send('/api/contact/children/C001', {}, staff)).json() as { sleeps: { nap_sleep_id: number; woke_at: string | null; nap_session_id?: number }[] };
+    for (const sl of before.sleeps.filter((x) => !x.woke_at && x.nap_session_id === session.nap_session_id)) {
+      await send(`/api/nap/sleeps/${sl.nap_sleep_id}/wake`, { method: 'POST', body: '{}' }, staff);
+    }
+
+    const controller = new AbortController();
+    const open = async (jar: string) => {
+      const res = await send('/api/events', { signal: controller.signal }, jar);
+      expect(res.status).toBe(200);
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      return {
+        /** want を含む行が届くまで待つ。届かなければ ms で諦めて false */
+        async waitFor(want: string, ms: number): Promise<boolean> {
+          const deadline = Date.now() + ms;
+          while (Date.now() < deadline) {
+            if (buffer.includes(want)) return true;
+            const chunk = await Promise.race([
+              reader.read(),
+              new Promise<null>((r) => setTimeout(() => r(null), Math.max(0, deadline - Date.now()))),
+            ]);
+            if (!chunk || chunk.done) break;
+            buffer += decoder.decode(chunk.value, { stream: true });
+          }
+          return buffer.includes(want);
+        },
+      };
+    };
+    try {
+      const guardianStream = await open(guardian);
+      const otherStream = await open(other);
+      await guardianStream.waitFor(': connected', 3000);
+      await otherStream.waitFor(': connected', 3000);
+
+      const started = Date.now();
+      const res = await send(`/api/nap/session/${session.nap_session_id}/sleeps`, { method: 'POST', body: JSON.stringify({ child_id: 'C001' }) }, staff);
+      expect(res.status).toBe(200);
+      expect(await guardianStream.waitFor('data: {"type":"contact","child_id":"C001"}', 3000)).toBe(true);
+      const page = await (await send('/api/contact/children/C001', {}, guardian)).json() as { sleeps: { woke_at: string | null }[] };
+      const elapsed = Date.now() - started;
+      expect(page.sleeps.some((x) => x.woke_at === null)).toBe(true);
+      expect(elapsed).toBeLessThan(3000);
+      console.log(`「ねた」から保護者の画面の読み直しまで ${elapsed} ミリ秒`);
+      // ほかの家庭には、知らせ自体が届かない
+      expect(await otherStream.waitFor('"child_id":"C001"', 500)).toBe(false);
+    } finally {
+      controller.abort();
+      // 後のテストと手での確かめのために、「おきた」にして戻しておく
+      const after = await (await send('/api/contact/children/C001', {}, staff)).json() as { sleeps: { nap_sleep_id: number; woke_at: string | null }[] };
+      for (const sl of after.sleeps.filter((x) => !x.woke_at)) {
+        await send(`/api/nap/sleeps/${sl.nap_sleep_id}/wake`, { method: 'POST', body: '{}' }, staff);
+      }
+      for (const jar of [staff, guardian, other]) await send('/api/logout', { method: 'POST', body: '{}' }, jar);
+    }
   });
 });
