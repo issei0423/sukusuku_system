@@ -25,17 +25,23 @@ export default function NapSearchScreen() {
   const [classId, setClassId] = useState<number | ''>(user!.role === '2' ? (user!.class_id ?? '') : '');
   const [childNameQ, setChildNameQ] = useState('');
   const [page, setPage] = useState(1);
-  const [applied, setApplied] = useState(0);
+
+  /*
+   * 「絞り込む」を押した時点の条件。一覧・ページの切り替え・同じ期間の異常時の記録・CSV 出力の
+   * ファイル名と操作ログは、すべてこの条件で作る。入力欄を変えただけでは使わない。
+   * 出力の中身と、ファイル名・操作ログの期間を食い違わせないため（基本設計書「操作ログ」(5-8)、GitHub Issue #165）
+   */
+  const [applied, setApplied] = useState({ from, to, classId, childName: childNameQ });
 
   const { data, error, loading } = useAsync(
-    () => api.searchRecords(user!, { from, to, classId, childName: childNameQ, page }),
+    () => api.searchRecords(user!, { ...applied, page }),
     [user?.account_id, page, applied],
   );
 
   const [rangeError, setRangeError] = useState<string | null>(null);
   const search = () => {
     if (from && to && from > to) { setRangeError('期間の開始は、終了より後の日にできません'); return; }
-    setRangeError(null); setPage(1); setApplied((n) => n + 1);
+    setRangeError(null); setPage(1); setApplied({ from, to, classId, childName: childNameQ });
   };
 
   /*
@@ -45,18 +51,21 @@ export default function NapSearchScreen() {
    */
   const abnormals = useAsync(async () => {
     const all = await api.abnormals(user!);
+    const name = applied.childName.trim();
     return all
-      .filter((a) => a.found_at.slice(0, 10) >= from && a.found_at.slice(0, 10) <= to)
-      .filter((a) => !childNameQ.trim() || a.child_name.includes(childNameQ.trim()))
+      .filter((a) => (!applied.from || a.found_at.slice(0, 10) >= applied.from)
+        && (!applied.to || a.found_at.slice(0, 10) <= applied.to))
+      .filter((a) => !name || a.child_name.includes(name))
       .sort((a, b) => b.found_at.localeCompare(a.found_at));
   }, [user?.account_id, applied]);
 
   const [exportError, setExportError] = useState<string | null>(null);
   const exportCsv = async () => {
     if (!data) return;
+    const { from: outFrom, to: outTo } = applied;
     // 出力したことを先に操作ログへ残す。残せなかったときは出力しない
     try {
-      await api.recordExport(user!, 'nap_record', from, to, data.rows.length);
+      await api.recordExport(user!, 'nap_record', outFrom, outTo, data.rows.length);
     } catch (e) {
       setExportError((e as Error).message);
       return;
@@ -69,7 +78,7 @@ export default function NapSearchScreen() {
       BODY_POSITION[r.body_position], BREATHING[r.breathing], COMPLEXION[r.complexion],
       r.temperature ?? '', r.staff_name, r.saved_at,
     ]);
-    downloadCsv(`午睡記録_${from}_${to}.csv`, header, rows);
+    downloadCsv(`午睡記録_${outFrom}_${outTo}.csv`, header, rows);
     notify('午睡記録を CSV で出力しました。出力したことは操作ログに残ります');
   };
 

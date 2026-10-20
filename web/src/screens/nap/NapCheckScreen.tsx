@@ -16,8 +16,8 @@ import { api, selectableClasses } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Alert, Modal } from '../../components/ui';
 import { ConfirmDialog } from '../../components/feedback';
 import { BODY_POSITION, BREATHING, COMPLEXION } from '../../api/codes';
-import { formatHM, formatTemperature, today, now, napTimerBase, plusMinutes } from '../../api/util';
-import type { BodyPosition, Breathing, Complexion } from '../../api/types';
+import { formatHM, formatTemperature, today, now, napTimerBase, plusMinutes, jstMs, isOneDecimal } from '../../api/util';
+import type { BodyPosition, Breathing, Complexion, NapRecord } from '../../api/types';
 import type { NapChildState } from '../../api/shapes';
 
 /** 園児の行に「保存しました」を出しておく時間（仮置き値.md「午睡チェックの動き」） */
@@ -92,6 +92,20 @@ export default function NapCheckScreen() {
   const isDue = (latestAt: string | null) =>
     !!s && plusMinutes(latestAt ?? s.started_at, intervalMinutes) <= now();
 
+  /*
+   * この実施で異常時の記録がある園児を、カードで強調して示す。ほかの職員が画面を見ても、
+   * 異常があったことが分かるようにする（基本設計書「異常時の記録」(4-7) 処理内容 2「クラス全体の午睡状況の確認で
+   * 強調表示する」、図/画面詳細図.md「異常時記録画面」(5-2) 項目7。GitHub Issue #142）。
+   * 【仮置き】強調の形（カードの印と枠）は設計が定めていない（web/仮置き値.md）
+   */
+  const abnormals = useAsync(async () => (activeId !== null ? api.abnormals(user!) : []), [activeId, tick]);
+  const abnormalAt = new Map<string, string>();
+  for (const a of abnormals.data ?? []) {
+    if (a.nap_session_id !== activeId) continue;
+    const seen = abnormalAt.get(a.child_id);
+    if (!seen || a.found_at > seen) abnormalAt.set(a.child_id, a.found_at);
+  }
+
   // 選べるクラスが無い（担当クラスの無い一般の職員）。ほかのクラスの実施を表示しない（GitHub Issue #127）
   if (classesForUser.length === 0) {
     return (
@@ -165,7 +179,8 @@ export default function NapCheckScreen() {
           <div className="nap-grid">
             {rows.map((r) => (
               <NapRecordRow key={r.child.child_id} row={r} sessionId={s.nap_session_id}
-                due={isDue(r.latest?.checked_at ?? null)} onSaved={() => setTick((n) => n + 1)} />
+                due={isDue(r.latest?.checked_at ?? null)} abnormalAt={abnormalAt.get(r.child.child_id) ?? null}
+                onSaved={() => setTick((n) => n + 1)} />
             ))}
           </div>
         </>
@@ -187,20 +202,25 @@ function NapTimer({ startedAt, intervalMinutes, rows }: {
     return () => clearInterval(t);
   }, []);
 
-  const startMs = new Date(startedAt).getTime();
+  /*
+   * 開始時刻・記録の時刻は日本時間の文字列で届く。端末の現地時刻として読むと、日本時間以外の端末で
+   * 時差のぶんだけずれるため、jstMs で日本時間として読む（MOCKUP.md「日本標準時（JST）に固定している」、
+   * 図/画面詳細図.md「端末の時計から日本時間を求めている」。GitHub Issue #165）
+   */
+  const startMs = jstMs(startedAt);
   const elapsed = Math.max(0, Math.floor((nowMs - startMs) / 1000));
 
   /*
    * いちばん長く確認していない園児を起点に、次のチェックまでを数える。
    * 1人を記録しただけでは次の間隔へ進まない。全員を確認し終えてはじめて進む。
    */
-  const baseMs = new Date(napTimerBase(startedAt, rows.map((r) => r.latest?.checked_at ?? null))).getTime();
+  const baseMs = jstMs(napTimerBase(startedAt, rows.map((r) => r.latest?.checked_at ?? null)));
   const dueMs = baseMs + intervalMinutes * 60_000;
   const remain = Math.floor((dueMs - nowMs) / 1000);
   const over = remain < 0;
   // 確認の時刻を過ぎている園児の数。未記録の園児は開始時刻から数える
   const dueCount = rows.filter((r) =>
-    new Date(r.latest?.checked_at ?? startedAt).getTime() + intervalMinutes * 60_000 <= nowMs).length;
+    jstMs(r.latest?.checked_at ?? startedAt) + intervalMinutes * 60_000 <= nowMs).length;
 
   // 1時間を超えるときは時も出す。分だけで表すと「66:57」のように読み取りにくくなるため
   const mmss = (sec: number) => {
@@ -238,8 +258,8 @@ function NapTimer({ startedAt, intervalMinutes, rows }: {
 }
 
 /** 園児の行から直接記録する。選択肢に前回値を入れず、毎回の目視確認を促す。 */
-function NapRecordRow({ row, sessionId, due, onSaved }: {
-  row: NapChildState; sessionId: number; due: boolean; onSaved: () => void;
+function NapRecordRow({ row, sessionId, due, abnormalAt, onSaved }: {
+  row: NapChildState; sessionId: number; due: boolean; abnormalAt: string | null; onSaved: () => void;
 }) {
   const { user } = useSession();
   const TEMP_MIN = 30.0;
@@ -284,16 +304,39 @@ function NapRecordRow({ row, sessionId, due, onSaved }: {
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
 
+  /*
+   * 直近の記録で「呼吸 確認できず」としたのに、そのあとの異常時の記録が無いときは、その園児を選んだ状態で
+   * 異常時記録画面へ移る導線を出す（図/画面詳細図.md「異常時記録画面」(5-2) 項目2「初期値：午睡チェック画面で選んでいた園児」、
+   * 「午睡チェック画面」(5-1) 項目10。GitHub Issue #142）。発見時刻は分までで入るため、分の単位で比べる。
+   * 【仮置き】導線を出す条件は設計が定めていない（web/仮置き値.md）
+   */
+  const latest = row.latest;
+  const needsAbnormal = !!latest && latest.breathing === '2'
+    && !(abnormalAt && abnormalAt.slice(0, 16) >= latest.checked_at.slice(0, 16));
+
   return (
-    <section className={`nap-card nap-record-row${!row.latest || due ? ' unrecorded' : ''}`} aria-label={`${name}の午睡チェック`}>
+    <section className={`nap-card nap-record-row${!row.latest || due ? ' unrecorded' : ''}${abnormalAt ? ' has-abnormal' : ''}`}
+      aria-label={`${name}の午睡チェック`}>
       <div className="nap-row-head">
         <strong className="name">{name}</strong>
         <span className={`nap-row-status${!row.latest || due ? ' due' : ''}`} role="status">
           {justSaved ? '保存しました' : !row.latest ? '未記録' : due ? 'チェック時刻を過ぎています' : '確認済み'}
         </span>
         <span className="last">{row.latest ? `前回 ${formatHM(row.latest.checked_at)} ${BODY_POSITION[row.latest.body_position]}` : '前回の記録なし'}</span>
+        {latest && <LatestObservation record={latest} />}
         <span className="last">平熱 {formatTemperature(row.child.normal_temperature)}℃</span>
+        {abnormalAt && <span className="tag tag-returned">異常時の記録あり {formatHM(abnormalAt)}</span>}
       </div>
+
+      {needsAbnormal && latest && (
+        <div className="row">
+          <Alert>前回の記録で呼吸が確認できていません。異常時の記録を残してください。</Alert>
+          <Link className="btn btn-sm" to="/staff/nap/abnormal"
+            state={{ childId: id, observed: `${formatHM(latest.checked_at)} の午睡チェック：${observationText(latest)}` }}>
+            異常時の記録を残す
+          </Link>
+        </div>
+      )}
 
       <div className="nap-inline-fields">
         <NapChoices label="体位" name={`position-${id}`} options={BODY_POSITION} value={position} onChange={startInput(setPosition)} />
@@ -332,6 +375,31 @@ function NapRecordRow({ row, sessionId, due, onSaved }: {
   );
 }
 
+/**
+ * 直近の記録のうち、体位のほかに見ておくべきもの（呼吸が確認できない・顔色が通常でない・体温）を並べる。
+ * あとから画面を見たほかの職員にも、記録した内容が分かるようにする（GitHub Issue #142）。
+ * 保育士が選んだ値をそのまま示すだけで、システムは判定しない（平熱との比較もしない）。
+ * 【仮置き】画面詳細図 5-1 項目7 はカードに時刻と体位を出すとだけ定めている（web/仮置き値.md）
+ */
+function LatestObservation({ record }: { record: NapRecord }) {
+  return (
+    <>
+      {record.breathing === '2' && <span className="tag tag-returned">呼吸 {BREATHING[record.breathing]}</span>}
+      {record.complexion !== '1' && <span className="tag tag-returned">顔色 {COMPLEXION[record.complexion]}</span>}
+      {record.temperature !== null && <span className="last">体温 {formatTemperature(record.temperature)}℃</span>}
+    </>
+  );
+}
+
+/** 異常時記録画面へ添える、直近の記録の内容（体位・呼吸・顔色・体温） */
+function observationText(record: NapRecord): string {
+  const parts = [
+    `体位 ${BODY_POSITION[record.body_position]}`, `呼吸 ${BREATHING[record.breathing]}`, `顔色 ${COMPLEXION[record.complexion]}`,
+  ];
+  if (record.temperature !== null) parts.push(`体温 ${formatTemperature(record.temperature)}℃`);
+  return parts.join('・');
+}
+
 function NapChoices<T extends string>({ label, name, options, value, onChange }: {
   label: string; name: string; options: Record<T, string>; value: T | null; onChange: (next: T) => void;
 }) {
@@ -357,6 +425,14 @@ function TemperaturePicker({ name, onClose, onSelect }: {
   const [whole, setWhole] = useState<number | null>(null);
   const [manual, setManual] = useState('');
   const [manualOpen, setManualOpen] = useState(false);
+  /*
+   * 手で入れる体温は小数第1位まで（基本設計書「入力項目の制約値」(4-9)、図/画面詳細図.md「午睡チェック画面」(5-1) 項目12）。
+   * 表示だけを丸めて、記録には入れたままの桁が残るのを防ぐ（GitHub Issue #165）
+   */
+  const manualValue = Number(manual);
+  const manualProblem = !manual ? null
+    : !Number.isFinite(manualValue) ? '数値で入力してください'
+      : !isOneDecimal(manualValue) ? '体温は小数第1位まで（例：34.9）で入力してください' : null;
   return (
     <Modal title={`${name}の体温`} onClose={onClose} footer={<button onClick={onClose}>閉じる</button>}>
       <div className="nap-temperature-picker">
@@ -365,7 +441,7 @@ function TemperaturePicker({ name, onClose, onSelect }: {
         <div className={`nap-temp-grid${whole === null ? ' whole' : ''}`}>
           {whole === null
             ? [35, 36, 37, 38, 39, 40].map((n) => <button key={n} onClick={() => setWhole(n)}>{n}℃</button>)
-            : Array.from({ length: 10 }, (_, n) => <button key={n} onClick={() => onSelect(whole + n / 10)}>.{n}</button>)}
+            : Array.from({ length: 10 }, (_, n) => <button key={n} onClick={() => onSelect((whole * 10 + n) / 10)}>.{n}</button>)}
         </div>
         {whole !== null && <button className="btn-quiet btn-sm" onClick={() => setWhole(null)}>整数部分を選び直す</button>}
         <div className="nap-temp-manual">
@@ -373,8 +449,9 @@ function TemperaturePicker({ name, onClose, onSelect }: {
             <label htmlFor={`temperature-manual-${name}`}>範囲外の体温</label>
             <input id={`temperature-manual-${name}`} type="number" inputMode="decimal" step="0.1" value={manual}
               onChange={(e) => setManual(e.target.value)} placeholder="例：34.9" />
-            <button onClick={() => { const value = Number(manual); if (manual && Number.isFinite(value)) onSelect(value); }}
-              disabled={!manual || !Number.isFinite(Number(manual))}>設定</button>
+            <button onClick={() => { if (manual && !manualProblem) onSelect(Math.round(manualValue * 10) / 10); }}
+              disabled={!manual || !!manualProblem}>設定</button>
+            {manualProblem && <div className="muted" role="alert">{manualProblem}</div>}
           </> : <button className="btn-quiet btn-sm" onClick={() => setManualOpen(true)}>範囲外の値を入力</button>}
         </div>
       </div>
