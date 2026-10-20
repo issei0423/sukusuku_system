@@ -417,6 +417,10 @@ CREATE TABLE t_development_check (
   -- 所見（チェック1件に対する自由記述）。園内限定であり、保護者へは共有しない
   -- （基本設計書「発達チェック・身体測定」(5-7)）
   note                    TEXT,
+  -- 保護者へのひとこと（所見とは別の欄。確定した時点で成長の記録に届く）と、最初に確定した日時（直しても動かさない）
+  -- （詳細設計書「変える表」(5-3)・「成長の記録に届くもの」(3-7)、決めたこと D-31）
+  guardian_message        TEXT,
+  finalized_at            TEXT,
   UNIQUE (child_id, checked_on)
 );
 

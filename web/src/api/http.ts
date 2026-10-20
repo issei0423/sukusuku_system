@@ -19,7 +19,7 @@ import type {
   DevListRow, DevScheduleRow, CsvRow, FiscalClassRow, StaffAccountRow,
   GuardianAccountRow, InvitationCodeRow, OperationLogRow, StaffSummary, GuardianHomeRow,
   DevDraftView,
-  ContactPage, ContactClassView, ContactHome, ContactHomeInput, NapSleep, NapExclusion,
+  ContactPage, ContactClassView, ContactHome, ContactHomeInput, NapSleep, NapExclusion, GrowthRecord,
 } from './shapes';
 import type { SendPhotoInput, SendPhotoResult } from './shapes';
 import type {
@@ -518,9 +518,9 @@ const apiGrowth = {
   saveCheck: (
     _u: SessionUser, childId: string, checkedOn: string,
     results: { development_item_id: number; result: string | null }[],
-    note: string, status: '1' | '2',
+    note: string, status: '1' | '2', guardianMessage: string | null = null,
   ) => post<DevelopmentCheck>('/api/development/checks', {
-    child_id: childId, checked_on: checkedOn, results, note, status,
+    child_id: childId, checked_on: checkedOn, results, note, status, guardian_message: guardianMessage,
   }),
 
   schedules: (_u: SessionUser, classId: number) =>
@@ -753,6 +753,12 @@ const contactApi = {
   settings: (_u: SessionUser) => get<SettingsView>('/api/settings'),
   saveSettings: (_u: SessionUser, changes: Record<string, string>, readAt: string) =>
     post<SettingsView>('/api/settings', { changes, read_at: readAt }),
+  /** 「成長の記録に残す」の付け外し（詳細設計書 (4-12 (3))）。updated_at は読んだ版 */
+  keepInGrowth: (_u: SessionUser, eventId: number, keep: boolean, updatedAt: string) =>
+    post<ContactEvent>(`/api/contact/events/${eventId}/keep-in-growth`, { keep_in_growth: keep, updated_at: updatedAt }),
+  /** 成長の記録（詳細設計書「成長の記録」(4-12 (1))）。before は前の応答の next_before */
+  growthRecord: (_u: SessionUser, childId: string, before?: string | null) =>
+    get<GrowthRecord>(`/api/children/${encodeURIComponent(childId)}/growth${before ? qs({ before }) : ''}`),
 };
 
 /* 保護者のメニュー（詳細設計書「保護者のメニュー」(4-15)。名前はモック（api/mock.ts の guardianApi）と同じ） */

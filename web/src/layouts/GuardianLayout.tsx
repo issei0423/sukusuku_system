@@ -127,6 +127,12 @@ export default function GuardianLayout() {
               </button>
             </div>
             <Link to="/guardian" onClick={() => setOpen(false)}>ホーム</Link>
+            {/* 園児ごとの成長の記録（図/画面詳細図「保護者（スマートフォン）」(1-2) の項目14） */}
+            {home.data?.map((h) => (
+              <Link key={h.child.child_id} to={`/guardian/growth/${encodeURIComponent(h.child.child_id)}`} onClick={() => setOpen(false)}>
+                {h.child.child_name}の成長の記録
+              </Link>
+            ))}
             <Link to="/guardian/chat" onClick={() => setOpen(false)}>チャット・お知らせ</Link>
             <Link to="/guardian/handouts" onClick={() => setOpen(false)}>園からの配布物</Link>
             {/*

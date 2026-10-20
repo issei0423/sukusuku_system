@@ -28,6 +28,11 @@ type saveCheckRequest struct {
 	Note string `json:"note"`
 	// "1" 下書き / "2" 確定
 	Status string `json:"status"`
+	// 保護者へのひとこと（所見とは別の欄。確定した時点で成長の記録に届く。詳細設計書「発達チェックの保存」(4-12 (2))）。
+	// 空なら null で保存する
+	GuardianMessage *string `json:"guardian_message"`
+	// 他児の名前の照合で承諾した名前（4-5 (2)）。照合は PR #201 の namecheck.go と合わせるときに足す（いまは受け取るだけ）
+	AcknowledgedNames []string `json:"acknowledged_names"`
 }
 
 func (a *app) handleSaveDevelopmentCheck(w http.ResponseWriter, r *http.Request) {
@@ -39,7 +44,9 @@ func (a *app) handleSaveDevelopmentCheck(w http.ResponseWriter, r *http.Request)
 	if !readJSON(w, r, &req) {
 		return
 	}
-	if !a.canSeeChild(u, req.ChildID) {
+	// その園児を書ける職員（contactAccess の Write）。フリーの職員は書けない（詳細設計書「発達チェックの保存」(4-12 (2))、
+	// 基本設計書「権限チェックの実装方針」(6-2)）。画面側のモック（web/src/api/mock.ts の saveCheck）と同じ規則
+	if !a.contactAccess(u, req.ChildID).Write {
 		writeForbidden(w, "この園児を記録する権限がありません")
 		return
 	}
@@ -65,6 +72,17 @@ func (a *app) handleSaveDevelopmentCheck(w http.ResponseWriter, r *http.Request)
 	if req.CheckedOn > today() {
 		writeErr(w, http.StatusBadRequest, "実施日に未来日は指定できません")
 		return
+	}
+	// 保護者へのひとことは前後の空白を除いて500文字以内。空なら null（詳細設計書 (4-12 (2))）
+	var guardianMessage any
+	if req.GuardianMessage != nil {
+		if m := strings.TrimSpace(*req.GuardianMessage); m != "" {
+			if tooLong(m, 500) {
+				writeErr(w, http.StatusBadRequest, msgGuardianMessageTooLong)
+				return
+			}
+			guardianMessage = m
+		}
 	}
 
 	tx, err := a.db.Begin()
@@ -101,8 +119,9 @@ func (a *app) handleSaveDevelopmentCheck(w http.ResponseWriter, r *http.Request)
 	switch {
 	case isNew:
 		res, e := tx.Exec(`INSERT INTO t_development_check
-			(child_id, checked_on, status, staff_id, share_status, note)
-			VALUES (?, ?, ?, ?, '1', ?)`, req.ChildID, req.CheckedOn, req.Status, u.staff(), note)
+			(child_id, checked_on, status, staff_id, share_status, note, guardian_message, finalized_at)
+			VALUES (?, ?, ?, ?, '1', ?, ?, CASE WHEN ? = '2' THEN ? END)`, req.ChildID, req.CheckedOn, req.Status, u.staff(), note,
+			guardianMessage, req.Status, now())
 		if e != nil {
 			writeErr(w, http.StatusInternalServerError, "保存に失敗しました")
 			return
@@ -112,8 +131,11 @@ func (a *app) handleSaveDevelopmentCheck(w http.ResponseWriter, r *http.Request)
 		writeErr(w, http.StatusInternalServerError, "保存に失敗しました")
 		return
 	default:
-		if _, e := tx.Exec(`UPDATE t_development_check SET status = ?, staff_id = ?, note = ?
-			WHERE development_check_id = ?`, req.Status, u.staff(), note, checkID); e != nil {
+		// 確定した日時は初めて確定したときだけ入れ、確定し直しても動かさない（「できたこと」の日付が動かないように。
+		// 詳細設計書「成長の記録に届くもの」(3-7)、決めたこと D-31）
+		if _, e := tx.Exec(`UPDATE t_development_check SET status = ?, staff_id = ?, note = ?, guardian_message = ?,
+			finalized_at = CASE WHEN ? = '2' AND finalized_at IS NULL THEN ? ELSE finalized_at END
+			WHERE development_check_id = ?`, req.Status, u.staff(), note, guardianMessage, req.Status, now(), checkID); e != nil {
 			writeErr(w, http.StatusInternalServerError, "保存に失敗しました")
 			return
 		}
@@ -154,7 +176,7 @@ func (a *app) handleSaveDevelopmentCheck(w http.ResponseWriter, r *http.Request)
 	}
 	// 発達チェック一覧（未入力の数・最後の実施日）とダッシュボードの「未実施」が変わりうる。
 	// 下書きでも未入力の数が変わる（events.go）
-	a.notifyDevelopment(req.ChildID)
+	a.notifyDevelopment(req.ChildID, req.Status == "2")
 
 	row := a.db.QueryRow(`SELECT `+checkColumns+` FROM t_development_check WHERE development_check_id = ?`, checkID)
 	c, _ := a.scanCheck(row)

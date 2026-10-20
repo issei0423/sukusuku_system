@@ -345,7 +345,7 @@ export interface ContactEvent {
   staff_name?: string;
   corrected_at: string | null;
   is_deleted: boolean;
-  /** 職員の応答だけ。訂正のときに読んだ版として送り返す（詳細設計書「訂正・取り消し」(4-7 (1))） */
+  /** 職員の応答だけ。直すときに読んだ版として送り返す（詳細設計書「訂正・取り消し」(4-7 (1))） */
   updated_at?: string;
 }
 
@@ -675,6 +675,53 @@ export interface SettingsView {
   ai_key_present: boolean;
   ai_key_rejected: boolean;
   push_available: boolean;
+}
+
+/*
+ * 成長の記録（GET /api/children/{childID}/growth。詳細設計書「成長の記録」(4-12 (1))）。
+ * 返すのは事実（測った値・確認できた項目の名前・保護者へのひとこと・連絡帳から残したもの）だけ。
+ * 「一部」「未確認」・所見・比較・記録した職員の名前・判定の言葉は入れない
+ */
+export interface GrowthRecord {
+  child_id: string;
+  child_name: string;
+  sex: Child['sex'];
+  birth_date: string;
+  grace_ends_on: string | null;
+  /** 偽なら measurements は空。画面は身長・体重の区画を出さない */
+  share_physical: boolean;
+  /** 新しい順・全件 */
+  measurements: GrowthMeasurement[];
+  /** 新しい順・12件まで */
+  achievements: GrowthEntry[];
+  next_before: string | null;
+  /** 成長グラフの免責（基本設計書「メッセージ一覧」(4-12)） */
+  disclaimer: string;
+}
+
+export interface GrowthMeasurement {
+  physical_record_id: number;
+  measured_on: string;
+  age_in_months: number;
+  height_cm: number;
+  weight_kg: number;
+  is_today: boolean;
+}
+
+/** 「できたこと」の1件。kind ごとに使う項目が違う */
+export interface GrowthEntry {
+  kind: 'development' | 'contact';
+  at: string;
+  date: string;
+  is_today: boolean;
+  /** development：確認できた項目の名前 */
+  items?: string[];
+  /** development：保護者へのひとこと */
+  message?: string | null;
+  /** contact：ひとこと・写真に添えた文 */
+  body?: string | null;
+  /** contact：写真 */
+  contact_photo_id?: number | null;
 }
 
 /** 参照のみに使う型の再輸出。画面が types.ts を直接読まなくて済むようにする */

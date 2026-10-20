@@ -174,6 +174,8 @@ func (a *app) routeGrowth(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/physical/records/{id}", a.handleRemovePhysical)
 	mux.HandleFunc("POST /api/physical/export", a.handleExportPdf)
 	mux.HandleFunc("GET /api/children/{childID}/physical", a.handlePhysicalRecords)
+	mux.HandleFunc("GET /api/children/{childID}/growth", a.handleGrowthRecord)
+	mux.HandleFunc("POST /api/contact/events/{id}/keep-in-growth", a.handleKeepInGrowth)
 }
 
 // アカウント管理・監査（基本設計書 4-3・6-4）

@@ -8,6 +8,7 @@
  * 前に開いたあとに記録・訂正されたものには「新」を添える（lastReadAt と比べる）。
  * 職員の画面で使うとき（viewer="staff"）は、記録した職員の名前と、保護者に出さない設定の印を添え、
  * 直せる人には行ごとに「直す・取り消す」を出す（onFix）。
+ * keepInGrowth を渡すと、ひとこと・写真の行に「成長の記録に残す」を置く（詳細設計書「職員の画面から成長の記録へ届けるもの」(2-12 (1))）。
  */
 import type { ContactEvent, ContactPage, NapSleep } from '../../api/shapes';
 import { settingText } from '../../api/client';
@@ -15,6 +16,7 @@ import { formatHM, today } from '../../api/util';
 import { TEXT } from '../../messages';
 import { eventText, sleepLines } from './contactText';
 import ContactPhotoImage from './ContactPhotoImage';
+import KeepInGrowthToggle from './KeepInGrowthToggle';
 
 const EVENT_ITEM: Record<string, string> = { '1': 'meal', '2': 'toilet', '3': 'temperature', '4': 'comment', '5': 'photo' };
 
@@ -22,18 +24,20 @@ export type TimelineFix = { kind: 'event'; event: ContactEvent } | { kind: 'slee
 
 interface Item {
   key: string; at: string; text: string; heading?: string; corrected: string | null; staff?: string; nap?: boolean;
-  hidden?: boolean; fix?: TimelineFix;
+  hidden?: boolean; fix?: TimelineFix; event?: ContactEvent;
   /** 写真の出来事なら写真の ID（時刻と絵を出す。押すと画面いっぱいに出す。詳細設計書 (2-6 (5))） */
   photoId?: number;
 }
 
-export default function TodayTimeline({ page, viewer, lastReadAt, onFix }: {
+export default function TodayTimeline({ page, viewer, lastReadAt, onFix, keepInGrowth }: {
   page: ContactPage;
   viewer: 'guardian' | 'staff';
   /** この画面を開く前に読んだ時刻。無ければ「新」を付けない */
   lastReadAt?: string | null;
   /** 職員の画面で、直せる人のときだけ渡す。行に「直す・取り消す」を出す */
   onFix?: (target: TimelineFix) => void;
+  /** 職員の画面だけ。「成長の記録に残す」を置くときに、直せる人か（canFix）と、押したあとの読み直しを渡す */
+  keepInGrowth?: { canFix: boolean; onChanged: () => void };
 }) {
   const isToday = page.contact_date === today();
   // 保護者に出さない設定の種類（職員の画面だけ印を付ける。基本設計書「出す項目と選択肢の設定」(4-5)）
@@ -46,7 +50,7 @@ export default function TodayTimeline({ page, viewer, lastReadAt, onFix }: {
       // 写真は「写真」と添えた文（あれば）
       text: e.event_type === '5' && e.body ? `${eventText(e)}　${e.body}` : eventText(e), corrected: e.corrected_at,
       staff: viewer === 'staff' ? e.staff_name : undefined, hidden: hidden(EVENT_ITEM[e.event_type]), fix: { kind: 'event', event: e },
-      photoId: e.event_type === '5' && e.contact_photo_id !== null ? e.contact_photo_id : undefined })),
+      photoId: e.event_type === '5' && e.contact_photo_id !== null ? e.contact_photo_id : undefined, event: e })),
     ...page.class_notes.map((c): Item => ({ key: `c${c.contact_class_id}`, at: c.recorded_at, text: c.body, heading: 'クラスのようす',
       corrected: c.corrected_at, hidden: hidden('class') })),
     ...page.sleeps.flatMap((s) => sleepLines(s, isToday, viewer).map((l, i): Item => ({ key: `s${s.nap_sleep_id}-${i}`, at: l.at, text: l.text,
@@ -74,6 +78,9 @@ export default function TodayTimeline({ page, viewer, lastReadAt, onFix }: {
                 <span className="contact-timeline-photo">
                   <ContactPhotoImage photoId={it.photoId} label={`${formatHM(it.at)} の写真`} size="timeline" />
                 </span>
+              )}
+              {viewer === 'staff' && keepInGrowth && it.event && (
+                <KeepInGrowthToggle event={it.event} canFix={keepInGrowth.canFix} onChanged={keepInGrowth.onChanged} />
               )}
             </span>
             {isNew(it) && <span className="tag tag-applied contact-new">新</span>}
