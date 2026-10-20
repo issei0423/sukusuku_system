@@ -14,7 +14,7 @@
 import * as db from './mockDb';
 import { CURRENT_TERMS_VERSION } from './mockDb';
 import type {
-  Account, Child, ClassRoom, Diary, SessionUser, Role,
+  Account, Child, ClassRoom, Diary, DiaryIncident, SessionUser, Role,
   InvitationCode, NapRecord, NapSession, NapAbnormal, PhysicalRecord, GrowthStandard,
   DevelopmentCheck, DevelopmentResultRecord, DevelopmentItem, ChatRoom, ChatMessage,
   OperationLog, Allergy, FunctionType, OperationType, Paged, Handout,
@@ -34,7 +34,7 @@ import {
 import { emitLive } from '../live';
 import type { LiveEvent } from '../live';
 import type {
-  LoginError, ChildInput, DiaryFilter, DiaryInput, DiaryAttachmentInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
+  LoginError, ChildInput, DiaryFilter, DiaryInput, DiaryAttachmentInput, DiaryIncidentInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
   DevDraftView,
   ContactHome, ContactHomeInput, ContactPage, ContactClassView, ContactClassRow, ContactEvent, ContactClass, ContactFacility,
   NapSleep, NapExclusion, HomeState, GuardianToday, TodayItem, MealAmount,
@@ -358,13 +358,169 @@ const DIARY_MSG = {
   versionConflict: '他の職員が更新しています。内容を再読み込みしてください。',
 } as const;
 
-/** 日誌に名前を添える。Go サーバ（server/api_diary.go の enrich）と同じ */
+/**
+ * 日誌に名前と、ヒヤリハットの欄を添える。Go サーバ（server/api_diary.go の enrich と scanDiary）と同じ。
+ * ヒヤリハットの欄は、本文を見出しで分けて返す（詳細設計書「日誌」(4-13 (6))）
+ */
 function withDiaryNames(d: Diary): Diary {
   return {
     ...d,
     staff_name: staffName(d.created_staff_id),
     approved_staff_name: d.approved_staff_id ? staffName(d.approved_staff_id) : null,
     applied_staff_name: d.applied_staff_id ? staffName(d.applied_staff_id) : null,
+    incident: incidentOf(d),
+  };
+}
+
+/* ============ ヒヤリハットの欄 ============
+ * 発生日時・場所・状況・とった対応・今後の対策・保護者へ伝えたこと
+ * （詳細設計書「日誌の画面（作り直し）」(2-13 (8))・「日誌」(4-13 (1)・(6))・決めたこと D-33、基本設計書「ヒヤリハットの記録」(4-6)）。
+ * 発生日時・場所・保護者へ伝えたことは列に持ち、状況・とった対応・今後の対策は本文に見出しを付けてつないで持つ。
+ * 今後の対策は人が書く欄であり、システムは原因の判定・過失の評価をしない。
+ * サーバ側は server/api_diary_incident.go。片方だけを直すと食い違う
+ */
+const INCIDENT_HEADINGS = { situation: '【状況】', response: '【とった対応】', countermeasure: '【今後の対策】' } as const;
+
+/** ヒヤリハットの欄の誤りの文言（詳細設計書「日誌」(4-13 (1))）。サーバ側の msgIncident… と同じ */
+export const INCIDENT_MSG = {
+  occurredAt: '発生日時を入力してください',
+  occurredAtFuture: '発生日時に未来の日時は指定できません。',
+  // 【仮置き】形の崩れた値の文言は設計に無い（web/仮置き値.md「ヒヤリハットの欄」）。画面からは送られない
+  occurredAtFormat: '発生日時の形式が正しくありません',
+  place: '場所を入力してください。',
+  placeLong: '場所は100文字以内で入力してください。',
+  situation: '状況を入力してください。',
+  response: 'とった対応を入力してください',
+  textLong: '状況・とった対応は1,000文字以内で入力してください。',
+  countermeasure: '今後の対策は1,000文字以内で入力してください。',
+  headingLine: '「【状況】」「【とった対応】」「【今後の対策】」だけの行は書けません。',
+  guardianNotice: '保護者へ伝えた日時・手段・相手を入れてください。',
+  // 【仮置き】「伝えた」「伝えていない」のほかの値の文言は設計に無い（web/仮置き値.md「ヒヤリハットの欄」）。画面からは送られない
+  guardianNoticeKind: '保護者へ伝えたかの指定が正しくありません',
+} as const;
+
+/** 欄の上限（基本設計書「入力項目の制約値」(4-12)、詳細設計書「日誌の画面（作り直し）」(2-13 (8))） */
+export const INCIDENT_LIMITS = { place: 100, text: 1000, person: 50 } as const;
+
+type IncidentFields = Required<DiaryIncidentInput>;
+
+/** ヒヤリハットの欄の前後の空白を除く。任意の欄も同じく除き、空なら「無し」として扱う（サーバ側は normalizeIncident） */
+function normalizeIncident(x: DiaryIncidentInput | undefined): IncidentFields {
+  return {
+    occurred_at: (x?.occurred_at ?? '').trim(),
+    place: (x?.place ?? '').trim(),
+    situation: (x?.situation ?? '').trim(),
+    response: (x?.response ?? '').trim(),
+    countermeasure: (x?.countermeasure ?? '').trim(),
+    guardian_notice: (x?.guardian_notice ?? '').trim() as IncidentFields['guardian_notice'],
+    guardian_noticed_at: (x?.guardian_noticed_at ?? '').trim(),
+    guardian_notice_method: (x?.guardian_notice_method ?? '').trim() as IncidentFields['guardian_notice_method'],
+    guardian_notice_person: (x?.guardian_notice_person ?? '').trim(),
+  };
+}
+
+/** その行が本文を分ける見出しだけでできているか（サーバ側は isIncidentHeading） */
+function isIncidentHeading(line: string): boolean {
+  const t = line.trim();
+  return t === INCIDENT_HEADINGS.situation || t === INCIDENT_HEADINGS.response || t === INCIDENT_HEADINGS.countermeasure;
+}
+
+/**
+ * ヒヤリハットの欄を確かめ、断る理由を返す（問題が無ければ null）。検査の順は詳細設計書「日誌」(4-13 (1)) の文言の並び。
+ * 未来かどうかは分の単位で比べる（異常時の記録の発見時刻 foundAtProblem と同じ。web/仮置き値.md）。
+ * サーバ側は server/api_diary_incident.go の checkDiaryIncident
+ */
+function diaryIncidentError(x: IncidentFields): string | null {
+  const nowMinute = now().slice(0, 16);
+  if (!x.occurred_at) return INCIDENT_MSG.occurredAt;
+  if (!isISODateTime(x.occurred_at)) return INCIDENT_MSG.occurredAtFormat;
+  if (x.occurred_at.slice(0, 16) > nowMinute) return INCIDENT_MSG.occurredAtFuture;
+  if (!x.place) return INCIDENT_MSG.place;
+  if (tooLong(x.place, INCIDENT_LIMITS.place)) return INCIDENT_MSG.placeLong;
+  if (!x.situation) return INCIDENT_MSG.situation;
+  if (!x.response) return INCIDENT_MSG.response;
+  if (tooLong(x.situation, INCIDENT_LIMITS.text) || tooLong(x.response, INCIDENT_LIMITS.text)) return INCIDENT_MSG.textLong;
+  if (tooLong(x.countermeasure, INCIDENT_LIMITS.text)) return INCIDENT_MSG.countermeasure;
+  // 見出しと同じ文字だけの行を書かせない。本文を見出しで分けるときに取り違えないため
+  if ([x.situation, x.response, x.countermeasure].some((t) => t.split('\n').some(isIncidentHeading))) {
+    return INCIDENT_MSG.headingLine;
+  }
+  switch (x.guardian_notice) {
+    case '':
+    case '2':
+      break; // 未記入・伝えていない。日時・手段・相手は持たない
+    case '1':
+      if (!isISODateTime(x.guardian_noticed_at) || x.guardian_noticed_at.slice(0, 16) > nowMinute
+        || !['1', '2', '3', '9'].includes(x.guardian_notice_method)
+        || !x.guardian_notice_person || tooLong(x.guardian_notice_person, INCIDENT_LIMITS.person)) {
+        return INCIDENT_MSG.guardianNotice;
+      }
+      break;
+    default:
+      return INCIDENT_MSG.guardianNoticeKind;
+  }
+  return null;
+}
+
+/**
+ * 状況・とった対応を見出しを付けてつなぎ、今後の対策があれば見出しを付けて続けた本文（D-33）。
+ * 今後の対策が無いときは見出しも付けない。サーバ側は incidentBody
+ */
+function incidentBody(situation: string, response: string, countermeasure: string): string {
+  const body = `${INCIDENT_HEADINGS.situation}\n${situation}\n\n${INCIDENT_HEADINGS.response}\n${response}`;
+  return countermeasure ? `${body}\n\n${INCIDENT_HEADINGS.countermeasure}\n${countermeasure}` : body;
+}
+
+/**
+ * ヒヤリハットの本文を見出しで分け、状況・とった対応・今後の対策を返す（詳細設計書「日誌」(4-13 (6))）。
+ * 【仮置き】最初の見出しより前に文があれば（第3.0版より前の記録の「【発生日時】」など）、状況の頭に入れる
+ * （web/仮置き値.md「ヒヤリハットの欄」）。捨てると、以前の記録を開いて保存し直したときに本文から消えるため。
+ * 同じ見出しが2回あれば、つないで返す。サーバ側は splitIncidentBody
+ */
+export function splitIncidentBody(body: string): { situation: string; response: string; countermeasure: string } {
+  const preamble: string[] = [];
+  const parts: Record<string, string[]> = {};
+  let current = '';
+  for (const line of body.replace(/\r\n/g, '\n').split('\n')) {
+    if (isIncidentHeading(line)) { current = line.trim(); continue; }
+    if (!current) { preamble.push(line); continue; }
+    (parts[current] ??= []).push(line);
+  }
+  const join = (lines: string[] | undefined) => (lines ?? []).join('\n').trim();
+  const head = join(preamble);
+  const own = join(parts[INCIDENT_HEADINGS.situation]);
+  return {
+    situation: head && own ? `${head}\n\n${own}` : head || own,
+    response: join(parts[INCIDENT_HEADINGS.response]),
+    countermeasure: join(parts[INCIDENT_HEADINGS.countermeasure]),
+  };
+}
+
+/** 日誌の行からヒヤリハットの欄を組み立てる（ヒヤリハットでなければ null。サーバ側は incidentOf） */
+function incidentOf(d: Diary): DiaryIncident | null {
+  if (d.record_type !== '4') return null;
+  return {
+    occurred_at: d.occurred_at ?? '',
+    place: d.place ?? '',
+    ...splitIncidentBody(d.body),
+    guardian_notice: d.guardian_notice ?? null,
+    guardian_noticed_at: d.guardian_noticed_at ?? null,
+    guardian_notice_method: d.guardian_notice_method ?? null,
+    guardian_notice_person: d.guardian_notice_person ?? null,
+  };
+}
+
+/** 保存するヒヤリハットの列。ヒヤリハットでなければすべて空にする（サーバ側は incidentColumnsOf） */
+function incidentColumnsOf(x: IncidentFields | null): Pick<Diary,
+  'occurred_at' | 'place' | 'guardian_notice' | 'guardian_noticed_at' | 'guardian_notice_method' | 'guardian_notice_person'> {
+  const told = x?.guardian_notice === '1';
+  return {
+    occurred_at: x ? x.occurred_at : null,
+    place: x ? x.place : null,
+    guardian_notice: x && x.guardian_notice ? x.guardian_notice : null,
+    guardian_noticed_at: told ? x.guardian_noticed_at : null,
+    guardian_notice_method: told && x.guardian_notice_method ? x.guardian_notice_method : null,
+    guardian_notice_person: told ? x.guardian_notice_person : null,
   };
 }
 
@@ -924,8 +1080,11 @@ function replaceDiaryAttachments(diaryId: number, photos: DiaryAttachmentInput[]
 const diaryApi2 = {
   /** 下書き保存・申請。status は呼び出し側が指定する */
   async saveDiary(user: SessionUser, input: DiaryInput, status: '1' | '2'): Promise<Diary> {
-    if (!input.body.trim()) return fail('本文を入力してください');
-    if (tooLong(input.body, 2000)) return fail('本文は2,000文字以内で入力してください');
+    // 本文は1〜2,000文字。ヒヤリハットは本文の代わりに欄で受け取る（詳細設計書「日誌」(4-13 (1))）
+    if (input.record_type !== '4') {
+      if (!input.body.trim()) return fail('本文を入力してください');
+      if (tooLong(input.body, 2000)) return fail('本文は2,000文字以内で入力してください');
+    }
     // 記録日は当日まで。形の崩れた値も断る（基本設計書「入力項目の制約値」(4-9)、
     // 図/画面詳細図.md「日誌作成・編集画面」(3-2) 項目6。GitHub Issue #174）
     if (!isISODate(input.diary_date)) return fail('記録日の形式が正しくありません');
@@ -945,6 +1104,18 @@ const diaryApi2 = {
     if (needsChild && !db.classChildren.some((cc) => cc.class_id === classId && cc.child_id === input.child_id)) {
       return fail('対象のクラスは、対象の園児が在籍するクラスを選んでください');
     }
+    /*
+     * ヒヤリハットは、発生日時・場所・状況・とった対応・今後の対策・保護者へ伝えたことを欄で受け取る
+     * （詳細設計書「日誌の画面（作り直し）」(2-13 (8))・「日誌」(4-13 (1))）。本文は欄から作り、送られた body は使わない（D-33）。
+     * サーバ側は server/api_diary_write.go の handleSaveDiary
+     */
+    const incident = input.record_type === '4' ? normalizeIncident(input.incident) : null;
+    if (incident) {
+      const msg = diaryIncidentError(incident);
+      if (msg) return fail(msg);
+    }
+    const body = incident ? incidentBody(incident.situation, incident.response, incident.countermeasure) : input.body;
+    const incidentColumns = incidentColumnsOf(incident);
     // 写真は、日誌と一緒に保存する。画面で足した写真が日誌に付かず、確認画面の「写真 n 枚」と承認画面が
     // 食い違っていた（GitHub Issue #175 の 2）。サーバ側は server/api_diary_write.go の checkDiaryAttachments
     const photos = input.attachments;
@@ -974,7 +1145,9 @@ const diaryApi2 = {
       d.child_id = input.child_id;
       d.class_id = input.class_id;
       d.diary_date = input.diary_date;
-      d.body = input.body;
+      d.body = body;
+      // ヒヤリハットの列は、欄で受け取った値で書き換える。ほかの記録種別に変えたときは空にする
+      Object.assign(d, incidentColumns);
       d.status = status;
       // 申請するときは、申請した職員と日時を入れ直す。下書き保存では変えない（詳細設計書「日誌の状態」(3-6)）
       if (status === '2') {
@@ -991,7 +1164,7 @@ const diaryApi2 = {
       log(user.account_id, '1', '2', 't_diary', d.diary_id, d.child_id, before,
         status === '2' ? DIARY_LOG_APPLY : '下書き保存');
       publishDiary(d);
-      return ok(d);
+      return ok(withDiaryNames(d));
     }
 
     const row: Diary = {
@@ -1000,7 +1173,8 @@ const diaryApi2 = {
       child_id: input.child_id,
       class_id: input.class_id,
       diary_date: input.diary_date,
-      body: input.body,
+      body,
+      ...incidentColumns,
       status,
       created_staff_id: user.staff_id!,
       approved_staff_id: null, approved_at: null,
@@ -1014,7 +1188,7 @@ const diaryApi2 = {
     log(user.account_id, '1', '1', 't_diary', row.diary_id, row.child_id, null,
       status === '2' ? DIARY_LOG_CREATE_AND_APPLY : '下書き作成');
     publishDiary(row);
-    return ok(row);
+    return ok(withDiaryNames(row));
   },
 
   /**
@@ -1879,10 +2053,17 @@ export const napApi = {
     const head = a.found_at.slice(0, 10);
     const diaryDate = isISODate(head) ? head
       : session && isISODate(session.session_date) ? session.session_date : today();
+    /*
+     * 発生日時（発見時刻）・状況・とった対応を引き継ぎ、本文はヒヤリハットの欄と同じ見出しの形で作る
+     * （基本設計書「ヒヤリハットの記録」(4-6)、詳細設計書「日誌の画面（作り直し）」(2-13 (8))、D-33）。
+     * 今後の対策は人が書く欄であり、空のまま起票する。場所は異常時の記録が持たないため空で起票し、
+     * 作成者が日誌作成・編集画面で入れる（保存のときに必須の検査を通る）。サーバ側は handleRaiseIncidentDiary
+     */
     const d: Diary = {
       diary_id: nextId(), record_type: '4', child_id: a.child_id,
       class_id: session?.class_id ?? null, diary_date: diaryDate,
-      body: `【発生日時】\n${a.found_at.replace('T', ' ')}\n\n【状況】\n${a.situation}\n\n【とった対応】\n${a.response}\n\n【今後の対策】\n`,
+      body: incidentBody(a.situation.trim(), a.response.trim(), ''),
+      occurred_at: a.found_at, place: '',
       status: '1', created_staff_id: user.staff_id!, approved_staff_id: null, approved_at: null,
       applied_staff_id: null, applied_at: null, nap_abnormal_id: abnormalId,
       returned_reason: null, is_deleted: false, created_at: now(), updated_at: now(),
@@ -1892,7 +2073,7 @@ export const napApi = {
     log(user.account_id, '1', '1', 't_diary', d.diary_id, a.child_id, null, '異常時の記録からヒヤリハットを起票');
     if (session) publishNapChild(session.class_id, a.child_id);
     publishDiary(d);
-    return ok(d);
+    return ok(withDiaryNames(d));
   },
 
   /**

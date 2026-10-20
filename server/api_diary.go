@@ -39,11 +39,14 @@ type Diary struct {
 	// 承認の経緯に出す名前（詳細設計書「日誌」(4-13 (6))）
 	ApprovedStaffName *string `json:"approved_staff_name"`
 	AppliedStaffName  *string `json:"applied_staff_name"`
+	// ヒヤリハットの欄。ヒヤリハットのときだけ（詳細設計書「日誌」(4-13 (6))。api_diary_incident.go）
+	Incident *DiaryIncident `json:"incident"`
 }
 
 const diaryColumns = `diary_id, record_type, child_id, class_id, diary_date, body, status,
 	created_staff_id, approved_staff_id, approved_at, applied_staff_id, applied_at,
-	nap_abnormal_id, returned_reason, is_deleted, created_at, updated_at`
+	nap_abnormal_id, returned_reason, is_deleted, created_at, updated_at,
+	occurred_at, place, guardian_notice, guardian_noticed_at, guardian_notice_method, guardian_notice_person`
 
 func (a *app) scanDiary(rows interface{ Scan(...any) error }) (Diary, error) {
 	var (
@@ -56,10 +59,13 @@ func (a *app) scanDiary(rows interface{ Scan(...any) error }) (Diary, error) {
 		appliedAt    sql.NullString
 		napID        sql.NullInt64
 		reason       sql.NullString
+		// ヒヤリハットの列（api_diary_incident.go）
+		occurredAt, place, notice, noticedAt, noticeMethod, noticePerson sql.NullString
 	)
 	err := rows.Scan(&d.DiaryID, &d.RecordType, &childID, &classID, &d.DiaryDate, &d.Body, &d.Status,
 		&d.CreatedStaffID, &appStaff, &appAt, &appliedStaff, &appliedAt,
-		&napID, &reason, &d.IsDeleted, &d.CreatedAt, &d.UpdatedAt)
+		&napID, &reason, &d.IsDeleted, &d.CreatedAt, &d.UpdatedAt,
+		&occurredAt, &place, &notice, &noticedAt, &noticeMethod, &noticePerson)
 	if err != nil {
 		return d, err
 	}
@@ -71,6 +77,7 @@ func (a *app) scanDiary(rows interface{ Scan(...any) error }) (Diary, error) {
 	d.AppliedAt = nullStr(appliedAt)
 	d.NapAbnormalID = nullInt(napID)
 	d.ReturnedReason = nullStr(reason)
+	d.Incident = incidentOf(d.RecordType, d.Body, occurredAt, place, notice, noticedAt, noticeMethod, noticePerson)
 
 	return d, nil
 }

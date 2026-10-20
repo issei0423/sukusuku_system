@@ -80,7 +80,9 @@ func TestApprovalSendsNothingToGuardian(t *testing.T) {
 	personal := diaryOf(t, call(t, h, teacher, "POST", "/api/diaries",
 		personalDiary(0, "C001", "1", today(), "園内で確かめる個人日誌", "2")).Body.Bytes())
 	incident := diaryOf(t, call(t, h, teacher, "POST", "/api/diaries",
-		`{"record_type":"4","child_id":"C001","class_id":1,"diary_date":"`+today()+`","body":"【状況】園内限定の記録","status":"2"}`).Body.Bytes())
+		// ヒヤリハットは本文の代わりに欄で送る（詳細設計書「日誌」(4-13 (1))。api_diary_incident.go）
+		`{"record_type":"4","child_id":"C001","class_id":1,"diary_date":"`+today()+`","body":"","status":"2",
+		  "incident":{"occurred_at":"`+today()+`T00:00:00","place":"保育室","situation":"園内限定の記録","response":"その場で確かめた"}}`).Body.Bytes())
 	for _, id := range []int64{personal.DiaryID, incident.DiaryID, 2} { // 2 はさくら組のクラス日誌（申請中）
 		d := diaryOf(t, call(t, h, admin, "POST", "/api/diaries/"+itoa(id)+"/approve", `{"share_to_guardian":true}`).Body.Bytes())
 		if d.Status != "3" {

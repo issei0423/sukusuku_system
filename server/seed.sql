@@ -273,15 +273,18 @@ INSERT INTO t_nap_abnormal (nap_abnormal_id, nap_session_id, child_id, found_at,
  (2,2,'C005','2026-08-31T14:10:00','顔色がやや紅潮していた。体温37.4度。','別室で休ませ、保護者へ連絡した。','S003',NULL);
 
 -- ヒヤリハット（異常時の記録から起票済み。相互に参照する）
-INSERT INTO t_diary (diary_id, record_type, child_id, class_id, diary_date, body, status, created_staff_id, applied_staff_id, applied_at, approved_staff_id, approved_at, occurred_at, place, nap_abnormal_id, returned_reason, is_deleted, created_at, updated_at) VALUES
- (3,'4','C003',1,'2026-08-30','【発生日時】
-午睡中の13時40分ごろ
-
-【状況】
+-- 発生日時・場所・保護者へ伝えたことは列に、状況・とった対応・今後の対策は本文に見出しを付けて持つ
+-- （詳細設計書「日誌の画面（作り直し）」(2-13 (8))・「日誌」(4-13 (1))、決めたこと D-33）。
+-- 発生日時は異常時の記録（nap_abnormal_id 1）の発見時刻。場所・伝えた日時・相手はデモの値。web/src/api/mockDb.ts の diary_id 3 とそろえる
+INSERT INTO t_diary (diary_id, record_type, child_id, class_id, diary_date, body, status, created_staff_id, applied_staff_id, applied_at, approved_staff_id, approved_at, occurred_at, place, guardian_notice, guardian_noticed_at, guardian_notice_method, guardian_notice_person, nap_abnormal_id, returned_reason, is_deleted, created_at, updated_at) VALUES
+ (3,'4','C003',1,'2026-08-30','【状況】
 午睡中にうつ伏せの体位を確認した。
 
 【とった対応】
-仰向けに直し、呼吸と顔色を確認した。','4','S004',NULL,NULL,NULL,NULL,'2026-08-30T00:00:00','（第3.0版より前の記録）',1,'発生時の呼吸・顔色の記録が本文にありません。異常時の記録と同じ内容を転記してください。',0,'2026-08-30T18:00:00','2026-08-31T09:10:00');
+仰向けに直し、呼吸と顔色を確認した。
+
+【今後の対策】
+午睡の確認のたびに、呼吸とあわせて体位も見る。うつ伏せを見つけて仰向けに直したときは、直したあとの向きも記録する。','4','S004',NULL,NULL,NULL,NULL,'2026-08-30T13:40:00','保育室（さくら組）','1','2026-08-30T17:10:00','2','父（お迎え）',1,'発生時の呼吸・顔色の記録が本文にありません。異常時の記録と同じ内容を転記してください。',0,'2026-08-30T18:00:00','2026-08-31T09:10:00');
 -- ヒヤリハットと異常時の記録は相互に参照する。循環参照になるため、日誌の登録後に紐づける
 UPDATE t_nap_abnormal SET diary_id = 3 WHERE nap_abnormal_id = 1;
 

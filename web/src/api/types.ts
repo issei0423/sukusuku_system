@@ -226,10 +226,41 @@ export interface Diary {
   is_deleted: boolean;
   created_at: string;
   updated_at: string;
+  /*
+   * ヒヤリハットだけが持つ列（発生日時・場所・保護者へ伝えたこと）。ほかの種別では空
+   * （基本設計書「日誌（t_diary）」(5-5)、詳細設計書「日誌の画面（作り直し）」(2-13 (8))）。
+   * 状況・とった対応・今後の対策は列を持たず、本文に見出しを付けて持つ（決めたこと D-33）
+   */
+  occurred_at?: string | null;
+  place?: string | null;
+  /** 1:伝えた 2:伝えていない。空は未記入 */
+  guardian_notice?: '1' | '2' | null;
+  guardian_noticed_at?: string | null;
+  /** 1:電話 2:お迎えのときに対面 3:連絡帳・個人チャット 9:その他 */
+  guardian_notice_method?: '1' | '2' | '3' | '9' | null;
+  guardian_notice_person?: string | null;
   /* 作成した職員・承認した職員・申請した職員の氏名。承認の経緯に出す導出値（詳細設計書「日誌」(4-13 (6))） */
   staff_name?: string;
   approved_staff_name?: string | null;
   applied_staff_name?: string | null;
+  /** ヒヤリハットの欄。ヒヤリハットのときだけ返す導出値（詳細設計書「日誌」(4-13 (6))） */
+  incident?: DiaryIncident | null;
+}
+
+/**
+ * 読むときに返すヒヤリハットの欄（詳細設計書「日誌」(4-13 (6))）。状況・とった対応・今後の対策は、
+ * 本文を見出し（【状況】【とった対応】【今後の対策】）で分けたもの。サーバ側は server/api_diary_incident.go の DiaryIncident
+ */
+export interface DiaryIncident {
+  occurred_at: string;
+  place: string;
+  situation: string;
+  response: string;
+  countermeasure: string;
+  guardian_notice: '1' | '2' | null;
+  guardian_noticed_at: string | null;
+  guardian_notice_method: '1' | '2' | '3' | '9' | null;
+  guardian_notice_person: string | null;
 }
 
 /** 編集ロック（t_diary_lock）。1件の日誌に1つ（5-4） */

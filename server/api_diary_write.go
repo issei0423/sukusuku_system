@@ -32,6 +32,12 @@ type diaryInput struct {
 	 * （【仮置き】web/仮置き値.md「日誌作成・編集画面の動き」。GitHub Issue #175 の 2）
 	 */
 	Attachments *[]diaryAttachmentInput `json:"attachments"`
+	/*
+	 * ヒヤリハットの欄（詳細設計書「日誌」(4-13 (1))）。ヒヤリハットのときは本文（body）の代わりにこれを受け取り、
+	 * 状況・とった対応・今後の対策を見出しでつないだ本文をサーバが作る（D-33。api_diary_incident.go）。
+	 * ほかの記録種別では読まない
+	 */
+	Incident *diaryIncidentInput `json:"incident"`
 }
 
 // diaryAttachmentInput は、日誌に付ける写真 1 枚。実体は持たず、ファイルの名前と形式だけを受け取る
@@ -93,13 +99,16 @@ func (a *app) handleSaveDiary(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &in) {
 		return
 	}
-	if strings.TrimSpace(in.Body) == "" {
-		writeErr(w, http.StatusBadRequest, "本文を入力してください")
-		return
-	}
-	if tooLong(in.Body, 2000) {
-		writeErr(w, http.StatusBadRequest, "本文は2,000文字以内で入力してください")
-		return
+	// 本文は1〜2,000文字。ヒヤリハットは本文の代わりに欄で受け取る（詳細設計書「日誌」(4-13 (1))）
+	if in.RecordType != "4" {
+		if strings.TrimSpace(in.Body) == "" {
+			writeErr(w, http.StatusBadRequest, "本文を入力してください")
+			return
+		}
+		if tooLong(in.Body, 2000) {
+			writeErr(w, http.StatusBadRequest, "本文は2,000文字以内で入力してください")
+			return
+		}
 	}
 	if in.Status != "1" && in.Status != "2" {
 		writeErr(w, http.StatusBadRequest, "保存する状態の指定が正しくありません")
@@ -157,6 +166,22 @@ func (a *app) handleSaveDiary(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "対象のクラスは、対象の園児が在籍するクラスを選んでください")
 		return
 	}
+	/*
+	 * ヒヤリハットは、発生日時・場所・状況・とった対応・今後の対策・保護者へ伝えたことを欄で受け取る
+	 * （詳細設計書「日誌の画面（作り直し）」(2-13 (8))・「日誌」(4-13 (1))）。本文は欄からサーバが作り、
+	 * 送られた body は使わない（D-33）。画面側のモック（web/src/api/mock.ts の saveDiary）と同じ規則
+	 */
+	if in.RecordType == "4" {
+		if in.Incident == nil {
+			in.Incident = &diaryIncidentInput{}
+		}
+		normalizeIncident(in.Incident)
+		if msg := checkDiaryIncident(in.Incident); msg != "" {
+			writeErr(w, http.StatusBadRequest, msg)
+			return
+		}
+		in.Body = incidentBody(in.Incident.Situation, in.Incident.Response, in.Incident.Countermeasure)
+	}
 	// 写真は、日誌と一緒に保存する。画面で足した写真が日誌に付かず、確認画面の「写真 n 枚」と承認画面が
 	// 食い違っていた（GitHub Issue #175 の 2）
 	if in.Attachments != nil {
@@ -185,13 +210,16 @@ func (a *app) handleSaveDiary(w http.ResponseWriter, r *http.Request) {
 	if in.Status == "2" {
 		appliedStaff, appliedAt = u.staff(), at
 	}
-	occurredAt, place := incidentPlaceholder(in.RecordType, in.DiaryDate+"T00:00:00")
+	inc := incidentColumnsOf(in.RecordType, in.Incident)
 	res, err := tx.Exec(`INSERT INTO t_diary
 		(record_type, child_id, class_id, diary_date, body, status, created_staff_id,
-		 applied_staff_id, applied_at, occurred_at, place, is_deleted, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+		 applied_staff_id, applied_at, occurred_at, place,
+		 guardian_notice, guardian_noticed_at, guardian_notice_method, guardian_notice_person,
+		 is_deleted, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
 		in.RecordType, in.ChildID, in.ClassID, in.DiaryDate, in.Body, in.Status, u.staff(),
-		appliedStaff, appliedAt, occurredAt, place, at, at)
+		appliedStaff, appliedAt, inc.occurredAt, inc.place,
+		inc.notice, inc.noticedAt, inc.noticeMethod, inc.noticePerson, at, at)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "日誌の保存に失敗しました")
 		return
@@ -261,15 +289,20 @@ func (a *app) updateDiary(w http.ResponseWriter, u *SessionUser, in diaryInput) 
 	defer tx.Rollback()
 	// 申請するときは、申請した職員と日時を入れ直す（詳細設計書「日誌の状態」(3-6)）。下書き保存では変えない
 	at := now()
-	occurredAt, place := incidentPlaceholder(in.RecordType, in.DiaryDate+"T00:00:00")
+	// ヒヤリハットの列は、欄で受け取った値で書き換える。ほかの記録種別に変えたときは空にする
+	inc := incidentColumnsOf(in.RecordType, in.Incident)
 	if _, err := tx.Exec(`UPDATE t_diary
 		SET record_type = ?, child_id = ?, class_id = ?, diary_date = ?, body = ?, status = ?,
 		    applied_staff_id = CASE WHEN ? = '2' THEN ? ELSE applied_staff_id END,
 		    applied_at = CASE WHEN ? = '2' THEN ? ELSE applied_at END,
-		    occurred_at = COALESCE(occurred_at, ?), place = COALESCE(place, ?), updated_at = ?
+		    occurred_at = ?, place = ?,
+		    guardian_notice = ?, guardian_noticed_at = ?, guardian_notice_method = ?, guardian_notice_person = ?,
+		    updated_at = ?
 		WHERE diary_id = ?`,
 		in.RecordType, in.ChildID, in.ClassID, in.DiaryDate, in.Body, in.Status,
-		in.Status, u.staff(), in.Status, at, occurredAt, place, nextDiaryVersion(version), *in.DiaryID); err != nil {
+		in.Status, u.staff(), in.Status, at, inc.occurredAt, inc.place,
+		inc.notice, inc.noticedAt, inc.noticeMethod, inc.noticePerson,
+		nextDiaryVersion(version), *in.DiaryID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "日誌の保存に失敗しました")
 		return
 	}
@@ -315,24 +348,6 @@ const (
 	diaryLogApply          = "申請"
 	diaryLogCreateAndApply = "作成して申請"
 )
-
-/*
-incidentPlaceholder は、ヒヤリハットの発生日時と場所の列に入れる値を返す（ヒヤリハットでなければ空）。
-
-【仮置き】ヒヤリハットの欄（詳細設計書「日誌の画面（作り直し）」(2-13 (8))）はまだ作っていない。
-表はヒヤリハットに発生日時と場所を必須とする（同「変える表」(5-3) の CHECK）ため、それまでは
-発生日時を記録日の 0:00（異常時の記録から起票したときは発見時刻）、場所を incidentPlaceUnset で埋める。
-すでに値があるときは書き換えない（web/仮置き値.md「ヒヤリハットの発生日時と場所」）
-*/
-func incidentPlaceholder(recordType, occurredAt string) (any, any) {
-	if recordType != "4" {
-		return nil, nil
-	}
-	return occurredAt, incidentPlaceUnset
-}
-
-// 【仮置き】ヒヤリハットの欄を作るまで、場所の列に入れる文（web/仮置き値.md）
-const incidentPlaceUnset = "（未入力）"
 
 // childInClass は、その園児がそのクラスに在籍している（いた）かを返す
 func (a *app) childInClass(childID string, classID int64) bool {
