@@ -51,6 +51,33 @@ const (
 	kindOtherChildNames = "other_child_names"
 )
 
+// 連絡帳の写真（詳細設計書「写真」(4-4 (2))・(4-4 (3))・「本書で足す文言」(4-1 (6))）。web/src/messages.ts の MSG と同じ
+const (
+	msgPhotoForbidden = "この写真は開けません。"
+	// 形式・大きさ。設定（attachment.max_size_mb）を変えても文言は変えない（設計の文言のまま）
+	msgPhotoFormat          = "写真は JPEG・PNG で、10MB までです。"
+	msgPhotoSubjectRequired = "写っている子を選んでください。子どもが写っていないときは『子どもは写っていない』を選んでください。"
+)
+
+/*
+photoConsentMessage は、写真の同意を満たさない子がいるときの文（詳細設計書 (4-4 (2))、基本設計書「写真の同意で止める規則」(4-2)）。
+写っている子が1人なら「園内記録として保持」の文、2人以上なら「ほかの保護者にも見える場」の文。names は満たさない子の氏名。
+web/src/messages.ts の photoConsentMessage と同じ
+*/
+func photoConsentMessage(names []string, subjects int) string {
+	if subjects == 1 {
+		return names[0] + "さんは写真の同意が『園内記録として保持』のため送れません。写真を外すか、写っている子を見直してください。"
+	}
+	joined := ""
+	for i, n := range names {
+		if i > 0 {
+			joined += "・"
+		}
+		joined += n + "さん"
+	}
+	return joined + "は、ほかの保護者にも見える場への写真の同意がないため送れません。写真を外すか、写っている子を見直してください。"
+}
+
 // きょうのようすの記録と、訂正・取り消し（詳細設計書「きょうのようす」(4-4)・「訂正・取り消し」(4-7)・「訂正・取り消しのまとめ」(3-5)）
 const (
 	msgBadRequest = "リクエストの内容を読み取れませんでした"

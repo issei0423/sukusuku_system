@@ -31,6 +31,11 @@ export const MSG = {
   excludeAfterSleep: '『ねた』を記録した園児は対象外にできません。',
   /** 【仮置き】対象外が既にあるとき。設計に文言が無い（web/仮置き値.md） */
   excludedTwice: 'すでに対象外になっています。画面を読み込み直してください。',
+  /* 連絡帳の写真（server/messages.go と同じ。詳細設計書 (4-4 (2))・(4-4 (3))・「本書で足す文言」(4-1 (6))） */
+  photoForbidden: 'この写真は開けません。',
+  /** 設定（attachment.max_size_mb）を変えても文言は変えない（設計の文言のまま） */
+  photoFormat: '写真は JPEG・PNG で、10MB までです。',
+  photoSubjectRequired: '写っている子を選んでください。子どもが写っていないときは『子どもは写っていない』を選んでください。',
   /* きょうのようすの記録と、訂正・取り消し（server/messages.go と同じ。詳細設計書 (4-4)・(4-7)） */
   badRequest: 'リクエストの内容を読み取れませんでした',
   eventTimeRange: '時刻は、その日の0時からいままでで選んでください。',
@@ -53,6 +58,16 @@ export const otherNamesMessage = (names: string[]) => `ほかのお子さんの�
  * 【仮置き】文言と、家庭の数を写っている子の数（届く先の園児のページの数）で数えること（web/仮置き値.md）
  */
 export const otherNamesFamiliesNote = (n: number) => `この文は写っている全員（${n} 家庭）に届きます。`;
+
+/**
+ * 写真の同意を満たさない子がいるときの文（詳細設計書 (4-4 (2))、基本設計書「写真の同意で止める規則」(4-2)。
+ * server/messages.go の photoConsentMessage と同じ）。写っている子が1人なら「園内記録として保持」の文、2人以上なら
+ * 「ほかの保護者にも見える場」の文。names は満たさない子の氏名
+ */
+export function photoConsentMessage(names: string[], subjects: number): string {
+  if (subjects === 1) return `${names[0]}さんは写真の同意が『園内記録として保持』のため送れません。写真を外すか、写っている子を見直してください。`;
+  return `${names.map((n) => `${n}さん`).join('・')}は、ほかの保護者にも見える場への写真の同意がないため送れません。写真を外すか、写っている子を見直してください。`;
+}
 
 /* ---- 画面の文言（図/画面詳細図「連絡帳画面」(8-3)・「連絡帳（クラス）画面」(8-1)、詳細設計書 2章） ---- */
 export const TEXT = {

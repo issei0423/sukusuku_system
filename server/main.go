@@ -17,6 +17,9 @@ import (
 type app struct {
 	db       *sql.DB
 	sessions *sessionStore
+	// 添付ファイルの実体を置く場所（起動の引数 -files）。公開ディレクトリには置かず、権限の判定を通してから配信する
+	// （基本設計書「添付ファイルの実体の保存先」(5-6)、詳細設計書「写真」(4-4 (2))）。空なら既定の files（photoRoot）
+	filesDir string
 	// 開いている画面への知らせ（events.go）。init で用意する
 	live                *liveHub
 	currentTermsVersion string
@@ -29,6 +32,7 @@ type app struct {
 
 func main() {
 	addr := flag.String("addr", ":8080", "待ち受けるアドレス")
+	filesDir := flag.String("files", defaultFilesDir, "添付ファイル（連絡帳の写真）の実体を置くディレクトリ")
 	dbPath := flag.String("db", "sukusuku.db", "SQLite のファイル")
 	webDir := flag.String("web", "../web/dist", "配信する静的ファイルのディレクトリ")
 	// HTTPS で公開するときに付ける。Cookie に Secure を付け、Strict-Transport-Security を返す（GitHub Issue #236 の 4）
@@ -41,7 +45,7 @@ func main() {
 	}
 	defer db.Close()
 
-	a := &app{db: db, sessions: newSessionStore()}
+	a := &app{db: db, sessions: newSessionStore(), filesDir: *filesDir}
 	a.sessions.secure = *secure
 	if err := a.init(); err != nil {
 		log.Fatal(err)

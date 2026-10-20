@@ -26,6 +26,7 @@ import type {
   DevelopmentSchedule, DevelopmentCheck, DevelopmentResultRecord,
   PhysicalRecord, GrowthStandard, OperationLog, Setting,
 } from './types';
+import type { ContactPhotoRecord, ContactPhotoChildRecord } from './types';
 
 /** 演習用の固定基準日。デモデータの日付はこの日を軸に組み立てている */
 export const DEMO_TODAY = '2026-09-01';
@@ -450,6 +451,13 @@ export const contactFacilities: ContactFacilityRecord[] = [
 export const contactReads: ContactReadRecord[] = [
   { child_id: 'C001', contact_date: '2026-08-31', account_id: 6, read_at: '2026-08-31T20:10:00' },
 ];
+
+/**
+ * 連絡帳の写真（t_contact_photo）と写っている子（t_contact_photo_child）。デモデータには入れない
+ * （詳細設計書「デモデータ」(5-5 (1))、決めたこと D-22。実在の子の写真を使わない。server/seed.sql にも入れていない）
+ */
+export const contactPhotos: ContactPhotoRecord[] = [];
+export const contactPhotoChildren: ContactPhotoChildRecord[] = [];
 
 function sleep(id: number, sessionId: number, childId: string, at: string, staffId: string, woke?: { at: string; staff: string }): NapSleepRecord {
   return {

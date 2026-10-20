@@ -33,6 +33,7 @@ import { dayLabel, eventText, homeLines } from './contactText';
 import FixDialog, { cancelAction, timeOptions, toiletChoices } from './FixDialog';
 import Composer from './Composer';
 import type { FixTarget } from './FixDialog';
+import PhotoSendDialog from './PhotoSendDialog';
 
 const HOME_STATE_TEXT = { unconfirmed: '未確認', revised: '更新', confirmed: '確認済み' } as const;
 
@@ -55,6 +56,8 @@ export default function ContactChildScreen() {
   const [tempOpen, setTempOpen] = useState(false);
   const [fix, setFix] = useState<{ target: FixTarget; mode: 'edit' | 'cancel' } | null>(null);
   const [editingFacility, setEditingFacility] = useState(false);
+  // 写真を送る（詳細設計書「きょうのようすを足す・直す」(2-3 (4))。中身は PhotoSendDialog.tsx）
+  const [photoOpen, setPhotoOpen] = useState(false);
   const reachable = useReachable();
   // 連絡帳（クラス）画面の「園から」の列から来たときは、園からの欄を見せる
   const { hash } = useLocation();
@@ -275,6 +278,12 @@ export default function ContactChildScreen() {
                   ))}
                 </div>
               </div>
+              {data.class_id !== null && (
+                <div className="contact-field">
+                  <span>写真</span>
+                  <button type="button" className="contact-pick" onClick={() => setPhotoOpen(true)} disabled={busy !== null}>写真を送る</button>
+                </div>
+              )}
               <Composer label="活動のひとこと" max={200} scope="2" recipient={data.recipient} className={childClass}
                 submitLabel="ひとことを送る" onSend={sendComment} />
             </>
@@ -288,6 +297,10 @@ export default function ContactChildScreen() {
       )}
       {fix && (
         <FixDialog target={fix.target} startMode={fix.mode} normalTemperature={findChild(childId)?.normal_temperature ?? null} onClose={() => setFix(null)} onDone={(message) => { setFix(null); notify(message); page.refresh(); }} />
+      )}
+      {photoOpen && data.class_id !== null && (
+        <PhotoSendDialog classId={data.class_id} date={date} initialSubjects={[childId]} onClose={() => setPhotoOpen(false)}
+          onSent={() => { setPhotoOpen(false); page.refresh(); }} />
       )}
     </div>
   );
