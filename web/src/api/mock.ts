@@ -36,7 +36,7 @@ import type {
   ContactHome, ContactHomeInput, ContactPage, ContactClassView, ContactClassRow, ContactEvent, ContactClass, ContactFacility,
   NapSleep, NapExclusion, HomeState, GuardianToday, TodayItem, MealAmount,
 } from './shapes';
-import { MSG, MEAL_AMOUNT_TEXT, MEAL_KIND_TEXT, otherNamesMessage } from '../messages';
+import { MSG, MEAL_AMOUNT_TEXT, MEAL_KIND_TEXT, otherNamesMessage, otherNamesFamiliesNote } from '../messages';
 import type {
   ContactEventInput, RecordEventsResult, ContactEventCorrection, NapSleepCorrection, CancelResult, Readers,
   ContactRecipient, Phrase, NameMatch, FacilityCorrection,
@@ -4242,11 +4242,17 @@ class MockApiError extends Error {
   }
 }
 
-type OtherNames = { names: string[]; matches: NameMatch[] };
+/** families は照合した家庭の数（写真で写っている子が2人以上なら2以上。server/namecheck.go の checkOtherNames） */
+type OtherNames = { names: string[]; matches: NameMatch[]; families?: number };
+
+/** 他児の名前の注意の文。届く家庭が2つ以上なら、家庭の数を添える（server/namecheck.go の checkOtherNames） */
+export function otherNamesHitMessage(hit: OtherNames): string {
+  return otherNamesMessage(hit.names) + ((hit.families ?? 1) >= 2 ? otherNamesFamiliesNote(hit.families!) : '');
+}
 
 /** 409 other_child_names（他児の名前の注意）で返す */
 function failOtherNames<T = never>(hit: OtherNames): Promise<T> {
-  const err = new MockApiError({ message: otherNamesMessage(hit.names), kind: 'other_child_names', names: hit.names, matches: hit.matches });
+  const err = new MockApiError({ message: otherNamesHitMessage(hit), kind: 'other_child_names', names: hit.names, matches: hit.matches });
   return new Promise((_, reject) => setTimeout(() => reject(err), 60));
 }
 
@@ -4312,47 +4318,95 @@ function occurrences(text: string[], v: NameVariant): [number, number][] {
 /**
  * 他児の名前の照合（server/namecheck.go の findOtherNames と同じ規則）。宛先の子の名前に当たった部分を先に除き（D-17。
  * ほかの子の当たりが、その部分にすべて入るときだけ除く）、
- * 宛先以外の候補の名前を探す。names は当たった園児の氏名（候補の並び順）、matches は当たった位置（強調の表示に使う）
+ * 宛先以外の候補の名前を探す。names は当たった園児の氏名（候補の並び順）、matches は当たった位置（強調の表示に使う）。
+ * 照合の前に除く語（クラス名・「〇〇先生」）は持たない。送る経路の注意は findOtherNamesFor で除く語を渡す
  */
 export function findOtherNames(text: string, field: string, recipients: NameChild[], all: NameChild[]): OtherNames {
+  return findOtherNamesFor(text, field, [recipients], all, []);
+}
+
+/**
+ * 届く家庭（families。家庭ごとの宛先の園児）ごとに照合し、当たりを合わせて返す（server/namecheck.go の findOtherNamesFor。
+ * 詳細設計書 4-5 (2) の④・「写真」(4-4 (2))）。写真で写っている子が2人以上なら、写っているほかの子も相手にする。
+ * excluded は照合の前に除く語（③の2）。ほかの子の当たりが除く語の中にすべて入れば数えない
+ */
+export function findOtherNamesFor(text: string, field: string, families: NameChild[][], all: NameChild[], excluded: string[]): OtherNames {
   const runes = [...text];
-  const masked = new Array<boolean>(runes.length).fill(false);
-  const recipientIds = new Set(recipients.map((r) => r.id));
-  for (const r of recipients) {
-    const vs = nameVariants(r).sort((a, b) => b.text.length - a.text.length);
-    for (const v of vs) {
-      for (const [s, e] of occurrences(runes, v)) {
-        // すぐ後ろの敬称も宛先の子の名前の部分に含める（server/namecheck.go と同じ）
-        const h = HONORIFICS.find((x) => runes.slice(e).join('').startsWith(x));
-        for (let k = s; k < e + (h ? [...h].length : 0); k++) masked[k] = true;
-      }
+  const base = new Array<boolean>(runes.length).fill(false);
+  for (const w of excluded) {
+    const word = [...w];
+    if (word.length === 0) continue;
+    for (let i = 0; i + word.length <= runes.length; i++) {
+      if (runes.slice(i, i + word.length).join('') === w) for (let k = i; k < i + word.length; k++) base[k] = true;
     }
   }
-  const names: string[] = [];
+  const hit = new Array<boolean>(all.length).fill(false);
   let matches: NameMatch[] = [];
-  for (const c of all) {
-    if (recipientIds.has(c.id)) continue;
-    const found: [number, number][] = [];
-    for (const v of nameVariants(c)) {
-      for (const o of occurrences(runes, v)) {
-        // 除くのは、印（宛先の子の名前の部分）の中にすべて入るときだけ。同じ姓のきょうだいの氏名は当てる
-        let inside = true;
-        for (let k = o[0]; k < o[1]; k++) if (!masked[k]) { inside = false; break; }
-        if (!inside) found.push(o);
+  for (const recipients of families.length === 0 ? [[]] : families) {
+    const masked = [...base];
+    const recipientIds = new Set(recipients.map((r) => r.id));
+    for (const r of recipients) {
+      const vs = nameVariants(r).sort((a, b) => b.text.length - a.text.length);
+      for (const v of vs) {
+        for (const [s, e] of occurrences(runes, v)) {
+          // すぐ後ろの敬称も宛先の子の名前の部分に含める（server/namecheck.go と同じ）
+          const h = HONORIFICS.find((x) => runes.slice(e).join('').startsWith(x));
+          for (let k = s; k < e + (h ? [...h].length : 0); k++) masked[k] = true;
+        }
       }
     }
-    if (found.length === 0) continue;
-    names.push(c.name);
-    for (const o of found) {
-      if (!found.some((p) => p !== o && p[0] <= o[0] && o[1] <= p[1])) matches.push({ field, start: o[0], end: o[1] });
-    }
+    all.forEach((c, ci) => {
+      if (recipientIds.has(c.id)) return;
+      const found: [number, number][] = [];
+      for (const v of nameVariants(c)) {
+        for (const o of occurrences(runes, v)) {
+          // 除くのは、印（宛先の子の名前の部分・除く語）の中にすべて入るときだけ。同じ姓のきょうだいの氏名は当てる
+          let inside = true;
+          for (let k = o[0]; k < o[1]; k++) if (!masked[k]) { inside = false; break; }
+          if (!inside) found.push(o);
+        }
+      }
+      if (found.length === 0) return;
+      hit[ci] = true;
+      for (const o of found) {
+        if (!found.some((p) => p !== o && p[0] <= o[0] && o[1] <= p[1])) matches.push({ field, start: o[0], end: o[1] });
+      }
+    });
   }
+  const names = all.filter((_, ci) => hit[ci]).map((c) => c.name);
   matches.sort((a, b) => a.start - b.start || b.end - a.end);
-  // 同じ位置・ほかの当たりに含まれる位置は1つにまとめる（名前はまとめない）
+  // 同じ位置・ほかの当たりに含まれる位置（家庭ごとに同じ所に当たったものも）は1つにまとめる（名前はまとめない）
   const uniq: NameMatch[] = [];
   for (const m of matches) if (!uniq.some((u) => u.start <= m.start && m.end <= u.end)) uniq.push(m);
   matches = uniq;
   return { names, matches };
+}
+
+/** 職員1人の「姓＋先生」「氏名＋先生」の書き方（server/namecheck.go の staffTitleWords）。【仮置き】よみは除かない（web/仮置き値.md） */
+function staffTitleWords(staffName: string): string[] {
+  const parts = splitName(staffName);
+  if (parts.length === 0) return [];
+  const bases = [parts[0], parts.join('')];
+  if (parts.length >= 2) bases.push(parts.join(' '), parts.join('　'));
+  return bases.flatMap((b) => [`${b}先生`, `${b}せんせい`]);
+}
+
+/**
+ * 照合の前に除く語（詳細設計書 4-5 (2) の③の2。server/namecheck.go の nameCheckExclusions）。
+ * 今年度のクラス名と、職員の姓・氏名に「先生」「せんせい」を続けたもの。園児を指さないため
+ */
+export function nameCheckExclusions(): string[] {
+  const classes = db.classes.filter((c) => c.fiscal_year === db.FISCAL_YEAR).map((c) => c.class_name.trim()).filter(Boolean);
+  return [...classes, ...db.staff.flatMap((s) => staffTitleWords(s.staff_name))];
+}
+
+/** 照合する家庭（server/namecheck.go の nameFamilies）。宛先がクラスなら宛先の子のいない家庭1つ、2人以上なら【仮置き】園児ごとに1家庭（web/仮置き値.md） */
+function nameFamilies(recipientIds: string[], everyone: boolean): NameChild[][] {
+  if (everyone || recipientIds.length === 0) return [[]];
+  return recipientIds.map((id) => {
+    const c = findChild(id);
+    return [c ? nameChildOf(c) : { id, name: '', kana: '', nickname: '' }];
+  });
 }
 
 const nicknameOf = (childId: string) => db.childNicknames.find((n) => n.child_id === childId)?.nickname ?? '';
@@ -4365,12 +4419,15 @@ function enrolledNameChildren(): NameChild[] {
     .map(nameChildOf);
 }
 
-/** 段2の送信の照合。承諾が当たった名前をすべて含めば null（server/namecheck.go の checkOtherNames） */
-function checkOtherNames(text: string, field: string, recipientIds: string[], everyone: boolean, acknowledged?: string[]): OtherNames | null {
-  const recipients = everyone ? [] : recipientIds.map((id) => findChild(id)).filter((c): c is Child => !!c).map(nameChildOf);
-  const hit = findOtherNames(text, field, recipients, enrolledNameChildren());
+/**
+ * 段2の送信の照合。承諾が当たった名前をすべて含めば null（server/namecheck.go の checkOtherNames）。
+ * 宛先の園児が2人以上（写真で写っている子）なら届く家庭ごとに照合し、families に家庭の数を入れる。照合の前にクラス名と「〇〇先生」を除く
+ */
+export function checkOtherNames(text: string, field: string, recipientIds: string[], everyone: boolean, acknowledged?: string[]): OtherNames | null {
+  const families = nameFamilies(recipientIds, everyone);
+  const hit = findOtherNamesFor(text, field, families, enrolledNameChildren(), nameCheckExclusions());
   if (hit.names.length === 0 || hit.names.every((n) => (acknowledged ?? []).includes(n))) return null;
-  return hit;
+  return { ...hit, families: families.length };
 }
 
 /** 送る直前に示す宛先。続柄は有効な紐づけ（1）の保護者だけ（server/api_contact_facility.go の recipientOf） */
@@ -4475,8 +4532,9 @@ const contactFacilityApi = {
     const everyone = input.class_id !== undefined && input.class_id !== null;
     if (everyone && !classContactAccess(user, input.class_id!).write) return fail(MSG.contactClassForbidden);
     for (const id of input.child_ids ?? []) if (!contactAccess(user, id).write) return fail(MSG.contactForbidden);
-    const recipients = everyone ? [] : (input.child_ids ?? []).map((id) => findChild(id)).filter((c): c is Child => !!c).map(nameChildOf);
-    return ok({ names: findOtherNames(input.text, 'text', recipients, enrolledNameChildren()).names });
+    // 送る経路と同じ照合：クラス名と「〇〇先生」を除き、宛先の園児が2人以上なら届く家庭ごとに照合する（server/api_contact_facility.go）
+    const families = nameFamilies(input.child_ids ?? [], everyone);
+    return ok({ names: findOtherNamesFor(input.text, 'text', families, enrolledNameChildren(), nameCheckExclusions()).names });
   },
 
   /**

@@ -488,7 +488,8 @@ export const childNicknames: { child_id: string; nickname: string }[] = [
 
 /**
  * 定型文（m_phrase）。server/seed.sql と server/db_contact.go の defaultPhrases と同じ順・同じ文。
- * 健康や発達の評価の言葉（「元気に」「順調に」など）を入れない（原則1）。4:日誌は server/api_diary.go の fixedPhrases と同じ5つ
+ * 健康や発達の評価の言葉（「元気に」「順調に」など）を入れない（原則1）。4:日誌は server/api_diary.go の fixedPhrases の5つから、
+ * 保護者に向けた「ご家庭でも様子を見ていただけますと幸いです。」を除いた4つ（日誌は園内の記録。詳細設計書「デモデータ」(5-5) 第1.3版）
  */
 export const phrases: PhraseRecord[] = ([
   ['1', '今日も一日ありがとうございました。'],
@@ -505,7 +506,6 @@ export const phrases: PhraseRecord[] = ([
   ['4', '午睡は落ち着いて入眠できました。'],
   ['4', '園庭で友だちと関わって遊ぶ姿が見られました。'],
   ['4', '鼻水が出ていたため、こまめに拭き取りました。'],
-  ['4', 'ご家庭でも様子を見ていただけますと幸いです。'],
 ] as const).map(([scope, body], i, all) => ({
   phrase_id: i + 1, phrase_scope: scope, body,
   display_order: all.slice(0, i + 1).filter(([x]) => x === scope).length,
