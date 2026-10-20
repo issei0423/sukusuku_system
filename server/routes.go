@@ -155,6 +155,8 @@ func (a *app) routeNap(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/nap/abnormals", a.handleNapAbnormals)
 	mux.HandleFunc("POST /api/nap/abnormals/{id}/incident", a.handleRaiseIncidentDiary)
 	mux.HandleFunc("GET /api/nap/records", a.handleSearchNapRecords)
+	// 午睡チェック表（帳票）。管理者だけ。サーバで作り、出力を操作ログへ記録する（api_nap_report.go）
+	mux.HandleFunc("GET /api/nap/report", a.handleNapReport)
 }
 
 // 発達チェック・身体測定（基本設計書 4-8）

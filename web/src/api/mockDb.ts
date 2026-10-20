@@ -542,7 +542,11 @@ function sleep(id: number, sessionId: number, childId: string, at: string, staff
     slept_staff_id: staffId, woke_staff_id: woke?.staff ?? null, corrected_at: null, is_deleted: false, created_at: at, updated_at: woke?.at ?? at,
   };
 }
-/** 今日の実施 1（さくら組）は C001 を空けておく（デモ②）。昨日の実施 2 は C001 が 13:02〜14:35 */
+/**
+ * 今日の実施 1（さくら組）は C001 を空けておく（デモ②）。昨日の実施 2 は C001 が 13:02〜14:35。
+ * 昨日の C001 には入眠時の体温（監査の層）を入れ、午睡記録検索と CSV のねたの行に出す
+ * （画面詳細図「午睡記録検索画面」(5-3) の項目6・9。server/seed.sql と同じ）
+ */
 export const napSleeps: NapSleepRecord[] = [
   sleep(1, 1, 'C002', '2026-09-01T13:05:00', 'S003'),
   sleep(2, 1, 'C004', '2026-09-01T13:08:00', 'S003'),
@@ -551,7 +555,7 @@ export const napSleeps: NapSleepRecord[] = [
   sleep(5, 1, 'C007', '2026-09-01T13:12:00', 'S004'),
   sleep(6, 1, 'C009', '2026-09-01T13:05:00', 'S004'),
   sleep(7, 1, 'C010', '2026-09-01T13:07:00', 'S004'),
-  sleep(8, 2, 'C001', '2026-08-31T13:02:00', 'S003', { at: '2026-08-31T14:35:00', staff: 'S003' }),
+  { ...sleep(8, 2, 'C001', '2026-08-31T13:02:00', 'S003', { at: '2026-08-31T14:35:00', staff: 'S003' }), sleep_temperature: 36.5 },
 ];
 
 /** 今日の実施 1 で C003 は欠席（ダッシュボードの「園から未送信」から外れることを見せる） */

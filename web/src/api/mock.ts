@@ -33,6 +33,11 @@ import {
 } from './procedure';
 import { emitLive } from '../live';
 import type { LiveEvent } from '../live';
+import type { NapAbnormalRow, NapSearchRow } from './shapes';
+import {
+  NAP_REPORT_MSG, SLEEP_ROW_LABEL, exclusionRowLabel, napReportCsv, reportTemperature, sortReportAbnormals, sortReportLines,
+} from './napReport';
+import type { NapReportAbnormal, NapReportFilter, NapReportLine } from './napReport';
 import type {
   LoginError, ChildInput, DiaryFilter, DiaryInput, DiaryAttachmentInput, DiaryIncidentInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
   DevDraftView,
@@ -2082,8 +2087,10 @@ export const napApi = {
    * 【仮置き】並びは発見時刻の新しい順、同じ時刻はあとで記録したものを先にする
    * （web/仮置き値.md「一覧の並び順」。GitHub Issue #177 の 7）。サーバ側は server/api_nap.go の handleNapAbnormals
    */
-  async abnormals(user: SessionUser) {
+  async abnormals(user: SessionUser): Promise<NapAbnormalRow[]> {
     if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
+    // 起票したヒヤリハットの文は添えない。一般（保育士）もこの一覧を読めるため、日誌を開けるかどうかと関わりなく
+    // 日誌の本文が読めてしまう。ヒヤリハット側の文は帳票（napReport。管理者だけ）が出す。サーバ側も同じ
     return ok(db.napAbnormals
       .filter((a) => canSeeChild(user, a.child_id))
       .sort((a, b) => b.found_at.localeCompare(a.found_at) || b.nap_abnormal_id - a.nap_abnormal_id)
@@ -2091,40 +2098,190 @@ export const napApi = {
   },
 };
 
+/**
+ * ヒヤリハットの本文から「【状況】」と「【とった対応】」の見出しの下の文を取り出す。
+ *
+ * 本文は見出しを付けてつないで持つ（基本設計書「ヒヤリハットの記録」(4-6)、詳細設計書「日誌」(4-13) の (1)
+ * 「ヒヤリハットの本文」）。見出しは「【〇〇】」だけの行とし、次の見出しの行までをその見出しの文とする。
+ * 見出しが無いときは空の文を返す。サーバ側は server/api_nap.go の incidentSituationResponse
+ */
+export function incidentSituationResponse(body: string): { situation: string; response: string } {
+  const sections = new Map<string, string[]>();
+  let current = '';
+  for (const line of body.replace(/\r\n/g, '\n').split('\n')) {
+    const t = line.trim();
+    if (/^【[^【】]+】$/.test(t)) { current = t; continue; }
+    if (current) sections.set(current, [...(sections.get(current) ?? []), line]);
+  }
+  const join = (heading: string) => (sections.get(heading) ?? []).join('\n').trim();
+  return { situation: join('【状況】'), response: join('【とった対応】') };
+}
+
 const napApi2 = {
-  /** 午睡記録検索。日付・園児名・クラスで絞り込む（基本設計書「画面の一覧」(3-2)） */
+  /**
+   * 午睡記録検索。日付・園児名・クラスで絞り込む（基本設計書「画面の一覧」(3-2)）
+   *
+   * 5分ごとの確認（napRecords）に、ねた・おきた（napSleeps）を同じ一覧の行として並べる。ねたの行には
+   * 入眠時の体温（sleep_temperature）を出す（画面詳細図「午睡記録検索画面」(5-3) の項目6「園児ごとの入眠（ねた）と
+   * 起床（おきた）、入眠時の体温（ねたの行）…も、その日の行に出す」、基本設計書「帳票の出力」(4-8)）。
+   * 取り消した「ねた」は出さない。期間・クラス・園児名・参照範囲は確認の行と同じ規則で絞る。
+   * きょうは対象外とその理由も、押した時刻の行として出す（同 (5-3) の項目6）。帳票（napReport）と同じ行・同じ並び。
+   * サーバ側は server/api_nap.go の handleSearchNapRecords
+   */
   async searchRecords(
     user: SessionUser,
     f: { from?: string; to?: string; classId?: number | ''; childName?: string; page?: number },
-  ): Promise<Paged<NapRecord & { child_name: string; class_name: string; staff_name: string; session_date: string }>> {
+  ): Promise<Paged<NapSearchRow>> {
     // 職員に限る（基本設計書「権限と利用可能機能」(6-1)「午睡チェックの実施・記録｜保護者 ×」。
     // サーバ側の server/api_nap.go の handleSearchNapRecords と同じ。GitHub Issue #177 の 3）
     if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
     const perPage = settingNumber('paging.nap_search_per_page', 50);
     const visible = new Set(visibleChildren(user).map((c) => c.child_id));
+    const sessionOf = (id: number) => db.napSessions.find((x) => x.nap_session_id === id);
+    const base = (sessionId: number, childId: string, at: string, staffId: string) => {
+      const s = sessionOf(sessionId);
+      return {
+        nap_session_id: sessionId, child_id: childId, checked_at: at, staff_id: staffId,
+        child_name: childName(childId),
+        class_name: className(s?.class_id ?? null),
+        staff_name: staffId ? staffName(staffId) : '',
+        session_date: s?.session_date ?? at.slice(0, 10),
+        _class_id: s?.class_id ?? null,
+      };
+    };
 
-    let rows = db.napRecords
+    const checks = db.napRecords
       .filter((r) => visible.has(r.child_id))
-      .map((r) => {
-        const s = db.napSessions.find((x) => x.nap_session_id === r.nap_session_id);
-        return {
-          ...r,
-          child_name: childName(r.child_id),
-          class_name: className(s?.class_id ?? null),
-          staff_name: staffName(r.staff_id),
-          session_date: s?.session_date ?? r.checked_at.slice(0, 10),
-          _class_id: s?.class_id ?? null,
+      .map((r) => ({
+        ...base(r.nap_session_id, r.child_id, r.checked_at, r.staff_id),
+        kind: 'check' as const, nap_record_id: r.nap_record_id, nap_sleep_id: null, saved_at: r.saved_at,
+        body_position: r.body_position, breathing: r.breathing, complexion: r.complexion,
+        temperature: r.temperature, sleep_temperature: null, nap_exclusion_id: null, exclusion_reason: null,
+      }));
+    const sleepRows = db.napSleeps
+      .filter((s) => !s.is_deleted && visible.has(s.child_id))
+      .flatMap((s) => {
+        const blank = {
+          nap_record_id: null, nap_sleep_id: s.nap_sleep_id, saved_at: null,
+          body_position: null, breathing: null, complexion: null, temperature: null,
+          nap_exclusion_id: null, exclusion_reason: null,
         };
+        const slept = {
+          ...base(s.nap_session_id, s.child_id, s.slept_at, s.slept_staff_id), ...blank,
+          kind: 'sleep' as const, sleep_temperature: s.sleep_temperature,
+        };
+        if (s.woke_at === null) return [slept];
+        return [slept, {
+          ...base(s.nap_session_id, s.child_id, s.woke_at, s.woke_staff_id ?? ''), ...blank,
+          kind: 'wake' as const, sleep_temperature: null,
+        }];
       });
+    // きょうは対象外と理由も、押した時刻の行として出す（画面詳細図「午睡記録検索画面」(5-3) の項目6）。取り消したものは出さない
+    const exclusionRows = db.napExclusions
+      .filter((e) => !e.is_deleted && visible.has(e.child_id))
+      .map((e) => ({
+        ...base(e.nap_session_id, e.child_id, e.created_at, e.staff_id),
+        kind: 'exclusion' as const, nap_record_id: null, nap_sleep_id: null, saved_at: null,
+        body_position: null, breathing: null, complexion: null, temperature: null, sleep_temperature: null,
+        nap_exclusion_id: e.nap_exclusion_id, exclusion_reason: e.reason,
+      }));
+    let rows = [...checks, ...sleepRows, ...exclusionRows];
 
     if (f.from) rows = rows.filter((r) => r.session_date >= f.from!);
     if (f.to) rows = rows.filter((r) => r.session_date <= f.to!);
     if (f.classId) rows = rows.filter((r) => r._class_id === f.classId);
     if (f.childName) rows = rows.filter((r) => r.child_name.includes(f.childName!.trim()));
 
-    rows.sort((a, b) => b.checked_at.localeCompare(a.checked_at));
+    // 【仮置き】時刻の新しい順。同じ時刻は、おきた・確認・ねた・対象外の順、同じ種類は ID の小さい順（web/仮置き値.md「一覧の並び順」）。
+    // サーバ側の server/api_nap.go の sortNapSearchRows と同じ並び。帳票（api/napReport.ts の sortReportLines）は
+    // 実施の日 → クラス → 園児 → 時刻 の古い順で、この並びとは違う
+    const rank = { wake: 0, check: 1, sleep: 2, exclusion: 3 };
+    const idOf = (r: (typeof rows)[number]) => r.nap_record_id ?? r.nap_sleep_id ?? r.nap_exclusion_id ?? 0;
+    rows.sort((a, b) => b.checked_at.localeCompare(a.checked_at) || rank[a.kind] - rank[b.kind] || idOf(a) - idOf(b));
     const page = f.page ?? 1;
-    return ok({ rows: rows.slice((page - 1) * perPage, page * perPage), total: rows.length, page, per_page: perPage });
+    const out: NapSearchRow[] = rows.map(({ _class_id: _drop, ...r }) => r);
+    return ok({ rows: out.slice((page - 1) * perPage, page * perPage), total: out.length, page, per_page: perPage });
+  },
+
+  /**
+   * 午睡チェック表（帳票・CSV）を作る。GET /api/nap/report にあたる（サーバ側は server/api_nap_report.go の handleNapReport）。
+   * 管理者だけが出せる。期間（実施の日）とクラスでその期間の全件を出し、出力したことと、サーバ（ここ）が数えた期間と件数を
+   * 操作ログへ記録する（基本設計書「帳票の出力」(4-8)）。返すのは CSV の本文（BOM なし）。
+   * 中身：確認の行・ねた・おきた・入眠時の体温（ねたの行）・きょうは対象外と理由・異常時の記録・「修正あり」の列。
+   * ヒヤリハットを起票した異常時の記録は、ヒヤリハット側の状況・とった対応に起票済みの印を付けて1行だけ出す
+   */
+  async napReport(user: SessionUser, f: NapReportFilter): Promise<string> {
+    if (user.role !== '1') return fail(NAP_REPORT_MSG.adminOnly);
+    // 【仮置き】PDF は作らない（web/仮置き値.md「午睡の帳票」）
+    if (f.format === 'pdf') return fail(NAP_REPORT_MSG.pdf);
+    if (f.format !== 'csv') return fail(NAP_REPORT_MSG.format);
+    if (!isISODate(f.from) || !isISODate(f.to)) return fail(NAP_REPORT_MSG.period);
+    if (f.from > f.to) return fail(NAP_REPORT_MSG.range);
+
+    const sessionIn = (sessionId: number) => {
+      const s = db.napSessions.find((x) => x.nap_session_id === sessionId);
+      if (!s || s.session_date < f.from || s.session_date > f.to) return null;
+      return !f.classId || s.class_id === f.classId ? s : null;
+    };
+    const head = (sessionId: number, childId: string) => {
+      const s = sessionIn(sessionId)!;
+      // 並べ替えの鍵（実施の日・クラス・園児のよみと ID）。よみは帳票には出さない（sortReportLines）
+      const key = { date: s.session_date, classId: s.class_id, kana: findChild(childId)?.child_name_kana ?? '', childId };
+      return [s.session_date, childName(childId), className(s.class_id), key] as const;
+    };
+    const lines: NapReportLine[] = [];
+    for (const r of db.napRecords) {
+      if (!sessionIn(r.nap_session_id)) continue;
+      const [date, child, cls, key] = head(r.nap_session_id, r.child_id);
+      lines.push({ kind: 'check', id: r.nap_record_id, ...key, at: r.checked_at, cells: [
+        date, r.checked_at, child, cls, BODY_POSITION[r.body_position], BREATHING[r.breathing], COMPLEXION[r.complexion],
+        reportTemperature(r.temperature), staffName(r.staff_id), r.saved_at,
+      ] });
+    }
+    for (const s of db.napSleeps) {
+      if (s.is_deleted || !sessionIn(s.nap_session_id)) continue;
+      const [date, child, cls, key] = head(s.nap_session_id, s.child_id);
+      // ねたの行の体温の列に入眠時の体温を出す（基本設計書「帳票の出力」(4-8)）
+      lines.push({ kind: 'sleep', id: s.nap_sleep_id, ...key, at: s.slept_at, cells: [
+        date, s.slept_at, child, cls, SLEEP_ROW_LABEL.sleep, '', '', reportTemperature(s.sleep_temperature), staffName(s.slept_staff_id), '',
+      ] });
+      if (s.woke_at !== null) {
+        lines.push({ kind: 'wake', id: s.nap_sleep_id, ...key, at: s.woke_at, cells: [
+          date, s.woke_at, child, cls, SLEEP_ROW_LABEL.wake, '', '', '', staffName(s.woke_staff_id), '',
+        ] });
+      }
+    }
+    for (const e of db.napExclusions) {
+      if (e.is_deleted || !sessionIn(e.nap_session_id)) continue;
+      const [date, child, cls, key] = head(e.nap_session_id, e.child_id);
+      // 【仮置き】対象外は、体位の列に「きょうは対象外（理由）」を入れて1行で出す（web/仮置き値.md「午睡の帳票」）
+      lines.push({ kind: 'exclusion', id: e.nap_exclusion_id, ...key, at: e.created_at, cells: [
+        date, e.created_at, child, cls, exclusionRowLabel(e.reason), '', '', '', staffName(e.staff_id), '',
+      ] });
+    }
+    // 「修正あり」の列は置くが、いまは空。午睡チェックの記録を修正する機能が、サーバにもモックにも無いため
+    // （基本設計書「記録の修正と改ざん防止」(4-8)）
+    for (const l of lines) l.cells.push('');
+
+    const abnormals: NapReportAbnormal[] = db.napAbnormals
+      .filter((a) => sessionIn(a.nap_session_id))
+      .map((a) => {
+        // 起票したヒヤリハットの側の状況・とった対応を出す。日誌が見つからないとき（削除したなど）は記録そのものを出す
+        const diary = a.diary_id === null ? undefined : db.diaries.find((d) => d.diary_id === a.diary_id && !d.is_deleted);
+        const v = diary ? incidentSituationResponse(diary.body) : { situation: a.situation, response: a.response };
+        const [, , , key] = head(a.nap_session_id, a.child_id);
+        return { id: a.nap_abnormal_id, ...key, foundAt: a.found_at, cells: [
+          a.found_at, childName(a.child_id), v.situation, v.response, staffName(a.staff_id), a.diary_id === null ? '未起票' : '起票済み',
+        ] };
+      });
+
+    const sortedLines = sortReportLines(lines);
+    const sortedAbnormals = sortReportAbnormals(abnormals);
+    const count = sortedLines.length + sortedAbnormals.length;
+    const classLabel = f.classId ? className(f.classId) : 'すべてのクラス';
+    log(user.account_id, '3', '5', 't_nap_record', null, null, null,
+      `午睡記録をCSV出力（期間 ${f.from}〜${f.to}・${classLabel}・${count} 件）`);
+    return ok(napReportCsv(sortedLines, sortedAbnormals));
   },
 
   /** 年齢に応じたチェック間隔。マスタ値を用いる（基本設計書 5-8） */
@@ -3214,17 +3371,19 @@ const adminApi3 = {
    * 画面側で組み立てた出力（CSV）を操作ログへ記録する。
    * 出力は目的を問わず操作ログへ記録する（基本設計書「発達チェック・身体測定」(4-8) と同じ扱い。
    * GitHub Issue #115・#117）
+   * 午睡記録の帳票はここでは受け付けない。帳票は napReport（サーバは GET /api/nap/report）が作り、そこで期間と件数を
+   * 記録する。ここで受け付けると、出力していない「午睡記録をCSV出力」を一般の職員も書けてしまう
+   * （server/api_audit.go の handleRecordExport と同じ）
    */
   async recordExport(
     user: SessionUser, kind: ExportKind, from: string, to: string, count: number,
   ): Promise<void> {
     if (user.role === '3') return fail('出力は職員のみが行えます');
+    if (!(EXPORT_KINDS as readonly string[]).includes(kind)) return fail('出力の種別が正しくありません');
     const period = `期間 ${from}〜${to}・${count} 件`;
     if (kind === 'operation_log') {
       if (user.role !== '1') return fail('操作ログの出力は管理者のみが行えます');
       log(user.account_id, '7', '5', 't_operation_log', null, null, null, `操作ログをCSV出力（${period}）`);
-    } else if (kind === 'nap_record') {
-      log(user.account_id, '3', '5', 't_nap_record', null, null, null, `午睡記録をCSV出力（${period}）`);
     } else if (kind === 'allergy_list') {
       /*
        * 要配慮個人情報の一覧。印刷できるのは管理者・一般（保護者は上で断る）。担任でない職員も、受け入れや
@@ -5779,8 +5938,9 @@ export const api = guardProcedure({
 
 /* ============ 入力の検査の補助（Go サーバの httpx.go と同じ規則） ============ */
 
-/** 出力の記録の種別 */
-export type ExportKind = 'operation_log' | 'nap_record' | 'allergy_list' | 'invitation_sheet';
+/** 出力の記録の種別。午睡記録の帳票は napReport が記録するため入れない（server/api_audit.go の handleRecordExport と同じ） */
+const EXPORT_KINDS = ['operation_log', 'allergy_list', 'invitation_sheet'] as const;
+export type ExportKind = (typeof EXPORT_KINDS)[number];
 
 /** 文字数（符号位置の数）が上限を超えているか。上限の正は基本設計書「入力項目の制約値」(4-9) */
 function tooLong(v: string, max: number): boolean {
