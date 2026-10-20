@@ -107,7 +107,11 @@ export default function OperationLogScreen() {
 
       {exportError && <section className="card"><ErrorBox text={exportError} /></section>}
 
-      <section className="card">
+      {/*
+        表の列が多く、枠が横に送れることがある。表の中に押せる部品が無いので、
+        キーボードでも横に送れるよう枠そのものにフォーカスを置けるようにする（WCAG 2.1.1。axe の scrollable-region-focusable）
+      */}
+      <section className="card" tabIndex={0} aria-label="操作ログの一覧">
         {loading && <Loading />}
         {error && <ErrorBox text={error} />}
         {data?.rows.length === 0 && <Empty text="該当する操作ログはありません。" />}
