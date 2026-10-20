@@ -18,6 +18,8 @@ import Reactions from '../../components/Reactions';
 import { CHAT_ROOM_TYPE, THREAD_STATUS, REACTION, GUARDIAN_ROOM_TYPES, SENDER_KIND } from '../../api/codes';
 import { formatHM, formatMD } from '../../api/util';
 import type { ChatMessage } from '../../api/types';
+import IncomingLog from './IncomingLog';
+import { useIncomingMessages } from './useIncomingMessages';
 
 /** 長押しとみなすまでの時間。保護者のチャット画面と同じ値（web/仮置き値.md） */
 const LONG_PRESS_MS = 800;
@@ -69,6 +71,8 @@ export default function StaffChatScreen() {
     [roomId],
     { refreshMs: AUTO_REFRESH_MS, live: onRoom(roomId) },
   );
+  // 保護者・ほかの職員から届いた新しいメッセージだけを読み上げへ伝える（詳細設計書 (2-0) の (6) の①、GitHub Issue #209）
+  const incoming = useIncomingMessages(messages.data, messages.loading, roomId, user!.account_id);
   /*
    * 外れたチャンネル（left）は閲覧のみ。外れるまでの過去ログだけが返り、投稿・リアクション・編集・取消・
    * 未対応の切り替えはできない。いまの参加者も返らないので、メンバーは問い合わせない
@@ -259,6 +263,7 @@ export default function StaffChatScreen() {
                 onEdit={async (body) => { await api.edit(user!, m.chat_message_id, body); messages.refresh(); }} />
             ))}
           </div>
+          <IncomingLog entries={incoming} />
           <div className="chat-compose">
             {error && <ErrorBox text={error} />}
             {/*
@@ -514,16 +519,10 @@ function MessageRow({ message, mine, canEdit, canDelete, showRole, readOnly, onR
           message.body
         )}
         {/*
-          * 日誌の共有（source_type=2）は、本文ではなく記録へのリンクとして出す。
-          * 編集できるのは添え書きの本文だけで、リンク先の記録は変わらない（基本設計書 4-6）。
-          * そのため編集中もリンクは出したままにする
+          * 配布物の掲載の知らせ（source_type=4）は、本文ではなく配布物の一覧へのリンクとして出す。
+          * 編集できるのは添え書きの本文だけで、リンク先は変わらない（基本設計書 4-6）。そのため編集中もリンクは出したままにする。
+          * 日誌の共有の知らせ（source_type=2）のカードは出さない（詳細設計書「日誌の画面（作り直し）」(2-13 (1))）
           */}
-        {message.source_type === '2' && message.source_id && (
-          <Link className="shared-card" to={`/staff/diary/${message.source_id}`}>
-            日誌を開く
-          </Link>
-        )}
-        {/* 配布物の掲載の知らせ（source_type=4）。現物は配布物の一覧から開く */}
         {message.source_type === '4' && (
           <Link className="shared-card" to="/staff/handouts">園からの配布物を開く</Link>
         )}

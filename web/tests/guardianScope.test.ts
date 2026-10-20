@@ -1,8 +1,7 @@
 /*
  * 保護者に見せる範囲（GitHub Issue #157）
- * 典拠：基本設計書.md「権限と利用可能機能」(6-1) ※3「自児のみ、かつ共有されたものに限る」・
- *      「権限チェックの実装方針」(6-2)、「日誌システム」(4-5)「共有を選べるのは個人日誌だけとする」、
- *      図/画面詳細図.md「共有日誌閲覧画面」(2-8)
+ * 典拠：基本設計書.md「権限と利用可能機能」(6-1)・「権限チェックの実装方針」(6-2)、
+ *      「日誌システム（園内の記録）」(4-6)、詳細設計書.md「日誌」(4-13)
  *
  * Go サーバ側（server/api_guardian_test.go）と同じ観点を、モック（api/mock.ts）に対して確かめる。
  * 業務の規則を2か所に持っているため、片方だけを直すと食い違う（MOCKUP.md）。
@@ -53,40 +52,45 @@ describe('職員の編集画面・タイムラインの経路は、保護者に�
     expect((await api.timelineOf(teacher, 'C001')).some((d) => d.diary_id === 1)).toBe(true);
   });
 
-  it('日誌の一覧も、保護者には承認済み・共有した自児の個人日誌だけを返す', async () => {
-    const rows = (await api.listDiaries(guardian)).rows;
-    expect(rows.length).toBeGreaterThan(0);
-    for (const d of rows) {
-      expect(d.record_type).toBe('1');
-      expect(d.status).toBe('3');
-      expect(d.is_shared_to_guardian).toBe(true);
-      expect(d.child_id).toBe('C001');
-    }
-  });
 });
 
-describe('共有を選べるのは個人日誌だけ（GitHub Issue #61・#157）', () => {
-  it('ヒヤリハット・クラス日誌を共有つきで承認しようとすると断り、承認もしない', async () => {
+/*
+ * 日誌は園内の記録で、保護者へ返す経路を持たない（詳細設計書「日誌」(4-13)「保護者が呼んだら 403
+ * 『この日誌を参照する権限がありません』」・(10)）。サーバ側は api_guardian_test.go の TestGuardianCannotUseDiaryRoutes
+ */
+describe('日誌は保護者に見せない', () => {
+  it('一覧・1件・添付・園児の日誌・タイムライン・取り下げのどれも、同じ文言で断る', async () => {
+    const forbidden = 'この日誌を参照する権限がありません';
+    await expect(api.listDiaries(guardian)).rejects.toThrow(forbidden);
+    await expect(api.listDiaries(guardian, { status: '3' })).rejects.toThrow(forbidden);
+    // 承認済みの自児の個人日誌（日誌 5。以前の版で保護者へ共有した日誌）・自児の下書き・他児の日誌・無い日誌
+    for (const id of [5, 1, 4, 99999]) {
+      await expect(api.getDiary(guardian, id)).rejects.toThrow(forbidden);
+      await expect(api.attachmentsOf(guardian, id)).rejects.toThrow(forbidden);
+    }
+    await expect(api.pastDiariesOf(guardian, 'C001')).rejects.toThrow(forbidden);
+    await expect(api.timelineOf(guardian, 'C001')).rejects.toThrow(forbidden);
+    await expect(api.withdrawDiary(guardian, 2, '')).rejects.toThrow(forbidden);
+    // 職員にはこれまでどおり（参照範囲の外は同じ文言）
+    await expect(api.getDiary(otherTeacher, 1)).rejects.toThrow(forbidden);
+    await expect(api.getDiary(teacher, 5)).resolves.toBeTruthy();
+  });
+
+  it('どの記録種別を承認しても、保護者へは何も届かない（チャットも保護者ホームも変わらない）', async () => {
+    const before = db.chatMessages.length;
+    const personal = await api.saveDiary(teacher, {
+      record_type: '1', child_id: 'C001', class_id: 1, diary_date: today(), body: '園内で確かめる個人日誌',
+    }, '2');
     const incident = await api.saveDiary(teacher, {
       record_type: '4', child_id: 'C001', class_id: 1, diary_date: today(), body: '【状況】園内限定の記録',
     }, '2');
-    for (const id of [incident.diary_id, 2]) { // 2 はさくら組のクラス日誌（申請中）
-      await expect(api.approveDiary(admin, id, true)).rejects.toThrow('個人日誌だけです');
-      const d = db.diaries.find((x) => x.diary_id === id)!;
-      expect(d.status).toBe('2');
-      expect(d.is_shared_to_guardian).toBe(false);
+    for (const id of [personal.diary_id, incident.diary_id, 2]) { // 2 はさくら組のクラス日誌（申請中）
+      expect((await api.approveDiary(admin, id)).status).toBe('3');
     }
-    expect(db.chatMessages.some((m) => m.source_type === '2' && m.source_id === incident.diary_id)).toBe(false);
-
-    // 共有しない承認は通る
-    await expect(api.approveDiary(admin, incident.diary_id, false)).resolves.toBeTruthy();
-
-    // すでに共有の印が付いてしまったヒヤリハットも、保護者には見せない
-    db.diaries.find((x) => x.diary_id === incident.diary_id)!.is_shared_to_guardian = true;
-    await expect(api.getDiary(guardian, incident.diary_id)).rejects.toThrow();
+    expect(db.chatMessages.length).toBe(before);
     const home = await api.guardianHome(guardian);
-    expect(home.flatMap((h) => h.sharedDiaries).some((d) => d.diary_id === incident.diary_id)).toBe(false);
-    expect((await api.listDiaries(guardian)).rows.some((d) => d.diary_id === incident.diary_id)).toBe(false);
+    expect(home.every((h) => !('sharedDiaries' in h))).toBe(true);
+    expect(JSON.stringify(home)).not.toContain('園内で確かめる個人日誌');
   });
 });
 
@@ -104,20 +108,9 @@ describe('園児情報・既往歴・アレルギーは保護者に見せない�
     await expect(api.allergiesOf(otherTeacher, 'C005')).rejects.toThrow('権限がありません');
   });
 
-  it('身体測定は、保護者には連携済の記録だけを返す。職員には全件', async () => {
-    const mine = await api.recordsOf(guardian, 'C001');
-    expect(mine).toHaveLength(2);
-    expect(mine.every((r) => r.share_status === '2')).toBe(true);
+  it('身体測定の経路は、保護者には断る（成長の記録で読む）。職員には全件', async () => {
+    await expect(api.recordsOf(guardian, 'C001')).rejects.toThrow('この園児の成長の記録は開けません。');
     expect(await api.recordsOf(teacher, 'C001')).toHaveLength(3);
   });
 });
 
-describe('保護者が見られない日誌は「この記録は共有されていません」と示す（画面詳細図 2-8）', () => {
-  it('自児の未共有・他児・無い日誌を同じ文言にし、職員にはこれまでどおり権限の文言を返す', async () => {
-    for (const id of [1, 4, 99999]) { // 自児の下書き・他児の共有済み・無い日誌
-      await expect(api.getDiary(guardian, id)).rejects.toThrow('この記録は共有されていません');
-    }
-    await expect(api.getDiary(otherTeacher, 1)).rejects.toThrow('この日誌を参照する権限がありません');
-    await expect(api.getDiary(guardian, 5)).resolves.toBeTruthy();
-  });
-});

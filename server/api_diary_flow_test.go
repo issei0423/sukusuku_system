@@ -9,7 +9,8 @@ import (
 
 /*
  * 日誌の申請・承認・一覧の流れ（GitHub Issue #174・#139）
- * 典拠：基本設計書.md「日誌の作成から保護者への共有」(4-5)・「日誌（t_diary）」(5-4)・「入力項目の制約値」(4-9)
+ * 典拠：基本設計書.md「日誌システム（園内の記録）」(4-6)・「日誌（t_diary）」(5-4)・「入力項目の制約値」(4-9)、
+ *      詳細設計書.md「日誌の状態」(3-6)・「日誌」(4-13)
  *      図/画面詳細図.md「職員ダッシュボード」(2-6)・「日誌一覧画面」(3-1)・「日誌作成・編集画面」(3-2)
  *
  * 画面側のモック（web/src/api/mock.ts）と同じ規則であることを、web/tests/diaryFlow.test.ts と同じ観点で確かめる。
@@ -49,8 +50,8 @@ func statusOfDiary(t *testing.T, a *app, id int64) string {
 	return status
 }
 
-// 自分が申請した日誌は承認できない。作成者でなくても、書き直して申請した管理者は承認できない
-// （基本設計書「日誌の作成から保護者への共有」(4-5)「自分が申請した日誌は、承認できない。ほかの管理者に承認を依頼する」）
+// 自分が申請した日誌は承認できない。作成者でなくても、書き直して申請した管理者は承認できない。
+// 申請者の列（applied_staff_id）で判定し、403 を返す（詳細設計書「日誌の状態」(3-6)・「日誌」(4-13 (2))）
 func TestApplicantCannotApproveRewrittenDiary(t *testing.T) {
 	a, h := newTestApp(t)
 	admin := loginAs(a, 1, "staff")   // 野原 一誠（S001・管理者）
@@ -61,9 +62,9 @@ func TestApplicantCannotApproveRewrittenDiary(t *testing.T) {
 	call(t, h, admin, "POST", "/api/diaries", withLock(
 		personalDiary(1, "C001", "1", today(), "園長が書き直した本文です。", "2"), acquireToken(t, h, admin, "1")))
 
-	t.Run("書き直して申請した管理者は、承認できない（共有もしない）", func(t *testing.T) {
-		body := expectStatus(t, request(t, h, admin, "POST", "/api/diaries/1/approve", `{"share_to_guardian":true}`),
-			http.StatusBadRequest)
+	t.Run("書き直して申請した管理者は、承認できない", func(t *testing.T) {
+		body := expectStatus(t, request(t, h, admin, "POST", "/api/diaries/1/approve", ""),
+			http.StatusForbidden)
 		if !strings.Contains(body, "自分が申請した日誌は承認できません") {
 			t.Fatalf("文言が違います: %s", body)
 		}
@@ -92,7 +93,7 @@ func TestApplicantCannotApproveRewrittenDiary(t *testing.T) {
 		if d.AppliedStaffID == nil || *d.AppliedStaffID != "S003" {
 			t.Fatalf("applied_staff_id = %v, want S003", d.AppliedStaffID)
 		}
-		call(t, h, admin, "POST", "/api/diaries/1/approve", `{"share_to_guardian":false}`)
+		call(t, h, admin, "POST", "/api/diaries/1/approve", "")
 	})
 
 	t.Run("ほかの管理者が書き直して申請したものは、別の管理者が承認できる", func(t *testing.T) {
@@ -100,9 +101,9 @@ func TestApplicantCannotApproveRewrittenDiary(t *testing.T) {
 		call(t, h, admin, "POST", "/api/diaries/7/return", `{"reason":"書き直します"}`)
 		call(t, h, admin2, "POST", "/api/diaries", withLock(
 			personalDiary(7, "C004", "1", today(), "上園が書き直した本文です。", "2"), acquireToken(t, h, admin2, "7")))
-		expectStatus(t, request(t, h, admin2, "POST", "/api/diaries/7/approve", `{"share_to_guardian":false}`),
-			http.StatusBadRequest)
-		call(t, h, admin, "POST", "/api/diaries/7/approve", `{"share_to_guardian":false}`)
+		expectStatus(t, request(t, h, admin2, "POST", "/api/diaries/7/approve", ""),
+			http.StatusForbidden)
+		call(t, h, admin, "POST", "/api/diaries/7/approve", "")
 	})
 }
 
@@ -234,7 +235,7 @@ func TestResubmitKeepsReturnedReason(t *testing.T) {
 	}
 	call(t, h, teacher, "POST", "/api/diaries", withLock(
 		personalDiary(d.DiaryID, "C004", "1", today(), "直しました", "2"), acquireToken(t, h, teacher, itoa(d.DiaryID))))
-	call(t, h, admin, "POST", "/api/diaries/"+itoa(d.DiaryID)+"/approve", `{"share_to_guardian":false}`)
+	call(t, h, admin, "POST", "/api/diaries/"+itoa(d.DiaryID)+"/approve", "")
 	if got := reasonOf(); got != nil {
 		t.Fatalf("承認のあと: returned_reason = %q, want null", *got)
 	}
@@ -257,10 +258,11 @@ func TestReturnedDiariesMatchDashboard(t *testing.T) {
 	d := diaryOf(t, call(t, h, teacher, "POST", "/api/diaries",
 		personalDiary(0, "C004", "1", old, "40日前の記録", "2")).Body.Bytes())
 	call(t, h, admin, "POST", "/api/diaries/"+itoa(d.DiaryID)+"/return", `{"reason":"書き足してください"}`)
-	// 以前の版で、クラスを指定せずに保存された個人日誌（差し戻し）
+	// 以前の版で、園児の在籍クラス（さくら組）と違うクラスを指定して保存された個人日誌（差し戻し）。
+	// クラスを空けて保存された日誌は、日誌を園内の記録へ移すときにクラスが入る（db_diary.go）
 	res, err := a.db.Exec(`INSERT INTO t_diary (record_type, child_id, class_id, diary_date, body, status,
 		created_staff_id, returned_reason, is_deleted, created_at, updated_at)
-		VALUES ('1', 'C004', NULL, ?, 'クラスなしの記録', '4', 'S003', '直してください', 0, ?, ?)`, today(), now(), now())
+		VALUES ('1', 'C004', 2, ?, 'ほかのクラスの記録', '4', 'S003', '直してください', 0, ?, ?)`, today(), now(), now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +300,7 @@ func TestReturnedDiariesMatchDashboard(t *testing.T) {
 		}
 	})
 
-	t.Run("クラスで絞っても、クラスの空いた個人日誌は園児の在籍クラスで拾う", func(t *testing.T) {
+	t.Run("クラスで絞っても、在籍クラスと違うクラスの個人日誌は園児の在籍クラスで拾う", func(t *testing.T) {
 		got := ids("/api/diaries?status=4&mine=1&class_id=1")
 		if !got[d.DiaryID] || !got[legacyID] {
 			t.Fatalf("got %v, want %d と %d を含む", got, d.DiaryID, legacyID)

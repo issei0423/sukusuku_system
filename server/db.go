@@ -52,6 +52,9 @@ func openDB(path string) (*sql.DB, error) {
 		if err := shiftSeedDates(db); err != nil {
 			return nil, err
 		}
+		if err := trimFutureDemoContacts(db); err != nil {
+			return nil, err
+		}
 		log.Printf("デモデータを投入しました")
 	}
 	if err := upgradeGrowthStandards(db); err != nil {
@@ -63,20 +66,29 @@ func openDB(path string) (*sql.DB, error) {
 	if err := ensureDesignColumns(db); err != nil {
 		return nil, err
 	}
-	if err := ensureChildNickname(db); err != nil {
-		return nil, err
-	}
 	if err := ensureHandouts(db); err != nil {
 		return nil, err
 	}
 	if err := ensurePersonalRoomChild(db); err != nil {
 		return nil, err
 	}
+	if err := ensureNapAbnormalRecordedAt(db); err != nil {
+		return nil, err
+	}
+	// 連絡帳の表と列を足す（詳細設計書「既存の DB の移し方」(5-4) の 1〜5。m_child.nickname もここで足す。db_contact.go）
+	if err := ensureContactSchema(db); err != nil {
+		return nil, err
+	}
+	// 個人チャットの無い在籍園児にルームを作る（同 (5-4) の 6。child_room.go）
 	if err := ensureMissingPersonalRooms(db); err != nil {
 		return nil, err
 	}
-	if err := ensureNapAbnormalRecordedAt(db); err != nil {
+	if err := ensureGrowthSchema(db); err != nil {
 		return nil, err
+	}
+	// 日誌を園内の記録の形へ移す（詳細設計書「既存の DB の移し方」(5-4) の 7。db_diary.go）
+	if err := ensureInternalDiary(db); err != nil {
+		return nil, fmt.Errorf("日誌を園内の記録の形へ移せません: %w", err)
 	}
 	return db, nil
 }

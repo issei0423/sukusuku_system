@@ -1,6 +1,6 @@
 /*
  * 業務の流れのテスト
- * 典拠：基本設計書.md「日誌の作成から保護者への共有」(4-5)、「保護者アカウントの自己登録」(4-3)、
+ * 典拠：基本設計書.md「日誌システム（園内の記録）」(4-6)、「保護者アカウントの自己登録」(4-3)、
  *      「異常時の記録」(4-7)、5-2（招待コードは1枚＝1アカウント）
  */
 import { describe, it, expect, vi } from 'vitest';
@@ -63,30 +63,23 @@ describe('ログイン', () => {
   });
 });
 
-describe('日誌の作成から保護者への共有', () => {
-  it('承認と共有の指定は別。共有しない承認では個人チャットへ流さない', async () => {
+/*
+ * 日誌の承認は園内の確認で、保護者へは何も届かない
+ * （基本設計書「日誌システム（園内の記録）」(4-6)、詳細設計書「日誌」(4-13 (2))）
+ */
+describe('園内の日誌の承認', () => {
+  it('承認しても個人チャットへ流さない（チャットのメッセージが増えない）', async () => {
     const d = await api.saveDiary(teacher, {
       record_type: '1', child_id: 'C001', class_id: 1,
-      diary_date: '2026-09-02', body: '共有しない日誌',
+      diary_date: '2026-09-02', body: '園内で確かめる日誌',
     }, '2');
     const before = db.chatMessages.length;
-    const approved = await api.approveDiary(admin, d.diary_id, false);
+    const approved = await api.approveDiary(admin, d.diary_id);
 
     expect(approved.status).toBe('3');
-    expect(approved.is_shared_to_guardian).toBe(false);
-    expect(approved.shared_at).toBeNull();
+    expect(approved.applied_staff_id).toBe('S003');
     expect(db.chatMessages.length).toBe(before);
-  });
-
-  it('共有する承認では個人チャットへ日誌の共有として流す', async () => {
-    const d = await api.saveDiary(teacher, {
-      record_type: '1', child_id: 'C001', class_id: 1,
-      diary_date: '2026-09-03', body: '共有する日誌',
-    }, '2');
-    await api.approveDiary(admin, d.diary_id, true);
-
-    const msg = db.chatMessages.find((m) => m.source_type === '2' && m.source_id === d.diary_id);
-    expect(msg).toBeDefined();
+    expect(db.chatMessages.some((m) => m.source_type === '2' && m.source_id === d.diary_id)).toBe(false);
   });
 
   it('差し戻しは理由の入力を必須とする', async () => {
@@ -101,12 +94,15 @@ describe('日誌の作成から保護者への共有', () => {
     expect(returned.returned_reason).toBe('記録が不足しています');
   });
 
-  it('申請中でない日誌は承認できない', async () => {
+  it('申請中でない日誌は承認できない。下書きは「取り下げられました」、承認済みは「申請中の日誌のみ」', async () => {
     const d = await api.saveDiary(teacher, {
       record_type: '2', child_id: null, class_id: 1,
       diary_date: '2026-09-05', body: '下書きのまま',
     }, '1');
-    await expect(api.approveDiary(admin, d.diary_id, false)).rejects.toThrow('申請中');
+    // 下書きへの承認は、取り下げたあとに届いた承認として扱う（詳細設計書「日誌の状態」(3-6)）
+    await expect(api.approveDiary(admin, d.diary_id)).rejects.toThrow('この日誌は取り下げられました。');
+    // 日誌 5 は承認済み
+    await expect(api.approveDiary(admin, 5)).rejects.toThrow('申請中の日誌のみ承認できます');
   });
 });
 
@@ -242,17 +238,9 @@ describe('メッセージの編集', () => {
     expect(after.body).toBe('既読が付いたあとの本文');
   });
 
-  it('日誌の共有は、本文だけ編集でき、リンク先の記録は変わらない', async () => {
-    // 日誌の共有（source_type=2）は個人チャットへ送られる（基本設計書「日誌の作成から保護者への共有」(4-5)）
-    const shared = db.chatMessages.find((m) => m.source_type === '2')!;
-    const sourceID = shared.source_id;
-
-    await api.edit(teacher, shared.chat_message_id, '本日の日誌を共有しました。お目通しください。');
-
-    const after = db.chatMessages.find((m) => m.chat_message_id === shared.chat_message_id)!;
-    expect(after.body).toBe('本日の日誌を共有しました。お目通しください。');
-    expect(after.source_type).toBe('2');
-    expect(after.source_id).toBe(sourceID);
+  it('デモデータに日誌の共有の知らせ（source_type=2）は無い', async () => {
+    // 日誌は園内の記録。共有の知らせは作らず、デモデータにも入れない（詳細設計書「デモデータ」(5-5)）
+    expect(db.chatMessages.filter((m) => m.source_type === '2' && !m.is_deleted)).toEqual([]);
   });
 });
 
@@ -338,11 +326,8 @@ describe('発達チェックの確定（基本設計書「発達チェックの�
 });
 
 describe('記録した職員の表示', () => {
-  it('保護者が開く共有日誌には、記入者・確認者の氏名が載る（職員IDではない）', async () => {
-    const shared = db.diaries.find((d) => !d.is_deleted && d.status === '3' && d.is_shared_to_guardian
-      && d.child_id && db.guardianChildren.some((gc) =>
-        gc.guardian_id === 'G001' && gc.child_id === d.child_id && gc.link_status === '1'))!;
-    const d = await api.getDiary(guardian, shared.diary_id);
+  it('職員が開く承認済み日誌には、作成者・承認者の氏名が載る', async () => {
+    const d = await api.getDiary(admin, 5);
     expect(d.staff_name).toBeTruthy();
     expect(d.staff_name).not.toMatch(/^S\d+$/);
     expect(d.approved_staff_name).toBeTruthy();

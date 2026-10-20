@@ -182,7 +182,7 @@ func (a *app) handleStartNapSession(w http.ResponseWriter, r *http.Request) {
 	id, _ := res.LastInsertId()
 	a.log(u.AccountID, fnNap, opCreate, "t_nap_session", i64(id), nil, nil,
 		s("午睡チェックを開始（"+a.className(req.ClassID)+"）"))
-	// そのクラスを扱える職員と、そのクラスに自児がいる保護者の画面へ知らせる（events.go）
+	// そのクラスを扱える職員の画面へ知らせる。保護者へは送らない（events.go。詳細設計書「PR #196 からの変更」(6-1)）
 	a.notifyNapSession(req.ClassID)
 
 	got, _ := a.napSession(req.ClassID, req.Date)
@@ -235,9 +235,12 @@ func (a *app) handleEndNapSession(w http.ResponseWriter, r *http.Request) {
 }
 
 // NapChildState は園児カードの状態。直近の記録が無ければ latest は null（画面詳細図 5-1）
+// sleeps・exclusion は、ねた・おきたと「きょうは対象外」（詳細設計書「午睡（ねた・おきた・対象外）」(4-6 (6))）
 type NapChildState struct {
-	Child  Child      `json:"child"`
-	Latest *NapRecord `json:"latest"`
+	Child     Child            `json:"child"`
+	Latest    *NapRecord       `json:"latest"`
+	Sleeps    []napSleepOut    `json:"sleeps"`
+	Exclusion *napExclusionOut `json:"exclusion"`
 }
 
 func (a *app) handleNapClassState(w http.ResponseWriter, r *http.Request) {
@@ -274,7 +277,7 @@ func (a *app) handleNapClassState(w http.ResponseWriter, r *http.Request) {
 		if !inClass[c.ChildID] {
 			continue
 		}
-		out = append(out, NapChildState{Child: c})
+		out = append(out, NapChildState{Child: c, Sleeps: []napSleepOut{}})
 	}
 	if !hasSession {
 		writeJSON(w, http.StatusOK, out)
@@ -283,6 +286,8 @@ func (a *app) handleNapClassState(w http.ResponseWriter, r *http.Request) {
 	// 直近の記録はカーソルを閉じたあとに引く
 	for i := range out {
 		out[i].Latest = a.latestNapRecord(sessionID, out[i].Child.ChildID)
+		out[i].Sleeps = a.napSessionSleeps(sessionID, out[i].Child.ChildID)
+		out[i].Exclusion = a.napSessionExclusion(sessionID, out[i].Child.ChildID)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -400,8 +405,8 @@ func (a *app) handleNapRecord(w http.ResponseWriter, r *http.Request) {
 	id, _ := res.LastInsertId()
 	a.log(u.AccountID, fnNap, opCreate, "t_nap_record", i64(id), s(req.ChildID), nil,
 		s("体位="+req.BodyPosition+" 呼吸="+req.Breathing+" 顔色="+req.Complexion))
-	// その園児を参照できる職員と、紐づく保護者の画面へ知らせる（events.go）
-	a.notifyNapChild(sessionClass, req.ChildID, true)
+	// その園児を参照できる職員の画面へ知らせる。5分ごとの確認は監査の層で、保護者へは送らない（events.go）
+	a.notifyNapChild(sessionClass, req.ChildID)
 
 	writeJSON(w, http.StatusOK, a.latestNapRecord(sessionID, req.ChildID))
 }
@@ -590,7 +595,7 @@ func (a *app) handleRecordNapAbnormal(w http.ResponseWriter, r *http.Request) {
 	a.log(u.AccountID, fnNap, opCreate, "t_nap_abnormal", i64(id), s(req.ChildID), nil, s("異常時の記録"))
 	// 職員の画面（午睡チェック画面の強調・ダッシュボードの「ヒヤリハット未起票」）へ知らせる。
 	// 園内の記録のため保護者には送らない（events.go）
-	a.notifyNapChild(sessionClass, req.ChildID, false)
+	a.notifyNapChild(sessionClass, req.ChildID)
 	writeJSON(w, http.StatusOK, map[string]int64{"nap_abnormal_id": id})
 }
 
@@ -674,11 +679,13 @@ func (a *app) handleRaiseIncidentDiary(w http.ResponseWriter, r *http.Request) {
 		"\n\n【とった対応】\n" + response +
 		"\n\n【今後の対策】\n"
 
+	// 発生日時は発見時刻（詳細設計書「日誌の画面（作り直し）」(2-13 (8))）。場所は【仮置き】（incidentPlaceholder）
+	occurredAt, place := incidentPlaceholder("4", foundAt)
 	res, err := a.db.Exec(`INSERT INTO t_diary
 		(record_type, child_id, class_id, diary_date, body, status, created_staff_id,
-		 is_shared_to_guardian, nap_abnormal_id, is_deleted, created_at, updated_at)
-		VALUES ('4', ?, ?, ?, ?, '1', ?, 0, ?, 0, ?, ?)`,
-		childID, classID, diaryDate, body, u.staff(), abnormalID, now(), now())
+		 occurred_at, place, nap_abnormal_id, is_deleted, created_at, updated_at)
+		VALUES ('4', ?, ?, ?, ?, '1', ?, ?, ?, ?, 0, ?, ?)`,
+		childID, classID, diaryDate, body, u.staff(), occurredAt, place, abnormalID, now(), now())
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "起票に失敗しました")
 		return
@@ -689,7 +696,7 @@ func (a *app) handleRaiseIncidentDiary(w http.ResponseWriter, r *http.Request) {
 	a.log(u.AccountID, fnDiary, opCreate, "t_diary", i64(newDiaryID), s(childID), nil,
 		s("異常時の記録からヒヤリハットを起票"))
 	// 「ヒヤリハット未起票の異常時の記録」が減り、日誌（下書き）が増える（events.go）
-	a.notifyNapChild(classID.Int64, childID, false)
+	a.notifyNapChild(classID.Int64, childID)
 	a.notifyDiary(newDiaryID)
 	a.writeDiaryByID(w, newDiaryID)
 }

@@ -11,16 +11,22 @@
  * サーバ側の送り分け（誰に届くか）は server/events_test.go、モックの送り分けは liveMock.test.ts が確かめる。
  */
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { render, screen, cleanup, waitFor, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import App from '../src/App';
 import { SessionProvider } from '../src/session';
 import { useAsync, AUTO_REFRESH_MS } from '../src/hooks';
 import {
-  startLive, isLiveConnected, liveStatus, onLive, onRoom, onNapClass, LIVE_REFRESH_MS, RECONNECT_MIN_MS,
+  startLive, isLiveConnected, liveStatus, onLive, onRoom, onNapClass, onContactChild, onContactClass,
+  LIVE_REFRESH_MS, RECONNECT_MIN_MS, PING_TIMEOUT_MS, WATCH_INTERVAL_MS,
 } from '../src/live';
 import type { LiveEvent } from '../src/live';
 import LiveIndicator from '../src/components/LiveIndicator';
+import ConnectionBanner from '../src/components/ConnectionBanner';
+import { setReachable } from '../src/api/reachability';
 import type { SessionUser } from '../src/api/types';
 
 /** EventSource の偽物。テストから open・send・drop・fail を呼んで、サーバ側の出来事を起こす */
@@ -36,6 +42,8 @@ class FakeEventSource {
   onerror: ((e: Event) => void) | null = null;
   closed = false;
   url: string;
+  /** 名前付きの知らせ（event: ping）の受け手 */
+  named: Record<string, ((e: Event) => void)[]> = {};
 
   constructor(url: string) {
     this.url = url;
@@ -45,6 +53,15 @@ class FakeEventSource {
   close() {
     this.readyState = FakeEventSource.CLOSED;
     this.closed = true;
+  }
+
+  addEventListener(type: string, listener: (e: Event) => void) {
+    (this.named[type] ??= []).push(listener);
+  }
+
+  /** 心拍（event: ping と空の data:）が届いた */
+  ping() {
+    for (const l of this.named.ping ?? []) l(new MessageEvent('ping', { data: '' }));
   }
 
   /** つながった */
@@ -323,9 +340,77 @@ describe('接続の扱い', () => {
         </SessionProvider>
       </MemoryRouter>,
     );
-    await waitFor(() => expect(document.body.textContent).toContain('共有された記録'), { timeout: 3000 });
+    await waitFor(() => expect(document.body.textContent).toContain('園からの配布物'), { timeout: 3000 });
     expect(FakeEventSource.instances).toHaveLength(0);
     expect(liveStatus()).toBe('off');
+  });
+});
+
+describe('心拍の見張り（詳細設計書「画面の受け取り」(6-4)）', () => {
+  it('心拍が45秒届かなければ、知らせが切れている状態にして読み直し、接続を閉じてつなぎ直す', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    const es = connect();
+    act(() => es.open());
+    expect(liveStatus()).toBe('open');
+
+    // 心拍が届いている間は、つながったまま
+    act(() => { vi.advanceTimersByTime(PING_TIMEOUT_MS - WATCH_INTERVAL_MS); });
+    act(() => es.ping());
+    act(() => { vi.advanceTimersByTime(PING_TIMEOUT_MS - WATCH_INTERVAL_MS); });
+    expect(liveStatus()).toBe('open');
+    expect(es.closed).toBe(false);
+
+    // 最後の心拍から45秒を超えた
+    const signals: string[] = [];
+    const { subscribeLive } = await import('../src/live');
+    const stop = subscribeLive((s) => signals.push(s.type));
+    act(() => { vi.advanceTimersByTime(WATCH_INTERVAL_MS * 2); });
+    stop();
+    expect(liveStatus()).toBe('connecting');
+    expect(es.closed).toBe(true);
+    expect(signals).toContain('resync');
+  });
+
+  it('連絡帳の知らせは、その園児（またはそのクラス）のものだけを通す', () => {
+    const child = onContactChild('C001', 1);
+    expect(child({ type: 'contact', child_id: 'C001' })).toBe(true);
+    expect(child({ type: 'contact', class_id: 1 })).toBe(true);
+    expect(child({ type: 'contact', child_id: 'C004' })).toBe(false);
+    expect(child({ type: 'nap', class_id: 1, child_id: 'C001' })).toBe(false);
+    const cls = onContactClass(1, ['C001', 'C004']);
+    expect(cls({ type: 'contact', child_id: 'C004' })).toBe(true);
+    expect(cls({ type: 'contact', child_id: 'C013' })).toBe(false);
+    expect(cls({ type: 'contact', class_id: 2 })).toBe(false);
+  });
+});
+
+describe('つながっているかの3つの状態（詳細設計書「つながっているかの表示」(2-8)）', () => {
+  afterEach(() => { act(() => setReachable(true)); });
+
+  it('サーバに届かないときは、ヘッダに「サーバにつながりません」、職員・保護者とも上端に警告の帯を出す', () => {
+    render(<><LiveIndicator /><ConnectionBanner audience="staff" /></>);
+    let es: FakeEventSource | undefined;
+    act(() => { es = connect(); });
+    act(() => es!.open());
+    expect(screen.queryByRole('alert')).toBeNull();
+
+    act(() => setReachable(false));
+    expect(screen.getByRole('status').textContent).toBe('サーバにつながりません');
+    expect(screen.getByRole('alert').textContent).toBe('サーバにつながりません。記録は保存されていません');
+
+    act(() => setReachable(true));
+    expect(screen.getByRole('status').textContent).toBe('すぐに反映');
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('知らせが切れている間は、保護者にだけ細い帯「自動で読み直しています」を出す（職員はヘッダで足りる）', () => {
+    render(<><div data-testid="guardian"><ConnectionBanner audience="guardian" /></div><div data-testid="staff"><ConnectionBanner audience="staff" /></div></>);
+    let es: FakeEventSource | undefined;
+    act(() => { es = connect(); });
+    expect(screen.getByTestId('guardian').textContent).toBe('自動で読み直しています');
+    expect(screen.getByTestId('staff').textContent).toBe('');
+    act(() => es!.open());
+    expect(screen.getByTestId('guardian').textContent).toBe('');
   });
 });
 
@@ -344,6 +429,21 @@ describe('職員のヘッダの表示', () => {
 
     act(() => stops.splice(0).forEach((stop) => stop()));
     expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('縦向きの狭い幅でも文言を隠さず、2行に折り返す切れ目は語の境目に置く（色だけに頼らない。GitHub Issue #211）', () => {
+    render(<LiveIndicator />);
+    act(() => { connect(); });
+    // 折り返しの切れ目（<wbr>）は「自動で」のあとだけ。読み上げる文は切れ目を入れても変わらない
+    const text = document.querySelector('.live-indicator .live-text')!;
+    expect(text.querySelectorAll('wbr')).toHaveLength(1);
+    expect(text.firstChild?.textContent).toBe('自動で');
+    expect(screen.getByRole('status').textContent).toBe('自動で読み直しています');
+
+    // jsdom は @media を当てないため、CSS の文で見る。文言を読み上げ用にだけ残す（見た目から隠す）規則を置いていない
+    const appCss = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../src/styles/app.css'), 'utf8');
+    expect(appCss).toContain('.live-indicator');
+    expect(appCss).not.toMatch(/\.live-text\s*\{[^}]*(clip|position:\s*absolute|display:\s*none)/);
   });
 
   it('モックの職員の画面には出さない（サーバにつないでいないため）', async () => {

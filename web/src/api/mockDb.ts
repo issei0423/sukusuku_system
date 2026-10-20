@@ -20,10 +20,13 @@ import type {
   Diary, DiaryLock, DiaryTemplate, DiaryAttachment,
   ChatRoom, ChatMember, ChatMessage, ChatRead, ChatReaction, TermsAgreement, MisdeliveryRecord, Handout,
   NapSession, NapRecord, NapAbnormal,
+  ContactHomeRecord, ContactEventRecord, ContactClassRecord, ContactFacilityRecord, ContactReadRecord,
+  NapSleepRecord, NapExclusionRecord, PhraseRecord,
   DevelopmentCategory, DevelopmentItem, DevelopmentFrequency, ShareSetting,
   DevelopmentSchedule, DevelopmentCheck, DevelopmentResultRecord,
   PhysicalRecord, GrowthStandard, OperationLog, Setting,
 } from './types';
+import type { ContactPhotoRecord, ContactPhotoChildRecord } from './types';
 
 /** 演習用の固定基準日。デモデータの日付はこの日を軸に組み立てている */
 export const DEMO_TODAY = '2026-09-01';
@@ -64,30 +67,40 @@ export const guardians: Guardian[] = [
  */
 const T0 = '2024-04-01T09:00:00';
 export const accounts: Account[] = [
-  { account_id: 1, email: 'nohara@hoiku.example.jp', password_hash: 'pass1234', role: '1', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
-  { account_id: 2, email: 'uezono@hoiku.example.jp',    password_hash: 'pass1234', role: '1', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
-  { account_id: 3, email: 'takanashi@hoiku.example.jp',    password_hash: 'pass1234', role: '2', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
+  { account_id: 1, email: 'nohara@hoiku.example.jp', password_hash: 'pass1234', role: '1', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
+  { account_id: 2, email: 'uezono@hoiku.example.jp',    password_hash: 'pass1234', role: '1', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
+  { account_id: 3, email: 'takanashi@hoiku.example.jp',    password_hash: 'pass1234', role: '2', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
   // 一時パスワードでログインした状態を再現する。真の間は他機能を使わせない（基本設計書 5-2）
-  { account_id: 4, email: 'miyagi@hoiku.example.jp',      password_hash: 'temp0901', role: '2', status: '1', is_temp_password: true,  temp_password_expires_at: '2026-09-03T09:00:00', failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
-  { account_id: 5, email: 'kinjo@hoiku.example.jp',    password_hash: 'pass1234', role: '2', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
-  { account_id: 6, email: 'nohara.i@example.jp',        password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: '2025-06-10T10:00:00', created_at: '2025-06-10T10:00:00', updated_at: '2025-06-10T10:00:00' },
+  { account_id: 4, email: 'miyagi@hoiku.example.jp',      password_hash: 'temp0901', role: '2', status: '1', is_temp_password: true,  temp_password_expires_at: '2026-09-03T09:00:00', failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
+  { account_id: 5, email: 'kinjo@hoiku.example.jp',    password_hash: 'pass1234', role: '2', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
+  { account_id: 6, email: 'nohara.i@example.jp',        password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: '2025-06-10T10:00:00', created_at: '2025-06-10T10:00:00', updated_at: '2025-06-10T10:00:00' },
   // 規約の改定後、まだ再同意していない状態を再現する。次回ログインで同意画面を出す（基本設計書 3-4）
   { account_id: 7, email: 'uezono.k@example.jp',        password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '0.9', terms_agreed_at: '2025-04-05T10:00:00', created_at: '2025-04-05T10:00:00', updated_at: '2025-04-05T10:00:00' },
-  { account_id: 8, email: 'takanashi.r@example.jp',          password_hash: 'pass1234', role: '3', status: '2', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: '2025-06-20T10:00:00', created_at: '2025-06-20T10:00:00', updated_at: '2026-08-20T10:00:00' },
-  { account_id: 9, email: 'miyagi.r@example.jp', password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: '2025-07-01T10:00:00', created_at: '2025-07-01T10:00:00', updated_at: '2025-07-01T10:00:00' },
-  { account_id: 10, email: 'kinjo.s@example.jp', password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.0', terms_agreed_at: '2025-07-05T10:00:00', created_at: '2025-07-05T10:00:00', updated_at: '2025-07-05T10:00:00' },
+  { account_id: 8, email: 'takanashi.r@example.jp',          password_hash: 'pass1234', role: '3', status: '2', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: '2025-06-20T10:00:00', created_at: '2025-06-20T10:00:00', updated_at: '2026-08-20T10:00:00' },
+  { account_id: 9, email: 'miyagi.r@example.jp', password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: '2025-07-01T10:00:00', created_at: '2025-07-01T10:00:00', updated_at: '2025-07-01T10:00:00' },
+  { account_id: 10, email: 'kinjo.s@example.jp', password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: '2025-07-05T10:00:00', created_at: '2025-07-05T10:00:00', updated_at: '2025-07-05T10:00:00' },
 ];
 
-/** 最新版の利用規約。これと異なる terms_version のアカウントには再同意を求める */
-export const CURRENT_TERMS_VERSION = '1.0';
+/**
+ * 最新版の利用規約。これと異なる terms_version のアカウントには再同意を求める。
+ * 第1.1版は、文章の下書きに外部の AI を使うことの条を足した版（詳細設計書「デモデータ」(5-5 (2))。server/seed.sql と同じ）
+ */
+export const CURRENT_TERMS_VERSION = '1.1';
 
 /* ============ 園児（m_child） ============ */
+
+/**
+ * 呼び名（m_child.nickname）。他児の名前の注意を見せるため（詳細設計書「デモデータ」(5-5 (2))。server/seed.sql と同じ）。
+ * 園児情報入力の呼び名の欄で直した値も、他児の名前の注意（mock.ts の nameChildOf）が同じ園児の行から読む
+ */
+const demoNicknames: Record<string, string> = { C001: 'たっくん', C006: 'あおちゃん', C008: 'ゆいちゃん' };
+
 function child(
   id: string, name: string, kana: string, birth: string, sex: Child['sex'], temp: number,
 ): Child {
   return {
     child_id: id, child_name: name, child_name_kana: kana,
-    nickname: ({ C001: 'たっくん', C006: 'あおちゃん', C008: 'ゆいちゃん' } as Record<string, string>)[id] ?? '',
+    nickname: demoNicknames[id] ?? '',
     birth_date: birth, sex,
     normal_temperature: temp, enrollment_status: '1', photo_consent_level: '2',
     is_deleted: false, created_at: '2025-04-01T09:00:00', updated_at: '2026-04-01T09:00:00',
@@ -186,7 +199,7 @@ export const invitationCodes: InvitationCode[] = [
  */
 export const termsDocs: Terms[] = [
   {
-    terms_id: 1, terms_version: '1.0', document_type: '1', published_on: '2026-09-01',
+    terms_id: 1, terms_version: '1.0', document_type: '1', published_on: '2026-09-01', covers_external_ai: false,
     body: [
       '第1条（本規約について）',
       '本規約は、当園が提供する保育支援システム（以下「本システム」）の利用条件を定めるものです。本システムを利用する職員および保護者の双方に適用します。',
@@ -210,22 +223,67 @@ export const termsDocs: Terms[] = [
     ].join('\n'),
   },
   {
-    terms_id: 2, terms_version: '0.9', document_type: '1', published_on: '2025-04-01',
+    terms_id: 2, terms_version: '0.9', document_type: '1', published_on: '2025-04-01', covers_external_ai: false,
     body: '（旧版）第1条（本規約について）本規約は、当園が提供する保育支援システムの利用条件を定めるものです。',
+  },
+  {
+    terms_id: 3, terms_version: '1.1', document_type: '1', published_on: '2026-09-01', covers_external_ai: true,
+    body: [
+      '第1条（本規約について）',
+      '本規約は、当園が提供する保育支援システム（以下「本システム」）の利用条件を定めるものです。本システムを利用する職員および保護者の双方に適用します。',
+      '',
+      '第2条（アカウント）',
+      '職員のアカウントは、当園が発行します。保護者のアカウントは、当園が発行する招待コードによって登録します。招待コードは1枚につき1アカウントの登録にのみ使用できます。',
+      'アカウントの情報は第三者に共有しないでください。',
+      '',
+      '第3条（本システムが行わないこと）',
+      '本システムは、お子さまの発達の遅速の判定、医療的な診断、療育の要否の判断を一切行いません。',
+      '記録および可視化は、保育士が気づくための支援であり、評価と判断の責任は当園にあります。',
+      '',
+      '第4条（緊急時の連絡）',
+      '緊急を要する連絡は、本システムのチャットではなく電話で行います。',
+      'チャットの通知は、端末の設定や通信の状況により届かない場合があります。',
+      '',
+      '第5条（記録の取り扱い）',
+      '保護者への記録の共有範囲は、当園が項目ごとに設定します。',
+      '',
+      '第6条（文章の下書きに外部の AI を使うこと）',
+      '当園は、連絡帳の文の下書きを作るために、外部の AI（Anthropic 社の Claude）を使うことがあります。当園が使うと決めたときだけ動きます。',
+      '送るのは、その日のできごと（時刻・食事の量・活動のようす）と、担任のメモと、年齢（何歳）だけです。お子さまの名前は置き換えて送り、名前・体温・写真・「家庭から」に書いた内容は送りません。',
+      '下書きは担任が読んで直してから送ります。AI が保護者へ自動で送ることはありません。',
+      '保護者は、お子さまごとに AI の下書きを使わないことを選べます。選んでも、連絡帳の届き方は変わりません。',
+      '',
+      '※本文は演習用の草案です。',
+    ].join('\n'),
+  },
+  {
+    terms_id: 4, terms_version: '1.1', document_type: '2', published_on: '2026-09-01', covers_external_ai: true,
+    body: [
+      '第1条（外部の AI へ送る情報）',
+      '当園は、連絡帳の文の下書きを作るために、記録の一部を外部の AI（Anthropic 社の Claude）へ送ることがあります。送るのは、その日のできごと（時刻・食事の量・活動のようす）、担任のメモ、年齢（何歳）だけです。',
+      '氏名・よみ・呼び名・生年月日・体温・アレルギー・既往歴・排せつの内容・写真・「家庭から」の内容・チャットの本文・発達の記録は送りません。名前は「〇〇ちゃん」「おともだち」に置き換えて送ります。',
+      '送った文と返った文は、本システムに残しません。',
+      '',
+      '第2条（使わないことを選ぶ）',
+      '保護者は、お子さまごとに AI の下書きを使わないことを選べます。紐づく保護者の1人でも選べば、そのお子さまには使いません。',
+      '',
+      '※本文は演習用の草案です。',
+    ].join('\n'),
   },
 ];
 
 /* ============ 日誌の雛形（m_diary_template） ============
- * 保護者共有の既定値を雛形側に持ち、コードに書かない（基本設計書 5-4）
+ * 日誌は保護者へ届かないため、保護者への共有の既定を持たず、個人日誌の雛形に保護者あての見出しを置かない
+ * （詳細設計書「変える表」(5-3)・「デモデータ」(5-5)）
  */
 export const diaryTemplates: DiaryTemplate[] = [
-  { diary_template_id: 1, record_type: '1', template_name: '個人日誌（標準）', default_share_to_guardian: true,
-    body: '【今日の様子】\n\n【食事】\n\n【排泄】\n\n【午睡】\n\n【保護者へのお伝え】\n' },
-  { diary_template_id: 2, record_type: '2', template_name: 'クラス日誌（標準）', default_share_to_guardian: false,
+  { diary_template_id: 1, record_type: '1', template_name: '個人日誌（標準）', is_deleted: false,
+    body: '【今日の様子】\n\n【食事】\n\n【排泄】\n\n【午睡】\n\n【気づいたこと】\n' },
+  { diary_template_id: 2, record_type: '2', template_name: 'クラス日誌（標準）', is_deleted: false,
     body: '【ねらい】\n\n【活動内容】\n\n【子どもの姿】\n\n【明日への配慮】\n' },
-  { diary_template_id: 3, record_type: '3', template_name: '週案', default_share_to_guardian: false,
+  { diary_template_id: 3, record_type: '3', template_name: '週案', is_deleted: false,
     body: '【今週のねらい】\n\n【環境構成】\n\n【予想される子どもの活動】\n\n【援助と配慮】\n' },
-  { diary_template_id: 4, record_type: '4', template_name: 'ヒヤリハット', default_share_to_guardian: false,
+  { diary_template_id: 4, record_type: '4', template_name: 'ヒヤリハット', is_deleted: false,
     body: '【発生日時】\n\n【発生場所】\n\n【状況】\n\n【とった対応】\n\n【今後の対策】\n' },
 ];
 
@@ -242,32 +300,32 @@ export const fixedPhrases: string[] = [
 export const diaries: Diary[] = [
   { diary_id: 1, record_type: '1', child_id: 'C001', class_id: 1, diary_date: '2026-09-01', status: '1',
     body: '【今日の様子】\n積み木を高く積んで遊んでいました。崩れても笑って積み直していました。\n\n【食事】\n完食。\n\n【午睡】\n13:05に入眠。',
-    created_staff_id: 'S003', approved_staff_id: null, approved_at: null, is_shared_to_guardian: false, shared_at: null,
+    created_staff_id: 'S003', approved_staff_id: null, approved_at: null, applied_staff_id: null, applied_at: null,
     nap_abnormal_id: null, returned_reason: null, is_deleted: false, created_at: '2026-09-01T16:40:00', updated_at: '2026-09-01T16:40:00' },
   { diary_id: 2, record_type: '2', child_id: null, class_id: 1, diary_date: '2026-08-31', status: '2',
     body: '【ねらい】\n身近な友だちと関わる楽しさを味わう。\n\n【活動内容】\n園庭でしゃぼん玉遊び。',
-    created_staff_id: 'S003', approved_staff_id: null, approved_at: null, is_shared_to_guardian: false, shared_at: null,
+    created_staff_id: 'S003', approved_staff_id: null, approved_at: null, applied_staff_id: 'S003', applied_at: '2026-08-31T17:20:00',
     nap_abnormal_id: null, returned_reason: null, is_deleted: false, created_at: '2026-08-31T17:20:00', updated_at: '2026-08-31T17:20:00' },
   { diary_id: 3, record_type: '4', child_id: 'C003', class_id: 1, diary_date: '2026-08-30', status: '4',
     body: '【発生日時】\n午睡中の13時40分ごろ\n\n【状況】\n午睡中にうつ伏せの体位を確認した。\n\n【とった対応】\n仰向けに直し、呼吸と顔色を確認した。',
-    created_staff_id: 'S004', approved_staff_id: 'S001', approved_at: null, is_shared_to_guardian: false, shared_at: null,
+    created_staff_id: 'S004', approved_staff_id: null, approved_at: null, applied_staff_id: null, applied_at: null,
     nap_abnormal_id: 1, returned_reason: '発生時の呼吸・顔色の記録が本文にありません。異常時の記録と同じ内容を転記してください。',
     is_deleted: false, created_at: '2026-08-30T18:00:00', updated_at: '2026-08-31T09:10:00' },
   { diary_id: 4, record_type: '1', child_id: 'C002', class_id: 1, diary_date: '2026-08-29', status: '3',
     body: '【今日の様子】\n絵本の読み聞かせに集中していました。\n\n【食事】\n野菜を残しましたが、声をかけると一口食べました。',
-    created_staff_id: 'S003', approved_staff_id: 'S001', approved_at: '2026-08-29T18:05:00', is_shared_to_guardian: true, shared_at: '2026-08-29T18:05:00',
+    created_staff_id: 'S003', approved_staff_id: 'S001', approved_at: '2026-08-29T18:05:00', applied_staff_id: 'S003', applied_at: '2026-08-29T17:10:00',
     nap_abnormal_id: null, returned_reason: null, is_deleted: false, created_at: '2026-08-29T17:10:00', updated_at: '2026-08-29T18:05:00' },
   { diary_id: 5, record_type: '1', child_id: 'C001', class_id: 1, diary_date: '2026-08-29', status: '3',
     body: '【今日の様子】\n砂場でスコップを使い、型抜きを繰り返していました。\n\n【午睡】\n12:55に入眠。',
-    created_staff_id: 'S003', approved_staff_id: 'S001', approved_at: '2026-08-29T18:06:00', is_shared_to_guardian: true, shared_at: '2026-08-29T18:06:00',
+    created_staff_id: 'S003', approved_staff_id: 'S001', approved_at: '2026-08-29T18:06:00', applied_staff_id: 'S003', applied_at: '2026-08-29T17:15:00',
     nap_abnormal_id: null, returned_reason: null, is_deleted: false, created_at: '2026-08-29T17:15:00', updated_at: '2026-08-29T18:06:00' },
   { diary_id: 6, record_type: '2', child_id: null, class_id: 2, diary_date: '2026-09-01', status: '2',
     body: '【ねらい】\n身の回りのことを自分でやってみようとする。\n\n【活動内容】\n散歩（近隣公園）。',
-    created_staff_id: 'S005', approved_staff_id: null, approved_at: null, is_shared_to_guardian: false, shared_at: null,
+    created_staff_id: 'S005', approved_staff_id: null, approved_at: null, applied_staff_id: 'S005', applied_at: '2026-09-01T17:00:00',
     nap_abnormal_id: null, returned_reason: null, is_deleted: false, created_at: '2026-09-01T17:00:00', updated_at: '2026-09-01T17:00:00' },
   { diary_id: 7, record_type: '1', child_id: 'C004', class_id: 1, diary_date: '2026-09-01', status: '2',
     body: '【今日の様子】\n手洗いを自分でしようとする姿がありました。',
-    created_staff_id: 'S004', approved_staff_id: null, approved_at: null, is_shared_to_guardian: false, shared_at: null,
+    created_staff_id: 'S004', approved_staff_id: null, approved_at: null, applied_staff_id: 'S004', applied_at: '2026-09-01T17:20:00',
     nap_abnormal_id: null, returned_reason: null, is_deleted: false, created_at: '2026-09-01T17:20:00', updated_at: '2026-09-01T17:20:00' },
 ];
 
@@ -337,10 +395,10 @@ export const chatMessages: ChatMessage[] = [
   { chat_message_id: 1, chat_room_id: 1, sender_account_id: 1, body: '9月の献立表を掲示しました。ご確認ください。', source_type: '1', source_id: null, sent_at: '2026-09-01T08:30:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
   { chat_message_id: 2, chat_room_id: 3, sender_account_id: 4, body: '明日の遠足の集合時間ですが、9時でよろしいでしょうか。', source_type: '1', source_id: null, sent_at: '2026-09-01T15:02:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
   { chat_message_id: 3, chat_room_id: 3, sender_account_id: 3, body: '9時に園庭でお願いします。', source_type: '1', source_id: null, sent_at: '2026-09-01T15:10:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
-  { chat_message_id: 4, chat_room_id: 6, sender_account_id: 3, body: '本日の日誌を共有しました。', source_type: '2', source_id: 5, sent_at: '2026-08-29T18:06:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
+  { chat_message_id: 4, chat_room_id: 6, sender_account_id: 3, body: '今日は砂場でスコップを使って、型抜きを何度もしていました。', source_type: '1', source_id: null, sent_at: '2026-08-29T18:06:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
   { chat_message_id: 5, chat_room_id: 6, sender_account_id: 6, body: 'ありがとうございます。確認しました。', source_type: '1', source_id: null, sent_at: '2026-08-29T20:30:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
   { chat_message_id: 6, chat_room_id: 6, sender_account_id: 6, body: '明日は祖母がお迎えに伺います。よろしくお願いします。', source_type: '1', source_id: null, sent_at: '2026-09-01T07:40:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
-  { chat_message_id: 7, chat_room_id: 7, sender_account_id: 3, body: '本日の日誌を共有しました。', source_type: '2', source_id: 4, sent_at: '2026-08-29T18:05:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
+  { chat_message_id: 7, chat_room_id: 7, sender_account_id: 3, body: '今日は絵本の読み聞かせを、最後まで座って聞いていました。', source_type: '1', source_id: null, sent_at: '2026-08-29T18:05:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
   { chat_message_id: 8, chat_room_id: 2, sender_account_id: 2, body: '来週の職員会議は水曜16時からです。', source_type: '1', source_id: null, sent_at: '2026-08-31T11:00:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
   { chat_message_id: 9, chat_room_id: 5, sender_account_id: 1, body: '種目案を今週中にまとめましょう。', source_type: '1', source_id: null, sent_at: '2026-08-28T13:00:00', edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null },
   // 取消済みのメッセージ。誤送信への対応の記録と対にする（基本設計書「誤送信への対応」(4-6)）
@@ -396,6 +454,136 @@ export const napAbnormals: NapAbnormal[] = [
     situation: '顔色がやや紅潮していた。体温37.4度。',
     response: '別室で休ませ、保護者へ連絡した。', staff_id: 'S003', diary_id: null },
 ];
+
+/* ============ 連絡帳と、ねた・おきた（詳細設計書「デモデータ」(5-5)） ============
+ * Go の server/seed.sql と同じ ID・同じ内容。野原 太郎（C001）の今日は「家庭から」「ねた」「園から」を空けておき、
+ * デモで押して見せる。起動した時刻より後の今日の記録は、下の日付ずらしのあとで外す（詳細設計書「未来の出来事を入れない」(5-5)）
+ */
+function home(id: number, childId: string, date: string, guardianId: string, v: Partial<ContactHomeRecord> & { submitted_at: string }): ContactHomeRecord {
+  return {
+    contact_home_id: id, child_id: childId, contact_date: date, guardian_id: guardianId,
+    temperature: null, night_sleep_from: null, night_sleep_to: null, breakfast: null, mood_label: null,
+    pickup_type: null, pickup_person: null, pickup_time: null, message: null,
+    confirmed_staff_id: null, confirmed_at: null, revised_at: null,
+    created_at: v.submitted_at, updated_at: v.confirmed_at ?? v.submitted_at, ...v,
+  };
+}
+export const contactHomes: ContactHomeRecord[] = [
+  home(1, 'C004', '2026-09-01', 'G004', { temperature: 36.5, night_sleep_from: '20:30', night_sleep_to: '06:30', breakfast: '1', mood_label: 'ごきげん', pickup_type: '1',
+    message: '朝から絵本を読んでほしいと言っていました。', submitted_at: '2026-09-01T07:40:00', confirmed_staff_id: 'S003', confirmed_at: '2026-09-01T08:52:00' }),
+  home(2, 'C005', '2026-09-01', 'G005', { temperature: 36.7, night_sleep_from: '21:00', night_sleep_to: '06:40', breakfast: '2', mood_label: 'ふつう', pickup_type: '2',
+    pickup_person: '祖母', pickup_time: '17:00', message: 'きょうは祖母が迎えに行きます。', submitted_at: '2026-09-01T07:45:00' }),
+  // 7:35 に送り、7:50 に園が確認したあと、8:05 に送り直した（確認が外れて「更新」）
+  home(3, 'C002', '2026-09-01', 'G002', { temperature: 36.9, night_sleep_from: '21:10', night_sleep_to: '06:50', breakfast: '3', mood_label: 'ふつう', pickup_type: '1',
+    message: '少し眠そうです。お昼寝のときによろしくお願いします。', submitted_at: '2026-09-01T08:05:00', revised_at: '2026-09-01T08:05:00',
+    created_at: '2026-09-01T07:35:00', updated_at: '2026-09-01T08:05:00' }),
+  home(4, 'C001', '2026-08-31', 'G001', { temperature: 36.6, breakfast: '1', mood_label: 'ごきげん',
+    submitted_at: '2026-08-31T07:42:00', confirmed_staff_id: 'S003', confirmed_at: '2026-08-31T08:50:00' }),
+];
+
+function contactEvent(id: number, childId: string, at: string, staffId: string, v: Partial<ContactEventRecord> & Pick<ContactEventRecord, 'event_type'>): ContactEventRecord {
+  return {
+    contact_event_id: id, child_id: childId, class_id: 1, contact_date: at.slice(0, 10), recorded_at: at,
+    meal_kind: null, meal_amount: null, toilet_label: null, temperature: null, body: null, contact_photo_id: null,
+    keep_in_growth: false, staff_id: staffId, corrected_at: null, is_deleted: false, created_at: at, updated_at: at, ...v,
+  };
+}
+/** 給食（meal_kind 1）の量 */
+const lunch = (amount: '1' | '2' | '3' | '4') => ({ event_type: '1' as const, meal_kind: '1' as const, meal_amount: amount });
+export const contactEvents: ContactEventRecord[] = [
+  contactEvent(1, 'C001', '2026-09-01T09:40:00', 'S004', { event_type: '2', toilet_label: 'おしっこ' }),
+  // 「成長の記録に残す」を付けてある（詳細設計書「デモデータ」(5-5) の成長の記録の行。server/seed.sql と同じ）
+  contactEvent(2, 'C001', '2026-09-01T10:15:00', 'S003', { event_type: '4', body: '園庭の砂場で、スコップの型抜きを何度もくり返していました。', keep_in_growth: true }),
+  contactEvent(3, 'C001', '2026-09-01T11:40:00', 'S003', lunch('1')),
+  contactEvent(4, 'C002', '2026-09-01T11:40:00', 'S003', lunch('1')),
+  contactEvent(5, 'C004', '2026-09-01T11:40:00', 'S003', lunch('2')),
+  contactEvent(6, 'C005', '2026-09-01T11:40:00', 'S003', lunch('1')),
+  contactEvent(7, 'C006', '2026-09-01T11:40:00', 'S003', lunch('3')),
+  contactEvent(8, 'C007', '2026-09-01T11:40:00', 'S003', lunch('1')),
+  contactEvent(9, 'C009', '2026-09-01T11:40:00', 'S004', lunch('2')),
+  contactEvent(10, 'C010', '2026-09-01T11:40:00', 'S004', lunch('1')),
+  contactEvent(11, 'C001', '2026-08-31T09:30:00', 'S004', { event_type: '2', toilet_label: 'おしっこ' }),
+  contactEvent(12, 'C001', '2026-08-31T11:40:00', 'S003', lunch('1')),
+  contactEvent(13, 'C001', '2026-08-31T15:10:00', 'S003', { event_type: '1', meal_kind: '2', meal_amount: '2' }),
+];
+
+export const contactClasses: ContactClassRecord[] = [
+  { contact_class_id: 1, class_id: 1, contact_date: '2026-09-01', body: '園庭で砂場あそびと、しゃぼん玉をしました。', contact_photo_id: null, source_diary_id: null,
+    staff_id: 'S003', recorded_at: '2026-09-01T10:30:00', corrected_at: null, is_deleted: false, created_at: '2026-09-01T10:30:00', updated_at: '2026-09-01T10:30:00' },
+];
+
+export const contactFacilities: ContactFacilityRecord[] = [
+  { contact_facility_id: 1, child_id: 'C001', class_id: 1, contact_date: '2026-08-31',
+    body: 'しゃぼん玉を追いかけて、園庭をたくさん走っていました。給食はぜんぶ食べて、おひるねは1時間30分でした。',
+    staff_id: 'S003', recorded_at: '2026-08-31T17:05:00', corrected_at: null, is_deleted: false, created_at: '2026-08-31T17:05:00', updated_at: '2026-08-31T17:05:00' },
+];
+
+export const contactReads: ContactReadRecord[] = [
+  { child_id: 'C001', contact_date: '2026-08-31', account_id: 6, read_at: '2026-08-31T20:10:00' },
+];
+
+/**
+ * 連絡帳の写真（t_contact_photo）と写っている子（t_contact_photo_child）。デモデータには入れない
+ * （詳細設計書「デモデータ」(5-5 (1))、決めたこと D-22。実在の子の写真を使わない。server/seed.sql にも入れていない）
+ */
+export const contactPhotos: ContactPhotoRecord[] = [];
+export const contactPhotoChildren: ContactPhotoChildRecord[] = [];
+
+function sleep(id: number, sessionId: number, childId: string, at: string, staffId: string, woke?: { at: string; staff: string }): NapSleepRecord {
+  return {
+    nap_sleep_id: id, nap_session_id: sessionId, child_id: childId, slept_at: at, woke_at: woke?.at ?? null, sleep_temperature: null,
+    slept_staff_id: staffId, woke_staff_id: woke?.staff ?? null, corrected_at: null, is_deleted: false, created_at: at, updated_at: woke?.at ?? at,
+  };
+}
+/** 今日の実施 1（さくら組）は C001 を空けておく（デモ②）。昨日の実施 2 は C001 が 13:02〜14:35 */
+export const napSleeps: NapSleepRecord[] = [
+  sleep(1, 1, 'C002', '2026-09-01T13:05:00', 'S003'),
+  sleep(2, 1, 'C004', '2026-09-01T13:08:00', 'S003'),
+  sleep(3, 1, 'C005', '2026-09-01T13:10:00', 'S003'),
+  sleep(4, 1, 'C006', '2026-09-01T13:06:00', 'S003'),
+  sleep(5, 1, 'C007', '2026-09-01T13:12:00', 'S004'),
+  sleep(6, 1, 'C009', '2026-09-01T13:05:00', 'S004'),
+  sleep(7, 1, 'C010', '2026-09-01T13:07:00', 'S004'),
+  sleep(8, 2, 'C001', '2026-08-31T13:02:00', 'S003', { at: '2026-08-31T14:35:00', staff: 'S003' }),
+];
+
+/** 今日の実施 1 で C003 は欠席（ダッシュボードの「園から未送信」から外れることを見せる） */
+export const napExclusions: NapExclusionRecord[] = [
+  { nap_exclusion_id: 1, nap_session_id: 1, child_id: 'C003', reason: '1', staff_id: 'S003', is_deleted: false, created_at: '2026-09-01T13:01:00' },
+];
+
+/* ============ 園からのひとことと他児の名前（詳細設計書「デモデータ」(5-5 (2))。server/seed.sql と同じ） ============ */
+
+/*
+ * 呼び名（m_child.nickname）は、園児の行（上の child() の demoNicknames）に持つ。
+ * 園児の応答（Child）には職員にだけ入れ、保護者へは返さない（インタフェース一覧「Child」。mock.ts の childForGuardian）
+ */
+
+/**
+ * 定型文（m_phrase）。server/seed.sql と server/db_contact.go の defaultPhrases と同じ順・同じ文。
+ * 健康や発達の評価の言葉（「元気に」「順調に」など）を入れない（原則1）。4:日誌は server/api_diary.go の fixedPhrases の5つから、
+ * 保護者に向けた「ご家庭でも様子を見ていただけますと幸いです。」を除いた4つ（日誌は園内の記録。詳細設計書「デモデータ」(5-5) 第1.3版）
+ */
+export const phrases: PhraseRecord[] = ([
+  ['1', '今日も一日ありがとうございました。'],
+  ['1', 'お迎えのときに、くわしくお話しします。'],
+  ['1', 'おうちでも、今日のことを聞いてみてください。'],
+  ['1', '明日もよろしくお願いします。'],
+  ['2', '園庭で遊びました。'],
+  ['2', '絵本を読みました。'],
+  ['2', '手洗いを自分でしようとしていました。'],
+  ['3', '今日は園庭で遊びました。'],
+  ['3', '今日はお散歩に出かけました。'],
+  ['3', '今日は室内で製作をしました。'],
+  ['4', 'よく食べ、おかわりをしていました。'],
+  ['4', '午睡は落ち着いて入眠できました。'],
+  ['4', '園庭で友だちと関わって遊ぶ姿が見られました。'],
+  ['4', '鼻水が出ていたため、こまめに拭き取りました。'],
+] as const).map(([scope, body], i, all) => ({
+  phrase_id: i + 1, phrase_scope: scope, body,
+  display_order: all.slice(0, i + 1).filter(([x]) => x === scope).length,
+  is_deleted: false, updated_staff_id: 'S001', created_at: '2026-04-01T09:00:00', updated_at: '2026-04-01T09:00:00',
+}));
 
 /* ============ 発達チェック（基本設計書 5-7） ============
  * 発達過程区分はマスタ化して指針改定に追従する。区分の粒度は
@@ -514,9 +702,17 @@ export const developmentSchedules: DevelopmentSchedule[] = [
  * サーバ側（server/seed.sql）も同じ
  */
 export const developmentChecks: DevelopmentCheck[] = [
-  { development_check_id: 1, child_id: 'C001', development_schedule_id: null, checked_on: '2026-05-15', status: '2', staff_id: 'S003', share_status: '2' },
-  { development_check_id: 2, child_id: 'C002', development_schedule_id: null, checked_on: '2026-05-10', status: '2', staff_id: 'S003', share_status: '2' },
-  { development_check_id: 3, child_id: 'C004', development_schedule_id: null, checked_on: '2026-06-05', status: '2', staff_id: 'S004', share_status: '1' },
+  // 成長の記録（詳細設計書「デモデータ」(5-5)）：野原 太郎の確定に、確定した日時と保護者へのひとこと（評価の言葉を入れない）。
+  // ほかの確定は「いまのデータの移し方」と同じく実施日の 00:00 を確定した日時とした（server/seed.sql と同じ）
+  // 【仮置き】野原 太郎のひとことは、確定した日のうちに担任が書き換えたものとして「訂正しました（日付）」の印を置く
+  // （決めたこと D-51。PR #216 で決まった設計。web/仮置き値.md。server/seed.sql と同じ）
+  { development_check_id: 1, child_id: 'C001', development_schedule_id: null, checked_on: '2026-05-15', status: '2', staff_id: 'S003', share_status: '2',
+    guardian_message: 'ボールを転がすと、追いかけて両手でつかもうとしていました。', finalized_at: '2026-05-15T16:00:00',
+    guardian_message_corrected_at: '2026-05-15T17:30:00' },
+  { development_check_id: 2, child_id: 'C002', development_schedule_id: null, checked_on: '2026-05-10', status: '2', staff_id: 'S003', share_status: '2',
+    finalized_at: '2026-05-10T00:00:00' },
+  { development_check_id: 3, child_id: 'C004', development_schedule_id: null, checked_on: '2026-06-05', status: '2', staff_id: 'S004', share_status: '1',
+    finalized_at: '2026-06-05T00:00:00' },
 ];
 
 /**
@@ -596,7 +792,7 @@ export const operationLogs: OperationLog[] = [
   { operation_log_id: 1, account_id: 3, operated_at: '2026-09-01T16:40:00', function_type: '1', operation_type: '1', target_table: 't_diary', target_id: 1, target_child_id: 'C001', before_value: null, after_value: '下書き作成' },
   { operation_log_id: 2, account_id: 3, operated_at: '2026-09-01T13:20:30', function_type: '3', operation_type: '1', target_table: 't_nap_record', target_id: 1, target_child_id: 'C001', before_value: null, after_value: '体位=仰向け 呼吸=あり 顔色=通常 体温=36.6' },
   { operation_log_id: 3, account_id: 1, operated_at: '2026-08-31T09:10:00', function_type: '1', operation_type: '3', target_table: 't_diary', target_id: 3, target_child_id: 'C003', before_value: '申請中', after_value: '差し戻し' },
-  { operation_log_id: 4, account_id: 1, operated_at: '2026-08-29T18:05:00', function_type: '1', operation_type: '3', target_table: 't_diary', target_id: 4, target_child_id: 'C002', before_value: '申請中', after_value: '承認済み・保護者へ共有' },
+  { operation_log_id: 4, account_id: 1, operated_at: '2026-08-29T18:05:00', function_type: '1', operation_type: '3', target_table: 't_diary', target_id: 4, target_child_id: 'C002', before_value: '申請中', after_value: '承認済み' },
   { operation_log_id: 5, account_id: 3, operated_at: '2026-09-01T10:00:00', function_type: '5', operation_type: '1', target_table: 't_physical_record', target_id: 7, target_child_id: 'C001', before_value: null, after_value: '身長=78.5 体重=9.8' },
   { operation_log_id: 6, account_id: 1, operated_at: '2026-08-25T10:00:00', function_type: '7', operation_type: '1', target_table: 't_invitation_code', target_id: 1, target_child_id: 'C001', before_value: null, after_value: '招待コードを発行' },
   { operation_log_id: 7, account_id: 1, operated_at: '2026-08-20T10:00:00', function_type: '7', operation_type: '2', target_table: 'm_account', target_id: 8, target_child_id: null, before_value: '有効', after_value: '停止' },
@@ -653,6 +849,18 @@ export const settings: Setting[] = [
   setting('paging.nap_search_per_page', '50', '午睡記録検索の既定件数'),
   setting('paging.operation_log_per_page', '100', '操作ログの既定件数'),
   setting('paging.physical_history_count', '12', '過去測定値一覧の既定表示件数'),
+  // 連絡帳・通知・AI（基本設計書「設定マスタ」(5-9)、詳細設計書「デモデータ」(5-5)。server/seed.sql と同じ）
+  setting('contact.show_items', 'nap,meal,toilet,temperature,comment,photo,class', '保護者へ出すきょうのようすの項目'),
+  setting('contact.home_items', 'temperature,night_sleep,breakfast,mood,pickup,message', '「家庭から」の入力欄に出す項目'),
+  setting('contact.toilet_choices', 'おしっこ,うんち,おむつ交換,トイレでできた', '排せつの選択肢'),
+  setting('contact.mood_choices', 'ごきげん,ふつう,ごきげんななめ', '「家庭から」のきげんの選択肢'),
+  setting('push.quiet_hours', '21:00-07:00', '通知を送らない時間帯'),
+  setting('ai.enabled', '0', '文章の下書き（AI）を使うか'),
+  setting('ai.daily_limit', '300', 'AI の下書きの1日の上限回数'),
+  setting('scope.guardian_grace_days', '30', '保護者の猶予期間（日）'),
+  setting('nap.temperature_required', '入眠時', '午睡で体温を求める時点'),
+  setting('growth.share_physical', '1', '身体測定を成長の記録に出すか'),
+  setting('retention.contact_years', '5', '連絡帳の保持年数（要決定。決まるまでは記録の保持年数と同じ）'),
 ];
 
 /**
@@ -744,6 +952,13 @@ function shiftRows(rows: Record<string, unknown>[], days: number): void {
       developmentResults as unknown as Record<string, unknown>[],
       physicalRecords as unknown as Record<string, unknown>[],
       operationLogs as unknown as Record<string, unknown>[],
+      contactHomes as unknown as Record<string, unknown>[],
+      contactEvents as unknown as Record<string, unknown>[],
+      contactClasses as unknown as Record<string, unknown>[],
+      contactFacilities as unknown as Record<string, unknown>[],
+      contactReads as unknown as Record<string, unknown>[],
+      napSleeps as unknown as Record<string, unknown>[],
+      napExclusions as unknown as Record<string, unknown>[],
     ];
     for (const rows of recordSets) shiftRows(rows, offset);
 
@@ -765,6 +980,32 @@ function shiftRows(rows: Record<string, unknown>[], days: number): void {
      */
     for (const c of children) c.birth_date = shiftValue(c.birth_date, offset);
   }
+  trimFutureDemoContacts();
+}
+
+/**
+ * 今日のページで、起動した時刻より後の連絡帳の記録を入れない（詳細設計書「未来の出来事を入れない」(5-5)、決めたこと D-8）。
+ * 朝に起動すると、まだ起きていない給食やおひるねが保護者の画面に出るため。Go は server/db_contact.go の trimFutureDemoContacts。
+ * 既存の午睡の実施と5分ごとの確認にはかけない（今までどおり）
+ */
+function trimFutureDemoContacts(): void {
+  const day = today();
+  const at = now();
+  const future = (v: string | null) => v !== null && v.slice(0, 10) === day && v > at;
+  const drop = <T,>(rows: T[], when: (r: T) => boolean) => {
+    for (let i = rows.length - 1; i >= 0; i--) if (when(rows[i])) rows.splice(i, 1);
+  };
+  drop(contactEvents, (r) => r.contact_date === day && future(r.recorded_at));
+  drop(contactClasses, (r) => r.contact_date === day && future(r.recorded_at));
+  drop(contactFacilities, (r) => r.contact_date === day && future(r.recorded_at));
+  drop(contactHomes, (r) => r.contact_date === day && future(r.submitted_at));
+  for (const h of contactHomes) {
+    if (future(h.confirmed_at)) { h.confirmed_at = null; h.confirmed_staff_id = null; }
+    if (future(h.revised_at)) h.revised_at = null;
+  }
+  drop(napSleeps, (r) => future(r.slept_at));
+  for (const s of napSleeps) if (future(s.woke_at)) { s.woke_at = null; s.woke_staff_id = null; }
+  drop(napExclusions, (r) => future(r.created_at));
 }
 
 /* ============ 配布物（t_handout） ============

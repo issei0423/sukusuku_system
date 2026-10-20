@@ -89,14 +89,5 @@ func queryChildIDs(q dbtx, query string, args ...any) ([]string, error) {
 	return ids, rows.Err()
 }
 
-func ensureChildNickname(db *sql.DB) error {
-	var n int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('m_child') WHERE name = 'nickname'`).Scan(&n); err != nil {
-		return err
-	}
-	if n == 0 {
-		_, err := db.Exec(`ALTER TABLE m_child ADD COLUMN nickname TEXT NOT NULL DEFAULT ''`)
-		return err
-	}
-	return nil
-}
+// 呼び名（m_child.nickname）の列は、連絡帳の移し（db_contact.go の ensureContactSchema）が
+// 詳細設計書「変える表」(5-3) の定義（TEXT・空のまま）で足す。ここでは足さない（2つの移しで定義が食い違わないように）

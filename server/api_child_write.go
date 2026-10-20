@@ -274,7 +274,8 @@ func (a *app) childFieldsOf(childID string) []field {
 		temp                                      sql.NullFloat64
 		className                                 sql.NullString
 	)
-	a.db.QueryRow(`SELECT child_name, child_name_kana, nickname, birth_date, sex, normal_temperature, photo_consent_level
+	// 呼び名の列は NULL がある（空のまま足した列）。NULL のまま読むと Scan が失敗し、ほかの項目まで空になる
+	a.db.QueryRow(`SELECT child_name, child_name_kana, IFNULL(nickname, ''), birth_date, sex, normal_temperature, photo_consent_level
 		FROM m_child WHERE child_id = ?`, childID).Scan(&name, &kana, &nickname, &birth, &sex, &temp, &consent)
 	a.db.QueryRow(`SELECT c.class_name FROM t_class_child cc
 		JOIN m_class c ON c.class_id = cc.class_id AND c.fiscal_year = ?

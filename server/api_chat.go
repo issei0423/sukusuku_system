@@ -1120,6 +1120,8 @@ func (a *app) handleMisdeliveryRecords(w http.ResponseWriter, r *http.Request) {
 // 配布物の掲載の知らせ（source_type = 4）は対象にしない。配布物を取り下げると知らせも
 // 取り消されるが、それは人が打ったメッセージの誤送信ではなく、取り下げとして操作ログに残る
 // （基本設計書「誤送信への対応」(4-6)。GitHub Issue #98）。
+// 日誌・発達身体の共有の知らせ（source_type = 2・3）も対象にしない。日誌を園内の記録にしたときに、システムが
+// まとめて取り消したもので、人の誤送信ではない（詳細設計書「変える表」(5-3)。db_diary.go の ensureInternalDiary）。
 // 【仮置き】保護者が送ったメッセージも対象にしない。誤送信への対応は、園が他児の記録などを誤って
 // 別の保護者へ送ったときのもの（同 (4-6) の利用タイミング）であり、保護者の打ちまちがいの取消は当たらない。
 // 対象にすると、園長が何か記録するまで一覧に残り続ける（GitHub Issue #171。web/仮置き値.md）
@@ -1135,7 +1137,7 @@ func (a *app) handleRetractedWithoutRecord(w http.ResponseWriter, r *http.Reques
 		FROM t_chat_message m
 		LEFT JOIN m_chat_room r ON r.chat_room_id = m.chat_room_id
 		WHERE m.is_deleted = 1
-		  AND m.source_type <> '4'
+		  AND m.source_type NOT IN ('2','3','4')
 		  AND m.sender_account_id NOT IN (SELECT account_id FROM m_account WHERE role = '3')
 		  AND m.chat_message_id NOT IN (SELECT chat_message_id FROM t_misdelivery_record)
 		ORDER BY m.sent_at DESC, m.chat_message_id DESC`)

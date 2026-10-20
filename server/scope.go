@@ -14,12 +14,13 @@ import (
  * 画面側の出し分けは操作性のためであって、権限の担保ではない。担保はここで行う。
  */
 
-// Child は園児（m_child）
+// Child は園児（m_child）。
+// 呼び名（Nickname）は保護者の応答には含めない（インタフェース一覧「Child」）。保護者へ返す visibleChildren・
+// guardianContactChildren が forGuardian で空にし、omitempty で項目ごと落とす
 type Child struct {
 	ChildID           string   `json:"child_id"`
 	ChildName         string   `json:"child_name"`
 	ChildNameKana     string   `json:"child_name_kana"`
-	// 呼び名は職員にだけ返す（図/インタフェース一覧.md「Child」：保護者の応答には含めない）
 	Nickname          string   `json:"nickname,omitempty"`
 	BirthDate         string   `json:"birth_date"`
 	Sex               string   `json:"sex"`
@@ -31,7 +32,8 @@ type Child struct {
 	UpdatedAt         string   `json:"updated_at"`
 }
 
-const childColumns = `child_id, child_name, IFNULL(child_name_kana,''), nickname, birth_date, sex,
+// 呼び名の列は空のまま足す（詳細設計書「変える表」(5-3)）ため NULL がある。IFNULL で空の文字列にそろえて読む
+const childColumns = `child_id, child_name, IFNULL(child_name_kana,''), IFNULL(nickname,''), birth_date, sex,
 	normal_temperature, enrollment_status, photo_consent_level, is_deleted, created_at, updated_at`
 
 func scanChild(rows interface{ Scan(...any) error }) (Child, error) {
@@ -41,6 +43,13 @@ func scanChild(rows interface{ Scan(...any) error }) (Child, error) {
 		&temp, &c.EnrollmentStatus, &c.PhotoConsentLevel, &c.IsDeleted, &c.CreatedAt, &c.UpdatedAt)
 	c.NormalTemperature = nullFloat(temp)
 	return c, err
+}
+
+// forGuardian は、保護者へ返す園児の形にする。呼び名は保護者の応答に含めない（インタフェース一覧「Child」）。
+// モックは web/src/api/mock.ts の childForGuardian
+func (c Child) forGuardian() Child {
+	c.Nickname = ""
+	return c
 }
 
 // canSeeChild は職員・保護者がその園児を参照できるかを判定する。
@@ -107,11 +116,11 @@ func (a *app) visibleChildren(u *SessionUser) ([]Child, error) {
 	out := []Child{}
 	for rows.Next() {
 		c, err := scanChild(rows)
-		if u.Role == "3" {
-			c.Nickname = ""
-		}
 		if err != nil {
 			return nil, err
+		}
+		if u.isGuardian() {
+			c = c.forGuardian()
 		}
 		out = append(out, c)
 	}

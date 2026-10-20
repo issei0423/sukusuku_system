@@ -51,7 +51,7 @@ describe('自分が申請した日誌は承認できない（基本設計書「�
     }), '2');
     const before = db.chatMessages.length;
 
-    await expect(api.approveDiary(admin, 1, true)).rejects.toThrow('自分が申請した日誌は承認できません');
+    await expect(api.approveDiary(admin, 1)).rejects.toThrow('自分が申請した日誌は承認できません');
     expect(statusOf(1)).toBe('2');
     expect(db.chatMessages.length).toBe(before);
     expect((await api.getDiary(admin, 1)).applied_staff_id).toBe('S001');
@@ -63,7 +63,7 @@ describe('自分が申請した日誌は承認できない（基本設計書「�
       diary_id: 1, child_id: 'C001', body: '高梨が直した本文です。', lock_token: await lockOf(teacher, 1),
     }), '2');
     expect((await api.getDiary(admin, 1)).applied_staff_id).toBe('S003');
-    await expect(api.approveDiary(admin, 1, false)).resolves.toMatchObject({ status: '3' });
+    await expect(api.approveDiary(admin, 1)).resolves.toMatchObject({ status: '3' });
   });
 
   it('ほかの管理者が書き直して申請したものは、別の管理者が承認できる', async () => {
@@ -72,8 +72,8 @@ describe('自分が申請した日誌は承認できない（基本設計書「�
     await api.saveDiary(admin2, personal({
       diary_id: 7, body: '上園が書き直した本文です。', lock_token: await lockOf(admin2, 7),
     }), '2');
-    await expect(api.approveDiary(admin2, 7, false)).rejects.toThrow('自分が申請した日誌は承認できません');
-    await expect(api.approveDiary(admin, 7, false)).resolves.toMatchObject({ status: '3' });
+    await expect(api.approveDiary(admin2, 7)).rejects.toThrow('自分が申請した日誌は承認できません');
+    await expect(api.approveDiary(admin, 7)).resolves.toMatchObject({ status: '3' });
   });
 });
 
@@ -145,7 +145,7 @@ describe('差し戻す理由は承認されるまで残す（基本設計書「�
     await api.saveDiary(teacher, personal({
       diary_id: d.diary_id, body: '直しました', lock_token: await lockOf(teacher, d.diary_id),
     }), '2');
-    await api.approveDiary(admin, d.diary_id, false);
+    await api.approveDiary(admin, d.diary_id);
     expect((await api.getDiary(admin, d.diary_id)).returned_reason).toBeNull();
   });
 });
@@ -171,7 +171,7 @@ describe('ダッシュボードの「差し戻された日誌」と日誌一覧�
     db.diaries.unshift({
       diary_id: legacyId, record_type: '1', child_id: 'C004', class_id: null, diary_date: today(), body: 'クラスなしの記録',
       status: '4', created_staff_id: 'S003', approved_staff_id: 'S001', approved_at: null,
-      is_shared_to_guardian: false, shared_at: null, nap_abnormal_id: null, returned_reason: '直してください',
+      applied_staff_id: null, applied_at: null, nap_abnormal_id: null, returned_reason: '直してください',
       is_deleted: false, created_at: now(), updated_at: now(),
     });
 

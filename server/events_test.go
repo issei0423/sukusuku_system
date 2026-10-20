@@ -269,8 +269,14 @@ func TestEventsEndpointStream(t *testing.T) {
 		readUntil(t, body, `data: {"type":"chat","room_id":6}`)
 	})
 
-	t.Run("空の知らせ（コメント行）を一定の間隔で送る", func(t *testing.T) {
-		readUntil(t, body, ": ping")
+	// 心拍は名前付きの event: ping と、空の data: の行（詳細設計書「送る形」(6-3)）。
+	// data: の行が無い知らせはブラウザが画面へ渡さず、画面の45秒の見張りが働かない
+	t.Run("心拍（event: ping と空の data:）を一定の間隔で送る", func(t *testing.T) {
+		readUntil(t, body, "event: ping")
+		line, err := body.ReadString('\n')
+		if err != nil || line != "data:\n" {
+			t.Fatalf("ping の次の行 = %q (%v), want %q", line, err, "data:\n")
+		}
 	})
 
 	t.Run("ログアウトすると接続を閉じる", func(t *testing.T) {
@@ -419,21 +425,32 @@ func TestNotifyDiaryAudience(t *testing.T) {
 	}
 	diary := func(id int64) liveEvent { return liveEvent{Type: evDiary, DiaryID: id} }
 
-	// 日誌 7 は宮城 美咲（さくら組）の個人日誌（申請中）。承認と同時に保護者へ共有する
-	call(t, h, admin, "POST", "/api/diaries/7/approve", `{"share_to_guardian":true}`)
-	expect(t, "承認して保護者へ共有（野原 太郎の保護者には届かない）", clients, map[string][]liveEvent{
-		"管理者（承認する人）": {diary(7), chatEv(roomOtherPerson)},
-		"ほかの管理者":     {diary(7), chatEv(roomOtherPerson)},
-		"さくら組の担任":    {diary(7), chatEv(roomOtherPerson)},
-		"宮城 美咲の保護者":  {diary(7), chatEv(roomOtherPerson)},
-	})
+	sakuraStaff := who("管理者（承認する人）", "ほかの管理者", "さくら組の担任")
+
+	// 日誌 7 は宮城 美咲（さくら組）の個人日誌（申請中）。承認は園内の確認で、保護者へは何も届かない。
+	// 以前の版の共有の指定が送られても読まず、個人チャットへも流さない（詳細設計書「日誌」(4-13 (2))・「PR #196 からの変更」(6-1)）
+	rec := call(t, h, admin, "POST", "/api/diaries/7/approve", `{"share_to_guardian":true}`)
+	var approved Diary
+	decode(t, rec, &approved)
+	expect(t, "承認（日誌の知らせは職員だけ。宮城 美咲の保護者にも何も届かない）", clients, to(sakuraStaff, diary(7)))
+
+	call(t, h, admin, "POST", "/api/diaries/7/revoke-approval",
+		`{"reason":"確かめ直します","updated_at":"`+approved.UpdatedAt+`"}`)
+	expect(t, "承認の取り消し（職員だけ）", clients, to(sakuraStaff, diary(7)))
+
+	// 日誌 2 はさくら組のクラス日誌（高梨が申請中）。申請した本人が取り下げる
+	teacher := loginAs(a, accTeacher, "staff")
+	var applied Diary
+	decode(t, call(t, h, teacher, "GET", "/api/diaries/2", ""), &applied)
+	call(t, h, teacher, "POST", "/api/diaries/2/withdraw", `{"updated_at":"`+applied.UpdatedAt+`"}`)
+	expect(t, "申請の取り下げ（職員だけ）", clients, to(sakuraStaff, diary(2)))
 
 	// 日誌 6 はひまわり組のクラス日誌（申請中）
 	call(t, h, admin, "POST", "/api/diaries/6/return", `{"reason":"活動のねらいを具体的に書いてください。"}`)
 	expect(t, "差し戻し（クラス日誌は保護者に見えない）", clients,
 		to(who("管理者（承認する人）", "ほかの管理者", "ひまわり組の担任"), diary(6)))
 
-	rec := call(t, h, otherTeacher, "POST", "/api/diaries",
+	rec = call(t, h, otherTeacher, "POST", "/api/diaries",
 		`{"record_type":"2","class_id":2,"diary_date":"`+today()+`","body":"散歩に出かけた。","status":"1"}`)
 	var saved struct {
 		DiaryID int64 `json:"diary_id"`
@@ -494,20 +511,21 @@ func TestNotifyNapAudience(t *testing.T) {
 	sakuraClass := liveEvent{Type: evNap, ClassID: classSakura}
 
 	s := startOwnNap(t, h, teacher)
-	expect(t, "さくら組の開始（さくら組に子がいる保護者にも届く）", clients,
-		to(who("管理者", "さくら組の担任", "野原 太郎の保護者", "宮城 美咲の保護者"), sakuraClass))
+	// 午睡の知らせ（nap）は職員だけ。保護者へは「ねた・おきた」を contact で送る（詳細設計書「PR #196 からの変更」(6-1)）
+	expect(t, "さくら組の開始（保護者には届かない）", clients,
+		to(who("管理者", "さくら組の担任"), sakuraClass))
 
 	path := "/api/nap/session/" + itoa(s.NapSessionID)
 	call(t, h, teacher, "POST", path+"/records",
 		`{"child_id":"C001","body_position":"1","breathing":"1","complexion":"1"}`)
-	expect(t, "野原 太郎の記録（ほかの家庭には届かない）", clients,
-		to(who("管理者", "さくら組の担任", "野原 太郎の保護者"),
+	expect(t, "野原 太郎の5分ごとの確認（監査の層。保護者には届かない）", clients,
+		to(who("管理者", "さくら組の担任"),
 			liveEvent{Type: evNap, ClassID: classSakura, ChildID: childTaro}))
 
 	call(t, h, teacher, "POST", path+"/records",
 		`{"child_id":"C004","body_position":"1","breathing":"1","complexion":"1"}`)
-	expect(t, "宮城 美咲の記録", clients,
-		to(who("管理者", "さくら組の担任", "宮城 美咲の保護者"),
+	expect(t, "宮城 美咲の5分ごとの確認", clients,
+		to(who("管理者", "さくら組の担任"),
 			liveEvent{Type: evNap, ClassID: classSakura, ChildID: childMisaki}))
 
 	rec := call(t, h, teacher, "POST", path+"/abnormals",
@@ -529,8 +547,8 @@ func TestNotifyNapAudience(t *testing.T) {
 			liveEvent{Type: evDiary, DiaryID: incident.DiaryID}))
 
 	call(t, h, teacher, "POST", path+"/end", "")
-	expect(t, "さくら組の終了", clients,
-		to(who("管理者", "さくら組の担任", "野原 太郎の保護者", "宮城 美咲の保護者"), sakuraClass))
+	expect(t, "さくら組の終了（保護者には届かない）", clients,
+		to(who("管理者", "さくら組の担任"), sakuraClass))
 
 	call(t, h, otherTeacher, "POST", "/api/nap/session", `{"class_id":2}`)
 	expect(t, "ひまわり組の開始（さくら組の担任・保護者には届かない）", clients,
@@ -557,32 +575,49 @@ func TestNotifyGrowthAudience(t *testing.T) {
 		to(who("管理者", "ひまわり組の担任"), devHimawari))
 	call(t, h, otherTeacher, "POST", "/api/development/checks",
 		`{"child_id":"C013","results":[],"note":"","status":"2"}`)
-	expect(t, "発達チェックの確定（発達チェックは保護者に見えない）", clients,
+	expect(t, "発達チェックの確定（ひまわり組の子の家庭はつないでいない）", clients,
 		to(who("管理者", "ひまわり組の担任"), devHimawari))
+
+	// 確定は成長の記録に届くため、その家庭の保護者へも送る。下書きは職員だけ（詳細設計書「知らせ」(6-2)）
+	devTaro := liveEvent{Type: evDevelopment, ChildID: childTaro}
+	call(t, h, teacher, "POST", "/api/development/checks",
+		`{"child_id":"C001","checked_on":"`+daysFromToday(-1)+`","results":[],"note":"","status":"1"}`)
+	expect(t, "野原 太郎の発達チェックの下書き", clients, to(who("管理者", "さくら組の担任"), devTaro))
+	call(t, h, teacher, "POST", "/api/development/checks",
+		`{"child_id":"C001","checked_on":"`+daysFromToday(-1)+`","results":[],"note":"","status":"2"}`)
+	expect(t, "野原 太郎の発達チェックの確定（その家庭の保護者にも届く）", clients,
+		to(who("管理者", "さくら組の担任", "野原 太郎の保護者"), devTaro))
 
 	call(t, h, admin, "POST", "/api/development/schedules",
 		`{"child_id":"C001","scheduled_on":"`+daysFromToday(30)+`","manual":true}`)
 	expect(t, "次回の予定日", clients,
 		to(who("管理者", "さくら組の担任"), liveEvent{Type: evDevelopment, ChildID: childTaro}))
 
+	// 身体測定は、共有範囲で「共有する」（growth.share_physical = 1）なら、その家庭の保護者へも届く（詳細設計書 (4-12 (4))）
 	physTaro := liveEvent{Type: evPhysical, ChildID: childTaro}
 	call(t, h, teacher, "POST", "/api/physical/records",
 		`{"child_id":"C001","measured_on":"`+daysFromToday(-1)+`","height_cm":79.0,"weight_kg":10.0,"confirm_same_month":true}`)
-	expect(t, "身体測定の登録（共有していない測定値は保護者に見えない）", clients,
+	expect(t, "身体測定の登録（共有するので保護者にも届く）", clients,
+		to(who("管理者", "さくら組の担任", "野原 太郎の保護者"), physTaro))
+	a.db.Exec(`UPDATE m_setting SET setting_value = '0' WHERE setting_key = 'growth.share_physical'`)
+	call(t, h, teacher, "POST", "/api/physical/records",
+		`{"child_id":"C001","measured_on":"`+daysFromToday(-1)+`","height_cm":79.1,"weight_kg":10.0,"confirm_overwrite":true}`)
+	expect(t, "身体測定を共有しないときの上書き（保護者には届かない）", clients,
 		to(who("管理者", "さくら組の担任"), physTaro))
+	a.db.Exec(`UPDATE m_setting SET setting_value = '1' WHERE setting_key = 'growth.share_physical'`)
 
-	// 測定値 2 は野原 太郎の共有済み（連携済）の測定値
+	// 測定値 2 は野原 太郎の測定値
 	var measured string
 	if err := a.db.QueryRow(`SELECT measured_on FROM t_physical_record WHERE physical_record_id = 2`).Scan(&measured); err != nil {
 		t.Fatal(err)
 	}
 	call(t, h, teacher, "POST", "/api/physical/records",
 		`{"child_id":"C001","measured_on":"`+measured+`","height_cm":77.5,"weight_kg":9.6,"confirm_overwrite":true}`)
-	expect(t, "共有済みの測定値の上書き（その家庭の保護者にだけ届く）", clients,
+	expect(t, "測定値の上書き（その家庭の保護者にだけ届く）", clients,
 		to(who("管理者", "さくら組の担任", "野原 太郎の保護者"), physTaro))
 
 	call(t, h, admin, "DELETE", "/api/physical/records/1", "")
-	expect(t, "共有済みの測定値の削除", clients, to(who("管理者", "さくら組の担任", "野原 太郎の保護者"), physTaro))
+	expect(t, "測定値の削除", clients, to(who("管理者", "さくら組の担任", "野原 太郎の保護者"), physTaro))
 }
 
 // 停止したアカウント・手続きの途中のアカウントがつないだままでも、知らせは送らない（受け取り口が閉じるまでの間）
