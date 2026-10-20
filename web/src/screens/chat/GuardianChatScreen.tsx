@@ -414,7 +414,7 @@ export default function GuardianChatScreen() {
             <button className="btn-primary" onClick={send} disabled={!text.trim()}>送信</button>
           </div>
         ) : (
-          <div className="muted">こちらは園からのお知らせです。返信はできません。</div>
+          <div className="muted">{noPostNotice(current.room.room_type)}</div>
         )}
       </div>
 
@@ -429,6 +429,18 @@ export default function GuardianChatScreen() {
       )}
     </div>
   );
+}
+
+/*
+ * 投稿欄の代わりに出す、投稿できない旨（図/画面詳細図.md「チャット画面（保護者・スマートフォン）」(4-2) 項目15）。
+ * 設計が文言を決めているのは園からのお知らせ（園全体）だけ。クラスのチャンネルにも同じ文言を出していたため、
+ * 園からのお知らせと読み違える（GitHub Issue #178 の 5）。
+ * 【仮置き】クラスのチャンネルとそのほかの文言、連絡先の案内（web/仮置き値.md）
+ */
+function noPostNotice(type: string): string {
+  if (type === '1') return 'こちらは園からのお知らせです。返信はできません。';
+  if (type === '2') return 'こちらはクラスのお知らせです。返信はできません。ご連絡は「担任の先生とのやりとり」からお願いします。';
+  return 'このチャンネルには投稿できません。';
 }
 
 function labelFor(type: string, name: string): string {

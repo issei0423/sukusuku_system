@@ -113,6 +113,32 @@ function RequireStaff() {
   return <StaffLayout />;
 }
 
+/**
+ * 強制で通る経路（一時パスワードからの変更・規約への同意）は、その手続きが残っている利用者だけに通す
+ * （図/画面遷移図.md「共通・認証」(2)「強制で通る経路と、メニューから任意に開く経路の2つがある」。GitHub Issue #178 の 4）。
+ * - 未ログインで開いたら、白紙にせず保護者用トップへ送る。どちらの系統かは分からないため、
+ *   ほかの知らない経路と同じ入口にそろえる【仮置き】（web/仮置き値.md）
+ * - 手続きが残っていない利用者は、メニューから開く任意の画面（パスワードの変更・利用規約の参照）へ送る。
+ *   一時パスワードの案内は、一時パスワードでログインした直後だけに出す（図/画面詳細図.md「パスワード変更画面」(2-4) 項目1）
+ * - 一時パスワードの変更が先、規約への同意が後（RequireStaff / RequireGuardian と同じ順）
+ */
+function RequireProcedure({ step }: { step: 'password' | 'terms' }) {
+  const { user } = useSession();
+  /*
+   * この画面の「変更せずログアウトする」「同意せずログアウトする」で利用者が空になったときは、
+   * 押したボタンの側が、ログインしていた系統のトップへ送る（基本設計書「ログアウト」(4-3)）。
+   * ここでも入口へ送ると、利用者を空にした描画が場所の更新より先に走り、送り先が食い違う
+   */
+  const [openedWithUser] = useState(() => user !== null);
+  if (!user) return openedWithUser ? null : <Navigate to="/" replace />;
+  const home = user.role === '3' ? '/guardian' : '/staff';
+  if (step === 'password') {
+    return user.is_temp_password ? <PasswordChangeScreen forced /> : <Navigate to={`${home}/password`} replace />;
+  }
+  if (user.is_temp_password) return <Navigate to="/password-change" replace />;
+  return user.terms_agreed ? <Navigate to={`${home}/terms`} replace /> : <TermsAgreeScreen />;
+}
+
 /** 管理者だけを通す。権限の担保はサーバ側（api/client.ts）が行い、ここは操作性のための出し分け */
 function RequireAdmin() {
   const { user } = useSession();
@@ -194,8 +220,9 @@ export default function App() {
       <Route path="/" element={<TopScreen entrance="guardian" />} />
       <Route path="/staff-top" element={<TopScreen entrance="staff" />} />
       <Route path="/signup" element={<SignUpScreen />} />
-      <Route path="/password-change" element={<PasswordChangeScreen forced />} />
-      <Route path="/terms-agree" element={<TermsAgreeScreen />} />
+      {/* ---- 共通・認証（強制で通る経路。手続きが残っている利用者だけ） ---- */}
+      <Route path="/password-change" element={<RequireProcedure step="password" />} />
+      <Route path="/terms-agree" element={<RequireProcedure step="terms" />} />
 
       {/* ---- 職員 ---- */}
       <Route path="/staff" element={<RequireStaff />}>

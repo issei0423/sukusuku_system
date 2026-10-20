@@ -34,6 +34,11 @@ export default function StaffDashboard() {
     ? `${firstUnhandled.room_name}${data.unhandledChat > 1 ? ` ほか${data.unhandledChat - 1}件` : ''}`
     : undefined;
 
+  /*
+   * 件数が 0 の項目も行を残す。各項目は「ラベル＋ボタン／表示：件数」であり（画面詳細図「職員ダッシュボード」(2-6) 項目2〜4・9）、
+   * 0 件の行を消すと、0 件なのか、その項目を見られないのかが分からない（GitHub Issue #178 の 6）。
+   * 【仮置き】設計の表に無い「未対応の個人チャット」も、ほかの行にそろえて 0 件で出す（web/仮置き値.md）
+   */
   const rows: { label: string; note?: string; count: number; unit: string; to: string }[] = [
     // 数えるのは自分が書いて差し戻されたもの。開いた一覧も自分が書いたものに絞り、期間を問わない（GitHub Issue #174）
     { label: '差し戻された日誌', count: data.returned, unit: '件', to: '/staff/diary?status=4&mine=1' },
@@ -44,7 +49,7 @@ export default function StaffDashboard() {
     { label: `発達チェックの未実施（${user.role === '1' ? '全クラス' : '担当クラス'}）`,
       count: data.devOverdue, unit: '名', to: '/staff/growth' },
     { label: 'ヒヤリハット未起票の異常時の記録', count: data.abnormalWithoutDiary, unit: '件', to: '/staff/nap/abnormal' },
-  ].filter((r) => r.count > 0);
+  ];
 
   return (
     <div>
@@ -64,24 +69,20 @@ export default function StaffDashboard() {
         {/* 未対応 */}
         <section className="card col-7">
           <h2>未対応</h2>
-          {rows.length === 0
-            ? <div className="empty">未対応の項目はありません。</div>
-            : (
-              <table className="list">
-                <tbody>
-                  {rows.map((r) => (
-                    <tr key={r.label}>
-                      <td>
-                        {r.label}
-                        {r.note && <div className="muted">{r.note}</div>}
-                      </td>
-                      <td className="num nowrap">{r.count} {r.unit}</td>
-                      <td className="nowrap"><Link className="btn btn-sm" to={r.to}>開く</Link></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+          <table className="list">
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.label}>
+                  <td>
+                    {r.label}
+                    {r.note && <div className="muted">{r.note}</div>}
+                  </td>
+                  <td className="num nowrap">{r.count} {r.unit}</td>
+                  <td className="nowrap"><Link className="btn btn-sm" to={r.to}>開く</Link></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </section>
 
         {/* よく使う。実施中の午睡チェックがあれば先頭に出す（画面詳細図 2-4） */}
