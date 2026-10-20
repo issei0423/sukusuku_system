@@ -2057,6 +2057,8 @@ export const devApi = {
     // 下で記録を作ったあとに check を見ると、いつも「変更」になっていた（GitHub Issue #177 の 6。
     // サーバ側は server/api_dev_write.go の handleSaveDevelopmentCheck の isNew）
     const isNew = !check;
+    // 確定済みのひとことを変えたときの、直す前と直したあと（操作ログに残す）
+    let messageFix: [string | null, string | null] | null = null;
     // 確定した記録は、下書きに戻さない。確定のまま直すことはできる。下書きに戻すと、確定で作った次回の予定日だけが残り、
     // 一覧とダッシュボードの「未実施」が食い違うため（GitHub Issue #164）。【仮置き】確定を取り消す操作は設けない
     if (check && check.status === '2' && status === '1') {
@@ -2069,6 +2071,23 @@ export const devApi = {
       };
       db.developmentChecks.push(check);
     } else {
+      /*
+       * 確定済みの保護者へのひとことを変える（書き換え・空にする・書き足す）ときは、確定した日（finalized_at の日付）は
+       * その園児のクラスの担任（上の contactAccess の write）、翌日以降は管理者だけ。結果・所見だけを直すのは今のまま
+       * （要件定義書「保護者へ届けるときの関所」(4-1-6) の (2)、詳細設計書 (2-12 (2))・(4-12 (2))、決めたこと D-51。
+       * PR #216 で決まった設計）。サーバ側は server/api_dev_write.go の handleSaveDevelopmentCheck
+       */
+      const oldMessage = check.guardian_message?.trim() ?? '';
+      const newMessage = message ?? '';
+      if (check.status === '2' && oldMessage !== newMessage) {
+        const finalizedDay = check.finalized_at?.slice(0, 10) ?? check.checked_on;
+        if (user.role !== '1' && finalizedDay !== today()) return fail(MSG.guardianMessageFixForbidden);
+        // 「訂正しました（日付）」の印。空でないひとことを別の文に書き換えたときだけ今にする。空にしたら取り消しとして印も消し、
+        // 空から書き足したときは初めて届くため付けない（D-51）
+        if (!newMessage) check.guardian_message_corrected_at = null;
+        else if (oldMessage) check.guardian_message_corrected_at = now();
+        messageFix = [oldMessage || null, newMessage || null];
+      }
       check.status = status;
       check.staff_id = user.staff_id!;
     }
@@ -2101,6 +2120,11 @@ export const devApi = {
     });
     log(user.account_id, '4', isNew ? '1' : '2', 't_development_check', check.development_check_id, childId,
       null, status === '2' ? '確定' : '下書き保存');
+    // 確定済みのひとことを変えたときは、直す前と直したあとのひとことを操作ログに残す（詳細設計書 (3-7)、D-51。サーバと同じ形）
+    if (messageFix) {
+      const [b, af] = changedFields([['保護者へのひとこと', messageFix[0]]], [['保護者へのひとこと', messageFix[1]]]);
+      log(user.account_id, '4', '2', 't_development_check', check.development_check_id, childId, b, af);
+    }
 
     if (status === '2') advanceDevelopmentSchedule(user, check, childId, checkedOn);
     // 下書きでも、一覧の未入力の数が変わる。保護者へは確定したときだけ
@@ -4025,7 +4049,11 @@ const growthApi = {
       const message = c.guardian_message?.trim() ? c.guardian_message : null;
       const date = c.finalized_at.slice(0, 10);
       const entry: GrowthEntryRow = { id: c.development_check_id, kind: 'development', at: c.finalized_at, date, is_today: date === day, items };
-      if (message) entry.message = message;
+      if (message) {
+        entry.message = message;
+        // ひとことを書き換えた時刻（「訂正しました（日付）」。D-51）。ひとことが無いときは入れない
+        if (c.guardian_message_corrected_at) entry.message_corrected_at = c.guardian_message_corrected_at;
+      }
       development.push(entry);
     }
 

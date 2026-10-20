@@ -273,3 +273,63 @@ describe('発達チェックの保護者へのひとこと（詳細設計書 (4-
     }
   });
 });
+
+/*
+ * 確定した保護者へのひとことの訂正（要件定義書「保護者へ届けるときの関所」(4-1-6) の (2)、詳細設計書 (2-12 (2))・(4-12 (2))、
+ * 決めたこと D-51。PR #216 で決まった設計）。server/api_growth_test.go の TestDevelopmentGuardianMessageCorrection と同じ流れ
+ */
+describe('確定した保護者へのひとことの訂正（D-51）', () => {
+  it('確定した日は担任、翌日以降は管理者だけが変えられ、書き換えたときだけ「訂正しました」の印を付ける', async () => {
+    // 実施日は前の日。確定した日（今日）で担任が直せるかが決まり、実施日では決まらないことも見る
+    const checkedOn = day(-2);
+    const save = (who: SessionUser, message: string | null, note = '') =>
+      api.saveCheck(who, 'C001', checkedOn, [], note, '2', message);
+    const find = () => db.developmentChecks.find((c) => c.child_id === 'C001' && c.checked_on === checkedOn)!;
+    const entry = async () => (await api.growthRecord(taroGuardian, 'C001')).achievements
+      .find((e) => e.kind === 'development' && e.message?.startsWith('ひとこと'));
+    try {
+      // 確定した日：担任が書き換えると印が付き、成長の記録に「訂正しました」の時刻が出る
+      await save(teacher, 'ひとこと1');
+      expect(find().guardian_message_corrected_at ?? null).toBeNull();
+      expect((await entry())?.message_corrected_at ?? null).toBeNull();
+      await save(teacher, 'ひとこと2');
+      expect(find().guardian_message).toBe('ひとこと2');
+      const corrected = find().guardian_message_corrected_at;
+      expect(corrected).toBeTruthy();
+      expect(await entry()).toMatchObject({ message: 'ひとこと2', message_corrected_at: corrected });
+      // 操作ログは新しい順に並ぶ（mock.ts の log は先頭に足す）
+      const fix = db.operationLogs.find((l) => l.target_table === 't_development_check' && l.before_value);
+      expect([fix?.before_value, fix?.after_value]).toEqual(['{"保護者へのひとこと":"ひとこと1"}', '{"保護者へのひとこと":"ひとこと2"}']);
+      // 所見だけを直しても印は動かない
+      find().guardian_message_corrected_at = '2026-01-01T00:00:00';
+      await save(teacher, 'ひとこと2', '所見だけ');
+      expect(find().guardian_message_corrected_at).toBe('2026-01-01T00:00:00');
+
+      // 翌日以降：担任はひとことを変えられない（書き換え・空にする）。結果・所見だけなら直せる
+      find().finalized_at = `${checkedOn}T16:00:00`;
+      await expect(save(teacher, 'ひとこと3')).rejects.toThrow(MSG.guardianMessageFixForbidden);
+      await expect(save(teacher, null)).rejects.toThrow(MSG.guardianMessageFixForbidden);
+      await save(teacher, 'ひとこと2', '翌日に所見を直す');
+      expect(find().guardian_message).toBe('ひとこと2');
+      // 管理者は翌日以降も書き換えられ、印が付く
+      await save(admin, 'ひとこと4');
+      expect(find().guardian_message).toBe('ひとこと4');
+      expect(find().guardian_message_corrected_at).not.toBe('2026-01-01T00:00:00');
+      expect(find().guardian_message_corrected_at).toBeTruthy();
+      // 空にすると取り消し：ひとことは成長の記録から消え、印も消す
+      await save(admin, null);
+      expect(find().guardian_message ?? null).toBeNull();
+      expect(find().guardian_message_corrected_at ?? null).toBeNull();
+      expect(await entry()).toBeUndefined();
+      // 空から書き足すのも翌日以降は管理者だけ。書き足しは初めて届くため印を付けない
+      await expect(save(teacher, 'ひとこと5')).rejects.toThrow(MSG.guardianMessageFixForbidden);
+      await save(admin, 'ひとこと5');
+      expect(find().guardian_message_corrected_at ?? null).toBeNull();
+      expect((await entry())?.message_corrected_at ?? null).toBeNull();
+    } finally {
+      // 同じファイルのほかのテストのために、足した記録を消す
+      const i = db.developmentChecks.findIndex((c) => c.child_id === 'C001' && c.checked_on === checkedOn);
+      if (i >= 0) db.developmentChecks.splice(i, 1);
+    }
+  });
+});

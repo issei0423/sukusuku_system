@@ -718,6 +718,8 @@ export interface GrowthEntry {
   items?: string[];
   /** development：保護者へのひとこと */
   message?: string | null;
+  /** development：ひとことを書き換えた時刻。「訂正しました（日付）」を出す（詳細設計書「成長の記録」(4-12)、決めたこと D-51） */
+  message_corrected_at?: string | null;
   /** contact：ひとこと・写真に添えた文 */
   body?: string | null;
   /** contact：写真 */

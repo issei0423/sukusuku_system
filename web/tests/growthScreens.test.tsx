@@ -19,6 +19,7 @@ import { useSession } from '../src/session';
 import { useAsync } from '../src/hooks';
 import { ToastHost } from '../src/components/feedback';
 import TodayTimeline from '../src/screens/contact/TodayTimeline';
+import { MSG, TEXT } from '../src/messages';
 
 const guardian: SessionUser = {
   account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
@@ -200,5 +201,48 @@ describe('発達チェック入力画面の保護者へのひとこと（詳細�
     await screen.findByText('確定しました。保護者が見られる状態です。', undefined, { timeout: 3000 });
     const uezono: SessionUser = { ...guardian, account_id: 7, guardian_id: 'G002', email: 'uezono.k@example.jp' };
     expect(JSON.stringify(await api.growthRecord(uezono, 'C002'))).toContain('お友だちに手を振っていました');
+  });
+});
+
+/*
+ * 確定した保護者へのひとことの訂正（詳細設計書 (2-12 (2))、決めたこと D-51。PR #216 で決まった設計）。
+ * 規則（誰がいつ直せるか・印の付け方）は tests/growth.test.ts と server/api_growth_test.go が見る。ここは画面の出し方だけ
+ */
+describe('確定した保護者へのひとことの訂正（D-51）', () => {
+  it('保護者の成長の記録で、書き換えたひとことに「訂正しました（日付）」を出す', async () => {
+    // デモデータ：野原 太郎のひとことは確定した日のうちに書き換えてある（mockDb.ts・seed.sql）
+    const corrected = db.developmentChecks.find((c) => c.development_check_id === 1)!.guardian_message_corrected_at!;
+    open('/guardian/growth/C001', guardian);
+    await screen.findByRole('heading', { name: '野原 太郎の成長の記録' }, { timeout: 3000 });
+    const done = screen.getByRole('region', { name: 'できたこと' });
+    const label = `訂正しました（${Number(corrected.slice(5, 7))}月${Number(corrected.slice(8, 10))}日）`;
+    expect(within(done).getByText(label)).toBeTruthy();
+    // 書き換えていないひとことには出さない（「訂正しました」はこの1件だけ）
+    expect(within(done).getAllByText(/^訂正しました/)).toHaveLength(1);
+  });
+
+  it('確定した日を過ぎたひとことは、担任には読むだけにして断る文言を添え、管理者には訂正の案内を出す', async () => {
+    // デモデータ：上園 花子の確定（確定した日は実施日の 00:00。今日より前）
+    const past = db.developmentChecks.find((c) => c.development_check_id === 2)!;
+    const box = async () => {
+      fireEvent.change(await screen.findByLabelText('実施日', undefined, { timeout: 3000 }), { target: { value: past.checked_on } });
+      await screen.findByText(/この日の記録は確定しています/, undefined, { timeout: 3000 });
+      return screen.getByRole('textbox', { name: '保護者へのひとこと（成長の記録に届きます）' }) as HTMLTextAreaElement;
+    };
+    // 前のテストが今日の記録を確定していることがあるため、今日の記録をいったん外す（開いた直後の今日の記録と取り違えない）
+    const i = db.developmentChecks.findIndex((c) => c.child_id === 'C002' && c.checked_on === today());
+    const todays = i >= 0 ? db.developmentChecks.splice(i, 1) : [];
+    try {
+      open('/staff/growth/dev/C002', teacher);
+      expect((await box()).readOnly).toBe(true);
+      expect(screen.getByText(MSG.guardianMessageFixForbidden)).toBeTruthy();
+      cleanup();
+      const admin: SessionUser = { ...teacher, account_id: 1, role: '1', staff_id: 'S001', display_name: '管理者', class_id: null, class_name: null };
+      open('/staff/growth/dev/C002', admin);
+      expect((await box()).readOnly).toBe(false);
+      expect(screen.getByText(TEXT.guardianMessageCorrectionNote)).toBeTruthy();
+    } finally {
+      db.developmentChecks.push(...todays);
+    }
   });
 });
