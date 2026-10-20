@@ -16,8 +16,38 @@ func (a *app) routes(mux *http.ServeMux) {
 	a.routeDiary(mux)
 	a.routeChat(mux)
 	a.routeNap(mux)
+	a.routeContact(mux)
 	a.routeGrowth(mux)
 	a.routeAdmin(mux)
+}
+
+// 連絡帳の読み書きと、ねた・おきた（詳細設計書「経路の一覧」(4-2)）
+func (a *app) routeContact(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/contact/children/{childID}", a.handleContactPage)
+	mux.HandleFunc("POST /api/contact/children/{childID}/read", a.handleContactRead)
+	mux.HandleFunc("PUT /api/contact/children/{childID}/home", a.handleSaveHome)
+	mux.HandleFunc("GET /api/contact/classes", a.handleContactClasses)
+	mux.HandleFunc("GET /api/contact/classes/{classID}", a.handleContactClass)
+	mux.HandleFunc("POST /api/contact/home/{id}/confirm", a.handleConfirmHome)
+	mux.HandleFunc("POST /api/nap/session/{id}/sleeps", a.handleSleep)
+	mux.HandleFunc("POST /api/nap/sleeps/{id}/wake", a.handleWake)
+	mux.HandleFunc("POST /api/nap/session/{id}/exclusions", a.handleExclude)
+	mux.HandleFunc("POST /api/nap/exclusions/{id}/cancel", a.handleCancelExclusion)
+	// きょうのようすの記録と、訂正・取り消し（詳細設計書「きょうのようす」(4-4)・「訂正・取り消し」(4-7)・(4-6 (4))）
+	mux.HandleFunc("POST /api/contact/events", a.handleRecordEvents)
+	mux.HandleFunc("POST /api/contact/events/{id}/correct", a.handleCorrectEvent)
+	mux.HandleFunc("POST /api/contact/events/{id}/cancel", a.handleCancelEvent)
+	mux.HandleFunc("GET /api/contact/events/{id}/readers", a.handleEventReaders)
+	mux.HandleFunc("POST /api/nap/sleeps/{id}/correct", a.handleCorrectSleep)
+	mux.HandleFunc("POST /api/nap/sleeps/{id}/cancel", a.handleCancelSleep)
+	mux.HandleFunc("GET /api/nap/sleeps/{id}/readers", a.handleSleepReaders)
+	// 園からのひとこと・他児の名前の照合・定型文（詳細設計書「園からのひとことと他児の名前」(4-5)）
+	mux.HandleFunc("PUT /api/contact/children/{childID}/facility", a.handleSendFacility)
+	mux.HandleFunc("POST /api/contact/facility/{id}/correct", a.handleCorrectFacility)
+	mux.HandleFunc("POST /api/contact/facility/{id}/cancel", a.handleCancelFacility)
+	mux.HandleFunc("GET /api/contact/facility/{id}/readers", a.handleFacilityReaders)
+	mux.HandleFunc("POST /api/contact/name-check", a.handleNameCheck)
+	mux.HandleFunc("GET /api/phrases", a.handlePhrases)
 }
 
 // 共通基盤：ログインとアカウント（基本設計書 4-3）

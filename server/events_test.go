@@ -269,8 +269,14 @@ func TestEventsEndpointStream(t *testing.T) {
 		readUntil(t, body, `data: {"type":"chat","room_id":6}`)
 	})
 
-	t.Run("空の知らせ（コメント行）を一定の間隔で送る", func(t *testing.T) {
-		readUntil(t, body, ": ping")
+	// 心拍は名前付きの event: ping と、空の data: の行（詳細設計書「送る形」(6-3)）。
+	// data: の行が無い知らせはブラウザが画面へ渡さず、画面の45秒の見張りが働かない
+	t.Run("心拍（event: ping と空の data:）を一定の間隔で送る", func(t *testing.T) {
+		readUntil(t, body, "event: ping")
+		line, err := body.ReadString('\n')
+		if err != nil || line != "data:\n" {
+			t.Fatalf("ping の次の行 = %q (%v), want %q", line, err, "data:\n")
+		}
 	})
 
 	t.Run("ログアウトすると接続を閉じる", func(t *testing.T) {
@@ -411,13 +417,14 @@ func TestNotifyDiaryAudience(t *testing.T) {
 	}
 	diary := func(id int64) liveEvent { return liveEvent{Type: evDiary, DiaryID: id} }
 
-	// 日誌 7 は宮城 美咲（さくら組）の個人日誌（申請中）。承認と同時に保護者へ共有する
+	// 日誌 7 は宮城 美咲（さくら組）の個人日誌（申請中）。承認と同時に保護者へ共有する。
+	// 日誌の知らせは保護者へ送らない（詳細設計書「PR #196 からの変更」(6-1)）。共有のメッセージ（チャット）は今までどおり届く
 	call(t, h, admin, "POST", "/api/diaries/7/approve", `{"share_to_guardian":true}`)
-	expect(t, "承認して保護者へ共有（野原 太郎の保護者には届かない）", clients, map[string][]liveEvent{
+	expect(t, "承認して保護者へ共有（日誌の知らせは職員だけ。野原 太郎の保護者には何も届かない）", clients, map[string][]liveEvent{
 		"管理者（承認する人）": {diary(7), chatEv(roomOtherPerson)},
 		"ほかの管理者":     {diary(7), chatEv(roomOtherPerson)},
 		"さくら組の担任":    {diary(7), chatEv(roomOtherPerson)},
-		"宮城 美咲の保護者":  {diary(7), chatEv(roomOtherPerson)},
+		"宮城 美咲の保護者":  {chatEv(roomOtherPerson)},
 	})
 
 	// 日誌 6 はひまわり組のクラス日誌（申請中）
@@ -486,20 +493,21 @@ func TestNotifyNapAudience(t *testing.T) {
 	sakuraClass := liveEvent{Type: evNap, ClassID: classSakura}
 
 	s := startOwnNap(t, h, teacher)
-	expect(t, "さくら組の開始（さくら組に子がいる保護者にも届く）", clients,
-		to(who("管理者", "さくら組の担任", "野原 太郎の保護者", "宮城 美咲の保護者"), sakuraClass))
+	// 午睡の知らせ（nap）は職員だけ。保護者へは「ねた・おきた」を contact で送る（詳細設計書「PR #196 からの変更」(6-1)）
+	expect(t, "さくら組の開始（保護者には届かない）", clients,
+		to(who("管理者", "さくら組の担任"), sakuraClass))
 
 	path := "/api/nap/session/" + itoa(s.NapSessionID)
 	call(t, h, teacher, "POST", path+"/records",
 		`{"child_id":"C001","body_position":"1","breathing":"1","complexion":"1"}`)
-	expect(t, "野原 太郎の記録（ほかの家庭には届かない）", clients,
-		to(who("管理者", "さくら組の担任", "野原 太郎の保護者"),
+	expect(t, "野原 太郎の5分ごとの確認（監査の層。保護者には届かない）", clients,
+		to(who("管理者", "さくら組の担任"),
 			liveEvent{Type: evNap, ClassID: classSakura, ChildID: childTaro}))
 
 	call(t, h, teacher, "POST", path+"/records",
 		`{"child_id":"C004","body_position":"1","breathing":"1","complexion":"1"}`)
-	expect(t, "宮城 美咲の記録", clients,
-		to(who("管理者", "さくら組の担任", "宮城 美咲の保護者"),
+	expect(t, "宮城 美咲の5分ごとの確認", clients,
+		to(who("管理者", "さくら組の担任"),
 			liveEvent{Type: evNap, ClassID: classSakura, ChildID: childMisaki}))
 
 	rec := call(t, h, teacher, "POST", path+"/abnormals",
@@ -521,8 +529,8 @@ func TestNotifyNapAudience(t *testing.T) {
 			liveEvent{Type: evDiary, DiaryID: incident.DiaryID}))
 
 	call(t, h, teacher, "POST", path+"/end", "")
-	expect(t, "さくら組の終了", clients,
-		to(who("管理者", "さくら組の担任", "野原 太郎の保護者", "宮城 美咲の保護者"), sakuraClass))
+	expect(t, "さくら組の終了（保護者には届かない）", clients,
+		to(who("管理者", "さくら組の担任"), sakuraClass))
 
 	call(t, h, otherTeacher, "POST", "/api/nap/session", `{"class_id":2}`)
 	expect(t, "ひまわり組の開始（さくら組の担任・保護者には届かない）", clients,

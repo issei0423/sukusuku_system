@@ -19,11 +19,18 @@ import type {
   DevListRow, DevScheduleRow, CsvRow, FiscalClassRow, StaffAccountRow,
   GuardianAccountRow, InvitationCodeRow, OperationLogRow, StaffSummary, GuardianHomeRow,
   DevDraftView,
+  ContactPage, ContactClassView, ContactHome, ContactHomeInput, NapSleep, NapExclusion,
+} from './shapes';
+import type {
+  ContactEvent, ContactEventInput, RecordEventsResult, ContactEventCorrection, NapSleepCorrection, CancelResult, Readers,
+  ContactFacility, FacilityCorrection, Phrase, NameMatch,
 } from './shapes';
 import {
   ProcedureRequiredError, isProcedureKind, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
 } from './procedure';
 import { startLive } from '../live';
+import { setReachable } from './reachability';
+import { TEXT } from '../messages';
 
 // 画面はこれまでどおり client 経由で型を参照する。定義の実体は shapes.ts が持つ
 export type {
@@ -46,24 +53,55 @@ class ApiError extends Error {
   kind?: string;
   remaining?: number;
   correct?: string;
-  constructor(body: { message: string; kind?: string; remaining?: number; correct?: string }) {
+  /** 他児の名前の注意（409 other_child_names）の、当たった園児の氏名と本文の中の位置（詳細設計書「誤りの応答」(4-1 (3))） */
+  names?: string[];
+  matches?: NameMatch[];
+  constructor(body: { message: string; kind?: string; remaining?: number; correct?: string; names?: string[]; matches?: NameMatch[] }) {
     super(body.message);
     this.kind = body.kind;
     this.remaining = body.remaining;
     this.correct = body.correct;
+    this.names = body.names;
+    this.matches = body.matches;
   }
 }
 
+/** 画面からサーバへの要求の上限（詳細設計書「押したときの処理の型」(2-0 (2))、決めたこと D-19） */
+const REQUEST_TIMEOUT_MS = 15_000;
+/** 画面に出す文（サーバに届かないとき。詳細設計書「つながっているかの表示」(2-8)） */
+const UNREACHABLE_MESSAGE = `${TEXT.unreachableBanner}。つながったら、もう一度送ってください。`;
+
+/** ログインの失敗理由（LoginError）。画面（TopScreen）が JSON にして分岐に使う */
+const LOGIN_KINDS = new Set(['credential', 'locked', 'suspended', 'wrong_entrance', 'temp_expired', 'already_logged_in']);
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(path, {
-    method,
-    // セッションの Cookie を送る。認証情報の保持方式は未確定（要決定事項.md 優先度A）
-    credentials: 'same-origin',
-    // 編集ロックの解除は、タブを閉じる・読み込み直す途中にも送る。途中で打ち切られないようにする
-    keepalive: method === 'DELETE',
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      method,
+      // セッションの Cookie を送る。認証情報の保持方式は未確定（要決定事項.md 優先度A）
+      credentials: 'same-origin',
+      // 編集ロックの解除は、タブを閉じる・読み込み直す途中にも送る。途中で打ち切られないようにする
+      keepalive: method === 'DELETE',
+      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch {
+    // 通信の失敗・時間切れは「サーバに届かない」（詳細設計書「画面の受け取り」(6-4)）。貯めて後から送ることはしない
+    setReachable(false);
+    throw new ApiError({ message: UNREACHABLE_MESSAGE, kind: 'unreachable' });
+  }
+  // 502・503（AI が下書きを返さなかったものを除く）・504 も「サーバに届かない」。ほかの応答はサーバに届いている
+  if (res.status === 502 || res.status === 504 || res.status === 503) {
+    const retryBody = await res.clone().json().catch(() => null);
+    if (res.status !== 503 || retryBody?.kind !== 'ai_unavailable') {
+      setReachable(false);
+      throw new ApiError({ message: UNREACHABLE_MESSAGE, kind: 'unreachable' });
+    }
+  } else {
+    setReachable(true);
+  }
 
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
@@ -87,8 +125,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       clearReference();
       notifySessionEnded();
     }
-    // ログインの失敗理由は画面が分岐に使う。mock 実装と同じ形（JSON 文字列）で投げる
-    if (err.kind) {
+    // ログインの失敗理由は画面が分岐に使う。mock 実装と同じ形（JSON 文字列）で投げる。
+    // ほかの kind（version_conflict など）は文言をそのまま見せる
+    if (err.kind && LOGIN_KINDS.has(err.kind)) {
       throw new Error(JSON.stringify({ kind: err.kind, remaining: err.remaining, correct: err.correct }));
     }
     throw err;
@@ -625,4 +664,46 @@ const apiHandout = {
 };
 
 /* ============ 画面が使う入口 ============ */
-export const api = { ...apiAuth, ...apiChatNap, ...apiGrowth, ...apiAdmin, ...apiHandout };
+/* 連絡帳と、ねた・おきた（詳細設計書「経路の一覧」(4-2)。名前はモック（api/mock.ts の contactApi）と同じ） */
+const contactApi = {
+  contactPage: (_u: SessionUser, childId: string, date?: string) =>
+    get<ContactPage>(`/api/contact/children/${encodeURIComponent(childId)}${date ? qs({ date }) : ''}`),
+  markContactRead: (_u: SessionUser, childId: string, date: string) =>
+    post<{ ok: true }>(`/api/contact/children/${encodeURIComponent(childId)}/read`, { date }),
+  contactClasses: (_u: SessionUser) => get<{ class_id: number; class_name: string }[]>('/api/contact/classes'),
+  contactClass: (_u: SessionUser, classId: number, date?: string) =>
+    get<ContactClassView>(`/api/contact/classes/${classId}${date ? qs({ date }) : ''}`),
+  saveHome: (_u: SessionUser, childId: string, input: ContactHomeInput) =>
+    put<ContactHome>(`/api/contact/children/${encodeURIComponent(childId)}/home`, input),
+  confirmHome: (_u: SessionUser, homeId: number, updatedAt: string) =>
+    post<ContactHome>(`/api/contact/home/${homeId}/confirm`, { updated_at: updatedAt }),
+  sleep: (_u: SessionUser, sessionId: number, childId: string) =>
+    post<NapSleep>(`/api/nap/session/${sessionId}/sleeps`, { child_id: childId }),
+  wake: (_u: SessionUser, sleepId: number) => post<NapSleep>(`/api/nap/sleeps/${sleepId}/wake`),
+  exclude: (_u: SessionUser, sessionId: number, childId: string, reason: '1' | '2') =>
+    post<NapExclusion>(`/api/nap/session/${sessionId}/exclusions`, { child_id: childId, reason }),
+  cancelExclusion: (_u: SessionUser, exclusionId: number) => post<{ ok: true }>(`/api/nap/exclusions/${exclusionId}/cancel`),
+  /* きょうのようすの記録と、訂正・取り消し（詳細設計書「経路の一覧」(4-2)） */
+  recordEvents: (_u: SessionUser, items: ContactEventInput[], acknowledgedNames?: string[]) =>
+    post<RecordEventsResult>('/api/contact/events', { items, acknowledged_names: acknowledgedNames ?? [] }),
+  correctEvent: (_u: SessionUser, eventId: number, input: ContactEventCorrection) =>
+    post<ContactEvent>(`/api/contact/events/${eventId}/correct`, input),
+  cancelEvent: (_u: SessionUser, eventId: number) => post<CancelResult>(`/api/contact/events/${eventId}/cancel`),
+  eventReaders: (_u: SessionUser, eventId: number) => get<Readers>(`/api/contact/events/${eventId}/readers`),
+  correctSleep: (_u: SessionUser, sleepId: number, input: NapSleepCorrection) =>
+    post<NapSleep>(`/api/nap/sleeps/${sleepId}/correct`, input),
+  cancelSleep: (_u: SessionUser, sleepId: number) => post<CancelResult>(`/api/nap/sleeps/${sleepId}/cancel`),
+  sleepReaders: (_u: SessionUser, sleepId: number) => get<Readers>(`/api/nap/sleeps/${sleepId}/readers`),
+  /* 園からのひとこと・他児の名前の照合・定型文（詳細設計書「園からのひとことと他児の名前」(4-5)） */
+  sendFacility: (_u: SessionUser, childId: string, body: string, acknowledgedNames?: string[]) =>
+    put<ContactFacility>(`/api/contact/children/${encodeURIComponent(childId)}/facility`, { body, acknowledged_names: acknowledgedNames ?? [] }),
+  correctFacility: (_u: SessionUser, facilityId: number, input: FacilityCorrection) =>
+    post<ContactFacility>(`/api/contact/facility/${facilityId}/correct`, input),
+  cancelFacility: (_u: SessionUser, facilityId: number) => post<CancelResult>(`/api/contact/facility/${facilityId}/cancel`),
+  facilityReaders: (_u: SessionUser, facilityId: number) => get<Readers>(`/api/contact/facility/${facilityId}/readers`),
+  nameCheck: (_u: SessionUser, input: { child_ids?: string[]; class_id?: number; text: string }) =>
+    post<{ names: string[] }>('/api/contact/name-check', input),
+  contactPhrases: (_u: SessionUser, scope: Phrase['phrase_scope']) => get<Phrase[]>(`/api/phrases${qs({ scope })}`),
+};
+
+export const api = { ...apiAuth, ...apiChatNap, ...apiGrowth, ...apiAdmin, ...apiHandout, ...contactApi };

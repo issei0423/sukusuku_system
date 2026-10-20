@@ -20,6 +20,9 @@ import PasswordChangeScreen from './screens/auth/PasswordChangeScreen';
 import TermsAgreeScreen from './screens/auth/TermsAgreeScreen';
 import StaffDashboard from './screens/auth/StaffDashboard';
 import GuardianHome from './screens/auth/GuardianHome';
+import GuardianContactScreen from './screens/contact/GuardianContactScreen';
+import ContactClassScreen from './screens/contact/ContactClassScreen';
+import ContactChildScreen from './screens/contact/ContactChildScreen';
 
 // 日誌システム
 import DiaryListScreen from './screens/diary/DiaryListScreen';
@@ -253,6 +256,8 @@ export default function App() {
         <Route path="handouts" element={<StaffHandoutsScreen />} />
 
         <Route path="nap" element={<NapCheckScreen />} />
+        <Route path="contact" element={<ContactClassScreen />} />
+        <Route path="contact/:childId" element={<ContactChildScreen />} />
         <Route path="nap/abnormal" element={<NapAbnormalScreen />} />
         <Route path="nap/search" element={<NapSearchScreen />} />
 
@@ -285,6 +290,7 @@ export default function App() {
       {/* ---- 保護者 ---- */}
       <Route path="/guardian" element={<RequireGuardian />}>
         <Route index element={<GuardianHome />} />
+        <Route path="contact/:childId" element={<GuardianContactScreen />} />
         <Route path="chat" element={<GuardianChatScreen />} />
         <Route path="handouts" element={<GuardianHandoutsScreen />} />
         <Route path="diary/:id" element={<GuardianDiaryScreen />} />

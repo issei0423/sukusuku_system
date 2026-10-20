@@ -412,9 +412,11 @@ describe('午睡チェック（3画面）', () => {
     const timerLabel = screen.queryByText('次のチェックまで') ?? screen.queryByText(/チェックの時刻を過ぎています/);
     expect(timerLabel).toBeTruthy();
     expect(screen.getByText('午睡チェックを終了')).toBeTruthy();
-    // 記録済み 8 / 12 名（デモデータ）。園児の状態はセッション取得後に読み直すため待つ
+    // 記録済み 8 / 11 名（デモデータ）。園児の状態はセッション取得後に読み直すため待つ。
+    // 高梨 健（C003）は今日の実施で「対象外（欠席）」のため、数から外す（詳細設計書「タイマー」(2-4 (3))、「デモデータ」(5-5)）。
+    // 対象外の記録（13:01）は、デモデータを読み込んだ時刻より後なら入らない（未来の出来事を入れない）。そのときは 12 名
     await waitFor(() => {
-      expect(document.body.textContent).toContain('記録済み 8 / 12 名');
+      expect(document.body.textContent).toMatch(/記録済み 8 \/ (11|12) 名/);
     }, { timeout: 3000 });
   });
 
@@ -577,6 +579,8 @@ describe('園児マスター・アカウント管理（10画面）', () => {
     expect(screen.getByText('アレルギー一覧（全園児）')).toBeTruthy();
     // 一般（さくら組担任）にも、ひまわり組の園児が出る
     expect(document.body.textContent).toContain('井上 空');
+    // 一般も印刷できる（画面詳細図「アレルギー一覧画面」(7-4) の項目2。PR #216 の直-16・直-24）
+    expect(screen.getByRole('button', { name: '印刷する' }).hasAttribute('disabled')).toBe(false);
   });
 
   it('年度更新画面：未確定事項があるため実行できない', async () => {
