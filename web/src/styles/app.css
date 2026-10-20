@@ -378,6 +378,11 @@ table.list tbody tr:focus-within td { background: var(--c-primary-faint); }
 table.list tr > :first-child { padding-left: var(--sp-3); }
 table.list tbody tr:last-child td { border-bottom: 0; }
 table.list td.num { text-align: right; font-variant-numeric: tabular-nums; }
+/*
+ * 行の中に並べたボタン（園児一覧の「記録」「編集」、職員アカウントの「変更」「一時パスワード再発行」「停止」など）の間を 8px 空ける。
+ * 詳細設計書「全画面に共通する部品と決まり」(2-0) の「タッチの条件」(4)：隣り合うボタンの間は 8px 以上（GitHub Issue #215）
+ */
+table.list td > :is(button, .btn) + :is(button, .btn) { margin-left: var(--sp-2); }
 
 .pager { display: flex; align-items: center; gap: var(--sp-3); justify-content: flex-end; margin-top: var(--sp-3); font-size: var(--fs-small); color: var(--c-text-sub); }
 

@@ -78,8 +78,10 @@ for (const { tag, scene, email, home } of [
 test('[staff] keyboard-nap-temperature — 体温パネルを Enter で開き、Esc で閉じるとフォーカスが元へ戻る', async ({ page }) => {
   await open(page, 'nap');
   const row = page.getByRole('region', { name: '伊藤 葵の午睡チェック' });
-  const button = row.getByRole('button', { name: '伊藤 葵の体温を選ぶ' });
+  // 名前は、見えている文字「体温 未測定」に氏名を添えたもの。値を選ぶと名前も変わるので、頭で探す（Issue #207）
+  const button = row.getByRole('button', { name: /^伊藤 葵の体温/ });
   const dialog = page.getByRole('dialog', { name: '伊藤 葵の体温' });
+  await expect(button).toHaveAccessibleName('伊藤 葵の体温 未測定');
   await tabTo(page, button);
 
   await page.keyboard.press('Enter');
@@ -104,6 +106,69 @@ test('[staff] keyboard-nap-temperature — 体温パネルを Enter で開き、
   await expect(dialog).toHaveCount(0);
   await expect(button).toBeFocused();
   await expect(button).toContainText('36.5℃');
+  await expect(button).toHaveAccessibleName('伊藤 葵の体温 36.5℃');
+});
+
+test('[staff] keyboard-nap-timer — Shift+Tab で上へ戻っても、フォーカスした部品が上に止めたタイマーの下に隠れない', async ({ page }) => {
+  // WCAG 2.4.11 フォーカスの非隠蔽（最低限）。GitHub Issue #212
+  await open(page, 'nap');
+  await tabTo(page, page.locator('.nap-record-row').last().getByRole('button', { name: /の体温 / }));
+  const hidden: string[] = [];
+  let steps = 0;
+  for (; steps < 120; steps += 1) {
+    await page.keyboard.press('Shift+Tab');
+    const focus = await page.evaluate(() => {
+      const el = document.activeElement as HTMLElement | null;
+      const timer = document.querySelector('.nap-timer');
+      if (!el || !timer || !el.closest('.main')) return null;
+      // radio は隠してあり、押す場所は包む label
+      const target = el.matches('input[type="radio"]') ? el.closest('label') ?? el : el;
+      const box = target.getBoundingClientRect();
+      const bar = timer.getBoundingClientRect();
+      return {
+        what: `${el.tagName.toLowerCase()}「${(el.getAttribute('aria-label') ?? target.textContent ?? '').trim().slice(0, 30)}」`,
+        covered: box.top < bar.bottom && box.bottom > bar.top,
+      };
+    });
+    if (!focus) break;
+    if (focus.covered) hidden.push(focus.what);
+  }
+  expect(steps, '園児の行をさかのぼって、画面の上の部品まで戻った').toBeGreaterThan(40);
+  expect(hidden, 'タイマーの下に隠れた部品').toEqual([]);
+});
+
+test('[staff] keyboard-nap-record — 「この子を記録」を押したあと、フォーカスが次の園児の行の最初の選択肢へ移る', async ({ page }) => {
+  // 押したボタンは記録のあと無効になる。フォーカスを body に落とさない（WCAG 2.4.3 フォーカス順序、GitHub Issue #213）
+  await open(page, 'nap');
+  const rows = page.locator('.nap-record-row');
+  const row = rows.first();
+  const record = row.getByRole('button', { name: 'この子を記録' });
+  for (const group of ['体位', '呼吸', '顔色']) {
+    const first = row.getByRole('group', { name: group }).getByRole('radio').first();
+    await tabTo(page, first, 20);
+    await page.keyboard.press('Space');
+    await expect(first).toBeChecked();
+  }
+  await tabTo(page, record, 5);
+  await page.keyboard.press('Enter');
+  await expect(row.getByRole('status')).toHaveText('保存しました');
+  await expect(record).toBeDisabled();
+  await expect(rows.nth(1).getByRole('group', { name: '体位' }).getByRole('radio').first()).toBeFocused();
+  await expectFocusVisible(page);
+
+  // 最後の園児の行では、記録した行の最初の選択肢へ戻す
+  const last = rows.last();
+  const lastRecord = last.getByRole('button', { name: 'この子を記録' });
+  for (const group of ['体位', '呼吸', '顔色']) {
+    const first = last.getByRole('group', { name: group }).getByRole('radio').first();
+    await tabTo(page, first, 80);
+    await page.keyboard.press('Space');
+  }
+  await tabTo(page, lastRecord, 5);
+  await page.keyboard.press('Enter');
+  await expect(last.getByRole('status')).toHaveText('保存しました');
+  await expect(last.getByRole('group', { name: '体位' }).getByRole('radio').first()).toBeFocused();
+  await expectFocusVisible(page);
 });
 
 test('[guardian] keyboard-guardian-menu — 保護者のメニューを開いて閉じると、フォーカスが元へ戻る', async ({ page }) => {

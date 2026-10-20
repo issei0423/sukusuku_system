@@ -124,7 +124,7 @@ describe('午睡チェック画面の園児カード（GitHub Issue #142 の 3�
     open('/staff/nap', teacher);
     await settled();
     await waitFor(() => expect(cardOf('金城 陸')).toBeTruthy(), { timeout: 3000 });
-    fireEvent.click(within(cardOf('金城 陸')).getByRole('button', { name: '金城 陸の体温を選ぶ' }));
+    fireEvent.click(within(cardOf('金城 陸')).getByRole('button', { name: /^金城 陸の体温/ }));
     fireEvent.click(screen.getByText('範囲外の値を入力'));
     const input = screen.getByLabelText('範囲外の体温');
     const setButton = screen.getByRole('button', { name: '設定' }) as HTMLButtonElement;
@@ -136,7 +136,7 @@ describe('午睡チェック画面の園児カード（GitHub Issue #142 の 3�
     fireEvent.change(input, { target: { value: '34.9' } });
     expect(setButton.disabled).toBe(false);
     fireEvent.click(setButton);
-    expect(within(cardOf('金城 陸')).getByRole('button', { name: '金城 陸の体温を選ぶ' }).textContent).toContain('34.9℃');
+    expect(within(cardOf('金城 陸')).getByRole('button', { name: /^金城 陸の体温/ }).textContent).toContain('34.9℃');
   });
 });
 

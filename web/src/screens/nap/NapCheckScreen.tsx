@@ -266,8 +266,26 @@ function NapTimer({ startedAt, intervalMinutes, rows, ready }: {
   };
   const hmm = (sec: number) => `${Math.floor(sec / 3600)}:${String(Math.floor((sec % 3600) / 60)).padStart(2, '0')}`;
 
+  /*
+   * 上に止めたタイマーの高さを、スクロールする枠（.main）へ --nap-timer-h として渡す。
+   * 枠はその高さぶんを scroll-padding-top に取り、キーボードで上へ戻ったとき（Shift+Tab）に、
+   * フォーカスした部品がタイマーの下へ隠れないようにする（WCAG 2.4.11 フォーカスの非隠蔽、GitHub Issue #212）。
+   * タイマーは幅によって折り返し、高さが変わるので、決めた値でなく測った値を使う
+   */
+  const timerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const timer = timerRef.current;
+    const main = timer?.closest<HTMLElement>('.main');
+    if (!timer || !main || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      main.style.setProperty('--nap-timer-h', `${timer.getBoundingClientRect().height}px`);
+    });
+    observer.observe(timer);
+    return () => { observer.disconnect(); main.style.removeProperty('--nap-timer-h'); };
+  }, []);
+
   return (
-    <div className={`nap-timer${over ? ' over' : ''}`}>
+    <div ref={timerRef} className={`nap-timer${over ? ' over' : ''}`}>
       <div>
         <div className="muted">{over ? overText : '次のチェックまで'}</div>
         <div className="sr-only" role="status">{said && <span key={said.seq}>{said.text}</span>}</div>
@@ -318,6 +336,28 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved }: {
   }, [justSaved]);
   const startInput = <T,>(set: (value: T) => void) => (value: T) => { setJustSaved(false); set(value); };
 
+  /*
+   * 「この子を記録」は、記録すると選択が空に戻って無効になり、押したボタンからフォーカスが外れて body に落ちる。
+   * 押したときにボタンにフォーカスがあった（キーボードで押したときなど）ら、次の園児の行の最初の選択肢へ移す。
+   * 巡回の順に次の子へ進めるようにするため。最後の行では、記録した行の最初の選択肢へ戻す
+   * （WCAG 2.4.3 フォーカス順序、GitHub Issue #213。共通の決まり：フォーカスを残すか、決めた場所へ移す）
+   */
+  const rowRef = useRef<HTMLElement>(null);
+  const saveRef = useRef<HTMLButtonElement>(null);
+  // 保存を終えて描き直したあとに、フォーカスを移す先。ボタンは保存している間は無効で、フォーカスを受け取れないため
+  const focusAfterSave = useRef<'next-row' | 'button' | null>(null);
+  useEffect(() => {
+    if (busy || !focusAfterSave.current) return;
+    const where = focusAfterSave.current;
+    focusAfterSave.current = null;
+    if (where === 'button') { saveRef.current?.focus(); return; }
+    const current = rowRef.current;
+    if (!current) return;
+    const next = current.nextElementSibling;
+    const target = next instanceof HTMLElement && next.matches('.nap-record-row') ? next : current;
+    target.querySelector<HTMLInputElement>('input[type="radio"]')?.focus();
+  }, [busy]);
+
   // 体温が範囲の外のときは、1度確かめてから記録する。記録は妨げない（園児の平熱と同じ範囲）
   const [confirmedTemp, setConfirmedTemp] = useState<number | null>(null);
   const save = async () => {
@@ -327,6 +367,8 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved }: {
       setError(`体温が ${TEMP_MIN.toFixed(1)}〜${TEMP_MAX.toFixed(1)}℃ の外です。入力に誤りがなければ、もう一度「この子を記録」を押してください。`);
       return;
     }
+    // 保存している間もボタンは無効になるので、押した時点で調べておく
+    const pressedWithFocus = document.activeElement === saveRef.current;
     setBusy(true); setError(null); setJustSaved(false);
     try {
       await api.record(user!, sessionId, {
@@ -335,8 +377,15 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved }: {
       setPosition(null); setBreathing(null); setComplexion(null); setTemperature(null); setConfirmedTemp(null);
       setJustSaved(true);
       onSaved();
-    } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+      if (pressedWithFocus) focusAfterSave.current = 'next-row';
+    } catch (e) {
+      setError((e as Error).message);
+      // 記録できなかったときは選択が残り、ボタンはまた押せるようになる。フォーカスをボタンへ戻す
+      if (pressedWithFocus) focusAfterSave.current = 'button';
+    } finally { setBusy(false); }
   };
+
+  const temperatureText = `体温 ${temperature === null ? '未測定' : `${temperature.toFixed(1)}℃`}`;
 
   /*
    * 直近の記録で「呼吸 確認できず」としたのに、そのあとの異常時の記録が無いときは、その園児を選んだ状態で
@@ -349,7 +398,7 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved }: {
     && !(abnormal && abnormal.recorded.slice(0, 16) >= latest.checked_at.slice(0, 16));
 
   return (
-    <section className={`nap-card nap-record-row${!excluded && (!row.latest || due) ? ' unrecorded' : ''}${abnormal ? ' has-abnormal' : ''}${excluded ? ' is-excluded' : ''}`}
+    <section ref={rowRef} className={`nap-card nap-record-row${!excluded && (!row.latest || due) ? ' unrecorded' : ''}${abnormal ? ' has-abnormal' : ''}${excluded ? ' is-excluded' : ''}`}
       aria-label={`${name}の午睡チェック`}>
       <div className="nap-row-head">
         <strong className="name">{name}</strong>
@@ -401,13 +450,20 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved }: {
       {error && <Alert>{error}</Alert>}
 
       <div className="nap-row-actions">
+        {/*
+          読み上げの名前は「（氏名）の体温 未測定」「（氏名）の体温 36.5℃」。見えている文字をそのまま名前に含め、
+          氏名を前に添える。見えている文字を名前に入れないと、いまの値が読み上げに入らず、
+          見えている文字で音声操作もできない（WCAG 2.5.3 ラベルの中の名前、GitHub Issue #207）。
+          氏名を .sr-only の要素で添えると、Chromium は要素の境目に空白を足し「（氏名）の 体温」になるため、
+          見えている文字と同じ文字列から aria-label を作る
+        */}
         <button type="button" className="nap-temperature-button" onClick={() => setTemperatureOpen(true)}
-          aria-label={`${name}の体温を選ぶ`}>
-          体温 {temperature === null ? '未測定' : `${temperature.toFixed(1)}℃`}
+          aria-label={`${name}の${temperatureText}`}>
+          {temperatureText}
         </button>
         {temperature !== null && <button type="button" className="btn-quiet btn-sm" onClick={() => setTemperature(null)}>体温を消す</button>}
         <div className="spacer" />
-        <button type="button" className="btn-primary" onClick={save}
+        <button ref={saveRef} type="button" className="btn-primary" onClick={save}
           disabled={busy || !position || !breathing || !complexion}>
           {busy ? '保存中…' : 'この子を記録'}
         </button>
