@@ -33,10 +33,10 @@ describe('日誌の承認', () => {
       record_type: '2', child_id: null, class_id: 3, diary_date: today(), body: '室内でふれあい遊び。',
     }, '2');
 
-    await expect(api.approveDiary(admin, d.diary_id, false)).rejects.toThrow('自分が申請した日誌は承認できません');
+    await expect(api.approveDiary(admin, d.diary_id)).rejects.toThrow('自分が申請した日誌は承認できません');
     expect(db.diaries.find((x) => x.diary_id === d.diary_id)?.status).toBe('2');
 
-    const approved = await api.approveDiary(admin2, d.diary_id, false);
+    const approved = await api.approveDiary(admin2, d.diary_id);
     expect(approved.status).toBe('3');
     expect(approved.approved_staff_id).toBe('S002');
   });
@@ -150,11 +150,20 @@ describe('出力の記録', () => {
     expect(row?.after_value).toContain('12 件');
   });
 
-  it('操作ログの出力は管理者に限る。午睡記録の出力は職員が行える', async () => {
+  it('操作ログの出力は管理者に限る', async () => {
     await expect(api.recordExport(teacher, 'operation_log', '2026-09-01', '2026-09-30', 1)).rejects.toThrow('管理者のみ');
-    await api.recordExport(teacher, 'nap_record', '2026-09-01', '2026-09-30', 8);
-    expect(db.operationLogs.some((l) => l.target_table === 't_nap_record' && l.operation_type === '5'
-      && l.account_id === teacher.account_id)).toBe(true);
+  });
+
+  it('午睡記録の出力は、画面からの申告では記録しない（帳票を作るサーバが記録する）', async () => {
+    // 出力していない「午睡記録をCSV出力」を書けると、監査の記録が信用できなくなる（server/api_audit.go の handleRecordExport と同じ）。
+    // 型からは外したので、古い画面が送ってきた場合を、型を外して確かめる
+    const napRecord = 'nap_record' as unknown as Parameters<typeof api.recordExport>[1];
+    const napExports = () => db.operationLogs.filter((l) => l.target_table === 't_nap_record' && l.operation_type === '5').length;
+    const before = napExports();
+    for (const user of [teacher, admin]) {
+      await expect(api.recordExport(user, napRecord, '2026-09-01', '2026-09-30', 8)).rejects.toThrow('出力の種別が正しくありません');
+    }
+    expect(napExports()).toBe(before);
   });
 });
 

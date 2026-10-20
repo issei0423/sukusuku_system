@@ -44,7 +44,7 @@ function openHome() {
 async function openMenu() {
   fireEvent.click(await screen.findByRole('button', { name: 'メニューを開く' }));
   const menu = screen.getByRole('dialog', { name: 'メニュー' });
-  await within(menu).findByText(/野原 太郎/, {}, { timeout: 3000 });
+  await within(menu).findAllByText(/野原 太郎/, {}, { timeout: 3000 });
   return menu;
 }
 
@@ -97,7 +97,7 @@ describe('保護者のメニュー：AI の下書きの利用', () => {
     db.guardianChildren.push({ guardian_id: 'G001', child_id: 'C007', relationship: '父', link_status: '3', linked_at: '2026-04-01T09:00:00', ended_at: null, grace_ends_on: '2099-03-31' });
     openHome();
     const menu = await openMenu();
-    await within(menu).findByText(/中村 蓮/);
+    await within(menu).findAllByText(/中村 蓮/);
     fireEvent.click(within(menu).getByRole('button', { name: AI_OPT_OUT_TEXT.title }));
 
     const dialog = await screen.findByRole('dialog', { name: AI_OPT_OUT_TEXT.title });

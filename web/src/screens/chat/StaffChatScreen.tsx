@@ -24,6 +24,10 @@ import { useIncomingMessages } from './useIncomingMessages';
 /** 長押しとみなすまでの時間。保護者のチャット画面と同じ値（web/仮置き値.md） */
 const LONG_PRESS_MS = 800;
 
+// 詳細設計書「チャット」(2-9)。DB 上の部屋名は既存の「園児名の保護者」のままにする（同「園児の登録と個人チャット」(4-9)）。
+const roomLabel = (room: { room_type: string; room_name: string }) =>
+  room.room_type === '4' ? room.room_name.replace(/の保護者$/, 'の園とのやりとり') : room.room_name;
+
 export default function StaffChatScreen() {
   const { user } = useSession();
   // 操作の一覧を開いているメッセージ。同時に開くのは1件だけ
@@ -205,7 +209,7 @@ export default function StaffChatScreen() {
                       className={`channel${r.room.chat_room_id === roomId ? ' current' : ''}`}
                       onClick={() => selectRoom(r.room.chat_room_id)}>
                       <span>
-                        {r.room.room_name}
+                        {roomLabel(r.room)}
                         {/* 保護者も読むチャンネルは、職員だけのチャンネルと見分けられるようにする */}
                         {r.room.room_type !== '4' && r.guardianCount > 0 && <span className="mark">保護者も参加</span>}
                         {r.room.room_type === '4' && r.room.thread_status === '1' && <span className="mark">未対応</span>}
@@ -222,7 +226,7 @@ export default function StaffChatScreen() {
         {/* メッセージ */}
         <div className="chat-pane">
           <h2>
-            {current ? current.room.room_name : 'チャンネルを選んでください'}
+            {current ? roomLabel(current.room) : 'チャンネルを選んでください'}
             {current && <span className="muted">（{CHAT_ROOM_TYPE[current.room.room_type]}）</span>}
             {/* 未対応スレッドの切り替えは個人チャットだけが持つ */}
             {current?.room.room_type === '4' && !current.left && (
@@ -270,7 +274,10 @@ export default function StaffChatScreen() {
               <Alert soft>この投稿は、保護者 {current.guardianCount} 名にも届きます。</Alert>
             )}
             {/* 【仮置き】停止中の保護者は再開後に過去の投稿を読める。web/仮置き値.md */}
-            {current?.canPost && current.guardianCount === 0 && current.room.room_type === '4' && (
+            {current?.canPost && current.guardianRegisteredCount === 0 && current.room.room_type === '4' && (
+              <Alert soft>まだ保護者が登録していません（登録すると読めます）</Alert>
+            )}
+            {current?.canPost && current.guardianCount === 0 && current.guardianRegisteredCount > 0 && current.room.room_type === '4' && (
               <Alert soft>現在、この家庭で読める保護者はいません。停止中の保護者が再開すると、この投稿を読めます。</Alert>
             )}
             {current?.canPost && current.guardianCount === 0 && current.room.room_type !== '4' && (
@@ -512,16 +519,10 @@ function MessageRow({ message, mine, canEdit, canDelete, showRole, readOnly, onR
           message.body
         )}
         {/*
-          * 日誌の共有（source_type=2）は、本文ではなく記録へのリンクとして出す。
-          * 編集できるのは添え書きの本文だけで、リンク先の記録は変わらない（基本設計書 4-6）。
-          * そのため編集中もリンクは出したままにする
+          * 配布物の掲載の知らせ（source_type=4）は、本文ではなく配布物の一覧へのリンクとして出す。
+          * 編集できるのは添え書きの本文だけで、リンク先は変わらない（基本設計書 4-6）。そのため編集中もリンクは出したままにする。
+          * 日誌の共有の知らせ（source_type=2）のカードは出さない（詳細設計書「日誌の画面（作り直し）」(2-13 (1))）
           */}
-        {message.source_type === '2' && message.source_id && (
-          <Link className="shared-card" to={`/staff/diary/${message.source_id}`}>
-            日誌を開く
-          </Link>
-        )}
-        {/* 配布物の掲載の知らせ（source_type=4）。現物は配布物の一覧から開く */}
         {message.source_type === '4' && (
           <Link className="shared-card" to="/staff/handouts">園からの配布物を開く</Link>
         )}

@@ -52,10 +52,11 @@ describe('Issue #177 の再現手順で、モックがサーバと同じ結果�
     };
   };
 
-  it('1：一般は他クラスのクラス日誌を開けず、保護者には下書き・申請中の日誌を返さない', async () => {
+  it('1：一般は他クラスのクラス日誌を開けず、保護者には日誌を返さない', async () => {
     // 日誌 6 はひまわり組のクラス日誌（申請中）。日誌 1 は 野原 太郎 の下書き、日誌 2 はさくら組のクラス日誌（申請中）
     await expect(api.getDiary(teacher, 6)).rejects.toThrow('この日誌を参照する権限がありません');
-    for (const id of [1, 2, 6]) await expect(api.getDiary(guardian, id)).rejects.toThrow('この記録は共有されていません');
+    // 日誌は園内の記録。保護者にはどの状態の日誌も返さない（詳細設計書「日誌」(4-13)）
+    for (const id of [1, 2, 6]) await expect(api.getDiary(guardian, id)).rejects.toThrow('この日誌を参照する権限がありません');
   });
 
   it('2：申請中・承認済みの日誌は、下書きとして保存し直せない', async () => {

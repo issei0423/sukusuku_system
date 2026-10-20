@@ -110,6 +110,8 @@ func (a *app) routeDiary(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/diaries/{id}/attachments", a.handleDiaryAttachments)
 	mux.HandleFunc("POST /api/diaries/{id}/approve", a.handleApproveDiary)
 	mux.HandleFunc("POST /api/diaries/{id}/return", a.handleReturnDiary)
+	mux.HandleFunc("POST /api/diaries/{id}/withdraw", a.handleWithdrawDiary)
+	mux.HandleFunc("POST /api/diaries/{id}/revoke-approval", a.handleRevokeDiaryApproval)
 	mux.HandleFunc("POST /api/diaries/{id}/lock", a.handleAcquireLock)
 	mux.HandleFunc("PUT /api/diaries/{id}/lock", a.handleTouchLock)
 	mux.HandleFunc("DELETE /api/diaries/{id}/lock", a.handleReleaseLock)
@@ -153,6 +155,10 @@ func (a *app) routeNap(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/nap/abnormals", a.handleNapAbnormals)
 	mux.HandleFunc("POST /api/nap/abnormals/{id}/incident", a.handleRaiseIncidentDiary)
 	mux.HandleFunc("GET /api/nap/records", a.handleSearchNapRecords)
+	// 午睡チェック表（帳票）。管理者だけ。サーバで作り、出力を操作ログへ記録する（api_nap_report.go）
+	mux.HandleFunc("GET /api/nap/report", a.handleNapReport)
+	// 午睡チェックの記録の修正。行を書き換え、修正前後の値と理由を操作ログに残す（api_nap_correct.go）
+	mux.HandleFunc("POST /api/nap/records/{id}/correct", a.handleCorrectNapRecord)
 }
 
 // 発達チェック・身体測定（基本設計書 4-8）
@@ -174,6 +180,8 @@ func (a *app) routeGrowth(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/physical/records/{id}", a.handleRemovePhysical)
 	mux.HandleFunc("POST /api/physical/export", a.handleExportPdf)
 	mux.HandleFunc("GET /api/children/{childID}/physical", a.handlePhysicalRecords)
+	mux.HandleFunc("GET /api/children/{childID}/growth", a.handleGrowthRecord)
+	mux.HandleFunc("POST /api/contact/events/{id}/keep-in-growth", a.handleKeepInGrowth)
 }
 
 // アカウント管理・監査（基本設計書 4-3・6-4）

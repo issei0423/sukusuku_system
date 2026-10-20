@@ -638,6 +638,7 @@ func (a *app) guardianToday(u *SessionUser, childID string) (*guardianTodayOut, 
 	if p.ClassID != nil {
 		t.ClassName = a.className(*p.ClassID)
 	}
+	t.GrowthNew = a.growthNew(childID)
 	var grace sql.NullString
 	a.db.QueryRow(`SELECT grace_ends_on FROM t_guardian_child WHERE guardian_id = ? AND child_id = ? AND link_status = '3'`,
 		u.guardian(), childID).Scan(&grace)

@@ -17,11 +17,17 @@ const PAD = { top: 16, right: 16, bottom: 34, left: 46 };
 const BANDS: [number, number][] = [[3, 97], [10, 90], [25, 75]];
 const BAND_OPACITY = [0.10, 0.16, 0.24];
 
-export default function GrowthChart({ child, records, standards, measureType }: {
-  child: Child;
-  records: PhysicalRecord[];
+/*
+ * 保護者の成長の記録画面も同じ部品で描く（基本設計書「成長グラフの表示」(4-9)）。保護者の応答には園児と測定記録の
+ * 全項目が無いため、描くのに使う項目だけを受け取る（詳細設計書「成長の記録画面（保護者）」(2-11 (1))）
+ */
+export default function GrowthChart({ child, records, standards, measureType, noBandText }: {
+  child: Pick<Child, 'child_name' | 'birth_date'>;
+  records: Pick<PhysicalRecord, 'measured_on' | 'height_cm' | 'weight_kg'>[];
   standards: GrowthStandard[] | null;
   measureType: '1' | '2';
+  /** 帯を描かないときにグラフの中へ出す文。既定は職員の身体記録画面の文 */
+  noBandText?: string;
 }) {
   const points = records
     .map((r) => ({
@@ -107,7 +113,7 @@ export default function GrowthChart({ child, records, standards, measureType }: 
           })
         : (
           <text x={W / 2} y={H / 2} textAnchor="middle" fontSize={13} fill="var(--c-text-weak)">
-            性別が未回答のため、基準値の帯は表示しません
+            {noBandText ?? '性別が未回答のため、基準値の帯は表示しません'}
           </text>
         )}
       {standards && <path d={medianPath()} fill="none" stroke="var(--c-primary-deep)" strokeWidth={1.5} strokeDasharray="4 3" />}

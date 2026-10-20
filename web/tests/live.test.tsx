@@ -340,7 +340,7 @@ describe('接続の扱い', () => {
         </SessionProvider>
       </MemoryRouter>,
     );
-    await waitFor(() => expect(document.body.textContent).toContain('共有された記録'), { timeout: 3000 });
+    await waitFor(() => expect(document.body.textContent).toContain('園からの配布物'), { timeout: 3000 });
     expect(FakeEventSource.instances).toHaveLength(0);
     expect(liveStatus()).toBe('off');
   });

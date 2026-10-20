@@ -225,7 +225,7 @@ export default function ContactChildScreen() {
 
           <section className="card contact-section" aria-labelledby="child-today-title">
             <h2 id="child-today-title">{isToday ? 'きょうのようす' : 'この日のようす'}（朝から）</h2>
-            <TodayTimeline page={data} viewer="staff" onFix={canFix ? openFix : undefined} />
+            <TodayTimeline page={data} viewer="staff" onFix={canFix ? openFix : undefined} keepInGrowth={{ canFix, onChanged: page.refresh }} />
             {!canFix && data.can_write && <p className="muted">{TEXT.fixAskAdmin}</p>}
           </section>
 

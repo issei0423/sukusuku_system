@@ -84,6 +84,11 @@ export default function TodayCard({ today: t, newCount }: {
 
       <div className="contact-today-links">
         <Link className="guardian-panel-link" to={contactPath}><span>連絡帳を開く</span><span aria-hidden="true">→</span></Link>
+        {/* 成長の記録（詳細設計書「保護者ホーム（「きょう」）」(2-5) の入口。きょう届いたものがあれば添える） */}
+        <Link className="guardian-panel-link" to={`/guardian/growth/${encodeURIComponent(t.child_id)}`}>
+          <span>成長の記録{t.growth_new && <span className="guardian-unread growth-new">新しい記録があります</span>}</span>
+          <span aria-hidden="true">→</span>
+        </Link>
         {t.personal_room_id !== null && (
           <Link className="guardian-panel-link" to="/guardian/chat">
             <span>{t.child_name}の園とのやりとり{t.unread_chat > 0 ? `（未読 ${t.unread_chat}）` : ''}</span><span aria-hidden="true">→</span>

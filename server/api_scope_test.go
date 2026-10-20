@@ -146,21 +146,19 @@ func TestTempPasswordComesBeforeTerms(t *testing.T) {
 	call(t, h, miyagi, "GET", "/api/children", "")
 }
 
-// 日誌の添付は、日誌本体と同じ参照範囲に従う。承認済みであっても参照範囲は広がらない
-// （基本設計書「日誌の作成から保護者への共有」(4-5)・「添付ファイルの実体の保存先」(5-5)）
+// 日誌の添付は、日誌本体と同じ参照範囲に従う。承認済みであっても参照範囲は広がらず、保護者には返さない
+// （詳細設計書「日誌」(4-13)、基本設計書「添付ファイルの実体の保存先」(5-5)）
 func TestDiaryAttachmentsFollowDiaryScope(t *testing.T) {
 	a, h := newTestApp(t)
-	const path = "/api/diaries/4/attachments" // 上園 花子（C002・さくら組）の個人日誌。承認済み・保護者へ共有、添付2件
+	const path = "/api/diaries/4/attachments" // 上園 花子（C002・さくら組）の個人日誌。承認済み、添付2件
 
-	t.Run("担当外の職員・関係のない保護者には見せない", func(t *testing.T) {
+	t.Run("担当外の職員・保護者には見せない", func(t *testing.T) {
 		expectStatus(t, request(t, h, loginAs(a, 5, "staff"), "GET", path, ""), http.StatusForbidden)    // ひまわり組の担任
 		expectStatus(t, request(t, h, loginAs(a, 6, "guardian"), "GET", path, ""), http.StatusForbidden) // 野原 太郎の保護者
 	})
 
-	t.Run("日誌本体を見られる人には返す", func(t *testing.T) {
-		uezono := loginAs(a, 7, "guardian") // C002 の保護者
-		call(t, h, uezono, "POST", "/api/terms/agree", "")
-		for _, c := range []*http.Cookie{loginAs(a, 1, "staff"), loginAs(a, 3, "staff"), uezono} {
+	t.Run("日誌本体を見られる職員には返す", func(t *testing.T) {
+		for _, c := range []*http.Cookie{loginAs(a, 1, "staff"), loginAs(a, 3, "staff")} {
 			var got []DiaryAttachment
 			if err := json.Unmarshal(call(t, h, c, "GET", path, "").Body.Bytes(), &got); err != nil {
 				t.Fatal(err)
@@ -171,11 +169,10 @@ func TestDiaryAttachmentsFollowDiaryScope(t *testing.T) {
 		}
 	})
 
-	t.Run("保護者へ共有していない日誌の添付は、自児の保護者にも見せない", func(t *testing.T) {
-		if _, err := a.db.Exec(`UPDATE t_diary SET is_shared_to_guardian = 0 WHERE diary_id = 4`); err != nil {
-			t.Fatal(err)
-		}
-		expectStatus(t, request(t, h, loginAs(a, 7, "guardian"), "GET", path, ""), http.StatusForbidden)
+	t.Run("承認済みの自児の日誌の添付も、保護者には見せない", func(t *testing.T) {
+		uezono := loginAs(a, 7, "guardian") // C002 の保護者
+		call(t, h, uezono, "POST", "/api/terms/agree", "")
+		expectStatus(t, request(t, h, uezono, "GET", path, ""), http.StatusForbidden)
 	})
 
 	t.Run("無い日誌は、あるかどうかを推測させない", func(t *testing.T) {

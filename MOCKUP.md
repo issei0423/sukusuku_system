@@ -77,7 +77,7 @@ cd web && npm run dev:mock
 | `takanashi@hoiku.example.jp` | 一般（さくら組担任） | 自クラスに絞られた参照範囲 |
 | `kinjo@hoiku.example.jp` | 一般（ひまわり組担任） | 担当が違うと見えるものが変わること |
 | `miyagi@hoiku.example.jp` | 一般（一時パスワード中） | 変更するまで他の画面へ進めないこと（パスワードは `temp0901`） |
-| `nohara.i@example.jp` | 保護者（野原 太郎の保護者） | 保護者の7画面と、共有された記録だけが見えること |
+| `nohara.i@example.jp` | 保護者（野原 太郎の保護者） | 保護者の画面と、自児の連絡帳（「きょう」）が見えること。日誌は園内の記録で見えないこと |
 | `uezono.k@example.jp` | 保護者（規約の再同意が必要） | 同意するまで他の画面へ進めないこと |
 | `takanashi.r@example.jp` | 保護者（停止中） | 停止されたアカウントがログインできないこと |
 | `miyagi.r@example.jp` | 保護者（宮城 美咲の保護者） | 保護者ごとに、見える園児と記録が違うこと |
@@ -126,7 +126,8 @@ cd web && npm test
 | :-- | :-- |
 | `tests/util.test.ts` | 月齢の算出（応当日基準・月末生まれ・うるう年）。GitHub Issue #54 の境界を固定 |
 | `tests/permission.test.ts` | 参照範囲と管理者に限る操作 |
-| `tests/flow.test.ts` | ログインの系統判定、承認と共有の指定が別であること、差し戻しの理由必須 |
+| `tests/flow.test.ts` | ログインの系統判定、承認しても保護者へ何も届かないこと、差し戻しの理由必須 |
+| `tests/diaryInternal.test.ts`・`tests/diaryInternalScreens.test.tsx` | 日誌の申請の取り下げ・承認の取り消し・申請者で判定する承認・承認待ちの並び（API と画面）。Go 側は `server/api_diary_internal_test.go` |
 | `tests/invitation.test.ts` | 招待コードが1枚＝1アカウントであること、紐づけゼロでの停止、身体測定の一意制約 |
 | `tests/screens.test.tsx` | 全画面が実際に描画されること、ロールによる出し分け |
 | `tests/decisions.test.ts` | 成長曲線の基準値（厚生労働省の公表値との照合、補間、2,044行）、ログインの失敗とロックの記録、規約の本文 |

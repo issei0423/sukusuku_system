@@ -95,7 +95,7 @@ func (a *app) guardianContactChildren(u *SessionUser) ([]Child, error) {
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, c)
+		out = append(out, c.forGuardian())
 	}
 	return out, rows.Err()
 }

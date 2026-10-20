@@ -78,9 +78,13 @@ func diaryRecordTypeLabel(v string) string {
 /*
 handleRecordExport は、画面側で組み立てた出力（CSV）を操作ログへ記録する。
 
-操作ログと午睡記録の CSV は画面側で作るため、サーバは出力そのものを見ていない。
+操作ログの CSV・アレルギー一覧・招待コードの配布用は画面側で作るため、サーバは出力そのものを見ていない。
 出力したことを残すために、画面から呼ばせる（GitHub Issue #115・#117）。
 出力は目的を問わず操作ログへ記録する（基本設計書「発達チェック・身体測定」(4-8) と同じ扱い）。
+
+午睡記録の帳票（CSV）は、ここでは受け付けない。帳票はサーバが作り、作った処理が期間と件数を操作ログへ書く
+（api_nap_report.go の handleNapReport。基本設計書「操作ログ（t_operation_log）」(5-9)）。ここで受け付けると、
+出力していない「午睡記録をCSV出力」を一般の職員も書けてしまい、監査の記録が信用できなくなる。
 */
 func (a *app) handleRecordExport(w http.ResponseWriter, r *http.Request) {
 	u, ok := a.requireStaff(w, r)
@@ -88,7 +92,7 @@ func (a *app) handleRecordExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Kind  string `json:"kind"` // "operation_log"・"nap_record"・"allergy_list"・"invitation_sheet"
+		Kind  string `json:"kind"` // "operation_log"・"allergy_list"・"invitation_sheet"
 		From  string `json:"from"`
 		To    string `json:"to"`
 		Count int    `json:"count"`
@@ -104,8 +108,6 @@ func (a *app) handleRecordExport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.log(u.AccountID, fnAccount, opExport, "t_operation_log", nil, nil, nil, s("操作ログをCSV出力（"+period+"）"))
-	case "nap_record":
-		a.log(u.AccountID, fnNap, opExport, "t_nap_record", nil, nil, nil, s("午睡記録をCSV出力（"+period+"）"))
 	case "allergy_list":
 		// 要配慮個人情報の一覧。印刷できるのは管理者・一般（保護者は上の requireStaff で断る）。
 		// 担任でない職員も、受け入れや合同保育で子を見る場面で配膳に使うため

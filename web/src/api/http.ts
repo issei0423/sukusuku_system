@@ -19,7 +19,7 @@ import type {
   DevListRow, DevScheduleRow, CsvRow, FiscalClassRow, StaffAccountRow,
   GuardianAccountRow, InvitationCodeRow, OperationLogRow, StaffSummary, GuardianHomeRow,
   DevDraftView,
-  ContactPage, ContactClassView, ContactHome, ContactHomeInput, NapSleep, NapExclusion,
+  ContactPage, ContactClassView, ContactHome, ContactHomeInput, NapSleep, NapExclusion, GrowthRecord,
 } from './shapes';
 import type { SendPhotoInput, SendPhotoResult } from './shapes';
 import type {
@@ -33,6 +33,8 @@ import {
 import { startLive } from '../live';
 import { setReachable } from './reachability';
 import { TEXT } from '../messages';
+import type { NapReportFilter } from './napReport';
+import type { NapRecordCorrectInput } from './napCorrect';
 
 // 画面はこれまでどおり client 経由で型を参照する。定義の実体は shapes.ts が持つ
 export type {
@@ -147,6 +149,42 @@ async function request<T>(method: string, path: string, body?: unknown, timeoutM
     throw err;
   }
   return data as T;
+}
+
+/**
+ * 本文を文字列のまま受け取る（サーバで作るファイル。GET /api/nap/report）。失敗の扱いは request と同じにする：
+ * 届かない・時間切れは「サーバに届かない」、401 は入口へ戻す、手続きの途中の 403 は手続きの画面へ案内する、
+ * ほかの失敗はサーバの文言を投げる。fetch の text() は先頭の BOM を外す。残っていても外す（保存する画面が付け直す）
+ */
+async function requestText(path: string): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch(path, { credentials: 'same-origin', signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+  } catch {
+    setReachable(false);
+    throw new ApiError({ message: UNREACHABLE_MESSAGE, kind: 'unreachable' });
+  }
+  if (res.status === 502 || res.status === 503 || res.status === 504) {
+    setReachable(false);
+    throw new ApiError({ message: UNREACHABLE_MESSAGE, kind: 'unreachable' });
+  }
+  setReachable(true);
+  const text = await res.text();
+  if (!res.ok) {
+    let body: { message: string; kind?: string } | null = null;
+    try { body = JSON.parse(text); } catch { body = null; }
+    const err = new ApiError(body ?? { message: '通信に失敗しました' });
+    if (res.status === 403 && isProcedureKind(err.kind)) {
+      notifyProcedureRequired(err.kind);
+      throw new ProcedureRequiredError(err.kind, err.message);
+    }
+    if (res.status === 401) {
+      clearReference();
+      notifySessionEnded();
+    }
+    throw err;
+  }
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
 }
 
 const get = <T>(path: string) => request<T>('GET', path);
@@ -382,8 +420,12 @@ const apiAuth = {
   saveDiary: (_u: SessionUser, input: DiaryInput, status: '1' | '2') =>
     post<Diary>('/api/diaries', { ...input, status }),
 
-  approveDiary: (_u: SessionUser, diaryId: number, shareToGuardian: boolean) =>
-    post<Diary>(`/api/diaries/${diaryId}/approve`, { share_to_guardian: shareToGuardian }),
+  approveDiary: (_u: SessionUser, diaryId: number) =>
+    post<Diary>(`/api/diaries/${diaryId}/approve`, {}),
+  withdrawDiary: (_u: SessionUser, diaryId: number, updatedAt: string) =>
+    post<Diary>(`/api/diaries/${diaryId}/withdraw`, { updated_at: updatedAt }),
+  revokeDiaryApproval: (_u: SessionUser, diaryId: number, reason: string, updatedAt: string) =>
+    post<Diary>(`/api/diaries/${diaryId}/revoke-approval`, { reason, updated_at: updatedAt }),
 
   returnDiary: (_u: SessionUser, diaryId: number, reason: string) =>
     post<Diary>(`/api/diaries/${diaryId}/return`, { reason }),
@@ -473,6 +515,19 @@ const apiChatNap = {
     from: f.from ?? '', to: f.to ?? '', class_id: f.classId ?? '',
     child_name: f.childName ?? '', page: f.page ?? 1,
   })),
+  /**
+   * 午睡チェック表（帳票）をサーバで作って受け取る（GET /api/nap/report。管理者だけ）。返すのは CSV の本文（BOM を外す）。
+   * 出力したことと期間・件数は、サーバが操作ログへ記録する（基本設計書「帳票の出力」(4-8)）
+   */
+  napReport: (_u: SessionUser, f: NapReportFilter) => requestText('/api/nap/report' + qs({
+    from: f.from, to: f.to, class_id: f.classId ?? '', format: f.format,
+  })),
+  /**
+   * 午睡チェックの記録を修正する（POST /api/nap/records/{id}/correct）。変える項目と理由を送る。直せる人の判定はサーバが行う
+   * （server/api_nap_correct.go。基本設計書「記録の修正と改ざん防止」(4-8)）
+   */
+  correctNapRecord: (_u: SessionUser, recordId: number, input: NapRecordCorrectInput) =>
+    post<NapRecord>(`/api/nap/records/${recordId}/correct`, input),
 
   /**
    * 年齢に応じたチェック間隔。マスタ値を用いる（基本設計書 5-8）
@@ -518,9 +573,9 @@ const apiGrowth = {
   saveCheck: (
     _u: SessionUser, childId: string, checkedOn: string,
     results: { development_item_id: number; result: string | null }[],
-    note: string, status: '1' | '2',
+    note: string, status: '1' | '2', guardianMessage: string | null = null,
   ) => post<DevelopmentCheck>('/api/development/checks', {
-    child_id: childId, checked_on: checkedOn, results, note, status,
+    child_id: childId, checked_on: checkedOn, results, note, status, guardian_message: guardianMessage,
   }),
 
   schedules: (_u: SessionUser, classId: number) =>
@@ -645,7 +700,7 @@ const apiAdmin = {
 
   /** 画面側で組み立てた出力（CSV）を操作ログへ記録する（GitHub Issue #115・#117） */
   recordExport: (
-    _u: SessionUser, kind: 'operation_log' | 'nap_record' | 'allergy_list' | 'invitation_sheet',
+    _u: SessionUser, kind: 'operation_log' | 'allergy_list' | 'invitation_sheet',
     from: string, to: string, count: number,
   ) => post<void>('/api/exports', { kind, from, to, count }),
 
@@ -753,6 +808,12 @@ const contactApi = {
   settings: (_u: SessionUser) => get<SettingsView>('/api/settings'),
   saveSettings: (_u: SessionUser, changes: Record<string, string>, readAt: string) =>
     post<SettingsView>('/api/settings', { changes, read_at: readAt }),
+  /** 「成長の記録に残す」の付け外し（詳細設計書 (4-12 (3))）。updated_at は読んだ版 */
+  keepInGrowth: (_u: SessionUser, eventId: number, keep: boolean, updatedAt: string) =>
+    post<ContactEvent>(`/api/contact/events/${eventId}/keep-in-growth`, { keep_in_growth: keep, updated_at: updatedAt }),
+  /** 成長の記録（詳細設計書「成長の記録」(4-12 (1))）。before は前の応答の next_before */
+  growthRecord: (_u: SessionUser, childId: string, before?: string | null) =>
+    get<GrowthRecord>(`/api/children/${encodeURIComponent(childId)}/growth${before ? qs({ before }) : ''}`),
 };
 
 /* 保護者のメニュー（詳細設計書「保護者のメニュー」(4-15)。名前はモック（api/mock.ts の guardianApi）と同じ） */

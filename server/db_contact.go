@@ -14,8 +14,9 @@ ensureContactSchema は、既存の DB に連絡帳の表と列を足す（詳�
 新規作成の DB は schema.sql と seed.sql がすでに持っているため、どの処理も何もしない。
 定義は schema.sql と同じにする（詳細設計書「書き方の対応」(5-1)。既存の ensureHandouts と同じ決まり）。
 
-本版で行うのは (5-4) の表の 1〜5。6（個人チャットの無い在籍園児にルームを作る）は、
-それを使う段（園児の登録時の個人チャット）で足す。
+ここで行うのは (5-4) の表の 1〜5。6（個人チャットの無い在籍園児にルームを作る）は、
+この後に child_room.go の ensureMissingPersonalRooms が行う（db.go の openDB の順）。
+m_child.nickname は、園児情報入力（呼び名の欄）と他児の名前の注意の両方が使う。足すのはここだけにする。
 */
 func ensureContactSchema(db *sql.DB) error {
 	// 1. 表と索引（contact_ddl.go。schema.sql の「5-4 連絡帳」の節と同じ定義）

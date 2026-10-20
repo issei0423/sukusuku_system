@@ -48,8 +48,10 @@ func TestGuardianCannotReadChatMembers(t *testing.T) {
 // currentRooms は、いま参加している（left_at の無い）チャンネルを番号順に返す
 func currentRooms(t *testing.T, a *app, accountID int64) []int64 {
 	t.Helper()
+	// この既存テストは元からあった 1〜9 番の参加状態を確かめる。
+	// 新しい在籍園児のルームは api_child_room_test.go で確かめる。
 	rows, err := a.db.Query(`SELECT chat_room_id FROM t_chat_member
-		WHERE account_id = ? AND left_at IS NULL ORDER BY chat_room_id`, accountID)
+		WHERE account_id = ? AND left_at IS NULL AND chat_room_id <= 9 ORDER BY chat_room_id`, accountID)
 	if err != nil {
 		t.Fatal(err)
 	}

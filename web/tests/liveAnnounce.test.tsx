@@ -86,7 +86,8 @@ describe('① チャット画面：相手から届いたメッセージだけを
 
   it('職員：保護者から届いたものを足し、自分が送ったものは足さない', async () => {
     open(`/staff/chat?room=${personalRoom}`, teacher);
-    await waitFor(() => expect(document.querySelector('.channel.current')?.textContent).toContain('野原 太郎の保護者'), { timeout: 3000 });
+    // 職員のチャット一覧は、個人チャットを「〇〇の園とのやりとり」と出す（#198。StaffChatScreen の roomLabel、詳細設計書「チャット」(2-9)）
+    await waitFor(() => expect(document.querySelector('.channel.current')?.textContent).toContain('野原 太郎の園とのやりとり'), { timeout: 3000 });
     await waitFor(() => expect(document.querySelectorAll('.msg').length).toBeGreaterThan(0), { timeout: 3000 });
     expect(logText()).toBe('');
 

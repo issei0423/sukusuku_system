@@ -263,7 +263,7 @@ describe('保護者ホームの「きょう」（詳細設計書「ダッシュ�
       const rows = await api.guardianHome(taroGuardian);
       expect(rows.map((r) => r.child.child_id)).toEqual(['C001']);
       expect([rows[0].today.can_write_home, rows[0].today.grace_ends_on]).toEqual([false, grace]);
-      expect(rows[0].sharedDiaries).toEqual([]);
+      expect('sharedDiaries' in rows[0]).toBe(false);
 
       link.link_status = '2';
       expect(await api.guardianHome(taroGuardian)).toEqual([]);
