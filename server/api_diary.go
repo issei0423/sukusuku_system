@@ -13,49 +13,59 @@ import (
 
 // Diary は日誌（t_diary）。記録種別でテーブルを分けない（基本設計書 5-4）
 type Diary struct {
-	DiaryID            int64   `json:"diary_id"`
-	RecordType         string  `json:"record_type"`
-	ChildID            *string `json:"child_id"`
-	ClassID            *int64  `json:"class_id"`
-	DiaryDate          string  `json:"diary_date"`
-	Body               string  `json:"body"`
-	Status             string  `json:"status"`
-	CreatedStaffID     string  `json:"created_staff_id"`
-	ApprovedStaffID    *string `json:"approved_staff_id"`
-	ApprovedAt         *string `json:"approved_at"`
-	IsSharedToGuardian bool    `json:"is_shared_to_guardian"`
-	SharedAt           *string `json:"shared_at"`
-	NapAbnormalID      *int64  `json:"nap_abnormal_id"`
-	ReturnedReason     *string `json:"returned_reason"`
-	IsDeleted          bool    `json:"is_deleted"`
-	CreatedAt          string  `json:"created_at"`
-	UpdatedAt          string  `json:"updated_at"`
+	DiaryID         int64   `json:"diary_id"`
+	RecordType      string  `json:"record_type"`
+	ChildID         *string `json:"child_id"`
+	ClassID         *int64  `json:"class_id"`
+	DiaryDate       string  `json:"diary_date"`
+	Body            string  `json:"body"`
+	Status          string  `json:"status"`
+	CreatedStaffID  string  `json:"created_staff_id"`
+	ApprovedStaffID *string `json:"approved_staff_id"`
+	ApprovedAt      *string `json:"approved_at"`
+	// 申請した職員と日時（詳細設計書「日誌の状態」(3-6)）。取り下げると空になる。
+	// 「自分が申請した日誌は承認できない」と「取り下げは申請した本人だけ」は、この列で判定する
+	AppliedStaffID *string `json:"applied_staff_id"`
+	AppliedAt      *string `json:"applied_at"`
+	NapAbnormalID  *int64  `json:"nap_abnormal_id"`
+	ReturnedReason *string `json:"returned_reason"`
+	IsDeleted      bool    `json:"is_deleted"`
+	CreatedAt      string  `json:"created_at"`
+	UpdatedAt      string  `json:"updated_at"`
 	// 画面が使う導出値
 	ChildName string `json:"child_name"`
 	ClassName string `json:"class_name"`
 	StaffName string `json:"staff_name"`
-	// 確認（承認）した職員の氏名。保護者には職員の名簿を渡さないため、日誌の側に載せる
+	// 承認の経緯に出す名前（詳細設計書「日誌」(4-13 (6))）
 	ApprovedStaffName *string `json:"approved_staff_name"`
+	AppliedStaffName  *string `json:"applied_staff_name"`
+	// ヒヤリハットの欄。ヒヤリハットのときだけ（詳細設計書「日誌」(4-13 (6))。api_diary_incident.go）
+	Incident *DiaryIncident `json:"incident"`
 }
 
 const diaryColumns = `diary_id, record_type, child_id, class_id, diary_date, body, status,
-	created_staff_id, approved_staff_id, approved_at, is_shared_to_guardian, shared_at,
-	nap_abnormal_id, returned_reason, is_deleted, created_at, updated_at`
+	created_staff_id, approved_staff_id, approved_at, applied_staff_id, applied_at,
+	nap_abnormal_id, returned_reason, is_deleted, created_at, updated_at,
+	occurred_at, place, guardian_notice, guardian_noticed_at, guardian_notice_method, guardian_notice_person`
 
 func (a *app) scanDiary(rows interface{ Scan(...any) error }) (Diary, error) {
 	var (
-		d        Diary
-		childID  sql.NullString
-		classID  sql.NullInt64
-		appStaff sql.NullString
-		appAt    sql.NullString
-		sharedAt sql.NullString
-		napID    sql.NullInt64
-		reason   sql.NullString
+		d            Diary
+		childID      sql.NullString
+		classID      sql.NullInt64
+		appStaff     sql.NullString
+		appAt        sql.NullString
+		appliedStaff sql.NullString
+		appliedAt    sql.NullString
+		napID        sql.NullInt64
+		reason       sql.NullString
+		// ヒヤリハットの列（api_diary_incident.go）
+		occurredAt, place, notice, noticedAt, noticeMethod, noticePerson sql.NullString
 	)
 	err := rows.Scan(&d.DiaryID, &d.RecordType, &childID, &classID, &d.DiaryDate, &d.Body, &d.Status,
-		&d.CreatedStaffID, &appStaff, &appAt, &d.IsSharedToGuardian, &sharedAt,
-		&napID, &reason, &d.IsDeleted, &d.CreatedAt, &d.UpdatedAt)
+		&d.CreatedStaffID, &appStaff, &appAt, &appliedStaff, &appliedAt,
+		&napID, &reason, &d.IsDeleted, &d.CreatedAt, &d.UpdatedAt,
+		&occurredAt, &place, &notice, &noticedAt, &noticeMethod, &noticePerson)
 	if err != nil {
 		return d, err
 	}
@@ -63,9 +73,11 @@ func (a *app) scanDiary(rows interface{ Scan(...any) error }) (Diary, error) {
 	d.ClassID = nullInt(classID)
 	d.ApprovedStaffID = nullStr(appStaff)
 	d.ApprovedAt = nullStr(appAt)
-	d.SharedAt = nullStr(sharedAt)
+	d.AppliedStaffID = nullStr(appliedStaff)
+	d.AppliedAt = nullStr(appliedAt)
 	d.NapAbnormalID = nullInt(napID)
 	d.ReturnedReason = nullStr(reason)
+	d.Incident = incidentOf(d.RecordType, d.Body, occurredAt, place, notice, noticedAt, noticeMethod, noticePerson)
 
 	return d, nil
 }
@@ -88,12 +100,16 @@ func (a *app) enrich(d *Diary) {
 	if d.ApprovedStaffID != nil {
 		d.ApprovedStaffName = s(a.staffName(*d.ApprovedStaffID))
 	}
+	if d.AppliedStaffID != nil {
+		d.AppliedStaffName = s(a.staffName(*d.AppliedStaffID))
+	}
 }
 
 // visibleDiaryCondition は参照範囲の条件を組み立てる。
 //
 // 個人日誌・ヒヤリハットは対象園児で、クラス日誌・週案は対象クラスで判定する。
-// 承認済みであっても参照範囲は広がらない（基本設計書「日誌の作成から保護者への共有」(4-5)）。
+// 承認済みであっても参照範囲は広がらない。日誌は園内の記録で、保護者へ返す道を持たない
+// （基本設計書「日誌システム（園内の記録）」(4-6)、詳細設計書「日誌」(4-13 (10))）
 func (a *app) visibleDiaryCondition(u *SessionUser) (string, []any) {
 	switch u.Role {
 	case "1":
@@ -105,23 +121,27 @@ func (a *app) visibleDiaryCondition(u *SessionUser) (string, []any) {
 		return `((child_id IS NOT NULL AND child_id IN (SELECT child_id FROM t_class_child WHERE class_id = ?))
 		         OR (child_id IS NULL AND class_id = ?))`, []any{*u.ClassID, *u.ClassID}
 	default:
-		if u.GuardianID == nil {
-			return "1 = 0", nil
-		}
-		// 保護者に見えるのは、承認済みかつ共有指定のある自児の個人日誌のみ。
-		// クラス日誌・週案月案・ヒヤリハットは保護者への共有の対象外とする（基本設計書「日誌システム」(4-5)）。
-		// 共有の印が付いてしまったものがあっても見せない（GitHub Issue #157）
-		return `(record_type = '1' AND status = '3' AND is_shared_to_guardian = 1 AND child_id IN
-		          (SELECT child_id FROM t_guardian_child WHERE guardian_id = ? AND link_status = '1'))`,
-			[]any{*u.GuardianID}
+		return "1 = 0", nil
 	}
 }
 
-// unsharedDiaryMessage は、保護者が見られない日誌を開いたときの文言。
-// 自児の共有されていない日誌・他児の日誌・無い日誌を同じ文言にし、あるかどうかを推測させない
-// （図/画面詳細図.md「共有日誌閲覧画面」(2-8)「どちらかが欠けていれば『この記録は共有されていません』と示す」）。
-// 画面側のモック（web/src/api/mock.ts の getDiary）と同じ文言にしてある
-const unsharedDiaryMessage = "この記録は共有されていません"
+// msgDiaryForbidden は、その日誌を読めないときの文言（既存）。保護者が日誌の経路を呼んだときも同じ文言にする
+// （詳細設計書「日誌」(4-13)「保護者が呼んだら 403」）。モック（web/src/api/mock.ts）と同じ
+const msgDiaryForbidden = "この日誌を参照する権限がありません"
+
+// requireDiaryStaff は、日誌の経路を職員だけに通す。保護者には 403 を返す（詳細設計書「日誌」(4-13)）。
+// 共有日誌閲覧画面を外したため、保護者が日誌を読む経路は無い
+func (a *app) requireDiaryStaff(w http.ResponseWriter, r *http.Request) (*SessionUser, bool) {
+	u, ok := a.requireUser(w, r)
+	if !ok {
+		return nil, false
+	}
+	if !u.isStaff() {
+		writeForbidden(w, msgDiaryForbidden)
+		return nil, false
+	}
+	return u, true
+}
 
 // canSeeDiary は、その日誌を参照できるかを返す。日誌本体（handleGetDiary）と同じ条件で判定する。
 // 無い日誌も「参照できない」とする。あるかどうかを推測させないため
@@ -159,7 +179,7 @@ func (a *app) queryDiaries(q string, args ...any) ([]Diary, error) {
 }
 
 func (a *app) handleListDiaries(w http.ResponseWriter, r *http.Request) {
-	u, ok := a.requireUser(w, r)
+	u, ok := a.requireDiaryStaff(w, r)
 	if !ok {
 		return
 	}
@@ -171,12 +191,23 @@ func (a *app) handleListDiaries(w http.ResponseWriter, r *http.Request) {
 		args = append(args, v)
 	}
 	if v, has := queryInt64(r, "class_id"); has {
-		q += ` AND class_id = ?`
-		args = append(args, v)
+		// 個人日誌・ヒヤリハットは対象園児の在籍クラスで、クラス日誌・週案は対象クラスで絞る。
+		// 参照範囲（visibleDiaryCondition）と同じ考え方にする。対象のクラスで絞ると、以前の版でクラスを空けて
+		// 保存した個人日誌が、見られるのに一覧に出なかった（GitHub Issue #174）。モック（listDiaries）と同じ規則
+		q += ` AND ((child_id IS NULL AND class_id = ?)
+		         OR (child_id IS NOT NULL AND child_id IN (SELECT child_id FROM t_class_child WHERE class_id = ?)))`
+		args = append(args, v, v)
 	}
 	if v := r.URL.Query().Get("status"); v != "" {
 		q += ` AND status = ?`
 		args = append(args, v)
+	}
+	// 【仮置き】自分が書いた日誌に絞る。職員ダッシュボードの「差し戻された日誌」（自分が書いたものを数える）から
+	// 開いた一覧を、数えた日誌と一致させるため（図/画面詳細図.md「職員ダッシュボード」(2-6) 項目2。GitHub Issue #174）。
+	// 日誌一覧画面（3-1）の絞り込みの項目には無い（web/仮置き値.md）
+	if r.URL.Query().Get("mine") == "1" && u.isStaff() {
+		q += ` AND created_staff_id = ?`
+		args = append(args, u.staff())
 	}
 	if v := r.URL.Query().Get("from"); v != "" {
 		q += ` AND diary_date >= ?`
@@ -197,7 +228,7 @@ func (a *app) handleListDiaries(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *app) handleGetDiary(w http.ResponseWriter, r *http.Request) {
-	u, ok := a.requireUser(w, r)
+	u, ok := a.requireDiaryStaff(w, r)
 	if !ok {
 		return
 	}
@@ -213,11 +244,7 @@ func (a *app) handleGetDiary(w http.ResponseWriter, r *http.Request) {
 	                       WHERE is_deleted = 0 AND `+cond+` AND diary_id = ?`, args...)
 	d, err := a.scanDiary(row)
 	if err != nil {
-		if u.isGuardian() {
-			writeForbidden(w, unsharedDiaryMessage)
-			return
-		}
-		writeForbidden(w, "この日誌を参照する権限がありません")
+		writeForbidden(w, msgDiaryForbidden)
 		return
 	}
 	a.enrich(&d)
@@ -227,11 +254,10 @@ func (a *app) handleGetDiary(w http.ResponseWriter, r *http.Request) {
 // handlePastDiaries はその園児の過去の記録を返す。
 // 前回の記述を見ながら書けるようにするため（画面詳細図 3-2）。
 //
-// 職員の編集画面のための経路であり、保護者には使わせない。下書き・申請中・差し戻し（理由を含む）・
-// ヒヤリハットまで、共有していない日誌がすべて返るため（基本設計書「権限と利用可能機能」(6-1) ※3
-// 「自児のみ、かつ共有されたものに限る」。GitHub Issue #157）。保護者の閲覧は visibleDiaryCondition を通す
+// 職員の編集画面のための経路であり、保護者には使わせない。日誌は園内の記録で、保護者へ返さない
+// （詳細設計書「日誌」(4-13)。GitHub Issue #157）
 func (a *app) handlePastDiaries(w http.ResponseWriter, r *http.Request) {
-	u, ok := a.requireStaff(w, r)
+	u, ok := a.requireDiaryStaff(w, r)
 	if !ok {
 		return
 	}
@@ -240,8 +266,11 @@ func (a *app) handlePastDiaries(w http.ResponseWriter, r *http.Request) {
 		writeForbidden(w, "この園児を参照する権限がありません")
 		return
 	}
+	// いま開いている日誌そのものは除く。過去の記録を見ながら書くための欄であるため（GitHub Issue #139・#174）。
+	// 除く日誌は exclude で受け取る。モック（pastDiariesOf）と同じ
+	exclude, _ := queryInt64(r, "exclude")
 	out, err := a.queryDiaries(`SELECT `+diaryColumns+` FROM t_diary
-		WHERE is_deleted = 0 AND child_id = ? ORDER BY diary_date DESC, diary_id DESC`, childID)
+		WHERE is_deleted = 0 AND child_id = ? AND diary_id <> ? ORDER BY diary_date DESC, diary_id DESC`, childID, exclude)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "過去の記録を取得できませんでした")
 		return
@@ -252,7 +281,7 @@ func (a *app) handlePastDiaries(w http.ResponseWriter, r *http.Request) {
 // handleTimeline は園児タイムライン画面のための日誌を返す。
 // 職員の画面のための経路であり、保護者には使わせない（handlePastDiaries と同じ。GitHub Issue #157）
 func (a *app) handleTimeline(w http.ResponseWriter, r *http.Request) {
-	u, ok := a.requireStaff(w, r)
+	u, ok := a.requireDiaryStaff(w, r)
 	if !ok {
 		return
 	}
@@ -271,21 +300,21 @@ func (a *app) handleTimeline(w http.ResponseWriter, r *http.Request) {
 }
 
 // DiaryTemplate は雛形（m_diary_template）。
-// 保護者共有の既定値を雛形側に持ち、コードに書かない（基本設計書 5-4）
+// 保護者への共有の既定（default_share_to_guardian）は持たない。日誌は共有しないため（詳細設計書「変える表」(5-3)）
 type DiaryTemplate struct {
-	DiaryTemplateID        int64  `json:"diary_template_id"`
-	RecordType             string `json:"record_type"`
-	TemplateName           string `json:"template_name"`
-	Body                   string `json:"body"`
-	DefaultShareToGuardian bool   `json:"default_share_to_guardian"`
+	DiaryTemplateID int64  `json:"diary_template_id"`
+	RecordType      string `json:"record_type"`
+	TemplateName    string `json:"template_name"`
+	Body            string `json:"body"`
+	IsDeleted       bool   `json:"is_deleted"`
 }
 
 func (a *app) handleDiaryTemplates(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.requireStaff(w, r); !ok {
 		return
 	}
-	rows, err := a.db.Query(`SELECT diary_template_id, record_type, template_name, body, default_share_to_guardian
-	                           FROM m_diary_template ORDER BY diary_template_id`)
+	rows, err := a.db.Query(`SELECT diary_template_id, record_type, template_name, body, is_deleted
+	                           FROM m_diary_template WHERE is_deleted = 0 ORDER BY diary_template_id`)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "雛形を取得できませんでした")
 		return
@@ -294,7 +323,7 @@ func (a *app) handleDiaryTemplates(w http.ResponseWriter, r *http.Request) {
 	out := []DiaryTemplate{}
 	for rows.Next() {
 		var t DiaryTemplate
-		if rows.Scan(&t.DiaryTemplateID, &t.RecordType, &t.TemplateName, &t.Body, &t.DefaultShareToGuardian) == nil {
+		if rows.Scan(&t.DiaryTemplateID, &t.RecordType, &t.TemplateName, &t.Body, &t.IsDeleted) == nil {
 			out = append(out, t)
 		}
 	}
@@ -339,13 +368,13 @@ type DiaryAttachment struct {
 /*
 handleDiaryAttachments は日誌の添付の一覧を返す。
 
-添付も日誌本体と同じ参照範囲に従う。承認済みであっても参照範囲は広がらない
-（基本設計書「日誌の作成から保護者への共有」(4-5)）。添付には園児の写真が含まれるため、
+添付も日誌本体と同じ参照範囲に従う。承認済みであっても参照範囲は広がらず、保護者には返さない
+（詳細設計書「日誌」(4-13)）。添付には園児の写真が含まれるため、
 権限の判定を通してから渡す（同「添付ファイルの実体の保存先」(5-5)）。
 件数とファイル名だけでも、担当外の園児の写真があることが分かる（GitHub Issue #153）。
 */
 func (a *app) handleDiaryAttachments(w http.ResponseWriter, r *http.Request) {
-	u, ok := a.requireUser(w, r)
+	u, ok := a.requireDiaryStaff(w, r)
 	if !ok {
 		return
 	}
@@ -355,7 +384,7 @@ func (a *app) handleDiaryAttachments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !a.canSeeDiary(u, id) {
-		writeForbidden(w, "この日誌を参照する権限がありません")
+		writeForbidden(w, msgDiaryForbidden)
 		return
 	}
 	rows, err := a.db.Query(`SELECT diary_attachment_id, diary_id, file_path, file_type

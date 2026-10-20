@@ -52,9 +52,10 @@ func TestDemoIncidentHasCountermeasureHeading(t *testing.T) {
 	if d.RecordType != "4" {
 		t.Fatalf("diary_id 3 の記録の種類 = %q, want 4（ヒヤリハット）", d.RecordType)
 	}
-	// 見出しは雛形（m_diary_template の 4）と同じ順に並ぶ
+	// 見出しは雛形（m_diary_template の 4）と同じ順に並ぶ。
+	// 発生日時は列（occurred_at）へ移ったので、本文の見出しには無い（#230。詳細設計書「日誌」(4-13 (1))、決めたこと D-33）
 	pos := -1
-	for _, heading := range []string{"【発生日時】", "【状況】", "【とった対応】", "【今後の対策】"} {
+	for _, heading := range []string{"【状況】", "【とった対応】", "【今後の対策】"} {
 		i := strings.Index(d.Body, heading)
 		if i <= pos {
 			t.Fatalf("見出し %s が無いか、順が違う: %q", heading, d.Body)

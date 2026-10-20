@@ -84,8 +84,8 @@ describe('手続きを終えるまで、ほかの API を使わせない（基�
   });
 });
 
-describe('日誌の添付（基本設計書「日誌の作成から保護者への共有」(4-5)「承認済みであっても参照範囲は広がらない」）', () => {
-  // 日誌 4 は上園 花子（C002・さくら組）の個人日誌。承認済み・保護者へ共有、添付2件
+describe('日誌の添付（詳細設計書「日誌」(4-13)。承認済みであっても参照範囲は広がらず、保護者には返さない）', () => {
+  // 日誌 4 は上園 花子（C002・さくら組）の個人日誌。承認済み、添付2件
   const diaryId = 4;
 
   it('日誌本体を見られない人には、添付も返さない', async () => {
@@ -94,22 +94,15 @@ describe('日誌の添付（基本設計書「日誌の作成から保護者へ�
     await expect(api.getDiary(otherTeacher, diaryId)).rejects.toThrow('この日誌を参照する権限がありません');
   });
 
-  it('日誌本体を見られる人には返す', async () => {
-    for (const u of [admin, teacher, childGuardian]) {
+  it('日誌本体を見られる職員には返す', async () => {
+    for (const u of [admin, teacher]) {
       expect(await api.attachmentsOf(u, diaryId)).toHaveLength(2);
     }
   });
 
-  it('保護者へ共有していない日誌は、自児の保護者にも本体・添付を見せない', async () => {
-    const d = db.diaries.find((x) => x.diary_id === diaryId)!;
-    d.is_shared_to_guardian = false;
-    try {
-      await expect(api.attachmentsOf(childGuardian, diaryId)).rejects.toThrow('この日誌を参照する権限がありません');
-      // 保護者には「この記録は共有されていません」と示す（画面詳細図 2-8。GitHub Issue #157）
-      await expect(api.getDiary(childGuardian, diaryId)).rejects.toThrow('この記録は共有されていません');
-    } finally {
-      d.is_shared_to_guardian = true;
-    }
+  it('保護者には承認済みでも本体・添付を見せない', async () => {
+    await expect(api.attachmentsOf(childGuardian, diaryId)).rejects.toThrow('この日誌を参照する権限がありません');
+    await expect(api.getDiary(childGuardian, diaryId)).rejects.toThrow('この日誌を参照する権限がありません');
   });
 });
 
@@ -134,7 +127,12 @@ describe('クラス日誌・週案のクラス（要件定義書「参照範囲�
     await expect(api.saveDiary(teacher, classDiary(1), '1')).resolves.toMatchObject({ class_id: 1 });
     await expect(api.saveDiary(otherTeacher, classDiary(2, '3'), '1')).resolves.toMatchObject({ class_id: 2 });
     await expect(api.saveDiary(admin, classDiary(2), '1')).resolves.toMatchObject({ class_id: 2 });
-    await expect(api.saveDiary(admin, classDiary(null, '3'), '1')).resolves.toMatchObject({ class_id: null });
+  });
+
+  // 対象のクラスは必須（図/画面詳細図.md「日誌作成・編集画面」(3-2) 項目5「入力：必須」）。
+  // 以前は管理者だけクラスを空けて作れたが、記録種別によらず断る（GitHub Issue #174。tests/diaryFlow.test.ts）
+  it('管理者も、クラスを指定しない週案は作れない', async () => {
+    await expect(api.saveDiary(admin, classDiary(null, '3'), '1')).rejects.toThrow('対象のクラスを選んでください');
   });
 
   it('更新で他クラスへ移すことも、他クラスの日誌を書き換えることもできない', async () => {
@@ -147,7 +145,10 @@ describe('クラス日誌・週案のクラス（要件定義書「参照範囲�
       .rejects.toThrow('この日誌を編集する権限がありません');
     expect(db.diaries.find((d) => d.diary_id === others.diary_id)).toMatchObject({ class_id: 2, body: 'クラスの様子' });
 
-    await expect(api.saveDiary(teacher, { ...classDiary(1), diary_id: own.diary_id, body: '書き直し' }, '1'))
+    // 自分の日誌は、編集ロックを取れば書き直せる（保存には本人のロックの識別子が要る。GitHub Issue #166）
+    const lock = await api.acquireLock(teacher, own.diary_id);
+    const lockToken = 'token' in lock ? lock.token : undefined;
+    await expect(api.saveDiary(teacher, { ...classDiary(1), diary_id: own.diary_id, body: '書き直し', lock_token: lockToken }, '1'))
       .resolves.toMatchObject({ body: '書き直し' });
   });
 });
@@ -190,13 +191,13 @@ describe('既存の日誌の更新と編集ロック（GitHub Issue #153 の追�
   it('担当外の日誌のロックは取れず、誰が編集中かも見えない', async () => {
     await expect(api.acquireLock(otherTeacher, 1)).rejects.toThrow('この日誌を編集する権限がありません');
     await expect(api.acquireLock(otherTeacher, 4)).rejects.toThrow('この日誌を編集する権限がありません');
-    // 日誌 2（さくら組のクラス日誌）は宮城 蓮がロックを持っている
-    await expect(api.lockOf(otherTeacher, 2)).rejects.toThrow('この日誌を参照する権限がありません');
+    // 日誌 3（差し戻しのヒヤリハット）は宮城 蓮がロックを持っている
+    await expect(api.lockOf(otherTeacher, 3)).rejects.toThrow('この日誌を参照する権限がありません');
     expect(db.diaryLocks.some((l) => l.locked_staff_id === 'S005')).toBe(false);
   });
 
   it('担任はロックを取れ、誰が編集中かも見える', async () => {
     await expect(api.acquireLock(teacher, 1)).resolves.toHaveProperty('token');
-    await expect(api.lockOf(teacher, 2)).resolves.toMatchObject({ staff_name: '宮城 蓮' });
+    await expect(api.lockOf(teacher, 3)).resolves.toMatchObject({ staff_name: '宮城 蓮' });
   });
 });

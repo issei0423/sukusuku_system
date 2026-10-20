@@ -50,6 +50,11 @@ type DevelopmentCheck struct {
 	// 【設計の穴】所見の列は基本設計書 5-7 の定義に無い（GitHub Issue #58）。
 	// ここでは t_development_check に note 列を足して保持している。設計の決定ではない。
 	Note *string `json:"note"`
+	// 保護者へのひとことと、最初に確定した日時（詳細設計書「発達チェックの保存」(4-12 (2))）。職員の経路だけが返す
+	GuardianMessage *string `json:"guardian_message"`
+	FinalizedAt     *string `json:"finalized_at"`
+	// 確定したあとでひとことを書き換えた時刻（詳細設計書「職員の画面から成長の記録へ届けるもの」(2-12 (2))、決めたこと D-51）
+	GuardianMessageCorrectedAt *string `json:"guardian_message_corrected_at"`
 }
 
 // categoryFor は月齢から発達過程区分を引く。区分はマスタから読む（画面詳細図 6-1）
@@ -123,14 +128,14 @@ func (a *app) scanCheck(row interface{ Scan(...any) error }) (DevelopmentCheck, 
 		note     sql.NullString
 	)
 	err := row.Scan(&c.DevelopmentCheckID, &c.ChildID, &schedule, &c.CheckedOn,
-		&c.Status, &c.StaffID, &c.ShareStatus, &note)
+		&c.Status, &c.StaffID, &c.ShareStatus, &note, &c.GuardianMessage, &c.FinalizedAt, &c.GuardianMessageCorrectedAt)
 	c.DevelopmentScheduleID = nullInt(schedule)
 	c.Note = nullStr(note)
 	return c, err
 }
 
 const checkColumns = `development_check_id, child_id, development_schedule_id, checked_on,
-	status, staff_id, share_status, note`
+	status, staff_id, share_status, note, guardian_message, finalized_at, guardian_message_corrected_at`
 
 // handlePreviousCheck は前回の確定済みの記録を返す。並べて表示するために使う（画面詳細図 6-1）
 func (a *app) handlePreviousCheck(w http.ResponseWriter, r *http.Request) {
@@ -180,7 +185,29 @@ func (a *app) handleDraftCheck(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, nil)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"check": c, "results": a.resultsOf(c.DevelopmentCheckID)})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"check": c, "results": a.resultsOf(c.DevelopmentCheckID), "confirmedAt": a.confirmedAt(c),
+	})
+}
+
+/*
+confirmedAt は、確定した記録を最後に確定した日時を返す。下書きと、記録が見つからないときは nil。
+
+確定したあとに開き直したとき、確定済みであることと、いつ・誰が確定したかを入力画面に出すために使う
+（GitHub Issue #143）。誰が確定したかは記録の staff_id（確定した記録は確定でしか保存できないため、最後に確定した職員）。
+【仮置き】確定の日時を持つ列は基本設計書「発達チェック・身体測定」(5-7) の定義に無いため、列は足さず、
+操作ログ（基本設計書「操作ログ」(5-8)）の「確定」から引く（web/仮置き値.md）。
+操作ログの無い記録（デモデータ）は nil になる。画面側のモック（web/src/api/mock.ts の draftFor）と同じ規則
+*/
+func (a *app) confirmedAt(c DevelopmentCheck) *string {
+	if c.Status != "2" {
+		return nil
+	}
+	var at sql.NullString
+	a.db.QueryRow(`SELECT operated_at FROM t_operation_log
+		WHERE target_table = 't_development_check' AND target_id = ? AND after_value = '確定'
+		ORDER BY operated_at DESC, operation_log_id DESC LIMIT 1`, c.DevelopmentCheckID).Scan(&at)
+	return nullStr(at)
 }
 
 /*
@@ -219,7 +246,7 @@ func (a *app) handleDevelopmentList(w http.ResponseWriter, r *http.Request) {
 		ScheduledOn   *string `json:"scheduledOn"`
 		LastCheckedOn *string `json:"lastCheckedOn"`
 		Overdue       bool    `json:"overdue"`
-		// 前回の確定した記録に残っている未入力の項目数。未入力はチェック漏れの対象（基本設計書 5-7）
+		// いちばん新しい記録（下書きを含む）に残っている未入力の項目数。未入力はチェック漏れの対象（基本設計書 5-7）
 		Unfilled int `json:"unfilled"`
 	}
 	out := []listRow{}
@@ -238,24 +265,33 @@ func (a *app) handleDevelopmentList(w http.ResponseWriter, r *http.Request) {
 			WHERE child_id = ? ORDER BY scheduled_on DESC LIMIT 1`, childID).Scan(&scheduled)
 		out[i].ScheduledOn = nullStr(scheduled)
 
-		var (
-			last        sql.NullString
-			lastCheckID sql.NullInt64
-		)
-		a.db.QueryRow(`SELECT checked_on, development_check_id FROM t_development_check
-			WHERE child_id = ? AND status = '2' ORDER BY checked_on DESC LIMIT 1`, childID).Scan(&last, &lastCheckID)
+		// 前回の実施日と「未実施」の判定は、確定した記録で見る。下書きは実施にならない
+		var last sql.NullString
+		a.db.QueryRow(`SELECT checked_on FROM t_development_check
+			WHERE child_id = ? AND status = '2' ORDER BY checked_on DESC LIMIT 1`, childID).Scan(&last)
 		out[i].LastCheckedOn = nullStr(last)
 
-		// 未入力は、その実施日の月齢に対応する項目のうち、結果のレコードが無いものを数える
-		if last.Valid {
-			if cat := a.categoryFor(ageInMonths(out[i].Child.BirthDate, last.String)); cat != nil {
+		/*
+		 * 未入力は、いちばん新しい記録（下書きを含む）について、その実施日の月齢に対応する項目のうち、
+		 * 結果のレコードが無いものを数える。入力画面の「未入力の項目」と同じ数になる。
+		 * 典拠：要件定義書「チェック漏れの強調」(4-5-2)「下書き保存された記録は、保存されていない項目を未入力として扱う」。
+		 * 確定した記録だけで数えていたため、下書きを保存しても一覧の件数が変わらず、入力画面と食い違っていた（GitHub Issue #143）
+		 */
+		var (
+			latestOn sql.NullString
+			latestID sql.NullInt64
+		)
+		a.db.QueryRow(`SELECT checked_on, development_check_id FROM t_development_check
+			WHERE child_id = ? ORDER BY checked_on DESC LIMIT 1`, childID).Scan(&latestOn, &latestID)
+		if latestOn.Valid {
+			if cat := a.categoryFor(ageInMonths(out[i].Child.BirthDate, latestOn.String)); cat != nil {
 				var total, filled int
 				a.db.QueryRow(`SELECT COUNT(*) FROM m_development_item
 					WHERE development_category_id = ?`, cat.DevelopmentCategoryID).Scan(&total)
 				a.db.QueryRow(`SELECT COUNT(*) FROM t_development_result r
 					JOIN m_development_item i ON i.development_item_id = r.development_item_id
 					WHERE r.development_check_id = ? AND i.development_category_id = ?`,
-					lastCheckID.Int64, cat.DevelopmentCategoryID).Scan(&filled)
+					latestID.Int64, cat.DevelopmentCategoryID).Scan(&filled)
 				if total > filled {
 					out[i].Unfilled = total - filled
 				}
@@ -307,6 +343,8 @@ func (a *app) handleDevelopmentSchedules(w http.ResponseWriter, r *http.Request)
 	}
 	classID, _ := queryInt64(r, "class_id")
 
+	// 【仮置き】並びは園児のよみ順（visibleChildren の順）。発達チェック一覧と同じ（web/仮置き値.md「一覧の並び順」）。
+	// モック（web/src/api/mock.ts の schedules）も同じ並びにした（GitHub Issue #177 の 7）
 	children, err := a.visibleChildren(u)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "園児を取得できませんでした")
@@ -419,6 +457,8 @@ func (a *app) handleSetSchedule(w http.ResponseWriter, r *http.Request) {
 	}
 	a.log(u.AccountID, fnDev, opUpdate, "t_development_schedule", nil, s(req.ChildID), nil,
 		s("次回予定日="+req.ScheduledOn+suffix))
+	// 発達チェック一覧の予定日と、ダッシュボードの「未実施」が変わりうる（events.go）
+	a.notifyDevelopment(req.ChildID, false)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 

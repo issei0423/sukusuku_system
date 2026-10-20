@@ -12,18 +12,18 @@
 -- ============ アカウント ============
 -- password_hash はサーバ起動時に平文から作り直す（seedPasswords）。ここでは目印だけ入れる。
 INSERT INTO m_account (account_id, email, password_hash, role, status, is_temp_password, temp_password_expires_at, failed_login_count, locked_until, terms_version, terms_agreed_at, created_at, updated_at) VALUES
- (1,'nohara@hoiku.example.jp','!pass1234','1','1',0,NULL,0,NULL,'1.0','2024-04-01T09:00:00','2024-04-01T09:00:00','2024-04-01T09:00:00'),
- (2,'uezono@hoiku.example.jp',   '!pass1234','1','1',0,NULL,0,NULL,'1.0','2024-04-01T09:00:00','2024-04-01T09:00:00','2024-04-01T09:00:00'),
- (3,'takanashi@hoiku.example.jp',   '!pass1234','2','1',0,NULL,0,NULL,'1.0','2024-04-01T09:00:00','2024-04-01T09:00:00','2024-04-01T09:00:00'),
+ (1,'nohara@hoiku.example.jp','!pass1234','1','1',0,NULL,0,NULL,'1.1','2024-04-01T09:00:00','2024-04-01T09:00:00','2024-04-01T09:00:00'),
+ (2,'uezono@hoiku.example.jp',   '!pass1234','1','1',0,NULL,0,NULL,'1.1','2024-04-01T09:00:00','2024-04-01T09:00:00','2024-04-01T09:00:00'),
+ (3,'takanashi@hoiku.example.jp',   '!pass1234','2','1',0,NULL,0,NULL,'1.1','2024-04-01T09:00:00','2024-04-01T09:00:00','2024-04-01T09:00:00'),
  -- 一時パスワードでログインした状態。真の間は他機能を使わせない
- (4,'miyagi@hoiku.example.jp',     '!temp0901','2','1',1,'2026-09-03T09:00:00',0,NULL,'1.0','2024-04-01T09:00:00','2024-04-01T09:00:00','2024-04-01T09:00:00'),
- (5,'kinjo@hoiku.example.jp',   '!pass1234','2','1',0,NULL,0,NULL,'1.0','2024-04-01T09:00:00','2024-04-01T09:00:00','2024-04-01T09:00:00'),
- (6,'nohara.i@example.jp',       '!pass1234','3','1',0,NULL,0,NULL,'1.0','2025-06-10T10:00:00','2025-06-10T10:00:00','2025-06-10T10:00:00'),
+ (4,'miyagi@hoiku.example.jp',     '!temp0901','2','1',1,'2026-09-03T09:00:00',0,NULL,'1.1','2024-04-01T09:00:00','2024-04-01T09:00:00','2024-04-01T09:00:00'),
+ (5,'kinjo@hoiku.example.jp',   '!pass1234','2','1',0,NULL,0,NULL,'1.1','2024-04-01T09:00:00','2024-04-01T09:00:00','2024-04-01T09:00:00'),
+ (6,'nohara.i@example.jp',       '!pass1234','3','1',0,NULL,0,NULL,'1.1','2025-06-10T10:00:00','2025-06-10T10:00:00','2025-06-10T10:00:00'),
  -- 規約の改定後、まだ再同意していない状態
  (7,'uezono.k@example.jp',       '!pass1234','3','1',0,NULL,0,NULL,'0.9','2025-04-05T10:00:00','2025-04-05T10:00:00','2025-04-05T10:00:00'),
- (8,'takanashi.r@example.jp',         '!pass1234','3','2',0,NULL,0,NULL,'1.0','2025-06-20T10:00:00','2025-06-20T10:00:00','2026-08-20T10:00:00'),
- (9,'miyagi.r@example.jp',            '!pass1234','3','1',0,NULL,0,NULL,'1.0','2025-07-01T10:00:00','2025-07-01T10:00:00','2025-07-01T10:00:00'),
- (10,'kinjo.s@example.jp',            '!pass1234','3','1',0,NULL,0,NULL,'1.0','2025-07-05T10:00:00','2025-07-05T10:00:00','2025-07-05T10:00:00');
+ (8,'takanashi.r@example.jp',         '!pass1234','3','2',0,NULL,0,NULL,'1.1','2025-06-20T10:00:00','2025-06-20T10:00:00','2026-08-20T10:00:00'),
+ (9,'miyagi.r@example.jp',            '!pass1234','3','1',0,NULL,0,NULL,'1.1','2025-07-01T10:00:00','2025-07-01T10:00:00','2025-07-01T10:00:00'),
+ (10,'kinjo.s@example.jp',            '!pass1234','3','1',0,NULL,0,NULL,'1.1','2025-07-05T10:00:00','2025-07-05T10:00:00','2025-07-05T10:00:00');
 
 INSERT INTO m_staff (staff_id, account_id, staff_name, created_at, updated_at) VALUES
  ('S001',1,'野原 一誠','2024-04-01T09:00:00','2024-04-01T09:00:00'),
@@ -54,7 +54,8 @@ INSERT INTO m_child (child_id, child_name, child_name_kana, birth_date, sex, nor
  ('C005','金城 陸','きんじょう りく','2025-07-15','1',36.4,'1','2',0,'2025-04-01T09:00:00','2026-04-01T09:00:00'),
  ('C006','伊藤 葵','いとう あおい','2025-02-28','2',36.6,'1','2',0,'2025-04-01T09:00:00','2026-04-01T09:00:00'),
  ('C007','中村 蓮','なかむら れん','2025-08-03','1',36.9,'1','2',0,'2025-04-01T09:00:00','2026-04-01T09:00:00'),
- -- 月末生まれ。応当日が存在しない月の扱いを確かめるための例（要件定義書「月齢の算出規則」(7-1 No.6)）
+ -- 月末生まれ。応当日が存在しない月の扱いを確かめるための例（要件定義書「月齢の算出規則」(7-1 No.6)）。
+ -- 生年月日も日付ずらし（seed_shift.go）で動くため、月末になるのは基準日（2026-09-01）に起動したときだけ
  ('C008','小林 結衣','こばやし ゆい','2025-01-31','2',36.5,'1','2',0,'2025-04-01T09:00:00','2026-04-01T09:00:00'),
  ('C009','加藤 大和','かとう やまと','2025-06-22','1',36.6,'1','2',0,'2025-04-01T09:00:00','2026-04-01T09:00:00'),
  ('C010','吉田 心春','よしだ こはる','2025-03-30','2',36.7,'1','2',0,'2025-04-01T09:00:00','2026-04-01T09:00:00'),
@@ -113,7 +114,9 @@ INSERT INTO t_invitation_code (invitation_code_id, code, child_id, expires_on, s
 -- ============ 利用規約 ============
 -- 本文は 利用規約・プライバシーポリシー.md 第1.0版の草案からの抜粋。
 -- 園情報の記入と法務の確認が未了（要決定事項.md B-21）
-INSERT INTO m_terms (terms_id, terms_version, document_type, body, published_on) VALUES
+-- 第1.1版（利用規約とプライバシーポリシー）は、文章の下書きに外部の AI を使うことの条を足した版（covers_external_ai = 1）。
+-- 詳細設計書「デモデータ」(5-5 (2))。利用規約・プライバシーポリシー.md の改定が済むまでの演習の文。アカウントは上園（7）のほか 1.1 に同意している
+INSERT INTO m_terms (terms_id, terms_version, document_type, body, published_on, covers_external_ai) VALUES
  (1,'1.0','1','第1条（本規約について）
 本規約は、当園が提供する保育支援システム（以下「本システム」）の利用条件を定めるものです。本システムを利用する職員および保護者の双方に適用します。
 
@@ -132,12 +135,46 @@ INSERT INTO m_terms (terms_id, terms_version, document_type, body, published_on)
 第5条（記録の取り扱い）
 保護者への記録の共有範囲は、当園が項目ごとに設定します。
 
-※本文は演習用の草案です。','2026-09-01'),
- (2,'0.9','1','（旧版）第1条（本規約について）本規約は、当園が提供する保育支援システムの利用条件を定めるものです。','2025-04-01');
+※本文は演習用の草案です。','2026-09-01',0),
+ (2,'0.9','1','（旧版）第1条（本規約について）本規約は、当園が提供する保育支援システムの利用条件を定めるものです。','2025-04-01',0),
+ (3,'1.1','1','第1条（本規約について）
+本規約は、当園が提供する保育支援システム（以下「本システム」）の利用条件を定めるものです。本システムを利用する職員および保護者の双方に適用します。
+
+第2条（アカウント）
+職員のアカウントは、当園が発行します。保護者のアカウントは、当園が発行する招待コードによって登録します。招待コードは1枚につき1アカウントの登録にのみ使用できます。
+アカウントの情報は第三者に共有しないでください。
+
+第3条（本システムが行わないこと）
+本システムは、お子さまの発達の遅速の判定、医療的な診断、療育の要否の判断を一切行いません。
+記録および可視化は、保育士が気づくための支援であり、評価と判断の責任は当園にあります。
+
+第4条（緊急時の連絡）
+緊急を要する連絡は、本システムのチャットではなく電話で行います。
+チャットの通知は、端末の設定や通信の状況により届かない場合があります。
+
+第5条（記録の取り扱い）
+保護者への記録の共有範囲は、当園が項目ごとに設定します。
+
+第6条（文章の下書きに外部の AI を使うこと）
+当園は、連絡帳の文の下書きを作るために、外部の AI（Anthropic 社の Claude）を使うことがあります。当園が使うと決めたときだけ動きます。
+送るのは、その日のできごと（時刻・食事の量・活動のようす）と、担任のメモと、年齢（何歳）だけです。お子さまの名前は置き換えて送り、名前・体温・写真・「家庭から」に書いた内容は送りません。
+下書きは担任が読んで直してから送ります。AI が保護者へ自動で送ることはありません。
+保護者は、お子さまごとに AI の下書きを使わないことを選べます。選んでも、連絡帳の届き方は変わりません。
+
+※本文は演習用の草案です。','2026-09-01',1),
+ (4,'1.1','2','第1条（外部の AI へ送る情報）
+当園は、連絡帳の文の下書きを作るために、記録の一部を外部の AI（Anthropic 社の Claude）へ送ることがあります。送るのは、その日のできごと（時刻・食事の量・活動のようす）、担任のメモ、年齢（何歳）だけです。
+氏名・よみ・呼び名・生年月日・体温・アレルギー・既往歴・排せつの内容・写真・「家庭から」の内容・チャットの本文・発達の記録は送りません。名前は「〇〇ちゃん」「おともだち」に置き換えて送ります。
+送った文と返った文は、本システムに残しません。
+
+第2条（使わないことを選ぶ）
+保護者は、お子さまごとに AI の下書きを使わないことを選べます。紐づく保護者の1人でも選べば、そのお子さまには使いません。
+
+※本文は演習用の草案です。','2026-09-01',1);
 
 -- ============ 日誌の雛形 ============
--- 保護者共有の既定値を雛形側に持ち、コードに書かない（基本設計書 5-4）
-INSERT INTO m_diary_template (diary_template_id, record_type, template_name, body, default_share_to_guardian) VALUES
+-- 日誌は保護者へ届かないため、個人日誌の雛形に保護者あての見出しを置かない（詳細設計書「デモデータ」(5-5)）
+INSERT INTO m_diary_template (diary_template_id, record_type, template_name, body, is_deleted) VALUES
  (1,'1','個人日誌（標準）','【今日の様子】
 
 【食事】
@@ -146,8 +183,8 @@ INSERT INTO m_diary_template (diary_template_id, record_type, template_name, bod
 
 【午睡】
 
-【保護者へのお伝え】
-',1),
+【気づいたこと】
+',0),
  (2,'2','クラス日誌（標準）','【ねらい】
 
 【活動内容】
@@ -176,7 +213,7 @@ INSERT INTO m_diary_template (diary_template_id, record_type, template_name, bod
 ',0);
 
 -- ============ 日誌 ============
-INSERT INTO t_diary (diary_id, record_type, child_id, class_id, diary_date, body, status, created_staff_id, approved_staff_id, approved_at, is_shared_to_guardian, shared_at, nap_abnormal_id, returned_reason, is_deleted, created_at, updated_at) VALUES
+INSERT INTO t_diary (diary_id, record_type, child_id, class_id, diary_date, body, status, created_staff_id, applied_staff_id, applied_at, approved_staff_id, approved_at, occurred_at, place, nap_abnormal_id, returned_reason, is_deleted, created_at, updated_at) VALUES
  (1,'1','C001',1,'2026-09-01','【今日の様子】
 積み木を高く積んで遊んでいました。崩れても笑って積み直していました。
 
@@ -184,29 +221,29 @@ INSERT INTO t_diary (diary_id, record_type, child_id, class_id, diary_date, body
 完食。
 
 【午睡】
-13:05に入眠。','1','S003',NULL,NULL,0,NULL,NULL,NULL,0,'2026-09-01T16:40:00','2026-09-01T16:40:00'),
+13:05に入眠。','1','S003',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,'2026-09-01T16:40:00','2026-09-01T16:40:00'),
  (2,'2',NULL,1,'2026-08-31','【ねらい】
 身近な友だちと関わる楽しさを味わう。
 
 【活動内容】
-園庭でしゃぼん玉遊び。','2','S003',NULL,NULL,0,NULL,NULL,NULL,0,'2026-08-31T17:20:00','2026-08-31T17:20:00'),
+園庭でしゃぼん玉遊び。','2','S003','S003','2026-08-31T17:20:00',NULL,NULL,NULL,NULL,NULL,NULL,0,'2026-08-31T17:20:00','2026-08-31T17:20:00'),
  (4,'1','C002',1,'2026-08-29','【今日の様子】
 絵本の読み聞かせに集中していました。
 
 【食事】
-野菜を残しましたが、声をかけると一口食べました。','3','S003','S001','2026-08-29T18:05:00',1,'2026-08-29T18:05:00',NULL,NULL,0,'2026-08-29T17:10:00','2026-08-29T18:05:00'),
+野菜を残しましたが、声をかけると一口食べました。','3','S003','S003','2026-08-29T17:10:00','S001','2026-08-29T18:05:00',NULL,NULL,NULL,NULL,0,'2026-08-29T17:10:00','2026-08-29T18:05:00'),
  (5,'1','C001',1,'2026-08-29','【今日の様子】
 砂場でスコップを使い、型抜きを繰り返していました。
 
 【午睡】
-12:55に入眠。','3','S003','S001','2026-08-29T18:06:00',1,'2026-08-29T18:06:00',NULL,NULL,0,'2026-08-29T17:15:00','2026-08-29T18:06:00'),
+12:55に入眠。','3','S003','S003','2026-08-29T17:15:00','S001','2026-08-29T18:06:00',NULL,NULL,NULL,NULL,0,'2026-08-29T17:15:00','2026-08-29T18:06:00'),
  (6,'2',NULL,2,'2026-09-01','【ねらい】
 身の回りのことを自分でやってみようとする。
 
 【活動内容】
-散歩（近隣公園）。','2','S005',NULL,NULL,0,NULL,NULL,NULL,0,'2026-09-01T17:00:00','2026-09-01T17:00:00'),
+散歩（近隣公園）。','2','S005','S005','2026-09-01T17:00:00',NULL,NULL,NULL,NULL,NULL,NULL,0,'2026-09-01T17:00:00','2026-09-01T17:00:00'),
  (7,'1','C004',1,'2026-09-01','【今日の様子】
-手洗いを自分でしようとする姿がありました。','2','S004',NULL,NULL,0,NULL,NULL,NULL,0,'2026-09-01T17:20:00','2026-09-01T17:20:00');
+手洗いを自分でしようとする姿がありました。','2','S004','S004','2026-09-01T17:20:00',NULL,NULL,NULL,NULL,NULL,NULL,0,'2026-09-01T17:20:00','2026-09-01T17:20:00');
 
 INSERT INTO t_diary_attachment (diary_attachment_id, diary_id, file_path, file_type) VALUES
  (1,4,'demo/photo-1','image/jpeg'),
@@ -235,21 +272,19 @@ INSERT INTO t_nap_abnormal (nap_abnormal_id, nap_session_id, child_id, found_at,
  (1,3,'C003','2026-08-30T13:40:00','うつ伏せの体位で寝ているのを発見。呼吸あり、顔色は通常。','仰向けに直し、5分後に再度確認した。保護者へは降園時に口頭で伝えた。','S004',NULL),
  (2,2,'C005','2026-08-31T14:10:00','顔色がやや紅潮していた。体温37.4度。','別室で休ませ、保護者へ連絡した。','S003',NULL);
 
--- 本文は雛形（m_diary_template の 4）と同じく【今後の対策】の見出しで今後の対策を持つ
--- （基本設計書「ヒヤリハットの記録」(4-6)、詳細設計書の決めたこと D-33。PR #216 で設計を直した）。web/src/api/mockDb.ts の diary_id 3 とそろえる
 -- ヒヤリハット（異常時の記録から起票済み。相互に参照する）
-INSERT INTO t_diary (diary_id, record_type, child_id, class_id, diary_date, body, status, created_staff_id, approved_staff_id, approved_at, is_shared_to_guardian, shared_at, nap_abnormal_id, returned_reason, is_deleted, created_at, updated_at) VALUES
- (3,'4','C003',1,'2026-08-30','【発生日時】
-午睡中の13時40分ごろ
-
-【状況】
+-- 発生日時・場所・保護者へ伝えたことは列に、状況・とった対応・今後の対策は本文に見出しを付けて持つ
+-- （詳細設計書「日誌の画面（作り直し）」(2-13 (8))・「日誌」(4-13 (1))、決めたこと D-33）。
+-- 発生日時は異常時の記録（nap_abnormal_id 1）の発見時刻。場所・伝えた日時・相手はデモの値。web/src/api/mockDb.ts の diary_id 3 とそろえる
+INSERT INTO t_diary (diary_id, record_type, child_id, class_id, diary_date, body, status, created_staff_id, applied_staff_id, applied_at, approved_staff_id, approved_at, occurred_at, place, guardian_notice, guardian_noticed_at, guardian_notice_method, guardian_notice_person, nap_abnormal_id, returned_reason, is_deleted, created_at, updated_at) VALUES
+ (3,'4','C003',1,'2026-08-30','【状況】
 午睡中にうつ伏せの体位を確認した。
 
 【とった対応】
 仰向けに直し、呼吸と顔色を確認した。
 
 【今後の対策】
-午睡の確認のたびに、呼吸とあわせて体位も見る。うつ伏せを見つけて仰向けに直したときは、直したあとの向きも記録する。','4','S004','S001',NULL,0,NULL,1,'発生時の呼吸・顔色の記録が本文にありません。異常時の記録と同じ内容を転記してください。',0,'2026-08-30T18:00:00','2026-08-31T09:10:00');
+午睡の確認のたびに、呼吸とあわせて体位も見る。うつ伏せを見つけて仰向けに直したときは、直したあとの向きも記録する。','4','S004',NULL,NULL,NULL,NULL,'2026-08-30T13:40:00','保育室（さくら組）','1','2026-08-30T17:10:00','2','父（お迎え）',1,'発生時の呼吸・顔色の記録が本文にありません。異常時の記録と同じ内容を転記してください。',0,'2026-08-30T18:00:00','2026-08-31T09:10:00');
 -- ヒヤリハットと異常時の記録は相互に参照する。循環参照になるため、日誌の登録後に紐づける
 UPDATE t_nap_abnormal SET diary_id = 3 WHERE nap_abnormal_id = 1;
 
@@ -284,14 +319,30 @@ INSERT INTO t_chat_member (chat_room_id, account_id, joined_at, left_at) VALUES
  (8,1,'2025-07-01T10:00:00',NULL),(8,2,'2025-07-01T10:00:00',NULL),(8,3,'2025-07-01T10:00:00',NULL),(8,4,'2025-07-01T10:00:00',NULL),(8,9,'2025-07-01T10:00:00',NULL),
  (9,1,'2025-07-05T10:00:00',NULL),(9,2,'2025-07-05T10:00:00',NULL),(9,3,'2025-07-05T10:00:00',NULL),(9,4,'2025-07-05T10:00:00',NULL),(9,10,'2025-07-05T10:00:00',NULL);
 
+-- 詳細設計書「デモデータ」(5-5)：保護者未登録の在籍園児にも個人チャットを用意する。
+INSERT INTO m_chat_room (room_type, class_id, room_name, is_archived, thread_status, child_id)
+SELECT '4', cc.class_id, c.child_name || 'の保護者', 0, '2', c.child_id
+FROM m_child c JOIN t_class_child cc ON cc.child_id = c.child_id
+JOIN m_class cl ON cl.class_id = cc.class_id AND cl.fiscal_year = 2026
+WHERE c.enrollment_status = '1' AND c.is_deleted = 0
+  AND NOT EXISTS (SELECT 1 FROM m_chat_room r WHERE r.room_type = '4' AND r.child_id = c.child_id)
+ORDER BY c.child_id;
+INSERT INTO t_chat_member (chat_room_id, account_id, joined_at, left_at)
+SELECT r.chat_room_id, a.account_id, '2026-09-01T09:00:00', NULL
+FROM m_chat_room r CROSS JOIN m_account a
+WHERE r.room_type = '4' AND r.chat_room_id >= 10 AND a.status = '1'
+  AND (a.role = '1' OR (a.role = '2' AND EXISTS (
+    SELECT 1 FROM m_staff s JOIN t_class_staff cs ON cs.staff_id = s.staff_id
+    WHERE s.account_id = a.account_id AND cs.class_id = r.class_id)));
+
 INSERT INTO t_chat_message (chat_message_id, chat_room_id, sender_account_id, body, source_type, source_id, sent_at, edited_at, is_deleted, deleted_at, deleted_account_id) VALUES
  (1,1,1,'9月の献立表を掲示しました。ご確認ください。','1',NULL,'2026-09-01T08:30:00',NULL,0,NULL,NULL),
  (2,3,4,'明日の遠足の集合時間ですが、9時でよろしいでしょうか。','1',NULL,'2026-09-01T15:02:00',NULL,0,NULL,NULL),
  (3,3,3,'9時に園庭でお願いします。','1',NULL,'2026-09-01T15:10:00',NULL,0,NULL,NULL),
- (4,6,3,'本日の日誌を共有しました。','2',5,'2026-08-29T18:06:00',NULL,0,NULL,NULL),
+ (4,6,3,'今日は砂場でスコップを使って、型抜きを何度もしていました。','1',NULL,'2026-08-29T18:06:00',NULL,0,NULL,NULL),
  (5,6,6,'ありがとうございます。確認しました。','1',NULL,'2026-08-29T20:30:00',NULL,0,NULL,NULL),
  (6,6,6,'明日は祖母がお迎えに伺います。よろしくお願いします。','1',NULL,'2026-09-01T07:40:00',NULL,0,NULL,NULL),
- (7,7,3,'本日の日誌を共有しました。','2',4,'2026-08-29T18:05:00',NULL,0,NULL,NULL),
+ (7,7,3,'今日は絵本の読み聞かせを、最後まで座って聞いていました。','1',NULL,'2026-08-29T18:05:00',NULL,0,NULL,NULL),
  (8,2,2,'来週の職員会議は水曜16時からです。','1',NULL,'2026-08-31T11:00:00',NULL,0,NULL,NULL),
  (9,5,1,'種目案を今週中にまとめましょう。','1',NULL,'2026-08-28T13:00:00',NULL,0,NULL,NULL),
  -- 取消済み。誤送信への対応の記録と対にする
@@ -342,10 +393,19 @@ INSERT INTO t_development_schedule (development_schedule_id, child_id, scheduled
  (4,'C004','2026-09-10',0,'S001'),(5,'C005','2026-09-05',1,'S001'),(6,'C006','2026-08-28',0,'S001'),
  (7,'C007','2026-09-20',0,'S001'),(8,'C008','2026-09-15',0,'S001');
 
-INSERT INTO t_development_check (development_check_id, child_id, development_schedule_id, checked_on, status, staff_id, share_status, note) VALUES
- (1,'C001',NULL,'2026-06-01','2','S003','2',NULL),
- (2,'C002',NULL,'2026-05-10','2','S003','2',NULL),
- (3,'C004',NULL,'2026-06-05','2','S004','1','食事の場面で意欲が見られる');
+-- 結果は、実施日の月齢の区分の項目で入れる（基本設計書「月齢の算出」(4-8)。基準日は実施日）。
+-- 日付ずらし（seed_shift.go）は生年月日と実施日を同じ日数だけ動かすが、月の長さの違いで応当日基準の月齢が
+-- 1 か月ずれることがある。区分の境目（誕生日のちょうど 1 年後など）に置くと隣の区分へ移り、一覧に「未入力」が出るため、
+-- 境目から離して置く。野原 太郎は 0歳11か月（9か月頃〜12か月頃）、上園 花子・宮城 美咲は 1歳1か月（1歳頃〜1歳3か月頃）
+-- （GitHub Issue #143・#164。もとの 2026-06-01 は 1歳0か月ちょうどで、結果の区分と合っていなかった）
+-- 成長の記録（詳細設計書「デモデータ」(5-5) の成長の記録の行）：野原 太郎の確定に、確定した日時と保護者へのひとこと
+-- （評価の言葉を入れない）。ほかの確定は「いまのデータの移し方」と同じく実施日の 00:00 を確定した日時とした
+-- 【仮置き】野原 太郎のひとことは、確定した日のうちに担任が書き換えたものとして「訂正しました（日付）」の印を置く
+-- （決めたこと D-51。PR #216 で決まった設計。web/仮置き値.md。web/src/api/mockDb.ts と同じ）
+INSERT INTO t_development_check (development_check_id, child_id, development_schedule_id, checked_on, status, staff_id, share_status, note, guardian_message, finalized_at, guardian_message_corrected_at) VALUES
+ (1,'C001',NULL,'2026-05-15','2','S003','2',NULL,'ボールを転がすと、追いかけて両手でつかもうとしていました。','2026-05-15T16:00:00','2026-05-15T17:30:00'),
+ (2,'C002',NULL,'2026-05-10','2','S003','2',NULL,NULL,'2026-05-10T00:00:00',NULL),
+ (3,'C004',NULL,'2026-06-05','2','S004','1','食事の場面で意欲が見られる',NULL,'2026-06-05T00:00:00',NULL);
 
 -- 「未入力」はレコードが存在しない状態で表す。「未確認」は result='3' として保持する
 INSERT INTO t_development_result (development_result_id, development_check_id, development_item_id, result, note) VALUES
@@ -371,7 +431,7 @@ INSERT INTO t_operation_log (operation_log_id, account_id, operated_at, function
  (1,3,'2026-09-01T16:40:00','1','1','t_diary',1,'C001',NULL,'下書き作成'),
  (2,3,'2026-09-01T13:20:30','3','1','t_nap_record',1,'C001',NULL,'体位=仰向け 呼吸=あり 顔色=通常 体温=36.6'),
  (3,1,'2026-08-31T09:10:00','1','3','t_diary',3,'C003','申請中','差し戻し'),
- (4,1,'2026-08-29T18:05:00','1','3','t_diary',4,'C002','申請中','承認済み・保護者へ共有'),
+ (4,1,'2026-08-29T18:05:00','1','3','t_diary',4,'C002','申請中','承認済み'),
  (5,3,'2026-09-01T10:00:00','5','1','t_physical_record',7,'C001',NULL,'身長=78.5 体重=9.8'),
  (6,1,'2026-08-25T10:00:00','7','1','t_invitation_code',1,'C001',NULL,'招待コードを発行'),
  (7,1,'2026-08-20T10:00:00','7','2','m_account',8,NULL,'有効','停止'),
@@ -398,7 +458,7 @@ INSERT INTO m_setting (setting_key, setting_value, description, updated_staff_id
  ('ui.diary_lock_minutes','15','編集ロックの無操作時間（分）','S001','2026-04-01T09:00:00'),
  ('scope.handover_grace_days','14','引き継ぎ猶予期間（日）','S001','2026-04-01T09:00:00'),
  ('scope.fiscal_year_update_date','04-01','年度更新の実行日','S001','2026-04-01T09:00:00'),
- ('physical.measure_months','4,7,10,1','測定を行う月','S001','2026-04-01T09:00:00'),
+ ('physical.measure_months','4,8,12','測定を行う月','S001','2026-04-01T09:00:00'),
  ('physical.height_min','40','身長の下限（cm）','S001','2026-04-01T09:00:00'),
  ('physical.height_max','140','身長の上限（cm）','S001','2026-04-01T09:00:00'),
  ('physical.weight_min','2','体重の下限（kg）','S001','2026-04-01T09:00:00'),
@@ -416,4 +476,98 @@ INSERT INTO m_setting (setting_key, setting_value, description, updated_staff_id
 
 -- 編集ロック。デモで「他の職員が編集中」の状態を見せるため、起動時に現在時刻へ更新する
 INSERT INTO t_diary_lock (diary_id, lock_token, locked_staff_id, locked_at, last_active_at) VALUES
- (2,'lock-demo-0001','S004','2026-09-01T09:20:00','2026-09-01T09:35:00');
+ (3,'lock-demo-0001','S004','2026-09-01T09:20:00','2026-09-01T09:35:00');
+
+-- ============ 連絡帳と、ねた・おきた（詳細設計書「デモデータ」(5-5)） ============
+-- web/src/api/mockDb.ts と同じ ID・同じ内容。野原 太郎（C001）の今日は「家庭から」「ねた」「園から」を空けておき、
+-- デモで押して見せる。起動した時刻より後の今日の記録は、日付ずらしのあとで外す（db_contact.go の trimFutureDemoContacts）
+INSERT INTO m_setting (setting_key, setting_value, description, updated_staff_id, updated_at) VALUES
+ ('contact.show_items','nap,meal,toilet,temperature,comment,photo,class','保護者へ出すきょうのようすの項目','S001','2026-04-01T09:00:00'),
+ ('contact.home_items','temperature,night_sleep,breakfast,mood,pickup,message','「家庭から」の入力欄に出す項目','S001','2026-04-01T09:00:00'),
+ ('contact.toilet_choices','おしっこ,うんち,おむつ交換,トイレでできた','排せつの選択肢','S001','2026-04-01T09:00:00'),
+ ('contact.mood_choices','ごきげん,ふつう,ごきげんななめ','「家庭から」のきげんの選択肢','S001','2026-04-01T09:00:00'),
+ ('push.quiet_hours','21:00-07:00','通知を送らない時間帯','S001','2026-04-01T09:00:00'),
+ ('ai.enabled','0','文章の下書き（AI）を使うか','S001','2026-04-01T09:00:00'),
+ ('ai.daily_limit','300','AI の下書きの1日の上限回数','S001','2026-04-01T09:00:00'),
+ ('scope.guardian_grace_days','30','保護者の猶予期間（日）','S001','2026-04-01T09:00:00'),
+ ('nap.temperature_required','入眠時','午睡で体温を求める時点','S001','2026-04-01T09:00:00'),
+ ('growth.share_physical','1','身体測定を成長の記録に出すか','S001','2026-04-01T09:00:00'),
+ ('retention.contact_years','5','連絡帳の保持年数（要決定。決まるまでは記録の保持年数と同じ）','S001','2026-04-01T09:00:00');
+
+-- 家庭から。C004 は確認済み、C005 は未確認（お迎えの変更あり）、C002 は 7:35 に送り 7:50 に確認されたあと 8:05 に送り直した＝更新
+INSERT INTO t_contact_home (contact_home_id, child_id, contact_date, guardian_id, temperature, night_sleep_from, night_sleep_to, breakfast, mood_label, pickup_type, pickup_person, pickup_time, message, submitted_at, confirmed_staff_id, confirmed_at, revised_at, created_at, updated_at) VALUES
+ (1,'C004','2026-09-01','G004',36.5,'20:30','06:30','1','ごきげん','1',NULL,NULL,'朝から絵本を読んでほしいと言っていました。','2026-09-01T07:40:00','S003','2026-09-01T08:52:00',NULL,'2026-09-01T07:40:00','2026-09-01T08:52:00'),
+ (2,'C005','2026-09-01','G005',36.7,'21:00','06:40','2','ふつう','2','祖母','17:00','きょうは祖母が迎えに行きます。','2026-09-01T07:45:00',NULL,NULL,NULL,'2026-09-01T07:45:00','2026-09-01T07:45:00'),
+ (3,'C002','2026-09-01','G002',36.9,'21:10','06:50','3','ふつう','1',NULL,NULL,'少し眠そうです。お昼寝のときによろしくお願いします。','2026-09-01T08:05:00',NULL,NULL,'2026-09-01T08:05:00','2026-09-01T07:35:00','2026-09-01T08:05:00'),
+ (4,'C001','2026-08-31','G001',36.6,NULL,NULL,'1','ごきげん',NULL,NULL,NULL,NULL,'2026-08-31T07:42:00','S003','2026-08-31T08:50:00',NULL,'2026-08-31T07:42:00','2026-08-31T08:50:00');
+
+-- きょうのようすの出来事。今日の C001 は排せつ・ひとこと・給食、ほかのさくら組の子は給食。昨日の C001 は排せつ・給食・おやつ
+INSERT INTO t_contact_event (contact_event_id, child_id, class_id, contact_date, event_type, recorded_at, meal_kind, meal_amount, toilet_label, temperature, body, staff_id, created_at, updated_at) VALUES
+ (1,'C001',1,'2026-09-01','2','2026-09-01T09:40:00',NULL,NULL,'おしっこ',NULL,NULL,'S004','2026-09-01T09:40:00','2026-09-01T09:40:00'),
+ (2,'C001',1,'2026-09-01','4','2026-09-01T10:15:00',NULL,NULL,NULL,NULL,'園庭の砂場で、スコップの型抜きを何度もくり返していました。','S003','2026-09-01T10:15:00','2026-09-01T10:15:00'),
+ (3,'C001',1,'2026-09-01','1','2026-09-01T11:40:00','1','1',NULL,NULL,NULL,'S003','2026-09-01T11:40:00','2026-09-01T11:40:00'),
+ (4,'C002',1,'2026-09-01','1','2026-09-01T11:40:00','1','1',NULL,NULL,NULL,'S003','2026-09-01T11:40:00','2026-09-01T11:40:00'),
+ (5,'C004',1,'2026-09-01','1','2026-09-01T11:40:00','1','2',NULL,NULL,NULL,'S003','2026-09-01T11:40:00','2026-09-01T11:40:00'),
+ (6,'C005',1,'2026-09-01','1','2026-09-01T11:40:00','1','1',NULL,NULL,NULL,'S003','2026-09-01T11:40:00','2026-09-01T11:40:00'),
+ (7,'C006',1,'2026-09-01','1','2026-09-01T11:40:00','1','3',NULL,NULL,NULL,'S003','2026-09-01T11:40:00','2026-09-01T11:40:00'),
+ (8,'C007',1,'2026-09-01','1','2026-09-01T11:40:00','1','1',NULL,NULL,NULL,'S003','2026-09-01T11:40:00','2026-09-01T11:40:00'),
+ (9,'C009',1,'2026-09-01','1','2026-09-01T11:40:00','1','2',NULL,NULL,NULL,'S004','2026-09-01T11:40:00','2026-09-01T11:40:00'),
+ (10,'C010',1,'2026-09-01','1','2026-09-01T11:40:00','1','1',NULL,NULL,NULL,'S004','2026-09-01T11:40:00','2026-09-01T11:40:00'),
+ (11,'C001',1,'2026-08-31','2','2026-08-31T09:30:00',NULL,NULL,'おしっこ',NULL,NULL,'S004','2026-08-31T09:30:00','2026-08-31T09:30:00'),
+ (12,'C001',1,'2026-08-31','1','2026-08-31T11:40:00','1','1',NULL,NULL,NULL,'S003','2026-08-31T11:40:00','2026-08-31T11:40:00'),
+ (13,'C001',1,'2026-08-31','1','2026-08-31T15:10:00','2','2',NULL,NULL,NULL,'S003','2026-08-31T15:10:00','2026-08-31T15:10:00');
+
+-- 今日の野原 太郎の 10:15 のひとことは「成長の記録に残す」を付けてある（詳細設計書「デモデータ」(5-5) の成長の記録の行）
+UPDATE t_contact_event SET keep_in_growth = 1 WHERE contact_event_id = 2;
+
+INSERT INTO t_contact_class (contact_class_id, class_id, contact_date, body, staff_id, recorded_at, created_at, updated_at) VALUES
+ (1,1,'2026-09-01','園庭で砂場あそびと、しゃぼん玉をしました。','S003','2026-09-01T10:30:00','2026-09-01T10:30:00','2026-09-01T10:30:00');
+
+INSERT INTO t_contact_facility (contact_facility_id, child_id, class_id, contact_date, body, staff_id, recorded_at, created_at, updated_at) VALUES
+ (1,'C001',1,'2026-08-31','しゃぼん玉を追いかけて、園庭をたくさん走っていました。給食はぜんぶ食べて、おひるねは1時間30分でした。','S003','2026-08-31T17:05:00','2026-08-31T17:05:00','2026-08-31T17:05:00');
+
+INSERT INTO t_contact_read (child_id, contact_date, account_id, read_at) VALUES
+ ('C001','2026-08-31',6,'2026-08-31T20:10:00');
+
+-- ねた・おきた。今日の実施 1（さくら組）は C001 を空けておく（デモ②）。昨日の実施 2 は C001 が 13:02〜14:35
+INSERT INTO t_nap_sleep (nap_sleep_id, nap_session_id, child_id, slept_at, woke_at, slept_staff_id, woke_staff_id, created_at, updated_at) VALUES
+ (1,1,'C002','2026-09-01T13:05:00',NULL,'S003',NULL,'2026-09-01T13:05:00','2026-09-01T13:05:00'),
+ (2,1,'C004','2026-09-01T13:08:00',NULL,'S003',NULL,'2026-09-01T13:08:00','2026-09-01T13:08:00'),
+ (3,1,'C005','2026-09-01T13:10:00',NULL,'S003',NULL,'2026-09-01T13:10:00','2026-09-01T13:10:00'),
+ (4,1,'C006','2026-09-01T13:06:00',NULL,'S003',NULL,'2026-09-01T13:06:00','2026-09-01T13:06:00'),
+ (5,1,'C007','2026-09-01T13:12:00',NULL,'S004',NULL,'2026-09-01T13:12:00','2026-09-01T13:12:00'),
+ (6,1,'C009','2026-09-01T13:05:00',NULL,'S004',NULL,'2026-09-01T13:05:00','2026-09-01T13:05:00'),
+ (7,1,'C010','2026-09-01T13:07:00',NULL,'S004',NULL,'2026-09-01T13:07:00','2026-09-01T13:07:00'),
+ (8,2,'C001','2026-08-31T13:02:00','2026-08-31T14:35:00','S003','S003','2026-08-31T13:02:00','2026-08-31T14:35:00');
+
+-- 入眠時の体温（監査の層。保護者へは返さない）。昨日の C001 の「ねた」に入れ、午睡記録検索と CSV のねたの行に出す
+-- （画面詳細図「午睡記録検索画面」(5-3) の項目6・9。web/src/api/mockDb.ts の napSleeps と同じ）
+UPDATE t_nap_sleep SET sleep_temperature = 36.5 WHERE nap_sleep_id = 8;
+
+-- きょうは対象外。今日の実施 1 で C003 は欠席
+INSERT INTO t_nap_exclusion (nap_exclusion_id, nap_session_id, child_id, reason, staff_id, created_at) VALUES
+ (1,1,'C003','1','S003','2026-09-01T13:01:00');
+
+-- ============ 園からのひとことと他児の名前（詳細設計書「デモデータ」(5-5 (2))） ============
+-- 呼び名。他児の名前の注意を見せるため。園児情報入力の呼び名の欄にも出る（web/src/api/mockDb.ts の demoNicknames と同じ）
+UPDATE m_child SET nickname = 'たっくん' WHERE child_id = 'C001';
+UPDATE m_child SET nickname = 'あおちゃん' WHERE child_id = 'C006';
+UPDATE m_child SET nickname = 'ゆいちゃん' WHERE child_id = 'C008';
+
+-- 定型文。db_contact.go の defaultPhrases・mockDb.ts の phrases と同じ行（既存の DB には ensureContactSchema が空のときだけ入れる）。
+-- 健康や発達の評価の言葉（「元気に」「順調に」など）を入れない（原則1）。4:日誌はいまコードに持つ5つ（api_diary.go の fixedPhrases）
+INSERT INTO m_phrase (phrase_id, phrase_scope, body, display_order, updated_staff_id, created_at, updated_at) VALUES
+ (1,'1','今日も一日ありがとうございました。',1,'S001','2026-04-01T09:00:00','2026-04-01T09:00:00'),
+ (2,'1','お迎えのときに、くわしくお話しします。',2,'S001','2026-04-01T09:00:00','2026-04-01T09:00:00'),
+ (3,'1','おうちでも、今日のことを聞いてみてください。',3,'S001','2026-04-01T09:00:00','2026-04-01T09:00:00'),
+ (4,'1','明日もよろしくお願いします。',4,'S001','2026-04-01T09:00:00','2026-04-01T09:00:00'),
+ (5,'2','園庭で遊びました。',1,'S001','2026-04-01T09:00:00','2026-04-01T09:00:00'),
+ (6,'2','絵本を読みました。',2,'S001','2026-04-01T09:00:00','2026-04-01T09:00:00'),
+ (7,'2','手洗いを自分でしようとしていました。',3,'S001','2026-04-01T09:00:00','2026-04-01T09:00:00'),
+ (8,'3','今日は園庭で遊びました。',1,'S001','2026-04-01T09:00:00','2026-04-01T09:00:00'),
+ (9,'3','今日はお散歩に出かけました。',2,'S001','2026-04-01T09:00:00','2026-04-01T09:00:00'),
+ (10,'3','今日は室内で製作をしました。',3,'S001','2026-04-01T09:00:00','2026-04-01T09:00:00'),
+ (11,'4','よく食べ、おかわりをしていました。',1,'S001','2026-04-01T09:00:00','2026-04-01T09:00:00'),
+ (12,'4','午睡は落ち着いて入眠できました。',2,'S001','2026-04-01T09:00:00','2026-04-01T09:00:00'),
+ (13,'4','園庭で友だちと関わって遊ぶ姿が見られました。',3,'S001','2026-04-01T09:00:00','2026-04-01T09:00:00'),
+ (14,'4','鼻水が出ていたため、こまめに拭き取りました。',4,'S001','2026-04-01T09:00:00','2026-04-01T09:00:00');

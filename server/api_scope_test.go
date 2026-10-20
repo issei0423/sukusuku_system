@@ -146,21 +146,19 @@ func TestTempPasswordComesBeforeTerms(t *testing.T) {
 	call(t, h, miyagi, "GET", "/api/children", "")
 }
 
-// 日誌の添付は、日誌本体と同じ参照範囲に従う。承認済みであっても参照範囲は広がらない
-// （基本設計書「日誌の作成から保護者への共有」(4-5)・「添付ファイルの実体の保存先」(5-5)）
+// 日誌の添付は、日誌本体と同じ参照範囲に従う。承認済みであっても参照範囲は広がらず、保護者には返さない
+// （詳細設計書「日誌」(4-13)、基本設計書「添付ファイルの実体の保存先」(5-5)）
 func TestDiaryAttachmentsFollowDiaryScope(t *testing.T) {
 	a, h := newTestApp(t)
-	const path = "/api/diaries/4/attachments" // 上園 花子（C002・さくら組）の個人日誌。承認済み・保護者へ共有、添付2件
+	const path = "/api/diaries/4/attachments" // 上園 花子（C002・さくら組）の個人日誌。承認済み、添付2件
 
-	t.Run("担当外の職員・関係のない保護者には見せない", func(t *testing.T) {
+	t.Run("担当外の職員・保護者には見せない", func(t *testing.T) {
 		expectStatus(t, request(t, h, loginAs(a, 5, "staff"), "GET", path, ""), http.StatusForbidden)    // ひまわり組の担任
 		expectStatus(t, request(t, h, loginAs(a, 6, "guardian"), "GET", path, ""), http.StatusForbidden) // 野原 太郎の保護者
 	})
 
-	t.Run("日誌本体を見られる人には返す", func(t *testing.T) {
-		uezono := loginAs(a, 7, "guardian") // C002 の保護者
-		call(t, h, uezono, "POST", "/api/terms/agree", "")
-		for _, c := range []*http.Cookie{loginAs(a, 1, "staff"), loginAs(a, 3, "staff"), uezono} {
+	t.Run("日誌本体を見られる職員には返す", func(t *testing.T) {
+		for _, c := range []*http.Cookie{loginAs(a, 1, "staff"), loginAs(a, 3, "staff")} {
 			var got []DiaryAttachment
 			if err := json.Unmarshal(call(t, h, c, "GET", path, "").Body.Bytes(), &got); err != nil {
 				t.Fatal(err)
@@ -171,11 +169,10 @@ func TestDiaryAttachmentsFollowDiaryScope(t *testing.T) {
 		}
 	})
 
-	t.Run("保護者へ共有していない日誌の添付は、自児の保護者にも見せない", func(t *testing.T) {
-		if _, err := a.db.Exec(`UPDATE t_diary SET is_shared_to_guardian = 0 WHERE diary_id = 4`); err != nil {
-			t.Fatal(err)
-		}
-		expectStatus(t, request(t, h, loginAs(a, 7, "guardian"), "GET", path, ""), http.StatusForbidden)
+	t.Run("承認済みの自児の日誌の添付も、保護者には見せない", func(t *testing.T) {
+		uezono := loginAs(a, 7, "guardian") // C002 の保護者
+		call(t, h, uezono, "POST", "/api/terms/agree", "")
+		expectStatus(t, request(t, h, uezono, "GET", path, ""), http.StatusForbidden)
 	})
 
 	t.Run("無い日誌は、あるかどうかを推測させない", func(t *testing.T) {
@@ -215,7 +212,12 @@ func TestClassDiaryRequiresOwnClass(t *testing.T) {
 		call(t, h, takanashi, "POST", "/api/diaries", diary("2", "1", "1"))
 		call(t, h, kinjo, "POST", "/api/diaries", diary("3", "2", "1"))
 		call(t, h, admin, "POST", "/api/diaries", diary("2", "2", "1"))
-		call(t, h, admin, "POST", "/api/diaries", diary("3", "null", "1"))
+	})
+
+	// 対象のクラスは必須（図/画面詳細図.md「日誌作成・編集画面」(3-2) 項目5「入力：必須」）。
+	// 以前は管理者だけクラスを空けて作れたが、記録種別によらず断る（GitHub Issue #174。api_diary_flow_test.go）
+	t.Run("管理者も、クラスを指定しない週案は作れない", func(t *testing.T) {
+		expectStatus(t, request(t, h, admin, "POST", "/api/diaries", diary("3", "null", "1")), http.StatusBadRequest)
 	})
 
 	t.Run("更新で他クラスへ移すことも、他クラスの日誌を書き換えることもできない", func(t *testing.T) {
@@ -239,7 +241,10 @@ func TestClassDiaryRequiresOwnClass(t *testing.T) {
 		if body != "クラスの様子" {
 			t.Fatalf("ひまわり組の日誌が書き換わっています: %q", body)
 		}
-		call(t, h, takanashi, "POST", "/api/diaries", update(own.DiaryID, "1"))
+		// 自分の日誌は、編集ロックを取れば書き直せる（保存には本人のロックの識別子が要る。GitHub Issue #166）
+		token := acquireToken(t, h, takanashi, itoa(own.DiaryID))
+		call(t, h, takanashi, "POST", "/api/diaries",
+			strings.Replace(update(own.DiaryID, "1"), `"status"`, `"lock_token":"`+token+`","status"`, 1))
 	})
 }
 
@@ -309,8 +314,10 @@ func TestDiaryUpdateRequiresVisibleDiary(t *testing.T) {
 			expectStatus(t, request(t, h, takanashi, "POST", "/api/diaries", body), http.StatusForbidden)
 		}
 		unchanged(t)
+		// 範囲の内の書き直しは、編集ロックを取れば通る（保存には本人のロックの識別子が要る。GitHub Issue #166）
+		token := acquireToken(t, h, takanashi, "1")
 		call(t, h, takanashi, "POST", "/api/diaries",
-			`{"diary_id":1,"record_type":"1","child_id":"C001","class_id":1,"diary_date":"2026-09-01","body":"書き直し","status":"1"}`)
+			`{"diary_id":1,"record_type":"1","child_id":"C001","class_id":1,"diary_date":"2026-09-01","body":"書き直し","lock_token":"`+token+`","status":"1"}`)
 	})
 }
 
@@ -324,8 +331,8 @@ func TestDiaryLockRequiresVisibleDiary(t *testing.T) {
 		for _, id := range []string{"1", "4", "99999"} {
 			expectStatus(t, request(t, h, kinjo, "POST", "/api/diaries/"+id+"/lock", ""), http.StatusForbidden)
 		}
-		// 日誌 2（さくら組のクラス日誌）は宮城 蓮がロックを持っている
-		expectStatus(t, request(t, h, kinjo, "GET", "/api/diaries/2/lock", ""), http.StatusForbidden)
+		// 日誌 3（差し戻しのヒヤリハット）は宮城 蓮がロックを持っている
+		expectStatus(t, request(t, h, kinjo, "GET", "/api/diaries/3/lock", ""), http.StatusForbidden)
 		var n int
 		a.db.QueryRow(`SELECT COUNT(*) FROM t_diary_lock WHERE locked_staff_id = 'S005'`).Scan(&n)
 		if n != 0 {
@@ -337,7 +344,7 @@ func TestDiaryLockRequiresVisibleDiary(t *testing.T) {
 		if !strings.Contains(call(t, h, takanashi, "POST", "/api/diaries/1/lock", "").Body.String(), `"token"`) {
 			t.Fatal("ロックのトークンが返っていません")
 		}
-		if !strings.Contains(call(t, h, takanashi, "GET", "/api/diaries/2/lock", "").Body.String(), "宮城 蓮") {
+		if !strings.Contains(call(t, h, takanashi, "GET", "/api/diaries/3/lock", "").Body.String(), "宮城 蓮") {
 			t.Fatal("編集中の職員が返っていません")
 		}
 	})

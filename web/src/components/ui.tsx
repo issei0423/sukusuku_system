@@ -94,7 +94,13 @@ export function Modal({ title, children, onClose, footer }: {
       !(element instanceof HTMLInputElement && element.type === 'hidden'))
       // 複数のセレクタをまとめた検索は、環境によって画面上の順で返らない。Tab の折り返し先を誤らないよう並べ直す
       .sort((x, y) => (x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
-    (root?.querySelector<HTMLElement>('input:not(:disabled), select:not(:disabled), textarea:not(:disabled)')
+    /*
+     * 開いたときのフォーカス：data-initial-focus を付けた部品（押せるときだけ）→ 最初の入力欄 → 最初の押せるもの → 窓そのもの。
+     * data-initial-focus は、押すとすぐ取り返しにくい記録をする窓で、いちばん弱い操作（「やめる」など）へ入れるときに付ける
+     * （WAI-ARIA Authoring Practices「Dialog (Modal) Pattern」。午睡チェックの「対象外」の窓、PR #226）。付けていない窓の動きは変わらない
+     */
+    (root?.querySelector<HTMLElement>('[data-initial-focus]:not(:disabled)')
+      ?? root?.querySelector<HTMLElement>('input:not(:disabled), select:not(:disabled), textarea:not(:disabled)')
       ?? focusable()[0] ?? root)?.focus();
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') { event.preventDefault(); close.current(); return; }
@@ -141,14 +147,18 @@ export function Empty({ text }: { text: string }) { return <div className="empty
 export function ErrorBox({ text }: { text: string }) { return <Alert>{text}</Alert>; }
 
 /** 選択肢。(*) が選択中、( ) が未選択（図/画面詳細図.md「表記ルール」(0-1)） */
-export function Radios<T extends string>({ name, value, options, onChange, label, required }: {
+export function Radios<T extends string>({ name, value, options, onChange, label, required, disabled }: {
   name: string; value: T | null; options: { value: T; label: string }[]; onChange: (v: T) => void; label?: string; required?: boolean;
+  /** 編集できない状態では選び直させない（日誌作成・編集画面。GitHub Issue #175 の 4） */
+  disabled?: boolean;
 }) {
   return (
-    <div className="choices" role="radiogroup" aria-label={label ?? name} aria-required={required || undefined}>
+    <div className="choices" role="radiogroup" aria-label={label ?? name} aria-required={required || undefined}
+      aria-disabled={disabled || undefined}>
       {options.map((o) => (
         <label key={o.value}>
-          <input type="radio" name={name} checked={value === o.value} onChange={() => onChange(o.value)} />
+          <input type="radio" name={name} checked={value === o.value} disabled={disabled}
+            onChange={() => { if (!disabled) onChange(o.value); }} />
           {o.label}
         </label>
       ))}

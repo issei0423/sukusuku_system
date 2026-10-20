@@ -73,8 +73,36 @@ Remove-Item Env:RESPONSIVE_STRICT
 - 専用サーバは `127.0.0.1:5186`。起動済みサーバは流用せず、ポート使用中なら失敗する。閲覧中の開発サーバとは独立する。
 - 生成物は Git 対象外。部分実行ではレポートもその部分だけに置き換わる。
 
-画面追加時は `scenarios.ts` に URL・権限・必要な入力状態を追加する。操作が必要なら `review.spec.ts` の `performAction` に、表示を確認する assertion と実際の操作を追加する。
+画面追加時は `scenarios.ts` に URL・権限・必要な入力状態を追加する。操作が必要なら `steps.ts` の `performAction` に、表示を確認する assertion と実際の操作を追加する（`review.spec.ts` とアクセシビリティの検査が共に使う）。
 
 WebKit エミュレーションは実機の Safari と完全には同じではない。持ちながらの指の届きやすさ、誤タップ、ソフトウェアキーボード、慣性スクロール、画面回転中の状態保持は実機で確認する。デモデータより長い氏名・文章、大量データ、業務フロー全体も別途確認する。
+
+## アクセシビリティの検査（axe・キーボード）
+
+同じハーネスと `scenarios.ts` の場面を使い、アクセシビリティを自動で確かめる。設定は `web/playwright.a11y.config.ts`、専用サーバは `127.0.0.1:5187`。
+
+```powershell
+npx playwright install chromium
+npm run test:a11y
+```
+
+**基準は WCAG 2.2 AA を目安にする（【仮置き】設計書に適合の水準の定めが無い。`web/仮置き値.md`）。** これは自動の検査で拾える範囲の目安であり、規格に適合しているという判定ではない。
+
+| ファイル | 中身 |
+| --- | --- |
+| `a11y-axe.spec.ts` | 全場面に axe（タグ wcag2a・wcag2aa・wcag21a・wcag21aa・wcag22aa）を掛ける。影響が critical・serious の違反が既知の一覧に無ければ落とす。moderate・minor は一覧に出すだけ |
+| `a11y-keyboard.spec.ts` | Tab・Enter・Space・Esc だけで、ログイン、午睡チェックの体温パネルの開け閉め（閉じたらフォーカスが元へ戻る）、保護者メニューの開け閉めを通す。途中でフォーカスが止まった要素すべてに、見える印（outline）があることも確かめる |
+| `a11y-known.ts` | 分かっていてまだ直していない違反（規則 × 場面 × Issue・PR の番号）。直したら行を消す |
+| `steps.ts` | `review.spec.ts` と共に使う、待ち（`ready`）と場面の操作（`performAction`） |
+| `a11y-reporter.ts` | `web/a11y-report/summary.md`（場面・規則・影響・件数の表）と `results.json` を書く |
+
+| プロジェクト | CSS viewport | エンジン | 対象 |
+| --- | --- | --- | --- |
+| staff | 1024 × 768 | Chromium | 職員・管理者・共通画面（`[staff]`・`[public]`） |
+| phone | 390 × 844 | Chromium | 保護者・共通画面（`[guardian]`・`[public]`） |
+
+実行後は `web/a11y-report/summary.md` を開く。axe が自動で決めきれなかったもの（背景が画像のときのコントラストなど）は「人が確かめるもの」に出る。テストは落とさない。違反した要素の HTML と直し方は、`web/a11y-report/html`（Playwright のレポート）の各テストの添付 `axe-results` にある。
+
+axe とキーボードの検査で見られないもの：読み上げソフトでの聞こえ方・読む順、意味の分かりやすさ、ズーム 200% や文字の拡大、実機の VoiceOver・TalkBack、場面に無い画面と状態。これらは人が確かめる。
 
 参考: [Playwright の端末エミュレーション](https://playwright.dev/docs/emulation)、[時計の固定](https://playwright.dev/docs/clock)、[レポーター](https://playwright.dev/docs/test-reporters)。

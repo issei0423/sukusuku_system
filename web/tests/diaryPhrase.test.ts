@@ -43,11 +43,12 @@ describe('デモのヒヤリハット', () => {
   it('雛形と同じ【今後の対策】の見出しで、今後の対策を持つ', async () => {
     const d = await api.getDiary(admin, 3);
     expect(d.record_type).toBe('4');
-    // 見出しは雛形（diaryTemplates の 4）と同じ順に並ぶ
+    // 見出しは雛形（diaryTemplates の 4）と同じ順に並ぶ。
+    // 発生日時は列（occurred_at）へ移ったので、本文の見出しには無い（#230。詳細設計書「日誌」(4-13 (1))、決めたこと D-33）
     const template = db.diaryTemplates.find((t) => t.record_type === '4');
     expect(template?.body).toContain('【今後の対策】');
     let pos = -1;
-    for (const heading of ['【発生日時】', '【状況】', '【とった対応】', '【今後の対策】']) {
+    for (const heading of ['【状況】', '【とった対応】', '【今後の対策】']) {
       const i = d.body.indexOf(heading);
       expect(i, `見出し ${heading} が無いか、順が違う`).toBeGreaterThan(pos);
       pos = i;

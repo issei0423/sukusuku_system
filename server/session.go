@@ -31,6 +31,19 @@ type session struct {
 type sessionStore struct {
 	mu   sync.RWMutex
 	data map[string]session
+	// HTTPS で公開するときに真にする。Cookie に Secure を付ける（main.go の -secure。GitHub Issue #236 の 4）
+	secure bool
+	// セッションが終わったとき（destroy・destroyAccount）に、終わったセッションIDを受け取る。
+	// 開いている画面への知らせの接続を、その場で閉じるために使う（events.go の closeSessions）。
+	// 鍵を外してから呼ぶ
+	onEnd func(ids []string)
+}
+
+// ended は、終わったセッションを知らせる
+func (s *sessionStore) ended(ids []string) {
+	if s.onEnd != nil && len(ids) > 0 {
+		s.onEnd(ids)
+	}
 }
 
 func newSessionStore() *sessionStore {
@@ -51,6 +64,14 @@ func randomToken(bytes int) string {
 func (s *sessionStore) create(w http.ResponseWriter, accountID int64, entrance string, ttlMinutes int) {
 	id := randomToken(32)
 	s.mu.Lock()
+	// 期限の切れたセッションを掃除する。参照のときに弾くだけでは、ログアウトしないまま切れたものが
+	// メモリに溜まり続けるため（GitHub Issue #236 の 9）。ログインのたびに一度なめれば十分に小さく保てる
+	t := time.Now()
+	for k, v := range s.data {
+		if t.After(v.expiresAt) {
+			delete(s.data, k)
+		}
+	}
 	s.data[id] = session{accountID: accountID, entrance: entrance, expiresAt: time.Now().Add(time.Duration(ttlMinutes) * time.Minute)}
 	s.mu.Unlock()
 
@@ -61,9 +82,9 @@ func (s *sessionStore) create(w http.ResponseWriter, accountID int64, entrance s
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   ttlMinutes * 60,
-		// Secure は HTTPS 公開時に true にする。本演習の動作検証環境は localhost のため false
+		// Secure は HTTPS 公開時に true にする（起動時の -secure）。本演習の動作検証環境は localhost のため既定は false
 		// （要件定義書「想定運用環境（HTTPS公開）」(6-1)・「本演習での動作検証環境（localhost）」(6-2)）
-		Secure: false,
+		Secure: s.secure,
 	})
 }
 
@@ -72,8 +93,10 @@ func (s *sessionStore) destroy(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		delete(s.data, c.Value)
 		s.mu.Unlock()
+		s.ended([]string{c.Value})
 	}
-	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true})
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
+		SameSite: http.SameSiteStrictMode, Secure: s.secure})
 }
 
 func (s *sessionStore) accountID(r *http.Request) (int64, bool) {
@@ -111,15 +134,16 @@ destroyAccount は、そのアカウントのセッションを keep 以外す�
 */
 func (s *sessionStore) destroyAccount(accountID int64, keep string) int {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	n := 0
+	var ids []string
 	for id, sess := range s.data {
 		if sess.accountID == accountID && id != keep {
 			delete(s.data, id)
-			n++
+			ids = append(ids, id)
 		}
 	}
-	return n
+	s.mu.Unlock()
+	s.ended(ids)
+	return len(ids)
 }
 
 // ---- 利用者の組み立て ----

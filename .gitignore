@@ -1,12 +1,19 @@
 # Claude Code ローカル設定
 .claude/
+# 1人ずつの指示（agent-harness/ を読み込むときに使う。agent-harness/README.md）
+CLAUDE.local.md
 
 # Node（web/ の React アプリ）
 node_modules/
 dist/
+# 生成物（Git に入れない）
 web/responsive-report/
+web/security-report/
+web/a11y-report/
 web/test-results/
 
 # Go（server/ のサーバ）
 server/*.db
 server/*.exe
+# 連絡帳の写真の実体（起動の引数 -files の既定 files。server/ で起動したときの置き場所）
+server/files/

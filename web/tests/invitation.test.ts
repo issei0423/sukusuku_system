@@ -7,6 +7,7 @@ import { api } from '../src/api/client';
 import * as db from '../src/api/mockDb';
 import type { SessionUser } from '../src/api/types';
 import { today } from '../src/api/util';
+import { MSG } from '../src/messages';
 
 const admin: SessionUser = {
   account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
@@ -15,12 +16,13 @@ const admin: SessionUser = {
 };
 
 describe('招待コード', () => {
+  // 文言は基本設計書「メッセージ一覧」(4-12) の招待コードの4つ（tests/invitationMessages.test.ts）
   it('使用済みのコードは確認できない', async () => {
-    await expect(api.verifyInvitationCode('IJKL-5678-MNOP')).rejects.toThrow('すでに使われています');
+    await expect(api.verifyInvitationCode('IJKL-5678-MNOP')).rejects.toThrow(MSG.invitationUsed);
   });
 
   it('失効したコードは確認できない', async () => {
-    await expect(api.verifyInvitationCode('YZAB-3456-CDEF')).rejects.toThrow('失効');
+    await expect(api.verifyInvitationCode('YZAB-3456-CDEF')).rejects.toThrow(MSG.invitationRevoked);
   });
 
   it('未使用のコードは確認できる（園児名は返さない）', async () => {
@@ -38,15 +40,16 @@ describe('招待コード', () => {
     const code = await api.issueOneInvitationCode(admin, 'C005', 30);
     await api.signUpGuardian({
       code, email: 'test.parent1@example.jp', password: 'kinjo-pass-5678',
-      guardian_name: '金城 一郎', relationship: '父',
+      guardian_name: '金城 一郎', relationship: '父', terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION,
     });
     // 使用と同時に status を使用済みにする
     expect(db.invitationCodes.find((c) => c.code === code)?.status).toBe('2');
 
+    // 使ったコードでの2つ目の登録は、使用済みの文で断る（新規登録の送信も確認と同じ4つの文言。決めたこと D-52）
     await expect(api.signUpGuardian({
       code, email: 'test.parent2@example.jp', password: 'kinjo-pass-5678',
-      guardian_name: '金城 花子', relationship: '母',
-    })).rejects.toThrow('招待コードが確認できません');
+      guardian_name: '金城 花子', relationship: '母', terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION,
+    })).rejects.toThrow(MSG.invitationUsed);
   });
 
   it('一括発行は 園児数 × 枚数 を発行する', async () => {
@@ -75,7 +78,7 @@ describe('招待コード', () => {
     const code = await api.issueOneInvitationCode(admin, 'C006', 30);
     await expect(api.signUpGuardian({
       code, email: 'takanashi@hoiku.example.jp', password: 'kinjo-pass-5678',
-      guardian_name: '重複 太郎', relationship: '父',
+      guardian_name: '重複 太郎', relationship: '父', terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION,
     })).rejects.toThrow('すでに登録されています');
   });
 });
@@ -85,7 +88,7 @@ describe('保護者の紐づけ', () => {
     const code = await api.issueOneInvitationCode(admin, 'C007', 30);
     const u = await api.signUpGuardian({
       code, email: 'test.parent3@example.jp', password: 'kinjo-pass-5678',
-      guardian_name: '中村 二郎', relationship: '父',
+      guardian_name: '中村 二郎', relationship: '父', terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION,
     });
     expect(u.guardian_id).toBeTruthy();
 
@@ -102,9 +105,14 @@ describe('身体測定', () => {
     is_temp_password: false, terms_agreed: true,
   };
 
-  it('同じ園児・同じ測定日は上書きになる（部分一意インデックス）', async () => {
+  it('同じ園児・同じ測定日は、上書きを承諾したときに上書きになる（部分一意インデックス）', async () => {
     const first = await api.save(teacher, { child_id: 'C009', measured_on: '2026-09-01', height_cm: 77.0, weight_kg: 9.2 });
-    const second = await api.save(teacher, { child_id: 'C009', measured_on: '2026-09-01', height_cm: 77.5, weight_kg: 9.3 });
+    // 確かめずに送ると書き換えない（基本設計書「身体測定の記録」(4-8)「上書き確認を表示する」。GitHub Issue #165）
+    await expect(api.save(teacher, { child_id: 'C009', measured_on: '2026-09-01', height_cm: 77.5, weight_kg: 9.3 }))
+      .rejects.toThrow('この測定日の記録は登録済みです');
+    const second = await api.save(teacher, {
+      child_id: 'C009', measured_on: '2026-09-01', height_cm: 77.5, weight_kg: 9.3, confirm_overwrite: true,
+    });
     expect(second.physical_record_id).toBe(first.physical_record_id);
     expect(second.height_cm).toBe(77.5);
   });
@@ -138,7 +146,9 @@ describe('招待コードの入力形式とメールアドレスの検査', () =
   });
 
   it('メールアドレスが空・形式の誤りのままでは登録できない', async () => {
-    const base = { code: unused().code, password: 'pass12345', guardian_name: '検査 太郎', relationship: '父' };
+    const base = { code: unused().code, password: 'pass12345', guardian_name: '検査 太郎', relationship: '父',
+      terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION,
+    };
     await expect(api.signUpGuardian({ ...base, email: '' })).rejects.toThrow(/メールアドレスを入力/);
     await expect(api.signUpGuardian({ ...base, email: '   ' })).rejects.toThrow(/メールアドレスを入力/);
     await expect(api.signUpGuardian({ ...base, email: 'taro.example.jp' })).rejects.toThrow(/形式/);
