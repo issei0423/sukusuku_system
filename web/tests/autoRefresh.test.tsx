@@ -242,7 +242,7 @@ describe('保育士と保護者の画面を並べたとき', () => {
   it('チャット（職員）：導線から開くとそのチャンネルを選んでおり、保護者の送信が入力中の文字を消さずに表れる', async () => {
     open(`/staff/chat?room=${personalRoom}`, teacher);
     await settled();
-    await waitFor(() => expect(document.querySelector('.channel.current')?.textContent).toContain('野原 太郎の保護者'));
+    await waitFor(() => expect(document.querySelector('.channel.current')?.textContent).toContain('野原 太郎の園とのやりとり'));
 
     // 返信を書きかけておく
     const box = screen.getByPlaceholderText('メッセージを入力') as HTMLTextAreaElement;

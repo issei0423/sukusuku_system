@@ -46,4 +46,26 @@ describe('共通部品の読み上げとキーボード操作', () => {
     expect(onClose).toHaveBeenCalledOnce();
     expect(document.activeElement).toBe(opener);
   });
+
+  /*
+   * 押すとすぐ取り返しにくい記録をする窓は、開いたときにいちばん弱い操作（「やめる」）へ入れる
+   * （WAI-ARIA Authoring Practices「Dialog (Modal) Pattern」。午睡チェックの「対象外」の窓、PR #226）。
+   * 窓の中の部品に data-initial-focus を付けると、入力欄や先頭の部品より先にそこへ入る
+   */
+  it('モーダルの中に data-initial-focus の部品があれば、開いたときに入力欄や先頭の部品より先にそこへ入る', () => {
+    render(<Modal title="対象外にする" onClose={() => {}}
+      footer={<button type="button" data-initial-focus>やめる</button>}>
+      <input aria-label="メモ" />
+      <button type="button">欠席</button>
+    </Modal>);
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'やめる' }));
+  });
+
+  it('data-initial-focus の部品が押せないときは、ふだんの順（入力欄、無ければ先頭の部品）で入る', () => {
+    render(<Modal title="対象外にする" onClose={() => {}}
+      footer={<button type="button" data-initial-focus disabled>やめる</button>}>
+      <button type="button">欠席</button>
+    </Modal>);
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: '欠席' }));
+  });
 });

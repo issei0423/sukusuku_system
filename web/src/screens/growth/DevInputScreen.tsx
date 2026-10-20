@@ -16,6 +16,8 @@ import { Loading, ErrorBox, Empty, Field, Alert, Disclaimer, Modal } from '../..
 import { DEVELOPMENT_RESULT } from '../../api/codes';
 import { ageInMonths, formatAge, formatHM, formatYMD, today } from '../../api/util';
 import type { DevelopmentResult } from '../../api/types';
+import { notify } from '../../components/feedback';
+import { MSG, TEXT } from '../../messages';
 
 const DISCLAIMER = '本機能は発達の判定・診断を行うものではありません。';
 
@@ -37,6 +39,9 @@ export default function DevInputScreen() {
 
   const [results, setResults] = useState<Record<number, DevelopmentResult | null>>({});
   const [note, setNote] = useState('');
+  // 保護者へのひとこと。所見とは別の欄で、確定した時点で成長の記録に届く（詳細設計書 (2-12 (2))）
+  const [guardianMessage, setGuardianMessage] = useState('');
+  const messageId = useId();
   const [compare, setCompare] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -46,12 +51,13 @@ export default function DevInputScreen() {
   // 下書きがあれば読み直す
   useEffect(() => {
     const d = draft.data;
-    if (!d) { setResults({}); setNote(''); return; }
+    if (!d) { setResults({}); setNote(''); setGuardianMessage(''); return; }
     const map: Record<number, DevelopmentResult | null> = {};
     d.results.filter((r) => r.development_item_id !== 0).forEach((r) => { map[r.development_item_id] = r.result; });
     setResults(map);
     // 所見はチェックの側が持つ。結果（項目単位）の側には無い
     setNote(d.check.note ?? '');
+    setGuardianMessage(d.check.guardian_message ?? '');
   }, [draft.data?.check.development_check_id, checkedOn]);
 
   const save = async (status: '1' | '2') => {
@@ -63,8 +69,15 @@ export default function DevInputScreen() {
           development_item_id: it.development_item_id,
           result: results[it.development_item_id] ?? null,
         })),
-        note, status,
+        note, status, guardianMessage.trim() || null,
       );
+      /*
+       * 結果の表示（詳細設計書「職員の画面から成長の記録へ届けるもの」(2-12 (2)) の文言）。
+       * 【仮置き】届くものがあるかは、ひとことか「確認できた」が1つでもあるかで見る。項目の共有範囲と、保護者がまだ登録していない
+       * ときの「確定しました。保護者が登録すると読めます。」は見分けていない（web/仮置き値.md）
+       */
+      const delivered = !!guardianMessage.trim() || Object.values(results).includes('1');
+      notify(status === '1' ? TEXT.devDraftSaved : delivered ? TEXT.devConfirmedShared : TEXT.devConfirmed);
       navigate('/staff/growth');
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
@@ -82,6 +95,13 @@ export default function DevInputScreen() {
   const unfilled = (items.data ?? []).filter((it) => !results[it.development_item_id]).length;
   // 確定した記録は下書きに戻さない。直すときは「確定する」で保存する（GitHub Issue #164。web/仮置き値.md）
   const confirmed = draft.data?.check.status === '2';
+  /*
+   * 確定済みの保護者へのひとことを直せるのは、確定した日（finalized_at の日付）はその園児のクラスの担任、翌日以降は管理者だけ
+   * （詳細設計書 (2-12 (2))、決めたこと D-51）。権限の担保はサーバ（server/api_dev_write.go）。
+   * 【仮置き】直せない職員には欄を読むだけにして、断る文言を添える（web/仮置き値.md）
+   */
+  const finalizedDay = draft.data?.check.finalized_at?.slice(0, 10) ?? draft.data?.check.checked_on;
+  const messageLocked = confirmed && user!.role !== '1' && finalizedDay !== today();
 
   return (
     <div style={{ maxWidth: 860 }}>
@@ -168,6 +188,27 @@ export default function DevInputScreen() {
             （{formatAge(c.birth_date, previous.data.check.checked_on)}）
           </div>
         )}
+      </section>
+
+      {/*
+        保護者へのひとこと。所見の下に別の欄として置く（詳細設計書 (2-12 (2))、図/画面詳細図「発達チェック入力画面」(6-2) の項目14〜16）。
+        発達の記録は外部の AI へ送らないため、AI のボタンは置かない（基本設計書「文章の下書き（AI）」(4-11)）。
+        定型文（PhraseMenu）と宛先の表示（RecipientBadge）は PR #201 の部品と合わせるときに置く
+      */}
+      <section className="card">
+        <label htmlFor={messageId} style={{ fontWeight: 700 }}>{TEXT.guardianMessageLabel}</label>
+        <textarea id={messageId} value={guardianMessage} onChange={(e) => setGuardianMessage(e.target.value)} maxLength={500}
+          readOnly={messageLocked} aria-describedby={confirmed ? `${messageId}-rest ${messageId}-fix` : `${messageId}-rest`} />
+        <div className="muted" id={`${messageId}-rest`} style={{ marginTop: 4 }}>残り {500 - [...guardianMessage].length} 文字</div>
+        {confirmed && (
+          <div className="muted" id={`${messageId}-fix`} style={{ marginTop: 4 }}>
+            {messageLocked ? MSG.guardianMessageFixForbidden : TEXT.guardianMessageCorrectionNote}
+          </div>
+        )}
+      </section>
+
+      <section className="card card-sub">
+        <div className="muted">{TEXT.guardianMessageGuide}</div>
       </section>
 
       <section className="card card-sub">

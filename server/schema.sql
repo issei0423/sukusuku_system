@@ -104,7 +104,7 @@ CREATE TABLE m_child (
   enrollment_status   TEXT    NOT NULL CHECK (enrollment_status IN ('1','2','3')),      -- 1:在籍 2:退園 3:卒園
   photo_consent_level TEXT    NOT NULL CHECK (photo_consent_level IN ('1','2','3')),    -- 1:園内記録 2:自児保護者 3:他保護者
   -- 詳細設計書「変える表」(5-3)。既存の DB には db_contact.go の ensureContactSchema が同じ定義で足す
-  nickname             TEXT,                                                              -- 呼び名
+  nickname             TEXT,                                                              -- 呼び名（任意・20文字。園児情報入力で入れ、他児の名前の注意に使う。NULL も '' も「無し」。読むときは IFNULL で '' にそろえる）
   face_photo_path      TEXT,
   withdrawn_on         TEXT,
   nap_interval_minutes INTEGER CHECK (nap_interval_minutes BETWEEN 1 AND 15),
@@ -169,31 +169,47 @@ CREATE TABLE m_medical_history (
 
 -- ============ 5-4 日誌 ============
 
--- 日誌（t_diary）。記録種別でテーブルを分けない
+-- 日誌（t_diary）。記録種別でテーブルを分けない。園内の記録で、どの状態でも保護者には届かない
+-- （基本設計書「日誌システム（園内の記録）」(4-6)、詳細設計書「変える表」(5-3)）。
+-- 既存の DB は db_diary.go の ensureInternalDiary が同じ定義に作り直す（定義は2か所で同じにする）
 CREATE TABLE t_diary (
   diary_id              INTEGER PRIMARY KEY AUTOINCREMENT,
   record_type           TEXT    NOT NULL CHECK (record_type IN ('1','2','3','4')),  -- 1:個人 2:クラス 3:週案月案 4:ヒヤリハット
   child_id              TEXT    REFERENCES m_child(child_id),
-  class_id              INTEGER REFERENCES m_class(class_id),
+  class_id              INTEGER NOT NULL REFERENCES m_class(class_id),
   diary_date            TEXT    NOT NULL,
   body                  TEXT    NOT NULL,
   status                TEXT    NOT NULL CHECK (status IN ('1','2','3','4')),       -- 1:下書き 2:申請中 3:承認済み 4:差し戻し
   created_staff_id      TEXT    NOT NULL REFERENCES m_staff(staff_id),
+  -- 申請した職員と日時。取り下げると空になる。「自分が申請した日誌は承認できない」はこの列で判定する
+  applied_staff_id      TEXT    REFERENCES m_staff(staff_id),
+  applied_at            TEXT,
+  -- 承認した職員と日時。差し戻しでは書かない。承認を取り消すと空になる（詳細設計書「日誌の状態」(3-6)）
   approved_staff_id     TEXT    REFERENCES m_staff(staff_id),
   approved_at           TEXT,
-  -- 承認とは別の指定
-  is_shared_to_guardian INTEGER NOT NULL DEFAULT 0,
-  shared_at             TEXT,
+  -- ヒヤリハットの欄（発生日時・場所・保護者へ伝えたこと）。状況・とった対応は本文に見出しを付けて持つ
+  occurred_at           TEXT,
+  place                 TEXT,
+  guardian_notice       TEXT    CHECK (guardian_notice IN ('1','2')),                 -- 1:伝えた 2:伝えていない
+  guardian_noticed_at   TEXT,
+  guardian_notice_method TEXT   CHECK (guardian_notice_method IN ('1','2','3','9')),  -- 1:電話 2:お迎えのとき 3:連絡帳・個人チャット 9:その他
+  guardian_notice_person TEXT,
   -- 起票元。ヒヤリハットのみ。異常時の記録と相互に参照する
   nap_abnormal_id       INTEGER REFERENCES t_nap_abnormal(nap_abnormal_id),
   -- 差し戻す理由。差し戻しは理由の入力を必須とする（画面詳細図 3-3）
   returned_reason       TEXT,
   is_deleted            INTEGER NOT NULL DEFAULT 0,
   created_at            TEXT    NOT NULL,
-  updated_at            TEXT    NOT NULL
+  updated_at            TEXT    NOT NULL,
+  -- 日付の前後を比べる CHECK は置かない（日付ずらしが列を1つずつ書き換えるため。詳細設計書の決めたこと D-25）
+  CHECK (status NOT IN ('2','3') OR (applied_staff_id IS NOT NULL AND applied_at IS NOT NULL)),
+  CHECK (record_type <> '4' OR (occurred_at IS NOT NULL AND place IS NOT NULL)),
+  CHECK (guardian_notice IS NOT '1' OR (guardian_noticed_at IS NOT NULL AND guardian_notice_method IS NOT NULL AND guardian_notice_person IS NOT NULL))
 );
-CREATE INDEX ix_diary_date  ON t_diary (diary_date);
-CREATE INDEX ix_diary_child ON t_diary (child_id, diary_date);
+CREATE INDEX ix_diary_date   ON t_diary (diary_date);
+CREATE INDEX ix_diary_child  ON t_diary (child_id, diary_date);
+CREATE INDEX ix_diary_class  ON t_diary (class_id, diary_date);
+CREATE INDEX ix_diary_status ON t_diary (status, applied_at);
 
 -- 編集ロック（t_diary_lock）。取得のたびにトークンを発行し、保存時に照合する
 CREATE TABLE t_diary_lock (
@@ -204,13 +220,13 @@ CREATE TABLE t_diary_lock (
   last_active_at  TEXT    NOT NULL
 );
 
--- 雛形（m_diary_template）。保護者共有の既定値を雛形側に持ち、コードに書かない
+-- 雛形（m_diary_template）。保護者への共有の既定は持たない（日誌は共有しない。詳細設計書「変える表」(5-3)）
 CREATE TABLE m_diary_template (
-  diary_template_id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  record_type               TEXT    NOT NULL CHECK (record_type IN ('1','2','3','4')),
-  template_name             TEXT    NOT NULL,
-  body                      TEXT    NOT NULL,
-  default_share_to_guardian INTEGER NOT NULL DEFAULT 0
+  diary_template_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  record_type       TEXT    NOT NULL CHECK (record_type IN ('1','2','3','4')),
+  template_name     TEXT    NOT NULL,
+  body              TEXT    NOT NULL,
+  is_deleted        INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE t_diary_attachment (
@@ -244,6 +260,10 @@ CREATE TABLE t_chat_member (
   account_id   INTEGER NOT NULL REFERENCES m_account(account_id),
   joined_at    TEXT    NOT NULL,
   left_at      TEXT,
+  -- 【仮置き】最初に参加した日時。抜けていた行を今の時刻で参加し直す（決めたこと D-48）ときに、書き換える前の joined_at を残す。
+  -- 個人チャットの「保護者がまだ1人もいなかった間の投稿は見せる」境（api_chat.go の firstGuardianJoinedAt）が今へ動かないように。
+  -- 空なら joined_at が最初の参加。既存の DB には db.go の ensureChatMemberFirstJoined が足す（web/仮置き値.md）
+  first_joined_at TEXT,
   PRIMARY KEY (chat_room_id, account_id)
 );
 
@@ -417,6 +437,13 @@ CREATE TABLE t_development_check (
   -- 所見（チェック1件に対する自由記述）。園内限定であり、保護者へは共有しない
   -- （基本設計書「発達チェック・身体測定」(5-7)）
   note                    TEXT,
+  -- 保護者へのひとこと（所見とは別の欄。確定した時点で成長の記録に届く）と、最初に確定した日時（直しても動かさない）
+  -- （詳細設計書「変える表」(5-3)・「成長の記録に届くもの」(3-7)、決めたこと D-31）
+  guardian_message        TEXT,
+  finalized_at            TEXT,
+  -- 確定したあとで保護者へのひとことを別の文に書き換えた時刻。空なら書き換えていない。保護者の成長の記録に
+  -- 「訂正しました（日付）」を出す（詳細設計書「変える表」(5-3)、決めたこと D-51。PR #216 で決まった設計）
+  guardian_message_corrected_at TEXT,
   UNIQUE (child_id, checked_on)
 );
 

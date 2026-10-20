@@ -30,7 +30,10 @@ export type DiaryStatus = '1' | '2' | '3' | '4';
 export type LinkStatus = '1' | '2' | '3';
 /** チャットルーム種別 1:園 2:クラスグループ 3:目的別グループ 4:個人 5:職員（m_chat_room.room_type） */
 export type ChatRoomType = '1' | '2' | '3' | '4' | '5';
-/** メッセージの出所 1:手入力 2:日誌の共有 3:発達身体測定の共有（t_chat_message.source_type） */
+/**
+ * メッセージの出所 1:手入力 2:日誌の共有 3:発達身体測定の共有 4:配布物の掲載（t_chat_message.source_type）。
+ * 2・3 は以前の版の知らせで、日誌を園内の記録にしたときに取り消し済みにした（詳細設計書「変える表」(5-3)）。いまは作らない
+ */
 export type MessageSourceType = '1' | '2' | '3' | '4';
 /** 体位 1:仰向け 2:うつ伏せ 3:左向き 4:右向き（t_nap_record.body_position） */
 export type BodyPosition = '1' | '2' | '3' | '4';
@@ -122,6 +125,8 @@ export interface Terms {
   document_type: TermsDocumentType;
   body: string;
   published_on: string;
+  /** 外部の AI へ送ることを書いた版か（詳細設計書「使える条件」(8-3) の④）。サーバの GET /api/terms は返さない（モックの判定に使う） */
+  covers_external_ai?: boolean;
 }
 
 /* ---- 園児・クラス（基本設計書 5-3） ---- */
@@ -131,6 +136,8 @@ export interface Child {
   child_id: string;
   child_name: string;
   child_name_kana: string;
+  /** 呼び名。職員の応答だけに入る（保護者の応答には含めない。インタフェース一覧「Child」） */
+  nickname?: string;
   /** 月齢算出の唯一の根拠。未来日不可（5-3） */
   birth_date: string;
   sex: Sex;
@@ -167,6 +174,13 @@ export interface GuardianChild {
   ended_at: string | null;
   /** 猶予中（3）の終わりの日（詳細設計書「変える表」(5-3)） */
   grace_ends_on?: string | null;
+  /** 保護者が「AI の下書きを使わない」を選んだ（詳細設計書「使える条件」(8-3) の④。無ければ偽） */
+  ai_opt_out?: boolean;
+  /**
+   * 連絡順（緊急時にかける順。管理者が紐づけごとに決める。基本設計書「保護者と園児の紐づけ（t_guardian_child）」(5-3)）。
+   * 無ければ 1（server/schema.sql の既定）。お子さまの追加で、その園児のいまの最大＋1 を入れる（詳細設計書「お子さまの追加」(4-15 (1))）
+   */
+  contact_order?: number;
 }
 
 /** アレルギー（m_allergy）。1園児に複数登録できる（5-3） */
@@ -199,9 +213,12 @@ export interface Diary {
   created_staff_id: string;
   approved_staff_id: string | null;
   approved_at: string | null;
-  /** 承認とは別の指定（5-4） */
-  is_shared_to_guardian: boolean;
-  shared_at: string | null;
+  /**
+   * 申請した職員と日時。取り下げると空になる（詳細設計書「日誌の状態」(3-6)）。
+   * 「自分が申請した日誌は承認できない」と「取り下げは申請した本人だけ」は、この値で判定する
+   */
+  applied_staff_id: string | null;
+  applied_at: string | null;
   /** 起票元。ヒヤリハットのみ。異常時の記録と相互に参照する（5-4） */
   nap_abnormal_id: number | null;
   /** 差し戻す理由。差し戻しは理由の入力を必須とする（画面詳細図 3-3） */
@@ -209,17 +226,10 @@ export interface Diary {
   is_deleted: boolean;
   created_at: string;
   updated_at: string;
-  /*
-   * 記入した職員・確認（承認）した職員の氏名。画面が使う導出値。
-   * 保護者には職員の名簿を渡さないため、IDから引かずにこの値を出す。
-   */
+  /* 作成した職員・承認した職員・申請した職員の氏名。承認の経緯に出す導出値（詳細設計書「日誌」(4-13 (6))） */
   staff_name?: string;
   approved_staff_name?: string | null;
-  /**
-   * 最後に申請した職員。日誌を1件開いたときに、職員へだけ返す導出値。
-   * 承認画面が「自分が申請した日誌」を見分けて、承認のボタンを押せなくするため（GitHub Issue #174）
-   */
-  applied_staff_id?: string | null;
+  applied_staff_name?: string | null;
 }
 
 /** 編集ロック（t_diary_lock）。1件の日誌に1つ（5-4） */
@@ -231,13 +241,13 @@ export interface DiaryLock {
   last_active_at: string;
 }
 
-/** 雛形（m_diary_template）。保護者共有の既定値を雛形側に持つ（5-4） */
+/** 雛形（m_diary_template）。 */
 export interface DiaryTemplate {
   diary_template_id: number;
   record_type: DiaryRecordType;
   template_name: string;
   body: string;
-  default_share_to_guardian: boolean;
+  is_deleted: boolean;
 }
 
 /** 添付（t_diary_attachment）。1〜3枚（5-4） */
@@ -267,6 +277,12 @@ export interface ChatMember {
   account_id: number;
   joined_at: string;
   left_at: string | null;
+  /**
+   * 【仮置き】最初に参加した日時。抜けていた行を今の時刻で参加し直す（決めたこと D-48）ときに、書き換える前の joined_at を残す。
+   * 空なら joined_at が最初の参加。個人チャットの「保護者がまだ1人もいなかった間の投稿は見せる」境（mock.ts の hiddenBeforeJoined）が
+   * 今へ動かないように（server/schema.sql の t_chat_member.first_joined_at と同じ。web/仮置き値.md）
+   */
+  first_joined_at?: string | null;
 }
 
 /** メッセージ（t_chat_message） */
@@ -435,6 +451,19 @@ export interface ContactHomeRecord {
   updated_at: string;
 }
 
+/** 定型文（m_phrase）。連絡帳と日誌で共通（基本設計書「定型文（m_phrase）」(5-9)） */
+export interface PhraseRecord {
+  phrase_id: number;
+  /** 1:園から 2:活動のひとこと 3:クラスのようす 4:日誌 */
+  phrase_scope: '1' | '2' | '3' | '4';
+  body: string;
+  display_order: number;
+  is_deleted: boolean;
+  updated_staff_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
 /** 出来事（t_contact_event）。きょうのようすの1件・園児1人 */
 export interface ContactEventRecord {
   contact_event_id: number;
@@ -494,6 +523,29 @@ export interface ContactReadRecord {
   contact_date: string;
   account_id: number;
   read_at: string;
+}
+
+/**
+ * 連絡帳の写真（t_contact_photo）。取り消したものは配信しない（詳細設計書「写真」(3-3)）。
+ * モックは実体を持たず、file_path に URL.createObjectURL で作った URL を持つ（再読み込みで消える。詳細設計書 (4-4 (2))）
+ */
+export interface ContactPhotoRecord {
+  contact_photo_id: number;
+  class_id: number;
+  contact_date: string;
+  file_path: string;
+  file_type: string;
+  file_size: number;
+  staff_id: string;
+  is_deleted: boolean;
+  created_at: string;
+}
+
+/** 写っている子（t_contact_photo_child）。送った時点の同意を写す（なぜ送れたかを後から示す） */
+export interface ContactPhotoChildRecord {
+  contact_photo_id: number;
+  child_id: string;
+  consent_level: PhotoConsentLevel;
 }
 
 /** ねた・おきた（t_nap_sleep）。sleep_temperature だけは監査の層で保護者へ返さない（基本設計書「午睡チェック」(5-7)） */
@@ -581,6 +633,15 @@ export interface DevelopmentCheck {
   share_status: ShareStatus;
   /** 所見（チェック単位の自由記述）。列は基本設計書 5-7 の定義に無い（GitHub Issue #58） */
   note?: string | null;
+  /** 保護者へのひとこと。確定した時点で成長の記録に届く（詳細設計書「変える表」(5-3)） */
+  guardian_message?: string | null;
+  /** 最初に確定した日時。確定し直しても動かさない（詳細設計書「成長の記録に届くもの」(3-7)、決めたこと D-31） */
+  finalized_at?: string | null;
+  /**
+   * 確定したあとで保護者へのひとことを別の文に書き換えた時刻。空なら書き換えていない。保護者の成長の記録に
+   * 「訂正しました（日付）」を出す（詳細設計書「変える表」(5-3)、決めたこと D-51。PR #216 で決まった設計）
+   */
+  guardian_message_corrected_at?: string | null;
 }
 
 /**

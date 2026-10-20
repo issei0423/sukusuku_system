@@ -5,12 +5,15 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 /*
- * 日誌システム（作成・承認・編集ロック）
- * 典拠：基本設計書.md「日誌の作成から保護者への共有」(4-5)・「編集ロックの解除」(4-5)
+ * 日誌システム（作成・承認・取り下げ・承認の取り消し・編集ロック）
+ * 典拠：基本設計書.md「日誌システム（園内の記録）」(4-6)・「編集ロックの解除」(4-5)
+ *      詳細設計書.md「日誌の状態」(3-6)・「日誌」(4-13)
  *      図/画面詳細図.md「日誌作成・編集画面」(3-2)・「日誌承認画面（管理者）」(3-3)
+ * 日誌は園内の記録であり、どの状態でも保護者には届かない
  */
 
 type diaryInput struct {
@@ -176,11 +179,19 @@ func (a *app) handleSaveDiary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
+	// 申請（status = 2）のときは、申請した職員と日時を入れる（詳細設計書「日誌」(4-13 (1))）
+	at := now()
+	var appliedStaff, appliedAt any
+	if in.Status == "2" {
+		appliedStaff, appliedAt = u.staff(), at
+	}
+	occurredAt, place := incidentPlaceholder(in.RecordType, in.DiaryDate+"T00:00:00")
 	res, err := tx.Exec(`INSERT INTO t_diary
 		(record_type, child_id, class_id, diary_date, body, status, created_staff_id,
-		 is_shared_to_guardian, is_deleted, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
-		in.RecordType, in.ChildID, in.ClassID, in.DiaryDate, in.Body, in.Status, u.staff(), now(), now())
+		 applied_staff_id, applied_at, occurred_at, place, is_deleted, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+		in.RecordType, in.ChildID, in.ClassID, in.DiaryDate, in.Body, in.Status, u.staff(),
+		appliedStaff, appliedAt, occurredAt, place, at, at)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "日誌の保存に失敗しました")
 		return
@@ -209,9 +220,9 @@ func (a *app) handleSaveDiary(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *app) updateDiary(w http.ResponseWriter, u *SessionUser, in diaryInput) {
-	var status string
-	if err := a.db.QueryRow(`SELECT status FROM t_diary WHERE diary_id = ? AND is_deleted = 0`,
-		*in.DiaryID).Scan(&status); err != nil {
+	var status, version string
+	if err := a.db.QueryRow(`SELECT status, updated_at FROM t_diary WHERE diary_id = ? AND is_deleted = 0`,
+		*in.DiaryID).Scan(&status, &version); err != nil {
 		writeErr(w, http.StatusNotFound, "日誌が見つかりません")
 		return
 	}
@@ -248,10 +259,17 @@ func (a *app) updateDiary(w http.ResponseWriter, u *SessionUser, in diaryInput) 
 		return
 	}
 	defer tx.Rollback()
+	// 申請するときは、申請した職員と日時を入れ直す（詳細設計書「日誌の状態」(3-6)）。下書き保存では変えない
+	at := now()
+	occurredAt, place := incidentPlaceholder(in.RecordType, in.DiaryDate+"T00:00:00")
 	if _, err := tx.Exec(`UPDATE t_diary
-		SET record_type = ?, child_id = ?, class_id = ?, diary_date = ?, body = ?, status = ?, updated_at = ?
+		SET record_type = ?, child_id = ?, class_id = ?, diary_date = ?, body = ?, status = ?,
+		    applied_staff_id = CASE WHEN ? = '2' THEN ? ELSE applied_staff_id END,
+		    applied_at = CASE WHEN ? = '2' THEN ? ELSE applied_at END,
+		    occurred_at = COALESCE(occurred_at, ?), place = COALESCE(place, ?), updated_at = ?
 		WHERE diary_id = ?`,
-		in.RecordType, in.ChildID, in.ClassID, in.DiaryDate, in.Body, in.Status, now(), *in.DiaryID); err != nil {
+		in.RecordType, in.ChildID, in.ClassID, in.DiaryDate, in.Body, in.Status,
+		in.Status, u.staff(), in.Status, at, occurredAt, place, nextDiaryVersion(version), *in.DiaryID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "日誌の保存に失敗しました")
 		return
 	}
@@ -289,26 +307,32 @@ func (a *app) updateDiary(w http.ResponseWriter, u *SessionUser, in diaryInput) 
 }
 
 /*
- * 申請したことを残す操作ログの「変更後」の文言。最後に申請した職員は、これで操作ログから引く（diaryApplicant）。
- * 申請した人は日誌（t_diary）の列に無い。申請と差し戻しの往復の経緯は操作ログで追うと定めているため
- * （基本設計書「日誌（t_diary）」(5-4)）。文言を変えるときは、画面側のモック（web/src/api/mock.ts）も合わせる
+ * 申請したことを残す操作ログの「変更後」の文言（詳細設計書「日誌」(4-13 (1))）。
+ * 申請した職員は日誌の列（applied_staff_id）で持つ。古い DB を移すときは、この文言の行から申請者を起こす
+ * （db_diary.go。詳細設計書「変える表」(5-3)）。文言を変えるときは、画面側のモック（web/src/api/mock.ts）も合わせる
  */
 const (
 	diaryLogApply          = "申請"
 	diaryLogCreateAndApply = "作成して申請"
 )
 
-// diaryApplicant は、その日誌を最後に申請した職員の職員IDを返す。申請の記録が無ければ空を返す
-func (a *app) diaryApplicant(diaryID int64) string {
-	var staffID string
-	a.db.QueryRow(`SELECT s.staff_id FROM t_operation_log l
-		JOIN m_staff s ON s.account_id = l.account_id
-		WHERE l.function_type = ? AND l.target_table = 't_diary' AND l.target_id = ?
-		  AND l.after_value IN (?, ?)
-		ORDER BY l.operation_log_id DESC LIMIT 1`,
-		fnDiary, diaryID, diaryLogApply, diaryLogCreateAndApply).Scan(&staffID)
-	return staffID
+/*
+incidentPlaceholder は、ヒヤリハットの発生日時と場所の列に入れる値を返す（ヒヤリハットでなければ空）。
+
+【仮置き】ヒヤリハットの欄（詳細設計書「日誌の画面（作り直し）」(2-13 (8))）はまだ作っていない。
+表はヒヤリハットに発生日時と場所を必須とする（同「変える表」(5-3) の CHECK）ため、それまでは
+発生日時を記録日の 0:00（異常時の記録から起票したときは発見時刻）、場所を incidentPlaceUnset で埋める。
+すでに値があるときは書き換えない（web/仮置き値.md「ヒヤリハットの発生日時と場所」）
+*/
+func incidentPlaceholder(recordType, occurredAt string) (any, any) {
+	if recordType != "4" {
+		return nil, nil
+	}
+	return occurredAt, incidentPlaceUnset
 }
+
+// 【仮置き】ヒヤリハットの欄を作るまで、場所の列に入れる文（web/仮置き値.md）
+const incidentPlaceUnset = "（未入力）"
 
 // childInClass は、その園児がそのクラスに在籍している（いた）かを返す
 func (a *app) childInClass(childID string, classID int64) bool {
@@ -331,13 +355,14 @@ func (a *app) writeDiaryByID(w http.ResponseWriter, id int64) {
 
 // ---- 承認（管理者のみ） ----
 
-// handlePendingDiaries は承認待ちの一覧を返す
+// handlePendingDiaries は承認待ちの一覧を返す。申請日時の古い順（詳細設計書「日誌の画面（作り直し）」(2-13 (1))
+// の承認待ち一覧画面）。同じ時刻は日誌の番号の順にする
 func (a *app) handlePendingDiaries(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.requireAdmin(w, r); !ok {
 		return
 	}
 	out, err := a.queryDiaries(`SELECT ` + diaryColumns + ` FROM t_diary
-		WHERE is_deleted = 0 AND status = '2' ORDER BY updated_at`)
+		WHERE is_deleted = 0 AND status = '2' ORDER BY applied_at, diary_id`)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "承認待ちを取得できませんでした")
 		return
@@ -345,14 +370,78 @@ func (a *app) handlePendingDiaries(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-/*
-handleApproveDiary は承認する。
+// 日誌の状態の遷移で返す文言（詳細設計書「日誌の状態」(3-6)・「日誌」(4-13)）。モック（web/src/api/mock.ts）と同じ
+const (
+	msgDiaryApproveAdminOnly  = "承認は管理者のみが行えます"
+	msgDiaryWithdrawn         = "この日誌は取り下げられました。"
+	msgDiaryApproveNotApplied = "申請中の日誌のみ承認できます"
+	msgDiaryReturnNotApplied  = "申請中の日誌のみ差し戻せます"
+	msgDiaryOwnApplication    = "自分が申請した日誌は承認できません。ほかの管理者に依頼してください。"
+	msgDiaryWithdrawOwnOnly   = "申請を取り下げられるのは、申請した本人だけです。"
+	msgDiaryWithdrawTooLate   = "すでに承認または差し戻しされたため、取り下げられません。"
+	msgDiaryRevokeAdminOnly   = "承認の取り消しは管理者のみが行えます。"
+	msgDiaryRevokeReason      = "承認を取り消す理由を入力してください。"
+	msgDiaryRevokeReasonLong  = "承認を取り消す理由は500文字以内で入力してください。"
+	msgDiaryNotApproved       = "承認済みの日誌ではありません。画面を読み込み直してください。"
+	msgDiaryVersionConflict   = "他の職員が更新しています。内容を再読み込みしてください。"
+)
 
-保護者への共有の指定を、承認と同じ操作で受け取る。
-承認後に別画面で指定させると共有し忘れが起きるため（画面詳細図 3-3）。
+// requireAdminFor は管理者だけを通す。管理者でなければ、その操作の文言で 403 を返す
+func (a *app) requireAdminFor(w http.ResponseWriter, r *http.Request, message string) (*SessionUser, bool) {
+	u, ok := a.requireUser(w, r)
+	if !ok {
+		return nil, false
+	}
+	if !u.isAdmin() {
+		writeForbidden(w, message)
+		return nil, false
+	}
+	return u, true
+}
+
+// diaryStatusOf は日誌のいまの状態を返す。無ければ空
+func (a *app) diaryStatusOf(id int64) string {
+	var status string
+	a.db.QueryRow(`SELECT status FROM t_diary WHERE diary_id = ? AND is_deleted = 0`, id).Scan(&status)
+	return status
+}
+
+// notAppliedMessage は、申請中でない日誌を承認・差し戻ししようとしたときの 409 の文言を返す。
+// 下書きなら、申請が取り下げられたあとに届いた操作である（詳細設計書「日誌の状態」(3-6)）
+func notAppliedMessage(status, otherwise string) string {
+	if status == "1" {
+		return msgDiaryWithdrawn
+	}
+	return otherwise
+}
+
+/*
+nextDiaryVersion は、日誌を書き換えるときの新しい updated_at を返す。
+
+読んだ版（updated_at）で取り下げ・承認の取り消しを確かめるため、書くたびに必ず前の値より進める。
+同じ秒のうちに2回書き換えても別の版になる（詳細設計書「足す表」(5-2) の決めたこと D-40）。
+今の時刻が前の値より後なら今の時刻、そうでなければ前の値の1秒後にする
+*/
+func nextDiaryVersion(previous string) string {
+	current := now()
+	if current > previous {
+		return current
+	}
+	t, err := time.ParseInLocation("2006-01-02T15:04:05", previous, jst)
+	if err != nil {
+		return current
+	}
+	return t.Add(time.Second).Format("2006-01-02T15:04:05")
+}
+
+/*
+handleApproveDiary は承認する。承認は園内の確認であり、保護者へは何も届かない
+（基本設計書「日誌システム（園内の記録）」(4-6)、詳細設計書「日誌」(4-13 (2))）。
+
+要求の本文は読まない。以前の版が受け取っていた保護者への共有の指定（share_to_guardian）は、送られても使わない。
 */
 func (a *app) handleApproveDiary(w http.ResponseWriter, r *http.Request) {
-	u, ok := a.requireAdmin(w, r)
+	u, ok := a.requireAdminFor(w, r, msgDiaryApproveAdminOnly)
 	if !ok {
 		return
 	}
@@ -361,97 +450,53 @@ func (a *app) handleApproveDiary(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "日誌の指定が正しくありません")
 		return
 	}
-	var req struct {
-		ShareToGuardian bool `json:"share_to_guardian"`
-	}
-	if !readJSON(w, r, &req) {
-		return
-	}
-
 	var (
-		status     string
-		childID    sql.NullString
-		creator    string
-		recordType string
+		status    string
+		childID   sql.NullString
+		applicant sql.NullString
+		version   string
 	)
-	if err := a.db.QueryRow(`SELECT status, child_id, created_staff_id, record_type FROM t_diary
-		WHERE diary_id = ? AND is_deleted = 0`, id).Scan(&status, &childID, &creator, &recordType); err != nil {
+	if err := a.db.QueryRow(`SELECT status, child_id, applied_staff_id, updated_at FROM t_diary
+		WHERE diary_id = ? AND is_deleted = 0`, id).Scan(&status, &childID, &applicant, &version); err != nil {
 		writeErr(w, http.StatusNotFound, "日誌が見つかりません")
 		return
 	}
 	if status != "2" {
-		writeErr(w, http.StatusBadRequest, "申請中の日誌のみ承認できます")
-		return
-	}
-	// 共有を選べるのは個人日誌だけ。クラス日誌・週案月案・ヒヤリハットは保護者への共有の対象外とする
-	// （基本設計書「日誌システム」(4-5)）。画面（DiaryApproveScreen）は選ばせないが、API でも断る
-	// （GitHub Issue #61・#157）。画面側のモック（web/src/api/mock.ts の approveDiary）と同じ規則
-	if req.ShareToGuardian && recordType != "1" {
-		writeErr(w, http.StatusBadRequest, "保護者へ共有できるのは個人日誌だけです。共有しないで承認してください")
+		writeErr(w, http.StatusConflict, notAppliedMessage(status, msgDiaryApproveNotApplied))
 		return
 	}
 	/*
-	 * 自分が申請した日誌は承認できない。承認を「作成者とは別の人による確認」として扱うため
-	 * （基本設計書「日誌の作成から保護者への共有」(4-5)。演習上の想定。GitHub Issue #106）。
-	 * 作成者だけでなく、最後に申請した職員も見る。担任の下書きを書き直して申請した管理者が、
-	 * 自分で承認して保護者へ共有できていた（GitHub Issue #174）。画面側のモック（approveDiary）と同じ規則
+	 * 自分が申請した日誌は承認できない。申請者の列（applied_staff_id）で判定する。作成者が管理者でも、
+	 * ほかの職員が申請したものは承認できる（詳細設計書「日誌の状態」(3-6)。GitHub Issue #106・#174）。
+	 * 画面側のモック（approveDiary）と同じ規則
 	 */
-	if creator == u.staff() || a.diaryApplicant(id) == u.staff() {
-		writeErr(w, http.StatusBadRequest, "自分が申請した日誌は承認できません。ほかの管理者に承認を依頼してください")
+	if applicant.Valid && applicant.String == u.staff() {
+		writeForbidden(w, msgDiaryOwnApplication)
 		return
 	}
-
-	var sharedAt any
-	if req.ShareToGuardian {
-		sharedAt = now()
-	}
-	if _, err := a.db.Exec(`UPDATE t_diary
-		SET status = '3', approved_staff_id = ?, approved_at = ?, returned_reason = NULL,
-		    is_shared_to_guardian = ?, shared_at = ?, updated_at = ?
-		WHERE diary_id = ?`,
-		u.staff(), now(), req.ShareToGuardian, sharedAt, now(), id); err != nil {
+	// 状態を条件にして書き換え、取り下げとほぼ同時に押されたときは後に届いたほうを拒む（詳細設計書「日誌の状態」(3-6)）
+	at := now()
+	res, err := a.db.Exec(`UPDATE t_diary
+		SET status = '3', approved_staff_id = ?, approved_at = ?, returned_reason = NULL, updated_at = ?
+		WHERE diary_id = ? AND status = '2'`,
+		u.staff(), at, nextDiaryVersion(version), id)
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "承認に失敗しました")
 		return
 	}
-
-	after := "承認済み・共有しない"
-	if req.ShareToGuardian {
-		after = "承認済み・保護者へ共有"
+	if n, _ := res.RowsAffected(); n == 0 {
+		writeErr(w, http.StatusConflict, notAppliedMessage(a.diaryStatusOf(id), msgDiaryApproveNotApplied))
+		return
 	}
-	a.log(u.AccountID, fnDiary, opApprove, "t_diary", i64(id), nullStr(childID), s("申請中"), s(after))
-
-	// 共有する場合、対象園児に紐づく保護者との個人チャットへ送る（基本設計書 4-5）
-	if req.ShareToGuardian && childID.Valid {
-		if roomID, ok := a.shareDiaryToGuardian(u, id, childID.String); ok {
-			a.notifyRoomPost(roomID)
-		}
-	}
-	// 承認待ちが減る。共有したら、紐づけのある保護者のホームに出る（canSeeDiary。events.go）
+	a.log(u.AccountID, fnDiary, opApprove, "t_diary", i64(id), nullStr(childID), s("申請中"), s("承認済み"))
+	// 承認待ちが減る（events.go。日誌の知らせは職員だけ）
 	a.notifyDiary(id)
 	a.writeDiaryByID(w, id)
 }
 
-// shareDiaryToGuardian は個人チャットへ日誌の共有として流す（t_chat_message.source_type = 2）。
-// 個人チャットは園児ID で引く。部屋の名前で探すと、同じ氏名の別の園児の家庭へ流れる（GitHub Issue #163）。
-// 流したチャンネルを返す。流せなかったときは偽（開いている画面への知らせに使う。events.go）
-func (a *app) shareDiaryToGuardian(u *SessionUser, diaryID int64, childID string) (int64, bool) {
-	var roomID int64
-	err := a.db.QueryRow(`SELECT chat_room_id FROM m_chat_room
-		WHERE room_type = '4' AND child_id = ?`, childID).Scan(&roomID)
-	if err != nil {
-		// 【要確認】個人チャットが無い場合の共有先が定義されていない（GitHub Issue #61 と同じ論点）
-		return 0, false
-	}
-	if _, err := a.db.Exec(`INSERT INTO t_chat_message
-		(chat_room_id, sender_account_id, body, source_type, source_id, sent_at, is_deleted)
-		VALUES (?, ?, '日誌を共有しました。', '2', ?, ?, 0)`,
-		roomID, u.AccountID, diaryID, now()); err != nil {
-		return 0, false
-	}
-	return roomID, true
-}
-
-// handleReturnDiary は差し戻す。理由の入力を必須とする（画面詳細図 3-3）
+// handleReturnDiary は差し戻す。理由の入力を必須とする（画面詳細図 3-3）。
+// 差し戻した管理者は承認者の列（approved_*）に書かない。承認していない人が「承認の経緯」に出るため。
+// 差し戻した管理者は操作ログで辿る（詳細設計書「日誌の状態」(3-6)・「日誌」(4-13 (3))）
 func (a *app) handleReturnDiary(w http.ResponseWriter, r *http.Request) {
 	u, ok := a.requireAdmin(w, r)
 	if !ok {
@@ -480,21 +525,26 @@ func (a *app) handleReturnDiary(w http.ResponseWriter, r *http.Request) {
 	var (
 		status  string
 		childID sql.NullString
+		version string
 	)
-	if err := a.db.QueryRow(`SELECT status, child_id FROM t_diary WHERE diary_id = ? AND is_deleted = 0`,
-		id).Scan(&status, &childID); err != nil {
+	if err := a.db.QueryRow(`SELECT status, child_id, updated_at FROM t_diary WHERE diary_id = ? AND is_deleted = 0`,
+		id).Scan(&status, &childID, &version); err != nil {
 		writeErr(w, http.StatusNotFound, "日誌が見つかりません")
 		return
 	}
 	if status != "2" {
-		writeErr(w, http.StatusBadRequest, "申請中の日誌のみ差し戻せます")
+		writeErr(w, http.StatusConflict, notAppliedMessage(status, msgDiaryReturnNotApplied))
 		return
 	}
 
-	if _, err := a.db.Exec(`UPDATE t_diary
-		SET status = '4', returned_reason = ?, approved_staff_id = ?, updated_at = ?
-		WHERE diary_id = ?`, req.Reason, u.staff(), now(), id); err != nil {
+	res, err := a.db.Exec(`UPDATE t_diary SET status = '4', returned_reason = ?, updated_at = ?
+		WHERE diary_id = ? AND status = '2'`, req.Reason, nextDiaryVersion(version), id)
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "差し戻しに失敗しました")
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		writeErr(w, http.StatusConflict, notAppliedMessage(a.diaryStatusOf(id), msgDiaryReturnNotApplied))
 		return
 	}
 	a.log(u.AccountID, fnDiary, opApprove, "t_diary", i64(id), nullStr(childID),
@@ -502,6 +552,151 @@ func (a *app) handleReturnDiary(w http.ResponseWriter, r *http.Request) {
 	// 承認待ちが減り、作成者の「差し戻された日誌」が増える（events.go）
 	a.notifyDiary(id)
 
+	a.writeDiaryByID(w, id)
+}
+
+// diaryVersionInput は、読んだ版を添える操作の要求（取り下げ・承認の取り消し）
+type diaryVersionInput struct {
+	Reason    string `json:"reason"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+/*
+handleWithdrawDiary は申請を取り下げ、下書きに戻す（詳細設計書「日誌の状態」(3-6)・「日誌」(4-13 (4))）。
+
+取り下げられるのは申請した本人だけで、申請中（承認・差し戻しの前）のときだけ。読んだ版が今の版と違えば 409。
+状態と版を書き換えの文の条件にし、承認・差し戻しとほぼ同時に押されたときは後に届いたほうを拒む。
+*/
+func (a *app) handleWithdrawDiary(w http.ResponseWriter, r *http.Request) {
+	u, ok := a.requireDiaryStaff(w, r)
+	if !ok {
+		return
+	}
+	id, valid := pathInt64(r, "id")
+	if !valid {
+		writeErr(w, http.StatusBadRequest, "日誌の指定が正しくありません")
+		return
+	}
+	var req diaryVersionInput
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if !a.canSeeDiary(u, id) {
+		writeForbidden(w, msgDiaryForbidden)
+		return
+	}
+	d, err := a.scanDiary(a.db.QueryRow(`SELECT `+diaryColumns+` FROM t_diary WHERE diary_id = ? AND is_deleted = 0`, id))
+	if err != nil {
+		writeForbidden(w, msgDiaryForbidden)
+		return
+	}
+	// 承認・差し戻しのあとも申請者の列は残るため、本人なら次の状態の検査で 409 になる
+	if d.AppliedStaffID == nil || *d.AppliedStaffID != u.staff() {
+		writeForbidden(w, msgDiaryWithdrawOwnOnly)
+		return
+	}
+	if d.Status != "2" {
+		writeErr(w, http.StatusConflict, msgDiaryWithdrawTooLate)
+		return
+	}
+	if req.UpdatedAt != d.UpdatedAt {
+		writeJSON(w, http.StatusConflict, apiError{Message: msgDiaryVersionConflict, Kind: kindVersionConflict})
+		return
+	}
+	res, err := a.db.Exec(`UPDATE t_diary SET status = '1', applied_staff_id = NULL, applied_at = NULL, updated_at = ?
+		WHERE diary_id = ? AND status = '2' AND updated_at = ?`, nextDiaryVersion(d.UpdatedAt), id, req.UpdatedAt)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "申請を取り下げられませんでした")
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		// 検査のあとに承認・差し戻しが先に済んだ
+		if a.diaryStatusOf(id) != "2" {
+			writeErr(w, http.StatusConflict, msgDiaryWithdrawTooLate)
+			return
+		}
+		writeJSON(w, http.StatusConflict, apiError{Message: msgDiaryVersionConflict, Kind: kindVersionConflict})
+		return
+	}
+	appliedAt := ""
+	if d.AppliedAt != nil {
+		appliedAt = *d.AppliedAt
+	}
+	a.log(u.AccountID, fnDiary, opUpdate, "t_diary", i64(id), d.ChildID,
+		s("申請者："+a.staffName(*d.AppliedStaffID)+"（"+*d.AppliedStaffID+"）・申請日時："+appliedAt), s("取り下げ"))
+	// 承認待ちの一覧を開いている管理者の画面から消える（events.go）
+	a.notifyDiary(id)
+	a.writeDiaryByID(w, id)
+}
+
+/*
+handleRevokeDiaryApproval は承認を取り消して差し戻す（詳細設計書「日誌の状態」(3-6)・「日誌」(4-13 (5))）。
+
+管理者なら、自分が承認したものも、ほかの管理者が承認したものも取り消せる。理由は必須（500文字）。
+承認者・承認日時は空にし、元の値は操作ログに残す（基本設計書「承認の取り消し」(4-6)）。
+*/
+func (a *app) handleRevokeDiaryApproval(w http.ResponseWriter, r *http.Request) {
+	u, ok := a.requireAdminFor(w, r, msgDiaryRevokeAdminOnly)
+	if !ok {
+		return
+	}
+	id, valid := pathInt64(r, "id")
+	if !valid {
+		writeErr(w, http.StatusBadRequest, "日誌の指定が正しくありません")
+		return
+	}
+	var req diaryVersionInput
+	if !readJSON(w, r, &req) {
+		return
+	}
+	reason := strings.TrimSpace(req.Reason)
+	if reason == "" {
+		writeErr(w, http.StatusBadRequest, msgDiaryRevokeReason)
+		return
+	}
+	if tooLong(reason, 500) {
+		writeErr(w, http.StatusBadRequest, msgDiaryRevokeReasonLong)
+		return
+	}
+	d, err := a.scanDiary(a.db.QueryRow(`SELECT `+diaryColumns+` FROM t_diary WHERE diary_id = ? AND is_deleted = 0`, id))
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "日誌が見つかりません")
+		return
+	}
+	if d.Status != "3" {
+		writeErr(w, http.StatusConflict, msgDiaryNotApproved)
+		return
+	}
+	if req.UpdatedAt != d.UpdatedAt {
+		writeJSON(w, http.StatusConflict, apiError{Message: msgDiaryVersionConflict, Kind: kindVersionConflict})
+		return
+	}
+	res, err := a.db.Exec(`UPDATE t_diary
+		SET status = '4', approved_staff_id = NULL, approved_at = NULL, returned_reason = ?, updated_at = ?
+		WHERE diary_id = ? AND status = '3' AND updated_at = ?`,
+		reason, nextDiaryVersion(d.UpdatedAt), id, req.UpdatedAt)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "承認を取り消せませんでした")
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		if a.diaryStatusOf(id) != "3" {
+			writeErr(w, http.StatusConflict, msgDiaryNotApproved)
+			return
+		}
+		writeJSON(w, http.StatusConflict, apiError{Message: msgDiaryVersionConflict, Kind: kindVersionConflict})
+		return
+	}
+	before := "承認者："
+	if d.ApprovedStaffID != nil {
+		before += a.staffName(*d.ApprovedStaffID) + "（" + *d.ApprovedStaffID + "）"
+	}
+	if d.ApprovedAt != nil {
+		before += "・承認日時：" + *d.ApprovedAt
+	}
+	a.log(u.AccountID, fnDiary, opUpdate, "t_diary", i64(id), d.ChildID, s(before), s("承認の取り消し："+reason))
+	// 作成者の一覧とダッシュボードの「差し戻された日誌」が読み直す（events.go）
+	a.notifyDiary(id)
 	a.writeDiaryByID(w, id)
 }
 

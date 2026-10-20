@@ -118,21 +118,20 @@ func (a *app) handlePhysicalRecords(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	childID := r.PathValue("childID")
+	// 保護者は 403。保護者は成長の記録（GET /api/children/{childID}/growth）で、共有する測定値だけを読む
+	// （詳細設計書「身体測定・共有範囲の経路」(4-12 (4))。図/インタフェース一覧の対象権限「管理者・一般」に合わせる）。
+	// 画面側のモック（web/src/api/mock.ts の recordsOf）と同じ規則
+	if u.isGuardian() {
+		writeForbidden(w, msgGrowthForbidden)
+		return
+	}
 	if !a.canSeeChild(u, childID) {
 		writeForbidden(w, "この園児を参照する権限がありません")
 		return
 	}
-	// 保護者に見せるのは、共有した（連携済の）測定値だけ。未連携・対象外の測定値は園内に留める
-	// （基本設計書「権限と利用可能機能」(6-1)「成長グラフの閲覧｜保護者 ※3」「※3 自児のみ、かつ共有されたものに限る」、
-	// 「身体測定記録」(5-7) share_status＝0:対象外 1:未連携 2:連携済。GitHub Issue #157）。
-	// 画面側のモック（web/src/api/mock.ts の recordsOf）と同じ規則
-	shared := ""
-	if u.isGuardian() {
-		shared = ` AND share_status = '2'`
-	}
 	rows, err := a.db.Query(`SELECT physical_record_id, child_id, measured_on, height_cm, weight_kg,
 		staff_id, share_status, is_deleted, created_at, updated_at
-		FROM t_physical_record WHERE is_deleted = 0 AND child_id = ?`+shared+`
+		FROM t_physical_record WHERE is_deleted = 0 AND child_id = ?
 		ORDER BY measured_on DESC`, childID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "測定値を取得できませんでした")
@@ -353,7 +352,7 @@ func (a *app) handleSavePhysical(w http.ResponseWriter, r *http.Request) {
 		Scan(&out.PhysicalRecordID, &out.ChildID, &out.MeasuredOn, &out.HeightCm, &out.WeightKg,
 			&out.StaffID, &out.ShareStatus, &out.IsDeleted, &out.CreatedAt, &out.UpdatedAt)
 	// その園児を参照できる職員へ知らせる。保護者へは、共有した（連携済の）測定値が変わったときだけ（events.go）
-	a.notifyPhysical(req.ChildID, out.ShareStatus == "2")
+	a.notifyPhysical(req.ChildID, a.sharePhysical())
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -388,7 +387,7 @@ func (a *app) handleRemovePhysical(w http.ResponseWriter, r *http.Request) {
 	a.log(u.AccountID, fnPhysical, opDelete, "t_physical_record", i64(id), s(childID),
 		s("身長="+strconv.FormatFloat(height, 'f', -1, 64)+" 体重="+strconv.FormatFloat(weight, 'f', -1, 64)),
 		s("削除"))
-	a.notifyPhysical(childID, share == "2")
+	a.notifyPhysical(childID, a.sharePhysical())
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 

@@ -5,7 +5,8 @@
  *
  * 園児ごとの「きょう」の区画（連絡帳の要約と未読。contact/TodayCard.tsx）を、園児の情報のすぐ下に置く。
  * 「ねた」「おきた」などは、園が記録した時点で知らせ（contact）を受けて読み直す。
- * 共有された記録（日誌）の区画は、日誌の作り直し（共有の道を外す。詳細設計書 (2-10 (3))）まで残す。
+ * 日誌は園内の記録で、保護者へ共有しない。以前の「共有された記録」（日誌へのリンク）の区画は外した
+ * （詳細設計書「日誌の画面（作り直し）」(2-13 (1))）。保護者へは連絡帳の「きょう」で届ける。
  */
 import { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
@@ -14,8 +15,8 @@ import { onLive } from '../../live';
 import { useSession } from '../../session';
 import { api } from '../../api/client';
 import { Loading, ErrorBox, Empty, Tag } from '../../components/ui';
-import { formatAge, formatMD, today } from '../../api/util';
-import { DIARY_RECORD_TYPE, HANDOUT_TYPE } from '../../api/codes';
+import { formatAge, today } from '../../api/util';
+import { HANDOUT_TYPE } from '../../api/codes';
 import TodayCard from '../contact/TodayCard';
 
 export default function GuardianHome() {
@@ -117,27 +118,6 @@ export default function GuardianHome() {
             <Link className="guardian-panel-link" to="/guardian/chat">
               <span>チャットを開く</span><span aria-hidden="true">→</span>
             </Link>
-          </section>
-
-          <section className="guardian-home-panel guardian-record-panel">
-            <div className="guardian-panel-heading">
-              <div>
-                <span className="guardian-eyebrow">園でのようす</span>
-                <h2>共有された記録</h2>
-              </div>
-            </div>
-            {h.sharedDiaries.length === 0
-              ? <Empty text="共有された記録はまだありません。" />
-              : (
-                <div className="guardian-record-list">
-                  {h.sharedDiaries.slice(0, 5).map((d) => (
-                    <Link key={d.diary_id} className="guardian-record-link" to={`/guardian/diary/${d.diary_id}`}>
-                      <span>{formatMD(d.diary_date)} {DIARY_RECORD_TYPE[d.record_type]}</span>
-                      <span aria-hidden="true">→</span>
-                    </Link>
-                  ))}
-                </div>
-              )}
           </section>
 
         </div>
