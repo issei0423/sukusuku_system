@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 )
 
 /*
@@ -52,6 +54,10 @@ func (a *app) handlePhysicalClassStatus(w http.ResponseWriter, r *http.Request) 
 	if measuredOn == "" {
 		measuredOn = today()
 	}
+	if !isISODate(measuredOn) {
+		writeErr(w, http.StatusBadRequest, "測定日の形式が正しくありません")
+		return
+	}
 
 	children, err := a.visibleChildren(u)
 	if err != nil {
@@ -69,9 +75,16 @@ func (a *app) handlePhysicalClassStatus(w http.ResponseWriter, r *http.Request) 
 		}
 		rows.Close()
 	}
+	/*
+	 * 入力済みは、選んだ測定日と同じ年月に未削除の記録があるかで見る。測定日が数日ずれても同じ回として扱う
+	 * （基本設計書「身体測定の記録」(4-8)「選択中の測定日と同一の年月に登録済みの園児には入力済みマークを付す」・
+	 * 「測定回の単位は年月とする」、ナレッジ/決定事項.md 2026-08-04。GitHub Issue #47・#165）。
+	 * 画面側のモック（web/src/api/mock.ts の classStatus）と同じ規則
+	 */
+	monthFirst, monthLast := monthRange(measuredOn)
 	done := map[string]bool{}
 	rows2, err := a.db.Query(`SELECT child_id FROM t_physical_record
-		WHERE is_deleted = 0 AND measured_on = ?`, measuredOn)
+		WHERE is_deleted = 0 AND measured_on BETWEEN ? AND ?`, monthFirst, monthLast)
 	if err == nil {
 		for rows2.Next() {
 			var id string
@@ -208,12 +221,42 @@ func (a *app) rangeWarning(heightCm, weightKg float64) *string {
 
 var _ = sql.ErrNoRows
 
+// monthRange は 'YYYY-MM-DD' の日付が属する月の初日と末日を返す。測定回（年月）の範囲を引くために使う。
+// 日付は isISODate で確かめてから渡す
+func monthRange(date string) (first, last string) {
+	t, err := time.ParseInLocation("2006-01-02", date, jst)
+	if err != nil {
+		return date, date
+	}
+	f := time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, jst)
+	return f.Format("2006-01-02"), f.AddDate(0, 1, -1).Format("2006-01-02")
+}
+
+// monthLabel は 'YYYY-MM-DD' を「2026年10月」の形にする
+func monthLabel(date string) string {
+	t, err := time.ParseInLocation("2006-01-02", date, jst)
+	if err != nil {
+		return date
+	}
+	return strconv.Itoa(t.Year()) + "年" + strconv.Itoa(int(t.Month())) + "月"
+}
+
 /*
 handleSavePhysical は測定値を登録・修正する。
 
 確認画面を挟まず連続して入力できる（画面詳細図 6-2）。
 範囲外の値は注意喚起を返すが、登録自体は妨げない。判定ではないため。
 一意制約は child_id + measured_on を is_deleted = 0 の行のみ対象とする（基本設計書 5-7）。
+
+登録済みの記録を黙って書き換えない。同一園児・同一測定日に未削除の記録があれば、上書きの承諾（confirm_overwrite）が
+あるときだけ書き換える（基本設計書「身体測定の記録」(4-8)「上書き確認を表示する」）。
+【仮置き】承諾をサーバでも確かめる。画面で確かめたあとにほかの職員が同じ日を登録した場合も、
+確かめずに書き換えないようにするため（web/仮置き値.md）。
+
+【仮置き】同じ年月の別の測定日に記録があるときは、同じ回の 2 件目になる。同じ月の別の記録としての承諾
+（confirm_same_month）があるときだけ登録する。設計は同じ回の 2 件目の扱いを定めていない（web/仮置き値.md、GitHub Issue #165）。
+承諾は確認の種類ごとに受け付け、一方の承諾で他方を通さない（同 (4-8)「確認の種類ごとに、対応する承諾だけを受け付ける」）。
+画面側のモック（web/src/api/mock.ts の save）と同じ規則
 */
 func (a *app) handleSavePhysical(w http.ResponseWriter, r *http.Request) {
 	u, ok := a.requireStaff(w, r)
@@ -221,10 +264,12 @@ func (a *app) handleSavePhysical(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		ChildID    string  `json:"child_id"`
-		MeasuredOn string  `json:"measured_on"`
-		HeightCm   float64 `json:"height_cm"`
-		WeightKg   float64 `json:"weight_kg"`
+		ChildID          string  `json:"child_id"`
+		MeasuredOn       string  `json:"measured_on"`
+		HeightCm         float64 `json:"height_cm"`
+		WeightKg         float64 `json:"weight_kg"`
+		ConfirmOverwrite bool    `json:"confirm_overwrite"`
+		ConfirmSameMonth bool    `json:"confirm_same_month"`
 	}
 	if !readJSON(w, r, &req) {
 		return
@@ -233,7 +278,17 @@ func (a *app) handleSavePhysical(w http.ResponseWriter, r *http.Request) {
 		writeForbidden(w, "この園児を記録する権限がありません")
 		return
 	}
-	if req.MeasuredOn == "" || req.MeasuredOn > today() {
+	// 文言は基本設計書「メッセージ一覧」(4-9) の「測定日の欠落」「測定日の形式不正」による。
+	// 崩れた測定日を保存すると、年月で数える実施状況や月齢の計算が狂う
+	if req.MeasuredOn == "" {
+		writeErr(w, http.StatusBadRequest, "測定日は必須項目です")
+		return
+	}
+	if !isISODate(req.MeasuredOn) {
+		writeErr(w, http.StatusBadRequest, "測定日の形式が正しくありません")
+		return
+	}
+	if req.MeasuredOn > today() {
 		writeErr(w, http.StatusBadRequest, "測定日に未来日は指定できません")
 		return
 	}
@@ -250,6 +305,22 @@ func (a *app) handleSavePhysical(w http.ResponseWriter, r *http.Request) {
 	err := a.db.QueryRow(`SELECT physical_record_id, height_cm, weight_kg FROM t_physical_record
 		WHERE is_deleted = 0 AND child_id = ? AND measured_on = ?`, req.ChildID, req.MeasuredOn).
 		Scan(&id, &height, &weight)
+
+	if err == nil && !req.ConfirmOverwrite {
+		writeErr(w, http.StatusConflict, "この測定日の記録は登録済みです。内容を確かめ、上書きするときはもう一度「登録する」を押してください")
+		return
+	}
+	if err != nil && !req.ConfirmSameMonth {
+		monthFirst, monthLast := monthRange(req.MeasuredOn)
+		var other string
+		if a.db.QueryRow(`SELECT measured_on FROM t_physical_record
+			WHERE is_deleted = 0 AND child_id = ? AND measured_on BETWEEN ? AND ?
+			ORDER BY measured_on DESC LIMIT 1`, req.ChildID, monthFirst, monthLast).Scan(&other) == nil {
+			writeErr(w, http.StatusConflict, monthLabel(req.MeasuredOn)+"の記録は登録済みです（測定日 "+
+				strings.ReplaceAll(other, "-", "/")+"）。内容を確かめ、別の記録として登録するときはもう一度「登録する」を押してください")
+			return
+		}
+	}
 
 	if err == nil {
 		// staff_id は初回登録者。更新時に書き換えない（基本設計書 5-7）
@@ -281,6 +352,8 @@ func (a *app) handleSavePhysical(w http.ResponseWriter, r *http.Request) {
 		FROM t_physical_record WHERE physical_record_id = ?`, id).
 		Scan(&out.PhysicalRecordID, &out.ChildID, &out.MeasuredOn, &out.HeightCm, &out.WeightKg,
 			&out.StaffID, &out.ShareStatus, &out.IsDeleted, &out.CreatedAt, &out.UpdatedAt)
+	// その園児を参照できる職員へ知らせる。保護者へは、共有した（連携済の）測定値が変わったときだけ（events.go）
+	a.notifyPhysical(req.ChildID, out.ShareStatus == "2")
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -300,9 +373,10 @@ func (a *app) handleRemovePhysical(w http.ResponseWriter, r *http.Request) {
 		childID string
 		height  float64
 		weight  float64
+		share   string
 	)
-	if err := a.db.QueryRow(`SELECT child_id, height_cm, weight_kg FROM t_physical_record
-		WHERE physical_record_id = ?`, id).Scan(&childID, &height, &weight); err != nil {
+	if err := a.db.QueryRow(`SELECT child_id, height_cm, weight_kg, share_status FROM t_physical_record
+		WHERE physical_record_id = ?`, id).Scan(&childID, &height, &weight, &share); err != nil {
 		writeErr(w, http.StatusNotFound, "記録が見つかりません")
 		return
 	}
@@ -314,6 +388,7 @@ func (a *app) handleRemovePhysical(w http.ResponseWriter, r *http.Request) {
 	a.log(u.AccountID, fnPhysical, opDelete, "t_physical_record", i64(id), s(childID),
 		s("身長="+strconv.FormatFloat(height, 'f', -1, 64)+" 体重="+strconv.FormatFloat(weight, 'f', -1, 64)),
 		s("削除"))
+	a.notifyPhysical(childID, share == "2")
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 

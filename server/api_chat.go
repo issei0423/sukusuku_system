@@ -98,13 +98,26 @@ func (a *app) handleChatRooms(w http.ResponseWriter, r *http.Request) {
 	// 未読の数え上げはカーソルを閉じたあとに行う（接続を1本に絞っているため。db.go）
 	for i := range views {
 		views[i].Unread = a.unreadCount(u, views[i].Room.ChatRoomID)
+		// 届く人数は、実際に読める保護者の数。停止中の保護者はログインできず読めないため数えない
+		// （図/画面詳細図.md「チャット画面（職員）」(4-1) No.19、GitHub Issue #171）
 		a.db.QueryRow(`SELECT COUNT(*) FROM t_chat_member m
 			JOIN m_account ac ON ac.account_id = m.account_id
-			WHERE m.chat_room_id = ? AND m.left_at IS NULL AND ac.role = '3'`,
+			WHERE m.chat_room_id = ? AND m.left_at IS NULL`+activeGuardianWhere,
 			views[i].Room.ChatRoomID).Scan(&views[i].GuardianCount)
 	}
 	writeJSON(w, http.StatusOK, views)
 }
+
+/*
+activeGuardianWhere は、参加者（m_account を ac として引く）のうち、読める保護者に絞る条件。
+
+停止中の保護者（紐づけを終えて有効な紐づけがゼロになった人など。基本設計書「クラスと紐づけ」(5-3)）は、
+参加の行が残っていてもログインできず、読めない。「この投稿は、保護者 n 名にも届きます」の n と
+メンバー欄には入れない（GitHub Issue #171・#141）。
+【仮置き】参加の行（left_at）は動かさず、数えるときに除く。停止は紐づけの終了のほか、管理者のアカウント操作でも
+起きるため、どの経路でも同じに扱えるようにする。再開すれば、そのまままた数える（web/仮置き値.md）。
+*/
+const activeGuardianWhere = ` AND ac.role = '3' AND ac.status = '1'`
 
 /*
 beforeJoinedClause は、保護者に見せないメッセージを除く条件。
@@ -208,6 +221,11 @@ type ChatMessage struct {
 	DeletedAccountID *int64  `json:"deleted_account_id"`
 	// 画面が使う導出値
 	SenderName string `json:"sender_name"`
+	/*
+	 * 送信者のロール（m_account.role。1:管理者 2:一般 3:保護者）。職員か保護者かを吹き出しに添えるために返す。
+	 * 職員と保護者に同じ氏名の人がいると、氏名だけでは誰の発言か分からない（GitHub Issue #141）
+	 */
+	SenderRole string `json:"sender_role"`
 	// 既読は人数で示す。保護者側には表示しない（基本設計書 5-5）
 	ReadCount int `json:"read_count"`
 	// リアクションの集計。種別ごとの人数と、自分が付けているか
@@ -262,10 +280,20 @@ func (a *app) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 外れた職員には、外れたあとの投稿を返さない（GitHub Issue #161）
+	// 既読の人数に数える人は、チャンネルの種別で決まる（readCountRoles）。読めなければ数え方を決められない
+	var roomType string
+	if err := a.db.QueryRow(`SELECT room_type FROM m_chat_room WHERE chat_room_id = ?`, roomID).
+		Scan(&roomType); err != nil {
+		writeErr(w, http.StatusInternalServerError, "メッセージを取得できませんでした")
+		return
+	}
+
+	// 外れた職員には、外れたあとの投稿を返さない（GitHub Issue #161）。送信者のロールも一緒に引く
 	q := `SELECT m.chat_message_id, m.chat_room_id, m.sender_account_id, m.body,
-		m.source_type, m.source_id, m.sent_at, m.edited_at, m.is_deleted, m.deleted_at, m.deleted_account_id
-		FROM t_chat_message m WHERE m.chat_room_id = ?` + afterLeftClause
+		m.source_type, m.source_id, m.sent_at, m.edited_at, m.is_deleted, m.deleted_at, m.deleted_account_id,
+		IFNULL(sa.role, '')
+		FROM t_chat_message m LEFT JOIN m_account sa ON sa.account_id = m.sender_account_id
+		WHERE m.chat_room_id = ?` + afterLeftClause
 	args := []any{roomID, u.AccountID}
 	// 保護者には、自分が参加するより前の個人チャットのやりとりを返さない
 	if u.isGuardian() {
@@ -287,7 +315,7 @@ func (a *app) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 			delAcc    sql.NullInt64
 		)
 		if rows.Scan(&m.ChatMessageID, &m.ChatRoomID, &m.SenderAccountID, &m.Body,
-			&m.SourceType, &sourceID, &m.SentAt, &editedAt, &m.IsDeleted, &deletedAt, &delAcc) != nil {
+			&m.SourceType, &sourceID, &m.SentAt, &editedAt, &m.IsDeleted, &deletedAt, &delAcc, &m.SenderRole) != nil {
 			continue
 		}
 		m.SourceID = nullInt(sourceID)
@@ -299,18 +327,41 @@ func (a *app) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 	rows.Close()
 
 	// 送信者名と既読の数え上げはカーソルを閉じたあとに行う
+	readers := readCountRoles(roomType)
 	for i := range out {
 		out[i].SenderName = a.accountName(out[i].SenderAccountID)
 		// 既読は保護者側には表示しない。そもそも返さない（基本設計書 5-5）
 		if u.isStaff() {
 			var n int
-			a.db.QueryRow(`SELECT COUNT(*) FROM t_chat_read WHERE chat_message_id = ?`,
+			a.db.QueryRow(`SELECT COUNT(*) FROM t_chat_read r JOIN m_account ac ON ac.account_id = r.account_id
+				WHERE r.chat_message_id = ? AND ac.role IN (`+readers+`)`,
 				out[i].ChatMessageID).Scan(&n)
 			out[i].ReadCount = n
 		}
 		out[i].Reactions = a.reactionsOf(out[i].ChatMessageID, u.AccountID)
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+/*
+readCountRoles は、既読の人数に数える人のロール（SQL の IN の中身）を返す。
+
+既読確認は、園が送ったものを保護者が開いたかを職員が確かめるためのもの（要件定義書「チャットツール」(4-3)
+「既読確認」、基本設計書「既読確認」(4-6)「保護者がメッセージを開いた時点で既読を記録する」）。
+保護者が参加するチャンネル（園全体・クラスグループ・個人チャット。基本設計書「チャット」(5-5)）では、
+保護者の既読だけを数える。職員の既読を混ぜると、「保護者 n 名にも届きます」と並んだ「既読 3」が、
+3 家庭が読んだと読めてしまう（GitHub Issue #171）。誤送信のときに既読が付いていたかを判断する材料
+（同「誤送信への対応」(4-6)）も、保護者が読んだかである。
+【仮置き】職員だけのチャンネル（職員チャット・目的別グループ）には保護者がいないため、職員の既読を数える。
+設計は職員どうしの既読を定めていない（web/仮置き値.md）。
+*/
+func readCountRoles(roomType string) string {
+	switch roomType {
+	case "1", "2", "4":
+		return `'3'`
+	default:
+		return `'1', '2'`
+	}
 }
 
 /*
@@ -385,6 +436,8 @@ func (a *app) handleToggleReaction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// そのメッセージを見られる人の画面へ知らせる（events.go）
+	a.notifyMessage(roomID, id)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -436,6 +489,8 @@ func (a *app) handleSetThreadStatus(w http.ResponseWriter, r *http.Request) {
 		after = "未対応"
 	}
 	a.log(u.AccountID, fnChat, opUpdate, "m_chat_room", i64(roomID), nil, nil, s(after))
+	// 未対応／対応済みは職員の画面にだけ出る。保護者には送らない（events.go）
+	a.notifyThreadStatus(roomID)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -449,11 +504,28 @@ func (a *app) handleMarkRead(w http.ResponseWriter, r *http.Request) {
 		writeForbidden(w, "このチャンネルを参照する権限がありません")
 		return
 	}
-	// 既読にするのは読めるメッセージだけ。外れた職員の、外れたあとの投稿は含めない（GitHub Issue #161）
-	a.db.Exec(`INSERT OR IGNORE INTO t_chat_read (chat_message_id, account_id, read_at)
+	/*
+	 * 既読にするのは読めるメッセージだけ。外れた職員の、外れたあとの投稿は含めない（GitHub Issue #161）。
+	 * 後から登録した保護者の、登録より前の個人チャットのやりとりも含めない。見えていないものを既読にすると、
+	 * 誤送信のときに既読が付いていたかの判断を誤らせる（基本設計書「既読確認」(4-6)「保護者がメッセージを
+	 * 開いた時点で既読を記録する」・「チャット」(5-5)。GitHub Issue #171）。未読の数え方（unreadCount）と同じ範囲
+	 */
+	q := `INSERT OR IGNORE INTO t_chat_read (chat_message_id, account_id, read_at)
 		SELECT m.chat_message_id, ?, ? FROM t_chat_message m
-		 WHERE m.chat_room_id = ? AND m.is_deleted = 0 AND m.sender_account_id <> ?`+afterLeftClause,
-		u.AccountID, now(), roomID, u.AccountID, u.AccountID)
+		 WHERE m.chat_room_id = ? AND m.is_deleted = 0 AND m.sender_account_id <> ?` + afterLeftClause
+	args := []any{u.AccountID, now(), roomID, u.AccountID, u.AccountID}
+	if u.isGuardian() {
+		q += beforeJoinedClause
+		args = append(args, u.AccountID)
+	}
+	res, err := a.db.Exec(q, args...)
+	// 新しく既読にしたものがあれば知らせる（events.go）。何も増えなかったときは送らない。
+	// 画面はチャンネルを開くたび・メッセージが届くたびに既読にするため
+	if err == nil {
+		if n, _ := res.RowsAffected(); n > 0 {
+			a.notifyRead(roomID, u)
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -514,6 +586,8 @@ func (a *app) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		a.db.Exec(`UPDATE m_chat_room SET thread_status = '1' WHERE chat_room_id = ?`, roomID)
 	}
 	a.log(u.AccountID, fnChat, opCreate, "t_chat_message", i64(id), nil, nil, s("送信"))
+	// いまの参加者の画面へ知らせる（events.go）
+	a.notifyRoomPost(roomID)
 	writeJSON(w, http.StatusOK, map[string]int64{"chat_message_id": id})
 }
 
@@ -559,6 +633,7 @@ func (a *app) handleRetractMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.log(u.AccountID, fnChat, opDelete, "t_chat_message", i64(id), nil, s(body), s("取消"))
+	a.notifyMessage(roomID, id)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -625,6 +700,7 @@ func (a *app) handleEditMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.log(u.AccountID, fnChat, opUpdate, "t_chat_message", i64(id), nil, s(before), s(req.Body))
+	a.notifyMessage(roomID, id)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -647,12 +723,18 @@ func (a *app) handleChatMembers(w http.ResponseWriter, r *http.Request) {
 	// 参加していないチャンネルのメンバーは返さない。ほかの家庭の保護者の氏名や続柄が読めてしまう
 	// （GitHub Issue #95）。外れた人にも、いまの参加者は返さない（外れたあとのことは見せない。#161）。
 	// 管理者は、グループ編成のために全チャンネルを参照できる
-	if !u.isAdmin() && !a.isParticipant(u, roomID) {
+	// 要件定義書「チャットツール」(4-3)：メンバー一覧は管理者・一般のみ。
+	// 保護者が参加中でも、ほかの家庭の氏名を返さない。
+	if !u.isStaff() || (!u.isAdmin() && !a.isParticipant(u, roomID)) {
 		writeForbidden(w, "このチャンネルを参照する権限がありません")
 		return
 	}
-	rows, err := a.db.Query(`SELECT account_id FROM t_chat_member
-		WHERE chat_room_id = ? AND left_at IS NULL ORDER BY account_id`, roomID)
+	// 停止中の保護者は、読めないため並べない（activeGuardianWhere と同じ考え方。GitHub Issue #171・#141）。
+	// 停止中の職員は除かない。目的別グループの編成は、いまの参加者を初期値にして送るため（groupMemberError）
+	rows, err := a.db.Query(`SELECT m.account_id FROM t_chat_member m
+		JOIN m_account ac ON ac.account_id = m.account_id
+		WHERE m.chat_room_id = ? AND m.left_at IS NULL AND NOT (ac.role = '3' AND ac.status <> '1')
+		ORDER BY m.account_id`, roomID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "メンバーを取得できませんでした")
 		return
@@ -736,12 +818,29 @@ func (a *app) handleGroupCandidates(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+/*
+handleChatGroups は、グループ編成画面に並べる目的別グループを返す。
+
+管理者にはすべてのグループを返す（要件定義書「チャットツール」(4-3) (c)「管理者：すべてのグループ」）。
+一般（保育士）には、いま参加しているグループだけを返す。編成できるのはそれだけであり（handleUpdateGroupMembers）、
+参加していないグループのメンバーは返さない（handleChatMembers）ため、出しても名前だけが並んで何もできない
+（図/画面詳細図.md「グループ編成画面」(4-3)「参照できないグループはチャンネル一覧に出さない」。GitHub Issue #172）。
+外されたグループの過去ログは、チャット画面の「外れたチャンネル（閲覧のみ）」から読める。
+*/
 func (a *app) handleChatGroups(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.requireStaff(w, r); !ok {
+	u, ok := a.requireStaff(w, r)
+	if !ok {
 		return
 	}
-	rows, err := a.db.Query(`SELECT chat_room_id, room_type, class_id, room_name, is_archived, thread_status
-	                           FROM m_chat_room WHERE room_type = '3' ORDER BY chat_room_id`)
+	q := `SELECT r.chat_room_id, r.room_type, r.class_id, r.room_name, r.is_archived, r.thread_status
+	        FROM m_chat_room r WHERE r.room_type = '3'`
+	args := []any{}
+	if !u.isAdmin() {
+		q += ` AND EXISTS (SELECT 1 FROM t_chat_member m
+		                    WHERE m.chat_room_id = r.chat_room_id AND m.account_id = ? AND m.left_at IS NULL)`
+		args = append(args, u.AccountID)
+	}
+	rows, err := a.db.Query(q+` ORDER BY r.chat_room_id`, args...)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "グループを取得できませんでした")
 		return
@@ -820,6 +919,8 @@ func (a *app) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	a.log(u.AccountID, fnChat, opCreate, "m_chat_room", i64(roomID), nil, nil,
 		s("グループ「"+req.Name+"」を作成"))
+	// 加えた人のチャンネルの一覧に出す（events.go）
+	a.notifyRoomMembers(roomID)
 	writeJSON(w, http.StatusOK, map[string]int64{"chat_room_id": roomID})
 }
 
@@ -952,6 +1053,8 @@ func (a *app) handleUpdateGroupMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.log(u.AccountID, fnChat, opUpdate, "t_chat_member", i64(roomID), nil, nil, s("メンバーを編成"))
+	// 加わった人・外れた人の一覧を読み直させる。外れた職員の一覧にも、閲覧のみとして残る（isMember。events.go）
+	a.notifyRoomMembers(roomID)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -998,21 +1101,28 @@ func (a *app) handleMisdeliveryRecords(w http.ResponseWriter, r *http.Request) {
 
 // handleRetractedWithoutRecord は取消済みで、まだ対応を記録していないメッセージを返す。
 // 「取り消した」だけで終わらせず、既読の有無と対応を残させるため。
-// 【仮置き】配布物の掲載の知らせ（source_type = 4）は対象にしない。配布物を取り下げると知らせも
+// 配布物の掲載の知らせ（source_type = 4）は対象にしない。配布物を取り下げると知らせも
 // 取り消されるが、それは人が打ったメッセージの誤送信ではなく、取り下げとして操作ログに残る
-// （GitHub Issue #98）。
+// （基本設計書「誤送信への対応」(4-6)。GitHub Issue #98）。
+// 【仮置き】保護者が送ったメッセージも対象にしない。誤送信への対応は、園が他児の記録などを誤って
+// 別の保護者へ送ったときのもの（同 (4-6) の利用タイミング）であり、保護者の打ちまちがいの取消は当たらない。
+// 対象にすると、園長が何か記録するまで一覧に残り続ける（GitHub Issue #171。web/仮置き値.md）
 func (a *app) handleRetractedWithoutRecord(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.requireAdmin(w, r); !ok {
 		return
 	}
+	// 【仮置き】並びは送信の新しい順、同じ時刻はあとで送ったもの（メッセージの番号の大きいもの）を先にする
+	// （web/仮置き値.md「一覧の並び順」）。モック（web/src/api/mock.ts の retractedWithoutRecord）も同じ並びにした
+	// （GitHub Issue #177 の 7）
 	rows, err := a.db.Query(`SELECT m.chat_message_id, IFNULL(r.room_name, '―'), m.sent_at,
 		m.deleted_at, m.sender_account_id
 		FROM t_chat_message m
 		LEFT JOIN m_chat_room r ON r.chat_room_id = m.chat_room_id
 		WHERE m.is_deleted = 1
 		  AND m.source_type <> '4'
+		  AND m.sender_account_id NOT IN (SELECT account_id FROM m_account WHERE role = '3')
 		  AND m.chat_message_id NOT IN (SELECT chat_message_id FROM t_misdelivery_record)
-		ORDER BY m.sent_at DESC`)
+		ORDER BY m.sent_at DESC, m.chat_message_id DESC`)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "取消メッセージを取得できませんでした")
 		return
@@ -1065,8 +1175,15 @@ func (a *app) handleAddMisdeliveryRecord(w http.ResponseWriter, r *http.Request)
 		writeErr(w, http.StatusBadRequest, "とった対応は1,000文字以内で入力してください")
 		return
 	}
+	// 発生日時は必須（図/画面詳細図.md「誤送信対応記録画面（管理者）」(4-4) 項目3）。
+	// 空のときに記録した時刻を入れると、監査の記録が事実と違う時刻になるため断る（GitHub Issue #178 の 1）
 	if req.OccurredAt == "" {
-		req.OccurredAt = now()
+		writeErr(w, http.StatusBadRequest, "発生日時を入力してください")
+		return
+	}
+	if !isISODateTime(req.OccurredAt) {
+		writeErr(w, http.StatusBadRequest, "発生日時の形式が正しくありません")
+		return
 	}
 	if _, err := a.db.Exec(`INSERT INTO t_misdelivery_record
 		(chat_message_id, occurred_at, was_read, response, staff_id) VALUES (?, ?, ?, ?, ?)`,

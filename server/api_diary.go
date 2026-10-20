@@ -36,6 +36,9 @@ type Diary struct {
 	StaffName string `json:"staff_name"`
 	// 確認（承認）した職員の氏名。保護者には職員の名簿を渡さないため、日誌の側に載せる
 	ApprovedStaffName *string `json:"approved_staff_name"`
+	// 最後に申請した職員。日誌を1件開いたとき（handleGetDiary）に職員へだけ返す。
+	// 承認画面が「自分が申請した日誌」を見分けて、承認のボタンを押せなくするため（GitHub Issue #174）
+	AppliedStaffID *string `json:"applied_staff_id,omitempty"`
 }
 
 const diaryColumns = `diary_id, record_type, child_id, class_id, diary_date, body, status,
@@ -171,12 +174,23 @@ func (a *app) handleListDiaries(w http.ResponseWriter, r *http.Request) {
 		args = append(args, v)
 	}
 	if v, has := queryInt64(r, "class_id"); has {
-		q += ` AND class_id = ?`
-		args = append(args, v)
+		// 個人日誌・ヒヤリハットは対象園児の在籍クラスで、クラス日誌・週案は対象クラスで絞る。
+		// 参照範囲（visibleDiaryCondition）と同じ考え方にする。対象のクラスで絞ると、以前の版でクラスを空けて
+		// 保存した個人日誌が、見られるのに一覧に出なかった（GitHub Issue #174）。モック（listDiaries）と同じ規則
+		q += ` AND ((child_id IS NULL AND class_id = ?)
+		         OR (child_id IS NOT NULL AND child_id IN (SELECT child_id FROM t_class_child WHERE class_id = ?)))`
+		args = append(args, v, v)
 	}
 	if v := r.URL.Query().Get("status"); v != "" {
 		q += ` AND status = ?`
 		args = append(args, v)
+	}
+	// 【仮置き】自分が書いた日誌に絞る。職員ダッシュボードの「差し戻された日誌」（自分が書いたものを数える）から
+	// 開いた一覧を、数えた日誌と一致させるため（図/画面詳細図.md「職員ダッシュボード」(2-6) 項目2。GitHub Issue #174）。
+	// 日誌一覧画面（3-1）の絞り込みの項目には無い（web/仮置き値.md）
+	if r.URL.Query().Get("mine") == "1" && u.isStaff() {
+		q += ` AND created_staff_id = ?`
+		args = append(args, u.staff())
 	}
 	if v := r.URL.Query().Get("from"); v != "" {
 		q += ` AND diary_date >= ?`
@@ -221,6 +235,12 @@ func (a *app) handleGetDiary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.enrich(&d)
+	// 最後に申請した職員は、職員にだけ返す（承認画面が使う。保護者には職員の名簿を渡さない）
+	if u.isStaff() {
+		if staffID := a.diaryApplicant(d.DiaryID); staffID != "" {
+			d.AppliedStaffID = s(staffID)
+		}
+	}
 	writeJSON(w, http.StatusOK, d)
 }
 
@@ -240,8 +260,11 @@ func (a *app) handlePastDiaries(w http.ResponseWriter, r *http.Request) {
 		writeForbidden(w, "この園児を参照する権限がありません")
 		return
 	}
+	// いま開いている日誌そのものは除く。過去の記録を見ながら書くための欄であるため（GitHub Issue #139・#174）。
+	// 除く日誌は exclude で受け取る。モック（pastDiariesOf）と同じ
+	exclude, _ := queryInt64(r, "exclude")
 	out, err := a.queryDiaries(`SELECT `+diaryColumns+` FROM t_diary
-		WHERE is_deleted = 0 AND child_id = ? ORDER BY diary_date DESC, diary_id DESC`, childID)
+		WHERE is_deleted = 0 AND child_id = ? AND diary_id <> ? ORDER BY diary_date DESC, diary_id DESC`, childID, exclude)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "過去の記録を取得できませんでした")
 		return

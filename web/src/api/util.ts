@@ -103,6 +103,34 @@ export function addDays(iso: string, days: number): string {
   return toISODate(new Date(y, m - 1, d + days));
 }
 
+/**
+ * 日本時間の日時の文字列 'YYYY-MM-DDTHH:MM:SS' を、その時刻のエポックミリ秒にする
+ *
+ * サーバ・モックが返す日時は時差の印を持たない日本時間である。new Date(文字列) で読むと端末の現地時刻として
+ * 読まれ、日本時間以外の端末では時差のぶんだけずれる（MOCKUP.md「日本標準時（JST）に固定している」、GitHub Issue #165）。
+ * 端末の時計（Date.now()）と比べるときは、必ずこの関数を通す。
+ */
+export function jstMs(isoDateTime: string): number {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(isoDateTime);
+  if (!m) return NaN;
+  const [y, mo, d, h, mi, sec] = m.slice(1).map((v) => Number(v ?? 0));
+  return Date.UTC(y, mo - 1, d, h, mi, sec) - JST_OFFSET_MINUTES * 60 * 1000;
+}
+
+/** 'YYYY-MM-DD' を「2026年10月」の形にする。身体測定の測定回（年月）を示すときに使う */
+export function formatYM(iso: string): string {
+  const [y, m] = parts(iso);
+  return `${y}年${m}月`;
+}
+
+/**
+ * 小数第1位までで表せる数か（体温。基本設計書「入力項目の制約値」(4-9)「小数第1位まで」）。
+ * 浮動小数の誤差（36.7 が 36.700000000000003 になるなど）は許す。サーバ側（server/api_nap.go の oneDecimal）と同じ規則
+ */
+export function isOneDecimal(v: number): boolean {
+  return Number.isFinite(v) && Math.abs(v * 10 - Math.round(v * 10)) < 1e-6;
+}
+
 /** サーバ時刻の代わり。モックでは端末の時計を JST に直して用いる */
 export function now(): string {
   const d = jstNow();
@@ -120,9 +148,13 @@ export function plusMinutes(isoDateTime: string, minutes: number): string {
   return formatLocal(new Date(new Date(isoDateTime).getTime() + minutes * 60_000));
 }
 
-/** 現在時刻に分を足す（現地時刻） */
+/**
+ * 現在時刻（now() と同じ JST）に分を足す。
+ * 端末の時計の時刻のまま作ると、JST でない端末（UTC で回る CI など）では now() と時差のぶんずれ、
+ * ロックの期限（locked_until）がはじめから過ぎていることになる（GitHub Issue #166 の 6 の確かめで見つけた）
+ */
 export function fromNowMinutes(minutes: number): string {
-  return formatLocal(new Date(Date.now() + minutes * 60_000));
+  return plusMinutes(now(), minutes);
 }
 
 function formatLocal(d: Date): string {
@@ -186,6 +218,23 @@ export function validateEmail(email: string): string | null {
 }
 
 /**
+ * 職員アカウントの発行の入力を確かめ、誤りがあれば利用者に見せる文言を返す。問題が無ければ null。
+ * 値は前後の空白を除いてから渡す（基本設計書「入力項目の制約値」(4-9)「ログインID（メールアドレス）254文字以内、
+ * メールアドレス形式」「氏名 各50文字以内」「園児ID・職員ID 20文字以内」。GitHub Issue #167 の 1）。
+ * 画面（職員アカウント管理画面）とモックが使う。サーバ側は server/api_admin.go の validateStaffAccountInput
+ */
+export function validateStaffAccountInput(staffId: string, staffName: string, email: string, role: string): string | null {
+  const length = (v: string) => [...v].length;
+  if (!staffId) return '職員IDを入力してください';
+  if (length(staffId) > 20) return '職員IDは20文字以内で入力してください';
+  if (!staffName) return '氏名を入力してください';
+  if (length(staffName) > 50) return '氏名は50文字以内で入力してください';
+  if (role !== '1' && role !== '2') return 'ロールの指定が正しくありません';
+  const emailError = validateEmail(email);
+  return emailError ? emailError.replace('メールアドレス', 'ログインID（メールアドレス）') : null;
+}
+
+/**
  * よく使われるため拒否するパスワード。大文字・小文字を区別せずに照らす
  * （基本設計書「パスワードの要件」(6-3)「password などは拒否する」）。
  * 【仮置き】設計は一覧を定めていない（web/仮置き値.md）。サーバ側（server/password.go の commonPasswords）と同じ一覧
@@ -228,7 +277,7 @@ export function isRealDate(v: string): boolean {
  * （GitHub Issue #160。直す前の CSV 一括登録で平熱に inf が入ったデータベースがありうる）
  */
 export function formatTemperature(t: number | null | undefined): string {
-  return t != null && Number.isFinite(t) ? String(t) : '―';
+  return t != null && Number.isFinite(t) ? t.toFixed(1) : '―';
 }
 
 /** 'YYYY-MM' を '2026年10月' の形に整える */

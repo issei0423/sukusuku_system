@@ -172,8 +172,9 @@ export default function ChildInputScreen() {
               onChange={(v) => set('sex', v)} />
           </Field>
           <div className="muted">
-            性別は成長曲線の参照と帳票にのみ用います。未回答を選ぶと、成長グラフの基準値の帯を表示しません
-            （基本設計書 5-3・5-7）。
+            性別は成長曲線の参照と帳票にのみ用います。未回答を選ぶと、成長グラフの基準値の帯を表示しません。
+            {/* 基本設計書「園児（m_child）」(5-3)「成長曲線の参照と帳票にのみ用いる」、
+                「成長曲線基準値（m_growth_standard）」(5-7)「未回答に対応する基準値は持たない」 */}
           </div>
           <Field label="クラス" required>
             <select value={form.class_id} onChange={(e) => set('class_id', Number(e.target.value))}>

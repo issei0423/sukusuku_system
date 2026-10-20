@@ -97,6 +97,8 @@ func (a *app) parseChildCsv(text string) ([]string, []CsvRow, error) {
 
 	// 同じ取込の中での重複も弾く。ファイル内で同じ園児IDが2度出ることがある
 	seen := map[string]bool{}
+	// 同じ氏名・生年月日の行が、このファイルの何行目に先に出たか。重ねて登録していないかを知らせる（GitHub Issue #144 の 2）
+	seenPerson := map[string]int{}
 	rows := make([]CsvRow, 0, len(lines))
 
 	for i, line := range lines {
@@ -108,6 +110,9 @@ func (a *app) parseChildCsv(text string) ([]string, []CsvRow, error) {
 
 		// 誤りは1行の中でまとめて示す。1つ直すたびに次の誤りが出る作りにしない（GitHub Issue #121）
 		errs := []string{}
+		// 取り込みは妨げないが、確かめてほしいこと。誤りと同じく1行の中でまとめて示す
+		warnings := []string{}
+		personKey := ""
 		if len(values) < 6 {
 			errs = append(errs, "列が足りません（園児ID,氏名,氏名かな,生年月日,性別,クラス名,平熱）")
 		} else {
@@ -150,15 +155,42 @@ func (a *app) parseChildCsv(text string) ([]string, []CsvRow, error) {
 				case !temperatureRe.MatchString(values[6]) || e != nil:
 					errs = append(errs, "平熱は数値（小数第1位まで。例：36.5）で入力してください")
 				case f < temperatureMin || f > temperatureMax:
-					row.Warning = s("平熱が想定の範囲（30.0〜43.0℃）の外です。値を確かめてください")
+					warnings = append(warnings, "平熱が想定の範囲（30.0〜43.0℃）の外です。値を確かめてください")
+				}
+			}
+
+			/*
+			 * 同じ氏名・生年月日の園児が登録済みか、このファイルの前の行にあれば、確認を促す。止めはしない
+			 * （GitHub Issue #144 の 2。【仮置き】web/仮置き値.md「同じ氏名・生年月日の園児の知らせ」）。
+			 * 園児IDは別の番号が振られるため、ID の重複では同じ子の二重登録に気づけない
+			 */
+			if childNameKey(values[1]) != "" && validBirthDate(values[3]) {
+				personKey = childNameKey(values[1]) + "|" + values[3]
+				if same, err := a.sameNameBirthChildren(values[1], values[3]); err == nil && len(same) > 0 {
+					ids := make([]string, 0, len(same))
+					for _, c := range same {
+						ids = append(ids, c.ChildID)
+					}
+					warnings = append(warnings, "同じ氏名・生年月日の園児がいます（"+strings.Join(ids, "・")+
+						"）。同じ子を重ねて登録していないか確かめてください")
+				}
+				if first, ok := seenPerson[personKey]; ok {
+					warnings = append(warnings, "同じ氏名・生年月日の行がこのファイル内にあります（"+strconv.Itoa(first)+
+						" 行目）。同じ子を重ねて登録していないか確かめてください")
 				}
 			}
 		}
 		if len(errs) > 0 {
 			row.Error = s(strings.Join(errs, "／"))
 		}
+		if len(warnings) > 0 {
+			row.Warning = s(strings.Join(warnings, "／"))
+		}
 		if row.Error == nil {
 			seen[values[0]] = true
+			if _, ok := seenPerson[personKey]; personKey != "" && !ok {
+				seenPerson[personKey] = row.Line
+			}
 		}
 		rows = append(rows, row)
 	}
@@ -260,8 +292,15 @@ func (a *app) handleImportChildCsv(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.log(u.AccountID, fnChild, opCreate, "m_child", nil, nil, nil,
-		s("CSV一括登録 "+strconv.Itoa(len(rows))+" 件"))
+	/*
+	 * 登録した園児ごとに、対象園児つきで残す。件数だけの 1 行では、対象園児で絞り込んだときに出ず
+	 * （基本設計書「操作ログ（t_operation_log）」(5-8) target_child_id「絞り込みに用いる」）、
+	 * 何を登録したかも追えない（GitHub Issue #166 の 5）。登録の内容は 1 件ずつの登録と同じ項目で残す
+	 */
+	for _, row := range rows {
+		after := append([]field{{"登録", "CSV一括登録"}}, a.childFieldsOf(row.Values[0])...)
+		a.log(u.AccountID, fnChild, opCreate, "m_child", nil, s(row.Values[0]), nil, s(fieldsJSON(after)))
+	}
 	writeJSON(w, http.StatusOK, map[string]int{"imported": len(rows)})
 }
 

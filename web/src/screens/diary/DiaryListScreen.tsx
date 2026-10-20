@@ -5,9 +5,10 @@
  * 状態を列として持つ（下書き／申請中／差し戻し／承認済）。差し戻しは他と区別できる色にする。
  * 一般（保育士）の既定の絞り込みは自クラス。他クラスは選べない。
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAsync } from '../../hooks';
+import { onLive } from '../../live';
 import { useSession } from '../../session';
 import { api, selectableClasses, childName, className, staffName } from '../../api/client';
 import { Loading, ErrorBox, Empty, Pager, Field, Tag } from '../../components/ui';
@@ -24,14 +25,35 @@ export default function DiaryListScreen() {
   // 一般の既定は自クラス。管理者は「すべて」から始める
   const [classId, setClassId] = useState<number | ''>(user!.role === '2' ? (user!.class_id ?? '') : '');
   const [status, setStatus] = useState<DiaryStatus | ''>((params.get('status') as DiaryStatus) ?? '');
-  const [from, setFrom] = useState(addDays(today(), -31));
-  const [to, setTo] = useState(today());
+  /*
+   * 【仮置き】職員ダッシュボードの「差し戻された日誌」から開いたとき（?mine=1）は、自分が書いた日誌に絞り、
+   * 期間を問わない。ダッシュボードは自分が書いた差し戻しを期間によらず数えるため、既定の期間（直近1か月）のままだと
+   * 数えた日誌が一覧に出ず、ほかの職員の差し戻しが出ていた（図/画面詳細図.md「職員ダッシュボード」(2-6) 項目2。
+   * GitHub Issue #174。web/仮置き値.md）
+   */
+  const fromDashboard = params.get('mine') === '1';
+  const [mine, setMine] = useState(fromDashboard);
+  const [from, setFrom] = useState(fromDashboard ? '' : addDays(today(), -31));
+  const [to, setTo] = useState(fromDashboard ? '' : today());
   const [page, setPage] = useState(1);
   const [applied, setApplied] = useState(0);
 
+  // 同じ画面のままサイドナビから再訪した場合も、URL の条件を反映する。
+  useEffect(() => {
+    const dashboard = params.get('mine') === '1';
+    setStatus((params.get('status') as DiaryStatus) ?? '');
+    setMine(dashboard);
+    setFrom(dashboard ? '' : addDays(today(), -31));
+    setTo(dashboard ? '' : today());
+    setPage(1);
+    setApplied((n) => n + 1);
+  }, [params]);
+
+  // ほかの職員の保存・申請・承認・差し戻しがあったら、開いたままでも読み直す（live.ts）
   const { data, error, loading } = useAsync(
-    () => api.listDiaries(user!, { recordType, classId, status, from, to, page }),
+    () => api.listDiaries(user!, { recordType, classId, status, from, to, page, mine }),
     [user?.account_id, page, applied],
+    { live: onLive('diary') },
   );
 
   const [rangeError, setRangeError] = useState<string | null>(null);
@@ -74,6 +96,14 @@ export default function DiaryListScreen() {
           <button onClick={search}>絞り込む</button>
         </div>
         {rangeError && <ErrorBox text={rangeError} />}
+        {mine && (
+          <div className="row" style={{ marginTop: 8 }}>
+            <span className="muted">自分が書いた日誌に絞っています。</span>
+            <button className="btn-sm" onClick={() => { setMine(false); setPage(1); setApplied((n) => n + 1); }}>
+              作成者で絞らない
+            </button>
+          </div>
+        )}
         {user!.role === '2' && (
           <div className="muted" style={{ marginTop: 8 }}>
             担当するクラスの日誌のみ表示しています。

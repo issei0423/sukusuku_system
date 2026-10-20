@@ -134,7 +134,12 @@ describe('クラス日誌・週案のクラス（要件定義書「参照範囲�
     await expect(api.saveDiary(teacher, classDiary(1), '1')).resolves.toMatchObject({ class_id: 1 });
     await expect(api.saveDiary(otherTeacher, classDiary(2, '3'), '1')).resolves.toMatchObject({ class_id: 2 });
     await expect(api.saveDiary(admin, classDiary(2), '1')).resolves.toMatchObject({ class_id: 2 });
-    await expect(api.saveDiary(admin, classDiary(null, '3'), '1')).resolves.toMatchObject({ class_id: null });
+  });
+
+  // 対象のクラスは必須（図/画面詳細図.md「日誌作成・編集画面」(3-2) 項目5「入力：必須」）。
+  // 以前は管理者だけクラスを空けて作れたが、記録種別によらず断る（GitHub Issue #174。tests/diaryFlow.test.ts）
+  it('管理者も、クラスを指定しない週案は作れない', async () => {
+    await expect(api.saveDiary(admin, classDiary(null, '3'), '1')).rejects.toThrow('対象のクラスを選んでください');
   });
 
   it('更新で他クラスへ移すことも、他クラスの日誌を書き換えることもできない', async () => {
@@ -147,7 +152,10 @@ describe('クラス日誌・週案のクラス（要件定義書「参照範囲�
       .rejects.toThrow('この日誌を編集する権限がありません');
     expect(db.diaries.find((d) => d.diary_id === others.diary_id)).toMatchObject({ class_id: 2, body: 'クラスの様子' });
 
-    await expect(api.saveDiary(teacher, { ...classDiary(1), diary_id: own.diary_id, body: '書き直し' }, '1'))
+    // 自分の日誌は、編集ロックを取れば書き直せる（保存には本人のロックの識別子が要る。GitHub Issue #166）
+    const lock = await api.acquireLock(teacher, own.diary_id);
+    const lockToken = 'token' in lock ? lock.token : undefined;
+    await expect(api.saveDiary(teacher, { ...classDiary(1), diary_id: own.diary_id, body: '書き直し', lock_token: lockToken }, '1'))
       .resolves.toMatchObject({ body: '書き直し' });
   });
 });
@@ -190,13 +198,13 @@ describe('既存の日誌の更新と編集ロック（GitHub Issue #153 の追�
   it('担当外の日誌のロックは取れず、誰が編集中かも見えない', async () => {
     await expect(api.acquireLock(otherTeacher, 1)).rejects.toThrow('この日誌を編集する権限がありません');
     await expect(api.acquireLock(otherTeacher, 4)).rejects.toThrow('この日誌を編集する権限がありません');
-    // 日誌 2（さくら組のクラス日誌）は宮城 蓮がロックを持っている
-    await expect(api.lockOf(otherTeacher, 2)).rejects.toThrow('この日誌を参照する権限がありません');
+    // 日誌 3（差し戻しのヒヤリハット）は宮城 蓮がロックを持っている
+    await expect(api.lockOf(otherTeacher, 3)).rejects.toThrow('この日誌を参照する権限がありません');
     expect(db.diaryLocks.some((l) => l.locked_staff_id === 'S005')).toBe(false);
   });
 
   it('担任はロックを取れ、誰が編集中かも見える', async () => {
     await expect(api.acquireLock(teacher, 1)).resolves.toHaveProperty('token');
-    await expect(api.lockOf(teacher, 2)).resolves.toMatchObject({ staff_name: '宮城 蓮' });
+    await expect(api.lockOf(teacher, 3)).resolves.toMatchObject({ staff_name: '宮城 蓮' });
   });
 });

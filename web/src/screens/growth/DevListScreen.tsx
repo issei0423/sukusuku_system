@@ -9,6 +9,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAsync } from '../../hooks';
+import { onLive } from '../../live';
 import { useSession } from '../../session';
 import { api, selectableClasses } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Tag } from '../../components/ui';
@@ -22,12 +23,13 @@ export default function DevListScreen() {
   const [classId, setClassId] = useState<number | 'all'>(
     isAdmin ? 'all' : (user!.class_id ?? classesForUser[0]?.class_id ?? 1));
 
+  // ほかの職員の入力・確定、予定日の変更があったら、開いたままでも読み直す（live.ts）
   const { data, error, loading } = useAsync(async () => {
     if (classId !== 'all') return (await api.list(user!, classId)).map((r) => ({ ...r, className: '' }));
     const perClass = await Promise.all(classesForUser.map(async (c) =>
       (await api.list(user!, c.class_id)).map((r) => ({ ...r, className: c.class_name }))));
     return perClass.flat();
-  }, [classId]);
+  }, [classId], { live: onLive('development') });
   const showClass = classId === 'all';
   const overdue = data?.filter((r) => r.overdue) ?? [];
 
@@ -108,8 +110,11 @@ export default function DevListScreen() {
       <section className="card card-sub">
         <div className="muted">
           「未実施」は、予定日を過ぎても記録が1件も入っていない状態を指します。
-          記録の中の「未確認」は入力済みの結果であり、未実施には含みません（基本設計書 5-7）。
-          「未入力」は、前回の確定した記録に結果を入れていない項目が残っている状態を指します。
+          記録の中の「未確認」は入力済みの結果であり、未実施には含みません。
+          {/* 「未確認」は結果として保持する状態で、漏れではない（基本設計書「発達チェック・身体測定」(5-7)） */}
+          {/* 下書きの保存していない項目も未入力に数える（要件定義書「チェック漏れの強調」(4-5-2)。GitHub Issue #143） */}
+          「未入力」は、いちばん新しい記録（下書きを含む）に、結果を入れていない項目が残っている状態を指します。
+          入力画面の「未入力の項目」と同じ数です。
           <br />
           月齢は、次回の予定日の時点で表示しています（予定日が無いときは今日の時点）。
           その時点の月齢でチェック項目が決まるためです。園児一覧の月齢は今日の時点です。
