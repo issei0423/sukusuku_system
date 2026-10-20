@@ -168,14 +168,14 @@ async function expectFocusBack(page: Page, opener: Locator) {
 }
 
 /**
- * root（CSS のセレクタ）の中の押せるもの（リンク・ボタン・入力欄。隠したラジオは包む label）のうち、
+ * root（CSS のセレクタ）の中の押せるもの（リンク・ボタン・入力欄。隠したラジオと、label に包まれたチェックボックスは、包む label（押せる所））のうち、
  * 44×44px に届かないものと、いちばん近い押せるものとの間が 8px に満たないものを返す
  * （詳細設計書「全画面に共通する部品と決まり」(2-0) の「タッチの条件」(4)、GitHub Issue #215）。重なっているもの（包む label と中の input）は比べない
  */
 async function touchProblems(page: Page, root: string) {
   return page.evaluate((root) => {
     const items = [...document.querySelectorAll<HTMLElement>(`${root} :is(a[href], button, input, select, textarea)`)].map((el) => {
-      const target = el.matches('input[type="radio"]') ? el.closest('label') ?? el : el;
+      const target = el.matches('input[type="radio"], input[type="checkbox"]') ? el.closest('label') ?? el : el;
       return { name: (el.getAttribute('aria-label') ?? target.textContent ?? '').trim().slice(0, 30), box: target.getBoundingClientRect() };
     }).filter(({ box }) => box.width > 0 && box.height > 0);
     const small = items.filter(({ box }) => box.width < 44 || box.height < 44).map(({ name, box }) => `${name} ${Math.round(box.width)}×${Math.round(box.height)}`);
