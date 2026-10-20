@@ -11,10 +11,10 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
-import { api } from '../../api/client';
+import { api, staffName } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Alert, Disclaimer, Modal } from '../../components/ui';
 import { DEVELOPMENT_RESULT } from '../../api/codes';
-import { ageInMonths, formatAge, formatYMD, today } from '../../api/util';
+import { ageInMonths, formatAge, formatHM, formatYMD, today } from '../../api/util';
 import type { DevelopmentResult } from '../../api/types';
 
 const DISCLAIMER = '本機能は発達の判定・診断を行うものではありません。';
@@ -171,9 +171,23 @@ export default function DevInputScreen() {
       {/* 免責表示を保存操作の直上に固定する（画面詳細図 6-1） */}
       <Disclaimer text={DISCLAIMER} />
 
-      {confirmed && (
+      {/*
+        確定したあとに開き直したとき、確定済みであることと、誰が・いつ確定したか、「確定する」で何が起きるかを示す
+        （GitHub Issue #143）。記録は園児と実施日で1件であり、「確定する」は同じ記録を書き換える。
+        確定の前に確かめるダイアログは、未入力が残るときだけ出す（基本設計書「画面の洗い出しの考え方」(3-1)。
+        連続入力を前提とする発達チェックには、1件ごとの確認を挟まない）
+      */}
+      {confirmed && draft.data && (
         <div className="muted" style={{ marginTop: 12 }}>
-          この日の記録は確定しています。直すときは「確定する」で保存してください（下書きには戻せません）。
+          <div>
+            この日の記録は確定しています（確定した職員：{staffName(draft.data.check.staff_id)}
+            {draft.data.confirmedAt && (
+              <>、確定した日時：{formatYMD(draft.data.confirmedAt.slice(0, 10))} {formatHM(draft.data.confirmedAt)}</>
+            )}）。
+          </div>
+          <div>
+            直すときは、内容を変えて「確定する」を押すと、この記録を書き換えます（新しい記録は増えません。下書きには戻せません）。
+          </div>
         </div>
       )}
       <div className="row-end" style={{ marginTop: 12 }}>

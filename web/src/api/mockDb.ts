@@ -101,7 +101,8 @@ export const children: Child[] = [
   child('C005', '金城 陸',   'きんじょう りく', '2025-07-15', '1', 36.4),
   child('C006', '伊藤 葵',   'いとう あおい', '2025-02-28', '2', 36.6),
   child('C007', '中村 蓮',   'なかむら れん', '2025-08-03', '1', 36.9),
-  // 月末生まれ。応当日が存在しない月の扱いを確かめるための例（要件定義書 7-1 No.6）
+  // 月末生まれ。応当日が存在しない月の扱いを確かめるための例（要件定義書 7-1 No.6）。
+  // 生年月日も末尾の日付ずらしで動くため、月末になるのは基準日（2026-09-01）に起動したときだけ
   child('C008', '小林 結衣', 'こばやし ゆい', '2025-01-31', '2', 36.5),
   child('C009', '加藤 大和', 'かとう やまと', '2025-06-22', '1', 36.6),
   child('C010', '吉田 心春', 'よしだ こはる', '2025-03-30', '2', 36.7),
@@ -489,9 +490,17 @@ export const developmentSchedules: DevelopmentSchedule[] = [
   { development_schedule_id: 8, child_id: 'C008', scheduled_on: '2026-09-15', is_manual_override: false, created_staff_id: 'S001' },
 ];
 
-/** 発達チェック（t_development_check） */
+/**
+ * 発達チェック（t_development_check）
+ *
+ * 結果は、実施日の月齢の区分の項目で入れる（基本設計書「月齢の算出」(4-8)。基準日は実施日）。
+ * 末尾の日付ずらしは生年月日と実施日を同じ日数だけ動かすが、月の長さの違いで応当日基準の月齢が 1 か月ずれることがある。
+ * 区分の境目（誕生日のちょうど 1 年後など）に置くと隣の区分へ移り、一覧に「未入力」が出るため、境目から離して置く
+ * （GitHub Issue #143・#164。もとの 2026-06-01 は 1歳0か月ちょうどで、結果の区分と合っていなかった）。
+ * サーバ側（server/seed.sql）も同じ
+ */
 export const developmentChecks: DevelopmentCheck[] = [
-  { development_check_id: 1, child_id: 'C001', development_schedule_id: null, checked_on: '2026-06-01', status: '2', staff_id: 'S003', share_status: '2' },
+  { development_check_id: 1, child_id: 'C001', development_schedule_id: null, checked_on: '2026-05-15', status: '2', staff_id: 'S003', share_status: '2' },
   { development_check_id: 2, child_id: 'C002', development_schedule_id: null, checked_on: '2026-05-10', status: '2', staff_id: 'S003', share_status: '2' },
   { development_check_id: 3, child_id: 'C004', development_schedule_id: null, checked_on: '2026-06-05', status: '2', staff_id: 'S004', share_status: '1' },
 ];
@@ -501,16 +510,16 @@ export const developmentChecks: DevelopmentCheck[] = [
  * 「未入力」はレコードが存在しない状態で表す。「未確認」は result='3' として保持する（基本設計書 5-7）
  */
 export const developmentResults: DevelopmentResultRecord[] = [
-  // C001 の前回（2026-06-01・0歳11か月）。9か月頃〜12か月頃の区分
+  // C001 の前回（2026-05-15・0歳11か月）。9か月頃〜12か月頃の区分
   { development_result_id: 1, development_check_id: 1, development_item_id: 141, result: '1', note: null },
   { development_result_id: 2, development_check_id: 1, development_item_id: 142, result: '1', note: null },
   { development_result_id: 3, development_check_id: 1, development_item_id: 143, result: '3', note: null },
   { development_result_id: 4, development_check_id: 1, development_item_id: 144, result: '2', note: null },
-  // C002 の前回
+  // C002 の前回（2026-05-10・1歳1か月）。1歳頃〜1歳3か月頃の区分
   { development_result_id: 5, development_check_id: 2, development_item_id: 151, result: '1', note: null },
   { development_result_id: 6, development_check_id: 2, development_item_id: 152, result: '2', note: null },
   { development_result_id: 7, development_check_id: 2, development_item_id: 153, result: '1', note: null },
-  // C004 の前回
+  // C004 の前回（2026-06-05・1歳1か月）。1歳頃〜1歳3か月頃の区分
   { development_result_id: 8, development_check_id: 3, development_item_id: 151, result: '1', note: null },
   { development_result_id: 9, development_check_id: 3, development_item_id: 152, result: '1', note: '絵本を指差して名前を言う場面があった' },
   { development_result_id: 10, development_check_id: 3, development_item_id: 153, result: '3', note: null },
@@ -658,12 +667,13 @@ export const termsAgreements: TermsAgreement[] = accounts
  * ずらす。記録どうしの前後関係（昨日・3日前）がそのまま保たれるため。
  * サーバ側（server/seed_shift.go）も同じ扱いにしてある。片方だけ直すと食い違う。
  *
- * ずらすのは記録だけである。園児の生年月日や年度の開始日は絶対の日付であり、
- * 動かしてはならない。マスタの配列は下の対象に含めず、記録の中に混ざる
- * birth_date は名前で除外する。
+ * ずらすのは記録だけである。年度の開始日などの絶対の日付は動かしてはならない。
+ * マスタの配列は下の対象に含めず、記録の中に混ざる birth_date は名前で除外する。
+ * ただしマスタにあっても、デモの「今日」から決めた値（一時パスワードの有効期限・園児の生年月日）は、
+ * 下で明示的にずらす。
  */
 
-/** ずらしの対象から外す項目名。生年月日は照合に使う値であり動かせない */
+/** ずらしの対象から外す項目名。記録の中に混ざる生年月日は動かさない（園児の生年月日は、下で園児の配列をずらす） */
 const SHIFT_EXCLUDED_KEYS = new Set(['birth_date']);
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
@@ -729,6 +739,15 @@ function shiftRows(rows: Record<string, unknown>[], days: number): void {
     for (const a of accounts) {
       if (a.temp_password_expires_at) a.temp_password_expires_at = shiftValue(a.temp_password_expires_at, offset);
     }
+
+    /*
+     * 園児の生年月日も、デモの「今日」に何か月の子かを決めて入れてある。記録と同じ日数だけずらし、
+     * 起動した日にもデモの園児の月齢（今日の時点・実施日の時点・測定日の時点）を保つ。ずらさないと、実施日だけが動いて
+     * 上園 花子・宮城 美咲の前回の発達チェックが別の発達過程区分になり、一覧に「未入力 5 件」と出る（GitHub Issue #164）。
+     * 日付をずらすので、月末生まれ（小林 結衣）は起動した日によって月末でなくなる。
+     * サーバ側は server/seed_shift.go の seedShiftMasterColumns
+     */
+    for (const c of children) c.birth_date = shiftValue(c.birth_date, offset);
   }
 }
 
