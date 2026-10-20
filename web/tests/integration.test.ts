@@ -663,4 +663,60 @@ run('結合：きょうのようすの記録・訂正・取り消しが3秒以�
       for (const jar of [staff, guardian, other]) await send('/api/logout', { method: 'POST', body: '{}' }, jar);
     }
   });
+
+  /*
+   * 園からのひとこと（段2）：他児の名前が入っていれば 409 other_child_names（names・matches）。承諾を付けて送ると、
+   * 3秒以内に開いている保護者の画面に出る（詳細設計書「園からのひとことと他児の名前」(4-5)・(6-7)）。ほかの家庭には届かない
+   */
+  it('園からのひとことは他児の名前の注意を通り、承諾を付けて送ると3秒以内に保護者の画面に出る', async () => {
+    const staff = await loginAs('takanashi@hoiku.example.jp', 'staff');
+    const guardian = await loginAs('nohara.i@example.jp', 'guardian');
+    const other = await loginAs('miyagi.r@example.jp', 'guardian');
+    const controller = new AbortController();
+    try {
+      // 今日の園からが既にあれば取り消しておく（手での確かめのあとでも回せるように）
+      const before = (await (await send('/api/contact/children/C001', {}, staff)).json()) as { facility: { contact_facility_id: number } | null };
+      if (before.facility) await send(`/api/contact/facility/${before.facility.contact_facility_id}/cancel`, { method: 'POST', body: '{}' }, staff);
+      const stream = async (jar: string) => {
+        const res = await send('/api/events', { signal: controller.signal }, jar);
+        const reader = res.body!.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        return async (want: string, ms: number) => {
+          const deadline = Date.now() + ms;
+          while (Date.now() < deadline && !buffer.includes(want)) {
+            const chunk = await Promise.race([reader.read(), new Promise<null>((r) => setTimeout(() => r(null), Math.max(0, deadline - Date.now())))]);
+            if (!chunk || chunk.done) break;
+            buffer += decoder.decode(chunk.value, { stream: true });
+          }
+          const hit = buffer.includes(want);
+          buffer = '';
+          return hit;
+        };
+      };
+      const guardianWait = await stream(guardian);
+      const otherWait = await stream(other);
+      await guardianWait(': connected', 3000);
+      await otherWait(': connected', 3000);
+      const body = 'あおちゃんとしゃぼん玉を追いかけていました。';
+      const first = await send('/api/contact/children/C001/facility', { method: 'PUT', body: JSON.stringify({ body }) }, staff);
+      expect(first.status).toBe(409);
+      const err = (await first.json()) as { kind: string; names: string[]; matches: { start: number; end: number }[] };
+      expect([err.kind, err.names, err.matches.map((m) => [m.start, m.end])]).toEqual(['other_child_names', ['伊藤 葵'], [[0, 5]]]);
+      const started = Date.now();
+      const sent = await send('/api/contact/children/C001/facility', { method: 'PUT', body: JSON.stringify({ body, acknowledged_names: err.names }) }, staff);
+      expect(sent.status).toBe(200);
+      expect(await guardianWait('data: {"type":"contact","child_id":"C001"}', 3000)).toBe(true);
+      const page = (await (await send('/api/contact/children/C001', {}, guardian)).json()) as { facility: { body: string } | null };
+      const elapsed = Date.now() - started;
+      expect(page.facility?.body).toBe(body);
+      expect(elapsed).toBeLessThan(3000);
+      console.log(`園からのひとことから保護者の画面の読み直しまで ${elapsed} ミリ秒`);
+      expect(await otherWait('"child_id":"C001"', 500)).toBe(false);
+      expect(JSON.stringify(page)).not.toMatch(/staff_name|recipient|高梨/);
+    } finally {
+      controller.abort();
+      for (const jar of [staff, guardian, other]) await send('/api/logout', { method: 'POST', body: '{}' }, jar);
+    }
+  });
 });

@@ -259,6 +259,8 @@ export interface StaffSummary {
   homeRevised: number;
   /** 実施中の午睡で、おひるね中の園児の数 */
   napSleeping: number;
+  /** 在籍中で、今日の園からを送っていない園児の数。今日の午睡で欠席にした子は数えない（詳細設計書 (4-8 (2))） */
+  facilityUnsent: number;
 }
 
 export interface GuardianHomeRow {
@@ -370,6 +372,8 @@ export interface ContactFacility {
   recorded_at: string;
   corrected_at: string | null;
   is_deleted: boolean;
+  /** 職員の応答だけ。訂正のときに読んだ版として送り返す */
+  updated_at?: string;
 }
 
 /** ねた・おきた（t_nap_sleep） */
@@ -424,6 +428,40 @@ export interface ContactPage {
    * 前の日のページに記録を足せないこと・翌日以降は管理者だけが直せることは、日付で決める
    */
   can_write?: boolean;
+  /** 職員の応答だけ。送る直前に示す宛先 */
+  recipient?: ContactRecipient;
+}
+
+/** 送る直前に示す宛先（職員の応答だけ。詳細設計書「型」(4-1 (4))） */
+export interface ContactRecipient {
+  child_id: string;
+  child_name: string;
+  /** 顔写真の登録は次の版。いまはいつも偽（名前の1文字目の丸で示す） */
+  has_face_photo: boolean;
+  /** 有効な紐づけの続柄（例 ['父', '祖母']）。空なら保護者が未登録 */
+  relationships: string[];
+}
+
+/** 定型文（m_phrase。図/インタフェース一覧の Phrase）。phrase_scope は 1:園から 2:ひとこと 3:クラスのようす 4:日誌 */
+export interface Phrase {
+  phrase_id: number;
+  phrase_scope: '1' | '2' | '3' | '4';
+  body: string;
+  display_order: number;
+}
+
+/** 他児の名前に当たった本文の位置（符号位置。詳細設計書「誤りの応答」(4-1 (3)) の matches） */
+export interface NameMatch {
+  field: string;
+  start: number;
+  end: number;
+}
+
+/** 園からの訂正（POST /api/contact/facility/{id}/correct） */
+export interface FacilityCorrection {
+  body: string;
+  acknowledged_names?: string[];
+  updated_at: string;
 }
 
 /** 連絡帳（クラス）画面の1行（園児） */
@@ -435,6 +473,8 @@ export interface ContactClassRow {
   sleeps: NapSleep[];
   exclusion: NapExclusion | null;
   facility: ContactFacility | null;
+  /** 送る直前に示す宛先 */
+  recipient: ContactRecipient;
 }
 
 /** 連絡帳（クラス）画面（GET /api/contact/classes/{classID}） */
@@ -476,6 +516,9 @@ export interface ContactEventCorrection {
   meal_amount?: MealAmount;
   toilet_label?: string;
   temperature?: number;
+  /** 活動のひとこと（訂正も他児の名前の照合を通る） */
+  body?: string;
+  acknowledged_names?: string[];
   recorded_at?: string;
   updated_at: string;
 }

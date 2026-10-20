@@ -36,9 +36,10 @@ import type {
   ContactHome, ContactHomeInput, ContactPage, ContactClassView, ContactClassRow, ContactEvent, ContactClass, ContactFacility,
   NapSleep, NapExclusion, HomeState, GuardianToday, TodayItem, MealAmount,
 } from './shapes';
-import { MSG, MEAL_AMOUNT_TEXT, MEAL_KIND_TEXT } from '../messages';
+import { MSG, MEAL_AMOUNT_TEXT, MEAL_KIND_TEXT, otherNamesMessage } from '../messages';
 import type {
   ContactEventInput, RecordEventsResult, ContactEventCorrection, NapSleepCorrection, CancelResult, Readers,
+  ContactRecipient, Phrase, NameMatch, FacilityCorrection,
 } from './shapes';
 
 // 画面はこれまでどおり client 経由で型を参照する。定義の実体は shapes.ts が持つ
@@ -3063,8 +3064,14 @@ const dashboardApi = {
     const openSessions = new Set(db.napSessions.filter((s) => s.ended_at === null && s.session_date === today()).map((s) => s.nap_session_id));
     const napSleeping = [...visible].filter((id) => db.napSleeps.some((s) =>
       s.child_id === id && s.woke_at === null && !s.is_deleted && openSessions.has(s.nap_session_id))).length;
+    // 園からのひとことを送っていない在籍園児。今日の午睡で欠席にした子は数えない（server/api_dashboard.go と同じ）
+    const todaySessions = new Set(db.napSessions.filter((s) => s.session_date === today()).map((s) => s.nap_session_id));
+    const facilityUnsent = [...visible].filter((id) => findChild(id)?.enrollment_status === '1'
+      && !db.contactFacilities.some((f) => f.child_id === id && f.contact_date === today() && !f.is_deleted)
+      && !db.napExclusions.some((x) => x.child_id === id && x.reason === '1' && !x.is_deleted && todaySessions.has(x.nap_session_id))).length;
     return ok({ returned, unreadChat, unhandledChat, unhandledChatRoom, devOverdue, pending, abnormalWithoutDiary, activeNap,
-      homeUnconfirmed: states.filter((x) => x === 'unconfirmed').length, homeRevised: states.filter((x) => x === 'revised').length, napSleeping });
+      homeUnconfirmed: states.filter((x) => x === 'unconfirmed').length, homeRevised: states.filter((x) => x === 'revised').length, napSleeping,
+      facilityUnsent });
   },
 
   /** 保護者ホーム。自児の情報とチャットへの導線（基本設計書「画面の一覧」(3-2)） */
@@ -3431,7 +3438,7 @@ function facilityView(f: ContactFacilityRecord | undefined, staff: boolean): Con
     contact_facility_id: f.contact_facility_id, child_id: f.child_id, contact_date: f.contact_date, body: f.body,
     recorded_at: f.recorded_at, corrected_at: f.corrected_at, is_deleted: f.is_deleted,
   };
-  if (staff) view.staff_name = staffName(f.staff_id);
+  if (staff) { view.staff_name = staffName(f.staff_id); view.updated_at = f.updated_at; }
   return view;
 }
 
@@ -3474,7 +3481,7 @@ function contactPageOf(user: SessionUser, childId: string, date: string): Contac
     facility: facilityView(db.contactFacilities.find((f) => f.child_id === childId && f.contact_date === date && !f.is_deleted), staff),
     can_write_home: false,
   };
-  if (staff) page.can_write = contactAccess(user, childId).write;
+  if (staff) { page.can_write = contactAccess(user, childId).write; page.recipient = recipientOf(childId); }
   if (!staff) {
     // 保護者に出さない種類は、開いた時点の設定で落とす
     events = events.filter((e) => guardianSeesItem(EVENT_ITEM[e.event_type]));
@@ -3668,6 +3675,7 @@ const contactApi = {
         exclusion: exclusionView(db.napExclusions.filter((x) => x.child_id === child.child_id && !x.is_deleted && sessionDateOf(x.nap_session_id) === d)
           .sort((a, b) => b.nap_exclusion_id - a.nap_exclusion_id)[0]),
         facility: facilityView(db.contactFacilities.find((f) => f.child_id === child.child_id && f.contact_date === d && !f.is_deleted), true),
+        recipient: recipientOf(child.child_id),
       };
     });
     // 家庭の数は、有効な紐づけの保護者が1人以上いる在籍園児の数（決めたこと D-27）
@@ -3858,7 +3866,7 @@ function guardProcedure<T extends Record<string, unknown>>(apis: T): T {
 /* ============ きょうのようすの記録と、訂正・取り消し（詳細設計書「きょうのようす」(4-4 (1))・「訂正・取り消し」(4-7)・「午睡」(4-6 (4))） ============
  * 規則は server/api_contact_events.go・api_nap_sleep_fix.go と同じ。関数の名前もそろえる（9-2）。
  * 食事・排せつ・体温は段1（記録した時点で保護者が読める）。時刻はモックの今。体温は判定しない（範囲の外も保存する）。
- * 活動のひとこと（種類 4）は段2の守り（他児の名前の注意）を通すため、園からのひとことと同じ段で受け付ける。
+ * 活動のひとこと（種類 4）は段2：文を1〜200文字、他児の名前の照合（findOtherNames）を通し、承諾があれば保存する。
  */
 
 /** 排せつの選択肢の既定（基本設計書「出す項目と選択肢の設定」(4-5)） */
@@ -3923,8 +3931,16 @@ function checkEventInput(input: ContactEventInput, day: string): { value?: Event
       if (typeof input.temperature !== 'number' || !isOneDecimal(input.temperature)) return { error: MSG.temperatureFormat };
       v.temperature = input.temperature;
       break;
+    case '4': {
+      // 活動のひとこと（段2）。他児の名前の照合は呼ぶ側で行う
+      const body = trimmedOrNull(input.body);
+      if (body === null) return { error: MSG.badChoice };
+      if (tooLong(body, 200)) return { error: MSG.commentTooLong };
+      v.body = body;
+      break;
+    }
     default:
-      // 活動のひとこと（4）は段2の守りと一緒に受け付ける。写真（5）はこの経路では受け付けない
+      // 写真（5）はこの経路では受け付けない
       return { error: MSG.badChoice };
   }
   if ((input.event_type === '2' || input.event_type === '3') && input.recorded_at != null) {
@@ -3968,7 +3984,7 @@ function sleepTarget(user: SessionUser, sleepId: number): { sleep?: NapSleepReco
 
 const contactEventsApi = {
   /** きょうのようすを記録する（POST /api/contact/events）。全件を1つの処理で保存し、1件でも誤りがあれば何も保存しない */
-  async recordEvents(user: SessionUser, items: ContactEventInput[]): Promise<RecordEventsResult> {
+  async recordEvents(user: SessionUser, items: ContactEventInput[], acknowledgedNames?: string[]): Promise<RecordEventsResult> {
     if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
     if (!Array.isArray(items) || items.length === 0 || items.length > 50) return fail(MSG.badRequest);
     const day = today();
@@ -3985,6 +4001,18 @@ const contactEventsApi = {
       if (!checked.value) return fail(checked.error ?? MSG.badChoice);
       values.push(checked.value);
     }
+    // 活動のひとことは、宛先の子（その item の園児）以外の在籍園児の名前を照合する
+    let other: OtherNames | null = null;
+    items.forEach((it, i) => {
+      if (it.event_type !== '4') return;
+      const hit = checkOtherNames(values[i].body ?? '', 'body', [it.child_id], false, acknowledgedNames);
+      if (!hit) return;
+      if (!other) { other = hit; return; }
+      const merged: OtherNames = other;
+      for (const n of hit.names) if (!merged.names.includes(n)) merged.names.push(n);
+      merged.matches.push(...hit.matches);
+    });
+    if (other) return failOtherNames(other);
     const at = now();
     const created: ContactEventRecord[] = [];
     const skipped: string[] = [];
@@ -4023,7 +4051,7 @@ const contactEventsApi = {
     const target = eventTarget(user, eventId);
     if (!target.event) return fail(target.error ?? MSG.contactForbidden);
     const e = target.event;
-    const next = { meal_amount: e.meal_amount, toilet_label: e.toilet_label, temperature: e.temperature, recorded_at: e.recorded_at };
+    const next = { meal_amount: e.meal_amount, toilet_label: e.toilet_label, temperature: e.temperature, recorded_at: e.recorded_at, body: e.body };
     let changed = false;
     if (e.event_type === '1' && input.meal_amount !== undefined) {
       if (!(input.meal_amount in MEAL_AMOUNT_TEXT)) return fail(MSG.badChoice);
@@ -4039,6 +4067,16 @@ const contactEventsApi = {
     if (e.event_type === '3' && input.temperature !== undefined) {
       if (typeof input.temperature !== 'number' || !isOneDecimal(input.temperature)) return fail(MSG.temperatureFormat);
       next.temperature = input.temperature;
+      changed = true;
+    }
+    if ((e.event_type === '4' || e.event_type === '5') && input.body !== undefined) {
+      // 活動のひとことの文・写真に添える文。訂正も他児の名前の照合を通る
+      const body = trimmedOrNull(input.body);
+      if (body === null && e.event_type === '4') return fail(MSG.badChoice);
+      if (body !== null && tooLong(body, 200)) return fail(MSG.commentTooLong);
+      const hit = body === null ? null : checkOtherNames(body, 'body', [e.child_id], false, input.acknowledged_names);
+      if (hit) return failOtherNames(hit);
+      next.body = body;
       changed = true;
     }
     if ((e.event_type === '2' || e.event_type === '3') && input.recorded_at !== undefined) {
@@ -4139,6 +4177,275 @@ const contactEventsApi = {
   },
 };
 
+/* ============ 他児の名前の照合・園からのひとこと・定型文・宛先（詳細設計書「園からのひとことと他児の名前」(4-5)） ============
+ * 規則は server/namecheck.go・api_contact_facility.go と同じ。関数の名前もそろえる（9-2）。
+ * 段2：送る人が確かめて届く。管理者の事前の承認は置かない。宛先を大きく示し（画面）、他児の名前を照合する。
+ * 当たった名前を承諾（acknowledged_names）すれば送れる。機械的な文字の照合であり、判断ではない。
+ */
+
+/** 誤りの応答に、画面が分岐に使う kind・当たった名前・位置を持たせる（http.ts の ApiError と同じ持ち方） */
+class MockApiError extends Error {
+  kind?: string;
+  names?: string[];
+  matches?: NameMatch[];
+  constructor(body: { message: string; kind?: string; names?: string[]; matches?: NameMatch[] }) {
+    super(body.message);
+    this.kind = body.kind;
+    this.names = body.names;
+    this.matches = body.matches;
+  }
+}
+
+type OtherNames = { names: string[]; matches: NameMatch[] };
+
+/** 409 other_child_names（他児の名前の注意）で返す */
+function failOtherNames<T = never>(hit: OtherNames): Promise<T> {
+  const err = new MockApiError({ message: otherNamesMessage(hit.names), kind: 'other_child_names', names: hit.names, matches: hit.matches });
+  return new Promise((_, reject) => setTimeout(() => reject(err), 60));
+}
+
+/** 照合に使う園児の名前（氏名・よみ・呼び名） */
+export interface NameChild { id: string; name: string; kana: string; nickname: string }
+
+const HONORIFICS = ['ちゃん', 'くん', 'さん', '君'];
+const isKanaChar = (c: string) => /^[ぁ-ゖァ-ヶー]$/.test(c);
+const allKana = (s: string) => s !== '' && [...s].every(isKanaChar);
+const toKatakana = (s: string) => s.replace(/[ぁ-ゖ]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x60));
+const toHiragana = (s: string) => s.replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60));
+const splitName = (s: string) => s.split(/[ 　\t]+/).filter(Boolean);
+
+type NameVariant = { text: string[]; short: boolean };
+
+/** 園児1人の照合する書き方（server/namecheck.go の nameVariants と同じ） */
+function nameVariants(c: NameChild): NameVariant[] {
+  const seen = new Set<string>();
+  const out: NameVariant[] = [];
+  const add = (raw: string) => {
+    const s = raw.trim();
+    if (!s) return;
+    for (const f of allKana(s) ? [toHiragana(s), toKatakana(s)] : [s]) {
+      if (seen.has(f)) continue;
+      seen.add(f);
+      const n = [...f].length;
+      out.push({ text: [...f], short: n === 1 || (allKana(f) && n <= 2) });
+    }
+  };
+  for (const full of [c.name, c.kana]) {
+    const parts = splitName(full);
+    if (parts.length === 0) continue;
+    add(parts.join(''));
+    if (parts.length >= 2) {
+      add(parts.join(' '));
+      add(parts.join('　'));
+      parts.forEach(add);
+    }
+  }
+  const nick = c.nickname.trim();
+  if (nick) {
+    add(nick);
+    for (const h of ['ちゃん', 'くん', 'さん']) if (nick.endsWith(h)) add(nick.slice(0, -h.length));
+  }
+  return out;
+}
+
+/** 本文の中の書き方の位置（符号位置）。短い名前は敬称が続くときだけ */
+function occurrences(text: string[], v: NameVariant): [number, number][] {
+  const out: [number, number][] = [];
+  const n = v.text.length;
+  for (let i = 0; i + n <= text.length; i++) {
+    if (text.slice(i, i + n).join('') !== v.text.join('')) continue;
+    if (v.short) {
+      const rest = text.slice(i + n).join('');
+      if (!HONORIFICS.some((h) => rest.startsWith(h))) continue;
+    }
+    out.push([i, i + n]);
+  }
+  return out;
+}
+
+/**
+ * 他児の名前の照合（server/namecheck.go の findOtherNames と同じ規則）。宛先の子の名前に当たった部分を先に除き（D-17。
+ * ほかの子の当たりが、その部分にすべて入るときだけ除く）、
+ * 宛先以外の候補の名前を探す。names は当たった園児の氏名（候補の並び順）、matches は当たった位置（強調の表示に使う）
+ */
+export function findOtherNames(text: string, field: string, recipients: NameChild[], all: NameChild[]): OtherNames {
+  const runes = [...text];
+  const masked = new Array<boolean>(runes.length).fill(false);
+  const recipientIds = new Set(recipients.map((r) => r.id));
+  for (const r of recipients) {
+    const vs = nameVariants(r).sort((a, b) => b.text.length - a.text.length);
+    for (const v of vs) {
+      for (const [s, e] of occurrences(runes, v)) {
+        // すぐ後ろの敬称も宛先の子の名前の部分に含める（server/namecheck.go と同じ）
+        const h = HONORIFICS.find((x) => runes.slice(e).join('').startsWith(x));
+        for (let k = s; k < e + (h ? [...h].length : 0); k++) masked[k] = true;
+      }
+    }
+  }
+  const names: string[] = [];
+  let matches: NameMatch[] = [];
+  for (const c of all) {
+    if (recipientIds.has(c.id)) continue;
+    const found: [number, number][] = [];
+    for (const v of nameVariants(c)) {
+      for (const o of occurrences(runes, v)) {
+        // 除くのは、印（宛先の子の名前の部分）の中にすべて入るときだけ。同じ姓のきょうだいの氏名は当てる
+        let inside = true;
+        for (let k = o[0]; k < o[1]; k++) if (!masked[k]) { inside = false; break; }
+        if (!inside) found.push(o);
+      }
+    }
+    if (found.length === 0) continue;
+    names.push(c.name);
+    for (const o of found) {
+      if (!found.some((p) => p !== o && p[0] <= o[0] && o[1] <= p[1])) matches.push({ field, start: o[0], end: o[1] });
+    }
+  }
+  matches.sort((a, b) => a.start - b.start || b.end - a.end);
+  // 同じ位置・ほかの当たりに含まれる位置は1つにまとめる（名前はまとめない）
+  const uniq: NameMatch[] = [];
+  for (const m of matches) if (!uniq.some((u) => u.start <= m.start && m.end <= u.end)) uniq.push(m);
+  matches = uniq;
+  return { names, matches };
+}
+
+const nicknameOf = (childId: string) => db.childNicknames.find((n) => n.child_id === childId)?.nickname ?? '';
+const nameChildOf = (c: Child): NameChild => ({ id: c.child_id, name: c.child_name, kana: c.child_name_kana, nickname: nicknameOf(c.child_id) });
+
+/** 照合の候補：在籍・取り消していない園児（よみの順） */
+function enrolledNameChildren(): NameChild[] {
+  return db.children.filter((c) => c.enrollment_status === '1' && !c.is_deleted)
+    .sort((a, b) => a.child_name_kana.localeCompare(b.child_name_kana, 'ja') || a.child_id.localeCompare(b.child_id))
+    .map(nameChildOf);
+}
+
+/** 段2の送信の照合。承諾が当たった名前をすべて含めば null（server/namecheck.go の checkOtherNames） */
+function checkOtherNames(text: string, field: string, recipientIds: string[], everyone: boolean, acknowledged?: string[]): OtherNames | null {
+  const recipients = everyone ? [] : recipientIds.map((id) => findChild(id)).filter((c): c is Child => !!c).map(nameChildOf);
+  const hit = findOtherNames(text, field, recipients, enrolledNameChildren());
+  if (hit.names.length === 0 || hit.names.every((n) => (acknowledged ?? []).includes(n))) return null;
+  return hit;
+}
+
+/** 送る直前に示す宛先。続柄は有効な紐づけ（1）の保護者だけ（server/api_contact_facility.go の recipientOf） */
+function recipientOf(childId: string): ContactRecipient {
+  return {
+    child_id: childId, child_name: childName(childId), has_face_photo: false,
+    relationships: db.guardianChildren.filter((g) => g.child_id === childId && g.link_status === '1')
+      .sort((a, b) => a.guardian_id.localeCompare(b.guardian_id)).map((g) => g.relationship || '保護者'),
+  };
+}
+
+/** 園からの本文の検査（前後の空白を除いてから。空は送れない・500文字以内） */
+function checkFacilityBody(body: string): { value?: string; error?: string } {
+  const v = (body ?? '').trim();
+  if (!v) return { error: MSG.facilityEmpty };
+  if (tooLong(v, 500)) return { error: MSG.facilityTooLong };
+  return { value: v };
+}
+
+/** 訂正・取り消しの相手の園から（server/api_contact_facility.go の facilityTarget） */
+function facilityTarget(user: SessionUser, facilityId: number): { facility?: ContactFacilityRecord; error?: string } {
+  const f = db.contactFacilities.find((x) => x.contact_facility_id === facilityId);
+  if (!f || f.is_deleted || !contactAccess(user, f.child_id).read) return { error: MSG.contactForbidden };
+  if (!canFixContact(user, f.child_id, f.contact_date)) return { error: MSG.fixForbidden };
+  return { facility: f };
+}
+
+const contactFacilityApi = {
+  /** 園からのひとことを送る（PUT /api/contact/children/{childID}/facility）。園児・日に1件 */
+  async sendFacility(user: SessionUser, childId: string, body: string, acknowledgedNames?: string[]): Promise<ContactFacility> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    const classId = contactClassOf(childId);
+    if (!contactAccess(user, childId).write || classId === null) return fail(MSG.contactForbidden);
+    const checked = checkFacilityBody(body);
+    if (checked.value === undefined) return fail(checked.error ?? MSG.facilityEmpty);
+    const day = today();
+    if (db.contactFacilities.some((f) => f.child_id === childId && f.contact_date === day && !f.is_deleted)) {
+      return Promise.reject(new MockApiError({ message: MSG.facilitySent, kind: 'already_exists' }));
+    }
+    const hit = checkOtherNames(checked.value, 'body', [childId], false, acknowledgedNames);
+    if (hit) return failOtherNames(hit);
+    const at = now();
+    const row: ContactFacilityRecord = {
+      contact_facility_id: nextId(), child_id: childId, class_id: classId, contact_date: day, body: checked.value,
+      staff_id: user.staff_id ?? '', recorded_at: at, corrected_at: null, is_deleted: false, created_at: at, updated_at: at,
+    };
+    db.contactFacilities.push(row);
+    log(user.account_id, '8', '1', 't_contact_facility', row.contact_facility_id, childId, null, fieldsJSON([['body', row.body]]));
+    publishContactChild(childId, 'facility');
+    return ok(facilityView(row, true)!);
+  },
+
+  /** 園からを直す（POST /api/contact/facility/{id}/correct）。訂正も他児の名前の照合を通る */
+  async correctFacility(user: SessionUser, facilityId: number, input: FacilityCorrection): Promise<ContactFacility> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    const target = facilityTarget(user, facilityId);
+    if (!target.facility) return fail(target.error ?? MSG.contactForbidden);
+    const f = target.facility;
+    const checked = checkFacilityBody(input.body);
+    if (checked.value === undefined) return fail(checked.error ?? MSG.facilityEmpty);
+    const hit = checkOtherNames(checked.value, 'body', [f.child_id], false, input.acknowledged_names);
+    if (hit) return failOtherNames(hit);
+    if (input.updated_at !== f.updated_at) return fail(MSG.fixConflict);
+    const [before, after] = changedFields([['body', f.body]], [['body', checked.value]]);
+    const at = now();
+    Object.assign(f, { body: checked.value, corrected_at: at, updated_at: at });
+    log(user.account_id, '8', '2', 't_contact_facility', f.contact_facility_id, f.child_id, before, after);
+    publishContactChild(f.child_id, 'facility');
+    return ok(facilityView(f, true)!);
+  },
+
+  /** 園からを取り消す（POST /api/contact/facility/{id}/cancel）。未送信に戻り、送り直せる */
+  async cancelFacility(user: SessionUser, facilityId: number): Promise<CancelResult> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    const target = facilityTarget(user, facilityId);
+    if (!target.facility) return fail(target.error ?? MSG.contactForbidden);
+    const f = target.facility;
+    const { family_count } = readersOf([f.child_id], f.contact_date, f.recorded_at);
+    f.is_deleted = true;
+    f.updated_at = now();
+    log(user.account_id, '8', '4', 't_contact_facility', f.contact_facility_id, f.child_id, fieldsJSON([['body', f.body]]), null);
+    publishContactChild(f.child_id, 'facility');
+    return ok({ ok: true, read_family_count: family_count });
+  },
+
+  /** 取り消しの確認に出す数（GET /api/contact/facility/{id}/readers） */
+  async facilityReaders(user: SessionUser, facilityId: number): Promise<Readers> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    const f = db.contactFacilities.find((x) => x.contact_facility_id === facilityId);
+    if (!f || f.is_deleted || !contactAccess(user, f.child_id).read) return fail(MSG.contactForbidden);
+    return ok(readersOf([f.child_id], f.contact_date, f.recorded_at));
+  },
+
+  /**
+   * 他児の名前の照合だけを行う（POST /api/contact/name-check）。本版の画面は呼ばない（送る経路が照合する。決めたこと D-4）。
+   * 宛先は書ける園児・クラスだけを指せる
+   */
+  async nameCheck(user: SessionUser, input: { child_ids?: string[]; class_id?: number; text: string }): Promise<{ names: string[] }> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    // 照合する文の上限（server/api_contact_facility.go の nameCheckMaxRunes と同じ）
+    if (typeof input.text !== 'string' || tooLong(input.text, 1000)) return fail(MSG.badRequest);
+    const everyone = input.class_id !== undefined && input.class_id !== null;
+    if (everyone && !classContactAccess(user, input.class_id!).write) return fail(MSG.contactClassForbidden);
+    for (const id of input.child_ids ?? []) if (!contactAccess(user, id).write) return fail(MSG.contactForbidden);
+    const recipients = everyone ? [] : (input.child_ids ?? []).map((id) => findChild(id)).filter((c): c is Child => !!c).map(nameChildOf);
+    return ok({ names: findOtherNames(input.text, 'text', recipients, enrolledNameChildren()).names });
+  },
+
+  /**
+   * 定型文（GET /api/phrases?scope=）。職員だけ。取り消していない行を並び順に。
+   * 詳細設計書 (4-2) の名前は phrases だが、日誌の定型文（GET /api/diaries/phrases）がその名前を使っているため contactPhrases とした
+   */
+  async contactPhrases(user: SessionUser, scope: Phrase['phrase_scope']): Promise<Phrase[]> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    if (!['1', '2', '3', '4'].includes(scope)) return fail(MSG.badRequest);
+    return ok(db.phrases.filter((p) => p.phrase_scope === scope && !p.is_deleted)
+      .sort((a, b) => a.display_order - b.display_order || a.phrase_id - b.phrase_id)
+      .map((p) => ({ phrase_id: p.phrase_id, phrase_scope: p.phrase_scope, body: p.body, display_order: p.display_order })));
+  },
+};
+
 /* ============ 画面が使う入口 ============ */
 export const api = guardProcedure({
   ...authApi, ...childApi, ...diaryApi, ...diaryApi2,
@@ -4147,6 +4454,7 @@ export const api = guardProcedure({
   ...bulkApi, ...dashboardApi, ...handoutApi,
   ...contactApi,
   ...contactEventsApi,
+  ...contactFacilityApi,
 });
 
 /* ============ 入力の検査の補助（Go サーバの httpx.go と同じ規則） ============ */
