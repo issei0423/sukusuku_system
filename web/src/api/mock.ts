@@ -36,8 +36,11 @@ import type { LiveEvent } from '../live';
 import type { NapAbnormalRow, NapSearchRow } from './shapes';
 import {
   NAP_REPORT_MSG, SLEEP_ROW_LABEL, exclusionRowLabel, napReportCsv, reportTemperature, sortReportAbnormals, sortReportLines,
+  sortReportHistories,
 } from './napReport';
-import type { NapReportAbnormal, NapReportFilter, NapReportLine } from './napReport';
+import type { NapReportAbnormal, NapReportFilter, NapReportHistory, NapReportLine } from './napReport';
+import { NAP_CORRECT_MSG, NAP_CORRECTED_MARK, napCorrectionReason, napCorrectionText, napRecordFields } from './napCorrect';
+import type { NapRecordCorrectInput } from './napCorrect';
 import type {
   LoginError, ChildInput, DiaryFilter, DiaryInput, DiaryAttachmentInput, DiaryIncidentInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
   DevDraftView,
@@ -1995,7 +1998,7 @@ export const napApi = {
       nap_record_id: nextId(), nap_session_id: sessionId, child_id: input.child_id,
       checked_at: now(), saved_at: now(),
       body_position: input.body_position, breathing: input.breathing,
-      complexion: input.complexion, temperature: input.temperature, staff_id: user.staff_id!,
+      complexion: input.complexion, temperature: input.temperature, staff_id: user.staff_id!, corrected_at: null,
     };
     db.napRecords.push(r);
     log(user.account_id, '3', '1', 't_nap_record', r.nap_record_id, input.child_id, null,
@@ -2117,6 +2120,20 @@ export function incidentSituationResponse(body: string): { situation: string; re
   return { situation: join('【状況】'), response: join('【とった対応】') };
 }
 
+/**
+ * その利用者がその午睡チェックの記録を直せないときの理由（断る文言）。直せるときは空。
+ * 管理者なら直せる。一般なら、実施の日がサーバの今日で、その園児について contactAccess の write が真（その園児のクラスの担任。
+ * フリーの職員は直せない）。その実施でその園児に異常時の記録があれば一般には直させない（詳細設計書「訂正・取り消しのまとめ」(3-5)）。
+ * サーバ側は server/api_nap_correct.go の napRecordCorrectDenied
+ */
+function napRecordCorrectDenied(user: SessionUser, childId: string, sessionId: number, sessionDate: string): string {
+  if (user.role === '1') return '';
+  if (user.role !== '2' || !contactAccess(user, childId).write) return NAP_CORRECT_MSG.forbidden;
+  if (sessionDate !== today()) return NAP_CORRECT_MSG.pastDay;
+  if (db.napAbnormals.some((a) => a.nap_session_id === sessionId && a.child_id === childId)) return NAP_CORRECT_MSG.abnormal;
+  return '';
+}
+
 const napApi2 = {
   /**
    * 午睡記録検索。日付・園児名・クラスで絞り込む（基本設計書「画面の一覧」(3-2)）
@@ -2147,6 +2164,8 @@ const napApi2 = {
         staff_name: staffId ? staffName(staffId) : '',
         session_date: s?.session_date ?? at.slice(0, 10),
         _class_id: s?.class_id ?? null,
+        // 修正あり・直せるか は確認の行だけが持つ（下で入れる）
+        corrected_at: null as string | null, can_correct: false,
       };
     };
 
@@ -2157,6 +2176,7 @@ const napApi2 = {
         kind: 'check' as const, nap_record_id: r.nap_record_id, nap_sleep_id: null, saved_at: r.saved_at,
         body_position: r.body_position, breathing: r.breathing, complexion: r.complexion,
         temperature: r.temperature, sleep_temperature: null, nap_exclusion_id: null, exclusion_reason: null,
+        corrected_at: r.corrected_at ?? null,
       }));
     const sleepRows = db.napSleeps
       .filter((s) => !s.is_deleted && visible.has(s.child_id))
@@ -2200,7 +2220,66 @@ const napApi2 = {
     rows.sort((a, b) => b.checked_at.localeCompare(a.checked_at) || rank[a.kind] - rank[b.kind] || idOf(a) - idOf(b));
     const page = f.page ?? 1;
     const out: NapSearchRow[] = rows.map(({ _class_id: _drop, ...r }) => r);
-    return ok({ rows: out.slice((page - 1) * perPage, page * perPage), total: out.length, page, per_page: perPage });
+    // 確認の行に、この利用者が直せるか（can_correct）を添える。画面は直せる行にだけ「修正」を出す。担保は correctNapRecord
+    // （サーバ側は server/api_nap.go の handleSearchNapRecords。出すページの行にだけ判定する）
+    const shown = out.slice((page - 1) * perPage, page * perPage).map((r) => (r.kind === 'check'
+      ? { ...r, can_correct: napRecordCorrectDenied(user, r.child_id, r.nap_session_id, r.session_date) === '' } : r));
+    return ok({ rows: shown, total: out.length, page, per_page: perPage });
+  },
+
+  /**
+   * 午睡チェックの記録を修正する。POST /api/nap/records/{id}/correct にあたる（サーバ側は server/api_nap_correct.go の
+   * handleCorrectNapRecord。同じ規則）。典拠：基本設計書「記録の修正と改ざん防止」(4-8)・「入力項目の制約値」(4-12)・
+   * 「操作ログ（t_operation_log）」(5-9)、詳細設計書「訂正・取り消しのまとめ」(3-5)、画面詳細図「午睡記録検索画面」(5-3) の項目12
+   * - 直せる項目は体位・呼吸・顔色・体温。チェックした時刻・保存時刻・記録した職員は変えない
+   * - 直せる人は napRecordCorrectDenied。理由は必須（前後の空白を除いて 1〜500文字）
+   * - 行を書き換え（2026/10/19 に持ち主が決めた）、corrected_at に今を入れ、変わった項目の修正前を before_value、
+   *   修正後と理由を after_value に、操作ログ（午睡 3・変更 2）へ残す。値が変わらない修正は断る【仮置き】
+   */
+  async correctNapRecord(user: SessionUser, recordId: number, input: NapRecordCorrectInput): Promise<NapRecord> {
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
+    const reason = (input.reason ?? '').trim();
+    if (!reason) return fail(NAP_CORRECT_MSG.reason);
+    if (tooLong(reason, 500)) return fail(NAP_CORRECT_MSG.reasonLong);
+    // 値の検査は記録するとき（record）と同じ
+    if (input.body_position !== undefined && !(input.body_position in BODY_POSITION)) return fail('体位を選んでください');
+    if (input.breathing !== undefined && !(input.breathing in BREATHING)) return fail('呼吸を選んでください');
+    if (input.complexion !== undefined && !(input.complexion in COMPLEXION)) return fail('顔色を選んでください');
+    if (input.temperature !== undefined && input.temperature !== null
+      && (typeof input.temperature !== 'number' || !isOneDecimal(input.temperature))) {
+      return fail('体温は小数第1位までで入力してください');
+    }
+    const r = db.napRecords.find((x) => x.nap_record_id === recordId);
+    if (!r) return fail(NAP_CORRECT_MSG.notFound);
+    const session = db.napSessions.find((x) => x.nap_session_id === r.nap_session_id);
+    if (!session) return fail(NAP_CORRECT_MSG.notFound);
+    const denied = napRecordCorrectDenied(user, r.child_id, r.nap_session_id, session.session_date);
+    if (denied) return fail(denied);
+
+    const next = {
+      body_position: input.body_position ?? r.body_position,
+      breathing: input.breathing ?? r.breathing,
+      complexion: input.complexion ?? r.complexion,
+      temperature: input.temperature !== undefined ? input.temperature : r.temperature,
+    };
+    // 変わった項目だけを、修正前と修正後に入れる。修正後には理由を添える（サーバと同じ項目名・同じ順）
+    const before = napRecordFields(r);
+    const after = napRecordFields(next);
+    const changedBefore: [string, unknown][] = [];
+    const changedAfter: [string, unknown][] = [];
+    after.forEach((f, i) => {
+      if (JSON.stringify(before[i][1]) === JSON.stringify(f[1])) return;
+      changedBefore.push(before[i]);
+      changedAfter.push(f);
+    });
+    if (changedAfter.length === 0) return fail(NAP_CORRECT_MSG.noChange);
+    changedAfter.push(['理由', reason]);
+
+    Object.assign(r, next, { corrected_at: now() });
+    log(user.account_id, '3', '2', 't_nap_record', r.nap_record_id, r.child_id,
+      fieldsJSON(changedBefore), fieldsJSON(changedAfter));
+    publishNapChild(session.class_id, r.child_id);
+    return ok({ ...r, corrected_at: r.corrected_at ?? null });
   },
 
   /**
@@ -2259,9 +2338,10 @@ const napApi2 = {
         date, e.created_at, child, cls, exclusionRowLabel(e.reason), '', '', '', staffName(e.staff_id), '',
       ] });
     }
-    // 「修正あり」の列は置くが、いまは空。午睡チェックの記録を修正する機能が、サーバにもモックにも無いため
-    // （基本設計書「記録の修正と改ざん防止」(4-8)）
-    for (const l of lines) l.cells.push('');
+    // 「修正あり」の列：修正した午睡チェックの記録（corrected_at がある）に印を付ける（基本設計書「帳票の出力」(4-8)）。
+    // ねた・おきた・対象外の行は空
+    const corrected = new Set(db.napRecords.filter((r) => r.corrected_at).map((r) => r.nap_record_id));
+    for (const l of lines) l.cells.push(l.kind === 'check' && corrected.has(l.id) ? NAP_CORRECTED_MARK : '');
 
     const abnormals: NapReportAbnormal[] = db.napAbnormals
       .filter((a) => sessionIn(a.nap_session_id))
@@ -2277,11 +2357,33 @@ const napApi2 = {
 
     const sortedLines = sortReportLines(lines);
     const sortedAbnormals = sortReportAbnormals(abnormals);
-    const count = sortedLines.length + sortedAbnormals.length;
+
+    /*
+     * 末尾の「修正の履歴」：期間（実施の日）とクラスに入る午睡チェックの記録の修正を、操作ログの修正の行
+     * （午睡 3・変更 2・t_nap_record）から1回1行で作る（基本設計書「帳票の出力」(4-8)。サーバ側は server/api_nap_correct.go の
+     * napReportHistories）。【仮置き】記録の列・修正前後の書き方・並び（web/仮置き値.md「午睡チェックの記録の修正」）
+     */
+    const histories: NapReportHistory[] = [];
+    for (const l of db.operationLogs) {
+      if (l.function_type !== '3' || l.operation_type !== '2' || l.target_table !== 't_nap_record') continue;
+      const r = db.napRecords.find((x) => x.nap_record_id === l.target_id);
+      if (!r || !sessionIn(r.nap_session_id)) continue;
+      const [, child, , key] = head(r.nap_session_id, r.child_id);
+      histories.push({
+        logId: l.operation_log_id, ...key, recordAt: r.checked_at, at: l.operated_at, cells: [
+          `午睡チェックの記録（${child}・${r.checked_at}）`, l.operated_at, accountName(l.account_id),
+          napCorrectionText(l.before_value), napCorrectionText(l.after_value), napCorrectionReason(l.after_value),
+        ],
+      });
+    }
+    const sortedHistories = sortReportHistories(histories);
+
+    // 【仮置き】件数は、一覧・異常時の記録・修正の履歴の行の合計（web/仮置き値.md）
+    const count = sortedLines.length + sortedAbnormals.length + sortedHistories.length;
     const classLabel = f.classId ? className(f.classId) : 'すべてのクラス';
     log(user.account_id, '3', '5', 't_nap_record', null, null, null,
       `午睡記録をCSV出力（期間 ${f.from}〜${f.to}・${classLabel}・${count} 件）`);
-    return ok(napReportCsv(sortedLines, sortedAbnormals));
+    return ok(napReportCsv(sortedLines, sortedAbnormals, sortedHistories));
   },
 
   /** 年齢に応じたチェック間隔。マスタ値を用いる（基本設計書 5-8） */

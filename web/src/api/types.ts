@@ -434,6 +434,11 @@ export interface NapRecord {
   complexion: Complexion;
   temperature: number | null;
   staff_id: string;
+  /**
+   * 最後に修正した時刻。空なら修正なし（帳票の「修正あり」の印。基本設計書「足した列」(5-7)）。
+   * デモデータ（mockDb.ts）は持たないため省いてよい（省いたものは修正なし）
+   */
+  corrected_at?: string | null;
 }
 
 /** 異常時の記録（t_nap_abnormal）。diary_id が空ならヒヤリハット未起票（5-6） */

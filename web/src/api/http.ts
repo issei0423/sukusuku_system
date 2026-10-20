@@ -34,6 +34,7 @@ import { startLive } from '../live';
 import { setReachable } from './reachability';
 import { TEXT } from '../messages';
 import type { NapReportFilter } from './napReport';
+import type { NapRecordCorrectInput } from './napCorrect';
 
 // 画面はこれまでどおり client 経由で型を参照する。定義の実体は shapes.ts が持つ
 export type {
@@ -521,6 +522,12 @@ const apiChatNap = {
   napReport: (_u: SessionUser, f: NapReportFilter) => requestText('/api/nap/report' + qs({
     from: f.from, to: f.to, class_id: f.classId ?? '', format: f.format,
   })),
+  /**
+   * 午睡チェックの記録を修正する（POST /api/nap/records/{id}/correct）。変える項目と理由を送る。直せる人の判定はサーバが行う
+   * （server/api_nap_correct.go。基本設計書「記録の修正と改ざん防止」(4-8)）
+   */
+  correctNapRecord: (_u: SessionUser, recordId: number, input: NapRecordCorrectInput) =>
+    post<NapRecord>(`/api/nap/records/${recordId}/correct`, input),
 
   /**
    * 年齢に応じたチェック間隔。マスタ値を用いる（基本設計書 5-8）

@@ -366,7 +366,10 @@ CREATE TABLE t_nap_record (
   breathing      TEXT    NOT NULL CHECK (breathing IN ('1','2')),              -- 1:あり 2:確認できず
   complexion     TEXT    NOT NULL CHECK (complexion IN ('1','2','3','4')),     -- 1:通常 2:蒼白 3:紅潮 4:その他
   temperature    REAL,
-  staff_id       TEXT    NOT NULL REFERENCES m_staff(staff_id)
+  staff_id       TEXT    NOT NULL REFERENCES m_staff(staff_id),
+  -- 最後に修正した時刻。空なら修正なし。帳票の「修正あり」の印に使う。修正者・修正前の値・修正後の値・理由は操作ログが持つ
+  -- （基本設計書「足した列」(5-7)・「記録の修正と改ざん防止」(4-8)）。既存の DB には api_nap_correct.go の ensureNapRecordCorrectedAt が足す
+  corrected_at   TEXT
 );
 CREATE INDEX ix_nap_record_child ON t_nap_record (child_id, checked_at);
 
