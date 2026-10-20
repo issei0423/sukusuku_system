@@ -160,6 +160,10 @@ function LoginErrorView({ error, entrance, onLogout }: {
       </Alert>
     );
   }
+  // 送信元の失敗が続いたとき（server/attempts.go。GitHub Issue #236 の 6）
+  if (error.kind === 'too_many_attempts') {
+    return <Alert>失敗が続いたため、しばらく受け付けを止めています。時間をおいてからお試しください。</Alert>;
+  }
   return <Alert>ログインIDまたはパスワードが違います（残り {error.remaining} 回）</Alert>;
 }
 

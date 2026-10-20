@@ -64,6 +64,7 @@ import StaffAccountsScreen from './screens/master/StaffAccountsScreen';
 import InvitationCodesScreen from './screens/master/InvitationCodesScreen';
 import GuardianAccountsScreen from './screens/master/GuardianAccountsScreen';
 import OperationLogScreen from './screens/master/OperationLogScreen';
+import SettingsScreen from './screens/admin/settings/SettingsScreen';
 
 const pageNames: Record<string, string> = {
   '/': '保護者用トップ', '/staff-top': '職員用トップ', '/signup': '新規登録',
@@ -81,7 +82,7 @@ const pageNames: Record<string, string> = {
   '/staff/admin/approval': '承認待ち', '/staff/admin/misdelivery': '誤送信対応',
   '/staff/admin/staff-accounts': '職員アカウント', '/staff/admin/invitations': '招待コード',
   '/staff/admin/guardian-accounts': '保護者アカウント', '/staff/admin/fiscal-year': '年度更新',
-  '/staff/admin/logs': '操作ログ', '/guardian': '保護者ホーム', '/guardian/chat': 'チャット・お知らせ',
+  '/staff/admin/logs': '操作ログ', '/staff/admin/settings': '設定', '/guardian': '保護者ホーム', '/guardian/chat': 'チャット・お知らせ',
   '/guardian/handouts': '園からの配布物', '/guardian/password': 'パスワードの変更', '/guardian/terms': '利用規約',
 };
 
@@ -283,6 +284,7 @@ export default function App() {
         <Route path="admin/guardian-accounts" element={<GuardianAccountsScreen />} />
         <Route path="admin/fiscal-year" element={<FiscalYearScreen />} />
         <Route path="admin/logs" element={<OperationLogScreen />} />
+        <Route path="admin/settings" element={<SettingsScreen />} />
         <Route path="growth/schedule" element={<DevScheduleScreen />} />
         <Route path="growth/share" element={<ShareSettingScreen />} />
         <Route path="children/new" element={<ChildInputScreen />} />

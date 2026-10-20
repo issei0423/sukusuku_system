@@ -12,6 +12,8 @@
  *
  * 活動のひとことと園からのひとことは段2：「送る」のすぐ上に宛先を大きく示し、サーバが他児の名前を照合する
  * （詳細設計書「園からのひとことを送る」(2-3 (3))）。園からは園児・日に1件。送ったあとは送った文と「直す」「取り消す」。
+ * 今日のページでは、使えるときだけ AI の下書き（園からは「AI で下書き」「言い換え」「続き」、ひとことは「言い換え」「続き」）を出す
+ * （詳細設計書「画面」(8-9)）。下書きは欄に入るだけで、送るのは職員。
  */
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
@@ -33,6 +35,7 @@ import { dayLabel, eventText, homeLines } from './contactText';
 import FixDialog, { cancelAction, timeOptions, toiletChoices } from './FixDialog';
 import Composer from './Composer';
 import type { FixTarget } from './FixDialog';
+import PhotoSendDialog from './PhotoSendDialog';
 
 const HOME_STATE_TEXT = { unconfirmed: '未確認', revised: '更新', confirmed: '確認済み' } as const;
 
@@ -55,6 +58,8 @@ export default function ContactChildScreen() {
   const [tempOpen, setTempOpen] = useState(false);
   const [fix, setFix] = useState<{ target: FixTarget; mode: 'edit' | 'cancel' } | null>(null);
   const [editingFacility, setEditingFacility] = useState(false);
+  // 写真を送る（詳細設計書「きょうのようすを足す・直す」(2-3 (4))。中身は PhotoSendDialog.tsx）
+  const [photoOpen, setPhotoOpen] = useState(false);
   const reachable = useReachable();
   // 連絡帳（クラス）画面の「園から」の列から来たときは、園からの欄を見せる
   const { hash } = useLocation();
@@ -221,7 +226,8 @@ export default function ContactChildScreen() {
               <Composer key={editingFacility ? `fix-${data.facility?.contact_facility_id}` : 'new'} label={editingFacility ? '園から（直して送る）' : '園からのひとこと'}
                 max={500} scope="1" recipient={data.recipient} className={childClass} initial={editingFacility ? data.facility?.body : ''}
                 submitLabel={editingFacility ? '直して送る' : '送る'} onSend={sendFacility}
-                onCancel={editingFacility ? () => setEditingFacility(false) : undefined} />
+                onCancel={editingFacility ? () => setEditingFacility(false) : undefined}
+                ai={isToday ? { childId, date, field: 'facility', allowDraft: true } : undefined} />
             )}
           </section>
         </div>
@@ -275,8 +281,15 @@ export default function ContactChildScreen() {
                   ))}
                 </div>
               </div>
+              {data.class_id !== null && (
+                <div className="contact-field">
+                  <span>写真</span>
+                  <button type="button" className="contact-pick" onClick={() => setPhotoOpen(true)} disabled={busy !== null}>写真を送る</button>
+                </div>
+              )}
               <Composer label="活動のひとこと" max={200} scope="2" recipient={data.recipient} className={childClass}
-                submitLabel="ひとことを送る" onSend={sendComment} />
+                submitLabel="ひとことを送る" onSend={sendComment}
+                ai={{ childId, date, field: 'comment', allowDraft: false }} />
             </>
           )}
         </aside>
@@ -284,10 +297,17 @@ export default function ContactChildScreen() {
 
       {tempOpen && (
         <TemperaturePicker title={`${name}の体温`} start={findChild(childId)?.normal_temperature ?? null} busy={busy !== null} onClose={() => setTempOpen(false)}
-          onSelect={(value) => { setTempOpen(false); void record('temp', { child_id: childId, event_type: '3', temperature: value }); }} />
+          onSelect={(value) => { setTempOpen(false); void record('temp', { child_id: childId, event_type: '3', temperature: value }); }}>
+          {/* 入力欄（体温の一覧）の近くに固定の文【仮置き】（図/画面詳細図「連絡帳（園児）画面」(8-2) 項目10。web/仮置き値.md） */}
+          <p className="contact-note">{TEXT.temperatureCallFirst}</p>
+        </TemperaturePicker>
       )}
       {fix && (
         <FixDialog target={fix.target} startMode={fix.mode} normalTemperature={findChild(childId)?.normal_temperature ?? null} onClose={() => setFix(null)} onDone={(message) => { setFix(null); notify(message); page.refresh(); }} />
+      )}
+      {photoOpen && data.class_id !== null && (
+        <PhotoSendDialog classId={data.class_id} date={date} initialSubjects={[childId]} onClose={() => setPhotoOpen(false)}
+          onSent={() => { setPhotoOpen(false); page.refresh(); }} />
       )}
     </div>
   );

@@ -4,9 +4,13 @@
 # Node（web/ の React アプリ）
 node_modules/
 dist/
+# 生成物（Git に入れない）
 web/responsive-report/
+web/security-report/
 web/test-results/
 
 # Go（server/ のサーバ）
 server/*.db
 server/*.exe
+# 連絡帳の写真の実体（起動の引数 -files の既定 files。server/ で起動したときの置き場所）
+server/files/

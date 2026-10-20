@@ -32,6 +32,8 @@ import { MEAL_AMOUNT_STAFF_TEXT, MEAL_KIND_TEXT, TEXT } from '../../messages';
 import { dayLabel, eventText, homeLines, latestSleepText } from './contactText';
 import FixDialog, { cancelAction, toiletChoices } from './FixDialog';
 import type { FixTarget } from './FixDialog';
+import PhotoSendDialog from './PhotoSendDialog';
+import ClassPhotoStrip from './ClassPhotoStrip';
 
 const HOME_STATE_TEXT: Record<HomeState, string> = { none: 'まだ', unconfirmed: '未確認', revised: '更新', confirmed: '確認済み' };
 /** sort=home の並び：「更新」「未確認」「まだ」「確認済み」（詳細設計書 (2-2 (2))） */
@@ -130,6 +132,8 @@ export default function ContactClassScreen() {
   const [failed, setFailed] = useState(false);
   const [fix, setFix] = useState<{ target: FixTarget; normal: number | null } | null>(null);
   const [tempFor, setTempFor] = useState<ContactClassRow | null>(null);
+  // 写真を送る（詳細設計書「写真を送る」(2-2 (7))。中身は PhotoSendDialog.tsx。送った写真は ClassPhotoStrip.tsx で表の上に出す）
+  const [photoOpen, setPhotoOpen] = useState(false);
   const reachable = useReachable();
   // 仮に入れた食事は保存していない。ログアウトの前に、破棄されることを確かめさせる
   useUnsavedInput(tentative !== null);
@@ -272,6 +276,7 @@ export default function ContactClassScreen() {
             <option value="facility">園からを送っていない園児を上に</option>
           </select>
         </label>
+        {canRecord && <button type="button" onClick={() => setPhotoOpen(true)}>写真を送る</button>}
       </div>
 
       {!isToday && (
@@ -288,6 +293,7 @@ export default function ContactClassScreen() {
             {data.unregistered_count > 0 && `（まだ登録していない ${data.unregistered_count} 家庭は、登録すると読めます）`}
             {!data.can_write && '。このクラスは読むだけです'}
           </p>
+          <ClassPhotoStrip rows={rows} />
           {canRecord && rows.length > 0 && (
             <section className="contact-meal-bar" aria-label="食事を記録する">
               <div className="contact-picks" role="group" aria-label="食事の区分">
@@ -327,7 +333,7 @@ export default function ContactClassScreen() {
                     <th scope="col" className="contact-col-toilet">排せつ</th>
                     <th scope="col" className="contact-col-temp">体温</th>
                     <th scope="col">午睡</th>
-                    <th scope="col">ひとこと</th>
+                    <th scope="col">ひとこと・写真</th>
                     <th scope="col">園から</th>
                   </tr>
                 </thead>
@@ -429,11 +435,18 @@ export default function ContactClassScreen() {
             const row = tempFor;
             setTempFor(null);
             void recordOne(row, `temp-${row.child.child_id}`, { child_id: row.child.child_id, event_type: '3', temperature: value });
-          }} />
+          }}>
+          {/* 入力欄（体温の一覧）の近くに固定の文【仮置き】（図/画面詳細図「連絡帳（クラス）画面」(8-1) 項目13。web/仮置き値.md） */}
+          <p className="contact-note">{TEXT.temperatureCallFirst}</p>
+        </TemperaturePicker>
       )}
       {fix && (
         <FixDialog target={fix.target} normalTemperature={fix.normal} onClose={() => setFix(null)}
           onDone={(message) => { setFix(null); notify(message); view.refresh(); }} />
+      )}
+      {photoOpen && classId > 0 && (
+        <PhotoSendDialog classId={classId} date={date} onClose={() => setPhotoOpen(false)}
+          onSent={() => { setPhotoOpen(false); view.refresh(); }} />
       )}
     </div>
   );

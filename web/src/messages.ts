@@ -31,6 +31,11 @@ export const MSG = {
   excludeAfterSleep: '『ねた』を記録した園児は対象外にできません。',
   /** 【仮置き】対象外が既にあるとき。設計に文言が無い（web/仮置き値.md） */
   excludedTwice: 'すでに対象外になっています。画面を読み込み直してください。',
+  /* 連絡帳の写真（server/messages.go と同じ。詳細設計書 (4-4 (2))・(4-4 (3))・「本書で足す文言」(4-1 (6))） */
+  photoForbidden: 'この写真は開けません。',
+  /** 設定（attachment.max_size_mb）を変えても文言は変えない（設計の文言のまま） */
+  photoFormat: '写真は JPEG・PNG で、10MB までです。',
+  photoSubjectRequired: '写っている子を選んでください。子どもが写っていないときは『子どもは写っていない』を選んでください。',
   /* きょうのようすの記録と、訂正・取り消し（server/messages.go と同じ。詳細設計書 (4-4)・(4-7)） */
   badRequest: 'リクエストの内容を読み取れませんでした',
   eventTimeRange: '時刻は、その日の0時からいままでで選んでください。',
@@ -44,10 +49,59 @@ export const MSG = {
   facilityTooLong: '園からのひとことは500文字以内で入力してください。',
   facilitySent: 'この日の園からは、もう送られています。直すときは送られた文の「直す」から行ってください。',
   commentTooLong: 'ひとことは200文字以内で入力してください。',
+  /* 文章の下書き（AI）と設定（server/messages.go と同じ。詳細設計書「経路」(8-2)・「設定」(4-10 (2))・「本書で足す文言」(4-1 (6))） */
+  aiUnavailableForTarget: 'AI の下書きは使えません。そのまま書いて送れます。',
+  aiMemoTooLong: 'メモは500文字以内で入力してください。',
+  aiExcludedName: 'AI を使わないお子さんの名前が入っています。このまま書いて送ってください。',
+  aiLimit: 'きょうの AI の下書きの回数を使い切りました。そのまま書いて送れます。',
+  aiFailed: 'いまは下書きを作れません。そのまま書いて送れます。',
+  /** 【仮置き】続きを足す空きが無い（web/仮置き値.md。server/messages.go の msgAiNoRoom） */
+  aiNoRoom: '文字数の上限に達しているため、続きは作れません。',
+  settingNotEditable: 'この設定は画面から変えられません。',
+  settingConflict: 'ほかの管理者が設定を変えました。読み直してから変えてください。',
+  settingAiDailyLimit: '1日の上限回数は1〜10000の整数で入力してください。',
+} as const;
+
+/** 欄の文が上限を超える（server/messages.go の aiTextTooLong。詳細設計書「経路」(8-2)） */
+export const aiTextTooLong = (max: number) => `文は${max}文字以内で入力してください。`;
+
+/* ---- 文章の下書き（AI）の画面の文言（詳細設計書「画面」(8-9)・「キーが無い・無効・有効にしていないときの画面」(8-8)、基本設計書「処理の流れ」(4-11)） ---- */
+export const AI_TEXT = {
+  draftButton: 'AI で下書き',
+  rephraseButton: '言い換え',
+  continueButton: '続き',
+  /** メモの近くに示す（基本設計書「送る項目と置き換え」(4-11)） */
+  memoNote: '体温や体の具合は書かずに、その日のようすを書いてください',
+  makeDraft: '下書きを作る',
+  making: '下書きを作っています（10秒ほどかかることがあります）',
+  useThis: 'この文を使う',
+  /** 下書きに必ず添える */
+  checkBeforeSend: 'AI の下書きです。事実と違うところがないか確かめてから送ってください。',
+  replacedOthers: 'ほかのお子さんの名前は『おともだち』に置き換えて送りました。',
+  /** 設定画面の AI の区画 */
+  noKey: 'サーバに API キーがありません。AI の下書きは使えません。',
+  keyRejected: 'API キーが使えませんでした。サーバの設定を確かめて起動し直してください。',
+  enableConfirm: 'プライバシーポリシーに外部の AI へ送ることを書いた版を施行してから有効にしてください',
+  saved: '保存しました。',
 } as const;
 
 /** 他児の名前の注意（基本設計書「メッセージ一覧」(4-12)。server/namecheck.go の otherNamesMessage と同じ） */
 export const otherNamesMessage = (names: string[]) => `ほかのお子さんの名前（${names.join('・')}）が入っています。このまま送りますか。`;
+/**
+ * 写っている子が2人以上の写真の注意に添える文（詳細設計書 4-5 (2) の④。server/namecheck.go の otherNamesFamiliesNote と同じ）。
+ * 【仮置き】文言と、家庭の数を写っている子の数（届く先の園児のページの数）で数えること（web/仮置き値.md）
+ */
+export const otherNamesFamiliesNote = (n: number) => `この文は写っている全員（${n} 家庭）に届きます。`;
+
+/**
+ * 写真の同意を満たさない子がいるときの文（詳細設計書 (4-4 (2))、基本設計書「写真の同意で止める規則」(4-2)。
+ * server/messages.go の photoConsentMessage と同じ）。写っている子が1人なら「園内記録として保持」の文、2人以上なら
+ * 「ほかの保護者にも見える場」の文。names は満たさない子の氏名
+ */
+export function photoConsentMessage(names: string[], subjects: number): string {
+  if (subjects === 1) return `${names[0]}さんは写真の同意が『園内記録として保持』のため送れません。写真を外すか、写っている子を見直してください。`;
+  return `${names.map((n) => `${n}さん`).join('・')}は、ほかの保護者にも見える場への写真の同意がないため送れません。写真を外すか、写っている子を見直してください。`;
+}
 
 /* ---- 画面の文言（図/画面詳細図「連絡帳画面」(8-3)・「連絡帳（クラス）画面」(8-1)、詳細設計書 2章） ---- */
 export const TEXT = {
@@ -82,6 +136,13 @@ export const TEXT = {
   cancelReaders: (families: number, guardians: number) => `いま保護者 ${families} 家庭（${guardians} 名）が読んでいます。取り消しても、読まれた内容は取り消せません。`,
   /** 体温の範囲の外（基本設計書「メッセージ一覧」(4-12)。判定ではなく、確かめを促すだけで止めない） */
   temperatureOutOfRange: '入力値が通常の範囲外です。測定値に誤りがないか確認してください。',
+  /**
+   * 【仮置き】職員の体温の入力欄の近くに出す固定の文（図/画面詳細図「連絡帳（クラス）画面」(8-1) 項目13・「連絡帳（園児）画面」(8-2) 項目10、
+   * 基本設計書「排せつ・体温の記録」(4-5)）。発熱の電話を先にすることを示す。順番はシステムが強制しない。判定の言葉ではない（web/仮置き値.md）
+   */
+  temperatureCallFirst: '記録すると保護者に数字が出ます。お電話するときは、先にお電話を',
+  /** 【仮置き】保護者の「家庭から」の連絡事項の近くに常に出す文（図/画面詳細図「連絡帳画面」(8-3) 項目10、要件定義書「家庭から」(4-2-2)。web/仮置き値.md） */
+  homeWrittenRequest: 'お薬・食事の除去のご依頼は、書面で担任へお渡しください',
   /** 前の日のページで直せない一般に添える（図/画面詳細図「連絡帳（園児）画面」(8-2) 項目7） */
   fixAskAdmin: '翌日以降は管理者へご依頼ください',
   /** 段2を送ったあと（基本設計書「メッセージ一覧」(4-12) の「送ったあと」「保護者が未登録」） */

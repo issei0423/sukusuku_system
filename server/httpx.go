@@ -19,6 +19,8 @@ type apiError struct {
 	// 他児の名前の注意（409 other_child_names）で、当たった園児の氏名と本文の中の位置（詳細設計書「誤りの応答」(4-1 (3))）
 	Names   []string    `json:"names,omitempty"`
 	Matches []nameMatch `json:"matches,omitempty"`
+	// 設定の保存で、誤りのあった設定のキー（詳細設計書「設定」(4-10 (2))）
+	Field string `json:"field,omitempty"`
 }
 
 /*

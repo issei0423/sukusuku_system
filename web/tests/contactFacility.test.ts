@@ -107,7 +107,10 @@ describe('定型文・宛先・照合の経路・ダッシュボード', () => {
     const list = await api.contactPhrases(teacher, '1');
     expect(list.map((p) => p.body)).toEqual(['今日も一日ありがとうございました。', 'お迎えのときに、くわしくお話しします。',
       'おうちでも、今日のことを聞いてみてください。', '明日もよろしくお願いします。']);
-    expect((await api.contactPhrases(teacher, '4')).length).toBe(5);
+    // 4:日誌は4つ。保護者に向けた文を入れない（日誌は園内の記録。詳細設計書「デモデータ」(5-5) 第1.3版）
+    const diary = await api.contactPhrases(teacher, '4');
+    expect(diary).toHaveLength(4);
+    expect(diary.map((p) => p.body)).not.toContain('ご家庭でも様子を見ていただけますと幸いです。');
     await expect(api.contactPhrases(taroGuardian, '1')).rejects.toThrow();
     for (const p of db.phrases) expect(p.body).not.toMatch(/元気|順調|問題|異常|健康/);
   });
@@ -125,6 +128,11 @@ describe('定型文・宛先・照合の経路・ダッシュボード', () => {
     await expect(api.nameCheck(otherTeacher, { child_ids: ['C001'], text: 'たっくん' })).rejects.toThrow(MSG.contactForbidden);
     await expect(api.nameCheck(otherTeacher, { class_id: 1, text: 'たっくん' })).rejects.toThrow();
     await expect(api.nameCheck(teacher, { child_ids: ['C001'], text: 'あ'.repeat(1001) })).rejects.toThrow(MSG.badRequest);
+  });
+
+  it('照合の経路も、写っている2人なら家庭ごとに照合し、クラス名と「〇〇先生」を除く（server/namecheck_family_test.go と同じ）', async () => {
+    expect((await api.nameCheck(teacher, { child_ids: ['C001', 'C006'], text: 'たっくんとあおちゃん' })).names).toHaveLength(2);
+    expect((await api.nameCheck(teacher, { child_ids: ['C001'], text: 'さくら組の高梨先生' })).names).toEqual([]);
   });
 
   it('ダッシュボードの園から未送信：送ると減り、今日の午睡で欠席にした子は数えない', async () => {
