@@ -28,6 +28,11 @@ type saveCheckRequest struct {
 	Note string `json:"note"`
 	// "1" 下書き / "2" 確定
 	Status string `json:"status"`
+	// 保護者へのひとこと（所見とは別の欄。確定した時点で成長の記録に届く。詳細設計書「発達チェックの保存」(4-12 (2))）。
+	// 空なら null で保存する
+	GuardianMessage *string `json:"guardian_message"`
+	// 他児の名前の照合で承諾した名前（4-5 (2)）。照合は PR #201 の namecheck.go と合わせるときに足す（いまは受け取るだけ）
+	AcknowledgedNames []string `json:"acknowledged_names"`
 }
 
 func (a *app) handleSaveDevelopmentCheck(w http.ResponseWriter, r *http.Request) {
@@ -39,7 +44,9 @@ func (a *app) handleSaveDevelopmentCheck(w http.ResponseWriter, r *http.Request)
 	if !readJSON(w, r, &req) {
 		return
 	}
-	if !a.canSeeChild(u, req.ChildID) {
+	// その園児を書ける職員（contactAccess の Write）。フリーの職員は書けない（詳細設計書「発達チェックの保存」(4-12 (2))、
+	// 基本設計書「権限チェックの実装方針」(6-2)）。画面側のモック（web/src/api/mock.ts の saveCheck）と同じ規則
+	if !a.contactAccess(u, req.ChildID).Write {
 		writeForbidden(w, "この園児を記録する権限がありません")
 		return
 	}
@@ -66,6 +73,19 @@ func (a *app) handleSaveDevelopmentCheck(w http.ResponseWriter, r *http.Request)
 		writeErr(w, http.StatusBadRequest, "実施日に未来日は指定できません")
 		return
 	}
+	// 保護者へのひとことは前後の空白を除いて500文字以内。空なら null（詳細設計書 (4-12 (2))）
+	var guardianMessage any
+	newMessage := ""
+	if req.GuardianMessage != nil {
+		if m := strings.TrimSpace(*req.GuardianMessage); m != "" {
+			if tooLong(m, 500) {
+				writeErr(w, http.StatusBadRequest, msgGuardianMessageTooLong)
+				return
+			}
+			guardianMessage = m
+			newMessage = m
+		}
+	}
 
 	tx, err := a.db.Begin()
 	if err != nil {
@@ -80,11 +100,15 @@ func (a *app) handleSaveDevelopmentCheck(w http.ResponseWriter, r *http.Request)
 	}
 
 	var (
-		checkID   int64
-		curStatus string
+		checkID      int64
+		curStatus    string
+		curMessage   sql.NullString
+		curFinalized sql.NullString
+		curCorrected sql.NullString
 	)
-	err = tx.QueryRow(`SELECT development_check_id, status FROM t_development_check
-		WHERE child_id = ? AND checked_on = ?`, req.ChildID, req.CheckedOn).Scan(&checkID, &curStatus)
+	err = tx.QueryRow(`SELECT development_check_id, status, guardian_message, finalized_at, guardian_message_corrected_at
+		FROM t_development_check WHERE child_id = ? AND checked_on = ?`, req.ChildID, req.CheckedOn).
+		Scan(&checkID, &curStatus, &curMessage, &curFinalized, &curCorrected)
 
 	/*
 	 * 確定した記録は、下書きに戻さない。確定のまま直すこと（もう一度「確定する」）はできる。
@@ -97,12 +121,50 @@ func (a *app) handleSaveDevelopmentCheck(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	/*
+	 * 確定済みの保護者へのひとことを変える（書き換え・空にする・書き足す）ときは、要件定義書「保護者へ届けるときの関所」(4-1-6)
+	 * の (2)「その日の取り消し・訂正」に従う。確定した日（finalized_at のサーバの日付）はその園児のクラスの担任
+	 * （上の contactAccess の Write）、翌日以降は管理者だけ。結果・所見だけを直すのは今のまま誰の日でもできる
+	 * （詳細設計書「職員の画面から成長の記録へ届けるもの」(2-12 (2))・「発達チェックの保存」(4-12 (2))、決めたこと D-51。
+	 * PR #216 で決まった設計）。画面側のモック（web/src/api/mock.ts の saveCheck）と同じ規則
+	 */
+	oldMessage := strings.TrimSpace(curMessage.String)
+	messageChanged := err == nil && curStatus == "2" && oldMessage != newMessage
+	if messageChanged {
+		finalizedDay := req.CheckedOn
+		if curFinalized.Valid && len(curFinalized.String) >= 10 {
+			finalizedDay = curFinalized.String[:10]
+		}
+		if !u.isAdmin() && finalizedDay != today() {
+			writeForbidden(w, msgGuardianMessageFixForbidden)
+			return
+		}
+	}
+	/*
+	 * 「訂正しました（日付）」の印（guardian_message_corrected_at）。空でないひとことを別の文に書き換えたときだけ今にする。
+	 * 空にしたときは取り消しとして印も消す（成長の記録からひとことが消える）。空から書き足したときは初めて届くため付けない
+	 * （決めたこと D-51）
+	 */
+	var corrected any
+	if curCorrected.Valid {
+		corrected = curCorrected.String
+	}
+	if messageChanged {
+		switch {
+		case newMessage == "":
+			corrected = nil
+		case oldMessage != "":
+			corrected = now()
+		}
+	}
+
 	isNew := err == sql.ErrNoRows
 	switch {
 	case isNew:
 		res, e := tx.Exec(`INSERT INTO t_development_check
-			(child_id, checked_on, status, staff_id, share_status, note)
-			VALUES (?, ?, ?, ?, '1', ?)`, req.ChildID, req.CheckedOn, req.Status, u.staff(), note)
+			(child_id, checked_on, status, staff_id, share_status, note, guardian_message, finalized_at)
+			VALUES (?, ?, ?, ?, '1', ?, ?, CASE WHEN ? = '2' THEN ? END)`, req.ChildID, req.CheckedOn, req.Status, u.staff(), note,
+			guardianMessage, req.Status, now())
 		if e != nil {
 			writeErr(w, http.StatusInternalServerError, "保存に失敗しました")
 			return
@@ -112,8 +174,12 @@ func (a *app) handleSaveDevelopmentCheck(w http.ResponseWriter, r *http.Request)
 		writeErr(w, http.StatusInternalServerError, "保存に失敗しました")
 		return
 	default:
-		if _, e := tx.Exec(`UPDATE t_development_check SET status = ?, staff_id = ?, note = ?
-			WHERE development_check_id = ?`, req.Status, u.staff(), note, checkID); e != nil {
+		// 確定した日時は初めて確定したときだけ入れ、確定し直しても動かさない（「できたこと」の日付が動かないように。
+		// 詳細設計書「成長の記録に届くもの」(3-7)、決めたこと D-31）
+		if _, e := tx.Exec(`UPDATE t_development_check SET status = ?, staff_id = ?, note = ?, guardian_message = ?,
+			finalized_at = CASE WHEN ? = '2' AND finalized_at IS NULL THEN ? ELSE finalized_at END,
+			guardian_message_corrected_at = ?
+			WHERE development_check_id = ?`, req.Status, u.staff(), note, guardianMessage, req.Status, now(), corrected, checkID); e != nil {
 			writeErr(w, http.StatusInternalServerError, "保存に失敗しました")
 			return
 		}
@@ -148,13 +214,25 @@ func (a *app) handleSaveDevelopmentCheck(w http.ResponseWriter, r *http.Request)
 		after = "確定"
 	}
 	a.log(u.AccountID, fnDev, op, "t_development_check", i64(checkID), s(req.ChildID), nil, s(after))
+	// 確定済みのひとことを変えたときは、直す前と直したあとのひとことを操作ログに残す（詳細設計書「成長の記録に届くもの」(3-7) の
+	// 「直す前の値は操作ログの before_value」、決めたこと D-51）。空は null
+	if messageChanged {
+		val := func(m string) any {
+			if m == "" {
+				return nil
+			}
+			return m
+		}
+		b, af := changedFields([]field{{"保護者へのひとこと", val(oldMessage)}}, []field{{"保護者へのひとこと", val(newMessage)}})
+		a.log(u.AccountID, fnDev, opUpdate, "t_development_check", i64(checkID), s(req.ChildID), s(b), s(af))
+	}
 
 	if req.Status == "2" {
 		a.advanceDevelopmentSchedule(u, checkID, req.ChildID, req.CheckedOn)
 	}
 	// 発達チェック一覧（未入力の数・最後の実施日）とダッシュボードの「未実施」が変わりうる。
 	// 下書きでも未入力の数が変わる（events.go）
-	a.notifyDevelopment(req.ChildID)
+	a.notifyDevelopment(req.ChildID, req.Status == "2")
 
 	row := a.db.QueryRow(`SELECT `+checkColumns+` FROM t_development_check WHERE development_check_id = ?`, checkID)
 	c, _ := a.scanCheck(row)

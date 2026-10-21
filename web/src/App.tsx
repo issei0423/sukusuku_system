@@ -21,6 +21,7 @@ import TermsAgreeScreen from './screens/auth/TermsAgreeScreen';
 import StaffDashboard from './screens/auth/StaffDashboard';
 import GuardianHome from './screens/auth/GuardianHome';
 import GuardianContactScreen from './screens/contact/GuardianContactScreen';
+import GuardianGrowthScreen from './screens/growth/GuardianGrowthScreen';
 import ContactClassScreen from './screens/contact/ContactClassScreen';
 import ContactChildScreen from './screens/contact/ContactChildScreen';
 
@@ -31,7 +32,6 @@ import DiaryConfirmScreen from './screens/diary/DiaryConfirmScreen';
 import ApprovalListScreen from './screens/diary/ApprovalListScreen';
 import DiaryApproveScreen from './screens/diary/DiaryApproveScreen';
 import ChildTimelineScreen from './screens/diary/ChildTimelineScreen';
-import GuardianDiaryScreen from './screens/diary/GuardianDiaryScreen';
 
 // チャットツール
 import StaffChatScreen from './screens/chat/StaffChatScreen';
@@ -73,6 +73,7 @@ const pageNames: Record<string, string> = {
   '/staff/diary': '日誌', '/staff/diary/new': '日誌の作成', '/staff/diary/confirm': '日誌の確認',
   '/staff/chat': 'チャット', '/staff/chat/groups': 'グループ編成', '/staff/handouts': '配布物',
   '/staff/nap': '午睡チェック', '/staff/nap/abnormal': '異常時の記録', '/staff/nap/search': '午睡記録の検索',
+  '/staff/contact': '連絡帳（クラス）',
   '/staff/growth': '発達チェック', '/staff/growth/physical': '身体記録',
   '/staff/growth/schedule': 'スケジュール設定', '/staff/growth/share': '共有範囲の設定',
   '/staff/children': '園児', '/staff/children/allergies': 'アレルギー一覧',
@@ -93,7 +94,10 @@ function PageNavigation() {
     : pathname.startsWith('/staff/diary/') ? '日誌の編集'
     : pathname.startsWith('/staff/growth/dev/') ? '発達チェックの入力'
     : pathname.startsWith('/staff/children/') ? '園児情報の編集'
-    : pathname.startsWith('/guardian/diary/') ? '共有された日誌' : 'すくすく');
+    // 連絡帳の画面の名前は 図/画面詳細図「連絡帳（クラス）画面」(8-1)・「連絡帳（園児）画面」(8-2)・「連絡帳画面（保護者・スマートフォン）」(8-3)（#214）
+    : pathname.startsWith('/staff/contact/') ? '連絡帳（園児）'
+    : pathname.startsWith('/guardian/contact/') ? '連絡帳'
+    : pathname.startsWith('/guardian/growth/') ? '成長の記録' : 'すくすく');
   useEffect(() => {
     document.title = `${name} — すくすく`;
     if (initial.current) { initial.current = false; return; }
@@ -293,9 +297,9 @@ export default function App() {
       <Route path="/guardian" element={<RequireGuardian />}>
         <Route index element={<GuardianHome />} />
         <Route path="contact/:childId" element={<GuardianContactScreen />} />
+        <Route path="growth/:childId" element={<GuardianGrowthScreen />} />
         <Route path="chat" element={<GuardianChatScreen />} />
         <Route path="handouts" element={<GuardianHandoutsScreen />} />
-        <Route path="diary/:id" element={<GuardianDiaryScreen />} />
         <Route path="password" element={<PasswordChangeScreen />} />
         <Route path="terms" element={<TermsAgreeScreen readOnly />} />
       </Route>

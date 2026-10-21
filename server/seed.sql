@@ -173,8 +173,8 @@ INSERT INTO m_terms (terms_id, terms_version, document_type, body, published_on,
 ※本文は演習用の草案です。','2026-09-01',1);
 
 -- ============ 日誌の雛形 ============
--- 保護者共有の既定値を雛形側に持ち、コードに書かない（基本設計書 5-4）
-INSERT INTO m_diary_template (diary_template_id, record_type, template_name, body, default_share_to_guardian) VALUES
+-- 日誌は保護者へ届かないため、個人日誌の雛形に保護者あての見出しを置かない（詳細設計書「デモデータ」(5-5)）
+INSERT INTO m_diary_template (diary_template_id, record_type, template_name, body, is_deleted) VALUES
  (1,'1','個人日誌（標準）','【今日の様子】
 
 【食事】
@@ -183,8 +183,8 @@ INSERT INTO m_diary_template (diary_template_id, record_type, template_name, bod
 
 【午睡】
 
-【保護者へのお伝え】
-',1),
+【気づいたこと】
+',0),
  (2,'2','クラス日誌（標準）','【ねらい】
 
 【活動内容】
@@ -213,7 +213,7 @@ INSERT INTO m_diary_template (diary_template_id, record_type, template_name, bod
 ',0);
 
 -- ============ 日誌 ============
-INSERT INTO t_diary (diary_id, record_type, child_id, class_id, diary_date, body, status, created_staff_id, approved_staff_id, approved_at, is_shared_to_guardian, shared_at, nap_abnormal_id, returned_reason, is_deleted, created_at, updated_at) VALUES
+INSERT INTO t_diary (diary_id, record_type, child_id, class_id, diary_date, body, status, created_staff_id, applied_staff_id, applied_at, approved_staff_id, approved_at, occurred_at, place, nap_abnormal_id, returned_reason, is_deleted, created_at, updated_at) VALUES
  (1,'1','C001',1,'2026-09-01','【今日の様子】
 積み木を高く積んで遊んでいました。崩れても笑って積み直していました。
 
@@ -221,29 +221,29 @@ INSERT INTO t_diary (diary_id, record_type, child_id, class_id, diary_date, body
 完食。
 
 【午睡】
-13:05に入眠。','1','S003',NULL,NULL,0,NULL,NULL,NULL,0,'2026-09-01T16:40:00','2026-09-01T16:40:00'),
+13:05に入眠。','1','S003',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,'2026-09-01T16:40:00','2026-09-01T16:40:00'),
  (2,'2',NULL,1,'2026-08-31','【ねらい】
 身近な友だちと関わる楽しさを味わう。
 
 【活動内容】
-園庭でしゃぼん玉遊び。','2','S003',NULL,NULL,0,NULL,NULL,NULL,0,'2026-08-31T17:20:00','2026-08-31T17:20:00'),
+園庭でしゃぼん玉遊び。','2','S003','S003','2026-08-31T17:20:00',NULL,NULL,NULL,NULL,NULL,NULL,0,'2026-08-31T17:20:00','2026-08-31T17:20:00'),
  (4,'1','C002',1,'2026-08-29','【今日の様子】
 絵本の読み聞かせに集中していました。
 
 【食事】
-野菜を残しましたが、声をかけると一口食べました。','3','S003','S001','2026-08-29T18:05:00',1,'2026-08-29T18:05:00',NULL,NULL,0,'2026-08-29T17:10:00','2026-08-29T18:05:00'),
+野菜を残しましたが、声をかけると一口食べました。','3','S003','S003','2026-08-29T17:10:00','S001','2026-08-29T18:05:00',NULL,NULL,NULL,NULL,0,'2026-08-29T17:10:00','2026-08-29T18:05:00'),
  (5,'1','C001',1,'2026-08-29','【今日の様子】
 砂場でスコップを使い、型抜きを繰り返していました。
 
 【午睡】
-12:55に入眠。','3','S003','S001','2026-08-29T18:06:00',1,'2026-08-29T18:06:00',NULL,NULL,0,'2026-08-29T17:15:00','2026-08-29T18:06:00'),
+12:55に入眠。','3','S003','S003','2026-08-29T17:15:00','S001','2026-08-29T18:06:00',NULL,NULL,NULL,NULL,0,'2026-08-29T17:15:00','2026-08-29T18:06:00'),
  (6,'2',NULL,2,'2026-09-01','【ねらい】
 身の回りのことを自分でやってみようとする。
 
 【活動内容】
-散歩（近隣公園）。','2','S005',NULL,NULL,0,NULL,NULL,NULL,0,'2026-09-01T17:00:00','2026-09-01T17:00:00'),
+散歩（近隣公園）。','2','S005','S005','2026-09-01T17:00:00',NULL,NULL,NULL,NULL,NULL,NULL,0,'2026-09-01T17:00:00','2026-09-01T17:00:00'),
  (7,'1','C004',1,'2026-09-01','【今日の様子】
-手洗いを自分でしようとする姿がありました。','2','S004',NULL,NULL,0,NULL,NULL,NULL,0,'2026-09-01T17:20:00','2026-09-01T17:20:00');
+手洗いを自分でしようとする姿がありました。','2','S004','S004','2026-09-01T17:20:00',NULL,NULL,NULL,NULL,NULL,NULL,0,'2026-09-01T17:20:00','2026-09-01T17:20:00');
 
 INSERT INTO t_diary_attachment (diary_attachment_id, diary_id, file_path, file_type) VALUES
  (1,4,'demo/photo-1','image/jpeg'),
@@ -273,15 +273,18 @@ INSERT INTO t_nap_abnormal (nap_abnormal_id, nap_session_id, child_id, found_at,
  (2,2,'C005','2026-08-31T14:10:00','顔色がやや紅潮していた。体温37.4度。','別室で休ませ、保護者へ連絡した。','S003',NULL);
 
 -- ヒヤリハット（異常時の記録から起票済み。相互に参照する）
-INSERT INTO t_diary (diary_id, record_type, child_id, class_id, diary_date, body, status, created_staff_id, approved_staff_id, approved_at, is_shared_to_guardian, shared_at, nap_abnormal_id, returned_reason, is_deleted, created_at, updated_at) VALUES
- (3,'4','C003',1,'2026-08-30','【発生日時】
-午睡中の13時40分ごろ
-
-【状況】
+-- 発生日時・場所・保護者へ伝えたことは列に、状況・とった対応・今後の対策は本文に見出しを付けて持つ
+-- （詳細設計書「日誌の画面（作り直し）」(2-13 (8))・「日誌」(4-13 (1))、決めたこと D-33）。
+-- 発生日時は異常時の記録（nap_abnormal_id 1）の発見時刻。場所・伝えた日時・相手はデモの値。web/src/api/mockDb.ts の diary_id 3 とそろえる
+INSERT INTO t_diary (diary_id, record_type, child_id, class_id, diary_date, body, status, created_staff_id, applied_staff_id, applied_at, approved_staff_id, approved_at, occurred_at, place, guardian_notice, guardian_noticed_at, guardian_notice_method, guardian_notice_person, nap_abnormal_id, returned_reason, is_deleted, created_at, updated_at) VALUES
+ (3,'4','C003',1,'2026-08-30','【状況】
 午睡中にうつ伏せの体位を確認した。
 
 【とった対応】
-仰向けに直し、呼吸と顔色を確認した。','4','S004','S001',NULL,0,NULL,1,'発生時の呼吸・顔色の記録が本文にありません。異常時の記録と同じ内容を転記してください。',0,'2026-08-30T18:00:00','2026-08-31T09:10:00');
+仰向けに直し、呼吸と顔色を確認した。
+
+【今後の対策】
+午睡の確認のたびに、呼吸とあわせて体位も見る。うつ伏せを見つけて仰向けに直したときは、直したあとの向きも記録する。','4','S004',NULL,NULL,NULL,NULL,'2026-08-30T13:40:00','保育室（さくら組）','1','2026-08-30T17:10:00','2','父（お迎え）',1,'発生時の呼吸・顔色の記録が本文にありません。異常時の記録と同じ内容を転記してください。',0,'2026-08-30T18:00:00','2026-08-31T09:10:00');
 -- ヒヤリハットと異常時の記録は相互に参照する。循環参照になるため、日誌の登録後に紐づける
 UPDATE t_nap_abnormal SET diary_id = 3 WHERE nap_abnormal_id = 1;
 
@@ -316,14 +319,30 @@ INSERT INTO t_chat_member (chat_room_id, account_id, joined_at, left_at) VALUES
  (8,1,'2025-07-01T10:00:00',NULL),(8,2,'2025-07-01T10:00:00',NULL),(8,3,'2025-07-01T10:00:00',NULL),(8,4,'2025-07-01T10:00:00',NULL),(8,9,'2025-07-01T10:00:00',NULL),
  (9,1,'2025-07-05T10:00:00',NULL),(9,2,'2025-07-05T10:00:00',NULL),(9,3,'2025-07-05T10:00:00',NULL),(9,4,'2025-07-05T10:00:00',NULL),(9,10,'2025-07-05T10:00:00',NULL);
 
+-- 詳細設計書「デモデータ」(5-5)：保護者未登録の在籍園児にも個人チャットを用意する。
+INSERT INTO m_chat_room (room_type, class_id, room_name, is_archived, thread_status, child_id)
+SELECT '4', cc.class_id, c.child_name || 'の保護者', 0, '2', c.child_id
+FROM m_child c JOIN t_class_child cc ON cc.child_id = c.child_id
+JOIN m_class cl ON cl.class_id = cc.class_id AND cl.fiscal_year = 2026
+WHERE c.enrollment_status = '1' AND c.is_deleted = 0
+  AND NOT EXISTS (SELECT 1 FROM m_chat_room r WHERE r.room_type = '4' AND r.child_id = c.child_id)
+ORDER BY c.child_id;
+INSERT INTO t_chat_member (chat_room_id, account_id, joined_at, left_at)
+SELECT r.chat_room_id, a.account_id, '2026-09-01T09:00:00', NULL
+FROM m_chat_room r CROSS JOIN m_account a
+WHERE r.room_type = '4' AND r.chat_room_id >= 10 AND a.status = '1'
+  AND (a.role = '1' OR (a.role = '2' AND EXISTS (
+    SELECT 1 FROM m_staff s JOIN t_class_staff cs ON cs.staff_id = s.staff_id
+    WHERE s.account_id = a.account_id AND cs.class_id = r.class_id)));
+
 INSERT INTO t_chat_message (chat_message_id, chat_room_id, sender_account_id, body, source_type, source_id, sent_at, edited_at, is_deleted, deleted_at, deleted_account_id) VALUES
  (1,1,1,'9月の献立表を掲示しました。ご確認ください。','1',NULL,'2026-09-01T08:30:00',NULL,0,NULL,NULL),
  (2,3,4,'明日の遠足の集合時間ですが、9時でよろしいでしょうか。','1',NULL,'2026-09-01T15:02:00',NULL,0,NULL,NULL),
  (3,3,3,'9時に園庭でお願いします。','1',NULL,'2026-09-01T15:10:00',NULL,0,NULL,NULL),
- (4,6,3,'本日の日誌を共有しました。','2',5,'2026-08-29T18:06:00',NULL,0,NULL,NULL),
+ (4,6,3,'今日は砂場でスコップを使って、型抜きを何度もしていました。','1',NULL,'2026-08-29T18:06:00',NULL,0,NULL,NULL),
  (5,6,6,'ありがとうございます。確認しました。','1',NULL,'2026-08-29T20:30:00',NULL,0,NULL,NULL),
  (6,6,6,'明日は祖母がお迎えに伺います。よろしくお願いします。','1',NULL,'2026-09-01T07:40:00',NULL,0,NULL,NULL),
- (7,7,3,'本日の日誌を共有しました。','2',4,'2026-08-29T18:05:00',NULL,0,NULL,NULL),
+ (7,7,3,'今日は絵本の読み聞かせを、最後まで座って聞いていました。','1',NULL,'2026-08-29T18:05:00',NULL,0,NULL,NULL),
  (8,2,2,'来週の職員会議は水曜16時からです。','1',NULL,'2026-08-31T11:00:00',NULL,0,NULL,NULL),
  (9,5,1,'種目案を今週中にまとめましょう。','1',NULL,'2026-08-28T13:00:00',NULL,0,NULL,NULL),
  -- 取消済み。誤送信への対応の記録と対にする
@@ -379,10 +398,14 @@ INSERT INTO t_development_schedule (development_schedule_id, child_id, scheduled
 -- 1 か月ずれることがある。区分の境目（誕生日のちょうど 1 年後など）に置くと隣の区分へ移り、一覧に「未入力」が出るため、
 -- 境目から離して置く。野原 太郎は 0歳11か月（9か月頃〜12か月頃）、上園 花子・宮城 美咲は 1歳1か月（1歳頃〜1歳3か月頃）
 -- （GitHub Issue #143・#164。もとの 2026-06-01 は 1歳0か月ちょうどで、結果の区分と合っていなかった）
-INSERT INTO t_development_check (development_check_id, child_id, development_schedule_id, checked_on, status, staff_id, share_status, note) VALUES
- (1,'C001',NULL,'2026-05-15','2','S003','2',NULL),
- (2,'C002',NULL,'2026-05-10','2','S003','2',NULL),
- (3,'C004',NULL,'2026-06-05','2','S004','1','食事の場面で意欲が見られる');
+-- 成長の記録（詳細設計書「デモデータ」(5-5) の成長の記録の行）：野原 太郎の確定に、確定した日時と保護者へのひとこと
+-- （評価の言葉を入れない）。ほかの確定は「いまのデータの移し方」と同じく実施日の 00:00 を確定した日時とした
+-- 【仮置き】野原 太郎のひとことは、確定した日のうちに担任が書き換えたものとして「訂正しました（日付）」の印を置く
+-- （決めたこと D-51。PR #216 で決まった設計。web/仮置き値.md。web/src/api/mockDb.ts と同じ）
+INSERT INTO t_development_check (development_check_id, child_id, development_schedule_id, checked_on, status, staff_id, share_status, note, guardian_message, finalized_at, guardian_message_corrected_at) VALUES
+ (1,'C001',NULL,'2026-05-15','2','S003','2',NULL,'ボールを転がすと、追いかけて両手でつかもうとしていました。','2026-05-15T16:00:00','2026-05-15T17:30:00'),
+ (2,'C002',NULL,'2026-05-10','2','S003','2',NULL,NULL,'2026-05-10T00:00:00',NULL),
+ (3,'C004',NULL,'2026-06-05','2','S004','1','食事の場面で意欲が見られる',NULL,'2026-06-05T00:00:00',NULL);
 
 -- 「未入力」はレコードが存在しない状態で表す。「未確認」は result='3' として保持する
 INSERT INTO t_development_result (development_result_id, development_check_id, development_item_id, result, note) VALUES
@@ -408,7 +431,7 @@ INSERT INTO t_operation_log (operation_log_id, account_id, operated_at, function
  (1,3,'2026-09-01T16:40:00','1','1','t_diary',1,'C001',NULL,'下書き作成'),
  (2,3,'2026-09-01T13:20:30','3','1','t_nap_record',1,'C001',NULL,'体位=仰向け 呼吸=あり 顔色=通常 体温=36.6'),
  (3,1,'2026-08-31T09:10:00','1','3','t_diary',3,'C003','申請中','差し戻し'),
- (4,1,'2026-08-29T18:05:00','1','3','t_diary',4,'C002','申請中','承認済み・保護者へ共有'),
+ (4,1,'2026-08-29T18:05:00','1','3','t_diary',4,'C002','申請中','承認済み'),
  (5,3,'2026-09-01T10:00:00','5','1','t_physical_record',7,'C001',NULL,'身長=78.5 体重=9.8'),
  (6,1,'2026-08-25T10:00:00','7','1','t_invitation_code',1,'C001',NULL,'招待コードを発行'),
  (7,1,'2026-08-20T10:00:00','7','2','m_account',8,NULL,'有効','停止'),
@@ -494,6 +517,9 @@ INSERT INTO t_contact_event (contact_event_id, child_id, class_id, contact_date,
  (12,'C001',1,'2026-08-31','1','2026-08-31T11:40:00','1','1',NULL,NULL,NULL,'S003','2026-08-31T11:40:00','2026-08-31T11:40:00'),
  (13,'C001',1,'2026-08-31','1','2026-08-31T15:10:00','2','2',NULL,NULL,NULL,'S003','2026-08-31T15:10:00','2026-08-31T15:10:00');
 
+-- 今日の野原 太郎の 10:15 のひとことは「成長の記録に残す」を付けてある（詳細設計書「デモデータ」(5-5) の成長の記録の行）
+UPDATE t_contact_event SET keep_in_growth = 1 WHERE contact_event_id = 2;
+
 INSERT INTO t_contact_class (contact_class_id, class_id, contact_date, body, staff_id, recorded_at, created_at, updated_at) VALUES
  (1,1,'2026-09-01','園庭で砂場あそびと、しゃぼん玉をしました。','S003','2026-09-01T10:30:00','2026-09-01T10:30:00','2026-09-01T10:30:00');
 
@@ -514,12 +540,16 @@ INSERT INTO t_nap_sleep (nap_sleep_id, nap_session_id, child_id, slept_at, woke_
  (7,1,'C010','2026-09-01T13:07:00',NULL,'S004',NULL,'2026-09-01T13:07:00','2026-09-01T13:07:00'),
  (8,2,'C001','2026-08-31T13:02:00','2026-08-31T14:35:00','S003','S003','2026-08-31T13:02:00','2026-08-31T14:35:00');
 
+-- 入眠時の体温（監査の層。保護者へは返さない）。昨日の C001 の「ねた」に入れ、午睡記録検索と CSV のねたの行に出す
+-- （画面詳細図「午睡記録検索画面」(5-3) の項目6・9。web/src/api/mockDb.ts の napSleeps と同じ）
+UPDATE t_nap_sleep SET sleep_temperature = 36.5 WHERE nap_sleep_id = 8;
+
 -- きょうは対象外。今日の実施 1 で C003 は欠席
 INSERT INTO t_nap_exclusion (nap_exclusion_id, nap_session_id, child_id, reason, staff_id, created_at) VALUES
  (1,1,'C003','1','S003','2026-09-01T13:01:00');
 
 -- ============ 園からのひとことと他児の名前（詳細設計書「デモデータ」(5-5 (2))） ============
--- 呼び名。他児の名前の注意を見せるため（web/src/api/mockDb.ts の childNicknames と同じ）
+-- 呼び名。他児の名前の注意を見せるため。園児情報入力の呼び名の欄にも出る（web/src/api/mockDb.ts の demoNicknames と同じ）
 UPDATE m_child SET nickname = 'たっくん' WHERE child_id = 'C001';
 UPDATE m_child SET nickname = 'あおちゃん' WHERE child_id = 'C006';
 UPDATE m_child SET nickname = 'ゆいちゃん' WHERE child_id = 'C008';

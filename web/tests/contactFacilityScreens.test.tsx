@@ -138,13 +138,45 @@ describe('職員ダッシュボードと連絡帳（クラス）画面の「園�
     expect(within(row).getByRole('link', { name: '開く' }).getAttribute('href')).toBe('/staff/contact?sort=facility');
     cleanup();
     open('/staff/contact?sort=facility', teacher);
-    const links = await screen.findAllByRole('link', { name: /の園から$/ }, { timeout: 3000 });
+    // 読み上げの名前は「（氏名）の園から 送った 17:05」「（氏名）の園からを書く」のように、見えている文字を入れている（WCAG 2.5.3）。
+    // 送っていない子は文字のボタン「書く」（2026-10-19 に決めた。GitHub Issue #215）
+    const links = await screen.findAllByRole('link', { name: /の園から(を書く$| 送った| 欠席)/ }, { timeout: 3000 });
     const texts = links.map((l) => l.textContent ?? '');
-    const firstSent = texts.findIndex((t) => !t.includes('未送信'));
-    expect(texts.slice(firstSent).some((t) => t.includes('未送信'))).toBe(false);
+    const firstSent = texts.findIndex((t) => t !== '書く');
+    expect(firstSent).toBeGreaterThan(0);
+    expect(texts.slice(firstSent).includes('書く')).toBe(false);
     // 今日の午睡で欠席にした子（デモの高梨 健）は「欠席」
     if (db.napExclusions.some((x) => x.child_id === 'C003' && x.reason === '1' && !x.is_deleted)) {
-      expect(screen.getByRole('link', { name: '高梨 健の園から' }).textContent).toMatch(/欠席|送った/);
+      expect(screen.getByRole('link', { name: /^高梨 健の園から / }).textContent).toMatch(/欠席|送った/);
     }
+  });
+
+  /*
+   * ひとこと・写真が無いセル（直す前は「―」）と、園からを送っていないセル（直す前は「未送信」）は、文字のボタン「書く」にする。
+   * セルいっぱいに広げ、高さ 44px（広さは tests/responsive/a11y-keyboard-contact.spec.ts で測る）。押すと連絡帳（園児）画面で書く。
+   * 同じ「書く」が表に並ぶので、読み上げの名前に園児名と列を入れる（WCAG 2.4.6・2.5.3。2026-10-19 に決めた。GitHub Issue #215）
+   */
+  it('連絡帳（クラス）画面：ひとこと・写真が無い・園からを送っていないセルは「書く」を出し、読み上げの名前に園児名を入れる', async () => {
+    for (const e of db.contactEvents) if (e.child_id === 'C002' && e.contact_date === today() && (e.event_type === '4' || e.event_type === '5')) e.is_deleted = true;
+    for (const f of db.contactFacilities) if (f.child_id === 'C002' && f.contact_date === today()) f.is_deleted = true;
+    open('/staff/contact', teacher);
+    const comment = await screen.findByRole('link', { name: '上園 花子のひとことを書く' }, { timeout: 3000 });
+    expect(comment.textContent).toBe('書く');
+    expect(comment.getAttribute('href')).toBe('/staff/contact/C002');
+    expect(comment.classList.contains('btn')).toBe(true);
+    const facility = screen.getByRole('link', { name: '上園 花子の園からを書く' });
+    expect(facility.textContent).toBe('書く');
+    expect(facility.getAttribute('href')).toBe('/staff/contact/C002#facility');
+    expect(facility.classList.contains('btn')).toBe(true);
+    // 表の中に「―」「未送信」のリンクは残らない。「書く」はどれも、名前が園児名と列で分かれる
+    const table = document.querySelector('.contact-class-table') as HTMLElement;
+    const links = within(table).getAllByRole('link');
+    expect(links.filter((l) => l.textContent === '―' || l.textContent === '未送信')).toEqual([]);
+    const writes = links.filter((l) => l.textContent === '書く');
+    const names = writes.map((l) => l.getAttribute('aria-label'));
+    expect(names.every((n) => /^.+の(ひとこと|園から)を書く$/.test(n ?? ''))).toBe(true);
+    expect(new Set(names).size).toBe(names.length);
+    fireEvent.click(facility);
+    await screen.findByRole('heading', { name: '上園 花子' }, { timeout: 3000 });
   });
 });

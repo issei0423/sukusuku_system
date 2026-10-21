@@ -42,6 +42,10 @@ export const scenarios: Scenario[] = [
   { id: 'nap-save', name: '午睡チェック・保存後', path: '/staff/nap', role: 'teacher', action: 'nap-save' },
   { id: 'nap-abnormal', name: '異常時の記録', path: '/staff/nap/abnormal', role: 'teacher' },
   { id: 'nap-search', name: '午睡記録検索', path: '/staff/nap/search', role: 'teacher' },
+  // 連絡帳のデモの道の画面（詳細設計書「実装の順番（デモの道）」(1-6)）。キーボードだけで通す検査は a11y-keyboard-contact.spec.ts
+  { id: 'contact-class', name: '連絡帳（クラス）', path: '/staff/contact', role: 'teacher' },
+  { id: 'contact-child', name: '連絡帳（園児）', path: '/staff/contact/C001', role: 'teacher' },
+  { id: 'guardian-contact', name: '保護者の連絡帳', path: '/guardian/contact/C001', role: 'guardian' },
   { id: 'development', name: '発達チェック一覧', path: '/staff/growth', role: 'teacher' },
   { id: 'development-input', name: '発達チェック入力', path: '/staff/growth/dev/C001', role: 'teacher' },
   { id: 'development-schedule', name: 'スケジュール設定', path: '/staff/growth/schedule', role: 'admin' },
@@ -68,6 +72,5 @@ export const scenarios: Scenario[] = [
   { id: 'guardian-menu', name: '保護者メニュー', path: '/guardian', role: 'guardian', action: 'guardian-menu' },
   { id: 'guardian-chat', name: '保護者チャット一覧', path: '/guardian/chat', role: 'guardian' },
   { id: 'guardian-handouts', name: '保護者配布物', path: '/guardian/handouts', role: 'guardian' },
-  { id: 'guardian-diary', name: '共有された日誌', path: '/guardian/diary/5', role: 'guardian' },
   { id: 'guardian-password', name: '保護者パスワード変更', path: '/guardian/password', role: 'guardian' },
 ];

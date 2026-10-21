@@ -203,7 +203,7 @@ export default function PhotoSendDialog({ classId, date, initialSubjects = [], o
             {/* 成長の記録に残す（詳細設計書「職員の画面から成長の記録へ届けるもの」(2-12 (1))、画面詳細図「連絡帳（園児）画面」(8-2) の項目8） */}
             <label className="photo-send-keep">
               <input type="checkbox" checked={keepInGrowth} disabled={busy} onChange={(e) => setKeepInGrowth(e.target.checked)} />
-              成長の記録に残す
+              {TEXT.keepInGrowth}
             </label>
             {recipientRows.length > 0 && (
               <div className="photo-send-badges">

@@ -50,11 +50,12 @@ export default function ChildTimelineScreen() {
     detail: `身長 ${p.height_cm} cm ／ 体重 ${p.weight_kg} kg`,
   }));
 
-  naps.data?.rows.filter((r) => r.child_id === childId).forEach((r) => entries.push({
+  // 午睡記録検索は、ねた・おきたの行も返す（画面詳細図「午睡記録検索画面」(5-3) の項目6）。ここは5分ごとの確認だけを並べる
+  naps.data?.rows.filter((r) => r.child_id === childId && r.kind === 'check' && r.body_position).forEach((r) => entries.push({
     kind: 'other',
     date: r.session_date,
     label: '午睡チェック',
-    detail: `${formatHM(r.checked_at)} ${BODY_POSITION[r.body_position]}${r.temperature ? ` ／ ${r.temperature}℃` : ''}`,
+    detail: `${formatHM(r.checked_at)} ${BODY_POSITION[r.body_position!]}${r.temperature ? ` ／ ${r.temperature}℃` : ''}`,
   }));
 
   entries.sort((a, b) => b.date.localeCompare(a.date));

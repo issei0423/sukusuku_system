@@ -322,6 +322,53 @@ func TestAddChildRestoresEndedLink(t *testing.T) {
 	}
 }
 
+// 【仮置き】参加し直しても、最初に参加した日時（first_joined_at）は書き換える前の joined_at のまま残す。
+// 個人チャットの「保護者がまだ1人もいなかった間の投稿は見せる」境（#198）が、D-48 の参加し直しで今へ動かないように。
+// あとから2人目の保護者が加わっても、同じ境で見せる・見せないを分ける（web/仮置き値.md）
+func TestAddChildRejoinKeepsFirstGuardianJoin(t *testing.T) {
+	a, h := newTestApp(t)
+	guardian := loginAs(a, accGuardian, "guardian")
+	var firstJoined string
+	if err := a.db.QueryRow(`SELECT joined_at FROM t_chat_member WHERE chat_room_id = 6 AND account_id = 6`).Scan(&firstJoined); err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, a, `UPDATE t_guardian_child SET link_status = '2', ended_at = '2026-08-20T10:00:00' WHERE guardian_id = 'G001' AND child_id = 'C001'`)
+	mustExec(t, a, `UPDATE t_chat_member SET left_at = '2026-08-20T10:00:00' WHERE account_id = 6 AND chat_room_id IN (3, 6)`)
+	// 保護者がまだ1人も参加していなかった間の連絡（最初の参加より前）と、外れていたあいだの連絡
+	mustExec(t, a, `INSERT INTO t_chat_message (chat_room_id, sender_account_id, body, source_type, sent_at, is_deleted)
+		VALUES (6, 3, '保護者がいなかった間の連絡', '1', '2025-01-01T10:00:00', 0),
+		       (6, 3, '外れていたあいだの連絡', '1', '2026-09-15T10:00:00', 0)`)
+
+	call(t, h, guardian, "POST", "/api/guardian/children", addChildBody(codeTaro, "母"))
+	var first, joined string
+	if err := a.db.QueryRow(`SELECT IFNULL(first_joined_at, ''), joined_at FROM t_chat_member WHERE chat_room_id = 6 AND account_id = 6`).Scan(&first, &joined); err != nil {
+		t.Fatal(err)
+	}
+	// DO UPDATE の中で読む joined_at は書き換える前の値（項の並びに頼らない）
+	if first != firstJoined || joined == firstJoined {
+		t.Fatalf("参加し直した行：first_joined_at=%q joined_at=%q（前の joined_at=%q）", first, joined, firstJoined)
+	}
+
+	seen := func(c *http.Cookie) (before, gap bool) {
+		for _, m := range chatMessagesOf(t, h, c, "6") {
+			before = before || m.Body == "保護者がいなかった間の連絡"
+			gap = gap || m.Body == "外れていたあいだの連絡"
+		}
+		return
+	}
+	if before, gap := seen(guardian); !before || gap {
+		t.Fatalf("参加し直した保護者：保護者がいなかった間=%v 外れていたあいだ=%v（見える・見えない、のはず）", before, gap)
+	}
+
+	// 2人目の保護者が今の時刻で加わる。境は最初の保護者の first_joined_at のまま
+	mustExec(t, a, `INSERT INTO t_chat_member (chat_room_id, account_id, joined_at, left_at) VALUES (6, 7, ?, NULL)`, now())
+	mustExec(t, a, `UPDATE m_account SET terms_version = ?, terms_agreed_at = ? WHERE account_id = 7`, a.currentTermsVersion, now())
+	second := loginAs(a, 7, "guardian")
+	if before, gap := seen(second); !before || gap {
+		t.Fatalf("2人目の保護者：保護者がいなかった間=%v 外れていたあいだ=%v（見える・見えない、のはず）", before, gap)
+	}
+}
+
 // 途中で失敗したら全部を戻す（紐づけ・コードの使用済み・参加のどれも残さない）
 func TestAddChildRollsBack(t *testing.T) {
 	a, h := newTestApp(t)

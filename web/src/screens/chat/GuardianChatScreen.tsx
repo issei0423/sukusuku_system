@@ -24,6 +24,8 @@ import type { MenuAt } from '../../secondaryAction';
 import { formatHM, formatMD } from '../../api/util';
 import type { ChatMessage } from '../../api/types';
 import { useUnsavedInput } from '../../unsavedInput';
+import IncomingLog from './IncomingLog';
+import { useIncomingMessages } from './useIncomingMessages';
 
 export default function GuardianChatScreen() {
   const { user } = useSession();
@@ -83,6 +85,8 @@ export default function GuardianChatScreen() {
 
   const messages = useAsync(async () => (roomId ? api.messages(user!, roomId) : []), [roomId],
     { refreshMs: AUTO_REFRESH_MS, live: onRoom(roomId) });
+  // 園から届いた新しいメッセージだけを読み上げへ伝える（詳細設計書 (2-0) の (6) の①、GitHub Issue #209）
+  const incoming = useIncomingMessages(messages.data, messages.loading, roomId, user!.account_id);
 
   // 開いたチャンネルは既読にする。開いている間に届いたメッセージも、届いたときに既読にする
   const shownRoom = messages.data?.[0]?.chat_room_id ?? null;
@@ -302,15 +306,11 @@ export default function GuardianChatScreen() {
                   m.body
                 )}
                 {/*
-                  記録の共有は本文ではなくリンクとして出す。編集できるのは添え書きの本文だけで、
-                  リンク先の記録は変わらないため、編集中もリンクは出したままにする（基本設計書 4-6）
+                  配布物の掲載の知らせ（source_type=4）。現物は配布物の一覧から開く。編集できるのは添え書きの本文だけで、
+                  リンク先は変わらないため、編集中もリンクは出したままにする（基本設計書 4-6）。
+                  日誌の共有の知らせ（source_type=2）のカードは出さない。日誌は園内の記録で、保護者は開けない
+                  （詳細設計書「日誌の画面（作り直し）」(2-13 (1))。以前の知らせは取り消し済みにしてある）
                 */}
-                {m.source_type === '2' && m.source_id && (
-                  <Link className="shared-card" to={`/guardian/diary/${m.source_id}`}>
-                    {formatMD(m.sent_at.slice(0, 10))} の記録を開く
-                  </Link>
-                )}
-                {/* 配布物の掲載の知らせ（source_type=4）。現物は配布物の一覧から開く */}
                 {m.source_type === '4' && (
                   <Link className="shared-card" to="/guardian/handouts">園からの配布物を開く</Link>
                 )}
@@ -354,6 +354,7 @@ export default function GuardianChatScreen() {
           );
         })}
       </div>
+      <IncomingLog entries={incoming} />
 
       <div className="guardian-message-compose">
         <div className="sr-only" role="status">{status}</div>

@@ -10,10 +10,11 @@
  * 押したらサーバの応答を待つ（楽観的更新をしない）。送れなかったら入力を残し、近くに何が違うかを出す。
  * 書きかけは保存しない。書きかけのままログアウトしようとしたら、消えることを確かめる。
  */
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import type { ContactRecipient, NameMatch, Phrase } from '../../api/shapes';
 import { useReachable } from '../../api/reachability';
 import { useUnsavedInput } from '../../unsavedInput';
+import { focusAfter, focusedNow } from '../../focusAfter';
 import { TEXT } from '../../messages';
 import RecipientBadge from '../../components/RecipientBadge';
 import NameCheckDialog from '../../components/NameCheckDialog';
@@ -23,7 +24,7 @@ import type { AiField } from '../../api/shapes';
 
 type SendError = Error & { kind?: string; names?: string[]; matches?: NameMatch[] };
 
-export default function Composer({ label, max, scope, recipient, className, initial = '', submitLabel, onSend, onCancel, ai }: {
+export default function Composer({ label, max, scope, recipient, className, initial = '', submitLabel, onSend, onCancel, ai, focusAfterSend }: {
   label: string;
   max: number;
   scope: Phrase['phrase_scope'];
@@ -36,6 +37,11 @@ export default function Composer({ label, max, scope, recipient, className, init
   onCancel?: () => void;
   /** AI の下書きを出す欄（今日のページだけ）。allowDraft は「AI で下書き」（園からのひとこと）を出すか */
   ai?: { childId: string; date: string; field: AiField; allowDraft: boolean };
+  /**
+   * 送ったあとのフォーカスの移し先。送ったあとにこの欄ごと消えるとき（園から）に、呼んだ側が決める（送った文の「直す」など）。
+   * 渡さなければ、空になった入力欄へ戻す（活動のひとこと）
+   */
+  focusAfterSend?: () => HTMLElement | null;
 }) {
   const id = useId();
   const [text, setText] = useState(initial);
@@ -43,18 +49,28 @@ export default function Composer({ label, max, scope, recipient, className, init
   const [error, setError] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [check, setCheck] = useState<{ names: string[]; matches: NameMatch[]; text: string } | null>(null);
+  const sendButton = useRef<HTMLButtonElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
   // 送れたら AI の下書きの表示を初めからにする（下書きの注意や候補を、次の文に持ち越さない）
   const [sentCount, setSentCount] = useState(0);
   const reachable = useReachable();
   useUnsavedInput(text.trim() !== '' && text !== initial);
   const left = max - [...text].length;
 
+  /*
+   * 「送る」「このまま送る」は送っている間に押せなくなり、押したボタンからフォーカスが外れる（「このまま送る」は窓ごと消える）。
+   * 応答のあとに決めた場所へ移す（src/focusAfter.ts、WCAG 2.4.3、GitHub Issue #213）：
+   * 送れた → focusAfterSend の場所か、空になった入力欄。送れなかった → 入力が残るので「送る」。
+   * 他児の名前の注意が開くときは、注意の窓がフォーカスを受け取るので動かさない
+   */
   const send = async (acknowledged: string[]) => {
     if (busy) return;
+    const pressed = focusedNow();
     setBusy(true); setError(null);
     try {
       await onSend(text.trim(), acknowledged);
       setText(''); setCheck(null); setFailed(false); setSentCount((n) => n + 1);
+      focusAfter(pressed, focusAfterSend ?? (() => input.current));
     } catch (e) {
       const err = e as SendError;
       if (err.kind === 'other_child_names' && err.names) {
@@ -63,6 +79,7 @@ export default function Composer({ label, max, scope, recipient, className, init
         setCheck(null);
         setError(err.message);
         setFailed(true);
+        focusAfter(pressed, () => sendButton.current);
       }
     } finally {
       setBusy(false);
@@ -74,7 +91,7 @@ export default function Composer({ label, max, scope, recipient, className, init
       <label className="contact-field" htmlFor={id}>
         <span>{label}</span>
       </label>
-      <textarea id={id} value={text} maxLength={max} onChange={(e) => setText(e.target.value)} disabled={busy} />
+      <textarea ref={input} id={id} value={text} maxLength={max} onChange={(e) => setText(e.target.value)} disabled={busy} />
       <div className="contact-composer-tools">
         <PhraseMenu scope={scope} disabled={busy} onPick={(body) => setText((t) => (t ? `${t}${body}` : body).slice(0, max))} />
         <span className="muted contact-count" aria-live="polite">残り {left} 文字</span>
@@ -87,14 +104,19 @@ export default function Composer({ label, max, scope, recipient, className, init
       {recipient && <RecipientBadge recipient={recipient} className={className} />}
       {error && <p className="contact-error" role="alert">{error}</p>}
       <div className="contact-composer-actions">
-        <button type="button" className="btn-primary" onClick={() => send([])} disabled={busy || text.trim() === ''} aria-busy={busy}>
+        <button ref={sendButton} type="button" className="btn-primary" onClick={() => send([])} disabled={busy || text.trim() === ''} aria-busy={busy}>
           {busy ? TEXT.sending : failed && !reachable ? TEXT.resend : submitLabel}
         </button>
         {onCancel && <button type="button" onClick={onCancel} disabled={busy}>やめる</button>}
       </div>
       {check && (
+        /*
+         * 「直す」（Esc も同じ）で閉じたら、開いた元の「送る」へフォーカスを戻す。
+         * 注意の窓は送ったあとの応答で開くため、開いた時点では送っている間に押せなくなった「送る」から
+         * フォーカスが外れており、窓の部品（Modal）が覚える戻り先が無い（GitHub Issue #105 のモーダルのフォーカス、WCAG 2.4.3）
+         */
         <NameCheckDialog names={check.names} matches={check.matches} text={check.text} busy={busy}
-          onFix={() => setCheck(null)} onSend={() => send(check.names)} />
+          onFix={() => { setCheck(null); sendButton.current?.focus(); }} onSend={() => send(check.names)} />
       )}
     </div>
   );

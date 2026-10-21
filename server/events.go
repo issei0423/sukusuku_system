@@ -52,7 +52,7 @@ type liveEvent struct {
 const (
 	// チャンネルの中身が変わった（送信・編集・取消・リアクション・既読・未対応／対応済み・メンバー）
 	evChat = "chat"
-	// 日誌が変わった（作成・保存・申請・承認・差し戻し・保護者への共有、ヒヤリハットの起票）
+	// 日誌が変わった（作成・保存・申請・取り下げ・承認・差し戻し・承認の取り消し、ヒヤリハットの起票）
 	evDiary = "diary"
 	// 配布物が掲載された・取り下げられた
 	evHandout = "handout"
@@ -314,7 +314,7 @@ func (a *app) notifyRoomMembers(roomID int64) {
 }
 
 // notifyMessage は、そのメッセージを見られる人へ送る（編集・取消・リアクション）。
-// handleChatMessages と同じ判定：後から加わった保護者には加わる前の、外れた人には外れたあとのメッセージを見せない
+// handleChatMessages と同じ判定：後から加わった保護者には加わる前の（保護者がまだいなかった間を除く）、外れた人には外れたあとのメッセージを見せない
 func (a *app) notifyMessage(roomID, messageID int64) {
 	a.notify(liveEvent{Type: evChat, RoomID: roomID}, func(u *SessionUser) bool {
 		return a.isMember(u, roomID) && a.messageVisibleTo(u, messageID)
@@ -365,7 +365,7 @@ func (a *app) notifyRead(roomID int64, reader *SessionUser) {
 // ---- 誰に送るか（日誌システム。基本設計書「日誌システム」(4-5)） ----
 
 // notifyDiary は、その日誌を参照できる職員へ送る（handleGetDiary と同じ判定。canSeeDiary）。
-// 保護者へは送らない（詳細設計書「PR #196 からの変更」(6-1)。日誌の共有の道そのものは日誌の作り直しで外す）
+// 日誌は園内の記録で、保護者へは送らない（詳細設計書「PR #196 からの変更」(6-1)・「日誌」(4-13)）
 func (a *app) notifyDiary(diaryID int64) {
 	a.notify(liveEvent{Type: evDiary, DiaryID: diaryID}, func(u *SessionUser) bool {
 		return u.isStaff() && a.canSeeDiary(u, diaryID)
@@ -460,19 +460,31 @@ func (a *app) classChildIDs(classID int64) ([]string, error) {
 
 // notifyDevelopment は、発達チェックの変化を、その園児を参照できる職員へ送る。
 // 発達チェックの API は職員だけが使える（requireStaff）ため、保護者には送らない
-func (a *app) notifyDevelopment(childID string) {
+//
+// 保護者へは確定したとき（finalized）だけ、成長の記録を読める家庭（contactAccess の Read）へ送る。
+// 確定した記録が保護者の成長の記録に届くため（詳細設計書「知らせ」(6-2) の development の行、「成長の記録に届くもの」(3-7)）
+func (a *app) notifyDevelopment(childID string, finalized bool) {
 	a.notify(liveEvent{Type: evDevelopment, ChildID: childID}, func(u *SessionUser) bool {
+		if u.isGuardian() {
+			return finalized && a.contactAccess(u, childID).Read
+		}
 		return u.isStaff() && a.canSeeChild(u, childID)
 	})
 }
 
 // notifyPhysical は、身体測定の記録の変化を、その園児を参照できる人へ送る。
-// 保護者に見せるのは共有した（連携済の）測定値だけ（handlePhysicalRecords）なので、shared のときだけ保護者へ送る
+// 保護者へは身体測定を共有するとき（shared。設定 growth.share_physical）だけ、成長の記録を読める家庭へ送る
+// （詳細設計書「知らせ」(6-2) の physical の行・「身体測定・共有範囲の経路」(4-12 (4))）
 func (a *app) notifyPhysical(childID string, shared bool) {
 	a.notify(liveEvent{Type: evPhysical, ChildID: childID}, func(u *SessionUser) bool {
-		if u.isGuardian() && !shared {
-			return false
+		if u.isGuardian() {
+			return shared && a.contactAccess(u, childID).Read
 		}
 		return a.canSeeChild(u, childID)
 	})
+}
+
+// sharePhysical は、身体測定を保護者の成長の記録に出すか（設定 growth.share_physical。詳細設計書 (4-12 (4))）
+func (a *app) sharePhysical() bool {
+	return a.settingText("growth.share_physical", "1") == "1"
 }

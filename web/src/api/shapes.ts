@@ -6,10 +6,11 @@
  * 形の定義は本ファイルの1か所に置く。
  */
 import type {
-  Account, Child, ChatRoom, Diary, DevelopmentItem, GuardianChild, NapRecord, NapSession,
+  Account, Child, ChatRoom, DevelopmentItem, GuardianChild, NapRecord, NapSession,
   DiaryRecordType, DiaryStatus, InvitationStatus, Role, FunctionType, OperationType,
   DevelopmentCheck, DevelopmentResultRecord, MealAmount, ContactEventType, Setting,
 } from './types';
+import type { BodyPosition, Breathing, Complexion } from './types';
 
 /** ログインの失敗理由。画面が分岐に使う（図/画面詳細図.md「職員用トップ／保護者用トップ」(2-1)） */
 export type LoginError =
@@ -29,6 +30,7 @@ export interface ChildInput {
   child_id: string;
   child_name: string;
   child_name_kana: string;
+  nickname?: string;
   birth_date: string;
   sex: Child['sex'];
   normal_temperature: number | null;
@@ -62,6 +64,26 @@ export interface DiaryInput {
    * 空の並びはすべて外す（【仮置き】web/仮置き値.md「日誌作成・編集画面の動き」。GitHub Issue #175 の 2）
    */
   attachments?: DiaryAttachmentInput[];
+  /**
+   * ヒヤリハットの欄（詳細設計書「日誌」(4-13 (1))）。ヒヤリハットのときは本文の代わりにこれを送り、
+   * 状況・とった対応・今後の対策を見出しでつないだ本文をサーバ（モック）が作る（決めたこと D-33）
+   */
+  incident?: DiaryIncidentInput;
+}
+
+/** 保存のときに送るヒヤリハットの欄。任意の欄は空の文字列で「無し」とする（サーバ側は diaryIncidentInput） */
+export interface DiaryIncidentInput {
+  /** 'YYYY-MM-DDTHH:MM:SS' */
+  occurred_at: string;
+  place: string;
+  situation: string;
+  response: string;
+  countermeasure?: string;
+  /** '1' 伝えた / '2' 伝えていない / '' 未記入 */
+  guardian_notice?: '' | '1' | '2';
+  guardian_noticed_at?: string;
+  guardian_notice_method?: '' | '1' | '2' | '3' | '9';
+  guardian_notice_person?: string;
 }
 
 /** 日誌に付ける写真 1 枚。実体は持たず、ファイルの名前と形式だけを持つ（web/仮置き値.md 7「添付ファイルの実体」） */
@@ -75,7 +97,7 @@ export interface DiaryTemplate {
   record_type: DiaryRecordType;
   template_name: string;
   body: string;
-  default_share_to_guardian: boolean;
+  is_deleted: boolean;
 }
 
 /** チャンネル。未読件数と投稿可否を添える（図/画面詳細図.md 4-1） */
@@ -85,6 +107,7 @@ export interface ChatRoomView {
   canPost: boolean;
   /** 参加している保護者の人数。投稿が保護者にも届くことを入力欄の近くで示すために使う */
   guardianCount: number;
+  guardianRegisteredCount: number;
   /**
    * 外れたチャンネル。職員は、外れるまでの過去ログだけを読める（投稿はできない）
    * （図/画面詳細図.md「グループ編成画面」(4-3) No.8、基本設計書「チャット」(5-5)。GitHub Issue #161）
@@ -135,11 +158,44 @@ export interface NapAbnormalRow {
   staff_name: string;
 }
 
-export interface NapSearchRow extends NapRecord {
+/**
+ * 午睡記録検索の行の種類。check は5分ごとの確認（t_nap_record）、sleep は「ねた」、wake は「おきた」（t_nap_sleep）、
+ * exclusion は「きょうは対象外」（t_nap_exclusion）
+ * （画面詳細図「午睡記録検索画面」(5-3) の項目6「園児ごとの入眠（ねた）と起床（おきた）、入眠時の体温（ねたの行）、
+ * きょうは対象外とその理由も、その日の行に出す」）
+ */
+export type NapSearchRowKind = 'check' | 'sleep' | 'wake' | 'exclusion';
+
+/**
+ * 午睡記録検索の1行。確認の行は体位・呼吸・顔色・体温・保存時刻を持つ。ねた・おきた・対象外の行は押した時刻（サーバの時刻）を
+ * checked_at に持ち、体位・呼吸・顔色・保存時刻は null。入眠時の体温（sleep_temperature）はねたの行だけに、
+ * 対象外の理由（exclusion_reason。1:欠席 2:午睡なし）は対象外の行だけに入る。
+ * 職員だけの経路（GET /api/nap/records）で返す
+ */
+export interface NapSearchRow {
+  kind: NapSearchRowKind;
+  nap_record_id: number | null;
+  nap_sleep_id: number | null;
+  nap_exclusion_id: number | null;
+  exclusion_reason: '1' | '2' | null;
+  nap_session_id: number;
+  child_id: string;
+  checked_at: string;
+  saved_at: string | null;
+  body_position: BodyPosition | null;
+  breathing: Breathing | null;
+  complexion: Complexion | null;
+  temperature: number | null;
+  sleep_temperature: number | null;
+  staff_id: string;
   session_date: string;
   child_name: string;
   class_name: string;
   staff_name: string;
+  /** 確認の行だけ：最後に修正した時刻（「修正あり」の印）。ほかの行は null */
+  corrected_at: string | null;
+  /** 確認の行だけ：この利用者が直せるか（画面は「修正」を出す。担保は POST /api/nap/records/{id}/correct） */
+  can_correct: boolean;
 }
 
 /** 発達チェック一覧の行。overdue は予定日を過ぎて未実施の状態 */
@@ -269,8 +325,6 @@ export interface GuardianHomeRow {
   child: Child;
   ageMonths: number;
   className: string;
-  /** 承認済みかつ共有指定のあるものだけ */
-  sharedDiaries: Diary[];
   unread: number;
   /** 園児1人の「きょう」（詳細設計書「ダッシュボード」(4-8 (1))） */
   today: GuardianToday;
@@ -345,7 +399,7 @@ export interface ContactEvent {
   staff_name?: string;
   corrected_at: string | null;
   is_deleted: boolean;
-  /** 職員の応答だけ。訂正のときに読んだ版として送り返す（詳細設計書「訂正・取り消し」(4-7 (1))） */
+  /** 職員の応答だけ。直すときに読んだ版として送り返す（詳細設計書「訂正・取り消し」(4-7 (1))） */
   updated_at?: string;
 }
 
@@ -675,6 +729,55 @@ export interface SettingsView {
   ai_key_present: boolean;
   ai_key_rejected: boolean;
   push_available: boolean;
+}
+
+/*
+ * 成長の記録（GET /api/children/{childID}/growth。詳細設計書「成長の記録」(4-12 (1))）。
+ * 返すのは事実（測った値・確認できた項目の名前・保護者へのひとこと・連絡帳から残したもの）だけ。
+ * 「一部」「未確認」・所見・比較・記録した職員の名前・判定の言葉は入れない
+ */
+export interface GrowthRecord {
+  child_id: string;
+  child_name: string;
+  sex: Child['sex'];
+  birth_date: string;
+  grace_ends_on: string | null;
+  /** 偽なら measurements は空。画面は身長・体重の区画を出さない */
+  share_physical: boolean;
+  /** 新しい順・全件 */
+  measurements: GrowthMeasurement[];
+  /** 新しい順・12件まで */
+  achievements: GrowthEntry[];
+  next_before: string | null;
+  /** 成長グラフの免責（基本設計書「メッセージ一覧」(4-12)） */
+  disclaimer: string;
+}
+
+export interface GrowthMeasurement {
+  physical_record_id: number;
+  measured_on: string;
+  age_in_months: number;
+  height_cm: number;
+  weight_kg: number;
+  is_today: boolean;
+}
+
+/** 「できたこと」の1件。kind ごとに使う項目が違う */
+export interface GrowthEntry {
+  kind: 'development' | 'contact';
+  at: string;
+  date: string;
+  is_today: boolean;
+  /** development：確認できた項目の名前 */
+  items?: string[];
+  /** development：保護者へのひとこと */
+  message?: string | null;
+  /** development：ひとことを書き換えた時刻。「訂正しました（日付）」を出す（詳細設計書「成長の記録」(4-12)、決めたこと D-51） */
+  message_corrected_at?: string | null;
+  /** contact：ひとこと・写真に添えた文 */
+  body?: string | null;
+  /** contact：写真 */
+  contact_photo_id?: number | null;
 }
 
 /** 参照のみに使う型の再輸出。画面が types.ts を直接読まなくて済むようにする */

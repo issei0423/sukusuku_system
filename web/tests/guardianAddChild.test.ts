@@ -190,6 +190,26 @@ describe('お子さまの追加：終了した紐づけ（決めたこと D-48�
     expect(logs).toHaveLength(1);
     expect(logs[0].after_value).toContain('戻した');
   });
+
+  it('【仮置き】参加し直しても最初に参加した日時（first_joined_at）を残し、保護者がまだいなかった間の連絡は見せる（#198 の境。web/仮置き値.md）', async () => {
+    const firstJoined = member(6, 6)!.joined_at;
+    Object.assign(link('G001', 'C001')!, { link_status: '2', ended_at: '2026-08-20T10:00:00' });
+    member(3, 6)!.left_at = '2026-08-20T10:00:00';
+    member(6, 6)!.left_at = '2026-08-20T10:00:00';
+    // 保護者がまだ1人も参加していなかった間の連絡（最初の参加より前）と、外れていたあいだの連絡
+    const msg = (id: number, body: string, sentAt: string) => ({ chat_message_id: id, chat_room_id: 6, sender_account_id: 3, body,
+      source_type: '1' as const, source_id: null, sent_at: sentAt, edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null });
+    db.chatMessages.push(msg(9002, '保護者がいなかった間の連絡', '2025-01-01T10:00:00'), msg(9003, '外れていたあいだの連絡', '2026-09-15T10:00:00'));
+    stops.push(() => {
+      for (const id of [9002, 9003]) db.chatMessages.splice(db.chatMessages.findIndex((m) => m.chat_message_id === id), 1);
+    });
+
+    await api.addChild(taroGuardian, codeTaro, '母');
+    expect(member(6, 6)).toMatchObject({ first_joined_at: firstJoined, joined_at: now(), left_at: null });
+    const bodies = (await api.messages(taroGuardian, 6)).map((m) => m.body);
+    expect(bodies).toContain('保護者がいなかった間の連絡');
+    expect(bodies).not.toContain('外れていたあいだの連絡');
+  });
 });
 
 describe('お子さまの追加：途中で失敗したら全部を戻す', () => {

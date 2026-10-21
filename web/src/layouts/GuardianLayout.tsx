@@ -100,6 +100,15 @@ export default function GuardianLayout() {
   };
   // 誰の保護者かを示す。「園児の氏名 保護者」と表す（図/画面詳細図.md の保護者の表し方）
   const who = `${home.data?.map((h) => h.child.child_name).join('・') || user.display_name} 保護者`;
+  // ホームの次に、園児ごとの成長の記録を置く（図/画面詳細図「保護者（スマートフォン）」(1-2) の項目14）
+  const pages = [
+    MENU_PAGES[0],
+    ...(home.data ?? []).map((h) => ({
+      to: `/guardian/growth/${encodeURIComponent(h.child.child_id)}`,
+      label: `${h.child.child_name}の成長の記録`,
+    })),
+    ...MENU_PAGES.slice(1),
+  ];
   /*
    * ダイアログを開く項目。画面は移らない（図/画面詳細図「保護者（スマートフォン）」(1-2) の項目15・18）。
    * 並びは設計の「お子さまの追加・連絡先の変更・通知の設定・AI の下書きの利用」の位置（連絡先の変更は
@@ -178,7 +187,7 @@ export default function GuardianLayout() {
                 <span aria-hidden="true">×</span> 閉じる
               </button>
             </div>
-            {MENU_PAGES.map((m) => <Link key={m.to} to={m.to} onClick={() => setOpen(false)}>{m.label}</Link>)}
+            {pages.map((m) => <Link key={m.to} to={m.to} onClick={() => setOpen(false)}>{m.label}</Link>)}
             {dialogItems(() => setOpen(false))}
             {MENU_ACCOUNT.map((m) => <Link key={m.to} to={m.to} onClick={() => setOpen(false)}>{m.label}</Link>)}
             <div className="spacer" />
@@ -208,7 +217,7 @@ export default function GuardianLayout() {
         {/* PC の幅で常に出すメニュー。スマートフォン・タブレットの幅では CSS で隠し、上のメニューから開く */}
         <nav className="guardian-sidebar" aria-label="メニュー">
           <div className="who">{who}</div>
-          {MENU_PAGES.map((m) => <NavLink key={m.to} to={m.to} end>{m.label}</NavLink>)}
+          {pages.map((m) => <NavLink key={m.to} to={m.to} end>{m.label}</NavLink>)}
           {dialogItems(() => {})}
           {MENU_ACCOUNT.map((m) => <NavLink key={m.to} to={m.to} end>{m.label}</NavLink>)}
           <div className="spacer" />

@@ -38,10 +38,15 @@ export default function TemperaturePicker({ title, start, busy, error, onSelect,
   const inputId = useId();
   const origin = Math.round((start ?? 36.5) * 10) / 10;
 
-  // 開いたら、平熱（または 36.5）の位置を見せる
+  /*
+   * 開いたら、平熱（または 36.5）の位置を見せ、その値にフォーカスを入れる。
+   * 窓の部品（Modal）は先頭の 35.0 にフォーカスを入れるため、36.5 まで Tab を 15 回押すことになっていた
+   * （WCAG 2.4.3 フォーカス順序、GitHub Issue #213）。見せた位置がずれないよう、フォーカスでは送らない
+   */
   useEffect(() => {
     const target = listRef.current?.querySelector<HTMLButtonElement>(`[data-value="${origin.toFixed(1)}"]`);
     target?.scrollIntoView?.({ block: 'center' });
+    target?.focus({ preventScroll: true });
   }, [origin]);
 
   const value = Number(manual);

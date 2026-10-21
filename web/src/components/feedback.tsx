@@ -8,9 +8,11 @@
  * 確認ダイアログ（ConfirmDialog）：1回押すだけで確定させない（GitHub Issue #107）。
  *   何が起きるかは呼び出し側が文章で書く。
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Modal } from './ui';
+import { useOverlayInset } from '../stickyInset';
+import { focusAfter, focusedNow } from '../focusAfter';
 
 // 表示する時間。読み上げに拾わせるため、すぐには消さない
 const SHOW_MS = 6000;
@@ -72,37 +74,99 @@ export function ToastHost() {
       .then((text) => setConfirming((c) => (c && c.action === action ? { ...c, text } : c)))
       .catch((e: Error) => setConfirming((c) => (c && c.action === action ? { ...c, text: '', error: e.message } : c)));
   };
+  /*
+   * 「閉じる」を押したとき・確認の窓で取り消したときは、知らせ（と知らせの「取り消す」）が消え、押したボタンからフォーカスが外れて
+   * body に落ちていた。知らせへフォーカスが入る前にいた部品（cameFrom）へ戻す。消えた・押せなくなったなどで戻せなければ、本文（main）へ移す
+   * （WCAG 2.4.3 フォーカス順序、GitHub Issue #213。共通の決まりは src/focusAfter.ts。押したときにフォーカスが無ければ動かさない）
+   */
+  const cameFrom = useRef<HTMLElement | null>(null);
+  const backTo = (back: HTMLElement | null) => () =>
+    (back?.isConnected && !back.matches(':disabled') ? back : document.querySelector<HTMLElement>('main'));
+  const close = () => {
+    const pressed = focusedNow();
+    const back = cameFrom.current;
+    publish(null);
+    focusAfter(pressed, backTo(back));
+  };
+  /*
+   * 確認の窓の「取り消す」。取り消せると知らせが結果の文に差し替わって知らせの「取り消す」が消え、窓の部品（Modal）が戻す先を失う。
+   * 「閉じる」と同じ先へ移す。取り消せなかったときは窓が残るので、押した「取り消す」へ戻す
+   */
   const runConfirmed = () => {
     if (!confirming || confirming.busy) return;
     const { action } = confirming;
+    const pressed = focusedNow();
+    const back = cameFrom.current;
     setConfirming({ ...confirming, busy: true, error: null });
     action.run()
-      .then((message) => { setConfirming(null); notify(message); })
-      .catch((e: Error) => setConfirming((c) => (c ? { ...c, busy: false, error: e.message } : c)));
+      .then((message) => { setConfirming(null); notify(message); focusAfter(pressed, backTo(back)); })
+      .catch((e: Error) => { setConfirming((c) => (c ? { ...c, busy: false, error: e.message } : c)); focusAfter(pressed); });
   };
 
+  /*
+   * 時間が来たら自分で消える。ただし、フォーカスがあるあいだ・ポインタが乗っているあいだは消すまでの時間を止め、
+   * 離れたら残りの時間から数え直す。キーボードで「取り消す」へ移るあいだや、読んでいるあいだに消えて、
+   * フォーカスと取り消す機会を失わないようにする（WCAG 2.2.1 タイミング調整可能、GitHub Issue #210 の 2）
+   */
+  const [hold, setHold] = useState({ focus: false, pointer: false });
+  const box = useRef<HTMLDivElement | null>(null);
+  const left = useRef<{ seq: number; ms: number } | null>(null);
+  /*
+   * 表示は画面の下端に重ねて固定する。出ている間、スクロールする枠（職員は .main、保護者は .guardian-main）の下端を
+   * 覆う高さを --toast-cover として渡し、枠はそのぶんを scroll-padding-bottom に取る（styles/app.css）。
+   * 下のほうでフォーカスした部品（「確認しました」のあとの「園が確認しました」など）が、表示の下に隠れないようにする
+   * （WCAG 2.4.11 フォーカスの非隠蔽、GitHub Issue #212）
+   */
+  const cover = useOverlayInset('.main, .guardian-main', '--toast-cover');
+  const toastRef = useCallback((el: HTMLDivElement | null) => {
+    box.current = el;
+    const release = cover(el);
+    return () => { box.current = null; release?.(); };
+  }, [cover]);
+
   useEffect(() => {
-    listeners.add(setToast);
-    return () => { listeners.delete(setToast); };
+    // 知らせが消えたら、止めていたことも忘れる（消えた表示からは、離れた知らせが届かないため）
+    const onToast = (next: Toast | null) => { setToast(next); if (!next) setHold({ focus: false, pointer: false }); };
+    listeners.add(onToast);
+    return () => { listeners.delete(onToast); };
   }, []);
 
-  // 時間が来たら自分で消える
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => { if (current?.seq === toast.seq) publish(null); }, Math.max(0, toast.until - Date.now()));
-    return () => clearTimeout(t);
-  }, [toast]);
+    // フォーカスのあった部品が知らせの差し替えで消えると、離れた知らせが届かない。いまも中にあるかを見る
+    const held = hold.pointer || (hold.focus && !!box.current?.contains(document.activeElement));
+    if (held) {
+      // 止めた時点の残りを覚える（同じ知らせのあいだに何度止めても、残りから数える）
+      if (left.current?.seq !== toast.seq) left.current = { seq: toast.seq, ms: Math.max(0, toast.until - Date.now()) };
+      return;
+    }
+    const rest = left.current?.seq === toast.seq ? left.current.ms : Math.max(0, toast.until - Date.now());
+    const startedAt = Date.now();
+    const t = setTimeout(() => { if (current?.seq === toast.seq) publish(null); }, rest);
+    return () => {
+      clearTimeout(t);
+      left.current = { seq: toast.seq, ms: Math.max(0, rest - (Date.now() - startedAt)) };
+    };
+  }, [toast, hold]);
 
   if (!toast && !confirming) return null;
   return (
     <>
       {toast && (
-        <div className="toast" role="status" aria-live="polite">
+        <div ref={toastRef} className="toast" role="status" aria-live="polite"
+          onFocus={(e) => {
+            // 外から入ってきたときだけ、入る前にいた部品を覚える（知らせの中で「取り消す」から「閉じる」へ移ったときは覚え直さない）
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) cameFrom.current = e.relatedTarget instanceof HTMLElement ? e.relatedTarget : null;
+            setHold((h) => ({ ...h, focus: true }));
+          }}
+          onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setHold((h) => ({ ...h, focus: false })); }}
+          onPointerEnter={() => setHold((h) => ({ ...h, pointer: true }))}
+          onPointerLeave={() => setHold((h) => ({ ...h, pointer: false }))}>
           <span>{toast.text}</span>
           {toast.action && (
             <button className="btn-sm btn-quiet" onClick={() => openConfirm(toast.action!)}>{toast.action.label}</button>
           )}
-          <button className="btn-sm btn-quiet" onClick={() => publish(null)}>閉じる</button>
+          <button className="btn-sm btn-quiet" onClick={close}>閉じる</button>
         </div>
       )}
       {confirming && (
@@ -117,15 +181,15 @@ export function ToastHost() {
 }
 
 /** 確定する前に、何が起きるかを確かめる */
-export function ConfirmDialog({ title, children, confirmLabel, danger, busy, onConfirm, onCancel }: {
-  title: string; children: ReactNode; confirmLabel: string; danger?: boolean; busy?: boolean;
+export function ConfirmDialog({ title, children, confirmLabel, danger, busy, confirmDisabled, onConfirm, onCancel }: {
+  title: string; children: ReactNode; confirmLabel: string; danger?: boolean; busy?: boolean; confirmDisabled?: boolean;
   onConfirm: () => void; onCancel: () => void;
 }) {
   return (
     <Modal title={title} onClose={onCancel}
       footer={<>
         <button onClick={onCancel} disabled={busy}>やめる</button>
-        <button className={danger ? 'btn-danger' : 'btn-primary'} onClick={onConfirm} disabled={busy}>
+        <button className={danger ? 'btn-danger' : 'btn-primary'} onClick={onConfirm} disabled={busy || confirmDisabled}>
           {confirmLabel}
         </button>
       </>}>

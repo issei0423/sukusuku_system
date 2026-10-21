@@ -52,7 +52,7 @@ function openHome() {
 async function openDialog() {
   fireEvent.click(await screen.findByRole('button', { name: 'メニューを開く' }));
   const menu = screen.getByRole('dialog', { name: 'メニュー' });
-  await within(menu).findByText(/野原 太郎/, {}, { timeout: 3000 });
+  await within(menu).findAllByText(/野原 太郎/, {}, { timeout: 3000 });
   fireEvent.click(within(menu).getByRole('button', { name: ADD_CHILD_TEXT.title }));
   return screen.findByRole('dialog', { name: ADD_CHILD_TEXT.title });
 }
