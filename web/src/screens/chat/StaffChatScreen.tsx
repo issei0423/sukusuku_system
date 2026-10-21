@@ -15,7 +15,7 @@ import { api, accountName } from '../../api/client';
 import { Loading, ErrorBox, Empty, Alert, Tag } from '../../components/ui';
 import { ConfirmDialog, notify } from '../../components/feedback';
 import Reactions from '../../components/Reactions';
-import { useSecondaryAction, keepInViewport, closeOnUserScroll } from '../../secondaryAction';
+import { useSecondaryAction, keepInViewport, closeOnUserScroll, MENU_OPENED_TEXT } from '../../secondaryAction';
 import type { MenuAt, SecondaryActionHandlers } from '../../secondaryAction';
 import { CHAT_ROOM_TYPE, THREAD_STATUS, REACTION, GUARDIAN_ROOM_TYPES, SENDER_KIND } from '../../api/codes';
 import { formatHM, formatMD } from '../../api/util';
@@ -266,6 +266,8 @@ export default function StaffChatScreen() {
             ))}
           </div>
           <IncomingLog entries={incoming} />
+          {/* 操作の一覧を開いたことを読み上げへ伝える（secondaryAction.ts） */}
+          <div className="sr-only" role="status">{menuId !== null ? MENU_OPENED_TEXT : ''}</div>
           <div className="chat-compose">
             {error && <ErrorBox text={error} />}
             {/*

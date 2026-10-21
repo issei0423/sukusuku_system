@@ -19,7 +19,7 @@ import { REACTION, SENDER_KIND } from '../../api/codes';
 import { Loading, ErrorBox, Empty } from '../../components/ui';
 import { ConfirmDialog } from '../../components/feedback';
 import Reactions from '../../components/Reactions';
-import { useSecondaryAction, keepInViewport, closeOnUserScroll } from '../../secondaryAction';
+import { useSecondaryAction, keepInViewport, closeOnUserScroll, MENU_OPENED_TEXT } from '../../secondaryAction';
 import type { MenuAt } from '../../secondaryAction';
 import { formatHM, formatMD } from '../../api/util';
 import type { ChatMessage } from '../../api/types';
@@ -357,6 +357,8 @@ export default function GuardianChatScreen() {
 
       <div className="guardian-message-compose">
         <div className="sr-only" role="status">{status}</div>
+        {/* 操作の一覧を開いたことを読み上げへ伝える（secondaryAction.ts） */}
+        <div className="sr-only" role="status">{menuId !== null ? MENU_OPENED_TEXT : ''}</div>
         {error && <ErrorBox text={error} />}
         {current.canPost ? (
           <div className="row">

@@ -30,6 +30,12 @@ export const LONG_PRESS_MOVE_PX = 10;
 
 const onControl = (target: EventTarget) => !!(target as HTMLElement).closest?.('a, button, input, textarea, select');
 
+/**
+ * 一覧を開いたときに読み上げへ伝える文。画面は開いている間だけ role="status" に置く（閉じると空にする）。
+ * 吹き出しに aria-expanded を付けられないため、開いたことをこれで伝える（WCAG 4.1.3）
+ */
+export const MENU_OPENED_TEXT = 'メッセージの操作を開きました。Esc で閉じます。';
+
 /** 一覧を出す位置（画面の左上からの px）。PC の右クリックのときだけ渡る */
 export type MenuAt = { x: number; y: number };
 
@@ -81,7 +87,7 @@ export function useSecondaryAction(): (open: (el: HTMLElement, at?: MenuAt) => v
     /*
      * aria-haspopup・aria-expanded は付けない。吹き出しは役割を持たない div で、この2つを付けられない（axe の aria-allowed-attr）。
      * role="button" にすると、中のリンク（配布物のカード）が入れ子の操作になる。開いたら一覧の最初のボタンへ移り、
-     * Esc で吹き出しへ戻ることと、案内文（aria-describedby）で伝える
+     * Esc で吹き出しへ戻ることと、案内文（aria-describedby）・開いたときの知らせ（MENU_OPENED_TEXT）で伝える
      */
     // 吹き出しそのものを選んでいるときだけ。中のリンク・入力欄の Enter はそのまま通す
     onKeyDown: (e) => {

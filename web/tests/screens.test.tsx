@@ -345,6 +345,8 @@ describe('チャット画面の表示', () => {
     expect(screen.getByRole('button', { name: '了解' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '編集' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '取消' })).toBeTruthy();
+    // 吹き出しに aria-expanded を付けられないので、開いたことは role="status" で伝える
+    expect(screen.getAllByRole('status').map((el) => el.textContent)).toContain('メッセージの操作を開きました。Esc で閉じます。');
 
     // 長押しで開いた直後に指を離したときのクリックは、一覧のボタンに当たっても無視する
     // （一覧を見える位置へ送ると画面が動き、指の下にボタンが来るため）
@@ -353,9 +355,10 @@ describe('チャット画面の表示', () => {
     expect(screen.getByRole('group', { name: 'メッセージの操作' })).toBeTruthy();
     expect(document.querySelectorAll('.msg.mine .bubble.pressable').length).toBeGreaterThan(0);
 
-    // 一覧の外を押すと閉じる
+    // 一覧の外を押すと閉じる。閉じたら知らせは空にする（次に開いたときにまた伝わる）
     fireEvent.pointerDown(document.body);
     expect(screen.queryByRole('group', { name: 'メッセージの操作' })).toBeNull();
+    expect(screen.getAllByRole('status').map((el) => el.textContent)).not.toContain('メッセージの操作を開きました。Esc で閉じます。');
   });
 
   it('保護者：相手のメッセージの長押しでは、リアクションだけを出す', async () => {
@@ -409,6 +412,7 @@ describe('チャット画面の表示', () => {
     const wrap = (await screen.findByRole('group', { name: 'メッセージの操作' })).parentElement!;
     expect(wrap.classList.contains('at-cursor')).toBe(true);
     expect(wrap.style.left).toBe('300px');
+    expect(screen.getAllByRole('status').map((el) => el.textContent)).toContain('メッセージの操作を開きました。Esc で閉じます。');
   });
 });
 
