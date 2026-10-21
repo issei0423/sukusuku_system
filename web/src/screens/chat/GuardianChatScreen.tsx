@@ -289,7 +289,6 @@ export default function GuardianChatScreen() {
               {/* 編集中は本文の入力欄を普通に触れるよう、長押しを受け付けない */}
               <div className={`bubble${editing ? '' : ' pressable'}`} data-message-bubble={m.chat_message_id}
                 aria-describedby="guardian-message-hint"
-                aria-expanded={editing ? undefined : menuOpen}
                 aria-controls={menuOpen ? `message-actions-${m.chat_message_id}` : undefined}
                 {...(editing ? {} : pressHandlers(m.chat_message_id))}>
                 {editing ? (

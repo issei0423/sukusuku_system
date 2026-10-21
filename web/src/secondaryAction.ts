@@ -35,7 +35,6 @@ export type MenuAt = { x: number; y: number };
 
 export type SecondaryActionHandlers = {
   tabIndex: number;
-  'aria-haspopup': 'true';
   onKeyDown: (e: ReactKeyboardEvent<HTMLElement>) => void;
   onPointerDown: (e: ReactPointerEvent<HTMLElement>) => void;
   onPointerMove: (e: ReactPointerEvent<HTMLElement>) => void;
@@ -79,7 +78,11 @@ export function useSecondaryAction(): (open: (el: HTMLElement, at?: MenuAt) => v
 
   return (open) => ({
     tabIndex: 0,
-    'aria-haspopup': 'true',
+    /*
+     * aria-haspopup・aria-expanded は付けない。吹き出しは役割を持たない div で、この2つを付けられない（axe の aria-allowed-attr）。
+     * role="button" にすると、中のリンク（配布物のカード）が入れ子の操作になる。開いたら一覧の最初のボタンへ移り、
+     * Esc で吹き出しへ戻ることと、案内文（aria-describedby）で伝える
+     */
     // 吹き出しそのものを選んでいるときだけ。中のリンク・入力欄の Enter はそのまま通す
     onKeyDown: (e) => {
       if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;

@@ -492,7 +492,6 @@ function MessageRow({ message, mine, canEdit, canDelete, showRole, readOnly, onR
       </div>
       <div ref={bubbleRef} className={`bubble${editing || readOnly ? '' : ' has-menu'}`}
         aria-describedby={editing || readOnly ? undefined : 'staff-message-hint'}
-        aria-expanded={editing || readOnly ? undefined : menuOpen}
         aria-controls={menuOpen ? `message-actions-${message.chat_message_id}` : undefined}
         {...(editing || readOnly ? {} : bindPress(openMenu))}>
         {editing ? (
