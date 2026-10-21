@@ -108,7 +108,7 @@ func TestSessionCookieSecureFollowsFlag(t *testing.T) {
 		s.secure = secure
 
 		rec := httptest.NewRecorder()
-		s.create(rec, 1, "staff", 30)
+		s.create(rec, 1, "staff", true, false, 30*time.Minute)
 		c := rec.Result().Cookies()[0]
 		if c.Secure != secure || !c.HttpOnly || c.SameSite != http.SameSiteStrictMode {
 			t.Errorf("secure=%v: Cookie = %+v", secure, c)
@@ -150,8 +150,12 @@ func TestExpiredSessionsArePurged(t *testing.T) {
 	s := newSessionStore()
 	s.data["old"] = session{accountID: 1, expiresAt: time.Now().Add(-time.Minute)}
 	s.data["live"] = session{accountID: 2, expiresAt: time.Now().Add(time.Hour)}
+	// 無操作の時間を過ぎていても、ログインを保つ上限の内なら掃除では消さない。午睡チェックの実施中の例外で
+	// 参照のときに受け入れることがあるため（判定は app.sessionAccount。GitHub Issue #210）
+	s.data["idle"] = session{accountID: 4, expiresAt: time.Now().Add(time.Hour), idleLogout: true,
+		lastActiveAt: time.Now().Add(-2 * time.Hour)}
 
-	s.create(httptest.NewRecorder(), 3, "staff", 30)
+	s.create(httptest.NewRecorder(), 3, "staff", true, false, 30*time.Minute)
 
 	if _, ok := s.data["old"]; ok {
 		t.Error("期限の切れたセッションが残っている")
@@ -159,8 +163,11 @@ func TestExpiredSessionsArePurged(t *testing.T) {
 	if _, ok := s.data["live"]; !ok {
 		t.Error("期限内のセッションまで消えた")
 	}
-	if len(s.data) != 2 {
-		t.Errorf("セッションの数 = %d, want 2", len(s.data))
+	if _, ok := s.data["idle"]; !ok {
+		t.Error("無操作の時間を過ぎただけのセッションまで消えた")
+	}
+	if len(s.data) != 3 {
+		t.Errorf("セッションの数 = %d, want 3", len(s.data))
 	}
 }
 

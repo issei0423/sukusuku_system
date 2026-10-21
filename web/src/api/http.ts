@@ -35,6 +35,8 @@ import { setReachable } from './reachability';
 import { TEXT } from '../messages';
 import type { NapReportFilter } from './napReport';
 import type { NapRecordCorrectInput } from './napCorrect';
+import { AUTO_REFRESH_HEADER, isAutomatic } from './automatic';
+import type { SessionStatus } from './shapes';
 
 // 画面はこれまでどおり client 経由で型を参照する。定義の実体は shapes.ts が持つ
 export type {
@@ -87,6 +89,13 @@ async function request<T>(method: string, path: string, body?: unknown, timeoutM
   let res: Response;
   // 写真（multipart/form-data）は FormData のまま送る。境界の入った Content-Type はブラウザが付ける
   const form = typeof FormData !== 'undefined' && body instanceof FormData;
+  const headers: Record<string, string> = {};
+  if (body !== undefined && !form) headers['Content-Type'] = 'application/json';
+  /*
+   * 裏の読み直しには印を付け、職員の自動ログアウトの「操作」に数えさせない（api/automatic.ts。GitHub Issue #210）。
+   * await より前に読む。読み直しの関数がその場で始めた要求だけに付けるため
+   */
+  if (isAutomatic()) headers[AUTO_REFRESH_HEADER] = '1';
   try {
     res = await fetch(path, {
       method,
@@ -94,7 +103,7 @@ async function request<T>(method: string, path: string, body?: unknown, timeoutM
       credentials: 'same-origin',
       // 編集ロックの解除は、タブを閉じる・読み込み直す途中にも送る。途中で打ち切られないようにする
       keepalive: method === 'DELETE',
-      headers: body === undefined || form ? undefined : { 'Content-Type': 'application/json' },
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
       body: body === undefined ? undefined : form ? body : JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs),
     });
@@ -336,6 +345,15 @@ const apiAuth = {
     await loadReferenceFor(u);
     return u;
   },
+
+  /**
+   * ログインの期限（GitHub Issue #210）。期限はサーバが決める。尋ねるだけでは延びない
+   * （server/api_session.go、server/session.go の countsAsOperation）。切れていれば 401 になり、画面へ知らせる（request）
+   */
+  sessionStatus: (_user: SessionUser) => get<SessionStatus>('/api/session'),
+
+  /** 予告の「続ける」。操作の1つとして期限を延ばし、延びた期限を返す */
+  extendSession: (_user: SessionUser) => post<SessionStatus>('/api/session/extend'),
 
   async changePassword(_accountId: number, current: string, next: string): Promise<void> {
     await post('/api/password', { current, next });
