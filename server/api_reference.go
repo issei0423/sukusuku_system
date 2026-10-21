@@ -11,7 +11,22 @@ import "net/http"
  *
  * 返す範囲はログイン中の利用者の参照範囲に従う。
  * 保護者には職員の名簿を返さない。チャットの送信者名はメッセージ側が持つため要らない。
+ * 保護者に返すクラスは自児のクラスだけ（scope.go の selectableClasses）、設定は guardianSettingKeys だけ。
  */
+
+// guardianSettingKeys は、保護者へ返す設定マスタのキー。保護者の画面で使うキーに絞る
+// （詳細設計書「参照データの設定の返し方」(4-10 (7))、決めたこと D-44。図/インタフェース一覧.md の GET /api/reference）。
+// 午睡の確認の間隔（nap.interval_minutes.*）のような監査の層の値を保護者へ返さない
+// （基本設計書「段3を保護者へ返さない作り」(2-4)）。
+// contact.*・ai.enabled は第3.0版で足すキーで、いまの設定マスタには無い（足されたらそのまま返る）。
+// 職員には今までどおり全キーを返す。モックは web/src/api/mock.ts の GUARDIAN_SETTING_KEYS
+var guardianSettingKeys = map[string]bool{
+	"facility.name":         true,
+	"facility.phone_number": true, // 保護者の画面の緊急連絡の案内（GuardianLayout）
+	"contact.home_items":    true,
+	"contact.mood_choices":  true,
+	"ai.enabled":            true,
+}
 
 type referenceData struct {
 	Classes    []ClassRoom           `json:"classes"`
@@ -71,9 +86,14 @@ func (a *app) handleReference(w http.ResponseWriter, r *http.Request) {
 	if rows, err := a.db.Query(`SELECT setting_key, setting_value FROM m_setting`); err == nil {
 		for rows.Next() {
 			var k, v string
-			if rows.Scan(&k, &v) == nil {
-				out.Settings[k] = v
+			if rows.Scan(&k, &v) != nil {
+				continue
 			}
+			// 保護者には、保護者の画面で使うキーだけを返す
+			if u.isGuardian() && !guardianSettingKeys[k] {
+				continue
+			}
+			out.Settings[k] = v
 		}
 		rows.Close()
 	}
