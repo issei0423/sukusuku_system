@@ -468,8 +468,13 @@ type napAbnormalView struct {
 	Response      string `json:"response"`
 	StaffID       string `json:"staff_id"`
 	DiaryID       *int64 `json:"diary_id"`
-	ChildName     string `json:"child_name"`
-	StaffName     string `json:"staff_name"`
+	// 保護者への連絡（画面詳細図「異常時記録画面」(5-2) 項目13）。空は未記入
+	GuardianNotice       *string `json:"guardian_notice"`
+	GuardianNoticedAt    *string `json:"guardian_noticed_at"`
+	GuardianNoticeMethod *string `json:"guardian_notice_method"`
+	GuardianNoticePerson *string `json:"guardian_notice_person"`
+	ChildName            string  `json:"child_name"`
+	StaffName            string  `json:"staff_name"`
 }
 
 func (a *app) handleNapAbnormals(w http.ResponseWriter, r *http.Request) {
@@ -480,7 +485,8 @@ func (a *app) handleNapAbnormals(w http.ResponseWriter, r *http.Request) {
 	// 【仮置き】並びは発見時刻の新しい順、同じ時刻はあとで記録したものを先にする（web/仮置き値.md「一覧の並び順」）。
 	// 同じ時刻の並びを決めておかないと、モック（web/src/api/mock.ts の abnormals）と食い違う（GitHub Issue #177 の 7）
 	rows, err := a.db.Query(`SELECT nap_abnormal_id, nap_session_id, child_id, found_at, recorded_at,
-		situation, response, staff_id, diary_id
+		situation, response, staff_id, diary_id,
+		guardian_notice, guardian_noticed_at, guardian_notice_method, guardian_notice_person
 		FROM t_nap_abnormal ORDER BY found_at DESC, nap_abnormal_id DESC`)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "異常時の記録を取得できませんでした")
@@ -489,12 +495,16 @@ func (a *app) handleNapAbnormals(w http.ResponseWriter, r *http.Request) {
 	all := []napAbnormalView{}
 	for rows.Next() {
 		var (
-			x       napAbnormalView
-			diaryID sql.NullInt64
+			x                              napAbnormalView
+			diaryID                        sql.NullInt64
+			notice, noticedAt, method, who sql.NullString
 		)
 		if rows.Scan(&x.NapAbnormalID, &x.NapSessionID, &x.ChildID, &x.FoundAt, &x.RecordedAt,
-			&x.Situation, &x.Response, &x.StaffID, &diaryID) == nil {
+			&x.Situation, &x.Response, &x.StaffID, &diaryID,
+			&notice, &noticedAt, &method, &who) == nil {
 			x.DiaryID = nullInt(diaryID)
+			x.GuardianNotice, x.GuardianNoticedAt = nullStr(notice), nullStr(noticedAt)
+			x.GuardianNoticeMethod, x.GuardianNoticePerson = nullStr(method), nullStr(who)
 			all = append(all, x)
 		}
 	}
@@ -562,6 +572,7 @@ func (a *app) handleRecordNapAbnormal(w http.ResponseWriter, r *http.Request) {
 		FoundAt   string `json:"found_at"`
 		Situation string `json:"situation"`
 		Response  string `json:"response"`
+		guardianNotice
 	}
 	if !readJSON(w, r, &req) {
 		return
@@ -582,6 +593,10 @@ func (a *app) handleRecordNapAbnormal(w http.ResponseWriter, r *http.Request) {
 		req.FoundAt = now()
 	}
 	if msg := foundAtProblem(req.FoundAt); msg != "" {
+		writeErr(w, http.StatusBadRequest, msg)
+		return
+	}
+	if msg := req.guardianNotice.problem(req.FoundAt); msg != "" {
 		writeErr(w, http.StatusBadRequest, msg)
 		return
 	}
@@ -623,10 +638,13 @@ func (a *app) handleRecordNapAbnormal(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "この午睡チェックは終了しています。画面を読み込み直してください")
 		return
 	}
+	notice, noticedAt, method, who := req.guardianNotice.columns()
 	res, err := a.db.Exec(`INSERT INTO t_nap_abnormal
-		(nap_session_id, child_id, found_at, recorded_at, situation, response, staff_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		sessionID, req.ChildID, req.FoundAt, now(), req.Situation, req.Response, u.staff())
+		(nap_session_id, child_id, found_at, recorded_at, situation, response, staff_id,
+		 guardian_notice, guardian_noticed_at, guardian_notice_method, guardian_notice_person)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		sessionID, req.ChildID, req.FoundAt, now(), req.Situation, req.Response, u.staff(),
+		notice, noticedAt, method, who)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "記録に失敗しました")
 		return
@@ -657,6 +675,81 @@ func foundAtProblem(v string) string {
 		return "発見時刻に未来の日時は指定できません"
 	}
 	return ""
+}
+
+/*
+guardianNotice は、異常時の記録の「保護者への連絡」（画面詳細図「異常時記録画面」(5-2) 項目13）の要求の形。
+
+した／しないは任意で、空は未記入（あとから足してよい。基本設計書「異常時の記録」(4-8) 処理内容 1）。
+「した」のときは日時（未来は不可）・手段・相手（50文字以内）が必須（同「入力項目の制約値」(4-12)）。
+**連絡の要否はシステムが判断しない**ため、「しない」を選んでも、未記入のままでも断らない。
+手段のコードは 1:電話 2:お迎えのときに対面 3:連絡帳・個人チャット 9:その他（基本設計書「午睡チェック」(5-7)。
+日誌のヒヤリハットと同じコード）。午睡中の異常は電話で伝え（段4）、連絡帳・個人チャットは電話のあとに
+経過を書く手段である（PR #216 の 図/画面詳細図.md「異常時記録画面」(5-2) 項目13）。
+画面側のモック（web/src/api/mock.ts の guardianNoticeProblem）と同じ規則。
+*/
+type guardianNotice struct {
+	GuardianNotice       string `json:"guardian_notice"`
+	GuardianNoticedAt    string `json:"guardian_noticed_at"`
+	GuardianNoticeMethod string `json:"guardian_notice_method"`
+	GuardianNoticePerson string `json:"guardian_notice_person"`
+}
+
+// guardianNoticeMethods は保護者への連絡の手段のコード（並びは画面の選択肢の並び。電話を先頭に置く）
+var guardianNoticeMethods = []string{"1", "2", "3", "9"}
+
+/*
+problem は保護者への連絡を確かめ、受け付けられないときは利用者に見せる文言を返す。
+foundAt は確かめ終えた発見時刻（foundAtProblem を通ったもの）。
+
+【仮置き】連絡した日時は発見時刻より前を断る（分の単位。ちょうど発見時刻は通す）。発見より前に連絡することはないため。
+設計は「未来は不可」だけを定め、発見時刻との前後を決めていない（web/仮置き値.md）。
+【仮置き】文言は設計に無い。日誌のヒヤリハットの「保護者へ伝えた日時・手段・相手を入れてください。」
+（詳細設計書「日誌」(4-13) の (1)）にならって置いた（web/仮置き値.md）
+*/
+func (g guardianNotice) problem(foundAt string) string {
+	switch g.GuardianNotice {
+	case "", "2":
+		return ""
+	case "1":
+	default:
+		return "保護者への連絡は「した」か「しない」を選んでください"
+	}
+	if g.GuardianNoticedAt == "" || g.GuardianNoticeMethod == "" || strings.TrimSpace(g.GuardianNoticePerson) == "" {
+		return "保護者へ連絡した日時・手段・相手を入れてください"
+	}
+	if !isISODateTime(g.GuardianNoticedAt) {
+		return "保護者へ連絡した日時の形式が正しくありません"
+	}
+	// 未来かどうかは発見時刻と同じく分の単位で比べる（foundAtProblem）
+	if g.GuardianNoticedAt[:16] > now()[:16] {
+		return "保護者へ連絡した日時に未来の日時は指定できません"
+	}
+	if g.GuardianNoticedAt[:16] < foundAt[:16] {
+		return "保護者へ連絡した日時に、発見時刻より前の日時は指定できません"
+	}
+	known := false
+	for _, m := range guardianNoticeMethods {
+		known = known || g.GuardianNoticeMethod == m
+	}
+	if !known {
+		return "保護者への連絡の手段の指定が正しくありません"
+	}
+	if tooLong(strings.TrimSpace(g.GuardianNoticePerson), 50) {
+		return "保護者への連絡の相手は50文字以内で入力してください"
+	}
+	return ""
+}
+
+// columns は保存する4列の値を返す。「した」のとき以外は日時・手段・相手を持たない（未記入は4列とも空）
+func (g guardianNotice) columns() (notice, noticedAt, method, person any) {
+	switch g.GuardianNotice {
+	case "1":
+		return "1", g.GuardianNoticedAt, g.GuardianNoticeMethod, strings.TrimSpace(g.GuardianNoticePerson)
+	case "2":
+		return "2", nil, nil, nil
+	}
+	return nil, nil, nil, nil
 }
 
 // handleRaiseIncidentDiary は異常時の記録からヒヤリハットを起票し、相互に参照させる（基本設計書 5-6）

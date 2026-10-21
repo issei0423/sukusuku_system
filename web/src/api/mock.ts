@@ -13,6 +13,9 @@
  */
 import * as db from './mockDb';
 import { CURRENT_TERMS_VERSION } from './mockDb';
+import type { AbnormalGuardianNoticeInput } from './shapes';
+import { GUARDIAN_NOTICE_METHOD_ORDER } from './codes';
+import type { GuardianNoticeMethod } from './types';
 import type {
   Account, Child, ClassRoom, Diary, DiaryIncident, SessionUser, Role,
   InvitationCode, NapRecord, NapSession, NapAbnormal, PhysicalRecord, GrowthStandard,
@@ -2080,7 +2083,7 @@ export const napApi = {
    */
   async recordAbnormal(
     user: SessionUser, sessionId: number,
-    input: { child_id: string; found_at: string; situation: string; response: string },
+    input: { child_id: string; found_at: string; situation: string; response: string } & AbnormalGuardianNoticeInput,
   ): Promise<NapAbnormal> {
     if (!input.situation.trim()) return fail('発見時の状況を入力してください');
     if (!input.response.trim()) return fail('とった対応を入力してください');
@@ -2090,6 +2093,8 @@ export const napApi = {
     const foundAt = input.found_at || now();
     const problem = foundAtProblem(foundAt);
     if (problem) return fail(problem);
+    const noticeProblem = guardianNoticeProblem(input, foundAt);
+    if (noticeProblem) return fail(noticeProblem);
     if (!canSeeChild(user, input.child_id)) return fail('この園児を記録する権限がありません');
     autoCloseNapSessions();
     const session = db.napSessions.find((x) => x.nap_session_id === sessionId);
@@ -2101,7 +2106,9 @@ export const napApi = {
     if (session.ended_at !== null) return fail('この午睡チェックは終了しています。画面を読み込み直してください');
     const a: NapAbnormal = {
       nap_abnormal_id: nextId(), nap_session_id: sessionId, staff_id: user.staff_id!,
-      diary_id: null, ...input, found_at: foundAt, recorded_at: now(),
+      diary_id: null, child_id: input.child_id, found_at: foundAt, recorded_at: now(),
+      situation: input.situation, response: input.response,
+      ...guardianNoticeColumns(input),
     };
     db.napAbnormals.unshift(a);
     log(user.account_id, '3', '1', 't_nap_abnormal', a.nap_abnormal_id, input.child_id, null, '異常時の記録');
@@ -2160,7 +2167,13 @@ export const napApi = {
     return ok(db.napAbnormals
       .filter((a) => canSeeChild(user, a.child_id))
       .sort((a, b) => b.found_at.localeCompare(a.found_at) || b.nap_abnormal_id - a.nap_abnormal_id)
-      .map((a) => ({ ...a, child_name: childName(a.child_id), staff_name: staffName(a.staff_id) })));
+      .map((a) => ({
+        ...a,
+        // 列を足す前のデモデータには保護者への連絡が無い。未記入として返す（サーバは空の列を null で返す）
+        guardian_notice: a.guardian_notice ?? null, guardian_noticed_at: a.guardian_noticed_at ?? null,
+        guardian_notice_method: a.guardian_notice_method ?? null, guardian_notice_person: a.guardian_notice_person ?? null,
+        child_name: childName(a.child_id), staff_name: staffName(a.staff_id),
+      })));
   },
 };
 
@@ -6232,6 +6245,48 @@ function foundAtProblem(v: string): string | null {
   if (!isISODateTime(v)) return '発見時刻の形式が正しくありません';
   if (v.slice(0, 16) > now().slice(0, 16)) return '発見時刻に未来の日時は指定できません';
   return null;
+}
+
+/**
+ * 異常時の記録の保護者への連絡を確かめる（画面詳細図「異常時記録画面」(5-2) 項目13、基本設計書「入力項目の制約値」(4-12)）。
+ * した／しないは任意で、空は未記入。連絡の要否はシステムが判断しない。「した」のときは日時（未来は不可）・
+ * 手段・相手（50文字以内）が必須。サーバ側は server/api_nap.go の guardianNotice.problem と同じ規則。
+ * foundAt は確かめ終えた発見時刻（foundAtProblem を通ったもの）。
+ * 【仮置き】連絡した日時は発見時刻より前を断る（分の単位。ちょうど発見時刻は通す）。発見より前に連絡することはないため。
+ * 設計は「未来は不可」だけを定め、発見時刻との前後を決めていない（web/仮置き値.md）
+ * 【仮置き】文言は設計に無い。日誌のヒヤリハットの文言にならって置いた（web/仮置き値.md）
+ */
+function guardianNoticeProblem(g: AbnormalGuardianNoticeInput, foundAt: string): string | null {
+  const notice = g.guardian_notice ?? '';
+  if (notice === '' || notice === '2') return null;
+  if (notice !== '1') return '保護者への連絡は「した」か「しない」を選んでください';
+  const at = g.guardian_noticed_at ?? '';
+  const method = g.guardian_notice_method ?? '';
+  const person = (g.guardian_notice_person ?? '').trim();
+  if (!at || !method || !person) return '保護者へ連絡した日時・手段・相手を入れてください';
+  if (!isISODateTime(at)) return '保護者へ連絡した日時の形式が正しくありません';
+  // 未来かどうかは発見時刻と同じく分の単位で比べる（foundAtProblem）
+  if (at.slice(0, 16) > now().slice(0, 16)) return '保護者へ連絡した日時に未来の日時は指定できません';
+  if (at.slice(0, 16) < foundAt.slice(0, 16)) return '保護者へ連絡した日時に、発見時刻より前の日時は指定できません';
+  if (!(GUARDIAN_NOTICE_METHOD_ORDER as string[]).includes(method)) return '保護者への連絡の手段の指定が正しくありません';
+  if (tooLong(person, 50)) return '保護者への連絡の相手は50文字以内で入力してください';
+  return null;
+}
+
+/** 保存する4列。「した」のとき以外は日時・手段・相手を持たない（未記入は4列とも空。サーバの guardianNotice.columns と同じ） */
+function guardianNoticeColumns(g: AbnormalGuardianNoticeInput): Pick<NapAbnormal,
+  'guardian_notice' | 'guardian_noticed_at' | 'guardian_notice_method' | 'guardian_notice_person'> {
+  if (g.guardian_notice === '1') {
+    return {
+      guardian_notice: '1', guardian_noticed_at: g.guardian_noticed_at!,
+      guardian_notice_method: g.guardian_notice_method as GuardianNoticeMethod,
+      guardian_notice_person: (g.guardian_notice_person ?? '').trim(),
+    };
+  }
+  return {
+    guardian_notice: g.guardian_notice === '2' ? '2' : null,
+    guardian_noticed_at: null, guardian_notice_method: null, guardian_notice_person: null,
+  };
 }
 
 /** よみとして受け取れる文字だけで出来ているか。ひらがな・長音・姓と名のあいだの空白を受け取る */
