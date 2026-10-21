@@ -6,7 +6,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import { useState } from 'react';
-import { useSecondaryAction, LONG_PRESS_MS } from '../src/secondaryAction';
+import { useSecondaryAction, closeOnUserScroll, LONG_PRESS_MS } from '../src/secondaryAction';
 
 afterEach(() => cleanup());
 
@@ -162,5 +162,29 @@ describe('右クリック・長押し', () => {
     const notCancelled = fireEvent.contextMenu(screen.getByText('リンク'));
     expect(onOpen).not.toHaveBeenCalled();
     expect(notCancelled).toBe(true);
+  });
+});
+
+describe('カーソルの位置に出した一覧を、人が画面を送ったときだけ閉じる（PR #240 のレビュー）', () => {
+  it('新着で自動に送られた（scroll だけが来た）ときは閉じず、ホイール・指・送るキーでは閉じる', () => {
+    const close = vi.fn();
+    const off = closeOnUserScroll(close);
+    try {
+      // 自動更新で新着が届き、いちばん下へ送られた
+      fireEvent.scroll(document);
+      fireEvent.scroll(document.body);
+      // 送らないキー
+      fireEvent.keyDown(document, { key: 'Tab' });
+      expect(close).not.toHaveBeenCalled();
+      fireEvent.wheel(document);
+      fireEvent.touchMove(document);
+      fireEvent.keyDown(document, { key: 'PageDown' });
+      expect(close).toHaveBeenCalledTimes(3);
+    } finally {
+      off();
+    }
+    // 外したあとは呼ばない
+    fireEvent.wheel(document);
+    expect(close).toHaveBeenCalledTimes(3);
   });
 });

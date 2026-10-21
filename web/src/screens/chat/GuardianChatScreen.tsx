@@ -19,7 +19,7 @@ import { REACTION, SENDER_KIND } from '../../api/codes';
 import { Loading, ErrorBox, Empty } from '../../components/ui';
 import { ConfirmDialog } from '../../components/feedback';
 import Reactions from '../../components/Reactions';
-import { useSecondaryAction, keepInViewport } from '../../secondaryAction';
+import { useSecondaryAction, keepInViewport, closeOnUserScroll } from '../../secondaryAction';
 import type { MenuAt } from '../../secondaryAction';
 import { formatHM, formatMD } from '../../api/util';
 import type { ChatMessage } from '../../api/types';
@@ -107,7 +107,8 @@ export default function GuardianChatScreen() {
   // 開いたチャンネルは、いちばん下（最新）から見せる（GitHub Issue #172）。いちばん下を読んでいるときに届いた
   // メッセージは、見える位置まで送る。上へ戻って読んでいるときは動かさない
   const listRef = useRef<HTMLDivElement | null>(null);
-  useFollowLatest(listRef, shownRoom, lastMessageId);
+  // PC の幅では列の内側でなくページ全体を送るので、送れる親が無ければ文書を送る
+  useFollowLatest(listRef, shownRoom, lastMessageId, { fallbackToDocument: true });
 
   // 一覧の外を押すか Esc で閉じる。開いたら最初の操作へ移る
   useEffect(() => {
@@ -122,15 +123,14 @@ export default function GuardianChatScreen() {
         document.querySelector<HTMLElement>(`[data-message-bubble="${menuId}"]`)?.focus();
       }
     };
-    // カーソルの位置に出した一覧は、画面を送るとメッセージから離れるので閉じる
-    const onScroll = () => { if (atCursor) setMenuId(null); };
+    // カーソルの位置に出した一覧は、人が画面を送るとメッセージから離れるので閉じる（新着での自動の送りでは閉じない）
+    const offScroll = atCursor ? closeOnUserScroll(() => setMenuId(null)) : () => {};
     document.addEventListener('pointerdown', onDown);
     document.addEventListener('keydown', onKey);
-    document.addEventListener('scroll', onScroll, true);
     return () => {
       document.removeEventListener('pointerdown', onDown);
       document.removeEventListener('keydown', onKey);
-      document.removeEventListener('scroll', onScroll, true);
+      offScroll();
     };
   }, [menuId, atCursor]);
 

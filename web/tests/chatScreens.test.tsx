@@ -149,6 +149,30 @@ describe('チャンネルを開いたら、いちばん下（最新）から見�
       restore();
     }
   });
+
+  // 送れる親が無い一覧（PR #240 のレビュー）。職員の画面などは文書を動かさず、保護者の PC の幅の画面だけ文書を送る
+  function Plain({ fallbackToDocument }: { fallbackToDocument?: boolean }) {
+    const ref = useRef<HTMLDivElement | null>(null);
+    useFollowLatest(ref, 8, 30, { fallbackToDocument });
+    return <div ref={ref} />;
+  }
+  it('送れる親が無いときは、指定した画面だけ文書全体を送る', () => {
+    const restore = withScrollBox();
+    const doc = document.documentElement;
+    const savedScrolling = Object.getOwnPropertyDescriptor(Document.prototype, 'scrollingElement');
+    Object.defineProperty(document, 'scrollingElement', { configurable: true, get: () => doc });
+    try {
+      render(<Plain />);
+      expect(doc.scrollTop).toBe(0);
+      cleanup();
+      render(<Plain fallbackToDocument />);
+      expect(doc.scrollTop).toBe(1000);
+    } finally {
+      delete (document as never as Record<string, unknown>).scrollingElement;
+      if (savedScrolling) Object.defineProperty(Document.prototype, 'scrollingElement', savedScrolling);
+      restore();
+    }
+  });
 });
 
 describe('取消は確かめてから行い、できなかったときは知らせる（GitHub Issue #141 の 2・#171 の 7）', () => {

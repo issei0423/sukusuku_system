@@ -15,7 +15,7 @@ import { api, accountName } from '../../api/client';
 import { Loading, ErrorBox, Empty, Alert, Tag } from '../../components/ui';
 import { ConfirmDialog, notify } from '../../components/feedback';
 import Reactions from '../../components/Reactions';
-import { useSecondaryAction, keepInViewport } from '../../secondaryAction';
+import { useSecondaryAction, keepInViewport, closeOnUserScroll } from '../../secondaryAction';
 import type { MenuAt, SecondaryActionHandlers } from '../../secondaryAction';
 import { CHAT_ROOM_TYPE, THREAD_STATUS, REACTION, GUARDIAN_ROOM_TYPES, SENDER_KIND } from '../../api/codes';
 import { formatHM, formatMD } from '../../api/util';
@@ -438,15 +438,14 @@ function MessageRow({ message, mine, canEdit, canDelete, showRole, readOnly, onR
       onMenu(false);
       bubbleRef.current?.focus({ preventScroll: true });
     };
-    // カーソルの位置に出した一覧は、画面を送るとメッセージから離れるので閉じる
-    const onScroll = () => { if (at) onMenu(false); };
+    // カーソルの位置に出した一覧は、人が画面を送るとメッセージから離れるので閉じる（新着での自動の送りでは閉じない）
+    const offScroll = at ? closeOnUserScroll(() => onMenu(false)) : () => {};
     document.addEventListener('pointerdown', onDown);
     document.addEventListener('keydown', onKey);
-    document.addEventListener('scroll', onScroll, true);
     return () => {
       document.removeEventListener('pointerdown', onDown);
       document.removeEventListener('keydown', onKey);
-      document.removeEventListener('scroll', onScroll, true);
+      offScroll();
     };
   }, [menuOpen, at]);
   /*

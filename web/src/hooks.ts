@@ -228,14 +228,16 @@ export function useAutoRefresh(callback: () => void, ms: number | undefined): vo
 /** いちばん下とみなす余り。指やホイールで少し戻しただけなら、いちばん下にいるものとして扱う */
 const FOLLOW_SLACK_PX = 48;
 
-/** 縦に送れる、いちばん近い祖先（自分を含む）。見つからなければ null */
-function scrollParent(el: HTMLElement | null): HTMLElement | null {
+/**
+ * 縦に送れる、いちばん近い祖先（自分を含む）。見つからなければ null。
+ * fallbackToDocument のときは、見つからなければ文書そのものを返す（ページ全体を送る作りの画面）
+ */
+function scrollParent(el: HTMLElement | null, fallbackToDocument: boolean): HTMLElement | null {
   for (let node = el; node; node = node.parentElement) {
     const y = getComputedStyle(node).overflowY;
     if (y === 'auto' || y === 'scroll') return node;
   }
-  // 列の内側でなくページ全体を送る作り（保護者の画面の PC の幅）では、文書そのものを送る
-  return (document.scrollingElement as HTMLElement | null) ?? null;
+  return fallbackToDocument ? (document.scrollingElement as HTMLElement | null) : null;
 }
 
 /**
@@ -248,11 +250,16 @@ function scrollParent(el: HTMLElement | null): HTMLElement | null {
  * チャットのメッセージは直近から遡って見せる（基本設計書「一覧表示とページング」(3-7)、図/画面詳細図.md 4-1 No.4）。
  * 古いものから出すと、最新と、開いている間に届いたものが画面の外に残る（GitHub Issue #172）。
  * latest は一覧の最後のメッセージ。scope と latest が変わったときだけ見る。
+ * 送れる祖先が無いときは何もしない。fallbackToDocument を付けた画面だけ、文書全体を送る
+ * （列の内側でなくページ全体を送る作り。保護者のチャット画面の PC の幅）。
  */
-export function useFollowLatest(target: RefObject<HTMLElement | null>, scope: unknown, latest: unknown): void {
+export function useFollowLatest(
+  target: RefObject<HTMLElement | null>, scope: unknown, latest: unknown,
+  { fallbackToDocument = false }: { fallbackToDocument?: boolean } = {},
+): void {
   const prev = useRef<{ scope: unknown; height: number } | null>(null);
   useLayoutEffect(() => {
-    const el = scrollParent(target.current);
+    const el = scrollParent(target.current, fallbackToDocument);
     if (!el) { prev.current = null; return; }
     const p = prev.current;
     // チャンネルのメッセージが初めて出た（開いた・切り替えた）。空のチャンネル（scope が無い）では何もしない

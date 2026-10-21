@@ -119,6 +119,27 @@ export function useSecondaryAction(): (open: (el: HTMLElement, at?: MenuAt) => v
   });
 }
 
+/** 画面を送るキー。押されたあとに画面が動く */
+const SCROLL_KEYS = new Set(['PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown']);
+
+/**
+ * 人が画面を送ろうとしたとき（ホイール・指での送り・送るキー）に close を呼ぶ。外すための関数を返す。
+ * カーソルの位置に出した一覧は、画面を送るとメッセージから離れるので閉じる。
+ * scroll イベントでは見ない。自動更新で新着が届き、いちばん下へ送られた（useFollowLatest）だけで
+ * 操作の途中の一覧が消えてしまうため。スクロールバーをつかんだときは、一覧の外を押したとして閉じる
+ */
+export function closeOnUserScroll(close: () => void): () => void {
+  const onKey = (e: KeyboardEvent) => { if (SCROLL_KEYS.has(e.key)) close(); };
+  document.addEventListener('wheel', close, { passive: true });
+  document.addEventListener('touchmove', close, { passive: true });
+  document.addEventListener('keydown', onKey);
+  return () => {
+    document.removeEventListener('wheel', close);
+    document.removeEventListener('touchmove', close);
+    document.removeEventListener('keydown', onKey);
+  };
+}
+
 /**
  * カーソルの位置に出した一覧（position: fixed）を、画面の外へはみ出さないよう寄せる。
  * 右へはみ出すときは左へ寄せ、下へはみ出すときはカーソルの上へ出す。開いた直後に1回呼ぶ
