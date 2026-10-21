@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"log"
 	"strconv"
 )
@@ -15,6 +16,7 @@ import (
  */
 
 // Child は園児（m_child）。
+// 保護者へ返すときは forGuardian を通し、園児情報入力画面の項目を応答から落とす（下の MarshalJSON）
 // 呼び名（Nickname）は保護者の応答には含めない（インタフェース一覧「Child」）。保護者へ返す visibleChildren・
 // guardianContactChildren が forGuardian で空にし、omitempty で項目ごと落とす
 type Child struct {
@@ -30,6 +32,46 @@ type Child struct {
 	IsDeleted         bool     `json:"is_deleted"`
 	CreatedAt         string   `json:"created_at"`
 	UpdatedAt         string   `json:"updated_at"`
+
+	// guardianView は保護者へ返す形かどうか。JSON には出さない
+	guardianView bool
+}
+
+// guardianHiddenChildKeys は、保護者へ返す園児の応答から落とす項目。
+// 園児情報入力画面の項目（既往歴・アレルギー・写真の利用同意・平熱）は保護者に返さない
+// （図/インタフェース一覧.md「経路の一覧」(1) の GET /api/children・/api/children/{childID}・/class。
+// 基本設計書「権限と利用可能機能」(6-1)「園児情報の参照｜保護者 ×」。設計の直しは PR #216 の直-30）。
+// 既往歴・アレルギーは Child に載らず、別の経路（職員だけ）で返す。
+// モックは web/src/api/mock.ts の childForGuardian
+var guardianHiddenChildKeys = []string{"normal_temperature", "photo_consent_level"}
+
+// forGuardian は、保護者へ返す園児の形にする。値も消しておき、JSON 以外の使い道からも漏らさない。
+// 呼び名も保護者の応答に含めない（インタフェース一覧「Child」）。
+// モックは web/src/api/mock.ts の childForGuardian
+func (c Child) forGuardian() Child {
+	c.Nickname = ""
+	c.NormalTemperature = nil
+	c.PhotoConsentLevel = ""
+	c.guardianView = true
+	return c
+}
+
+// MarshalJSON は、保護者へ返す形のときだけ guardianHiddenChildKeys を項目ごと落とす。
+// 職員への応答の形は変えない（平熱が無い園児は null のまま返す）
+func (c Child) MarshalJSON() ([]byte, error) {
+	type plain Child // MarshalJSON を持たない型に移して、呼び返しを避ける
+	b, err := json.Marshal(plain(c))
+	if err != nil || !c.guardianView {
+		return b, err
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, err
+	}
+	for _, k := range guardianHiddenChildKeys {
+		delete(m, k)
+	}
+	return json.Marshal(m)
 }
 
 // 呼び名の列は空のまま足す（詳細設計書「変える表」(5-3)）ため NULL がある。IFNULL で空の文字列にそろえて読む
@@ -43,13 +85,6 @@ func scanChild(rows interface{ Scan(...any) error }) (Child, error) {
 		&temp, &c.EnrollmentStatus, &c.PhotoConsentLevel, &c.IsDeleted, &c.CreatedAt, &c.UpdatedAt)
 	c.NormalTemperature = nullFloat(temp)
 	return c, err
-}
-
-// forGuardian は、保護者へ返す園児の形にする。呼び名は保護者の応答に含めない（インタフェース一覧「Child」）。
-// モックは web/src/api/mock.ts の childForGuardian
-func (c Child) forGuardian() Child {
-	c.Nickname = ""
-	return c
 }
 
 // canSeeChild は職員・保護者がその園児を参照できるかを判定する。
@@ -82,6 +117,7 @@ func (a *app) canSeeChild(u *SessionUser, childID string) bool {
 }
 
 // visibleChildren はその利用者が参照できる在籍中の園児を、かな順で返す。
+// 保護者には自児だけを、園児情報入力画面の項目を落とした形（forGuardian）で返す
 func (a *app) visibleChildren(u *SessionUser) ([]Child, error) {
 	base := `SELECT ` + childColumns + ` FROM m_child
 	          WHERE is_deleted = 0 AND enrollment_status = '1'`
@@ -137,15 +173,28 @@ type ClassRoom struct {
 }
 
 // selectableClasses は職員が選べるクラス。一般は自クラスのみ（画面詳細図 3-1）。
+// 保護者には自児（visibleChildren と同じ、有効な紐づけのある在籍中の園児）のクラスだけを返す。
+// 保護者の画面はクラスの一覧を使わず、ほかのクラスの名前や数を保護者へ渡す理由が無いため
+// （【仮置き】設計は保護者に返すクラスを決めていない。web/仮置き値.md。モックは web/src/api/mock.ts の selectableClasses）
 func (a *app) selectableClasses(u *SessionUser) ([]ClassRoom, error) {
 	q := `SELECT class_id, fiscal_year, class_name, age_class FROM m_class WHERE fiscal_year = ?`
 	args := []any{fiscalYear}
-	if u.isGeneralStaff() {
+	switch {
+	case u.isGeneralStaff():
 		if u.ClassID == nil {
 			return []ClassRoom{}, nil
 		}
 		q += ` AND class_id = ?`
 		args = append(args, *u.ClassID)
+	case u.isGuardian():
+		if u.GuardianID == nil {
+			return []ClassRoom{}, nil
+		}
+		q += ` AND class_id IN (SELECT cc.class_id FROM t_class_child cc
+		         JOIN t_guardian_child gc ON gc.child_id = cc.child_id AND gc.link_status = '1'
+		         JOIN m_child c ON c.child_id = cc.child_id AND c.is_deleted = 0 AND c.enrollment_status = '1'
+		        WHERE gc.guardian_id = ?)`
+		args = append(args, *u.GuardianID)
 	}
 	q += ` ORDER BY class_id`
 

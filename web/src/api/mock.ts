@@ -44,6 +44,8 @@ import {
 import type { NapReportAbnormal, NapReportFilter, NapReportHistory, NapReportLine } from './napReport';
 import { NAP_CORRECT_MSG, NAP_CORRECTED_MARK, napCorrectionReason, napCorrectionText, napRecordFields } from './napCorrect';
 import type { NapRecordCorrectInput } from './napCorrect';
+import { isAutomatic } from './automatic';
+import type { SessionStatus } from './shapes';
 import type {
   LoginError, ChildInput, DiaryFilter, DiaryInput, DiaryAttachmentInput, DiaryIncidentInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
   DevDraftView,
@@ -113,6 +115,29 @@ export function settingNumber(key: string, fallback: number): number {
 }
 export function settingText(key: string, fallback: string): string {
   return db.settings.find((s) => s.setting_key === key)?.setting_value ?? fallback;
+}
+
+/**
+ * 保護者へ返す設定マスタのキー。保護者の画面で使うキーに絞る（詳細設計書「参照データの設定の返し方」(4-10 (7))、
+ * 決めたこと D-44）。午睡の確認の間隔のような監査の層の値を保護者へ返さない。contact.*・ai.enabled は
+ * 第3.0版で足すキーで、いまの設定マスタには無い。サーバ側は server/api_reference.go の guardianSettingKeys
+ */
+export const GUARDIAN_SETTING_KEYS: ReadonlySet<string> = new Set([
+  'facility.name', 'facility.phone_number', 'contact.home_items', 'contact.mood_choices', 'ai.enabled',
+]);
+
+/**
+ * 参照データ（GET /api/reference）の設定。保護者には GUARDIAN_SETTING_KEYS だけ、職員には全キー。
+ * http.ts の画面はこの形を受け取る。モックの画面は settingText・settingNumber で設定マスタを直接読むため、
+ * 利用者で絞れない（下の「手続きを終えるまでの拒否」の注記と同じ、利用者を受け取らない関数の制約）
+ */
+export function referenceSettings(user: SessionUser): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const s of db.settings) {
+    if (user.role === '3' && !GUARDIAN_SETTING_KEYS.has(s.setting_key)) continue;
+    out[s.setting_key] = s.setting_value;
+  }
+  return out;
 }
 
 /**
@@ -272,16 +297,23 @@ export function canSeeChild(user: SessionUser, childId: string): boolean {
 }
 
 /**
- * 保護者へ返す園児の形。呼び名（nickname）は保護者の応答に含めない（インタフェース一覧「Child」）。
- * 写しを返す（園児の行そのものは変えない）。server/scope.go の forGuardian と同じ
+ * 保護者へ返す園児の形。園児情報入力画面の項目（既往歴・アレルギー・写真の利用同意・平熱）は保護者に返さない
+ * （図/インタフェース一覧.md「経路の一覧」(1) の GET /api/children・/api/children/{childID}・/class。
+ * 基本設計書「権限と利用可能機能」(6-1)「園児情報の参照｜保護者 ×」。設計の直しは PR #216 の直-30）。
+ * 既往歴・アレルギーは Child に載らず、別の経路（職員だけ）で返す。平熱・写真の利用同意は項目ごと落とす。
+ * 呼び名（nickname）も保護者の応答に含めない（インタフェース一覧「Child」）。
+ * 写しを返す（園児の行そのものは変えない）。
+ * 型は Child のままにしている（保護者の画面はこの2つを読まない）。サーバ側は server/scope.go の forGuardian
  */
 export function childForGuardian(c: Child): Child {
-  const out = { ...c };
+  const out: Partial<Child> = { ...c };
   delete out.nickname;
-  return out;
+  delete out.normal_temperature;
+  delete out.photo_consent_level;
+  return out as Child;
 }
 
-/** 保護者の自児一覧。紐づけが終了したものは含めない。呼び名は落とす（childForGuardian） */
+/** 保護者の自児一覧。紐づけが終了したものは含めない。呼び名と園児情報入力画面の項目は落とす（childForGuardian） */
 export function childrenOfGuardian(guardianId: string): Child[] {
   return db.guardianChildren
     .filter((gc) => gc.guardian_id === guardianId && gc.link_status === '1')
@@ -306,10 +338,22 @@ export function visibleChildren(user: SessionUser): Child[] {
   return user.guardian_id ? childrenOfGuardian(user.guardian_id) : [];
 }
 
-/** 職員が選べるクラス。一般は自クラスのみ（画面詳細図 3-1） */
+/**
+ * 職員が選べるクラス。一般は自クラスのみ（画面詳細図 3-1）。
+ * 保護者には自児（有効な紐づけのある在籍中の園児）のクラスだけを返す
+ * （【仮置き】設計は保護者に返すクラスを決めていない。web/仮置き値.md。サーバ側は server/scope.go の selectableClasses）
+ */
 export function selectableClasses(user: SessionUser): ClassRoom[] {
   const current = db.classes.filter((c) => c.fiscal_year === db.FISCAL_YEAR);
   if (user.role === '1') return current;
+  if (user.role === '3') {
+    if (!user.guardian_id) return [];
+    const mine = new Set(childrenOfGuardian(user.guardian_id)
+      .filter((c) => !c.is_deleted && c.enrollment_status === '1')
+      .map((c) => c.child_id));
+    const ids = new Set(db.classChildren.filter((cc) => mine.has(cc.child_id)).map((cc) => cc.class_id));
+    return current.filter((c) => ids.has(c.class_id));
+  }
   return current.filter((c) => c.class_id === user.class_id);
 }
 
@@ -635,6 +679,8 @@ export const authApi = {
     a.locked_until = null;
     const sessionUser = buildSessionUser(a);
     loggedInStaffId = sessionUser.staff_id;
+    // ログインそのものを最初の操作とし、自動ログアウトの時間を数え始める（server/session.go の create と同じ）
+    startIdleSession(a.account_id);
     return ok(sessionUser);
   },
 
@@ -703,6 +749,23 @@ export const authApi = {
     // 停止中のアカウントは、ログイン中であっても通さない（server/session.go の requireLogin。GitHub Issue #159）
     if (a.status === '2') return sessionEnded();
     return ok(buildSessionUser(a));
+  },
+
+  /**
+   * ログインの期限（GitHub Issue #210）。職員の画面が、自動ログアウトの予告を出すかを決めるのに使う
+   * （components/SessionTimeoutWarning.tsx）。尋ねるだけでは延ばさない（下の「ログインの期限」の touchIdleSession）。
+   * サーバ側は server/api_session.go の handleSessionStatus
+   */
+  async sessionStatus(user: SessionUser): Promise<SessionStatus> {
+    return idleSessionStatus(user);
+  },
+
+  /**
+   * 予告の「続ける」。操作の1つとして期限を延ばし（呼んだ時点で touchIdleSession が延ばしている）、延びた期限を返す。
+   * 切れたあとは延ばさない。サーバ側は server/api_session.go の handleExtendSession
+   */
+  async extendSession(user: SessionUser): Promise<SessionStatus> {
+    return idleSessionStatus(user);
   },
 };
 
@@ -4676,6 +4739,97 @@ function sessionAlive(u: SessionUser): boolean {
   return findAccount(u.account_id)?.status !== '2';
 }
 
+/* ============ ログインの期限（GitHub Issue #210） ============
+ *
+ * 職員の画面は、最後の操作から ui.auto_logout_minutes を過ぎたら切れる（基本設計書「ログイン」(4-3)）。
+ * 切れる時刻を画面へ返し（sessionStatus）、予告の「続ける」で延ばす（extendSession）。
+ * サーバ側は server/session.go の idleDeadline・napExemption と server/api_session.go。同じ規則にしてある。
+ *
+ * モックはセッションを持たないため、アカウントごとに最後の操作の時刻を持つ（同じブラウザのタブはどれも同じセッションになる）。
+ *   - ログインで数え始める。ログインしないで呼んだとき（テストなど）は、最初に呼ばれた時刻から数える
+ *   - 操作に数えるのは、利用者を受け取る api の呼び出しのうち、裏の読み直し（api/automatic.ts の asAutomatic）でないもの。
+ *     期限を尋ねる sessionStatus は数えない（server/session.go の countsAsOperation と同じ）
+ *   - その職員が開始した午睡チェックの実施中は切らず、期限を返さない。実施が終わったら、終わった時刻から数え直す
+ *   - 切れたあとは、操作しても戻らない。sessionStatus・extendSession は切れたと知らせる（サーバの 401 にあたる）
+ *   - 【モックだけ】ほかの api は、切れたあとも拒まない。モックはもともと期限でセッションを切らない（web/仮置き値.md）。
+ *     画面は期限の時刻に sessionStatus を尋ねるので、モックでも入口へ戻る
+ */
+interface IdleSession { lastActiveMs: number; ended: boolean }
+const idleSessions = new Map<number, IdleSession>();
+
+const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+/** 時刻（ミリ秒）を JST の 'YYYY-MM-DDTHH:MM:SS' にする */
+const jstISO = (ms: number) => new Date(ms + JST_OFFSET_MS).toISOString().slice(0, 19);
+/** JST の 'YYYY-MM-DDTHH:MM:SS' を時刻（ミリ秒）にする */
+const jstMs = (iso: string) => Date.parse(`${iso}+09:00`);
+
+function startIdleSession(accountId: number): void {
+  idleSessions.set(accountId, { lastActiveMs: Date.now(), ended: false });
+}
+
+function idleSessionOf(u: SessionUser): IdleSession {
+  let s = idleSessions.get(u.account_id);
+  if (!s) {
+    s = { lastActiveMs: Date.now(), ended: false };
+    idleSessions.set(u.account_id, s);
+  }
+  return s;
+}
+
+/**
+ * その職員が、このまま操作が無ければ切れる時刻（ミリ秒）。開始した午睡チェックが実施中なら決まらない（napActive）。
+ * 最後の操作から ui.auto_logout_minutes。最後の操作より後に実施が終わっていれば、終わった時刻から数える。
+ * 終了の操作を忘れた実施は、午睡の時間帯（nap.time_range）の終わりで解除する（napAutoCloseAt）
+ */
+function idleDeadlineOf(u: SessionUser, s: IdleSession): { deadlineMs: number; napActive: boolean } {
+  const staffId = db.staff.find((x) => x.account_id === u.account_id)?.staff_id;
+  const range = settingText('nap.time_range', '13:00-15:00');
+  const nowISO = now();
+  const since = jstISO(s.lastActiveMs);
+  let from = s.lastActiveMs;
+  for (const n of db.napSessions) {
+    if (!staffId || n.started_staff_id !== staffId) continue;
+    if (n.ended_at !== null && n.ended_at <= since) continue;
+    let end = n.ended_at;
+    if (end === null) {
+      const closeAt = napAutoCloseAt(n.session_date, n.started_at, range);
+      if (nowISO <= closeAt) return { deadlineMs: 0, napActive: true };
+      end = closeAt;
+    }
+    from = Math.max(from, jstMs(end));
+  }
+  return { deadlineMs: from + settingNumber('ui.auto_logout_minutes', 30) * 60_000, napActive: false };
+}
+
+/** 切れていれば切れた印を付ける。ちょうどの時刻まではまだ使える（server/session.go の sessionAccount と同じ） */
+function expireIfIdle(u: SessionUser, s: IdleSession): void {
+  if (s.ended) return;
+  const { deadlineMs, napActive } = idleDeadlineOf(u, s);
+  if (!napActive && Date.now() > deadlineMs) s.ended = true;
+}
+
+/** 操作に数える呼び出しなら、最後の操作の時刻をいまにする（server/session.go の requireLogin の touch） */
+function touchIdleSession(u: SessionUser, name: string): void {
+  if (u.role === '3' || name === 'sessionStatus' || isAutomatic()) return;
+  const s = idleSessionOf(u);
+  expireIfIdle(u, s);
+  if (!s.ended) s.lastActiveMs = Date.now();
+}
+
+/** いまの期限。保護者には自動ログアウトが無いので返さない（server/api_session.go の sessionStatusOf） */
+function idleSessionStatus(u: SessionUser): Promise<SessionStatus> {
+  if (u.role === '3') return ok({ auto_logout: false, nap_exempt: false, expires_at: null, remaining_seconds: null });
+  const s = idleSessionOf(u);
+  expireIfIdle(u, s);
+  if (s.ended) return sessionEnded();
+  const { deadlineMs, napActive } = idleDeadlineOf(u, s);
+  if (napActive) return ok({ auto_logout: true, nap_exempt: true, expires_at: null, remaining_seconds: null });
+  return ok({
+    auto_logout: true, nap_exempt: false,
+    expires_at: jstISO(deadlineMs), remaining_seconds: Math.floor((deadlineMs - Date.now()) / 1000),
+  });
+}
+
 function guardProcedure<T extends Record<string, unknown>>(apis: T): T {
   const out: Record<string, unknown> = {};
   for (const [name, fn] of Object.entries(apis)) {
@@ -4683,6 +4837,8 @@ function guardProcedure<T extends Record<string, unknown>>(apis: T): T {
     out[name] = (...args: unknown[]) => {
       const caller = args.find(isSessionUser);
       if (caller && !sessionAlive(caller)) return sessionEnded();
+      // 自動ログアウトの時間を、最後の操作から数え直す（上の「ログインの期限」）。サーバと同じく、手続きで拒むより前に数える
+      if (caller) touchIdleSession(caller, name);
       const kind = caller ? pendingProcedure(caller) : null;
       if (!kind) return fn(...args);
       notifyProcedureRequired(kind);

@@ -40,7 +40,10 @@ func newTestApp(t *testing.T) (*app, http.Handler) {
 func loginAs(a *app, accountID int64, entrance string) *http.Cookie {
 	id := randomToken(16)
 	a.sessions.mu.Lock()
-	a.sessions.data[id] = session{accountID: accountID, entrance: entrance, expiresAt: time.Now().Add(time.Hour)}
+	// 職員の入口なら、ログインと同じく自動ログアウトを課す（session.go の idleLogout）。ログインした時刻を最後の操作とする
+	at := a.sessions.now()
+	a.sessions.data[id] = session{accountID: accountID, entrance: entrance,
+		expiresAt: at.Add(time.Hour), idleLogout: entrance == "staff", lastActiveAt: at}
 	a.sessions.mu.Unlock()
 	return &http.Cookie{Name: sessionCookie, Value: id}
 }

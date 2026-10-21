@@ -26,6 +26,22 @@ export type LoginError =
   /** 送信元の失敗が続き、しばらく受け付けを止めている（server/attempts.go。GitHub Issue #236 の 6）。Go サーバだけが返す */
   | { kind: 'too_many_attempts' };
 
+/**
+ * ログインの期限（GET /api/session・POST /api/session/extend の応答。GitHub Issue #210）。
+ * 期限はサーバが決める（server/api_session.go の sessionStatusOf。モックは api/mock.ts の sessionStatus）。
+ * 画面は自分で数えた時刻を正とせず、予告を出す前・出している間に尋ね直す（components/SessionTimeoutWarning.tsx）
+ */
+export interface SessionStatus {
+  /** 無操作で切るか。職員の画面だけ真（基本設計書「ログイン」(4-3)） */
+  auto_logout: boolean;
+  /** その職員が開始した午睡チェックが実施中で、いまは切らない。期限は決まっていない */
+  nap_exempt: boolean;
+  /** このまま操作が無ければ切れる時刻（JST、'YYYY-MM-DDTHH:MM:SS'）。決まっていないときは null */
+  expires_at: string | null;
+  /** 切れるまでの秒数（切り捨て）。0 のあいだはまだ使える。決まっていないときは null */
+  remaining_seconds: number | null;
+}
+
 /** 園児情報の登録・編集の入力（図/画面詳細図.md 7-2） */
 export interface ChildInput {
   child_id: string;

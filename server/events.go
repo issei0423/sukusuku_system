@@ -193,9 +193,11 @@ func (u *SessionUser) canReceiveLive() bool {
 	return !u.isSuspended() && !u.IsTempPassword && u.TermsAgreed
 }
 
-// liveSessionAlive は、つないだときのセッションがまだ使えるかを返す。期限切れ・停止などに気づいて閉じるために使う
+// liveSessionAlive は、つないだときのセッションがまだ使えるかを返す。期限切れ・停止などに気づいて閉じるために使う。
+// 判定は session.go の sessionAccount（自動ログアウトと午睡チェックの実施中の例外を含む）。ストアだけで見ると、
+// 実施中の職員の接続を閉じてしまう。/api/events は操作に数えない（countsAsOperation）ので、ここで期限は延ばさない
 func (a *app) liveSessionAlive(r *http.Request, accountID int64) bool {
-	id, ok := a.sessions.accountID(r)
+	id, ok := a.sessionAccount(r)
 	if !ok || id != accountID {
 		return false
 	}
