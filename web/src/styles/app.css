@@ -39,13 +39,13 @@
 .app-header button { min-height: var(--tap-min); background: var(--c-surface); }
 
 /* 通知と未対応件数 */
-/* 件数の札がベルの絵に重ならないよう、右側を空けておく */
-.notify-btn { position: relative; padding: var(--sp-2) 26px var(--sp-2) var(--sp-3); }
+/* 件数の札がベルの絵に重ならないよう、右側を空けておく。札と空きは文字の大きさに合わせて rem で決める */
+.notify-btn { position: relative; padding: var(--sp-2) 1.625rem var(--sp-2) var(--sp-3); }
 .notify-badge {
   position: absolute; top: 2px; right: 2px;
-  min-width: 22px; height: 22px; padding: 0 6px;
-  border-radius: 11px; background: var(--c-alert); color: var(--dads-white);
-  font-size: var(--fs-small); font-weight: 700; line-height: 22px; letter-spacing: 0; text-align: center;
+  min-width: 1.375rem; height: 1.375rem; padding: 0 6px;
+  border-radius: 0.6875rem; background: var(--c-alert); color: var(--dads-white);
+  font-size: var(--fs-small); font-weight: 700; line-height: 1.375rem; letter-spacing: 0; text-align: center;
 }
 
 /*
@@ -75,7 +75,7 @@
  */
 .connection-banner { margin: 0 0 var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: 8px; font-weight: 700; }
 .connection-banner.is-unreachable { background: var(--c-alert); color: var(--dads-white); }
-.connection-banner.is-unreachable.is-large { min-height: 64px; display: flex; align-items: center; font-size: 20px; }
+.connection-banner.is-unreachable.is-large { min-height: 64px; display: flex; align-items: center; font-size: 1.25rem; }
 .connection-banner.is-fallback { padding: var(--sp-1) var(--sp-3); background: var(--c-alert-soft); color: var(--c-primary-ink); font-weight: 400; font-size: var(--fs-small); }
 
 .staff-body { flex: 1; display: flex; min-height: 0; position: relative; }
@@ -174,7 +174,7 @@
   min-height: 52px; min-width: 64px; padding: 2px 6px;
   font-size: var(--fs-small); line-height: 1.2; letter-spacing: 0; white-space: nowrap;
 }
-.guardian-menu-button span:first-child { font-size: 20px; line-height: 24px; }
+.guardian-menu-button span:first-child { font-size: 1.25rem; line-height: 1.5rem; }
 .guardian-brand { display: inline-flex; align-items: center; gap: 2px; min-height: 48px; text-decoration: none; }
 .guardian-brand-mark { width: 44px; height: 40px; object-fit: contain; }
 .guardian-brand-wordmark { width: 100px; height: auto; }
@@ -188,7 +188,7 @@
 .guardian-home-intro, .guardian-page-intro { padding: 0; }
 .guardian-page-intro { padding-bottom: var(--sp-4); }
 .guardian-eyebrow { display: block; color: var(--c-text-sub); font-size: var(--fs-body); font-weight: 700; line-height: 1.7; }
-.guardian-home-intro h1, .guardian-page-intro h1 { margin: 0 0 var(--sp-2); font-size: 24px; }
+.guardian-home-intro h1, .guardian-page-intro h1 { margin: 0 0 var(--sp-2); font-size: 1.5rem; }
 .guardian-home-intro p, .guardian-page-intro p { margin: 0; color: var(--c-text-sub); font-size: var(--fs-body); }
 
 .guardian-child-section { display: flex; flex-direction: column; gap: var(--sp-4); }
@@ -198,7 +198,7 @@
   padding: var(--sp-4);
   background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius);
 }
-.guardian-child-card h2 { margin: 0; font-size: 24px; }
+.guardian-child-card h2 { margin: 0; font-size: 1.5rem; }
 .guardian-child-card p { margin: 0; color: var(--c-text-sub); }
 .guardian-child-card img { flex: none; width: 64px; height: 56px; object-fit: contain; }
 
@@ -208,7 +208,7 @@
   border: 1px solid var(--c-border); border-radius: var(--radius);
 }
 .guardian-panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
-.guardian-panel-heading h2 { font-size: 20px; }
+.guardian-panel-heading h2 { font-size: 1.25rem; }
 .guardian-home-panel p { margin: var(--sp-2) 0 var(--sp-4); color: var(--c-text-sub); }
 /* 件数の札。DADS のチップラベル（塗り）と同じ形 */
 .guardian-unread {
@@ -255,7 +255,7 @@
 .guardian-chat-list .guardian-contact-note { padding-top: var(--sp-4); }
 .guardian-chat-thread { display: flex; flex-direction: column; min-height: 100%; }
 .guardian-thread-heading { padding: 0 0 var(--sp-3); border-bottom: 1px solid var(--c-border); }
-.guardian-thread-heading h1 { font-size: 20px; }
+.guardian-thread-heading h1 { font-size: 1.25rem; }
 .guardian-message-list { flex: 1; padding-top: var(--sp-4); }
 .guardian-message-compose {
   position: sticky; bottom: calc(var(--sp-6) * -1); padding: var(--sp-3) 0;
@@ -263,7 +263,7 @@
 }
 .guardian-message-compose input { min-width: 0; }
 .guardian-diary-card { padding: var(--sp-5) var(--sp-4); }
-.guardian-diary-card h2 { font-size: 20px; }
+.guardian-diary-card h2 { font-size: 1.25rem; }
 
 /*
  * 保護者レイアウトの幅ごとの切り替え。スマートフォンの形を基本に書き、幅が広いときだけ上書きする。
@@ -288,7 +288,7 @@
 @media (min-width: 1024px) {
   /* 文字を 16px → 18px に上げる。画面から目までがスマートフォンより遠く、同じ大きさでは小さく見えるため */
   .guardian-shell {
-    --fs-body: 18px; --fs-small: 16px;
+    --fs-body: 1.125rem; --fs-small: 1rem;
     font-size: var(--fs-body);
     max-width: none; height: auto; min-height: 100%;
     border: 0; background: var(--c-bg);
@@ -299,7 +299,7 @@
     display: flex; align-items: center; gap: var(--sp-2); margin-right: var(--sp-3);
     font-size: var(--fs-small); font-weight: 700;
   }
-  .guardian-header-phone a { display: inline-flex; align-items: center; min-height: var(--tap-min); font-size: 20px; }
+  .guardian-header-phone a { display: inline-flex; align-items: center; min-height: var(--tap-min); font-size: 1.25rem; }
   /* 下端の案内はヘッダへ移したので出さない（.guardian-footer の定義より後ろでも効くよう、列の中に限って書く） */
   .guardian-shell .guardian-footer { display: none; }
 
@@ -578,7 +578,7 @@ summary { min-height: var(--tap-min); padding: 10px 0; cursor: pointer; }
 .step.locked { background: var(--c-surface-sub); color: var(--c-text-sub); }
 .step fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .step.locked fieldset:disabled { cursor: not-allowed; }
-.step .step-title { font-size: 17px; font-weight: 700; margin-bottom: var(--sp-3); }
+.step .step-title { font-size: 1.0625rem; font-weight: 700; margin-bottom: var(--sp-3); }
 
 .terms-box { max-height: 220px; overflow-y: auto; border: 1px solid var(--c-border); border-radius: var(--radius); padding: var(--sp-3) var(--sp-4); background: var(--c-surface-sub); white-space: pre-wrap; }
 .skip-link { position: absolute; left: 8px; top: -100px; z-index: 100; background: var(--c-surface); padding: 8px 16px; }
