@@ -9,8 +9,7 @@
  * 2026/09/07 に「分けない」と決着した（基本設計書「画面の一覧」(3-2)）。
  * 分けても表示項目は増えず、画面数と図の分量だけが増えるため。
  */
-import { useEffect, useRef, useState } from 'react';
-import type { MouseEvent, PointerEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAsync, useFollowLatest, AUTO_REFRESH_MS } from '../../hooks';
 import { onLive, onRoom } from '../../live';
@@ -20,18 +19,13 @@ import { REACTION, SENDER_KIND } from '../../api/codes';
 import { Loading, ErrorBox, Empty } from '../../components/ui';
 import { ConfirmDialog } from '../../components/feedback';
 import Reactions from '../../components/Reactions';
+import { useSecondaryAction, keepInViewport, closeOnUserScroll, MENU_OPENED_TEXT } from '../../secondaryAction';
+import type { MenuAt } from '../../secondaryAction';
 import { formatHM, formatMD } from '../../api/util';
 import type { ChatMessage } from '../../api/types';
 import { useUnsavedInput } from '../../unsavedInput';
 import IncomingLog from './IncomingLog';
 import { useIncomingMessages } from './useIncomingMessages';
-
-/*
- * メッセージを長押しして操作の一覧を開くまでの時間と、長押しとみなす指のずれの上限。
- * 設計に定めが無く、仮に置いた値（web/仮置き値.md）
- */
-const LONG_PRESS_MS = 800;
-const LONG_PRESS_MOVE_PX = 10;
 
 export default function GuardianChatScreen() {
   const { user } = useSession();
@@ -67,7 +61,8 @@ export default function GuardianChatScreen() {
   /*
    * リアクション・編集・取消は、メッセージを長押しして開く操作の一覧に置く。
    * 各メッセージの下へ常に並べると、やりとりが続いたときに本文が読みにくくなるため。
-   * 長押しができない操作（キーボード、マウスの右クリック）からも同じ一覧を開ける。
+   * PC では右クリックで、右クリックした位置に開く。キーボードでは吹き出しを選んで Enter で開く。
+   * 「操作」ボタンは置かない（secondaryAction.ts）。
    */
   const [menuId, setMenuId] = useState<number | null>(null);
   /*
@@ -75,16 +70,18 @@ export default function GuardianChatScreen() {
    * 画面の端のメッセージでも一覧が画面の外へ出ないようにするため。
    * メッセージの並びは押し広げず、重ねて出す（開いたときに画面が動かない）
    */
-  const [menuPlace, setMenuPlace] = useState<{ above: boolean; offset: number }>({ above: false, offset: 0 });
+  const [menuPlace, setMenuPlace] = useState<{ above: boolean; offset: number; at?: MenuAt }>({ above: false, offset: 0 });
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const pressTimer = useRef<number | null>(null);
-  const pressStart = useRef<{ x: number; y: number } | null>(null);
+  const atCursor = menuPlace.at !== undefined;
+  // PC の右クリックで開いたときは、カーソルの位置に出し、画面の外へはみ出さないよう寄せる
+  useLayoutEffect(() => {
+    if (menuId !== null && menuPlace.at) keepInViewport(menuRef.current?.parentElement ?? null, menuPlace.at);
+  }, [menuId, menuPlace]);
   /*
-   * 長押しで一覧を開いた直後に指を離すと、その位置が「押された」ことになる。
-   * 一覧を見える位置へ送ると画面が動くため、指の下に来たリアクションのボタンや本文中のリンクが
-   * 意図せず押されてしまう。長押しで開いた直後の1回だけ、どこに当たっても無視する
+   * 右クリック・長押しの判定（secondaryAction.ts）。長押しで開いた直後に指を離したときのクリックを
+   * 無視する扱いも、ここに含まれる（一覧を見える位置へ送ると画面が動き、指の下にボタンが来るため）
    */
-  const suppressClick = useRef(false);
+  const secondary = useSecondaryAction();
 
   const messages = useAsync(async () => (roomId ? api.messages(user!, roomId) : []), [roomId],
     { refreshMs: AUTO_REFRESH_MS, live: onRoom(roomId) });
@@ -110,7 +107,8 @@ export default function GuardianChatScreen() {
   // 開いたチャンネルは、いちばん下（最新）から見せる（GitHub Issue #172）。いちばん下を読んでいるときに届いた
   // メッセージは、見える位置まで送る。上へ戻って読んでいるときは動かさない
   const listRef = useRef<HTMLDivElement | null>(null);
-  useFollowLatest(listRef, shownRoom, lastMessageId);
+  // PC の幅では列の内側でなくページ全体を送るので、送れる親が無ければ文書を送る
+  useFollowLatest(listRef, shownRoom, lastMessageId, { fallbackToDocument: true });
 
   // 一覧の外を押すか Esc で閉じる。開いたら最初の操作へ移る
   useEffect(() => {
@@ -122,34 +120,20 @@ export default function GuardianChatScreen() {
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key === 'Escape') {
         setMenuId(null);
-        document.querySelector<HTMLButtonElement>(`[data-message-menu="${menuId}"]`)?.focus();
+        document.querySelector<HTMLElement>(`[data-message-bubble="${menuId}"]`)?.focus();
       }
     };
+    // カーソルの位置に出した一覧は、人が画面を送るとメッセージから離れるので閉じる（新着での自動の送りでは閉じない）
+    const offScroll = atCursor ? closeOnUserScroll(() => setMenuId(null)) : () => {};
     document.addEventListener('pointerdown', onDown);
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('pointerdown', onDown);
       document.removeEventListener('keydown', onKey);
+      offScroll();
     };
-  }, [menuId]);
+  }, [menuId, atCursor]);
 
-  useEffect(() => {
-    const swallow = (e: Event) => {
-      if (!suppressClick.current) return;
-      suppressClick.current = false;
-      e.preventDefault();
-      e.stopPropagation();
-    };
-    // 次に押し始めたら、無視する指定を解く（指を離しても「押された」ことにならなかった場合に残さない）
-    const reset = () => { suppressClick.current = false; };
-    document.addEventListener('click', swallow, true);
-    document.addEventListener('pointerdown', reset, true);
-    return () => {
-      document.removeEventListener('click', swallow, true);
-      document.removeEventListener('pointerdown', reset, true);
-      if (pressTimer.current !== null) clearTimeout(pressTimer.current);
-    };
-  }, []);
   useEffect(() => { setMenuId(null); setError(null); }, [roomId]);
 
   // 読み込み中の表示は最初の1回だけ。読み直しのたびに画面を入れ替えると、入力中の文字や読んでいた位置が失われる
@@ -172,9 +156,9 @@ export default function GuardianChatScreen() {
     } catch (e) { setError((e as Error).message); }
   };
 
-  // 操作の一覧を閉じたら、開いた「操作」ボタンへ戻す。キーボードで画面の先頭からやり直さずに済むように（GitHub Issue #172）
+  // 操作の一覧を閉じたら、開いた吹き出しへ戻す。キーボードで画面の先頭からやり直さずに済むように（GitHub Issue #172）
   const focusTrigger = (messageId: number) =>
-    document.querySelector<HTMLButtonElement>(`[data-message-menu="${messageId}"]`)?.focus({ preventScroll: true });
+    document.querySelector<HTMLElement>(`[data-message-bubble="${messageId}"]`)?.focus({ preventScroll: true });
   const closeMenu = (messageId: number) => {
     focusTrigger(messageId);
     setMenuId(null);
@@ -204,13 +188,8 @@ export default function GuardianChatScreen() {
     catch (e) { setError((e as Error).message); }
   };
 
-  const cancelPress = () => {
-    if (pressTimer.current !== null) { clearTimeout(pressTimer.current); pressTimer.current = null; }
-    pressStart.current = null;
-  };
-
-  // 吹き出しの位置から、一覧を上下どちらへ出すかを決めて開く
-  const openMenu = (messageId: number, bubble: HTMLElement) => {
+  // 吹き出しの位置から、一覧を上下どちらへ出すかを決めて開く。PC の右クリックではカーソルの位置（at）に出す
+  const openMenu = (messageId: number, bubble: HTMLElement, at?: MenuAt) => {
     const r = bubble.getBoundingClientRect();
     const above = r.top + r.height / 2 > window.innerHeight / 2;
     const msg = bubble.parentElement;
@@ -221,38 +200,13 @@ export default function GuardianChatScreen() {
         ? (msg ? msg.offsetHeight - bubble.offsetTop : 0) + gap
         // 下へ出すときは、付いているリアクションの印を隠さないよう、その下に置く
         : (msg ? msg.offsetHeight : bubble.offsetTop + bubble.offsetHeight) + gap,
+      at,
     });
     setMenuId(messageId);
   };
 
-  // 吹き出しに付ける。押したまま LONG_PRESS_MS が過ぎたら、そのメッセージの操作の一覧を開く
-  const pressHandlers = (messageId: number) => ({
-    onPointerDown: (e: PointerEvent) => {
-      if (e.pointerType === 'mouse' && e.button !== 0) return;
-      cancelPress();
-      pressStart.current = { x: e.clientX, y: e.clientY };
-      const bubble = e.currentTarget as HTMLElement;
-      pressTimer.current = window.setTimeout(() => {
-        pressTimer.current = null;
-        suppressClick.current = true;
-        openMenu(messageId, bubble);
-      }, LONG_PRESS_MS);
-    },
-    // 画面を送ろうとして指が動いたときは、長押しとみなさない
-    onPointerMove: (e: PointerEvent) => {
-      const s = pressStart.current;
-      if (s && Math.hypot(e.clientX - s.x, e.clientY - s.y) > LONG_PRESS_MOVE_PX) cancelPress();
-    },
-    onPointerUp: cancelPress,
-    onPointerCancel: cancelPress,
-    onPointerLeave: cancelPress,
-    // 右クリックと、端末が長押しで出す既定のメニューの代わりに開く
-    onContextMenu: (e: MouseEvent) => {
-      e.preventDefault();
-      cancelPress();
-      openMenu(messageId, e.currentTarget as HTMLElement);
-    },
-  });
+  // 吹き出しに付ける。右クリックか長押しで、そのメッセージの操作の一覧を開く
+  const pressHandlers = (messageId: number) => secondary((bubble, at) => openMenu(messageId, bubble, at));
 
   // 一覧
   if (!current) {
@@ -293,7 +247,7 @@ export default function GuardianChatScreen() {
       <div className="guardian-message-list" ref={listRef}>
         {(messages.data?.length ?? 0) > 0 && (
           <p id="guardian-message-hint" className="guardian-message-hint">
-            メッセージの「操作」ボタンか長押しで、リアクションを付けられます。自分のメッセージは編集・取消もできます。
+            メッセージを長押し（パソコンでは右クリック）すると、リアクションを付けられます。自分のメッセージは編集・取消もできます。
           </p>
         )}
         {messages.loading && <Loading />}
@@ -333,7 +287,9 @@ export default function GuardianChatScreen() {
                 {m.edited_at && <span className="weak">（編集済み）</span>}
               </div>
               {/* 編集中は本文の入力欄を普通に触れるよう、長押しを受け付けない */}
-              <div className={`bubble${editing ? '' : ' pressable'}`}
+              <div className={`bubble${editing ? '' : ' pressable'}`} data-message-bubble={m.chat_message_id}
+                aria-describedby="guardian-message-hint"
+                aria-controls={menuOpen ? `message-actions-${m.chat_message_id}` : undefined}
                 {...(editing ? {} : pressHandlers(m.chat_message_id))}>
                 {editing ? (
                   <>
@@ -358,24 +314,15 @@ export default function GuardianChatScreen() {
                   <Link className="shared-card" to="/guardian/handouts">園からの配布物を開く</Link>
                 )}
               </div>
-              {!editing && (
-                <button type="button" className="message-actions-trigger" data-message-menu={m.chat_message_id}
-                  aria-label={`${mine ? '自分' : m.sender_name ?? '相手'}のメッセージの操作`} aria-expanded={menuOpen}
-                  aria-controls={menuOpen ? `message-actions-${m.chat_message_id}` : undefined}
-                  onClick={(e) => {
-                    if (menuOpen) { setMenuId(null); return; }
-                    const bubble = e.currentTarget.closest('.msg')?.querySelector<HTMLElement>('.bubble');
-                    if (bubble) openMenu(m.chat_message_id, bubble);
-                  }}>操作</button>
-              )}
               {/* 既読は保護者側には表示しない（基本設計書 5-5） */}
               {/* 編集は送信者本人のみ（同 4-6）。既読が付いたあとも編集できる */}
               {/* 付いているリアクションは常に出す。付ける・編集・取消は長押しの一覧から */}
               <Reactions reactions={m.reactions ?? []} showAdd={false}
                 onToggle={(type) => react(m.chat_message_id, type)} />
               {menuOpen && !editing && (
-                <div className={`msg-menu-wrap${menuPlace.above ? ' above' : ''}`}
-                  style={menuPlace.above ? { bottom: menuPlace.offset } : { top: menuPlace.offset }}>
+                <div className={`msg-menu-wrap${menuPlace.at ? ' at-cursor' : menuPlace.above ? ' above' : ''}`}
+                  style={menuPlace.at ? { left: menuPlace.at.x, top: menuPlace.at.y }
+                    : menuPlace.above ? { bottom: menuPlace.offset } : { top: menuPlace.offset }}>
                   <div ref={menuRef} id={`message-actions-${m.chat_message_id}`} className="msg-menu" role="group" aria-label="メッセージの操作"
                     onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setMenuId(null); }}>
                     <div className="msg-menu-row">
@@ -410,6 +357,8 @@ export default function GuardianChatScreen() {
 
       <div className="guardian-message-compose">
         <div className="sr-only" role="status">{status}</div>
+        {/* 操作の一覧を開いたことを読み上げへ伝える（secondaryAction.ts） */}
+        <div className="sr-only" role="status">{menuId !== null ? MENU_OPENED_TEXT : ''}</div>
         {error && <ErrorBox text={error} />}
         {current.canPost ? (
           <div className="row">

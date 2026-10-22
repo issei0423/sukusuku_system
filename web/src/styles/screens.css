@@ -229,12 +229,17 @@
 }
 .msg .bubble.pressable:active { background: var(--c-surface-head); }
 .msg.mine .bubble.pressable:active { background: var(--c-primary); }
-.msg .bubble.pressable:focus-visible { outline: 4px solid var(--c-focus); outline-offset: 2px; box-shadow: 0 0 0 2px var(--c-focus-ring); }
-.message-actions-trigger { min-width: 44px; min-height: 44px; margin-left: var(--sp-2); vertical-align: bottom; }
+.msg .bubble.pressable:focus-visible,
+.msg .bubble.has-menu:focus-visible { outline: 4px solid var(--c-focus); outline-offset: 2px; box-shadow: 0 0 0 2px var(--c-focus-ring); }
 /* 一覧はメッセージの並びを押し広げず、重ねて出す。上下の位置は画面側で決める（GuardianChatScreen.tsx） */
 .guardian-message-list .msg { position: relative; }
 .msg-menu-wrap { position: absolute; left: 0; z-index: 5; max-width: 100%; }
 .msg.mine .msg-menu-wrap { left: auto; right: 0; }
+/*
+ * PC の右クリックで開いたときは、右クリックした位置（カーソルの所）に出す。
+ * 位置は画面側が left・top で渡し、画面の外へはみ出すときは寄せる（secondaryAction.ts の keepInViewport）
+ */
+.msg .msg-menu-wrap.at-cursor { position: fixed; right: auto; bottom: auto; z-index: 50; width: max-content; max-width: calc(100vw - 16px); }
 /* 重ねて出すものだけに影を付ける（DADS のエレベーション） */
 .msg-menu {
   display: inline-flex; flex-direction: column; gap: var(--sp-2);

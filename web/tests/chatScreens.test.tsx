@@ -59,7 +59,9 @@ const findRow = async (body: string) => {
   await waitFor(() => expect(rowOf(body)).toBeTruthy(), { timeout: 3000 });
   return rowOf(body)!;
 };
-const openMenu = (row: HTMLElement) => fireEvent.click(row.querySelector('.message-actions-trigger')!);
+// 操作の一覧は、吹き出しの右クリック（タブレットでは長押し）で開く。「操作」ボタンは置いていない（PR #240）
+const bubbleOf = (row: HTMLElement) => row.querySelector<HTMLElement>('.bubble')!;
+const openMenu = (row: HTMLElement) => fireEvent.contextMenu(bubbleOf(row), { button: 2, clientX: 120, clientY: 90 });
 const isRetracted = (id: number) => db.chatMessages.find((m) => m.chat_message_id === id)!.is_deleted;
 
 describe('書きかけの本文は、書いていたチャンネルにだけ結び付く（GitHub Issue #172 の 2）', () => {
@@ -144,6 +146,30 @@ describe('チャンネルを開いたら、いちばん下（最新）から見�
       view.rerender(<Probe scope={9} latest={40} />);
       expect(box.scrollTop).toBe(1000);
     } finally {
+      restore();
+    }
+  });
+
+  // 送れる親が無い一覧（PR #240 のレビュー）。職員の画面などは文書を動かさず、保護者の PC の幅の画面だけ文書を送る
+  function Plain({ fallbackToDocument }: { fallbackToDocument?: boolean }) {
+    const ref = useRef<HTMLDivElement | null>(null);
+    useFollowLatest(ref, 8, 30, { fallbackToDocument });
+    return <div ref={ref} />;
+  }
+  it('送れる親が無いときは、指定した画面だけ文書全体を送る', () => {
+    const restore = withScrollBox();
+    const doc = document.documentElement;
+    const savedScrolling = Object.getOwnPropertyDescriptor(Document.prototype, 'scrollingElement');
+    Object.defineProperty(document, 'scrollingElement', { configurable: true, get: () => doc });
+    try {
+      render(<Plain />);
+      expect(doc.scrollTop).toBe(0);
+      cleanup();
+      render(<Plain fallbackToDocument />);
+      expect(doc.scrollTop).toBe(1000);
+    } finally {
+      delete (document as never as Record<string, unknown>).scrollingElement;
+      if (savedScrolling) Object.defineProperty(Document.prototype, 'scrollingElement', savedScrolling);
       restore();
     }
   });
@@ -235,7 +261,7 @@ describe('管理者は、他者の誤送信メッセージをチャット画面�
   });
 });
 
-describe('操作の一覧を閉じたら、開いた「操作」ボタンへ戻る（GitHub Issue #172 の 3）', () => {
+describe('操作の一覧を閉じたら、開いた吹き出しへ戻る（GitHub Issue #172 の 3）', () => {
   it('職員：リアクションを選んだあと', async () => {
     await api.send(teacher, 8, 'F1 フォーカスの確かめ（職員）');
     open('/staff/chat?room=8', teacher);
@@ -245,7 +271,7 @@ describe('操作の一覧を閉じたら、開いた「操作」ボタンへ戻�
     await waitFor(() => expect(document.activeElement?.getAttribute('aria-label')).toBe('了解'));
     fireEvent.click(document.activeElement!);
     await waitFor(() => expect(screen.queryByRole('group', { name: 'メッセージの操作' })).toBeNull());
-    expect(document.activeElement).toBe(row.querySelector('.message-actions-trigger'));
+    expect(document.activeElement).toBe(bubbleOf(row));
   });
 
   it('保護者：リアクションを選んだあと', async () => {
@@ -257,7 +283,7 @@ describe('操作の一覧を閉じたら、開いた「操作」ボタンへ戻�
     openMenu(row);
     fireEvent.click(screen.getByRole('button', { name: '了解' }));
     await waitFor(() => expect(screen.queryByRole('group', { name: 'メッセージの操作' })).toBeNull());
-    expect(document.activeElement).toBe(rowOf('F2 フォーカスの確かめ（保護者）')!.querySelector('.message-actions-trigger'));
+    expect(document.activeElement).toBe(bubbleOf(rowOf('F2 フォーカスの確かめ（保護者）')!));
   });
 });
 

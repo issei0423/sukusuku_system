@@ -265,6 +265,74 @@
 .guardian-diary-card { padding: var(--sp-5) var(--sp-4); }
 .guardian-diary-card h2 { font-size: 20px; }
 
+/*
+ * 保護者レイアウトの幅ごとの切り替え。スマートフォンの形を基本に書き、幅が広いときだけ上書きする。
+ * 【仮置き】設計は保護者の画面をスマートフォン・シングルカラムとだけ定めている（基本設計書「想定する端末と向き」(3-5)）。
+ * 幅の区切り（768px・1024px）、PC の幅での文字の大きさ（18px）、本文の最大幅は web/仮置き値.md。
+ *   - 767px 以下（スマートフォン）… これまでどおり。480px の列、メニューは上のボタンから
+ *   - 768〜1023px（タブレット・細めの PC の窓）… 列を 960px まで広げ、ホームのカードを2列に並べる
+ *   - 1024px 以上（PC）… メニューを左に常に出す。列の内側でなくページ全体を送る。文字を 18px に上げる
+ * 職員の画面の幅の区切り（900px・1400px）とは別のもの。職員と保護者で想定する端末が違うため
+ */
+.guardian-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.guardian-sidebar, .guardian-header-phone { display: none; }
+
+@media (min-width: 768px) {
+  .guardian-shell { max-width: 960px; }
+  .guardian-main { padding: var(--sp-6) var(--sp-5); }
+  /* お子さまの情報は横いっぱい、その下にチャットと記録を並べる */
+  .guardian-child-section { display: grid; grid-template-columns: 1fr 1fr; align-items: start; gap: var(--sp-5); }
+  .guardian-child-section > .guardian-child-card { grid-column: 1 / -1; }
+}
+
+@media (min-width: 1024px) {
+  /* 文字を 16px → 18px に上げる。画面から目までがスマートフォンより遠く、同じ大きさでは小さく見えるため */
+  .guardian-shell {
+    --fs-body: 18px; --fs-small: 16px;
+    font-size: var(--fs-body);
+    max-width: none; height: auto; min-height: 100%;
+    border: 0; background: var(--c-bg);
+  }
+  .guardian-header { position: sticky; top: 0; z-index: 30; padding: 0 var(--sp-5); }
+  .guardian-menu-button, .guardian-shell .drawer, .guardian-shell .drawer-backdrop { display: none; }
+  .guardian-header-phone {
+    display: flex; align-items: center; gap: var(--sp-2); margin-right: var(--sp-3);
+    font-size: var(--fs-small); font-weight: 700;
+  }
+  .guardian-header-phone a { display: inline-flex; align-items: center; min-height: var(--tap-min); font-size: 20px; }
+  /* 下端の案内はヘッダへ移したので出さない（.guardian-footer の定義より後ろでも効くよう、列の中に限って書く） */
+  .guardian-shell .guardian-footer { display: none; }
+
+  /* メニューと本文。全体は 1200px で頭打ちにし、横いっぱいに引き伸ばさない */
+  .guardian-body {
+    display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: var(--sp-6);
+    width: 100%; max-width: 1200px; margin: 0 auto; padding: var(--sp-6) var(--sp-5);
+  }
+  .guardian-sidebar {
+    display: flex; flex-direction: column; position: sticky; top: calc(64px + var(--sp-5)); align-self: start;
+    padding: var(--sp-4); background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius);
+  }
+  .guardian-sidebar .who { font-weight: 700; padding-bottom: var(--sp-3); border-bottom: 1px solid var(--c-border); margin-bottom: var(--sp-2); }
+  .guardian-sidebar a {
+    display: flex; align-items: center; min-height: var(--control-h);
+    padding: 0 var(--sp-3); color: var(--c-text); text-decoration: none;
+    border-bottom: 1px solid var(--c-border-weak);
+  }
+  /* いまの画面を、色だけでなく太さと左の線でも示す */
+  .guardian-sidebar a[aria-current="page"] { font-weight: 700; box-shadow: inset 4px 0 0 var(--c-primary-deep); background: var(--c-surface-sub); }
+  .guardian-sidebar .spacer { height: var(--sp-5); }
+  /* ダイアログを開く項目も、となりのリンクと同じ左の余白にそろえる */
+  .guardian-body .guardian-sidebar button.drawer-item { padding: 0 var(--sp-3); }
+  /* 列の内側でなく、ページ全体を送る。ブラウザの拡大・縮小やマウスのホイールと素直に合う */
+  .guardian-main { overflow: visible; padding: 0; background: transparent; }
+  .guardian-main p { max-width: 40em; }
+  /* チャットの入力欄は、ページの下端に付ける */
+  .guardian-message-compose { bottom: 0; }
+}
+@media (min-width: 1024px) and (hover: hover) {
+  .guardian-sidebar a:hover { background: var(--c-surface-sub); color: var(--c-text); text-decoration: underline; text-decoration-thickness: 1px; }
+}
+
 .drawer-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .5); z-index: 40; }
 /* DADS のドロワー。幅 288px */
 .drawer {
@@ -285,13 +353,13 @@
   .drawer a:hover { background: var(--c-surface-sub); color: var(--c-text); text-decoration: underline; text-decoration-thickness: 1px; }
 }
 /* メニューの中でダイアログを開く項目（保護者のメニューの「AI の下書きの利用」）。ボタンでも、となりのリンクと同じ行の見た目にそろえる */
-.drawer button.drawer-item {
+.drawer button.drawer-item, .guardian-sidebar button.drawer-item {
   justify-content: flex-start; width: 100%; padding: 0 var(--sp-2); background: none;
   border: 0; border-bottom: 1px solid var(--c-border-weak); border-radius: 0;
   font-weight: inherit; letter-spacing: inherit; text-align: left;
 }
 @media (hover: hover) {
-  .drawer button.drawer-item:hover:not(:disabled) { background: var(--c-surface-sub); border-color: var(--c-border-weak); text-decoration-thickness: 1px; }
+  .drawer button.drawer-item:hover:not(:disabled), .guardian-sidebar button.drawer-item:hover:not(:disabled) { background: var(--c-surface-sub); border-color: var(--c-border-weak); text-decoration-thickness: 1px; }
 }
 /* 移る先の並びと、ログアウトのあいだを空ける。並びの続きに見えないようにする */
 .drawer .spacer { flex: none; height: var(--sp-5); }
