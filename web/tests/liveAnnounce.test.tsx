@@ -133,6 +133,23 @@ describe('② 連絡帳の画面：「家庭から」が増えたときだけ、
     expect(arrival()).toHaveLength(1);
   });
 
+  // 表が DOM に出てから画面の effect が走るまでの間に届いた知らせも、捨てずに読み直す（GitHub Issue #246）。
+  // 負荷のあるときは、この間に上のテストの書き込みが入ることがあり、5秒の読み直しまで表が古いままだった
+  it('連絡帳（クラス）画面：表が出た直後に届いた園児の知らせでも、すぐ読み直す', async () => {
+    open('/staff/contact', teacher);
+    // 表が出たその場（MutationObserver の中。passive effect より前）で書き込む
+    await new Promise<void>((resolve) => {
+      const mo = new MutationObserver(() => {
+        if (!screen.queryByRole('rowheader', { name: '野原 太郎' })) return;
+        mo.disconnect();
+        void api.recordEvents(teacher, [{ child_id: 'C002', event_type: '2', toilet_label: 'うんち' }]);
+        resolve();
+      });
+      mo.observe(document.body, { childList: true, subtree: true });
+    });
+    await screen.findByRole('button', { name: /^上園 花子の排せつ .*うんち .+ を直す・取り消す$/ }, { timeout: 3000 });
+  });
+
   it('連絡帳（園児）画面：開いたときは読まず、その子の家庭からが届いたら読む', async () => {
     clearHome();
     open('/staff/contact/C001', teacher);
