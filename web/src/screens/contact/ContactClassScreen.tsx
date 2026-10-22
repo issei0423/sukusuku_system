@@ -16,7 +16,7 @@
  * ひとこと・写真が無いセルと園からを送っていないセルは、文字のボタン「書く」をセルいっぱいに出す（GitHub Issue #215）。
  * 体温に判定の色や言葉を付けない（平熱は比べる材料として並べてよい）。
  */
-import { useEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../../api/client';
 import type { ContactClassRow, ContactClassView, ContactEvent, ContactEventInput, HomeState, MealAmount } from '../../api/shapes';
@@ -148,7 +148,12 @@ export default function ContactClassScreen() {
   const view = useAsync(async (): Promise<ContactClassView | null> => (classId ? api.contactClass(user!, classId, date) : null),
     [user?.account_id, classId, date], { refreshMs: AUTO_REFRESH_MS, live: (e) => onContactClass(classId, childIds.current)(e) });
   const data = view.data;
-  useEffect(() => { childIds.current = data?.rows.map((r) => r.child.child_id) ?? []; }, [data]);
+  /*
+   * 表を描いたその時点で、知らせを選ぶ園児を入れ替える（useLayoutEffect）。
+   * useEffect だと、表が出てから入れ替わるまでの間（React が後回しにする間。負荷のあるときに延びる）に届いた
+   * 園児の知らせ（child_id だけで class_id が無い）を捨て、次の間隔の読み直し（5秒）まで表に出なかった（GitHub Issue #246）
+   */
+  useLayoutEffect(() => { childIds.current = data?.rows.map((r) => r.child.child_id) ?? []; }, [data]);
   // 「家庭から」の届いた園児が増えたときだけ、読み上げへ伝える（詳細設計書 (2-0) の (6) の②、GitHub Issue #209）。
   // 範囲は応答のクラスと日付で決める（クラス・日付を替えて読み込んでいる間は、前の応答のまま）
   const arrival = useHomeArrival(data ? `${data.class_id}:${data.contact_date}` : null,
