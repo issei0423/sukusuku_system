@@ -171,6 +171,7 @@ func (a *app) routeGrowth(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/development/checks", a.handleSaveDevelopmentCheck)
 	mux.HandleFunc("GET /api/development/schedules", a.handleDevelopmentSchedules)
 	mux.HandleFunc("POST /api/development/schedules", a.handleSetSchedule)
+	mux.HandleFunc("POST /api/development/schedules/apply", a.handleApplyRecommendedSchedules)
 	mux.HandleFunc("GET /api/development/share-settings", a.handleShareSettings)
 	mux.HandleFunc("POST /api/development/share-settings", a.handleSetShareable)
 	mux.HandleFunc("GET /api/children/{childID}/development/previous", a.handlePreviousCheck)

@@ -377,6 +377,7 @@ func (a *app) handleDevelopmentSchedules(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
+	rule := a.loadScheduleRule()
 	for i := range out {
 		childID := out[i].Child.ChildID
 		out[i].AgeMonths = ageInMonths(out[i].Child.BirthDate, today())
@@ -396,12 +397,21 @@ func (a *app) handleDevelopmentSchedules(w http.ResponseWriter, r *http.Request)
 		out[i].ScheduledOn = nullStr(scheduled)
 		out[i].IsManualOverride = manual.Valid && manual.Bool
 
-		// システムが提案する予定日。前回の実施日にマスタの推奨間隔を足す
+		/*
+		 * システムが提案する予定日。予定の無い園児に一括で当てる日と同じ規則で作る（dev_schedule.go の
+		 * handleApplyRecommendedSchedules・scheduleRule.next）。基準日は最後に確定した実施日、無ければ今日。
+		 * その月齢の推奨頻度の日数を足し、あいだに健診の節目があれば節目の日にする（基本設計書「推奨スケジュールの作り方」(4-9)）。
+		 * 推奨頻度がマスタに無い月齢では、これまでどおり今日を出す（GitHub Issue #164 の 3）
+		 */
 		var last sql.NullString
 		a.db.QueryRow(`SELECT checked_on FROM t_development_check
 			WHERE child_id = ? AND status = '2' ORDER BY checked_on DESC LIMIT 1`, childID).Scan(&last)
-		if last.Valid && interval.Valid {
-			out[i].Suggested = addDays(last.String, int(interval.Int64))
+		base := today()
+		if last.Valid {
+			base = last.String
+		}
+		if d, ok := rule.next(out[i].Child.BirthDate, base); ok {
+			out[i].Suggested = d
 		} else {
 			out[i].Suggested = today()
 		}

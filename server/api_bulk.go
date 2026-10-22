@@ -258,6 +258,10 @@ func (a *app) handleImportChildCsv(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 最初の予定日は、1 件ずつの登録と同じ規則で当てる（基本設計書「推奨スケジュールの作り方」(4-9)「園児を登録した日
+	// （画面・CSV）を基準日とし」、dev_schedule.go）。取引の中では a.db へ問い合わせないため、規則は先に読む
+	rule := a.loadScheduleRule()
+
 	tx, err := a.db.Begin()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "取り込みに失敗しました")
@@ -287,6 +291,13 @@ func (a *app) handleImportChildCsv(w http.ResponseWriter, r *http.Request) {
 			fiscalYear, v[5]).Scan(&classID); e == nil {
 			if _, e = tx.Exec(`INSERT OR IGNORE INTO t_class_child (class_id, child_id) VALUES (?, ?)`, classID, v[0]); e != nil {
 				writeErr(w, http.StatusInternalServerError, "登録できませんでした。もう一度お試しください。")
+				return
+			}
+		}
+		if first, ok := rule.next(v[3], today()); ok {
+			if _, e := tx.Exec(`INSERT INTO t_development_schedule (child_id, scheduled_on, is_manual_override, created_staff_id)
+				VALUES (?, ?, 0, ?)`, v[0], first, u.staff()); e != nil {
+				writeErr(w, http.StatusInternalServerError, "取り込みに失敗しました")
 				return
 			}
 		}
