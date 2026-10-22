@@ -21,7 +21,7 @@ import { formatHM, formatTemperature, today, now, napTimerBase, plusMinutes, jst
 import type { BodyPosition, Breathing, Complexion, NapRecord } from '../../api/types';
 import type { NapChildState } from '../../api/shapes';
 import SleepControls from './SleepControls';
-import { focusAfter, focusedNow } from '../../focusAfter';
+import { focusAfter, focusableIn, focusedNow } from '../../focusAfter';
 
 /** 園児の行に「保存しました」を出しておく時間（仮置き値.md「午睡チェックの動き」） */
 const SAVED_NOTICE_MS = 5000;
@@ -51,10 +51,20 @@ export default function NapCheckScreen() {
   // 未記録の園児が残っているときに、終了の前に確かめる（画面詳細図「午睡チェック画面」(5-1)）
   const [ending, setEnding] = useState(false);
 
+  /*
+   * 開始すると、読み直しで「午睡チェックを開始する」が消えて実施中の画面に替わり、フォーカスが body に落ちていた
+   * （WCAG 2.4.3、GitHub Issue #213）。代わりに出る見出しの並び（記録済みの数・「異常を記録する」・「午睡チェックを終了」）の、
+   * 押せる最初の部品へ移す（同じ並びの押せるもの。src/focusAfter.ts）。開始できなかったときはボタンもフォーカスも残る
+   */
+  const sessionHead = useRef<HTMLDivElement>(null);
   const start = async () => {
+    const pressed = focusedNow();
     setError(null);
-    try { await api.startSession(user!, classId, today()); setTick((n) => n + 1); }
-    catch (e) { setError((e as Error).message); }
+    try {
+      await api.startSession(user!, classId, today());
+      setTick((n) => n + 1);
+      focusAfter(pressed, () => focusableIn(sessionHead.current)[0] ?? null);
+    } catch (e) { setError((e as Error).message); }
   };
   /*
    * 終了すると、読み直しで「午睡チェックを終了」が消え、フォーカスが body に落ちていた（WCAG 2.4.3、GitHub Issue #213）。
@@ -182,7 +192,7 @@ export default function NapCheckScreen() {
 
       {s && (
         <>
-          <div className="page-head">
+          <div ref={sessionHead} className="page-head">
             <span>記録済み {recorded} / {rows.length} 名</span>
             <div className="spacer" />
             <Link className="btn" to="/staff/nap/abnormal">異常を記録する</Link>
