@@ -43,7 +43,7 @@
 .channel .unread {
   margin-left: auto; flex: none; min-width: 22px; padding: 0 6px; border-radius: 11px;
   background: var(--c-alert); color: var(--dads-white);
-  font-size: var(--fs-small); font-weight: 700; line-height: 22px; letter-spacing: 0; text-align: center;
+  font-size: var(--fs-small); font-weight: 700; line-height: 1.375rem; letter-spacing: 0; text-align: center;
 }
 .channel-group { padding: var(--sp-3) var(--sp-3) var(--sp-1); font-size: var(--fs-small); font-weight: 700; color: var(--c-text-sub); }
 
@@ -88,7 +88,7 @@
  * 高さは NapTimer が測って --nap-timer-h に入れる。フォーカスの枠（outline 4px・outline-offset 2px）も見えるよう、その幅を足す
  */
 .main:has(.nap-timer) { scroll-padding-top: calc(var(--nap-timer-h, 0px) + 6px); }
-.nap-timer .big { font-size: 32px; font-weight: 700; line-height: 1.3; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.nap-timer .big { font-size: 2rem; font-weight: 700; line-height: 1.3; letter-spacing: 0; font-variant-numeric: tabular-nums; }
 .nap-timer.over { background: var(--c-alert-soft); border-bottom: 2px solid var(--c-alert); color: var(--c-alert); }
 
 .nap-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); }
@@ -108,7 +108,7 @@
 /* この実施で異常時の記録がある園児。記録済みでも強調を外さない（基本設計書「異常時の記録」(4-7)「強調表示する」） */
 .nap-record-row.has-abnormal { border-color: var(--c-returned); border-left: 6px solid var(--c-returned); }
 .nap-row-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); }
-.nap-row-head .name { font-size: 20px; line-height: 1.5; }
+.nap-row-head .name { font-size: 1.25rem; line-height: 1.5; }
 .nap-row-head .last { white-space: nowrap; }
 .nap-row-status { color: var(--c-approved); font-size: var(--fs-small); font-weight: 700; }
 .nap-row-status.due { color: var(--c-alert); }
@@ -154,7 +154,7 @@
 .nap-temp-heading { margin-bottom: var(--sp-2); font-weight: 700; }
 .nap-temp-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--sp-2); margin-bottom: var(--sp-3); }
 .nap-temp-grid.whole { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.nap-temp-grid button { min-height: 58px; padding: 0 var(--sp-2); font-size: 20px; font-weight: 700; letter-spacing: 0; }
+.nap-temp-grid button { min-height: 58px; padding: 0 var(--sp-2); font-size: 1.25rem; font-weight: 700; letter-spacing: 0; }
 .nap-temp-manual { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); padding-top: var(--sp-3); border-top: 1px solid var(--c-border); }
 .nap-temp-manual label { font-size: var(--fs-small); font-weight: 700; }
 .nap-temp-manual input { width: 125px; }
@@ -323,13 +323,13 @@ button.guardian-record-link {
  */
 .guardian-main:has(.contact-page-head) { scroll-padding-top: calc(var(--contact-head-h, 0px) + 6px); }
 .guardian-main:has(.contact-form-actions) { scroll-padding-bottom: calc(var(--contact-actions-h, 0px) + 6px); }
-.contact-page-head h1 { font-size: 22px; margin: 0; }
+.contact-page-head h1 { font-size: 1.375rem; margin: 0; }
 /* 「‹ ホームへ」も押せるものとして高さ 44px 以上にする（詳細設計書「全画面に共通する部品と決まり」(2-0) の「タッチの条件」(4)、GitHub Issue #215） */
 .contact-page-head > a { display: flex; align-items: center; min-height: 44px; }
 .contact-date { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .contact-date button { min-height: 44px; min-width: 44px; }
 .contact-section { display: grid; gap: var(--sp-3); }
-.contact-section h2 { font-size: 18px; margin: 0; }
+.contact-section h2 { font-size: 1.125rem; margin: 0; }
 .contact-home-lines { display: grid; gap: var(--sp-1); margin: 0; }
 .contact-home-lines > div { display: grid; grid-template-columns: 6.5em 1fr; gap: var(--sp-2); }
 .contact-home-lines dt { font-weight: 700; color: var(--c-text-weak); }
@@ -376,9 +376,9 @@ button.guardian-record-link {
 
 /* 保護者ホームの「きょう」 */
 .contact-today-card { display: grid; gap: var(--sp-3); }
-.contact-today-name { font-size: 20px; }
+.contact-today-name { font-size: 1.25rem; }
 .contact-today-block { display: grid; gap: var(--sp-1); }
-.contact-today-block h3 { font-size: 16px; margin: 0; }
+.contact-today-block h3 { font-size: 1rem; margin: 0; }
 .contact-today-block p { margin: 0; }
 .contact-latest { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1); }
 .contact-latest time { font-weight: 700; margin-right: var(--sp-1); }
@@ -475,18 +475,18 @@ button.guardian-record-link {
   display: inline-flex; align-items: center; justify-content: center; flex: none; width: 40px; height: 40px; border-radius: 50%;
   background: var(--c-primary-soft); border: 2px solid var(--c-primary-deep); font-weight: 700; color: var(--c-primary-ink);
 }
-.child-avatar.is-lg { width: 56px; height: 56px; font-size: 24px; }
+.child-avatar.is-lg { width: 56px; height: 56px; font-size: 1.5rem; }
 .contact-temp-row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .contact-temp-value { font-size: 1.1rem; }
 /* 連絡帳（園児）画面：左に1日のページ（約 60%）、右に書く欄（約 40%）。縦向きでも並びを変えず幅だけを詰める */
 .contact-child-head { flex-wrap: wrap; gap: var(--sp-3); align-items: center; }
 .contact-back { min-height: 44px; display: inline-flex; align-items: center; }
 .contact-child-name { display: flex; align-items: center; gap: var(--sp-2); }
-.contact-child-name h1 { margin: 0; font-size: 24px; }
+.contact-child-name h1 { margin: 0; font-size: 1.5rem; }
 .contact-child-body { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--sp-4); align-items: start; }
 .contact-child-page { display: grid; gap: var(--sp-4); min-width: 0; }
 .contact-child-record { display: grid; gap: var(--sp-3); position: sticky; top: var(--sp-2); }
-.contact-child-record h2 { font-size: 18px; margin: 0; }
+.contact-child-record h2 { font-size: 1.125rem; margin: 0; }
 @media (max-width: 760px) {
   .contact-child-body { grid-template-columns: 1fr; }
   .contact-child-record { position: static; }
@@ -522,7 +522,7 @@ button.guardian-record-link {
   padding: var(--sp-2) var(--sp-3); border: 2px solid var(--c-primary-deep); border-radius: var(--radius); background: var(--c-primary-soft);
 }
 .recipient-label { font-size: var(--fs-small); font-weight: 700; }
-.recipient-name { font-size: 20px; }
+.recipient-name { font-size: 1.25rem; }
 .recipient-to { font-weight: 700; }
 .recipient-badge.is-unregistered .recipient-to { font-weight: 400; }
 .name-check-message { font-weight: 700; }
