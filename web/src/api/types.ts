@@ -441,6 +441,11 @@ export interface NapRecord {
   corrected_at?: string | null;
 }
 
+/** 保護者への連絡（t_nap_abnormal.guardian_notice）。1:した 2:しない */
+export type GuardianNotice = '1' | '2';
+/** 保護者への連絡の手段（t_nap_abnormal.guardian_notice_method）。日誌のヒヤリハットと同じコード */
+export type GuardianNoticeMethod = '1' | '2' | '3' | '9';
+
 /** 異常時の記録（t_nap_abnormal）。diary_id が空ならヒヤリハット未起票（5-6） */
 export interface NapAbnormal {
   nap_abnormal_id: number;
@@ -452,6 +457,14 @@ export interface NapAbnormal {
   response: string;
   staff_id: string;
   diary_id: number | null;
+  /*
+   * 保護者への連絡（画面詳細図「異常時記録画面」(5-2) 項目13。基本設計書「午睡チェック」(5-7) の足した列）。
+   * 空は未記入。「した」のときだけ日時・手段・相手を持つ。列を足す前のデモデータには無いため省略できる
+   */
+  guardian_notice?: GuardianNotice | null;
+  guardian_noticed_at?: string | null;
+  guardian_notice_method?: GuardianNoticeMethod | null;
+  guardian_notice_person?: string | null;
 }
 
 /* ---- 連絡帳（基本設計書「連絡帳」(5-4)、詳細設計書「足す表」(5-2)） ----

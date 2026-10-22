@@ -24,7 +24,8 @@ const relationshipMax = 20
 // loggedInGuardian は、要求を送った人がログイン中の保護者なら、その人を返す（停止中・職員・ログインしていない人は nil）。
 // 招待コードの確認は、新規登録の途中（ログインしていない人）とお子さまの追加（ログインしている保護者）の両方が呼ぶ
 func (a *app) loggedInGuardian(r *http.Request) *SessionUser {
-	id, ok := a.sessions.accountID(r)
+	// ログイン中かの判定は session.go の sessionAccount（ログイン・新規登録と同じ）
+	id, ok := a.sessionAccount(r)
 	if !ok {
 		return nil
 	}
