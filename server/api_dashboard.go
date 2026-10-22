@@ -121,9 +121,11 @@ func (a *app) handleStaffSummary(w http.ResponseWriter, r *http.Request) {
 		rows.Close()
 	}
 
-	// 異常時の記録のうち、ヒヤリハットを起票していないもの
+	// 異常時の記録のうち、ヒヤリハットを起票していないもの、起票したヒヤリハットが下書きのままのもの
+	// （申請していない下書きは「起票済み」として埋もれるため。GitHub Issue #142 の 5。判定は api_nap.go の napAbnormalDiaryJoin）
 	abnormalWithoutDiary := 0
-	ar, err := a.db.Query(`SELECT child_id FROM t_nap_abnormal WHERE diary_id IS NULL`)
+	ar, err := a.db.Query(`SELECT a.child_id FROM t_nap_abnormal a `+napAbnormalDiaryJoin+`
+		WHERE a.diary_id IS NULL OR d.status = ?`, diaryStatusDraft)
 	if err == nil {
 		for ar.Next() {
 			var childID string

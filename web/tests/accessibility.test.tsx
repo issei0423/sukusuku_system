@@ -1,5 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { Alert, Field, Modal, Radios } from '../src/components/ui';
@@ -67,5 +70,23 @@ describe('共通部品の読み上げとキーボード操作', () => {
       <button type="button">欠席</button>
     </Modal>);
     expect(document.activeElement).toBe(screen.getByRole('button', { name: '欠席' }));
+  });
+});
+
+describe('押せるものどうしの間は 8px 以上（詳細設計書「全画面に共通する部品と決まり」(2-0 (4)) の「タッチの条件」、GitHub Issue #215）', () => {
+  // jsdom は画面の CSS を読まず並べ方を測れないため、規則の文で見る（画面で測るのは tests/responsive/a11y-keyboard-contact.spec.ts の touchProblems）
+  const screensCss = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../src/styles/screens.css'), 'utf8');
+  const gapOf = (selector: string) => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return screensCss.match(new RegExp(`(?:^|\\n)${escaped}\\s*\\{[^}]*\\bgap:\\s*([^;]+);`))?.[1].trim() ?? null;
+  };
+
+  it.each([
+    ['.growth-switch', '成長の記録の「身長」「体重」'],
+    ['.ai-draft-memo', 'AI の下書きのメモの欄と「下書きを作る」'],
+    ['.reactions', 'チャットのリアクションどうし'],
+    ['.msg-menu-row', 'チャットの操作の一覧のボタンどうし'],
+  ])('%s（%s）の間は var(--sp-2)', (selector) => {
+    expect(gapOf(selector)).toBe('var(--sp-2)');
   });
 });

@@ -171,6 +171,11 @@ export interface NapAbnormalRow {
   response: string;
   staff_id: string;
   diary_id: number | null;
+  /**
+   * 起票したヒヤリハットが下書きのまま（申請していない）か。起票していなければ false（GitHub Issue #142 の 5）。
+   * 判定はサーバ（server/api_nap.go の napAbnormalDiaryJoin）とモック（mock.ts の incidentDiaryDraft）
+   */
+  diary_draft: boolean;
   /** 保護者への連絡（画面詳細図「異常時記録画面」(5-2) 項目13）。空は未記入 */
   guardian_notice: GuardianNotice | null;
   guardian_noticed_at: string | null;

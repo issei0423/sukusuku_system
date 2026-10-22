@@ -160,9 +160,11 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[], options: Asyn
   /*
    * サーバからの知らせを受けて読み直す。選び方（live）は描くたびに作り直されるため、最新のものを参照する。
    * 読み直しの途中で届いたら、終わったあとにもう1回読む（途中の応答が知らせより前の状態かもしれないため）
+   * 選び方は描いた直後（useLayoutEffect）に差し替える。useEffect だと、描いてから effect が走るまでの間
+   * （負荷のあるときは長い）に届いた知らせを、前の選び方で捨ててしまう（GitHub Issue #246）
    */
   const liveFilter = useRef(options.live);
-  useEffect(() => { liveFilter.current = options.live; });
+  useLayoutEffect(() => { liveFilter.current = options.live; });
   const subscribed = options.live !== undefined;
   useEffect(() => {
     if (!subscribed) return undefined;

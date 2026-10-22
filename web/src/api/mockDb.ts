@@ -999,6 +999,24 @@ function shiftRows(rows: Record<string, unknown>[], days: number): void {
     for (const c of children) c.birth_date = shiftValue(c.birth_date, offset);
   }
   trimFutureDemoContacts();
+  capFutureDemoDiaryTimes(today(), now());
+}
+
+/**
+ * 起動した日の日誌の時刻のうち、起動した時刻より後のものを起動した時刻に丸める（GitHub Issue #139）。
+ * デモデータの日誌は今日の夕方に書いて申請したものとして作ってあり、朝に起動すると承認待ちに未来の時刻が並ぶため。
+ * 【仮置き】設計に無い決めごと（web/仮置き値.md）。連絡帳のように外すと承認待ちの一覧を見せられないので、外さずに丸める。
+ * 差し戻しの時刻は updated_at に入る。作成・更新の時刻も丸め、作成 ≦ 申請 ≦ 承認・差し戻しの順を保つ。
+ * 外すときは、この関数と上の呼び出しを消す。Go は server/seed_shift.go の capFutureDemoDiaryTimes
+ */
+export function capFutureDemoDiaryTimes(day: string, at: string): void {
+  const cap = <T extends string | null>(v: T): T => (v !== null && v.slice(0, 10) === day && v > at ? (at as T) : v);
+  for (const d of diaries) {
+    d.created_at = cap(d.created_at);
+    d.applied_at = cap(d.applied_at);
+    d.approved_at = cap(d.approved_at);
+    d.updated_at = cap(d.updated_at);
+  }
 }
 
 /**
