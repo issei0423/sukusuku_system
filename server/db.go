@@ -87,6 +87,9 @@ func openDB(path string) (*sql.DB, error) {
 	if err := ensureNapRecordCorrectedAt(db); err != nil {
 		return nil, err
 	}
+	if err := ensureNapAbnormalCorrectedAt(db); err != nil {
+		return nil, err
+	}
 	// 連絡帳の表と列を足す（詳細設計書「既存の DB の移し方」(5-4) の 1〜5。m_child.nickname もここで足す。db_contact.go）
 	if err := ensureContactSchema(db); err != nil {
 		return nil, err

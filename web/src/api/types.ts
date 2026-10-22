@@ -465,6 +465,11 @@ export interface NapAbnormal {
   guardian_noticed_at?: string | null;
   guardian_notice_method?: GuardianNoticeMethod | null;
   guardian_notice_person?: string | null;
+  /**
+   * 最後に修正した時刻。空なら修正なし（帳票と異常時記録画面の「修正あり」の印。基本設計書「足した列」(5-7)）。
+   * デモデータ（mockDb.ts）は持たないため省いてよい（省いたものは修正なし）
+   */
+  corrected_at?: string | null;
 }
 
 /* ---- 連絡帳（基本設計書「連絡帳」(5-4)、詳細設計書「足す表」(5-2)） ----

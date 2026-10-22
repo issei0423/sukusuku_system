@@ -5,6 +5,8 @@
  *
  * 規則はサーバ（server/api_nap_correct.go）とモック（api/mock.ts の correctNapRecord）の両方にある。ここは両方が同じ文言・
  * 同じ形を使うための置き場（サーバの値は api_nap_correct.go の msgNapCorrect*・napRecordFields・napCorrectionText と同じ）。
+ * 異常時の記録の修正（POST /api/nap/abnormals/{id}/correct。server/api_nap_abnormal_correct.go、mock.ts の correctNapAbnormal。
+ * 画面詳細図「異常時記録画面」(5-2) の項目17）の文言と形もここに置く。
  */
 import { BODY_POSITION, BREATHING, COMPLEXION } from './codes';
 import type { NapRecord } from './types';
@@ -33,7 +35,30 @@ export interface NapRecordCorrectInput {
   reason: string;
 }
 
-/** 【仮置き】帳票の一覧の「修正あり」の列に入れる印（server/api_nap_correct.go の napReportCorrectedMark） */
+/**
+ * 異常時の記録の修正（POST /api/nap/abnormals/{id}/correct）の文言。理由・権限・値が変わらないときは NAP_CORRECT_MSG と同じ。
+ * 【仮置き】設計の「メッセージ一覧」(4-12) に無いため置いた（web/仮置き値.md「異常時の記録の修正」）。
+ * サーバの server/api_nap_abnormal_correct.go の msgNapAbnormalCorrect* と同じ
+ */
+export const NAP_ABNORMAL_CORRECT_MSG = {
+  target: '異常時の記録の指定が正しくありません',
+  notFound: '異常時の記録が見つかりません',
+  afterRecorded: '発見時刻は、記録を保存した時刻より後にできません',
+  afterNotice: '発見時刻は、保護者へ連絡した日時より後にできません',
+} as const;
+
+/**
+ * 異常時の記録の修正の要求。直す項目（発見時刻・状況・とった対応）のうち変えるものだけを送る（図/インタフェース一覧.md）。
+ * 送らない項目はいまの値のまま。保存時刻・記録した職員・保護者への連絡は変えない。理由は必須（1〜500文字）
+ */
+export interface NapAbnormalCorrectInput {
+  found_at?: string;
+  situation?: string;
+  response?: string;
+  reason: string;
+}
+
+/** 【仮置き】帳票の一覧と異常時の記録の「修正あり」の列に入れる印（server/api_nap_correct.go の napReportCorrectedMark） */
 export const NAP_CORRECTED_MARK = '修正あり';
 
 /** 操作ログの修正前・修正後に入れる項目（区分値は表示名、体温は数値か null）。サーバの napRecordFields と同じ項目名・同じ順 */
@@ -46,8 +71,17 @@ export function napRecordFields(r: Pick<NapRecord, 'body_position' | 'breathing'
   ];
 }
 
-/** 修正前・修正後の列に出す項目の順（操作ログの項目名と同じ） */
-const CORRECTION_KEYS = ['体位', '呼吸', '顔色', '体温'];
+/** 異常時の記録の操作ログの修正前・修正後に入れる項目。サーバの napAbnormalFields と同じ項目名・同じ順 */
+export function napAbnormalFields(a: { found_at: string; situation: string; response: string }): [string, unknown][] {
+  return [
+    ['発見時刻', a.found_at],
+    ['状況', a.situation],
+    ['とった対応', a.response],
+  ];
+}
+
+/** 修正前・修正後の列に出す項目の順（操作ログの項目名と同じ。午睡チェックの記録の4つに、異常時の記録の3つを続ける） */
+const CORRECTION_KEYS = ['体位', '呼吸', '顔色', '体温', '発見時刻', '状況', 'とった対応'];
 
 function parseFields(json: string | null): Record<string, unknown> | null {
   if (json === null) return null;

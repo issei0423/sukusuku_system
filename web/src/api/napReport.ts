@@ -11,8 +11,11 @@ import { toCsv } from '../csv';
 /** 帳票の見出し。画面詳細図「午睡記録検索画面」(5-3) の項目6の並びに「修正あり」を添える（server/api_nap_report.go の napReportHeader） */
 export const NAP_REPORT_HEADER = ['日付', 'チェック時刻', '園児', 'クラス', '体位', '呼吸', '顔色', '体温', '記録者', '保存時刻', '修正あり'];
 
-/** 同じ期間の異常時の記録の見出し。同 (5-3) の項目11の並び */
-export const NAP_ABNORMAL_HEADER = ['発見時刻', '園児', '状況', '対応', '記録者', 'ヒヤリハット'];
+/**
+ * 同じ期間の異常時の記録の見出し。同 (5-3) の項目11の並びに、一覧と同じく「修正あり」を添える
+ * （【仮置き】末尾の列に置くこと。web/仮置き値.md「異常時の記録の修正」。server/api_nap_report.go の napReportAbnormalHeader）
+ */
+export const NAP_ABNORMAL_HEADER = ['発見時刻', '園児', '状況', '対応', '記録者', 'ヒヤリハット', '修正あり'];
 
 export const NAP_ABNORMAL_TITLE = '同じ期間の異常時の記録';
 
