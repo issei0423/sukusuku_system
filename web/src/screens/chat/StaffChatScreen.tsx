@@ -18,6 +18,8 @@ import Reactions from '../../components/Reactions';
 import { CHAT_ROOM_TYPE, THREAD_STATUS, REACTION, GUARDIAN_ROOM_TYPES, SENDER_KIND } from '../../api/codes';
 import { formatHM, formatMD } from '../../api/util';
 import type { ChatMessage } from '../../api/types';
+import IncomingLog from './IncomingLog';
+import { useIncomingMessages } from './useIncomingMessages';
 
 /** 長押しとみなすまでの時間。保護者のチャット画面と同じ値（web/仮置き値.md） */
 const LONG_PRESS_MS = 800;
@@ -69,6 +71,8 @@ export default function StaffChatScreen() {
     [roomId],
     { refreshMs: AUTO_REFRESH_MS, live: onRoom(roomId) },
   );
+  // 保護者・ほかの職員から届いた新しいメッセージだけを読み上げへ伝える（詳細設計書 (2-0) の (6) の①、GitHub Issue #209）
+  const incoming = useIncomingMessages(messages.data, messages.loading, roomId, user!.account_id);
   /*
    * 外れたチャンネル（left）は閲覧のみ。外れるまでの過去ログだけが返り、投稿・リアクション・編集・取消・
    * 未対応の切り替えはできない。いまの参加者も返らないので、メンバーは問い合わせない
@@ -259,6 +263,7 @@ export default function StaffChatScreen() {
                 onEdit={async (body) => { await api.edit(user!, m.chat_message_id, body); messages.refresh(); }} />
             ))}
           </div>
+          <IncomingLog entries={incoming} />
           <div className="chat-compose">
             {error && <ErrorBox text={error} />}
             {/*

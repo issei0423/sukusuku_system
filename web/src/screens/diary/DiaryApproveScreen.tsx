@@ -16,6 +16,7 @@ import { Loading, ErrorBox, Field, Alert } from '../../components/ui';
 import { notify } from '../../components/feedback';
 import { DIARY_RECORD_TYPE, DIARY_STATUS } from '../../api/codes';
 import { formatYMD, formatMDHM } from '../../api/util';
+import { IncidentSummary } from './IncidentFields';
 
 export default function DiaryApproveScreen() {
   const { user } = useSession();
@@ -108,10 +109,15 @@ export default function DiaryApproveScreen() {
             <Alert soft>前回差し戻した理由：{d.returned_reason}</Alert>
           </div>
         )}
-        {/* 本文は読み取り専用。承認者が書き換えられないようにする */}
-        <div style={{ whiteSpace: 'pre-wrap', border: '1px solid var(--c-border)', borderRadius: 6, padding: 12, background: 'var(--c-surface-sub)' }}>
-          {d.body}
-        </div>
+        {/*
+          * 本文は読み取り専用。承認者が書き換えられないようにする。ヒヤリハットは発生日時・場所・状況・とった対応・
+          * 保護者へ伝えたこと（と今後の対策）を示す（図/画面詳細図.md「日誌承認画面（管理者）」(3-5) 項目3）
+          */}
+        {d.incident ? <IncidentSummary incident={d.incident} /> : (
+          <div style={{ whiteSpace: 'pre-wrap', border: '1px solid var(--c-border)', borderRadius: 6, padding: 12, background: 'var(--c-surface-sub)' }}>
+            {d.body}
+          </div>
+        )}
         {(attachments.data?.length ?? 0) > 0 && (
           <div className="row" style={{ marginTop: 12 }}>
             <span className="muted">写真</span>

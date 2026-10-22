@@ -12,7 +12,8 @@
  *   - 記録した値を押すと「直す」「取り消す」（その日はその園児のクラスの担任、管理者はいつでも。取り消しは確認のダイアログ）
  * 午睡は表示だけ（記録は午睡チェック画面の行で行う）。押したらサーバの応答を待って結果を出す（楽観的更新をしない。決めたこと D-3）。
  * ひとこと・園からは、連絡帳（園児）画面で書いて送る（段2。宛先を大きく示し、他児の名前を照合する）。この表は件数と
- * 「未送信」「欠席」（午睡で欠席にした子。未送信に数えない）「送った 17:05」を出し、押すとその園児の画面へ移る。
+ * 「欠席」（午睡で欠席にした子。未送信に数えない）「送った 17:05」を出し、押すとその園児の画面へ移る。
+ * ひとこと・写真が無いセルと園からを送っていないセルは、文字のボタン「書く」をセルいっぱいに出す（GitHub Issue #215）。
  * 体温に判定の色や言葉を付けない（平熱は比べる材料として並べてよい）。
  */
 import { useEffect, useRef, useState } from 'react';
@@ -27,11 +28,17 @@ import { Alert, Empty, ErrorBox, Loading } from '../../components/ui';
 import { notify } from '../../components/feedback';
 import { useReachable } from '../../api/reachability';
 import { useUnsavedInput } from '../../unsavedInput';
+import { useStickyInset } from '../../stickyInset';
+import { focusAfter, focusedNow } from '../../focusAfter';
 import TemperaturePicker from '../../components/TemperaturePicker';
 import { MEAL_AMOUNT_STAFF_TEXT, MEAL_KIND_TEXT, TEXT } from '../../messages';
 import { dayLabel, eventText, homeLines, latestSleepText } from './contactText';
 import FixDialog, { cancelAction, toiletChoices } from './FixDialog';
 import type { FixTarget } from './FixDialog';
+import PhotoSendDialog from './PhotoSendDialog';
+import ClassPhotoStrip from './ClassPhotoStrip';
+import HomeArrivalStatus from './HomeArrival';
+import { useHomeArrival } from './useHomeArrival';
 
 const HOME_STATE_TEXT: Record<HomeState, string> = { none: 'まだ', unconfirmed: '未確認', revised: '更新', confirmed: '確認済み' };
 /** sort=home の並び：「更新」「未確認」「まだ」「確認済み」（詳細設計書 (2-2 (2))） */
@@ -68,7 +75,8 @@ function HomeCell({ row, canConfirm, busy, onConfirm }: {
         ))}
       </dl>
       {h.confirmed_at
-        ? <p className="contact-confirmed">園が確認しました {formatHM(h.confirmed_at)} {h.confirmed_staff_name}</p>
+        // 「確認しました」を押したあとのフォーカスの移し先（tabIndex -1。Tab では止まらない。GitHub Issue #213）
+        ? <p className="contact-confirmed" tabIndex={-1} data-confirmed-home={h.contact_home_id}>園が確認しました {formatHM(h.confirmed_at)} {h.confirmed_staff_name}</p>
         : canConfirm && (
           <button type="button" className="btn-primary contact-confirm-button" onClick={onConfirm} disabled={busy} aria-busy={busy}
             aria-label={`${row.child.child_name}の家庭からを確認しました`}>
@@ -130,6 +138,8 @@ export default function ContactClassScreen() {
   const [failed, setFailed] = useState(false);
   const [fix, setFix] = useState<{ target: FixTarget; normal: number | null } | null>(null);
   const [tempFor, setTempFor] = useState<ContactClassRow | null>(null);
+  // 写真を送る（詳細設計書「写真を送る」(2-2 (7))。中身は PhotoSendDialog.tsx。送った写真は ClassPhotoStrip.tsx で表の上に出す）
+  const [photoOpen, setPhotoOpen] = useState(false);
   const reachable = useReachable();
   // 仮に入れた食事は保存していない。ログアウトの前に、破棄されることを確かめさせる
   useUnsavedInput(tentative !== null);
@@ -139,6 +149,17 @@ export default function ContactClassScreen() {
     [user?.account_id, classId, date], { refreshMs: AUTO_REFRESH_MS, live: (e) => onContactClass(classId, childIds.current)(e) });
   const data = view.data;
   useEffect(() => { childIds.current = data?.rows.map((r) => r.child.child_id) ?? []; }, [data]);
+  // 「家庭から」の届いた園児が増えたときだけ、読み上げへ伝える（詳細設計書 (2-0) の (6) の②、GitHub Issue #209）。
+  // 範囲は応答のクラスと日付で決める（クラス・日付を替えて読み込んでいる間は、前の応答のまま）
+  const arrival = useHomeArrival(data ? `${data.class_id}:${data.contact_date}` : null,
+    data ? data.rows.filter((r) => r.home).map((r) => ({ id: r.child.child_id, name: r.child.child_name })) : null);
+  /*
+   * 左に止めた園児名の列の幅を、表を横に送る枠（.contact-table-wrap）へ --contact-col-child-w として渡す。
+   * 枠はその幅ぶんを scroll-padding-left に取り、キーボードで表の中を移ったとき（iPad の横向き 1024px など、表が横に送られる幅）に、
+   * フォーカスした部品が園児名の列の下に隠れないようにする（WCAG 2.4.11 フォーカスの非隠蔽、GitHub Issue #212）
+   */
+  const childColumn = useStickyInset('.contact-table-wrap', '--contact-col-child-w', 'width');
+  const fillAllButton = useRef<HTMLButtonElement>(null);
 
   const go = (next: { class?: number; date?: string; sort?: string }) => {
     const p: Record<string, string> = {};
@@ -152,13 +173,21 @@ export default function ContactClassScreen() {
     setParams(p);
   };
 
-  /** 押したら応答を待つ。成功でも失敗でも、今の状態を読み直す */
-  const act = async (key: string, name: string, work: () => Promise<void>) => {
+  /**
+   * 押したら応答を待つ。成功でも失敗でも、今の状態を読み直す。
+   * 送っている間は表のボタンがすべて押せなくなり、押したボタンからフォーカスが外れる。応答のあと、押したボタンへ戻す。
+   * 押したボタンが消えるもの（確認しました）は、成功したときに movedTo の場所へ移す（src/focusAfter.ts、GitHub Issue #213）。
+   * 窓の中で押して窓ごと消えるもの（体温の一覧の値）は、成功・失敗とも back の場所（窓を開いた「＋体温」）へ移す
+   */
+  const act = async (key: string, name: string, work: () => Promise<void>, movedTo?: () => HTMLElement | null, back?: () => HTMLElement | null) => {
     if (busyKey !== null) return;
+    const pressed = focusedNow();
+    let done = false;
     setBusyKey(key); setError(null);
     try {
       await work();
       setFailed(false);
+      done = true;
     } catch (e) {
       const message = (e as Error).message;
       setError(`${name}さん：${message}`);
@@ -167,21 +196,22 @@ export default function ContactClassScreen() {
     } finally {
       setBusyKey(null);
       view.refresh();
+      focusAfter(pressed, (done ? movedTo : undefined) ?? back);
     }
   };
 
   const confirm = (row: ContactClassRow) => {
     if (!row.home) return;
     const home = row.home;
-    // 読んだあとに保護者が直していたら 409。読み直して、新しい内容を読んでから押してもらう
+    // 読んだあとに保護者が直していたら 409。読み直して、新しい内容を読んでから押してもらう（ボタンが残るので、ボタンへ戻す）
     return act(`home-${home.contact_home_id}`, row.child.child_name, async () => {
       await api.confirmHome(user!, home.contact_home_id, home.updated_at);
       notify(`${row.child.child_name}さんの家庭からを確認しました。保護者に「園が確認しました」と出ます。`);
-    });
+    }, () => document.querySelector<HTMLElement>(`[data-confirmed-home="${home.contact_home_id}"]`));
   };
 
-  /** 1件を記録する（段1。その場で保存）。結果の表示に「取り消す」を添える */
-  const recordOne = (row: ContactClassRow, key: string, input: ContactEventInput) =>
+  /** 1件を記録する（段1。その場で保存）。結果の表示に「取り消す」を添える。back は act と同じ */
+  const recordOne = (row: ContactClassRow, key: string, input: ContactEventInput, back?: () => HTMLElement | null) =>
     act(key, row.child.child_name, async () => {
       const res = await api.recordEvents(user!, [input]);
       const saved = res.events[0];
@@ -193,7 +223,7 @@ export default function ContactClassScreen() {
       // 【仮置き】記録したときの結果の文。園児名と記録したものを足した（web/仮置き値.md）
       notify(`${row.child.child_name}さんの「${eventText(saved)}」を記録しました。保護者が見られる状態です。`,
         cancelAction(user!, { kind: 'event', event: saved, childName: row.child.child_name }));
-    });
+    }, undefined, back);
 
   const correctMeal = (row: ContactClassRow, e: ContactEvent, amount: MealAmount) =>
     act(`meal-${row.child.child_id}`, row.child.child_name, async () => {
@@ -217,7 +247,8 @@ export default function ContactClassScreen() {
       setTentative(null);
       const skipped = res.skipped.length > 0 ? `${res.skipped.length}人はすでに記録されていたため飛ばしました。` : '';
       notify(`${res.events.length}人の${slotLabel(slot)}を記録しました。保護者が見られる状態です。${skipped}`);
-    });
+    // 記録すると「記録する」は消え、同じ場所に「全員ぜんぶ」が戻る
+    }, () => fillAllButton.current);
   };
   /** 区分を替える。仮に入れていれば、捨ててよいかを確かめる */
   const chooseSlot = (next: MealSlot) => {
@@ -250,6 +281,7 @@ export default function ContactClassScreen() {
 
   return (
     <div className="contact-class">
+      <HomeArrivalStatus said={arrival} />
       <div className="page-head contact-class-head">
         <h1>連絡帳</h1>
         <label className="contact-inline-field">
@@ -272,6 +304,7 @@ export default function ContactClassScreen() {
             <option value="facility">園からを送っていない園児を上に</option>
           </select>
         </label>
+        {canRecord && <button type="button" onClick={() => setPhotoOpen(true)}>写真を送る</button>}
       </div>
 
       {!isToday && (
@@ -288,6 +321,7 @@ export default function ContactClassScreen() {
             {data.unregistered_count > 0 && `（まだ登録していない ${data.unregistered_count} 家庭は、登録すると読めます）`}
             {!data.can_write && '。このクラスは読むだけです'}
           </p>
+          <ClassPhotoStrip rows={rows} />
           {canRecord && rows.length > 0 && (
             <section className="contact-meal-bar" aria-label="食事を記録する">
               <div className="contact-picks" role="group" aria-label="食事の区分">
@@ -297,7 +331,7 @@ export default function ContactClassScreen() {
                 ))}
               </div>
               {!tentative ? (
-                <button type="button" onClick={fillAll} disabled={busyKey !== null}>全員ぜんぶ</button>
+                <button ref={fillAllButton} type="button" onClick={fillAll} disabled={busyKey !== null}>全員ぜんぶ</button>
               ) : (
                 <>
                   <p className="contact-meal-tentative" role="status">{TEXT.mealTentative(tentativeCount)}</p>
@@ -321,13 +355,13 @@ export default function ContactClassScreen() {
               <table className="list contact-class-table">
                 <thead>
                   <tr>
-                    <th scope="col" className="contact-col-child">園児</th>
+                    <th ref={childColumn} scope="col" className="contact-col-child">園児</th>
                     <th scope="col" className="contact-col-home">家庭から</th>
                     <th scope="col" className="contact-col-meal">{slotLabel(slot)}</th>
                     <th scope="col" className="contact-col-toilet">排せつ</th>
                     <th scope="col" className="contact-col-temp">体温</th>
                     <th scope="col">午睡</th>
-                    <th scope="col">ひとこと</th>
+                    <th scope="col">ひとこと・写真</th>
                     <th scope="col">園から</th>
                   </tr>
                 </thead>
@@ -345,6 +379,11 @@ export default function ContactClassScreen() {
                     const lastToilet = toilets.at(-1);
                     const lastTemp = temps.at(-1);
                     const rowBusy = busyKey !== null;
+                    // 見えている文字は、読み上げの名前にもそのまま入れる（WCAG 2.5.3。声で「書く」「送った」と言って押せるように）
+                    const toiletText = lastToilet ? `${toilets.length}回／${eventText(lastToilet)} ${formatHM(lastToilet.recorded_at)}` : '';
+                    const tempText = lastTemp ? `${eventText(lastTemp)}（${formatHM(lastTemp.recorded_at)}）` : '';
+                    const facilityText = row.facility ? `送った ${formatHM(row.facility.recorded_at)}`
+                      : row.exclusion?.reason === '1' ? '欠席' : null;
                     return (
                       <tr key={id}>
                         <th scope="row" className="contact-col-child"><Link to={childPath}>{name}</Link></th>
@@ -378,34 +417,44 @@ export default function ContactClassScreen() {
                           {lastToilet ? (
                             canRecord
                               ? <button type="button" className="btn-quiet contact-last" onClick={() => openFix(row, lastToilet)}
-                                aria-label={`${name}の排せつ ${eventText(lastToilet)} ${formatHM(lastToilet.recorded_at)} を直す・取り消す`}>
-                                {toilets.length}回／{eventText(lastToilet)} {formatHM(lastToilet.recorded_at)}</button>
-                              : <span>{toilets.length}回／{eventText(lastToilet)} {formatHM(lastToilet.recorded_at)}</span>
+                                aria-label={`${name}の排せつ ${toiletText} を直す・取り消す`}>
+                                {toiletText}</button>
+                              : <span>{toiletText}</span>
                           ) : !canRecord && <span className="muted">―</span>}
                         </td>
                         <td className="contact-col-temp">
                           {lastTemp && (
                             canRecord
                               ? <button type="button" className="btn-quiet contact-last" onClick={() => openFix(row, lastTemp)}
-                                aria-label={`${name}の体温 ${eventText(lastTemp)} ${formatHM(lastTemp.recorded_at)} を直す・取り消す`}>
-                                {eventText(lastTemp)}（{formatHM(lastTemp.recorded_at)}）</button>
-                              : <span>{eventText(lastTemp)}（{formatHM(lastTemp.recorded_at)}）</span>
+                                aria-label={`${name}の体温 ${tempText} を直す・取り消す`}>
+                                {tempText}</button>
+                              : <span>{tempText}</span>
                           )}
                           {canRecord && (
                             <button type="button" className="contact-pick contact-temp-add" onClick={() => setTempFor(row)} disabled={rowBusy}
-                              aria-label={`${name}の体温を記録する`}>＋体温</button>
+                              data-temp-add={id} aria-label={`${name}の体温を記録する`}>＋体温</button>
                           )}
                           {!lastTemp && !canRecord && <span className="muted">―</span>}
                           {row.child.normal_temperature !== null && <div className="muted">平熱 {row.child.normal_temperature.toFixed(1)}</div>}
                         </td>
                         <td>{nap ? <Link to="/staff/nap">{nap}</Link> : <span className="muted">―</span>}</td>
-                        <td className="num"><Link to={childPath} aria-label={`${name}のひとこと・写真`}>{comments > 0 ? `${comments} 件` : '―'}</Link></td>
-                        {/* 園から：未送信・送った（時刻）。午睡で欠席にした子は「欠席」（未送信に数えない）。押すと連絡帳（園児）画面の園から */}
+                        {/*
+                          * ひとこと・写真の件数。無ければ、園からを送っていないときと同じく文字のボタン「書く」（押すと連絡帳（園児）画面で書く）。
+                          * 直す前は「―」「未送信」の小さなリンクで、押せると分かりにくかった。セルいっぱい・高さ 44px にする
+                          * （「タッチの条件」(2-0 (4))、GitHub Issue #215。2026-10-19 に決めた）。行き先は画面の移動なので、ボタンの見た目のリンクにする。
+                          * 同じ「書く」が表に並ぶので、読み上げの名前に園児名と列を入れる（WCAG 2.4.6。見えている「書く」も入れる。2.5.3）
+                          * 【仮置き】文言「書く」（web/仮置き値.md）
+                          */}
+                        <td className="num">
+                          {comments > 0
+                            ? <Link to={childPath} aria-label={`${name}のひとこと・写真 ${comments} 件`}>{comments} 件</Link>
+                            : <Link to={childPath} className="btn btn-sm contact-write" aria-label={`${name}のひとことを書く`}>書く</Link>}
+                        </td>
+                        {/* 園から：送った（時刻）・送っていなければ「書く」。午睡で欠席にした子は「欠席」（未送信に数えない）。押すと連絡帳（園児）画面の園から */}
                         <td>
-                          <Link to={`${childPath}#facility`} aria-label={`${name}の園から`}>
-                            {row.facility ? `送った ${formatHM(row.facility.recorded_at)}`
-                              : row.exclusion?.reason === '1' ? '欠席' : <span className="contact-unsent">未送信</span>}
-                          </Link>
+                          {facilityText
+                            ? <Link to={`${childPath}#facility`} aria-label={`${name}の園から ${facilityText}`}>{facilityText}</Link>
+                            : <Link to={`${childPath}#facility`} className="btn btn-sm contact-write" aria-label={`${name}の園からを書く`}>書く</Link>}
                         </td>
                       </tr>
                     );
@@ -422,12 +471,24 @@ export default function ContactClassScreen() {
           onSelect={(value) => {
             const row = tempFor;
             setTempFor(null);
-            void recordOne(row, `temp-${row.child.child_id}`, { child_id: row.child.child_id, event_type: '3', temperature: value });
-          }} />
+            /*
+             * 値を押すと窓が閉じて送る。窓の部品は開いた元の「＋体温」へフォーカスを戻すが、送っている間は押せないので戻らず、
+             * 押した値も窓ごと消える。応答のあと、押せるようになった「＋体温」へ移す（WCAG 2.4.3、GitHub Issue #213）
+             */
+            void recordOne(row, `temp-${row.child.child_id}`, { child_id: row.child.child_id, event_type: '3', temperature: value },
+              () => document.querySelector<HTMLElement>(`[data-temp-add="${row.child.child_id}"]`));
+          }}>
+          {/* 入力欄（体温の一覧）の近くに固定の文【仮置き】（図/画面詳細図「連絡帳（クラス）画面」(8-1) 項目13。web/仮置き値.md） */}
+          <p className="contact-note">{TEXT.temperatureCallFirst}</p>
+        </TemperaturePicker>
       )}
       {fix && (
         <FixDialog target={fix.target} normalTemperature={fix.normal} onClose={() => setFix(null)}
           onDone={(message) => { setFix(null); notify(message); view.refresh(); }} />
+      )}
+      {photoOpen && classId > 0 && (
+        <PhotoSendDialog classId={classId} date={date} onClose={() => setPhotoOpen(false)}
+          onSent={() => { setPhotoOpen(false); view.refresh(); }} />
       )}
     </div>
   );

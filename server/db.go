@@ -63,6 +63,9 @@ func openDB(path string) (*sql.DB, error) {
 	if err := ensureTermsAgreement(db); err != nil {
 		return nil, err
 	}
+	if err := ensureNapAbnormalGuardianNotice(db); err != nil {
+		return nil, err
+	}
 	if err := ensureDesignColumns(db); err != nil {
 		return nil, err
 	}
@@ -72,7 +75,13 @@ func openDB(path string) (*sql.DB, error) {
 	if err := ensurePersonalRoomChild(db); err != nil {
 		return nil, err
 	}
+	if err := ensureChatMemberFirstJoined(db); err != nil {
+		return nil, err
+	}
 	if err := ensureNapAbnormalRecordedAt(db); err != nil {
+		return nil, err
+	}
+	if err := ensureNapRecordCorrectedAt(db); err != nil {
 		return nil, err
 	}
 	// 連絡帳の表と列を足す（詳細設計書「既存の DB の移し方」(5-4) の 1〜5。m_child.nickname もここで足す。db_contact.go）
@@ -83,11 +92,30 @@ func openDB(path string) (*sql.DB, error) {
 	if err := ensureMissingPersonalRooms(db); err != nil {
 		return nil, err
 	}
+	if err := ensureGrowthSchema(db); err != nil {
+		return nil, err
+	}
 	// 日誌を園内の記録の形へ移す（詳細設計書「既存の DB の移し方」(5-4) の 7。db_diary.go）
 	if err := ensureInternalDiary(db); err != nil {
 		return nil, fmt.Errorf("日誌を園内の記録の形へ移せません: %w", err)
 	}
 	return db, nil
+}
+
+// ensureChatMemberFirstJoined は、参加の行に最初に参加した日時の列（t_chat_member.first_joined_at）を足す。
+// 【仮置き】抜けていた行を今の時刻で参加し直す（決めたこと D-48）ときに書き換える前の joined_at を残し、
+// 個人チャットの「保護者がまだ1人もいなかった間の投稿は見せる」境（api_chat.go の firstGuardianJoinedAt）が今へ動かないようにする。
+// 既存の行は空のまま（空なら joined_at が最初の参加）。設計書の表の定義（5-3・5-4）には無い列（web/仮置き値.md）
+func ensureChatMemberFirstJoined(db *sql.DB) error {
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('t_chat_member') WHERE name = 'first_joined_at'`).Scan(&n); err != nil {
+		return err
+	}
+	if n == 0 {
+		_, err := db.Exec(`ALTER TABLE t_chat_member ADD COLUMN first_joined_at TEXT`)
+		return err
+	}
+	return nil
 }
 
 // 発見時刻と保存時刻を分ける（図/画面詳細図「異常時記録画面」(5-2)）。

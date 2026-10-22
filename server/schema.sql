@@ -260,6 +260,10 @@ CREATE TABLE t_chat_member (
   account_id   INTEGER NOT NULL REFERENCES m_account(account_id),
   joined_at    TEXT    NOT NULL,
   left_at      TEXT,
+  -- 【仮置き】最初に参加した日時。抜けていた行を今の時刻で参加し直す（決めたこと D-48）ときに、書き換える前の joined_at を残す。
+  -- 個人チャットの「保護者がまだ1人もいなかった間の投稿は見せる」境（api_chat.go の firstGuardianJoinedAt）が今へ動かないように。
+  -- 空なら joined_at が最初の参加。既存の DB には db.go の ensureChatMemberFirstJoined が足す（web/仮置き値.md）
+  first_joined_at TEXT,
   PRIMARY KEY (chat_room_id, account_id)
 );
 
@@ -362,7 +366,10 @@ CREATE TABLE t_nap_record (
   breathing      TEXT    NOT NULL CHECK (breathing IN ('1','2')),              -- 1:あり 2:確認できず
   complexion     TEXT    NOT NULL CHECK (complexion IN ('1','2','3','4')),     -- 1:通常 2:蒼白 3:紅潮 4:その他
   temperature    REAL,
-  staff_id       TEXT    NOT NULL REFERENCES m_staff(staff_id)
+  staff_id       TEXT    NOT NULL REFERENCES m_staff(staff_id),
+  -- 最後に修正した時刻。空なら修正なし。帳票の「修正あり」の印に使う。修正者・修正前の値・修正後の値・理由は操作ログが持つ
+  -- （基本設計書「足した列」(5-7)・「記録の修正と改ざん防止」(4-8)）。既存の DB には api_nap_correct.go の ensureNapRecordCorrectedAt が足す
+  corrected_at   TEXT
 );
 CREATE INDEX ix_nap_record_child ON t_nap_record (child_id, checked_at);
 
@@ -376,7 +383,13 @@ CREATE TABLE t_nap_abnormal (
   situation       TEXT    NOT NULL,
   response        TEXT    NOT NULL,
   staff_id        TEXT    NOT NULL REFERENCES m_staff(staff_id),
-  diary_id        INTEGER REFERENCES t_diary(diary_id)
+  diary_id        INTEGER REFERENCES t_diary(diary_id),
+  -- 保護者への連絡（基本設計書「午睡チェック」(5-7) の「足した列（午睡チェックの記録・異常時の記録）」）。
+  -- 空は未記入。連絡の要否はシステムが判断しない。「した」のときの必須はサーバが確かめる（api_nap.go の guardianNotice.problem。モックは web/src/api/mock.ts の guardianNoticeProblem）
+  guardian_notice        TEXT CHECK (guardian_notice IN ('1','2')),                 -- 1:した 2:しない
+  guardian_noticed_at    TEXT,
+  guardian_notice_method TEXT CHECK (guardian_notice_method IN ('1','2','3','9')),  -- 1:電話 2:お迎えのときに対面 3:連絡帳・個人チャット 9:その他
+  guardian_notice_person TEXT
 );
 
 -- ============ 5-7 発達チェック・身体測定 ============
@@ -433,6 +446,13 @@ CREATE TABLE t_development_check (
   -- 所見（チェック1件に対する自由記述）。園内限定であり、保護者へは共有しない
   -- （基本設計書「発達チェック・身体測定」(5-7)）
   note                    TEXT,
+  -- 保護者へのひとこと（所見とは別の欄。確定した時点で成長の記録に届く）と、最初に確定した日時（直しても動かさない）
+  -- （詳細設計書「変える表」(5-3)・「成長の記録に届くもの」(3-7)、決めたこと D-31）
+  guardian_message        TEXT,
+  finalized_at            TEXT,
+  -- 確定したあとで保護者へのひとことを別の文に書き換えた時刻。空なら書き換えていない。保護者の成長の記録に
+  -- 「訂正しました（日付）」を出す（詳細設計書「変える表」(5-3)、決めたこと D-51。PR #216 で決まった設計）
+  guardian_message_corrected_at TEXT,
   UNIQUE (child_id, checked_on)
 );
 

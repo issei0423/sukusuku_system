@@ -39,6 +39,12 @@ export { onProcedureRequired } from './procedure';
 export { onSessionEnded } from './procedure';
 
 /**
+ * 裏の読み直しとして要求を送る。職員の自動ログアウトの「操作」に数えさせない（GitHub Issue #210）。
+ * http は印の見出しを付ける。モックは呼ばれたときに印の中かを見て、期限を延ばさない
+ */
+export { asAutomatic } from './automatic';
+
+/**
  * 開いている画面への知らせにつなぐ（live.ts）。返す関数で切る。
  * http はサーバ（GET /api/events）へつなぎ、mock はブラウザの中で同じ知らせを出す相手を決める
  */
@@ -48,5 +54,5 @@ export const connectLive = impl.connectLive;
 export const backend: 'http' | 'mock' = useMock ? 'mock' : 'http';
 
 export type {
-  LoginError, ChildInput, DiaryFilter, DiaryInput, DiaryAttachmentInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
+  LoginError, ChildInput, DiaryFilter, DiaryInput, DiaryAttachmentInput, DiaryIncidentInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
 } from './shapes';

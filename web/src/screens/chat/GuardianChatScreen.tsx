@@ -23,6 +23,8 @@ import Reactions from '../../components/Reactions';
 import { formatHM, formatMD } from '../../api/util';
 import type { ChatMessage } from '../../api/types';
 import { useUnsavedInput } from '../../unsavedInput';
+import IncomingLog from './IncomingLog';
+import { useIncomingMessages } from './useIncomingMessages';
 
 /*
  * メッセージを長押しして操作の一覧を開くまでの時間と、長押しとみなす指のずれの上限。
@@ -86,6 +88,8 @@ export default function GuardianChatScreen() {
 
   const messages = useAsync(async () => (roomId ? api.messages(user!, roomId) : []), [roomId],
     { refreshMs: AUTO_REFRESH_MS, live: onRoom(roomId) });
+  // 園から届いた新しいメッセージだけを読み上げへ伝える（詳細設計書 (2-0) の (6) の①、GitHub Issue #209）
+  const incoming = useIncomingMessages(messages.data, messages.loading, roomId, user!.account_id);
 
   // 開いたチャンネルは既読にする。開いている間に届いたメッセージも、届いたときに既読にする
   const shownRoom = messages.data?.[0]?.chat_room_id ?? null;
@@ -402,6 +406,7 @@ export default function GuardianChatScreen() {
           );
         })}
       </div>
+      <IncomingLog entries={incoming} />
 
       <div className="guardian-message-compose">
         <div className="sr-only" role="status">{status}</div>

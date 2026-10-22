@@ -19,6 +19,14 @@ func (a *app) routes(mux *http.ServeMux) {
 	a.routeContact(mux)
 	a.routeGrowth(mux)
 	a.routeAdmin(mux)
+	a.routeGuardian(mux)
+}
+
+// 保護者のメニュー（詳細設計書「保護者のメニュー」(4-15)。api_guardian.go）。本版は AI の下書きの利用とお子さまの追加。
+// お子さまの追加の招待コードの確認は、新規登録と同じ POST /api/invitation/verify を広げて使う（routeAuth）
+func (a *app) routeGuardian(mux *http.ServeMux) {
+	mux.HandleFunc("POST /api/guardian/children", a.handleAddChild)
+	mux.HandleFunc("POST /api/guardian/children/{childID}/ai-opt-out", a.handleAiOptOut)
 }
 
 // 連絡帳の読み書きと、ねた・おきた（詳細設計書「経路の一覧」(4-2)）
@@ -41,6 +49,9 @@ func (a *app) routeContact(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/nap/sleeps/{id}/correct", a.handleCorrectSleep)
 	mux.HandleFunc("POST /api/nap/sleeps/{id}/cancel", a.handleCancelSleep)
 	mux.HandleFunc("GET /api/nap/sleeps/{id}/readers", a.handleSleepReaders)
+	// 写真を送る・写真の実体（詳細設計書「きょうのようす」(4-4 (2))・(4-4 (3))）
+	mux.HandleFunc("POST /api/contact/photos", a.handleSendPhoto)
+	mux.HandleFunc("GET /api/contact/photos/{id}", a.handlePhotoFile)
 	// 園からのひとこと・他児の名前の照合・定型文（詳細設計書「園からのひとことと他児の名前」(4-5)）
 	mux.HandleFunc("PUT /api/contact/children/{childID}/facility", a.handleSendFacility)
 	mux.HandleFunc("POST /api/contact/facility/{id}/correct", a.handleCorrectFacility)
@@ -48,6 +59,9 @@ func (a *app) routeContact(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/contact/facility/{id}/readers", a.handleFacilityReaders)
 	mux.HandleFunc("POST /api/contact/name-check", a.handleNameCheck)
 	mux.HandleFunc("GET /api/phrases", a.handlePhrases)
+	// 文章の下書き（AI）（詳細設計書「経路」(8-2)）
+	mux.HandleFunc("GET /api/ai/status", a.handleAiStatus)
+	mux.HandleFunc("POST /api/ai/drafts", a.handleAiDrafts)
 }
 
 // 共通基盤：ログインとアカウント（基本設計書 4-3）
@@ -55,6 +69,9 @@ func (a *app) routeAuth(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/login", a.handleLogin)
 	mux.HandleFunc("POST /api/logout", a.handleLogout)
 	mux.HandleFunc("GET /api/me", a.handleMe)
+	// 自動ログアウトの期限と、予告の「続ける」（api_session.go。GitHub Issue #210）
+	mux.HandleFunc("GET /api/session", a.handleSessionStatus)
+	mux.HandleFunc("POST /api/session/extend", a.handleExtendSession)
 	mux.HandleFunc("GET /api/reference", a.handleReference)
 	mux.HandleFunc("POST /api/password", a.handleChangePassword)
 	mux.HandleFunc("GET /api/terms", a.handleCurrentTerms)
@@ -141,6 +158,10 @@ func (a *app) routeNap(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/nap/abnormals", a.handleNapAbnormals)
 	mux.HandleFunc("POST /api/nap/abnormals/{id}/incident", a.handleRaiseIncidentDiary)
 	mux.HandleFunc("GET /api/nap/records", a.handleSearchNapRecords)
+	// 午睡チェック表（帳票）。管理者だけ。サーバで作り、出力を操作ログへ記録する（api_nap_report.go）
+	mux.HandleFunc("GET /api/nap/report", a.handleNapReport)
+	// 午睡チェックの記録の修正。行を書き換え、修正前後の値と理由を操作ログに残す（api_nap_correct.go）
+	mux.HandleFunc("POST /api/nap/records/{id}/correct", a.handleCorrectNapRecord)
 }
 
 // 発達チェック・身体測定（基本設計書 4-8）
@@ -162,6 +183,8 @@ func (a *app) routeGrowth(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/physical/records/{id}", a.handleRemovePhysical)
 	mux.HandleFunc("POST /api/physical/export", a.handleExportPdf)
 	mux.HandleFunc("GET /api/children/{childID}/physical", a.handlePhysicalRecords)
+	mux.HandleFunc("GET /api/children/{childID}/growth", a.handleGrowthRecord)
+	mux.HandleFunc("POST /api/contact/events/{id}/keep-in-growth", a.handleKeepInGrowth)
 }
 
 // アカウント管理・監査（基本設計書 4-3・6-4）
@@ -182,4 +205,7 @@ func (a *app) routeAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/invitations/{id}/revoke", a.handleRevokeInvitationCode)
 	mux.HandleFunc("GET /api/admin/logs", a.handleOperationLogs)
 	mux.HandleFunc("POST /api/exports", a.handleRecordExport)
+	// 設定画面（詳細設計書「設定」(4-10)。本版は AI の区画だけ）
+	mux.HandleFunc("GET /api/settings", a.handleSettings)
+	mux.HandleFunc("POST /api/settings", a.handleSaveSettings)
 }

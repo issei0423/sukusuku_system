@@ -125,6 +125,8 @@ export interface Terms {
   document_type: TermsDocumentType;
   body: string;
   published_on: string;
+  /** 外部の AI へ送ることを書いた版か（詳細設計書「使える条件」(8-3) の④）。サーバの GET /api/terms は返さない（モックの判定に使う） */
+  covers_external_ai?: boolean;
 }
 
 /* ---- 園児・クラス（基本設計書 5-3） ---- */
@@ -172,6 +174,13 @@ export interface GuardianChild {
   ended_at: string | null;
   /** 猶予中（3）の終わりの日（詳細設計書「変える表」(5-3)） */
   grace_ends_on?: string | null;
+  /** 保護者が「AI の下書きを使わない」を選んだ（詳細設計書「使える条件」(8-3) の④。無ければ偽） */
+  ai_opt_out?: boolean;
+  /**
+   * 連絡順（緊急時にかける順。管理者が紐づけごとに決める。基本設計書「保護者と園児の紐づけ（t_guardian_child）」(5-3)）。
+   * 無ければ 1（server/schema.sql の既定）。お子さまの追加で、その園児のいまの最大＋1 を入れる（詳細設計書「お子さまの追加」(4-15 (1))）
+   */
+  contact_order?: number;
 }
 
 /** アレルギー（m_allergy）。1園児に複数登録できる（5-3） */
@@ -217,10 +226,41 @@ export interface Diary {
   is_deleted: boolean;
   created_at: string;
   updated_at: string;
+  /*
+   * ヒヤリハットだけが持つ列（発生日時・場所・保護者へ伝えたこと）。ほかの種別では空
+   * （基本設計書「日誌（t_diary）」(5-5)、詳細設計書「日誌の画面（作り直し）」(2-13 (8))）。
+   * 状況・とった対応・今後の対策は列を持たず、本文に見出しを付けて持つ（決めたこと D-33）
+   */
+  occurred_at?: string | null;
+  place?: string | null;
+  /** 1:伝えた 2:伝えていない。空は未記入 */
+  guardian_notice?: '1' | '2' | null;
+  guardian_noticed_at?: string | null;
+  /** 1:電話 2:お迎えのときに対面 3:連絡帳・個人チャット 9:その他 */
+  guardian_notice_method?: '1' | '2' | '3' | '9' | null;
+  guardian_notice_person?: string | null;
   /* 作成した職員・承認した職員・申請した職員の氏名。承認の経緯に出す導出値（詳細設計書「日誌」(4-13 (6))） */
   staff_name?: string;
   approved_staff_name?: string | null;
   applied_staff_name?: string | null;
+  /** ヒヤリハットの欄。ヒヤリハットのときだけ返す導出値（詳細設計書「日誌」(4-13 (6))） */
+  incident?: DiaryIncident | null;
+}
+
+/**
+ * 読むときに返すヒヤリハットの欄（詳細設計書「日誌」(4-13 (6))）。状況・とった対応・今後の対策は、
+ * 本文を見出し（【状況】【とった対応】【今後の対策】）で分けたもの。サーバ側は server/api_diary_incident.go の DiaryIncident
+ */
+export interface DiaryIncident {
+  occurred_at: string;
+  place: string;
+  situation: string;
+  response: string;
+  countermeasure: string;
+  guardian_notice: '1' | '2' | null;
+  guardian_noticed_at: string | null;
+  guardian_notice_method: '1' | '2' | '3' | '9' | null;
+  guardian_notice_person: string | null;
 }
 
 /** 編集ロック（t_diary_lock）。1件の日誌に1つ（5-4） */
@@ -268,6 +308,12 @@ export interface ChatMember {
   account_id: number;
   joined_at: string;
   left_at: string | null;
+  /**
+   * 【仮置き】最初に参加した日時。抜けていた行を今の時刻で参加し直す（決めたこと D-48）ときに、書き換える前の joined_at を残す。
+   * 空なら joined_at が最初の参加。個人チャットの「保護者がまだ1人もいなかった間の投稿は見せる」境（mock.ts の hiddenBeforeJoined）が
+   * 今へ動かないように（server/schema.sql の t_chat_member.first_joined_at と同じ。web/仮置き値.md）
+   */
+  first_joined_at?: string | null;
 }
 
 /** メッセージ（t_chat_message） */
@@ -388,7 +434,17 @@ export interface NapRecord {
   complexion: Complexion;
   temperature: number | null;
   staff_id: string;
+  /**
+   * 最後に修正した時刻。空なら修正なし（帳票の「修正あり」の印。基本設計書「足した列」(5-7)）。
+   * デモデータ（mockDb.ts）は持たないため省いてよい（省いたものは修正なし）
+   */
+  corrected_at?: string | null;
 }
+
+/** 保護者への連絡（t_nap_abnormal.guardian_notice）。1:した 2:しない */
+export type GuardianNotice = '1' | '2';
+/** 保護者への連絡の手段（t_nap_abnormal.guardian_notice_method）。日誌のヒヤリハットと同じコード */
+export type GuardianNoticeMethod = '1' | '2' | '3' | '9';
 
 /** 異常時の記録（t_nap_abnormal）。diary_id が空ならヒヤリハット未起票（5-6） */
 export interface NapAbnormal {
@@ -401,6 +457,14 @@ export interface NapAbnormal {
   response: string;
   staff_id: string;
   diary_id: number | null;
+  /*
+   * 保護者への連絡（画面詳細図「異常時記録画面」(5-2) 項目13。基本設計書「午睡チェック」(5-7) の足した列）。
+   * 空は未記入。「した」のときだけ日時・手段・相手を持つ。列を足す前のデモデータには無いため省略できる
+   */
+  guardian_notice?: GuardianNotice | null;
+  guardian_noticed_at?: string | null;
+  guardian_notice_method?: GuardianNoticeMethod | null;
+  guardian_notice_person?: string | null;
 }
 
 /* ---- 連絡帳（基本設計書「連絡帳」(5-4)、詳細設計書「足す表」(5-2)） ----
@@ -510,6 +574,29 @@ export interface ContactReadRecord {
   read_at: string;
 }
 
+/**
+ * 連絡帳の写真（t_contact_photo）。取り消したものは配信しない（詳細設計書「写真」(3-3)）。
+ * モックは実体を持たず、file_path に URL.createObjectURL で作った URL を持つ（再読み込みで消える。詳細設計書 (4-4 (2))）
+ */
+export interface ContactPhotoRecord {
+  contact_photo_id: number;
+  class_id: number;
+  contact_date: string;
+  file_path: string;
+  file_type: string;
+  file_size: number;
+  staff_id: string;
+  is_deleted: boolean;
+  created_at: string;
+}
+
+/** 写っている子（t_contact_photo_child）。送った時点の同意を写す（なぜ送れたかを後から示す） */
+export interface ContactPhotoChildRecord {
+  contact_photo_id: number;
+  child_id: string;
+  consent_level: PhotoConsentLevel;
+}
+
 /** ねた・おきた（t_nap_sleep）。sleep_temperature だけは監査の層で保護者へ返さない（基本設計書「午睡チェック」(5-7)） */
 export interface NapSleepRecord {
   nap_sleep_id: number;
@@ -595,6 +682,15 @@ export interface DevelopmentCheck {
   share_status: ShareStatus;
   /** 所見（チェック単位の自由記述）。列は基本設計書 5-7 の定義に無い（GitHub Issue #58） */
   note?: string | null;
+  /** 保護者へのひとこと。確定した時点で成長の記録に届く（詳細設計書「変える表」(5-3)） */
+  guardian_message?: string | null;
+  /** 最初に確定した日時。確定し直しても動かさない（詳細設計書「成長の記録に届くもの」(3-7)、決めたこと D-31） */
+  finalized_at?: string | null;
+  /**
+   * 確定したあとで保護者へのひとことを別の文に書き換えた時刻。空なら書き換えていない。保護者の成長の記録に
+   * 「訂正しました（日付）」を出す（詳細設計書「変える表」(5-3)、決めたこと D-51。PR #216 で決まった設計）
+   */
+  guardian_message_corrected_at?: string | null;
 }
 
 /**

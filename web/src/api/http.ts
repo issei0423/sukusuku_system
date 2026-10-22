@@ -19,18 +19,25 @@ import type {
   DevListRow, DevScheduleRow, CsvRow, FiscalClassRow, StaffAccountRow,
   GuardianAccountRow, InvitationCodeRow, OperationLogRow, StaffSummary, GuardianHomeRow,
   DevDraftView,
-  ContactPage, ContactClassView, ContactHome, ContactHomeInput, NapSleep, NapExclusion,
+  ContactPage, ContactClassView, ContactHome, ContactHomeInput, NapSleep, NapExclusion, GrowthRecord,
 } from './shapes';
+import type { SendPhotoInput, SendPhotoResult } from './shapes';
 import type {
   ContactEvent, ContactEventInput, RecordEventsResult, ContactEventCorrection, NapSleepCorrection, CancelResult, Readers,
-  ContactFacility, FacilityCorrection, Phrase, NameMatch,
+  ContactFacility, FacilityCorrection, Phrase, NameMatch, AiTarget, AiDraftInput, AiDraftResult, SettingsView,
 } from './shapes';
+import type { InvitationPreview, AddChildResult } from './shapes';
+import type { AbnormalGuardianNoticeInput } from './shapes';
 import {
   ProcedureRequiredError, isProcedureKind, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
 } from './procedure';
 import { startLive } from '../live';
 import { setReachable } from './reachability';
 import { TEXT } from '../messages';
+import type { NapReportFilter } from './napReport';
+import type { NapRecordCorrectInput } from './napCorrect';
+import { AUTO_REFRESH_HEADER, isAutomatic } from './automatic';
+import type { SessionStatus } from './shapes';
 
 // 画面はこれまでどおり client 経由で型を参照する。定義の実体は shapes.ts が持つ
 export type {
@@ -56,26 +63,40 @@ class ApiError extends Error {
   /** 他児の名前の注意（409 other_child_names）の、当たった園児の氏名と本文の中の位置（詳細設計書「誤りの応答」(4-1 (3))） */
   names?: string[];
   matches?: NameMatch[];
-  constructor(body: { message: string; kind?: string; remaining?: number; correct?: string; names?: string[]; matches?: NameMatch[] }) {
+  /** 設定の保存で、誤りのあった設定のキー（詳細設計書「設定」(4-10 (2))） */
+  field?: string;
+  constructor(body: { message: string; kind?: string; remaining?: number; correct?: string; names?: string[]; matches?: NameMatch[]; field?: string }) {
     super(body.message);
     this.kind = body.kind;
     this.remaining = body.remaining;
     this.correct = body.correct;
     this.names = body.names;
     this.matches = body.matches;
+    this.field = body.field;
   }
 }
 
 /** 画面からサーバへの要求の上限（詳細設計書「押したときの処理の型」(2-0 (2))、決めたこと D-19） */
 const REQUEST_TIMEOUT_MS = 15_000;
+/** AI の下書きの要求の上限（決めたこと D-19。サーバは再試行を含めて10秒で諦める） */
+const AI_REQUEST_TIMEOUT_MS = 20_000;
 /** 画面に出す文（サーバに届かないとき。詳細設計書「つながっているかの表示」(2-8)） */
 const UNREACHABLE_MESSAGE = `${TEXT.unreachableBanner}。つながったら、もう一度送ってください。`;
 
 /** ログインの失敗理由（LoginError）。画面（TopScreen）が JSON にして分岐に使う */
-const LOGIN_KINDS = new Set(['credential', 'locked', 'suspended', 'wrong_entrance', 'temp_expired', 'already_logged_in']);
+const LOGIN_KINDS = new Set(['credential', 'locked', 'suspended', 'wrong_entrance', 'temp_expired', 'already_logged_in', 'too_many_attempts']);
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, timeoutMs = REQUEST_TIMEOUT_MS): Promise<T> {
   let res: Response;
+  // 写真（multipart/form-data）は FormData のまま送る。境界の入った Content-Type はブラウザが付ける
+  const form = typeof FormData !== 'undefined' && body instanceof FormData;
+  const headers: Record<string, string> = {};
+  if (body !== undefined && !form) headers['Content-Type'] = 'application/json';
+  /*
+   * 裏の読み直しには印を付け、職員の自動ログアウトの「操作」に数えさせない（api/automatic.ts。GitHub Issue #210）。
+   * await より前に読む。読み直しの関数がその場で始めた要求だけに付けるため
+   */
+  if (isAutomatic()) headers[AUTO_REFRESH_HEADER] = '1';
   try {
     res = await fetch(path, {
       method,
@@ -83,9 +104,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       credentials: 'same-origin',
       // 編集ロックの解除は、タブを閉じる・読み込み直す途中にも送る。途中で打ち切られないようにする
       keepalive: method === 'DELETE',
-      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
+      body: body === undefined ? undefined : form ? body : JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch {
     // 通信の失敗・時間切れは「サーバに届かない」（詳細設計書「画面の受け取り」(6-4)）。貯めて後から送ることはしない
@@ -125,6 +146,11 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       clearReference();
       notifySessionEnded();
     }
+    // 送信元の失敗が続いて止めているとき（server/attempts.go。GitHub Issue #236 の 6）。
+    // 招待コードの確認・新規登録の画面は文言をそのまま出すので、ログイン以外では文言で投げる
+    if (err.kind === 'too_many_attempts' && path !== '/api/login') {
+      throw new Error(err.message);
+    }
     // ログインの失敗理由は画面が分岐に使う。mock 実装と同じ形（JSON 文字列）で投げる。
     // ほかの kind（version_conflict など）は文言をそのまま見せる
     if (err.kind && LOGIN_KINDS.has(err.kind)) {
@@ -133,6 +159,42 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     throw err;
   }
   return data as T;
+}
+
+/**
+ * 本文を文字列のまま受け取る（サーバで作るファイル。GET /api/nap/report）。失敗の扱いは request と同じにする：
+ * 届かない・時間切れは「サーバに届かない」、401 は入口へ戻す、手続きの途中の 403 は手続きの画面へ案内する、
+ * ほかの失敗はサーバの文言を投げる。fetch の text() は先頭の BOM を外す。残っていても外す（保存する画面が付け直す）
+ */
+async function requestText(path: string): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch(path, { credentials: 'same-origin', signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+  } catch {
+    setReachable(false);
+    throw new ApiError({ message: UNREACHABLE_MESSAGE, kind: 'unreachable' });
+  }
+  if (res.status === 502 || res.status === 503 || res.status === 504) {
+    setReachable(false);
+    throw new ApiError({ message: UNREACHABLE_MESSAGE, kind: 'unreachable' });
+  }
+  setReachable(true);
+  const text = await res.text();
+  if (!res.ok) {
+    let body: { message: string; kind?: string } | null = null;
+    try { body = JSON.parse(text); } catch { body = null; }
+    const err = new ApiError(body ?? { message: '通信に失敗しました' });
+    if (res.status === 403 && isProcedureKind(err.kind)) {
+      notifyProcedureRequired(err.kind);
+      throw new ProcedureRequiredError(err.kind, err.message);
+    }
+    if (res.status === 401) {
+      clearReference();
+      notifySessionEnded();
+    }
+    throw err;
+  }
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
 }
 
 const get = <T>(path: string) => request<T>('GET', path);
@@ -285,6 +347,15 @@ const apiAuth = {
     return u;
   },
 
+  /**
+   * ログインの期限（GitHub Issue #210）。期限はサーバが決める。尋ねるだけでは延びない
+   * （server/api_session.go、server/session.go の countsAsOperation）。切れていれば 401 になり、画面へ知らせる（request）
+   */
+  sessionStatus: (_user: SessionUser) => get<SessionStatus>('/api/session'),
+
+  /** 予告の「続ける」。操作の1つとして期限を延ばし、延びた期限を返す */
+  extendSession: (_user: SessionUser) => post<SessionStatus>('/api/session/extend'),
+
   async changePassword(_accountId: number, current: string, next: string): Promise<void> {
     await post('/api/password', { current, next });
   },
@@ -295,7 +366,11 @@ const apiAuth = {
 
   currentTerms: () => get<{ terms_version: string; body: string; published_on: string }>('/api/terms'),
 
-  verifyInvitationCode: (code: string) => post<{ ok: true }>('/api/invitation/verify', { code }),
+  /**
+   * 招待コードの確認。ログインしている保護者（お子さまの追加）には園児名も返る（詳細設計書「お子さまの追加」(4-15 (1))）。
+   * だれが呼んだかはサーバがセッションで見るため、利用者は使わない（モックと同じ形にするための引数）
+   */
+  verifyInvitationCode: (code: string, _u?: SessionUser | null) => post<InvitationPreview>('/api/invitation/verify', { code }),
 
   async signUpGuardian(input: {
     code: string; email: string; password: string; guardian_name: string; relationship: string;
@@ -447,7 +522,7 @@ const apiChatNap = {
   ) => post<NapRecord>(`/api/nap/session/${sessionId}/records`, input),
   recordAbnormal: (
     _u: SessionUser, sessionId: number,
-    input: { child_id: string; found_at: string; situation: string; response: string },
+    input: { child_id: string; found_at: string; situation: string; response: string } & AbnormalGuardianNoticeInput,
   ) => post<{ nap_abnormal_id: number }>(`/api/nap/session/${sessionId}/abnormals`, input),
   abnormals: (_u: SessionUser) => get<NapAbnormalRow[]>('/api/nap/abnormals'),
   raiseIncidentDiary: (_u: SessionUser, abnormalId: number) =>
@@ -459,6 +534,19 @@ const apiChatNap = {
     from: f.from ?? '', to: f.to ?? '', class_id: f.classId ?? '',
     child_name: f.childName ?? '', page: f.page ?? 1,
   })),
+  /**
+   * 午睡チェック表（帳票）をサーバで作って受け取る（GET /api/nap/report。管理者だけ）。返すのは CSV の本文（BOM を外す）。
+   * 出力したことと期間・件数は、サーバが操作ログへ記録する（基本設計書「帳票の出力」(4-8)）
+   */
+  napReport: (_u: SessionUser, f: NapReportFilter) => requestText('/api/nap/report' + qs({
+    from: f.from, to: f.to, class_id: f.classId ?? '', format: f.format,
+  })),
+  /**
+   * 午睡チェックの記録を修正する（POST /api/nap/records/{id}/correct）。変える項目と理由を送る。直せる人の判定はサーバが行う
+   * （server/api_nap_correct.go。基本設計書「記録の修正と改ざん防止」(4-8)）
+   */
+  correctNapRecord: (_u: SessionUser, recordId: number, input: NapRecordCorrectInput) =>
+    post<NapRecord>(`/api/nap/records/${recordId}/correct`, input),
 
   /**
    * 年齢に応じたチェック間隔。マスタ値を用いる（基本設計書 5-8）
@@ -504,9 +592,9 @@ const apiGrowth = {
   saveCheck: (
     _u: SessionUser, childId: string, checkedOn: string,
     results: { development_item_id: number; result: string | null }[],
-    note: string, status: '1' | '2',
+    note: string, status: '1' | '2', guardianMessage: string | null = null,
   ) => post<DevelopmentCheck>('/api/development/checks', {
-    child_id: childId, checked_on: checkedOn, results, note, status,
+    child_id: childId, checked_on: checkedOn, results, note, status, guardian_message: guardianMessage,
   }),
 
   schedules: (_u: SessionUser, classId: number) =>
@@ -631,7 +719,7 @@ const apiAdmin = {
 
   /** 画面側で組み立てた出力（CSV）を操作ログへ記録する（GitHub Issue #115・#117） */
   recordExport: (
-    _u: SessionUser, kind: 'operation_log' | 'nap_record' | 'allergy_list' | 'invitation_sheet',
+    _u: SessionUser, kind: 'operation_log' | 'allergy_list' | 'invitation_sheet',
     from: string, to: string, count: number,
   ) => post<void>('/api/exports', { kind, from, to, count }),
 
@@ -668,8 +756,30 @@ const apiHandout = {
 };
 
 /* ============ 画面が使う入口 ============ */
+/* 連絡帳の写真（詳細設計書「きょうのようす」(4-4 (2))・(4-4 (3))。名前はモック（api/mock.ts の contactPhotoApi）と同じ） */
+const contactPhotoApi = {
+  /** 写真を送る（multipart/form-data）。写っている子・承諾した名前はカンマ区切りで送る */
+  sendPhoto: (_u: SessionUser, input: SendPhotoInput) => {
+    const form = new FormData();
+    form.append('file', input.file);
+    form.append('subject_child_ids', input.subject_child_ids.join(','));
+    if (input.target_child_id) form.append('target_child_id', input.target_child_id);
+    if (input.body) form.append('body', input.body);
+    form.append('keep_in_growth', input.keep_in_growth ? '1' : '0');
+    form.append('acknowledged_names', (input.acknowledged_names ?? []).join(','));
+    return post<SendPhotoResult>('/api/contact/photos', form);
+  },
+  /**
+   * 写真の実体の URL。画面は <img src> に使う（Cookie が送られる）。見てよいかの判定は、サーバが実体を返すときに行う
+   * （取り消した写真・条件に合わない写真は 403「この写真は開けません。」）
+   */
+  photoUrl: (_u: SessionUser, photoId: number) => Promise.resolve(`/api/contact/photos/${photoId}`),
+};
+
 /* 連絡帳と、ねた・おきた（詳細設計書「経路の一覧」(4-2)。名前はモック（api/mock.ts の contactApi）と同じ） */
 const contactApi = {
+  // 写真の2つ（上の contactPhotoApi）も、連絡帳の経路として画面へ出す
+  ...contactPhotoApi,
   contactPage: (_u: SessionUser, childId: string, date?: string) =>
     get<ContactPage>(`/api/contact/children/${encodeURIComponent(childId)}${date ? qs({ date }) : ''}`),
   markContactRead: (_u: SessionUser, childId: string, date: string) =>
@@ -708,6 +818,37 @@ const contactApi = {
   nameCheck: (_u: SessionUser, input: { child_ids?: string[]; class_id?: number; text: string }) =>
     post<{ names: string[] }>('/api/contact/name-check', input),
   contactPhrases: (_u: SessionUser, scope: Phrase['phrase_scope']) => get<Phrase[]>(`/api/phrases${qs({ scope })}`),
+  /* 文章の下書き（AI）（詳細設計書「経路」(8-2)。名前はモック（api/mock.ts の aiApi）と同じ） */
+  aiStatus: (_u: SessionUser, target: AiTarget) =>
+    get<{ available: boolean }>(`/api/ai/status${qs({ child_id: target.child_id, class_id: target.class_id })}`),
+  aiDrafts: (_u: SessionUser, input: AiDraftInput) =>
+    request<AiDraftResult>('POST', '/api/ai/drafts', input, AI_REQUEST_TIMEOUT_MS),
+  /* 設定画面（詳細設計書「設定」(4-10)。本版は AI の区画だけ。名前はモックの settingsApi と同じ） */
+  settings: (_u: SessionUser) => get<SettingsView>('/api/settings'),
+  saveSettings: (_u: SessionUser, changes: Record<string, string>, readAt: string) =>
+    post<SettingsView>('/api/settings', { changes, read_at: readAt }),
+  /** 「成長の記録に残す」の付け外し（詳細設計書 (4-12 (3))）。updated_at は読んだ版 */
+  keepInGrowth: (_u: SessionUser, eventId: number, keep: boolean, updatedAt: string) =>
+    post<ContactEvent>(`/api/contact/events/${eventId}/keep-in-growth`, { keep_in_growth: keep, updated_at: updatedAt }),
+  /** 成長の記録（詳細設計書「成長の記録」(4-12 (1))）。before は前の応答の next_before */
+  growthRecord: (_u: SessionUser, childId: string, before?: string | null) =>
+    get<GrowthRecord>(`/api/children/${encodeURIComponent(childId)}/growth${before ? qs({ before }) : ''}`),
 };
 
-export const api = { ...apiAuth, ...apiChatNap, ...apiGrowth, ...apiAdmin, ...apiHandout, ...contactApi };
+/* 保護者のメニュー（詳細設計書「保護者のメニュー」(4-15)。名前はモック（api/mock.ts の guardianApi）と同じ） */
+const guardianApi = {
+  /**
+   * お子さまの追加（詳細設計書「お子さまの追加」(4-15 (1))）。紐づけ・招待コードの使用済み・個人チャットとクラスグループへの参加を1つの処理で行う。
+   * 参照表（園児名・自児の一覧）に加わった園児が載るよう、園児の登録と同じく読み直す
+   */
+  async addChild(_u: SessionUser, code: string, relationship: string): Promise<AddChildResult> {
+    const r = await post<AddChildResult>('/api/guardian/children', { code, relationship });
+    await loadReference();
+    return r;
+  },
+  /** AI の下書きを使わない・使う（4-15 (3)）。自分の紐づけの値だけを変える */
+  aiOptOut: (_u: SessionUser, childId: string, optOut: boolean) =>
+    post<{ ok: true }>(`/api/guardian/children/${encodeURIComponent(childId)}/ai-opt-out`, { opt_out: optOut }),
+};
+
+export const api = { ...apiAuth, ...apiChatNap, ...apiGrowth, ...apiAdmin, ...apiHandout, ...contactApi, ...guardianApi };

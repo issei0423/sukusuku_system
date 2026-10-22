@@ -50,7 +50,7 @@
 
 /*
  * 相手の操作がすぐに出る状態か（components/LiveIndicator.tsx）。通知の左に小さく置く。
- * 色だけに頼らず文言でも示す。縦向きの狭い幅では文言を読み上げ用にだけ残し、点だけを見せる
+ * 色だけに頼らず文言でも示す。縦向きの狭い幅でも文言を隠さない（WCAG 1.4.1、GitHub Issue #211）
  */
 .live-indicator {
   display: inline-flex; align-items: center; gap: var(--sp-1);
@@ -59,11 +59,14 @@
 .live-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 10px; border: 1px solid var(--c-primary-ink); }
 .live-indicator.is-open .live-dot { background: var(--c-live-on); }
 .live-indicator.is-fallback .live-dot { background: var(--c-live-off); }
+/*
+ * 【仮置き】縦向きの狭い幅で入りきらないときは、文言の区切り（<wbr>）で2行に折り返す。
+ * 「自動で／読み直しています」のように、語の途中では切らない（keep-all）。入りきる幅では1行のまま。
+ * 縮めるのはこの表示だけにし、通知とログアウトのボタンは縮めない（「ログアウト」の文字を折り返させない）
+ */
 @media (max-width: 900px) {
-  .live-indicator .live-text {
-    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-    overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
-  }
+  .live-indicator { white-space: normal; word-break: keep-all; line-height: 1.25; }
+  .app-header button { flex-shrink: 0; }
 }
 
 /*
@@ -281,6 +284,15 @@
 @media (hover: hover) {
   .drawer a:hover { background: var(--c-surface-sub); color: var(--c-text); text-decoration: underline; text-decoration-thickness: 1px; }
 }
+/* メニューの中でダイアログを開く項目（保護者のメニューの「AI の下書きの利用」）。ボタンでも、となりのリンクと同じ行の見た目にそろえる */
+.drawer button.drawer-item {
+  justify-content: flex-start; width: 100%; padding: 0 var(--sp-2); background: none;
+  border: 0; border-bottom: 1px solid var(--c-border-weak); border-radius: 0;
+  font-weight: inherit; letter-spacing: inherit; text-align: left;
+}
+@media (hover: hover) {
+  .drawer button.drawer-item:hover:not(:disabled) { background: var(--c-surface-sub); border-color: var(--c-border-weak); text-decoration-thickness: 1px; }
+}
 /* 移る先の並びと、ログアウトのあいだを空ける。並びの続きに見えないようにする */
 .drawer .spacer { flex: none; height: var(--sp-5); }
 
@@ -366,6 +378,11 @@ table.list tbody tr:focus-within td { background: var(--c-primary-faint); }
 table.list tr > :first-child { padding-left: var(--sp-3); }
 table.list tbody tr:last-child td { border-bottom: 0; }
 table.list td.num { text-align: right; font-variant-numeric: tabular-nums; }
+/*
+ * 行の中に並べたボタン（園児一覧の「記録」「編集」、職員アカウントの「変更」「一時パスワード再発行」「停止」など）の間を 8px 空ける。
+ * 詳細設計書「全画面に共通する部品と決まり」(2-0) の「タッチの条件」(4)：隣り合うボタンの間は 8px 以上（GitHub Issue #215）
+ */
+table.list td > :is(button, .btn) + :is(button, .btn) { margin-left: var(--sp-2); }
 
 .pager { display: flex; align-items: center; gap: var(--sp-3); justify-content: flex-end; margin-top: var(--sp-3); font-size: var(--fs-small); color: var(--c-text-sub); }
 
@@ -473,6 +490,15 @@ summary { min-height: var(--tap-min); padding: 10px 0; cursor: pointer; }
   padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4);
   background: var(--c-text); color: var(--c-surface);
   border-radius: var(--radius); box-shadow: var(--elevation-2);
+}
+/*
+ * 表示が出ている間、スクロールする枠の下端のうち表示が覆う高さ（ToastHost が測って --toast-cover に入れる。src/stickyInset.ts）を
+ * scroll-padding-bottom に取り、下のほうでフォーカスした部品が表示の下に隠れないようにする（GitHub Issue #212）。
+ * 保護者の連絡帳画面の下に止めた送る帯（--contact-actions-h）と同じ場所を覆うので、大きいほうを取る。フォーカスの枠の幅（6px）を足す
+ */
+.staff-body:has(> .toast) > .main,
+.guardian-shell:has(> .toast) > .guardian-main {
+  scroll-padding-bottom: calc(max(var(--toast-cover, 0px), var(--contact-actions-h, 0px)) + 6px);
 }
 .toast .btn-sm { color: inherit; border-color: currentColor; background: transparent; }
 @media (hover: hover) {

@@ -23,6 +23,9 @@ import { DIARY_RECORD_TYPE, DIARY_STATUS, DIARY_STATUS_CLASS } from '../../api/c
 import { formatMD, formatMDHM, today, now, plusMinutes } from '../../api/util';
 import type { DiaryRecordType } from '../../api/types';
 import { acquireDiaryLock, releaseDiaryLock, releaseDiaryLockNow, markDiaryLockHandOver, LOCK_TOUCH_MS } from './diaryLock';
+import { IncidentFields } from './IncidentFields';
+import { EMPTY_INCIDENT, incidentFormOf, incidentInputOf, incidentReady } from './incidentForm';
+import type { IncidentForm } from './incidentForm';
 
 // 本文の上限（基本設計書「入力項目の制約値」(4-9)）
 const BODY_MAX = 2000;
@@ -37,6 +40,8 @@ interface DiaryDraft {
   date: string;
   body: string;
   photos: DiaryAttachmentInput[];
+  /** ヒヤリハットの欄（記録種別がヒヤリハットのときだけ使う） */
+  incident?: IncidentForm;
 }
 
 export default function DiaryEditScreen() {
@@ -61,6 +66,11 @@ export default function DiaryEditScreen() {
   const [date, setDate] = useState(draft?.date ?? today());
   const [body, setBody] = useState(draft?.body ?? '');
   const [photos, setPhotos] = useState<DiaryAttachmentInput[]>(draft?.photos ?? []);
+  /*
+   * ヒヤリハットの欄。ヒヤリハットでは本文の代わりにこれを入れ、状況・とった対応・今後の対策を見出しでつないだ本文は
+   * サーバ（モック）が作る（詳細設計書「日誌の画面（作り直し）」(2-13 (8))・「日誌」(4-13 (1))、決めたこと D-33）
+   */
+  const [incident, setIncident] = useState<IncidentForm>(draft?.incident ?? EMPTY_INCIDENT);
   /*
    * 保存していない入力があるか。一覧へ戻る前に確かめるために持つ（画面詳細図「日誌作成・編集画面」(3-2) 項目1
    * 「未保存の内容がある場合は確認する」）。本文の欄だけでなく、内容を変える操作（記録種別・園児・クラス・記録日・
@@ -107,6 +117,8 @@ export default function DiaryEditScreen() {
       }
       setDate(d.diary_date);
       setBody(d.body);
+      // ヒヤリハットは、サーバが本文を見出しで分けて返した欄を入れる（異常時の記録から起票したものも同じ）
+      setIncident(incidentFormOf(d.incident));
       api.attachmentsOf(user!, d.diary_id)
         .then((a) => setPhotos(a.map((x) => ({ file_path: x.file_path, file_type: x.file_type }))));
     }
@@ -161,7 +173,7 @@ export default function DiaryEditScreen() {
     if (t - lastTouchRef.current < LOCK_TOUCH_MS) return;
     lastTouchRef.current = t;
     api.touchLock(user!, diaryId, lockToken).catch((e) => setError((e as Error).message));
-  }, [user, diaryId, lockToken, body, recordType, childId, classId, date, photos]);
+  }, [user, diaryId, lockToken, body, recordType, childId, classId, date, photos, incident]);
 
   // 管理者による強制解除（基本設計書「編集ロックの解除」(4-5)）。解除したあと、自分がロックを取り直す
   const forceUnlock = async () => {
@@ -262,7 +274,8 @@ export default function DiaryEditScreen() {
         diary_id: diaryId ?? undefined, record_type: recordType,
         child_id: needsChild ? childId : null,
         class_id: classId === '' ? null : classId,
-        diary_date: date, body, lock_token: lockToken, attachments: photos,
+        diary_date: date, body: isIncident ? '' : body, lock_token: lockToken, attachments: photos,
+        incident: isIncident ? incidentInputOf(incident) : undefined,
       }, status);
       // 保存できたので、保存していない内容は無い（GitHub Issue #175 の 3）
       setDirty(false);
@@ -276,6 +289,9 @@ export default function DiaryEditScreen() {
   };
 
   const needsChild = recordType === '1' || recordType === '4';
+  // ヒヤリハットは本文の代わりに欄を出し、雛形・定型文を置かない（詳細設計書「日誌の画面（作り直し）」(2-13 (8))）
+  const isIncident = recordType === '4';
+  const contentReady = isIncident ? incidentReady(incident) : !!body.trim();
   const d = existing.data;
   const readOnly = !!d && (d.status === '2' || d.status === '3');
   // 申請を取り下げられるのは、申請中の日誌を申請した本人だけ。承認を取り消せるのは管理者だけ（サーバも拒む）
@@ -312,7 +328,8 @@ export default function DiaryEditScreen() {
     if (diaryId && lockToken) markDiaryLockHandOver(diaryId, lockToken);
     navigate('/staff/diary/confirm', {
       state: { recordType, childId: needsChild ? childId : null, classId: classId === '' ? null : classId,
-               date, body, diaryId, lockToken, photos },
+               date, body: isIncident ? '' : body, diaryId, lockToken, photos,
+               incident: isIncident ? incident : undefined },
     });
   };
 
@@ -412,27 +429,39 @@ export default function DiaryEditScreen() {
               </Field>
             </div>
 
-            {/* 選んだあとは見出しの行へ戻す（値を持たない）。同じ雛形・定型文を続けて選べるようにする */}
-            <div className="row">
-              <select value="" onChange={(e) => { if (e.target.value) applyTemplate(Number(e.target.value)); }}
-                aria-label="雛形を呼び出す" disabled={locked} style={{ maxWidth: 240 }}>
-                <option value="">雛形を呼び出す</option>
-                {templatesForType.map((t) => (
-                  <option key={t.diary_template_id} value={t.diary_template_id}>{t.template_name}</option>
-                ))}
-              </select>
-              <select value="" onChange={(e) => { if (e.target.value) addPhrase(e.target.value); }}
-                aria-label="定型文を入れる" disabled={locked} style={{ maxWidth: 320 }}>
-                <option value="">定型文を入れる</option>
-                {phrases.data?.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </div>
+            {isIncident ? (
+              /*
+               * ヒヤリハットは本文の代わりに、発生日時・場所・状況・とった対応・保護者へ伝えたこと・今後の対策を入れる
+               * （図/画面詳細図.md「日誌作成・編集画面」(3-2) 項目9「ヒヤリハットでは項目20・21に替える」・項目18〜21・28）。
+               * 本文を入れる雛形と、定型文は置かない（詳細設計書「日誌の画面（作り直し）」(2-13 (8))「AI と定型文のボタンは置かない」）
+               */
+              <IncidentFields value={incident} disabled={locked}
+                onChange={(next) => { setIncident(next); setDirty(true); }} />
+            ) : (
+              <>
+                {/* 選んだあとは見出しの行へ戻す（値を持たない）。同じ雛形・定型文を続けて選べるようにする */}
+                <div className="row">
+                  <select value="" onChange={(e) => { if (e.target.value) applyTemplate(Number(e.target.value)); }}
+                    aria-label="雛形を呼び出す" disabled={locked} style={{ maxWidth: 240 }}>
+                    <option value="">雛形を呼び出す</option>
+                    {templatesForType.map((t) => (
+                      <option key={t.diary_template_id} value={t.diary_template_id}>{t.template_name}</option>
+                    ))}
+                  </select>
+                  <select value="" onChange={(e) => { if (e.target.value) addPhrase(e.target.value); }}
+                    aria-label="定型文を入れる" disabled={locked} style={{ maxWidth: 320 }}>
+                    <option value="">定型文を入れる</option>
+                    {phrases.data?.map((p) => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
 
-            <Field label="本文" required>
-              <textarea value={body} onChange={(e) => { setBody(e.target.value); setDirty(true); }}
-                disabled={locked} maxLength={BODY_MAX} style={{ minHeight: 280 }} />
-            </Field>
-            {!readOnly && <div className="muted" aria-live="polite">残り {BODY_MAX - [...body].length} 文字</div>}
+                <Field label="本文" required>
+                  <textarea value={body} onChange={(e) => { setBody(e.target.value); setDirty(true); }}
+                    disabled={locked} maxLength={BODY_MAX} style={{ minHeight: 280 }} />
+                </Field>
+                {!readOnly && <div className="muted" aria-live="polite">残り {BODY_MAX - [...body].length} 文字</div>}
+              </>
+            )}
 
             {/* 写真は3枚まで。上限に達したら追加を無効にする（画面詳細図 3-2） */}
             <Field label={`写真（1〜${maxPhotos}枚）`}>
@@ -458,6 +487,12 @@ export default function DiaryEditScreen() {
             {classId === '' && !readOnly && (
               <div className="muted">対象のクラスを選ぶと、確認へ進めます。</div>
             )}
+            {/* 【仮置き】ヒヤリハットの必須の欄を待つときの案内（web/仮置き値.md「ヒヤリハットの欄」） */}
+            {isIncident && !incidentReady(incident) && !readOnly && (
+              <div className="muted">
+                発生日時・場所・状況・とった対応{incident.guardianNotice === '1' && '・伝えた日時・手段・相手'}を入れると、確認へ進めます。
+              </div>
+            )}
 
             <div className="row-end">
               {/* 申請の取り下げ（申請した本人）・承認の取り消し（管理者）。押すと確かめてから行う */}
@@ -470,7 +505,7 @@ export default function DiaryEditScreen() {
               {/* 既存の日誌は、ロックを取れるまで保存させない。ロックの無い保存はサーバが断る（GitHub Issue #166） */}
               <button onClick={() => save('1')} disabled={busy || readOnly || !!heldBy || lockPending}>下書き保存</button>
               <button className="btn-primary" onClick={goConfirm}
-                disabled={busy || readOnly || !!heldBy || lockPending || !body.trim() || (needsChild && !childId) || classId === ''}>
+                disabled={busy || readOnly || !!heldBy || lockPending || !contentReady || (needsChild && !childId) || classId === ''}>
                 確認へ進む
               </button>
             </div>

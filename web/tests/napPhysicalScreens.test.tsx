@@ -22,6 +22,12 @@ const teacher: SessionUser = {
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
+// 午睡記録の CSV（帳票）は管理者だけが出せる（画面詳細図「午睡記録検索画面」(5-3) の項目9・10）
+const admin: SessionUser = {
+  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
+  is_temp_password: false, terms_agreed: true,
+};
 
 function open(path: string, user: SessionUser) {
   return render(
@@ -118,7 +124,7 @@ describe('午睡チェック画面の園児カード（GitHub Issue #142 の 3�
     open('/staff/nap', teacher);
     await settled();
     await waitFor(() => expect(cardOf('金城 陸')).toBeTruthy(), { timeout: 3000 });
-    fireEvent.click(within(cardOf('金城 陸')).getByRole('button', { name: '金城 陸の体温を選ぶ' }));
+    fireEvent.click(within(cardOf('金城 陸')).getByRole('button', { name: /^金城 陸の体温/ }));
     fireEvent.click(screen.getByText('範囲外の値を入力'));
     const input = screen.getByLabelText('範囲外の体温');
     const setButton = screen.getByRole('button', { name: '設定' }) as HTMLButtonElement;
@@ -130,7 +136,7 @@ describe('午睡チェック画面の園児カード（GitHub Issue #142 の 3�
     fireEvent.change(input, { target: { value: '34.9' } });
     expect(setButton.disabled).toBe(false);
     fireEvent.click(setButton);
-    expect(within(cardOf('金城 陸')).getByRole('button', { name: '金城 陸の体温を選ぶ' }).textContent).toContain('34.9℃');
+    expect(within(cardOf('金城 陸')).getByRole('button', { name: /^金城 陸の体温/ }).textContent).toContain('34.9℃');
   });
 });
 
@@ -143,19 +149,23 @@ describe('午睡記録検索画面の CSV 出力（GitHub Issue #165 の 3）', 
     URL.createObjectURL = vi.fn(() => 'blob:test');
     URL.revokeObjectURL = vi.fn();
 
-    open('/staff/nap/search', teacher);
+    open('/staff/nap/search', admin);
     await settled();
     await waitFor(() => expect(document.querySelector('table.list tbody tr')).toBeTruthy(), { timeout: 3000 });
-    const applied = `${addDays(today(), -7)}〜${today()}`;
+    // 期間の初期値は直近1か月（開始＝当日の30日前。画面詳細図「午睡記録検索画面」(5-3) の項目1）
+    const applied = `${addDays(today(), -30)}〜${today()}`;
 
     const [fromInput] = Array.from(document.querySelectorAll('input[type="date"]')) as HTMLInputElement[];
-    fireEvent.change(fromInput, { target: { value: lastMonthDay(1) } });
+    // 初期値と違う日に変える（日によっては先月の1日が30日前と同じになるため）
+    const changed = lastMonthDay(1) === addDays(today(), -30) ? lastMonthDay(2) : lastMonthDay(1);
+    fireEvent.change(fromInput, { target: { value: changed } });
     fireEvent.click(screen.getByText('CSV出力'));
 
     await waitFor(() => expect(fileName).not.toBe(''));
-    expect(fileName).toBe(`午睡記録_${addDays(today(), -7)}_${today()}.csv`);
+    expect(fileName).toBe(`午睡記録_${addDays(today(), -30)}_${today()}.csv`);
+    // 操作ログは新しいものを先頭に持つ。期間はサーバ（モック）が帳票を作った期間を書く
     const logged = db.operationLogs.filter((l) => (l.after_value ?? '').startsWith('午睡記録をCSV出力'));
-    expect(logged[logged.length - 1]?.after_value).toContain(`期間 ${applied}`);
+    expect(logged[0]?.after_value).toContain(`期間 ${applied}`);
   });
 });
 

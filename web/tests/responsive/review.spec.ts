@@ -1,53 +1,7 @@
-import { test, expect, type Page, type Locator } from '@playwright/test';
-import { scenarios, REVIEW_TIME, type Scenario } from './scenarios';
+import { test, expect } from '@playwright/test';
+import { scenarios, REVIEW_TIME } from './scenarios';
 import { auditLayout } from './audit';
-
-async function ready(page: Page) {
-  await expect(page.locator('html')).toHaveAttribute('data-review-ready', 'true');
-  await expect(page.getByText('読み込んでいます…', { exact: true })).toHaveCount(0);
-  await page.evaluate(async () => {
-    await document.fonts.ready;
-    await Promise.all(Array.from(document.images, (img) => img.decode().catch(() => undefined)));
-    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-  });
-}
-
-async function performAction(page: Page, scenario: Scenario, touch: boolean) {
-  const press = async (target: Locator) => touch ? target.tap() : target.click();
-  if (!scenario.action) return;
-  if (scenario.action === 'guardian-menu') {
-    await press(page.locator('.guardian-menu-button'));
-    await expect(page.getByRole('button', { name: 'メニューを閉じる', exact: true })).toBeVisible();
-    return;
-  }
-  const row = page.getByRole('region', { name: '伊藤 葵の午睡チェック' });
-  await expect(row).toBeVisible();
-  if (scenario.action.startsWith('temperature')) {
-    await press(row.getByRole('button', { name: '伊藤 葵の体温を選ぶ' }));
-    const dialog = page.getByRole('dialog', { name: '伊藤 葵の体温' });
-    await expect(dialog).toBeVisible();
-    // 体温パネルを開くだけでソフトウェアキーボードを呼ばない。
-    await expect(dialog.locator('input')).toHaveCount(0);
-    if (scenario.action === 'temperature-decimal') await press(dialog.getByRole('button', { name: '36℃', exact: true }));
-    return;
-  }
-  if (scenario.action === 'nap-warning') {
-    await press(row.getByText('うつ伏せ', { exact: true }));
-    await press(row.getByText('確認できず', { exact: true }));
-    await expect(row.getByRole('alert')).toHaveCount(2);
-    return;
-  }
-  const record = row.getByRole('button', { name: 'この子を記録' });
-  await expect(record).toBeDisabled();
-  for (const name of ['仰向け', 'あり', '通常']) await press(row.getByText(name, { exact: true }));
-  await expect(record).toBeEnabled();
-  await press(record);
-  await ready(page);
-  await expect(row).toContainText('前回 13:30');
-  await expect(row.locator('input:checked')).toHaveCount(0);
-  await expect(record).toBeDisabled();
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-}
+import { ready, performAction } from './steps';
 
 for (const scenario of scenarios) {
   const group = scenario.role === 'admin' || scenario.role === 'teacher' ? 'staff' : scenario.role;

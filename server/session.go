@@ -21,16 +21,44 @@ import (
  * SameSite=Strict は緩和策であって、対策の決定ではない。
  */
 
+/*
+ * ログインの期限（GitHub Issue #210）
+ *
+ * 期限は2つあり、どちらか一方に当たった時点で再認証を求める（要件定義書「『ログイン情報の記憶』と
+ * 自動ログアウトの関係」(4-1-4 (4))）。
+ *
+ *   - ログインを保つ上限（expiresAt）… ログインした時刻から数える。操作を続けていても、過ぎたら切る
+ *   - 自動ログアウト（idleLogout）… 職員の画面に限り、最後の操作から ui.auto_logout_minutes を過ぎたら切る。
+ *     記憶を付けた職員にも課す（同上「自動ログアウトを優先する」）。保護者には課さない
+ *     （基本設計書「システムの利用方法」(2-2)・「ログイン」(4-3)）
+ *
+ * 自動ログアウトの例外として、その職員が開始した午睡チェックが実施中のあいだは切らない
+ * （基本設計書「午睡チェックの実施」(4-7)、要件定義書「午睡チェック中の例外」(4-1-4 (4))）。判定は app.sessionAccount。
+ * 開いたままの画面が裏で読み直す要求と、知らせの受け取りは、操作に数えない（countsAsOperation）。
+ *
+ * 切れる時刻はサーバが決め、画面へ返す（api_session.go の GET /api/session。切れる前の予告と「続ける」に使う）。
+ * 判定と返す時刻は、どちらも idleDeadline で求める。
+ */
 type session struct {
 	accountID int64
 	// 開いた入口。ログアウトの遷移先はログインしていた系統のトップ（基本設計書「画面遷移」(3-4)）
-	entrance  string
+	entrance string
+	// ログインを保つ上限。ログインした時刻に「ログイン情報の記憶」の保存期間（auth.remember_days）を足す。
+	// 【仮置き】記憶を付けなかったときの上限は設計に無い。同じ保存期間を上限にする（web/仮置き値.md）
 	expiresAt time.Time
+	// 無操作で切るか（自動ログアウト）。職員の画面だけ真にする
+	idleLogout bool
+	// 最後の操作の時刻。無操作の時間はここから数える
+	lastActiveAt time.Time
 }
 
 type sessionStore struct {
 	mu   sync.RWMutex
 	data map[string]session
+	// いまの時刻。テストで時間を進めるために差し替える
+	now func() time.Time
+	// HTTPS で公開するときに真にする。Cookie に Secure を付ける（main.go の -secure。GitHub Issue #236 の 4）
+	secure bool
 	// セッションが終わったとき（destroy・destroyAccount）に、終わったセッションIDを受け取る。
 	// 開いている画面への知らせの接続を、その場で閉じるために使う（events.go の closeSessions）。
 	// 鍵を外してから呼ぶ
@@ -45,7 +73,7 @@ func (s *sessionStore) ended(ids []string) {
 }
 
 func newSessionStore() *sessionStore {
-	return &sessionStore{data: make(map[string]session)}
+	return &sessionStore{data: make(map[string]session), now: time.Now}
 }
 
 const sessionCookie = "sukusuku_session"
@@ -59,22 +87,49 @@ func randomToken(bytes int) string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
-func (s *sessionStore) create(w http.ResponseWriter, accountID int64, entrance string, ttlMinutes int) {
+/*
+create はセッションを作り、Cookie で識別子を渡す。ログインそのものを最初の操作とする。
+
+remember は「ログイン情報の記憶」を付けたか。付けたときだけ、Cookie に保存期間（lifetime）を持たせる。
+ブラウザを閉じて開き直したときに再認証を求めずに済む期間が、記憶の意味である（要件定義書「『ログイン情報の記憶』と
+自動ログアウトの関係」(4-1-4 (4))）。付けないときは、ブラウザを閉じたら消える Cookie にする。
+職員の Cookie に自動ログアウトの時間を持たせない。持たせるとログインから数えて消えてしまう。無操作の判定はサーバが行う
+*/
+func (s *sessionStore) create(w http.ResponseWriter, accountID int64, entrance string, idleLogout, remember bool, lifetime time.Duration) {
 	id := randomToken(32)
+	at := s.now()
 	s.mu.Lock()
-	s.data[id] = session{accountID: accountID, entrance: entrance, expiresAt: time.Now().Add(time.Duration(ttlMinutes) * time.Minute)}
+	// 期限の切れたセッションを掃除する。参照のときに弾くだけでは、ログアウトしないまま切れたものが
+	// メモリに溜まり続けるため（GitHub Issue #236 の 9）。ログインのたびに一度なめれば十分に小さく保てる。
+	// 掃除はログインを保つ上限（expiresAt）だけを、lookup と同じ時計（s.now）と同じ比べ方で見る。参照で受け入れる
+	// セッションを掃除が消すことはない。無操作で切れたか（自動ログアウト）は、午睡チェックの実施中の例外と
+	// ui.auto_logout_minutes をデータベースで確かめないと決まらない（app.sessionAccount）ので、ここでは消さない。
+	// 無操作で切れたまま使われないセッションは、上限まで残り、使われたときに drop で消える
+	for k, v := range s.data {
+		if at.After(v.expiresAt) {
+			delete(s.data, k)
+		}
+	}
+	s.data[id] = session{
+		accountID: accountID, entrance: entrance,
+		expiresAt: at.Add(lifetime), idleLogout: idleLogout, lastActiveAt: at,
+	}
 	s.mu.Unlock()
 
+	maxAge := 0
+	if remember {
+		maxAge = int(lifetime / time.Second)
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookie,
 		Value:    id,
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
-		MaxAge:   ttlMinutes * 60,
-		// Secure は HTTPS 公開時に true にする。本演習の動作検証環境は localhost のため false
+		MaxAge:   maxAge,
+		// Secure は HTTPS 公開時に true にする（起動時の -secure）。本演習の動作検証環境は localhost のため既定は false
 		// （要件定義書「想定運用環境（HTTPS公開）」(6-1)・「本演習での動作検証環境（localhost）」(6-2)）
-		Secure: false,
+		Secure: s.secure,
 	})
 }
 
@@ -85,21 +140,169 @@ func (s *sessionStore) destroy(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 		s.ended([]string{c.Value})
 	}
-	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true})
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
+		SameSite: http.SameSiteStrictMode, Secure: s.secure})
 }
 
-func (s *sessionStore) accountID(r *http.Request) (int64, bool) {
-	c, err := r.Cookie(sessionCookie)
-	if err != nil {
-		return 0, false
-	}
+// lookup は、そのセッションを返す。無いもの・ログインを保つ上限を過ぎたものは返さない。
+// 自動ログアウト（無操作）の判定はここではしない。午睡チェックの実施をデータベースで確かめるため、app.sessionAccount で行う
+func (s *sessionStore) lookup(id string) (session, bool) {
 	s.mu.RLock()
-	sess, ok := s.data[c.Value]
+	sess, ok := s.data[id]
 	s.mu.RUnlock()
-	if !ok || time.Now().After(sess.expiresAt) {
+	if !ok || s.now().After(sess.expiresAt) {
+		return session{}, false
+	}
+	return sess, true
+}
+
+// touch は、そのセッションの最後の操作の時刻をいまにする
+func (s *sessionStore) touch(id string) {
+	s.mu.Lock()
+	if sess, ok := s.data[id]; ok {
+		sess.lastActiveAt = s.now()
+		s.data[id] = sess
+	}
+	s.mu.Unlock()
+}
+
+// drop は、期限の切れたセッションを消す。切れたあとに操作しても、つながり直さない
+func (s *sessionStore) drop(id string) {
+	s.mu.Lock()
+	delete(s.data, id)
+	s.mu.Unlock()
+}
+
+/*
+autoRefreshHeader は、開いたままの画面が裏で読み直す要求に付ける印の見出し。【仮置き】名前は設計に無い（web/仮置き値.md）。
+
+職員の自動ログアウトは、最後の操作から時間を数える（基本設計書「ログイン」(4-3)）。画面の5秒ごとの読み直し
+（web/src/hooks.ts の useAsync。GitHub Issue #150）は利用者の操作ではないので、画面はこの見出しを付けて送り
+（web/src/api/automatic.ts）、サーバは期限を延ばさない。
+
+印は「延ばさない」ことにだけ使う。付けても権限の判定は変わらない。付け忘れた要求は操作に数える側に倒れ、
+切れるのが遅れるだけで、切れてはいけないときに切れることはない
+*/
+const autoRefreshHeader = "X-Sukusuku-Auto-Refresh"
+
+// liveEventsPath は、開いている画面への知らせの受け取り口（PR #196 の GET /api/events。SSE）。
+// 知らせの受け取りは、職員の自動ログアウトの「操作」に数えない（基本設計書「リアルタイムの反映と通知」(4-10)）。
+// EventSource は見出しを付けられないため、経路で見る
+const liveEventsPath = "/api/events"
+
+// sessionStatusPath は、ログインの期限を尋ねる口（api_session.go の GET /api/session）。
+// 画面は予告を出す前・出している間に何度も尋ねる。尋ねるたびに延びると切れなくなるため、操作に数えない（GitHub Issue #210）
+const sessionStatusPath = "/api/session"
+
+// countsAsOperation は、その要求を利用者の操作に数えるか（期限を延ばすか）を返す
+func countsAsOperation(r *http.Request) bool {
+	if r.Header.Get(autoRefreshHeader) != "" {
+		return false
+	}
+	return r.URL.Path != liveEventsPath && r.URL.Path != sessionStatusPath
+}
+
+/*
+sessionAccount は、要求のセッションがいま使えるかを判定し、そのアカウントを返す。期限を延ばすことはしない（requireLogin が行う）。
+
+職員の画面は、最後の操作から ui.auto_logout_minutes を過ぎたら切る（自動ログアウト）。設定を変えたら、
+ログイン中のセッションにもその場で効く。ただし、その職員が開始した午睡チェックが実施中のあいだは切らない。
+実施が終わったら（終了の操作・時間帯の終わりでの自動の解除）、終わった時刻から数え直す。要件定義書「午睡チェック中の例外」
+(4-1-4 (4)) の「以後は通常の自動ログアウトが適用される」による。実施中に操作が無くても、終わった直後に切れることはない
+*/
+func (a *app) sessionAccount(r *http.Request) (int64, bool) {
+	id := sessionID(r)
+	sess, ok := a.sessions.lookup(id)
+	if !ok {
 		return 0, false
 	}
-	return sess.accountID, true
+	if !sess.idleLogout {
+		return sess.accountID, true
+	}
+	at := a.sessions.now()
+	// 最後の操作から時間内なら、午睡チェックの実施を確かめるまでもなく使える（要求のたびにデータベースを引かない）
+	if !at.After(sess.lastActiveAt.Add(a.idleLimit())) {
+		return sess.accountID, true
+	}
+	deadline, napActive := a.idleDeadline(sess, at)
+	if napActive || !at.After(deadline) {
+		return sess.accountID, true
+	}
+	a.sessions.drop(id)
+	return 0, false
+}
+
+// idleLimit は、自動ログアウトまでの無操作の時間（ui.auto_logout_minutes）
+func (a *app) idleLimit() time.Duration {
+	return time.Duration(a.settingInt("ui.auto_logout_minutes", 30)) * time.Minute
+}
+
+/*
+idleDeadline は、職員のセッションが、このまま操作が無ければ切れる時刻を返す。切れるかどうかの判定（sessionAccount）と、
+画面へ返す期限（api_session.go の sessionStatusOf）は、どちらもこれで求める。
+
+最後の操作の時刻から ui.auto_logout_minutes。最後の操作より後に、その職員が開始した午睡チェックの実施が終わっていれば、
+終わった時刻から数える。実施中なら切らないので、切れる時刻は決まらない（napActive が真、deadline はゼロ）
+*/
+func (a *app) idleDeadline(sess session, at time.Time) (deadline time.Time, napActive bool) {
+	active, endedAt := a.napExemption(sess.accountID, sess.lastActiveAt, at)
+	if active {
+		return time.Time{}, true
+	}
+	from := sess.lastActiveAt
+	if endedAt.After(from) {
+		from = endedAt
+	}
+	return from.Add(a.idleLimit()), false
+}
+
+/*
+napExemption は、そのアカウントの職員が開始した午睡チェックのうち、いま実施中のものがあるかを返す。
+無ければ、since より後に終わった実施の、いちばん遅い終わりの時刻を返す（無ければゼロ）。
+
+担当は開始した職員とする。担当を交代するときは「終了 → ログアウト → 次の職員がログイン → 開始」の順で
+引き継ぐ（基本設計書「午睡チェックの実施」(4-7)）。実施の記録（t_nap_session）は、自動ログアウトの例外範囲と
+担当者の追跡に用いる（同「午睡チェック」(5-7)）。
+
+終了の操作を忘れた実施は、午睡の時間帯（nap.time_range）の終わりで解除する（napAutoCloseAt）。
+データベースの解除（autoCloseNapSessions）を待たずに、同じ規則で解除の時刻を求める
+*/
+func (a *app) napExemption(accountID int64, since, at time.Time) (active bool, lastEnded time.Time) {
+	const layout = "2006-01-02T15:04:05"
+	// 接続は1本に絞っている（db.go）。行を読んでいる途中で a.db へ問い合わせないよう、設定は先に読む
+	timeRange := a.settingText("nap.time_range", "13:00-15:00")
+	rows, err := a.db.Query(`SELECT ns.session_date, ns.started_at, ns.ended_at
+		  FROM t_nap_session ns
+		  JOIN m_staff st ON st.staff_id = ns.started_staff_id
+		 WHERE st.account_id = ? AND (ns.ended_at IS NULL OR ns.ended_at > ?)`,
+		accountID, since.In(jst).Format(layout))
+	if err != nil {
+		// 確かめられないときは例外を当てず、通常の自動ログアウトにする。黙って捨てない（GitHub Issue #99）
+		log.Printf("午睡チェックの実施を確かめられません（account=%d）: %v", accountID, err)
+		return false, time.Time{}
+	}
+	defer rows.Close()
+
+	nowISO := at.In(jst).Format(layout)
+	for rows.Next() {
+		var date, started string
+		var ended sql.NullString
+		if err := rows.Scan(&date, &started, &ended); err != nil {
+			continue
+		}
+		end := ended.String
+		if !ended.Valid {
+			closeAt, _ := napAutoCloseAt(date, started, timeRange)
+			if nowISO <= closeAt {
+				return true, time.Time{}
+			}
+			end = closeAt
+		}
+		if t, err := time.ParseInLocation(layout, end, jst); err == nil && t.After(lastEnded) {
+			lastEnded = t
+		}
+	}
+	return false, lastEnded
 }
 
 // sessionID は、要求が持つセッションIDを返す。無ければ空文字
@@ -210,8 +413,11 @@ const (
 // 停止・紐づけの解除のときにはセッションも消している（destroyAccount）が、状態だけが変わる経路が
 // あっても止まるようにするため（GitHub Issue #159）。停止したアカウントはログインできない（要件定義書、
 // 画面詳細図 7-8 項目5）
+//
+// 通した要求が利用者の操作なら、最後の操作の時刻をいまにする（自動ログアウトを最後の操作から数える。
+// 基本設計書「ログイン」(4-3)。GitHub Issue #210）。裏の読み直し・知らせの受け取りでは延ばさない（countsAsOperation）
 func (a *app) requireLogin(w http.ResponseWriter, r *http.Request) (*SessionUser, bool) {
-	id, ok := a.sessions.accountID(r)
+	id, ok := a.sessionAccount(r)
 	if !ok {
 		writeJSON(w, http.StatusUnauthorized, apiError{Message: "ログインしていません"})
 		return nil, false
@@ -225,6 +431,9 @@ func (a *app) requireLogin(w http.ResponseWriter, r *http.Request) (*SessionUser
 		a.sessions.destroyAccount(u.AccountID, "")
 		writeJSON(w, http.StatusUnauthorized, apiError{Message: "ログインしていません"})
 		return nil, false
+	}
+	if countsAsOperation(r) {
+		a.sessions.touch(sessionID(r))
 	}
 	return u, true
 }

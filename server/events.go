@@ -193,9 +193,11 @@ func (u *SessionUser) canReceiveLive() bool {
 	return !u.isSuspended() && !u.IsTempPassword && u.TermsAgreed
 }
 
-// liveSessionAlive は、つないだときのセッションがまだ使えるかを返す。期限切れ・停止などに気づいて閉じるために使う
+// liveSessionAlive は、つないだときのセッションがまだ使えるかを返す。期限切れ・停止などに気づいて閉じるために使う。
+// 判定は session.go の sessionAccount（自動ログアウトと午睡チェックの実施中の例外を含む）。ストアだけで見ると、
+// 実施中の職員の接続を閉じてしまう。/api/events は操作に数えない（countsAsOperation）ので、ここで期限は延ばさない
 func (a *app) liveSessionAlive(r *http.Request, accountID int64) bool {
-	id, ok := a.sessions.accountID(r)
+	id, ok := a.sessionAccount(r)
 	if !ok || id != accountID {
 		return false
 	}
@@ -460,19 +462,31 @@ func (a *app) classChildIDs(classID int64) ([]string, error) {
 
 // notifyDevelopment は、発達チェックの変化を、その園児を参照できる職員へ送る。
 // 発達チェックの API は職員だけが使える（requireStaff）ため、保護者には送らない
-func (a *app) notifyDevelopment(childID string) {
+//
+// 保護者へは確定したとき（finalized）だけ、成長の記録を読める家庭（contactAccess の Read）へ送る。
+// 確定した記録が保護者の成長の記録に届くため（詳細設計書「知らせ」(6-2) の development の行、「成長の記録に届くもの」(3-7)）
+func (a *app) notifyDevelopment(childID string, finalized bool) {
 	a.notify(liveEvent{Type: evDevelopment, ChildID: childID}, func(u *SessionUser) bool {
+		if u.isGuardian() {
+			return finalized && a.contactAccess(u, childID).Read
+		}
 		return u.isStaff() && a.canSeeChild(u, childID)
 	})
 }
 
 // notifyPhysical は、身体測定の記録の変化を、その園児を参照できる人へ送る。
-// 保護者に見せるのは共有した（連携済の）測定値だけ（handlePhysicalRecords）なので、shared のときだけ保護者へ送る
+// 保護者へは身体測定を共有するとき（shared。設定 growth.share_physical）だけ、成長の記録を読める家庭へ送る
+// （詳細設計書「知らせ」(6-2) の physical の行・「身体測定・共有範囲の経路」(4-12 (4))）
 func (a *app) notifyPhysical(childID string, shared bool) {
 	a.notify(liveEvent{Type: evPhysical, ChildID: childID}, func(u *SessionUser) bool {
-		if u.isGuardian() && !shared {
-			return false
+		if u.isGuardian() {
+			return shared && a.contactAccess(u, childID).Read
 		}
 		return a.canSeeChild(u, childID)
 	})
+}
+
+// sharePhysical は、身体測定を保護者の成長の記録に出すか（設定 growth.share_physical。詳細設計書 (4-12 (4))）
+func (a *app) sharePhysical() bool {
+	return a.settingText("growth.share_physical", "1") == "1"
 }

@@ -39,11 +39,14 @@ type Diary struct {
 	// 承認の経緯に出す名前（詳細設計書「日誌」(4-13 (6))）
 	ApprovedStaffName *string `json:"approved_staff_name"`
 	AppliedStaffName  *string `json:"applied_staff_name"`
+	// ヒヤリハットの欄。ヒヤリハットのときだけ（詳細設計書「日誌」(4-13 (6))。api_diary_incident.go）
+	Incident *DiaryIncident `json:"incident"`
 }
 
 const diaryColumns = `diary_id, record_type, child_id, class_id, diary_date, body, status,
 	created_staff_id, approved_staff_id, approved_at, applied_staff_id, applied_at,
-	nap_abnormal_id, returned_reason, is_deleted, created_at, updated_at`
+	nap_abnormal_id, returned_reason, is_deleted, created_at, updated_at,
+	occurred_at, place, guardian_notice, guardian_noticed_at, guardian_notice_method, guardian_notice_person`
 
 func (a *app) scanDiary(rows interface{ Scan(...any) error }) (Diary, error) {
 	var (
@@ -56,10 +59,13 @@ func (a *app) scanDiary(rows interface{ Scan(...any) error }) (Diary, error) {
 		appliedAt    sql.NullString
 		napID        sql.NullInt64
 		reason       sql.NullString
+		// ヒヤリハットの列（api_diary_incident.go）
+		occurredAt, place, notice, noticedAt, noticeMethod, noticePerson sql.NullString
 	)
 	err := rows.Scan(&d.DiaryID, &d.RecordType, &childID, &classID, &d.DiaryDate, &d.Body, &d.Status,
 		&d.CreatedStaffID, &appStaff, &appAt, &appliedStaff, &appliedAt,
-		&napID, &reason, &d.IsDeleted, &d.CreatedAt, &d.UpdatedAt)
+		&napID, &reason, &d.IsDeleted, &d.CreatedAt, &d.UpdatedAt,
+		&occurredAt, &place, &notice, &noticedAt, &noticeMethod, &noticePerson)
 	if err != nil {
 		return d, err
 	}
@@ -71,6 +77,7 @@ func (a *app) scanDiary(rows interface{ Scan(...any) error }) (Diary, error) {
 	d.AppliedAt = nullStr(appliedAt)
 	d.NapAbnormalID = nullInt(napID)
 	d.ReturnedReason = nullStr(reason)
+	d.Incident = incidentOf(d.RecordType, d.Body, occurredAt, place, notice, noticedAt, noticeMethod, noticePerson)
 
 	return d, nil
 }
@@ -329,13 +336,18 @@ func (a *app) handleDiaryTemplates(w http.ResponseWriter, r *http.Request) {
  * 【仮置き】定型文を保持するテーブルが基本設計書「日誌」(5-4) に定義されていない。
  * 雛形（m_diary_template）は1件で本文全体を差し替えるものであり、粒度が違う。
  * ここでは定数として持っているが、園が編集できる値であるはずで、置き場を決める必要がある。
+ *
+ * 日誌は園内の保育日誌であり、保護者へは連絡帳で届ける。保護者に向けた文
+ * （「ご家庭でも様子を見ていただけますと幸いです。」）は置かない
+ * （ナレッジ/決定事項.md 2026-10-18「『日誌』は園内の保育日誌として連絡帳とは別に持ち、保護者へは連絡帳で届ける」、
+ * 詳細設計書「デモデータ」(5-5) の m_phrase。PR #216 で設計を直した）。
+ * web/src/api/mockDb.ts の fixedPhrases と同じ並びにそろえる
  */
 var fixedPhrases = []string{
 	"よく食べ、おかわりをしていました。",
 	"午睡は落ち着いて入眠できました。",
 	"園庭で友だちと関わって遊ぶ姿が見られました。",
 	"鼻水が出ていたため、こまめに拭き取りました。",
-	"ご家庭でも様子を見ていただけますと幸いです。",
 }
 
 func (a *app) handleDiaryPhrases(w http.ResponseWriter, r *http.Request) {

@@ -298,13 +298,13 @@ func (a *app) handleNameCheck(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, msgContactLoadFailed)
 		return
 	}
-	recipients := []nameChild{}
-	if !everyone {
-		for _, id := range in.ChildIDs {
-			recipients = append(recipients, a.nameChildOf(id))
-		}
+	excluded, err := a.nameCheckExclusions()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, msgContactLoadFailed)
+		return
 	}
-	names, _ := findOtherNames(in.Text, "text", recipients, all)
+	// 送る経路と同じ照合（4-5 (2)）：クラス名と「〇〇先生」を除き、宛先の園児が2人以上なら届く家庭ごとに照合する
+	names, _ := findOtherNamesFor(in.Text, "text", a.nameFamilies(in.ChildIDs, everyone), all, excluded)
 	writeJSON(w, http.StatusOK, map[string][]string{"names": names})
 }
 

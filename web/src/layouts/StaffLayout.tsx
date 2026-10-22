@@ -11,6 +11,7 @@ import { BellIcon, Alert } from '../components/ui';
 import LiveIndicator from '../components/LiveIndicator';
 import ConnectionBanner from '../components/ConnectionBanner';
 import { ToastHost } from '../components/feedback';
+import SessionTimeoutWarning from '../components/SessionTimeoutWarning';
 
 const NAV = [
   { to: '/staff', label: 'ダッシュボード', end: true, adminOnly: false },
@@ -41,6 +42,7 @@ const ADMIN_NAV = [
   { to: '/staff/admin/fiscal-year', label: '年度更新' },
   { to: '/staff/admin/logs', label: '操作ログ' },
   { to: '/staff/admin/misdelivery', label: '誤送信対応' },
+  { to: '/staff/admin/settings', label: '設定' },
 ];
 
 export default function StaffLayout() {
@@ -146,6 +148,11 @@ export default function StaffLayout() {
           <Outlet />
         </main>
         <ToastHost />
+        {/*
+          自動ログアウトの予告と「続ける」。自動ログアウトは職員の画面に限る（基本設計書「ログイン」(4-3)）ので、
+          保護者の共通レイアウトには置かない（GitHub Issue #210）
+        */}
+        <SessionTimeoutWarning />
       </div>
     </div>
   );

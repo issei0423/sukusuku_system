@@ -8,8 +8,10 @@
 import type {
   Account, Child, ChatRoom, DevelopmentItem, GuardianChild, NapRecord, NapSession,
   DiaryRecordType, DiaryStatus, InvitationStatus, Role, FunctionType, OperationType,
-  DevelopmentCheck, DevelopmentResultRecord, MealAmount, ContactEventType,
+  DevelopmentCheck, DevelopmentResultRecord, MealAmount, ContactEventType, Setting,
 } from './types';
+import type { GuardianNotice, GuardianNoticeMethod } from './types';
+import type { BodyPosition, Breathing, Complexion } from './types';
 
 /** ログインの失敗理由。画面が分岐に使う（図/画面詳細図.md「職員用トップ／保護者用トップ」(2-1)） */
 export type LoginError =
@@ -20,7 +22,25 @@ export type LoginError =
   /** 一時パスワードの有効期限切れ（基本設計書「ログイン」(4-3)、メッセージ一覧 (4-9)。GitHub Issue #159） */
   | { kind: 'temp_expired' }
   /** ログイン中の新しいログイン・新規登録。上書きログインは設けない（基本設計書「ログイン」(4-3)。GitHub Issue #159） */
-  | { kind: 'already_logged_in' };
+  | { kind: 'already_logged_in' }
+  /** 送信元の失敗が続き、しばらく受け付けを止めている（server/attempts.go。GitHub Issue #236 の 6）。Go サーバだけが返す */
+  | { kind: 'too_many_attempts' };
+
+/**
+ * ログインの期限（GET /api/session・POST /api/session/extend の応答。GitHub Issue #210）。
+ * 期限はサーバが決める（server/api_session.go の sessionStatusOf。モックは api/mock.ts の sessionStatus）。
+ * 画面は自分で数えた時刻を正とせず、予告を出す前・出している間に尋ね直す（components/SessionTimeoutWarning.tsx）
+ */
+export interface SessionStatus {
+  /** 無操作で切るか。職員の画面だけ真（基本設計書「ログイン」(4-3)） */
+  auto_logout: boolean;
+  /** その職員が開始した午睡チェックが実施中で、いまは切らない。期限は決まっていない */
+  nap_exempt: boolean;
+  /** このまま操作が無ければ切れる時刻（JST、'YYYY-MM-DDTHH:MM:SS'）。決まっていないときは null */
+  expires_at: string | null;
+  /** 切れるまでの秒数（切り捨て）。0 のあいだはまだ使える。決まっていないときは null */
+  remaining_seconds: number | null;
+}
 
 /** 園児情報の登録・編集の入力（図/画面詳細図.md 7-2） */
 export interface ChildInput {
@@ -61,6 +81,26 @@ export interface DiaryInput {
    * 空の並びはすべて外す（【仮置き】web/仮置き値.md「日誌作成・編集画面の動き」。GitHub Issue #175 の 2）
    */
   attachments?: DiaryAttachmentInput[];
+  /**
+   * ヒヤリハットの欄（詳細設計書「日誌」(4-13 (1))）。ヒヤリハットのときは本文の代わりにこれを送り、
+   * 状況・とった対応・今後の対策を見出しでつないだ本文をサーバ（モック）が作る（決めたこと D-33）
+   */
+  incident?: DiaryIncidentInput;
+}
+
+/** 保存のときに送るヒヤリハットの欄。任意の欄は空の文字列で「無し」とする（サーバ側は diaryIncidentInput） */
+export interface DiaryIncidentInput {
+  /** 'YYYY-MM-DDTHH:MM:SS' */
+  occurred_at: string;
+  place: string;
+  situation: string;
+  response: string;
+  countermeasure?: string;
+  /** '1' 伝えた / '2' 伝えていない / '' 未記入 */
+  guardian_notice?: '' | '1' | '2';
+  guardian_noticed_at?: string;
+  guardian_notice_method?: '' | '1' | '2' | '3' | '9';
+  guardian_notice_person?: string;
 }
 
 /** 日誌に付ける写真 1 枚。実体は持たず、ファイルの名前と形式だけを持つ（web/仮置き値.md 7「添付ファイルの実体」） */
@@ -131,15 +171,64 @@ export interface NapAbnormalRow {
   response: string;
   staff_id: string;
   diary_id: number | null;
+  /** 保護者への連絡（画面詳細図「異常時記録画面」(5-2) 項目13）。空は未記入 */
+  guardian_notice: GuardianNotice | null;
+  guardian_noticed_at: string | null;
+  guardian_notice_method: GuardianNoticeMethod | null;
+  guardian_notice_person: string | null;
   child_name: string;
   staff_name: string;
 }
 
-export interface NapSearchRow extends NapRecord {
+/**
+ * 異常時の記録で送る保護者への連絡（画面詳細図「異常時記録画面」(5-2) 項目13）。
+ * guardian_notice が空（''）なら未記入。「した」（'1'）のときだけ日時・手段・相手を使う
+ */
+export interface AbnormalGuardianNoticeInput {
+  guardian_notice?: GuardianNotice | '';
+  guardian_noticed_at?: string;
+  guardian_notice_method?: GuardianNoticeMethod | '';
+  guardian_notice_person?: string;
+}
+
+/**
+ * 午睡記録検索の行の種類。check は5分ごとの確認（t_nap_record）、sleep は「ねた」、wake は「おきた」（t_nap_sleep）、
+ * exclusion は「きょうは対象外」（t_nap_exclusion）
+ * （画面詳細図「午睡記録検索画面」(5-3) の項目6「園児ごとの入眠（ねた）と起床（おきた）、入眠時の体温（ねたの行）、
+ * きょうは対象外とその理由も、その日の行に出す」）
+ */
+export type NapSearchRowKind = 'check' | 'sleep' | 'wake' | 'exclusion';
+
+/**
+ * 午睡記録検索の1行。確認の行は体位・呼吸・顔色・体温・保存時刻を持つ。ねた・おきた・対象外の行は押した時刻（サーバの時刻）を
+ * checked_at に持ち、体位・呼吸・顔色・保存時刻は null。入眠時の体温（sleep_temperature）はねたの行だけに、
+ * 対象外の理由（exclusion_reason。1:欠席 2:午睡なし）は対象外の行だけに入る。
+ * 職員だけの経路（GET /api/nap/records）で返す
+ */
+export interface NapSearchRow {
+  kind: NapSearchRowKind;
+  nap_record_id: number | null;
+  nap_sleep_id: number | null;
+  nap_exclusion_id: number | null;
+  exclusion_reason: '1' | '2' | null;
+  nap_session_id: number;
+  child_id: string;
+  checked_at: string;
+  saved_at: string | null;
+  body_position: BodyPosition | null;
+  breathing: Breathing | null;
+  complexion: Complexion | null;
+  temperature: number | null;
+  sleep_temperature: number | null;
+  staff_id: string;
   session_date: string;
   child_name: string;
   class_name: string;
   staff_name: string;
+  /** 確認の行だけ：最後に修正した時刻（「修正あり」の印）。ほかの行は null */
+  corrected_at: string | null;
+  /** 確認の行だけ：この利用者が直せるか（画面は「修正」を出す。担保は POST /api/nap/records/{id}/correct） */
+  can_correct: boolean;
 }
 
 /** 発達チェック一覧の行。overdue は予定日を過ぎて未実施の状態 */
@@ -343,7 +432,7 @@ export interface ContactEvent {
   staff_name?: string;
   corrected_at: string | null;
   is_deleted: boolean;
-  /** 職員の応答だけ。訂正のときに読んだ版として送り返す（詳細設計書「訂正・取り消し」(4-7 (1))） */
+  /** 職員の応答だけ。直すときに読んだ版として送り返す（詳細設計書「訂正・取り消し」(4-7 (1))） */
   updated_at?: string;
 }
 
@@ -542,6 +631,41 @@ export interface Readers {
   guardian_count: number;
 }
 
+/**
+ * 連絡帳の写真（図/インタフェース一覧の ContactPhoto）。写っている子（subject_child_ids）は職員の応答だけ。
+ * 実体は GET /api/contact/photos/{id}（画面は api.photoUrl で URL を得る）
+ */
+export interface ContactPhoto {
+  contact_photo_id: number;
+  contact_date: string;
+  /** 静止画のみ（image/jpeg・image/png） */
+  file_type: string;
+  file_size: number;
+  /** 職員の応答だけ。写っている子（0人なら空） */
+  subject_child_ids?: string[];
+  is_deleted: boolean;
+}
+
+/**
+ * 写真を送る（POST /api/contact/photos、multipart/form-data。詳細設計書「きょうのようす」(4-4 (2))）。
+ * 写っている子が0人なら、届ける子（target_child_id）を1人選ぶ。添える文は任意・200文字
+ */
+export interface SendPhotoInput {
+  file: Blob;
+  subject_child_ids: string[];
+  target_child_id?: string | null;
+  body?: string | null;
+  /** 届く先の全員の出来事に「成長の記録に残す」を付ける（詳細設計書 (4-12 (3))） */
+  keep_in_growth?: boolean;
+  acknowledged_names?: string[];
+}
+
+/** POST /api/contact/photos の応答。events は届く先の園児ごとの出来事（種類 5） */
+export interface SendPhotoResult {
+  photo: ContactPhoto;
+  events: ContactEvent[];
+}
+
 /** 保護者ホームの「きょう」の1件（午睡を除く） */
 export interface TodayItem {
   kind: 'meal' | 'toilet' | 'temperature' | 'comment' | 'photo' | 'class_note';
@@ -570,6 +694,123 @@ export interface GuardianToday {
   personal_room_id: number | null;
   /** 成長の記録を作るまでは常に偽 */
   growth_new: boolean;
+  /**
+   * ログイン中の保護者自身の紐づけの「AI の下書きを使わない」。ほかの家族の値は入れない
+   * （詳細設計書「ダッシュボード」(4-8 (1))・「AI の下書きの利用」(4-15 (3))。保護者のメニューのダイアログの初期値）
+   */
+  ai_opt_out: boolean;
+}
+
+/**
+ * POST /api/invitation/verify の応答（詳細設計書「お子さまの追加」(4-15 (1))）。
+ * child_name・relationship は、ログインしている保護者が呼んだときだけ入る（決めたこと D-47）
+ */
+export interface InvitationPreview {
+  ok: true;
+  child_name?: string;
+  /** 【仮置き】ダイアログの続柄の初期値（最初に登録したときの続柄。設計は渡し方を決めていない。web/仮置き値.md） */
+  relationship?: string;
+}
+
+/** POST /api/guardian/children の応答（詳細設計書「お子さまの追加」(4-15 (1))） */
+export interface AddChildResult {
+  ok: true;
+  child_id: string;
+}
+
+/* ============ 文章の下書き（AI）（詳細設計書「経路」(8-2)） ============ */
+
+/** 用途。facility_note：園からのひとことの下書き（1つ）、rephrase：言い換え（候補3つ）、continue：続きの候補（3つ） */
+export type AiPurpose = 'facility_note' | 'rephrase' | 'continue';
+/** 下書きを入れる欄（文字数の上限と操作ログの表を決める）。facility：園から 500、comment：活動のひとこと 200、class：クラスのようす 500 */
+export type AiField = 'facility' | 'comment' | 'class';
+
+/** GET /api/ai/status の宛先（どちらか一方） */
+export type AiTarget = { child_id: string; class_id?: undefined } | { class_id: number; child_id?: undefined };
+
+/** POST /api/ai/drafts の要求。画面は「何の下書きか」「宛先」「メモ」「欄の文」だけを送り、送る項目はサーバが決める */
+export type AiDraftInput = AiTarget & {
+  purpose: AiPurpose;
+  date: string;
+  memo?: string;
+  text?: string;
+  field?: AiField;
+};
+
+/** POST /api/ai/drafts の応答 */
+export interface AiDraftResult {
+  drafts: string[];
+  /** メモ・欄の文の中のほかの園児の名前を「おともだち」に置き換えて送った */
+  replaced_other_names: boolean;
+}
+
+/* ============ 設定画面（詳細設計書「設定」(4-10)。本版は AI の区画だけ） ============ */
+
+export interface SettingRow extends Setting {
+  group: 'contact' | 'notify' | 'ai' | 'other';
+  /** 基本設計書「設定マスタ（m_setting）」(5-9) の既定値 */
+  default_value: string;
+  /** 画面から変えられるか */
+  editable: boolean;
+}
+
+/** GET /api/settings の応答。API キーそのものは返さない（あるか・無効と分かったかの真偽だけ。詳細設計書 (8-8)） */
+export interface SettingsView {
+  settings: SettingRow[];
+  /** サーバの今。保存のときに送り返す（ほかの管理者の変更を見つけるため） */
+  read_at: string;
+  ai_key_present: boolean;
+  ai_key_rejected: boolean;
+  push_available: boolean;
+}
+
+/*
+ * 成長の記録（GET /api/children/{childID}/growth。詳細設計書「成長の記録」(4-12 (1))）。
+ * 返すのは事実（測った値・確認できた項目の名前・保護者へのひとこと・連絡帳から残したもの）だけ。
+ * 「一部」「未確認」・所見・比較・記録した職員の名前・判定の言葉は入れない
+ */
+export interface GrowthRecord {
+  child_id: string;
+  child_name: string;
+  sex: Child['sex'];
+  birth_date: string;
+  grace_ends_on: string | null;
+  /** 偽なら measurements は空。画面は身長・体重の区画を出さない */
+  share_physical: boolean;
+  /** 新しい順・全件 */
+  measurements: GrowthMeasurement[];
+  /** 新しい順・12件まで */
+  achievements: GrowthEntry[];
+  next_before: string | null;
+  /** 成長グラフの免責（基本設計書「メッセージ一覧」(4-12)） */
+  disclaimer: string;
+}
+
+export interface GrowthMeasurement {
+  physical_record_id: number;
+  measured_on: string;
+  age_in_months: number;
+  height_cm: number;
+  weight_kg: number;
+  is_today: boolean;
+}
+
+/** 「できたこと」の1件。kind ごとに使う項目が違う */
+export interface GrowthEntry {
+  kind: 'development' | 'contact';
+  at: string;
+  date: string;
+  is_today: boolean;
+  /** development：確認できた項目の名前 */
+  items?: string[];
+  /** development：保護者へのひとこと */
+  message?: string | null;
+  /** development：ひとことを書き換えた時刻。「訂正しました（日付）」を出す（詳細設計書「成長の記録」(4-12)、決めたこと D-51） */
+  message_corrected_at?: string | null;
+  /** contact：ひとこと・写真に添えた文 */
+  body?: string | null;
+  /** contact：写真 */
+  contact_photo_id?: number | null;
 }
 
 /** 参照のみに使う型の再輸出。画面が types.ts を直接読まなくて済むようにする */

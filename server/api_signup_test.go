@@ -37,7 +37,7 @@ func signUpWith(t *testing.T, h http.Handler, code string, fields map[string]any
 	body := map[string]any{
 		"code": code, "email": "signup.test@example.jp", "password": "signup-5678",
 		"guardian_name": "検査 太郎", "relationship": "母",
-		"terms_agreed": true, "terms_version": "1.0",
+		"terms_agreed": true, "terms_version": "1.1",
 	}
 	for k, v := range fields {
 		if v == nil {
