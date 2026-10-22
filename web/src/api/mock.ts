@@ -12,6 +12,7 @@
  * （基本設計書.md「権限チェックの実装方針」(6-2)）。
  */
 import * as db from './mockDb';
+import { DEFAULT_MILESTONE_MONTHS, parseMilestones, recommendedScheduleDate } from './devSchedule';
 import { CURRENT_TERMS_VERSION } from './mockDb';
 import type { AbnormalGuardianNoticeInput } from './shapes';
 import { GUARDIAN_NOTICE_METHOD_ORDER } from './codes';
@@ -899,6 +900,11 @@ export const childApi = {
     };
     if (existing) Object.assign(existing, row);
     else db.children.push(row);
+    /*
+     * 新しく登録する園児には、最初の予定日を当てる。基準日は登録した日（基本設計書「推奨スケジュールの作り方」(4-9)）。
+     * 推奨頻度がマスタに無い月齢では当てない。編集では予定を動かさない。サーバ側は server/api_child_write.go の handleSaveChild
+     */
+    if (!existing) addFirstSchedule(user, input.child_id, input.birth_date);
 
     // クラス在籍の付け替え
     const idx = db.classChildren.findIndex((cc) => cc.child_id === input.child_id);
@@ -2504,6 +2510,29 @@ function advanceDevelopmentSchedule(user: SessionUser, check: DevelopmentCheck, 
   log(user.account_id, '4', '1', 't_development_schedule', null, childId, null, `次回予定日=${next}（実施日から算出）`);
 }
 
+/**
+ * 推奨スケジュールの規則で、基準日（baseDate）から予定日を作る（基本設計書「推奨スケジュールの作り方」(4-9)）。
+ * 推奨頻度はマスタ（m_development_frequency）、節目は設定 dev.milestone_months から読む。サーバ側は server/dev_schedule.go
+ */
+function recommendedFor(birthDate: string, baseDate: string): string | null {
+  return recommendedScheduleDate(birthDate, baseDate, db.developmentFrequencies,
+    parseMilestones(settingList('dev.milestone_months', DEFAULT_MILESTONE_MONTHS)));
+}
+
+/**
+ * 登録した園児に、最初の予定日を当てる。基準日は登録した日（今日）。
+ * 操作ログは別の行に残さない。園児の登録の行が登録した日を示し、予定日はこの規則から導けるため
+ * （【仮置き】web/仮置き値.md「登録で作る最初の予定日の操作ログ」）
+ */
+function addFirstSchedule(user: SessionUser, childId: string, birthDate: string): void {
+  const first = recommendedFor(birthDate, today());
+  if (!first) return;
+  db.developmentSchedules.push({
+    development_schedule_id: nextId(), child_id: childId,
+    scheduled_on: first, is_manual_override: false, created_staff_id: user.staff_id!,
+  });
+}
+
 /** 園児の最新の予定 */
 function latestSchedule(childId: string) {
   return db.developmentSchedules
@@ -2807,6 +2836,41 @@ const devApi2 = {
       `次回予定日=${scheduledOn}${manual ? '（手動上書き）' : ''}`);
     publishDevelopment(childId, false);
     return ok(undefined);
+  },
+
+  /**
+   * 予定の無い在籍園児に推奨スケジュールを当てる（スケジュール設定画面の「予定の無い園児に推奨を当てる」。管理者のみ）。
+   * 基本設計書「推奨スケジュールの作り方」(4-9)「予定の無い在籍園児には、管理者が一括で規則を当てる操作を置く」。
+   * 当てた園児ごとに操作ログへ残す。サーバ側は server/dev_schedule.go の handleApplyRecommendedSchedules。
+   *
+   * 【仮置き】基準日は、最後に確定した実施日。確定した記録が無ければ、当てた日（今日）。登録日を基準にすると、
+   * 長く在籍している園児が一斉に「過ぎた」になるため（web/仮置き値.md「予定の無い園児へ推奨を当てるときの基準日」）。
+   * 【仮置き】対象は、すべてのクラスの在籍園児のうち、予定が1件も無い園児。画面で選んでいるクラスに限らない
+   * （web/仮置き値.md「一括で当てる範囲」）
+   */
+  async applyRecommendedSchedules(user: SessionUser): Promise<{ applied: number }> {
+    if (user.role !== '1') return fail('この操作は管理者のみが行えます');
+    const scheduled = new Set(db.developmentSchedules.map((s) => s.child_id));
+    const targets = db.children
+      .filter((c) => !c.is_deleted && c.enrollment_status === '1' && !scheduled.has(c.child_id))
+      .sort((a, b) => a.child_id.localeCompare(b.child_id))
+      .flatMap((c) => {
+        const last = lastConfirmedCheck(c.child_id)?.checked_on ?? null;
+        const d = recommendedFor(c.birth_date, last ?? today());
+        return d ? [{ childId: c.child_id, scheduledOn: d, from: last ? '最後の実施日から算出' : '当てた日から算出' }] : [];
+      });
+    for (const t of targets) {
+      db.developmentSchedules.push({
+        development_schedule_id: nextId(), child_id: t.childId,
+        scheduled_on: t.scheduledOn, is_manual_override: false, created_staff_id: user.staff_id!,
+      });
+    }
+    for (const t of targets) {
+      log(user.account_id, '4', '1', 't_development_schedule', null, t.childId, null,
+        `次回予定日=${t.scheduledOn}（推奨を一括で当てた。${t.from}）`);
+      publishDevelopment(t.childId, false);
+    }
+    return ok({ applied: targets.length });
   },
 
   /** 共有範囲設定。項目ごとの保護者への共有可否（要件定義書「発達チェック」(4-5)） */
@@ -3709,6 +3773,9 @@ const bulkApi = {
       });
       const cls = db.classes.find((c) => c.fiscal_year === db.FISCAL_YEAR && c.class_name === clsName)!;
       db.classChildren.push({ class_id: cls.class_id, child_id: id });
+      // 最初の予定日は、1 件ずつの登録と同じ規則で当てる（基本設計書「推奨スケジュールの作り方」(4-9)「園児を登録した日
+      // （画面・CSV）を基準日とし」。サーバ側は server/api_bulk.go の handleImportChildCsv）
+      addFirstSchedule(user, id, birth);
       createPersonalRoom(id);
     });
     // 登録した園児ごとに、対象園児つきで残す。件数だけの 1 行では、対象園児で絞り込んだときに出ない
