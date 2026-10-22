@@ -31,7 +31,11 @@ npm run review:responsive -- --grep "nap"
 npm run review:responsive -- --list
 # ハーネス自身の型検査
 npm run review:responsive:check
+# ブラウザの文字の大きさの設定を変えて回す（Chrome の「大」は 20、「特大」は 24。Chromium の端末だけ効く）
+$env:RESPONSIVE_FONT_SIZE = '24'; npm run review:responsive -- --project=desktop; Remove-Item Env:RESPONSIVE_FONT_SIZE
 ```
+
+文字の大きさを変えたときは、画像を全体でなく画面の範囲だけ撮る（fullPage の撮影が Chromium の設定を既定に戻すため）。ページ全体を送る画面は、`bottom` に下端を撮る。
 
 ## 端末と画面
 
