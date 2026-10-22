@@ -444,3 +444,18 @@ describe('設定画面：保存したら区画を描き直す（GitHub Issue #21
     }
   });
 });
+
+describe('押したボタンがその場で消えるとき：職員アカウントの「ロック解除」（GitHub Issue #213）', () => {
+  it('解除して読み直すと「ロック解除」が消えるので、同じ行の押せる最初のもの（「変更」）へ移す', async () => {
+    const account = db.accounts.find((a) => a.account_id === 5)!;
+    account.locked_until = '2099-01-01T00:00:00';
+    account.failed_login_count = 5;
+    open('/staff/admin/staff-accounts', admin);
+    const unlock = await screen.findByRole('button', { name: 'ロック解除' }, { timeout: 3000 });
+    const row = unlock.closest('tr')!;
+    press(unlock);
+    await waitFor(() => expect(unlock.isConnected).toBe(false), { timeout: 3000 });
+    expect(account.locked_until).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(within(row).getByRole('button', { name: '変更' })));
+  });
+});

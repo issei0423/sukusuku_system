@@ -4,7 +4,7 @@
  */
 import { Children, cloneElement, isValidElement, useEffect, useId, useRef } from 'react';
 import type { ReactElement, ReactNode } from 'react';
-import { focusAfter } from '../focusAfter';
+import { around, focusAfter, focusableIn } from '../focusAfter';
 
 export function Field({ label, required, children, style }: {
   label: string; required?: boolean; children: ReactNode; style?: React.CSSProperties;
@@ -78,16 +78,6 @@ export function Card({ title, children, sub, actions }: {
   );
 }
 
-/** root の中の、Tab で止まれる部品（画面上の順） */
-function focusableIn(root: HTMLElement | null): HTMLElement[] {
-  return Array.from(root?.querySelectorAll<HTMLElement>(
-    'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
-  ) ?? []).filter((element) => element.getAttribute('aria-hidden') !== 'true' &&
-    !(element instanceof HTMLInputElement && element.type === 'hidden'))
-    // 複数のセレクタをまとめた検索は、環境によって画面上の順で返らない。Tab の折り返し先を誤らないよう並べ直す
-    .sort((x, y) => (x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
-}
-
 /** ダイアログで足りるものは画面として起こさない（基本設計書「画面の洗い出しの考え方」(3-1) 基準3） */
 export function Modal({ title, children, onClose, footer, returnTo, returnWithin }: {
   title: string; children: ReactNode; onClose: () => void; footer?: ReactNode;
@@ -111,8 +101,7 @@ export function Modal({ title, children, onClose, footer, returnTo, returnWithin
   useEffect(() => {
     const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     // 開いた元を囲む範囲（returnWithin）は、開いた時点で覚える。読み直しが閉じるより先に届き、閉じる時点で開いた元が消えていることがある
-    const areas = (within.current ?? []).map((selector) => before?.closest<HTMLElement>(selector) ?? null)
-      .filter((area): area is HTMLElement => area !== null);
+    const near = around(before, within.current ?? []);
     const root = dialog.current;
     const focusable = () => focusableIn(root);
     /*
@@ -152,16 +141,14 @@ export function Modal({ title, children, onClose, footer, returnTo, returnWithin
        */
       if (!before || before === document.body) return;
       const fallback = () => {
-        for (const area of areas) {
-          const first = area.isConnected ? focusableIn(area)[0] : undefined;
-          if (first) return first;
-        }
+        const inArea = near();
+        if (inArea) return inArea;
         const to = back.current?.();
         return to?.isConnected && !to.matches(':disabled') ? to : document.querySelector<HTMLElement>('main');
       };
       if (before.isConnected && !before.matches(':disabled')) {
         before.focus();
-        if (areas.length || back.current) focusAfter(before, () => (before.isConnected ? null : fallback()));
+        if (within.current?.length || back.current) focusAfter(before, () => (before.isConnected ? null : fallback()));
         return;
       }
       focusAfter(before, () => (before.isConnected ? before : fallback()));
