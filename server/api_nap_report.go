@@ -21,7 +21,7 @@ import (
  *   記録できなかったときは出力しない
  * - 含めるもの：確認の行（チェックした時刻と保存時刻・体位・呼吸・顔色・体温・記録した職員）、ねた・おきた、
  *   入眠時の体温（ねたの行）、きょうは対象外と理由、異常時の記録、「修正あり」の印、末尾の「修正の履歴」の表
- *   （修正した午睡チェックの記録ごとに、操作ログの修正の行から作る。api_nap_correct.go）
+ *   （修正した午睡チェックの記録・異常時の記録ごとに、操作ログの修正の行から作る。api_nap_correct.go）
  * - ヒヤリハットを起票した異常時の記録は、ヒヤリハット側の状況・とった対応に起票済みの印を付けて1行だけ出す
  *   （要件定義書「日誌システム」(4-3) の「午睡チェックの異常時の記録との関係」の「集計・監査時はヒヤリハット側を正」）
  *
@@ -47,8 +47,10 @@ const (
 // 帳票の見出し。画面詳細図「午睡記録検索画面」(5-3) の項目6の並びに「修正あり」を添える
 var napReportHeader = []string{"日付", "チェック時刻", "園児", "クラス", "体位", "呼吸", "顔色", "体温", "記録者", "保存時刻", "修正あり"}
 
-// 同じ期間の異常時の記録の見出し。同 (5-3) の項目11の並び
-var napReportAbnormalHeader = []string{"発見時刻", "園児", "状況", "対応", "記録者", "ヒヤリハット"}
+// 同じ期間の異常時の記録の見出し。同 (5-3) の項目11の並びに、一覧と同じく「修正あり」を添える
+// （基本設計書「帳票の出力」(4-8) の修正の履歴は「午睡チェックの記録と異常時の記録の両方」）。
+// 【仮置き】「修正あり」を末尾の列に置くこと（web/仮置き値.md「異常時の記録の修正」）。web/src/api/napReport.ts の NAP_ABNORMAL_HEADER と同じ
+var napReportAbnormalHeader = []string{"発見時刻", "園児", "状況", "対応", "記録者", "ヒヤリハット", "修正あり"}
 
 const napReportAbnormalTitle = "同じ期間の異常時の記録"
 
@@ -321,10 +323,11 @@ func (a *app) napReportData(from, to string, classID int64, hasClass bool) ([]na
 		diaryID                                    sql.NullInt64
 		date                                       string
 		classID                                    int64
+		corrected                                  sql.NullString
 	}
 	rawAbnormals := []rawAbnormal{}
 	abnormalRows, err := a.db.Query(`SELECT a.nap_abnormal_id, a.child_id, a.found_at, a.situation, a.response,
-		a.staff_id, a.diary_id, s.session_date, s.class_id
+		a.staff_id, a.diary_id, s.session_date, s.class_id, a.corrected_at
 		FROM t_nap_abnormal a JOIN t_nap_session s ON s.nap_session_id = a.nap_session_id
 		WHERE 1 = 1`+cond, args...)
 	if err != nil {
@@ -333,7 +336,7 @@ func (a *app) napReportData(from, to string, classID int64, hasClass bool) ([]na
 	for abnormalRows.Next() {
 		var x rawAbnormal
 		if err := abnormalRows.Scan(&x.id, &x.childID, &x.foundAt, &x.situation, &x.resp, &x.staffID, &x.diaryID,
-			&x.date, &x.classID); err != nil {
+			&x.date, &x.classID, &x.corrected); err != nil {
 			abnormalRows.Close()
 			return nil, nil, err
 		}
@@ -372,7 +375,8 @@ func (a *app) napReportData(from, to string, classID int64, hasClass bool) ([]na
 		}
 		/*
 		 * 「修正あり」の列：修正した午睡チェックの記録（t_nap_record.corrected_at がある）に印を付ける
-		 * （基本設計書「帳票の出力」(4-8)）。ねた・おきた・対象外の行は空（伝える層の訂正は別の規則。異常時の記録の修正は別の PR）
+		 * （基本設計書「帳票の出力」(4-8)）。ねた・おきた・対象外の行は空（伝える層の訂正は別の規則）。
+		 * 修正した異常時の記録の印は、下の「同じ期間の異常時の記録」の「修正あり」の列に付ける
 		 */
 		mark := ""
 		if x.kind == napRowCheck && x.corrected.Valid {
@@ -401,9 +405,15 @@ func (a *app) napReportData(from, to string, classID int64, hasClass bool) ([]na
 				}
 			}
 		}
+		// 「修正あり」の列：修正した異常時の記録（t_nap_abnormal.corrected_at がある）に印を付ける（基本設計書「帳票の出力」(4-8)）。
+		// ヒヤリハットを起票した記録も、異常時の記録そのものを直したら印を付ける（出す文はヒヤリハット側のまま）
+		corrected := ""
+		if x.corrected.Valid {
+			corrected = napReportCorrectedMark
+		}
 		abnormals = append(abnormals, napReportAbnormal{id: x.id, date: x.date, classID: x.classID,
 			kana: childKana(x.childID), childID: x.childID, foundAt: x.foundAt, cells: []string{
-				x.foundAt, a.childName(x.childID), situation, resp, a.staffName(x.staffID), mark,
+				x.foundAt, a.childName(x.childID), situation, resp, a.staffName(x.staffID), mark, corrected,
 			}})
 	}
 	sortNapReportAbnormals(abnormals)

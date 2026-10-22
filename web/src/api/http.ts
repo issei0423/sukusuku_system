@@ -35,7 +35,7 @@ import { startLive } from '../live';
 import { setReachable } from './reachability';
 import { TEXT } from '../messages';
 import type { NapReportFilter } from './napReport';
-import type { NapRecordCorrectInput } from './napCorrect';
+import type { NapAbnormalCorrectInput, NapRecordCorrectInput } from './napCorrect';
 import { AUTO_REFRESH_HEADER, isAutomatic } from './automatic';
 import type { SessionStatus } from './shapes';
 
@@ -547,6 +547,12 @@ const apiChatNap = {
    */
   correctNapRecord: (_u: SessionUser, recordId: number, input: NapRecordCorrectInput) =>
     post<NapRecord>(`/api/nap/records/${recordId}/correct`, input),
+  /**
+   * 異常時の記録を修正する（POST /api/nap/abnormals/{id}/correct）。変える項目（発見時刻・状況・とった対応）と理由を送る。
+   * 直せる人と発見時刻の前後の判定はサーバが行う（server/api_nap_abnormal_correct.go。基本設計書「記録の修正と改ざん防止」(4-8)）
+   */
+  correctNapAbnormal: (_u: SessionUser, abnormalId: number, input: NapAbnormalCorrectInput) =>
+    post<NapAbnormalRow>(`/api/nap/abnormals/${abnormalId}/correct`, input),
 
   /**
    * 年齢に応じたチェック間隔。マスタ値を用いる（基本設計書 5-8）
