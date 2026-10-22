@@ -2502,7 +2502,9 @@ const napApi2 = {
 /**
  * 確定した実施が予定を満たしたときに、次回の予定日を作る
  *
- * 次回の予定日は、実施日にマスタの推奨頻度（m_development_frequency）の日数を足した日とする。
+ * 次回の予定日は、実施日を基準日として、最初の予定日と同じ規則で作る（基本設計書「推奨スケジュールの作り方」(4-9)
+ * 「次の予定日｜確定したとき、実施日を基準日として同じ規則で作る」）。実施日の月齢の推奨頻度（m_development_frequency）の
+ * 日数を足し、あいだに健診の節目があれば節目の日にする（recommendedFor。GitHub Issue #164）。
  * すでに実施日より先の予定があるとき（園児単位で手動上書きした予定を含む）は、それを残す。
  *
  * 【仮置き】次回の予定日をいつ・何から計算し直すかは基本設計書が定めていない（web/仮置き値.md）。
@@ -2517,11 +2519,9 @@ function advanceDevelopmentSchedule(user: SessionUser, check: DevelopmentCheck, 
 
   const child = findChild(childId);
   if (!child) return;
-  const ageM = ageInMonths(child.birth_date, checkedOn);
-  const freq = db.developmentFrequencies.find((f) => ageM >= f.age_month_from && ageM <= f.age_month_to);
+  const next = recommendedFor(child.birth_date, checkedOn);
   // 推奨頻度がマスタに無い月齢では、予定日を提案しない
-  if (!freq) return;
-  const next = addDays(checkedOn, freq.interval_days);
+  if (!next) return;
   db.developmentSchedules.push({
     development_schedule_id: nextId(), child_id: childId,
     scheduled_on: next, is_manual_override: false, created_staff_id: user.staff_id!,
@@ -2823,8 +2823,12 @@ const devApi2 = {
       return {
         child,
         ageMonths: ageM,
-        /** システムが提案する予定日。マスタの推奨頻度から算出する */
-        suggested: lastCheck && freq ? addDays(lastCheck.checked_on, freq.interval_days) : today(),
+        /**
+         * システムが提案する予定日。予定の無い園児に一括で当てる日と同じ規則で作る（applyRecommendedSchedules・recommendedFor）。
+         * 基準日は最後に確定した実施日、無ければ今日。推奨頻度がマスタに無い月齢では、これまでどおり今日を出す
+         * （基本設計書「推奨スケジュールの作り方」(4-9)、GitHub Issue #164 の 3。サーバ側は handleDevelopmentSchedules）
+         */
+        suggested: recommendedFor(child.birth_date, lastCheck?.checked_on ?? today()) ?? today(),
         intervalDays: freq?.interval_days ?? null,
         scheduledOn: sch?.scheduled_on ?? null,
         isManualOverride: sch?.is_manual_override ?? false,

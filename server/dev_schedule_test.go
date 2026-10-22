@@ -283,3 +283,84 @@ func TestSeedSchedulesFollowRule(t *testing.T) {
 		}
 	}
 }
+
+// 確定したときの次の予定日も、実施日を基準日として同じ規則で作る（基本設計書「推奨スケジュールの作り方」(4-9)
+// 「次の予定日｜確定したとき、実施日を基準日として同じ規則で作る」）。あいだに節目があれば節目の日
+func TestConfirmedCheckNextScheduleFollowsRule(t *testing.T) {
+	a, h := newTestApp(t)
+	admin := loginAs(a, 1, "staff")
+	teacher := loginAs(a, 3, "staff")
+	milestoneBirth, milestone := birthForMilestoneIn(10)
+	checkedOn := addDays(today(), -5)
+
+	for _, tc := range []struct {
+		name, childID, birth, want string
+	}{
+		{"節目が遠ければ、実施日に推奨頻度の日数を足す", "C301", addDays(today(), -200), addDays(checkedOn, 90)},
+		{"あいだに1歳6か月があれば、節目の日にする", "C302", milestoneBirth, milestone},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			call(t, h, admin, "POST", "/api/children", childBody(tc.childID, tc.birth, 1))
+			// 予定日が来て過ぎた園児として、予定を実施日より前に置く
+			mustExec(t, a, `UPDATE t_development_schedule SET scheduled_on = ? WHERE child_id = ?`, addDays(today(), -10), tc.childID)
+			call(t, h, teacher, "POST", "/api/development/checks", devCheckBody(tc.childID, checkedOn, "2"))
+			if on, n := scheduleOf(t, a, tc.childID); n != 2 || on != tc.want {
+				t.Fatalf("予定 %d 件・最新 %s, want 2 件・%s", n, on, tc.want)
+			}
+			var after string
+			a.db.QueryRow(`SELECT IFNULL(after_value, '') FROM t_operation_log
+				WHERE target_table = 't_development_schedule' AND target_child_id = ?
+				ORDER BY operation_log_id DESC LIMIT 1`, tc.childID).Scan(&after)
+			if after != "次回予定日="+tc.want+"（実施日から算出）" {
+				t.Fatalf("操作ログ = %q", after)
+			}
+		})
+	}
+}
+
+// スケジュール設定画面の「システムの提案」は、予定の無い園児に一括で当てる日と同じ
+func TestSuggestedScheduleMatchesApply(t *testing.T) {
+	a, h := newTestApp(t)
+	admin := loginAs(a, 1, "staff")
+	milestoneBirth, milestone := birthForMilestoneIn(10)
+	lastChecked := addDays(today(), -200)
+
+	// C401：記録の無い 0歳児。C402：あいだに 1歳6か月がある。C403：200日前に確定した記録がある 0歳児
+	call(t, h, admin, "POST", "/api/children", childBody("C401", addDays(today(), -200), 1))
+	call(t, h, admin, "POST", "/api/children", childBody("C402", milestoneBirth, 1))
+	call(t, h, admin, "POST", "/api/children", childBody("C403", addDays(today(), -330), 1))
+	mustExec(t, a, `DELETE FROM t_development_schedule WHERE child_id IN ('C401','C402','C403')`)
+	mustExec(t, a, `INSERT INTO t_development_check (child_id, checked_on, status, staff_id, share_status, finalized_at)
+		VALUES ('C403', ?, '2', 'S003', '1', ?)`, lastChecked, lastChecked+"T10:00:00")
+
+	suggested := func() map[string]string {
+		var rows []struct {
+			Child struct {
+				ChildID string `json:"child_id"`
+			} `json:"child"`
+			Suggested string `json:"suggested"`
+		}
+		if err := json.Unmarshal(call(t, h, admin, "GET", "/api/development/schedules?class_id=1", "").Body.Bytes(), &rows); err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]string{}
+		for _, r := range rows {
+			out[r.Child.ChildID] = r.Suggested
+		}
+		return out
+	}
+	want := map[string]string{"C401": addDays(today(), 90), "C402": milestone, "C403": addDays(lastChecked, 90)}
+	got := suggested()
+	for id, w := range want {
+		if got[id] != w {
+			t.Errorf("%s の提案 = %s, want %s", id, got[id], w)
+		}
+	}
+
+	call(t, h, admin, "POST", "/api/development/schedules/apply", "")
+	for id, w := range want {
+		if on, _ := scheduleOf(t, a, id); on != w {
+			t.Errorf("%s に当てた日 = %s, 提案は %s", id, on, w)
+		}
+	}
+}

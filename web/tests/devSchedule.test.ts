@@ -202,3 +202,63 @@ describe('デモデータの、予定の無かった園児（C009〜C022）', ()
     }
   });
 });
+
+/*
+ * 確定したときの次の予定日も、実施日を基準日として同じ規則で作る（基本設計書「推奨スケジュールの作り方」(4-9)
+ * 「次の予定日｜確定したとき、実施日を基準日として同じ規則で作る」）。あいだに節目があれば節目の日。
+ * サーバ側は server/dev_schedule_test.go の TestConfirmedCheckNextScheduleFollowsRule
+ */
+describe('確定したときの次の予定日も、同じ規則で作る', () => {
+  const { birth: milestoneBirth, milestone } = birthForMilestoneIn(10);
+  const checkedOn = addDays(today(), -5);
+
+  for (const [label, childId, birth, want] of [
+    ['節目が遠ければ、実施日に推奨頻度の日数を足す', 'C901', addDays(today(), -200), addDays(checkedOn, 90)],
+    ['あいだに1歳6か月があれば、節目の日にする', 'C902', milestoneBirth, milestone],
+  ] as const) {
+    it(label, async () => {
+      await api.saveChild(admin, newChild(childId, birth), 'create');
+      // 予定日が来て過ぎた園児として、予定を実施日より前に置く
+      schedulesOf(childId).forEach((s) => { s.scheduled_on = addDays(today(), -10); });
+      await api.saveCheck(teacher, childId, checkedOn, [], '', '2');
+      const rows = schedulesOf(childId).sort((a, b) => b.scheduled_on.localeCompare(a.scheduled_on));
+      expect(rows).toHaveLength(2);
+      expect(rows[0].scheduled_on).toBe(want);
+      const log = db.operationLogs.filter((l) => l.target_table === 't_development_schedule' && l.target_child_id === childId).at(-1);
+      expect(log?.after_value).toBe(`次回予定日=${want}（実施日から算出）`);
+    });
+  }
+});
+
+/*
+ * スケジュール設定画面の「システムの提案」は、予定の無い園児に一括で当てる日と同じ。
+ * サーバ側は server/dev_schedule_test.go の TestSuggestedScheduleMatchesApply
+ */
+describe('スケジュール設定画面の「システムの提案」は、一括で当てる日と同じ', () => {
+  it('記録の無い園児・節目のある園児・確定した記録のある園児', async () => {
+    const { birth: milestoneBirth, milestone } = birthForMilestoneIn(10);
+    const lastChecked = addDays(today(), -200);
+    // C951：記録の無い 0歳児。C952：あいだに 1歳6か月がある。C953：200日前に確定した記録がある 0歳児
+    await api.saveChild(admin, newChild('C951', addDays(today(), -200)), 'create');
+    await api.saveChild(admin, newChild('C952', milestoneBirth), 'create');
+    await api.saveChild(admin, newChild('C953', addDays(today(), -330)), 'create');
+    for (let i = db.developmentSchedules.length - 1; i >= 0; i--) {
+      if (['C951', 'C952', 'C953'].includes(db.developmentSchedules[i].child_id)) db.developmentSchedules.splice(i, 1);
+    }
+    db.developmentChecks.push({
+      development_check_id: 990_000 + db.developmentChecks.length, child_id: 'C953', development_schedule_id: null,
+      checked_on: lastChecked, status: '2', staff_id: 'S003', share_status: '1', note: null, guardian_message: null,
+      finalized_at: `${lastChecked}T10:00:00`,
+    });
+
+    const want: Record<string, string> = { C951: addDays(today(), 90), C952: milestone, C953: addDays(lastChecked, 90) };
+    const rows = await api.schedules(admin, 1);
+    for (const [id, w] of Object.entries(want)) {
+      expect(rows.find((r) => r.child.child_id === id)?.suggested, id).toBe(w);
+    }
+    await api.applyRecommendedSchedules(admin);
+    for (const [id, w] of Object.entries(want)) {
+      expect(schedulesOf(id).map((s) => s.scheduled_on), id).toEqual([w]);
+    }
+  });
+});
