@@ -153,6 +153,14 @@
 .col-8  { grid-column: span 8; }
 .col-9  { grid-column: span 9; }
 .col-12 { grid-column: span 12; }
+/*
+ * ブラウザの文字の大きさの設定を上げて、画面の幅が文字 48 字ぶんに届かないときは、段を並べず縦に積む。
+ * 左メニューも文字に合わせて広がり、本文が狭くなって右の段がはみ出すため。
+ * メディアクエリの em はブラウザの設定の文字の大きさで決まる。768px 以上に限るので、既定（16px）では効かない
+ */
+@media (min-width: 768px) and (max-width: 47.9375em) {
+  .grid12 > [class*="col-"] { grid-column: 1 / -1; }
+}
 
 /* ============ 保護者レイアウト（画面詳細図 1-2） ============ */
 .guardian-shell {
@@ -303,9 +311,9 @@
   /* 下端の案内はヘッダへ移したので出さない（.guardian-footer の定義より後ろでも効くよう、列の中に限って書く） */
   .guardian-shell .guardian-footer { display: none; }
 
-  /* メニューと本文。全体は 1200px で頭打ちにし、横いっぱいに引き伸ばさない */
+  /* メニューと本文。全体は 1200px で頭打ちにし、横いっぱいに引き伸ばさない。メニューの幅は文字に合わせて rem で決める（既定で 240px） */
   .guardian-body {
-    display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: var(--sp-6);
+    display: grid; grid-template-columns: 15rem minmax(0, 1fr); gap: var(--sp-6);
     width: 100%; max-width: 1200px; margin: 0 auto; padding: var(--sp-6) var(--sp-5);
   }
   .guardian-sidebar {
