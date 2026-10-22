@@ -1919,16 +1919,8 @@ const chatApi2 = {
    */
   async retractedWithoutRecord(user: SessionUser) {
     if (user.role !== '1') return fail('誤送信対応の記録は管理者のみが参照できます');
-    const recorded = new Set(db.misdeliveryRecords.map((r) => r.chat_message_id));
-    return ok([...db.chatMessages]
+    return ok(retractedMessagesWithoutRecord()
       .sort((a, b) => b.sent_at.localeCompare(a.sent_at) || b.chat_message_id - a.chat_message_id)
-      // 配布物の掲載の知らせ（source_type = 4）は対象にしない。取り下げとして操作ログに残る
-      // （基本設計書「誤送信への対応」(4-6)。GitHub Issue #98）。日誌・発達身体の共有の知らせ（source_type = 2・3）も
-      // 対象にしない。日誌を園内の記録にしたときにシステムがまとめて取り消したもので、人の誤送信ではない（api_chat.go と同じ）
-      // 【仮置き】保護者が送ったメッセージも対象にしない。誤送信への対応は、園が誤って送ったときのもの（同 (4-6) の
-      // 利用タイミング）であり、保護者の打ちまちがいの取消は当たらない（GitHub Issue #171。api_chat.go と同じ）
-      .filter((m) => m.is_deleted && m.source_type === '1' && findAccount(m.sender_account_id)?.role !== '3'
-        && !recorded.has(m.chat_message_id))
       .map((m) => ({
         chat_message_id: m.chat_message_id,
         room_name: db.chatRooms.find((r) => r.chat_room_id === m.chat_room_id)?.room_name ?? '―',
@@ -1938,6 +1930,22 @@ const chatApi2 = {
       })));
   },
 };
+
+/**
+ * 誤送信への対応を記録する取り消しのうち、まだ対応の記録が無いもの。誤送信対応記録画面の「対応の記録がない取り消し」の
+ * 一覧（retractedWithoutRecord）と、管理者のダッシュボードの件数（staffSummary）が同じ範囲を数えるよう、1か所に置く
+ * （GitHub Issue #141 の 3。サーバ側は server/api_chat.go の retractedWithoutRecordClause）
+ */
+function retractedMessagesWithoutRecord() {
+  const recorded = new Set(db.misdeliveryRecords.map((r) => r.chat_message_id));
+  // 配布物の掲載の知らせ（source_type = 4）は対象にしない。取り下げとして操作ログに残る
+  // （基本設計書「誤送信への対応」(4-6)。GitHub Issue #98）。日誌・発達身体の共有の知らせ（source_type = 2・3）も
+  // 対象にしない。日誌を園内の記録にしたときにシステムがまとめて取り消したもので、人の誤送信ではない（api_chat.go と同じ）
+  // 【仮置き】保護者が送ったメッセージも対象にしない。誤送信への対応は、園が誤って送ったときのもの（同 (4-6) の
+  // 利用タイミング）であり、保護者の打ちまちがいの取消は当たらない（GitHub Issue #171。api_chat.go と同じ）
+  return db.chatMessages.filter((m) => m.is_deleted && m.source_type === '1'
+    && findAccount(m.sender_account_id)?.role !== '3' && !recorded.has(m.chat_message_id));
+}
 
 /* ============ 午睡チェック（基本設計書「午睡チェック」(4-7)） ============ */
 
@@ -3799,6 +3807,11 @@ const dashboardApi = {
     // 承認待ちの区画は管理者にのみ表示する
     const pending = user.role === '1' ? db.diaries.filter((d) => !d.is_deleted && d.status === '2').length : 0;
 
+    // 誤送信への対応を記録していない取り消し。記録するのは管理者のため、管理者にのみ数える
+    // （図/画面詳細図.md「誤送信対応記録画面（管理者）」(4-4)「この記録は管理者が行う」。GitHub Issue #141 の 3）。
+    // 数える範囲は、同じ画面の「対応の記録がない取り消し」の一覧と同じ（サーバ側は server/api_dashboard.go）
+    const misdeliveryUnrecorded = user.role === '1' ? retractedMessagesWithoutRecord().length : 0;
+
     // 異常時の記録のうち、ヒヤリハットを起票していないもの、起票したヒヤリハットが下書きのままのもの
     // （申請していない下書きは「起票済み」として埋もれるため。GitHub Issue #142 の 5。サーバ側は server/api_dashboard.go）
     const abnormalWithoutDiary = db.napAbnormals
@@ -3818,7 +3831,8 @@ const dashboardApi = {
     const facilityUnsent = [...visible].filter((id) => findChild(id)?.enrollment_status === '1'
       && !db.contactFacilities.some((f) => f.child_id === id && f.contact_date === today() && !f.is_deleted)
       && !db.napExclusions.some((x) => x.child_id === id && x.reason === '1' && !x.is_deleted && todaySessions.has(x.nap_session_id))).length;
-    return ok({ returned, unreadChat, unhandledChat, unhandledChatRoom, devOverdue, pending, abnormalWithoutDiary, activeNap,
+    return ok({ returned, unreadChat, unhandledChat, unhandledChatRoom, devOverdue, pending, abnormalWithoutDiary,
+      misdeliveryUnrecorded, activeNap,
       homeUnconfirmed: states.filter((x) => x === 'unconfirmed').length, homeRevised: states.filter((x) => x === 'revised').length, napSleeping,
       facilityUnsent });
   },
