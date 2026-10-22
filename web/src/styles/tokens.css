@@ -146,10 +146,12 @@
 
   /*
    * 文字の大きさ。DADS は本文と操作部品を 16px 以上とし、14px は補足や表など場所の限られる所にだけ使う。
-   * 14px より小さい文字は使わない
+   * 14px より小さい文字は使わない。
+   * 文字の大きさは rem（ブラウザの既定の 16px が 1rem）で書く。ブラウザの文字の大きさの設定を変えている人にも合わせるため。
+   * html の font-size は決めない（決めると、その設定が効かなくなる）
    */
-  --fs-small: 14px;
-  --fs-body:  16px;
+  --fs-small: 0.875rem;
+  --fs-body:  1rem;
 
   /* グリッド：職員（タブレット／PC）＝12カラム（基本設計書 3-5） */
   --grid-cols: 12;
@@ -173,9 +175,9 @@ body {
 
 /* 見出し：DADS の Std-24B-150／Std-18B-160／Std-17B-170。太字は見出し・ラベル・ボタンに限る */
 h1, h2, h3, h4 { margin: 0; font-weight: 700; }
-h1 { font-size: 24px; line-height: 1.5; }
-h2 { font-size: 18px; line-height: 1.6; }
-h3 { font-size: 17px; line-height: 1.7; }
+h1 { font-size: 1.5rem; line-height: 1.5; }
+h2 { font-size: 1.125rem; line-height: 1.6; }
+h3 { font-size: 1.0625rem; line-height: 1.7; }
 p  { margin: 0 0 var(--sp-3); }
 
 /*

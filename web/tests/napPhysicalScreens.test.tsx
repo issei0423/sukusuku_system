@@ -232,4 +232,26 @@ describe('身体記録画面の上書き・同じ月の記録（GitHub Issue #16
     fireEvent.click(screen.getByRole('button', { name: '別の記録として登録する' }));
     await waitFor(() => expect(rowsOf('C010')).toHaveLength(2));
   });
+
+  it('成長グラフの「身長」「体重」の切り替えは、選んでいる側を色のほかに「✓」と aria-pressed で示す（WCAG 1.4.1、GitHub Issue #211）', async () => {
+    open('/staff/growth/physical', teacher);
+    await settled();
+    await waitFor(() => expect(screen.getByRole('button', { name: /小林 結衣/ })).toBeTruthy(), { timeout: 3000 });
+    pick('小林 結衣');
+    const height = await screen.findByRole('button', { name: '身長' }, { timeout: 3000 });
+    const weight = screen.getByRole('button', { name: '体重' });
+    const mark = (button: HTMLElement) => button.querySelector('[aria-hidden="true"]')?.textContent ?? null;
+    expect(height.getAttribute('aria-pressed')).toBe('true');
+    expect(mark(height)).toBe('✓');
+    expect(weight.getAttribute('aria-pressed')).toBe('false');
+    expect(mark(weight)).toBeNull();
+    // 太字は保護者の成長の記録画面と同じ規則（.measure-toggle。growthScreens.test.tsx で規則の文を見る）
+    expect(height.classList.contains('measure-toggle') && weight.classList.contains('measure-toggle')).toBe(true);
+
+    fireEvent.click(weight);
+    expect(weight.getAttribute('aria-pressed')).toBe('true');
+    expect(mark(weight)).toBe('✓');
+    expect(height.getAttribute('aria-pressed')).toBe('false');
+    expect(mark(height)).toBeNull();
+  });
 });
