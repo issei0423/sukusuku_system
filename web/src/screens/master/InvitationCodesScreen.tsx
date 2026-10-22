@@ -314,10 +314,10 @@ export default function InvitationCodesScreen() {
           <div className="stack">
             {printable.map((r) => (
               <div key={r.invitation_code_id} className="card" style={{ margin: 0 }}>
-                <div style={{ fontSize: 13, color: 'var(--c-text-sub)' }}>お子さまのお名前</div>
-                <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>{childLabel(r.child_id, r.child_name, r.class_id)}</div>
-                <div style={{ fontSize: 13, color: 'var(--c-text-sub)' }}>招待コード</div>
-                <div style={{ fontSize: 22, fontFamily: 'monospace', letterSpacing: '.08em' }}>{r.code}</div>
+                <div style={{ fontSize: '0.8125rem', color: 'var(--c-text-sub)' }}>お子さまのお名前</div>
+                <div style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: 8 }}>{childLabel(r.child_id, r.child_name, r.class_id)}</div>
+                <div style={{ fontSize: '0.8125rem', color: 'var(--c-text-sub)' }}>招待コード</div>
+                <div style={{ fontSize: '1.375rem', fontFamily: 'monospace', letterSpacing: '.08em' }}>{r.code}</div>
                 <div className="muted" style={{ marginTop: 8 }}>
                   有効期限：{formatYMD(r.expires_on)}　／　このコードは1名分の登録にのみ使えます
                 </div>

@@ -390,10 +390,15 @@ func (a *app) napReportData(from, to string, classID int64, hasClass bool) ([]na
 		if x.diaryID.Valid {
 			mark = "起票済み"
 			// 起票したヒヤリハットの側の状況・とった対応を出す。日誌が見つからないとき（削除したなど）は記録そのものを出す
-			var diaryBody string
-			if a.db.QueryRow(`SELECT body FROM t_diary WHERE diary_id = ? AND is_deleted = 0`, x.diaryID.Int64).
-				Scan(&diaryBody) == nil {
+			var diaryBody, diaryStatus string
+			if a.db.QueryRow(`SELECT body, status FROM t_diary WHERE diary_id = ? AND is_deleted = 0`, x.diaryID.Int64).
+				Scan(&diaryBody, &diaryStatus) == nil {
 				situation, resp = incidentSituationResponse(diaryBody)
+				// 【仮置き】下書きのまま（申請していない）なら、印を「起票済み（下書き）」にする。1行で出すのは変えない
+				// （GitHub Issue #142 の 5。web/仮置き値.md「ヒヤリハットが下書きのままの異常時の記録」。api_nap.go の napAbnormalDiaryJoin）
+				if diaryStatus == diaryStatusDraft {
+					mark = "起票済み（下書き）"
+				}
 			}
 		}
 		abnormals = append(abnormals, napReportAbnormal{id: x.id, date: x.date, classID: x.classID,

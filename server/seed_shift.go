@@ -213,3 +213,25 @@ func hasDateSuffix(name string) bool {
 	}
 	return false
 }
+
+/*
+capFutureDemoDiaryTimes は、起動した日の日誌（t_diary）の時刻のうち、起動した時刻より後のものを起動した時刻に丸める
+（GitHub Issue #139）。デモデータの日誌は「今日の夕方（16:40〜17:20）に書いて申請した」として作ってあるため、
+朝に起動すると、承認待ちの一覧にまだ来ていない時刻の申請が並ぶ。
+
+【仮置き】設計に無い決めごとである（web/仮置き値.md）。連絡帳の記録は未来のものを外すが
+（db_contact.go の trimFutureDemoContacts、決めたこと D-8）、日誌は外さずに丸める。
+外すと、承認待ちの一覧をデモで見せられなくなるため。差し戻しの時刻は updated_at に入る。
+作成・更新の時刻も同じく丸め、作成 ≦ 申請 ≦ 承認・差し戻しの順を保つ（どの列も同じ時刻を上限にするので、順は崩れない）。
+新規作成のときに、日付をずらしたあとで呼ぶ。外すときは、この関数と db.go の呼び出しを消す。
+モックは web/src/api/mockDb.ts の capFutureDemoDiaryTimes が同じ規則で丸める。
+*/
+func capFutureDemoDiaryTimes(db *sql.DB, day, at string) error {
+	for _, col := range []string{"created_at", "applied_at", "approved_at", "updated_at"} {
+		q := fmt.Sprintf(`UPDATE t_diary SET %s = ? WHERE substr(%s, 1, 10) = ? AND %s > ?`, col, col, col)
+		if _, err := db.Exec(q, at, day, at); err != nil {
+			return fmt.Errorf("デモデータの日誌の時刻を丸められません: %w", err)
+		}
+	}
+	return nil
+}
