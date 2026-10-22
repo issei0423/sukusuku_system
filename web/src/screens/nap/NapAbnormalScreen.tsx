@@ -4,6 +4,8 @@
  *      基本設計書.md「異常時の記録」(4-7)、5-6 t_nap_abnormal
  *
  * diary_id が空なら「記録したがヒヤリハットを起票していない」状態として一覧で示す。
+ * 起票したヒヤリハットが下書きのまま（申請していない）なら、そうと分かるように示す（diary_draft。GitHub Issue #142 の 5）。
+ * 申請すると表示が変わるよう、日誌の知らせ（diary）でも読み直す。
  *
  * 記録は、選んだ園児のクラスの、実施中の午睡チェックにつなぐ。記録の操作で午睡チェックを開始しない
  * （基本設計書「午睡チェックの実施」(4-7)。GitHub Issue #158）。
@@ -30,7 +32,7 @@ export default function NapAbnormalScreen() {
   const [tick, setTick] = useState(0);
 
   // ほかの職員の記録・起票があったら、開いたままでも読み直す（live.ts）
-  const list = useAsync(() => api.abnormals(user!), [user?.account_id, tick], { live: onLive('nap') });
+  const list = useAsync(() => api.abnormals(user!), [user?.account_id, tick], { live: onLive('nap', 'diary') });
   const children = visibleChildren(user!);
 
   /*
@@ -203,8 +205,9 @@ export default function NapAbnormalScreen() {
                   </td>
                   <td className="nowrap">{a.staff_name}</td>
                   <td className="nowrap">
+                    {/* 【仮置き】ヒヤリハットが下書きのまま（申請していない）なら「起票済み（下書き・開く）」（web/仮置き値.md。GitHub Issue #142 の 5） */}
                     {a.diary_id
-                      ? <Link className="btn btn-sm" to={`/staff/diary/${a.diary_id}`}>起票済み（開く）</Link>
+                      ? <Link className="btn btn-sm" to={`/staff/diary/${a.diary_id}`}>{a.diary_draft ? '起票済み（下書き・開く）' : '起票済み（開く）'}</Link>
                       : <button className="btn-sm btn-primary" onClick={() => raise(a.nap_abnormal_id)}>起票する</button>}
                   </td>
                 </tr>
