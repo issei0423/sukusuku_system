@@ -1117,6 +1117,15 @@ func (a *app) handleMisdeliveryRecords(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// retractedWithoutRecordClause は、誤送信への対応を記録する取り消しのうち、まだ対応の記録が無いものの条件
+// （t_chat_message を m とする）。誤送信対応記録画面の「対応の記録がない取り消し」の一覧（handleRetractedWithoutRecord）と、
+// 管理者のダッシュボードの件数（api_dashboard.go の handleStaffSummary）が同じ範囲を数えるよう、1か所に置く
+// （GitHub Issue #141 の 3）。それぞれの条件のわけは、下の handleRetractedWithoutRecord に書いた
+const retractedWithoutRecordClause = `m.is_deleted = 1
+		  AND m.source_type NOT IN ('2','3','4')
+		  AND m.sender_account_id NOT IN (SELECT account_id FROM m_account WHERE role = '3')
+		  AND m.chat_message_id NOT IN (SELECT chat_message_id FROM t_misdelivery_record)`
+
 // handleRetractedWithoutRecord は取消済みで、まだ対応を記録していないメッセージを返す。
 // 「取り消した」だけで終わらせず、既読の有無と対応を残させるため。
 // 配布物の掲載の知らせ（source_type = 4）は対象にしない。配布物を取り下げると知らせも
@@ -1138,10 +1147,7 @@ func (a *app) handleRetractedWithoutRecord(w http.ResponseWriter, r *http.Reques
 		m.deleted_at, m.sender_account_id
 		FROM t_chat_message m
 		LEFT JOIN m_chat_room r ON r.chat_room_id = m.chat_room_id
-		WHERE m.is_deleted = 1
-		  AND m.source_type NOT IN ('2','3','4')
-		  AND m.sender_account_id NOT IN (SELECT account_id FROM m_account WHERE role = '3')
-		  AND m.chat_message_id NOT IN (SELECT chat_message_id FROM t_misdelivery_record)
+		WHERE ` + retractedWithoutRecordClause + `
 		ORDER BY m.sent_at DESC, m.chat_message_id DESC`)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "取消メッセージを取得できませんでした")
