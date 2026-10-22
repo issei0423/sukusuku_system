@@ -7,6 +7,9 @@
  * 画面はモック（api/mock.ts）が相手。時計は今日の 18:00（tests/setup-clock.ts）。
  */
 import { describe, it, expect, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import App from '../src/App';
@@ -39,6 +42,8 @@ function open(path: string, user: SessionUser) {
 
 afterEach(cleanup);
 
+const screensCss = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../src/styles/screens.css'), 'utf8');
+
 describe('成長の記録画面（保護者）', () => {
   it('園児名・身長と体重（グラフと測った値）・できたこと・免責を出す。所見・「一部」「未確認」・判定の言葉は出さない', async () => {
     open('/guardian/growth/C001', guardian);
@@ -69,6 +74,30 @@ describe('成長の記録画面（保護者）', () => {
     const text = document.querySelector('.growth-page')!.textContent ?? '';
     expect(text).not.toMatch(/やせ|肥満|標準|順調|遅れ|異常|良好|未確認|一部|パパ|自分でやりたい|高梨/);
     expect(document.querySelector('.growth-page img')).toBeNull();
+  });
+
+  it('「身長」「体重」の切り替えは、選んでいる側を色のほかに「✓」・太字・aria-pressed で示す（WCAG 1.4.1、GitHub Issue #211）', async () => {
+    open('/guardian/growth/C001', guardian);
+    await screen.findByRole('heading', { name: '野原 太郎の成長の記録' }, { timeout: 3000 });
+    const height = screen.getByRole('button', { name: '身長' });
+    const weight = screen.getByRole('button', { name: '体重' });
+    const mark = (button: HTMLElement) => button.querySelector('[aria-hidden="true"]')?.textContent ?? null;
+    // 選んでいる側だけに「✓」。「✓」は読み上げの名前に入れない（名前は「身長」のまま）
+    expect(height.getAttribute('aria-pressed')).toBe('true');
+    expect(mark(height)).toBe('✓');
+    expect(weight.getAttribute('aria-pressed')).toBe('false');
+    expect(mark(weight)).toBeNull();
+    expect(height.classList.contains('measure-toggle') && weight.classList.contains('measure-toggle')).toBe(true);
+
+    fireEvent.click(weight);
+    expect(weight.getAttribute('aria-pressed')).toBe('true');
+    expect(mark(weight)).toBe('✓');
+    expect(height.getAttribute('aria-pressed')).toBe('false');
+    expect(mark(height)).toBeNull();
+
+    // 太字は CSS で当てる（jsdom は画面の CSS を読まないため、規則の文で見る）。選んでいない側は細字
+    expect(screensCss).toMatch(/\.measure-toggle\s*\{\s*font-weight:\s*400;\s*\}/);
+    expect(screensCss).toMatch(/\.measure-toggle\[aria-pressed="true"\]\s*\{\s*font-weight:\s*700;\s*\}/);
   });
 
   it('ほかの家庭の園児は開けない', async () => {
