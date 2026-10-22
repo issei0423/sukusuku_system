@@ -14,8 +14,9 @@
  * | できた | 欄が空なら下書きをそのまま入れる。文があれば置き換えずに候補のカードで出し、「この文を使う」で入れる |
  * | 失敗 | 応答の文（「いまは下書きを作れません。そのまま書いて送れます。」など）をここに出す。入力欄の文は残す |
  */
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { api } from '../api/client';
+import { focusAfter, focusedNow } from '../focusAfter';
 import type { AiField, AiPurpose } from '../api/shapes';
 import { useSession } from '../session';
 import { AI_TEXT } from '../messages';
@@ -27,7 +28,7 @@ const CONTINUE_MIN_ROOM = 10;
 
 type Result = { purpose: AiPurpose; drafts: string[]; replaced: boolean; inserted: boolean };
 
-export default function AiDraftPanel({ childId, date, field, max, text, disabled, allowDraft, onUse }: {
+export default function AiDraftPanel({ childId, date, field, max, text, disabled, allowDraft, onUse, focusAfterUse }: {
   childId: string;
   date: string;
   field: AiField;
@@ -41,6 +42,8 @@ export default function AiDraftPanel({ childId, date, field, max, text, disabled
   allowDraft: boolean;
   /** 入力欄に入れる。mode は replace（入れ替える）か append（続きを足す） */
   onUse: (value: string, mode: 'replace' | 'append') => void;
+  /** 「この文を使う」のあとにフォーカスを移す先（文を入れた入力欄）。押したカードが消えるため（GitHub Issue #213） */
+  focusAfterUse?: () => HTMLElement | null;
 }) {
   const { user } = useSession();
   const memoId = useId();
@@ -50,6 +53,7 @@ export default function AiDraftPanel({ childId, date, field, max, text, disabled
   const [making, setMaking] = useState<AiPurpose | null>(null);
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const draftButton = useRef<HTMLButtonElement>(null);
 
   // 使えるかを読む。読めないときは出さない（AI が無くても届けられる）
   const readStatus = () => api.aiStatus(user!, { child_id: childId })
@@ -66,8 +70,17 @@ export default function AiDraftPanel({ childId, date, field, max, text, disabled
   const hasText = text.trim() !== '';
   const roomForMore = max - [...text.trim()].length >= CONTINUE_MIN_ROOM;
 
+  /*
+   * 作っている間はパネルのボタンがすべて押せなくなり、押したボタンからフォーカスが外れて body に落ちる。
+   * 応答のあとに決めた場所へ移す（src/focusAfter.ts、WCAG 2.4.3、GitHub Issue #213）：
+   *   - 言い換え・続き：押したボタンが残るので、押せるようになったらそこへ戻す（成功・失敗とも）
+   *   - メモの「下書きを作る」：作れたらメモの欄が閉じてボタンが消えるので、欄を開いた「AI で下書き」へ移す
+   *     （窓の中で押して窓が閉じたら開いた元へ戻すのと同じ）。作れなかったら欄が残るので、押した「下書きを作る」へ戻す
+   */
   const make = async (purpose: AiPurpose) => {
     if (making) return;
+    const pressed = focusedNow();
+    let closed = false;
     setMaking(purpose); setError(null); setResult(null);
     try {
       const res = await api.aiDrafts(user!, {
@@ -78,26 +91,30 @@ export default function AiDraftPanel({ childId, date, field, max, text, disabled
       const insertNow = purpose === 'facility_note' && !hasText && res.drafts.length === 1;
       if (insertNow) onUse(res.drafts[0], 'replace');
       setResult({ purpose, drafts: res.drafts, replaced: res.replaced_other_names, inserted: insertNow });
-      if (purpose === 'facility_note') setMemoOpen(false);
+      if (purpose === 'facility_note') { setMemoOpen(false); closed = true; }
     } catch (e) {
       setError((e as Error).message);
       // キーが無効と分かったときなどは、読み直すとボタンが消える
       void readStatus();
     } finally {
       setMaking(null);
+      focusAfter(pressed, closed ? () => draftButton.current : undefined);
     }
   };
 
+  // 「この文を使う」は候補のカードごと消えるので、文を入れた入力欄へ移す（GitHub Issue #213）
   const use = (d: string) => {
+    const pressed = focusedNow();
     onUse(d, result?.purpose === 'continue' ? 'append' : 'replace');
     setResult((r) => (r ? { ...r, drafts: [], inserted: true } : r));
+    if (focusAfterUse) focusAfter(pressed, focusAfterUse);
   };
 
   return (
     <div className="ai-draft">
       <div className="ai-draft-buttons" role="group" aria-label="AI の下書き">
         {allowDraft && (
-          <button type="button" className="contact-pick" aria-expanded={memoOpen} disabled={disabled || making !== null}
+          <button ref={draftButton} type="button" className="contact-pick" aria-expanded={memoOpen} disabled={disabled || making !== null}
             onClick={() => { setMemoOpen((o) => !o); setError(null); }}>{AI_TEXT.draftButton}</button>
         )}
         <button type="button" className="contact-pick" disabled={disabled || making !== null || !hasText}

@@ -4,6 +4,7 @@
  */
 import { Children, cloneElement, isValidElement, useEffect, useId, useRef } from 'react';
 import type { ReactElement, ReactNode } from 'react';
+import { focusAfter } from '../focusAfter';
 
 export function Field({ label, required, children, style }: {
   label: string; required?: boolean; children: ReactNode; style?: React.CSSProperties;
@@ -78,13 +79,17 @@ export function Card({ title, children, sub, actions }: {
 }
 
 /** ダイアログで足りるものは画面として起こさない（基本設計書「画面の洗い出しの考え方」(3-1) 基準3） */
-export function Modal({ title, children, onClose, footer }: {
+export function Modal({ title, children, onClose, footer, returnTo }: {
   title: string; children: ReactNode; onClose: () => void; footer?: ReactNode;
+  /** 閉じたときに開いた元が消えていたら、フォーカスを移す先。渡さなければ本文（main）（GitHub Issue #213） */
+  returnTo?: () => HTMLElement | null | undefined;
 }) {
   const id = useId();
   const dialog = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
   useEffect(() => { close.current = onClose; }, [onClose]);
+  const back = useRef(returnTo);
+  useEffect(() => { back.current = returnTo; }, [returnTo]);
   useEffect(() => {
     const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const root = dialog.current;
@@ -113,7 +118,25 @@ export function Modal({ title, children, onClose, footer }: {
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     };
     document.addEventListener('keydown', onKey);
-    return () => { document.removeEventListener('keydown', onKey); before?.focus(); };
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      /*
+       * 閉じたら開いた元へ戻す。開いた元が押せない・消えていると、focus() が効かずに body へ落ちていた
+       * （WCAG 2.4.3 フォーカス順序、GitHub Issue #213。共通の決まりは src/focusAfter.ts）。
+       *   - 押せない（送っている間など）：押せるようになるのを待って戻す。待つ間に消えたら、下の移し先へ
+       *   - 消えている：呼んだ側が渡す戻り先（returnTo）へ。渡されない・戻せないときは本文（main）へ
+       * 押せる開いた元へはこれまでどおりすぐ戻す。開いたときにフォーカスが無かった（body）ときは動かさない。
+       * 押せない・消えているときに、呼んだ側がすでにほかへフォーカスを移していたら、そちらを残す
+       * （focusAfter は body に落ちているときだけ動かす。結果の表示の「取り消す」の確認の窓など）
+       */
+      if (!before || before === document.body) return;
+      if (before.isConnected && !before.matches(':disabled')) { before.focus(); return; }
+      const fallback = () => {
+        const to = back.current?.();
+        return to?.isConnected && !to.matches(':disabled') ? to : document.querySelector<HTMLElement>('main');
+      };
+      focusAfter(before, () => (before.isConnected ? before : fallback()));
+    };
   }, []);
   return (
     <div className="modal-backdrop" onClick={onClose}>
