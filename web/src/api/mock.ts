@@ -2172,10 +2172,26 @@ export const napApi = {
         // 列を足す前のデモデータには保護者への連絡が無い。未記入として返す（サーバは空の列を null で返す）
         guardian_notice: a.guardian_notice ?? null, guardian_noticed_at: a.guardian_noticed_at ?? null,
         guardian_notice_method: a.guardian_notice_method ?? null, guardian_notice_person: a.guardian_notice_person ?? null,
+        diary_draft: incidentDiaryDraft(a),
         child_name: childName(a.child_id), staff_name: staffName(a.staff_id),
       })));
   },
 };
+
+/**
+ * 異常時の記録から起票したヒヤリハットが、下書きのまま（申請していない）か。起票していなければ false。
+ *
+ * 起票は下書きを作ること（画面詳細図「異常時記録画面」(5-2) 項目9）だが、下書きのまま止まると「起票済み」として
+ * 埋もれる（GitHub Issue #142 の 5）。下書きのものは「起票済み（下書き）」と出し、ダッシュボードの
+ * 「ヒヤリハット未起票・下書きのままの異常時の記録」に数える。申請中・承認済み・差し戻し（申請まで進んだもの）は
+ * 「起票済み」。削除した日誌は、これまでどおり「起票済み」とする。
+ * 【仮置き】下書きの扱いは設計に無い（web/仮置き値.md「ヒヤリハットが下書きのままの異常時の記録」）。
+ * サーバ側は server/api_nap.go の napAbnormalDiaryJoin
+ */
+function incidentDiaryDraft(a: NapAbnormal): boolean {
+  if (a.diary_id === null) return false;
+  return db.diaries.find((d) => d.diary_id === a.diary_id && !d.is_deleted)?.status === '1';
+}
 
 /**
  * ヒヤリハットの本文から「【状況】」と「【とった対応】」の見出しの下の文を取り出す。
@@ -2426,8 +2442,11 @@ const napApi2 = {
         const diary = a.diary_id === null ? undefined : db.diaries.find((d) => d.diary_id === a.diary_id && !d.is_deleted);
         const v = diary ? incidentSituationResponse(diary.body) : { situation: a.situation, response: a.response };
         const [, , , key] = head(a.nap_session_id, a.child_id);
+        // 【仮置き】ヒヤリハットが下書きのまま（申請していない）なら、印を「起票済み（下書き）」にする。1行で出すのは変えない
+        // （GitHub Issue #142 の 5。web/仮置き値.md「ヒヤリハットが下書きのままの異常時の記録」。incidentDiaryDraft）
+        const mark = a.diary_id === null ? '未起票' : incidentDiaryDraft(a) ? '起票済み（下書き）' : '起票済み';
         return { id: a.nap_abnormal_id, ...key, foundAt: a.found_at, cells: [
-          a.found_at, childName(a.child_id), v.situation, v.response, staffName(a.staff_id), a.diary_id === null ? '未起票' : '起票済み',
+          a.found_at, childName(a.child_id), v.situation, v.response, staffName(a.staff_id), mark,
         ] };
       });
 
@@ -3780,8 +3799,10 @@ const dashboardApi = {
     // 承認待ちの区画は管理者にのみ表示する
     const pending = user.role === '1' ? db.diaries.filter((d) => !d.is_deleted && d.status === '2').length : 0;
 
-    // 異常時の記録のうち、ヒヤリハットを起票していないもの
-    const abnormalWithoutDiary = db.napAbnormals.filter((a) => !a.diary_id && visible.has(a.child_id)).length;
+    // 異常時の記録のうち、ヒヤリハットを起票していないもの、起票したヒヤリハットが下書きのままのもの
+    // （申請していない下書きは「起票済み」として埋もれるため。GitHub Issue #142 の 5。サーバ側は server/api_dashboard.go）
+    const abnormalWithoutDiary = db.napAbnormals
+      .filter((a) => (!a.diary_id || incidentDiaryDraft(a)) && visible.has(a.child_id)).length;
 
     // 実施中の午睡チェック
     autoCloseNapSessions();

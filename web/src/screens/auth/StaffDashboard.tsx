@@ -50,7 +50,9 @@ export default function StaffDashboard() {
     // 数える範囲は、参照できる園児の全体。管理者は全クラス、一般は担当クラス（GitHub Issue #125）
     { label: `発達チェックの未実施（${user.role === '1' ? '全クラス' : '担当クラス'}）`,
       count: data.devOverdue, unit: '名', to: '/staff/growth' },
-    { label: 'ヒヤリハット未起票の異常時の記録', count: data.abnormalWithoutDiary, unit: '件', to: '/staff/nap/abnormal' },
+    // 【仮置き】起票したヒヤリハットが下書きのまま（申請していない）ものも数え、名前もそれに合わせる
+    // （設計の名前は画面詳細図「職員ダッシュボード」(2-6) 項目9 の「ヒヤリハット未起票の異常時の記録」。web/仮置き値.md。GitHub Issue #142 の 5）
+    { label: 'ヒヤリハット未起票・下書きのままの異常時の記録', count: data.abnormalWithoutDiary, unit: '件', to: '/staff/nap/abnormal' },
   ];
 
   return (

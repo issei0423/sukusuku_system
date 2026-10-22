@@ -458,6 +458,22 @@ func (a *app) handleNapInterval(w http.ResponseWriter, r *http.Request) {
 
 // ---- 異常時の記録（基本設計書「異常時の記録」(4-7)、5-6） ----
 
+/*
+napAbnormalDiaryJoin は、異常時の記録（a）に、そこから起票したヒヤリハットの日誌（d）をつなぐ。
+
+起票は下書きを作ること（画面詳細図「異常時記録画面」(5-2) 項目9）だが、下書きのまま止まると「起票済み」として
+埋もれる（GitHub Issue #142 の 5）。日誌が下書き（diaryStatusDraft）のものは「起票済み（下書き）」と出し、
+ダッシュボードの「ヒヤリハット未起票・下書きのままの異常時の記録」に数える。
+申請中・承認済み・差し戻し（申請まで進んだもの。差し戻しはダッシュボードの「差し戻された日誌」に出る）は「起票済み」。
+削除した日誌（d が無い）は、これまでどおり「起票済み」とする。
+【仮置き】下書きの扱いは設計に無い（web/仮置き値.md「ヒヤリハットが下書きのままの異常時の記録」）。
+モックは web/src/api/mock.ts の incidentDiaryDraft
+*/
+const napAbnormalDiaryJoin = `LEFT JOIN t_diary d ON d.diary_id = a.diary_id AND d.is_deleted = 0`
+
+// diaryStatusDraft は日誌の状態「下書き」（schema.sql の t_diary.status）
+const diaryStatusDraft = "1"
+
 type napAbnormalView struct {
 	NapAbnormalID int64  `json:"nap_abnormal_id"`
 	NapSessionID  int64  `json:"nap_session_id"`
@@ -468,6 +484,8 @@ type napAbnormalView struct {
 	Response      string `json:"response"`
 	StaffID       string `json:"staff_id"`
 	DiaryID       *int64 `json:"diary_id"`
+	// 起票したヒヤリハットが下書きのまま（申請していない）か。起票していなければ false（napAbnormalDiaryJoin）
+	DiaryDraft bool `json:"diary_draft"`
 	// 保護者への連絡（画面詳細図「異常時記録画面」(5-2) 項目13）。空は未記入
 	GuardianNotice       *string `json:"guardian_notice"`
 	GuardianNoticedAt    *string `json:"guardian_noticed_at"`
@@ -484,10 +502,11 @@ func (a *app) handleNapAbnormals(w http.ResponseWriter, r *http.Request) {
 	}
 	// 【仮置き】並びは発見時刻の新しい順、同じ時刻はあとで記録したものを先にする（web/仮置き値.md「一覧の並び順」）。
 	// 同じ時刻の並びを決めておかないと、モック（web/src/api/mock.ts の abnormals）と食い違う（GitHub Issue #177 の 7）
-	rows, err := a.db.Query(`SELECT nap_abnormal_id, nap_session_id, child_id, found_at, recorded_at,
-		situation, response, staff_id, diary_id,
-		guardian_notice, guardian_noticed_at, guardian_notice_method, guardian_notice_person
-		FROM t_nap_abnormal ORDER BY found_at DESC, nap_abnormal_id DESC`)
+	rows, err := a.db.Query(`SELECT a.nap_abnormal_id, a.nap_session_id, a.child_id, a.found_at, a.recorded_at,
+		a.situation, a.response, a.staff_id, a.diary_id,
+		a.guardian_notice, a.guardian_noticed_at, a.guardian_notice_method, a.guardian_notice_person, d.status
+		FROM t_nap_abnormal a ` + napAbnormalDiaryJoin + `
+		ORDER BY a.found_at DESC, a.nap_abnormal_id DESC`)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "異常時の記録を取得できませんでした")
 		return
@@ -498,11 +517,13 @@ func (a *app) handleNapAbnormals(w http.ResponseWriter, r *http.Request) {
 			x                              napAbnormalView
 			diaryID                        sql.NullInt64
 			notice, noticedAt, method, who sql.NullString
+			diaryStatus                    sql.NullString
 		)
 		if rows.Scan(&x.NapAbnormalID, &x.NapSessionID, &x.ChildID, &x.FoundAt, &x.RecordedAt,
 			&x.Situation, &x.Response, &x.StaffID, &diaryID,
-			&notice, &noticedAt, &method, &who) == nil {
+			&notice, &noticedAt, &method, &who, &diaryStatus) == nil {
 			x.DiaryID = nullInt(diaryID)
+			x.DiaryDraft = diaryID.Valid && diaryStatus.String == diaryStatusDraft
 			x.GuardianNotice, x.GuardianNoticedAt = nullStr(notice), nullStr(noticedAt)
 			x.GuardianNoticeMethod, x.GuardianNoticePerson = nullStr(method), nullStr(who)
 			all = append(all, x)
@@ -830,7 +851,8 @@ func (a *app) handleRaiseIncidentDiary(w http.ResponseWriter, r *http.Request) {
 
 	a.log(u.AccountID, fnDiary, opCreate, "t_diary", i64(newDiaryID), s(childID), nil,
 		s("異常時の記録からヒヤリハットを起票"))
-	// 「ヒヤリハット未起票の異常時の記録」が減り、日誌（下書き）が増える（events.go）
+	// 異常時の記録の一覧が「起票済み（下書き）」に変わり、日誌（下書き）が増える（events.go）。
+	// ダッシュボードの「ヒヤリハット未起票・下書きのままの異常時の記録」は、申請するまで減らない（napAbnormalDiaryJoin）
 	a.notifyNapChild(classID.Int64, childID)
 	a.notifyDiary(newDiaryID)
 	a.writeDiaryByID(w, newDiaryID)
