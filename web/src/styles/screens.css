@@ -41,7 +41,7 @@
   .channel.current:hover:not(:disabled) { background: var(--c-primary-soft); border-left-color: var(--c-primary-deep); }
 }
 .channel .unread {
-  margin-left: auto; flex: none; min-width: 22px; padding: 0 6px; border-radius: 11px;
+  margin-left: auto; flex: none; min-width: 1.375rem; padding: 0 6px; border-radius: 0.6875rem;
   background: var(--c-alert); color: var(--dads-white);
   font-size: var(--fs-small); font-weight: 700; line-height: 1.375rem; letter-spacing: 0; text-align: center;
 }

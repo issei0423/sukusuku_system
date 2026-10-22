@@ -39,12 +39,12 @@
 .app-header button { min-height: var(--tap-min); background: var(--c-surface); }
 
 /* 通知と未対応件数 */
-/* 件数の札がベルの絵に重ならないよう、右側を空けておく */
-.notify-btn { position: relative; padding: var(--sp-2) 26px var(--sp-2) var(--sp-3); }
+/* 件数の札がベルの絵に重ならないよう、右側を空けておく。札と空きは文字の大きさに合わせて rem で決める */
+.notify-btn { position: relative; padding: var(--sp-2) 1.625rem var(--sp-2) var(--sp-3); }
 .notify-badge {
   position: absolute; top: 2px; right: 2px;
-  min-width: 22px; height: 22px; padding: 0 6px;
-  border-radius: 11px; background: var(--c-alert); color: var(--dads-white);
+  min-width: 1.375rem; height: 1.375rem; padding: 0 6px;
+  border-radius: 0.6875rem; background: var(--c-alert); color: var(--dads-white);
   font-size: var(--fs-small); font-weight: 700; line-height: 1.375rem; letter-spacing: 0; text-align: center;
 }
 
