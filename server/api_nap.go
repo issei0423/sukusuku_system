@@ -493,6 +493,67 @@ type napAbnormalView struct {
 	GuardianNoticePerson *string `json:"guardian_notice_person"`
 	ChildName            string  `json:"child_name"`
 	StaffName            string  `json:"staff_name"`
+	// 最後に修正した時刻（行の「修正あり」）と、この利用者が直せるか（直せる行にだけ「修正」を出す）。
+	// 画面詳細図「異常時記録画面」(5-2) の項目17。判定は POST /api/nap/abnormals/{id}/correct と同じ（napAbnormalCorrectDenied）
+	CorrectedAt *string `json:"corrected_at"`
+	CanCorrect  bool    `json:"can_correct"`
+	sessionDate string
+}
+
+// napAbnormalSelect は、異常時の記録の一覧と1件の読み出しが使う列。並べ替え・絞り込みは呼ぶ側が足す
+const napAbnormalSelect = `SELECT a.nap_abnormal_id, a.nap_session_id, a.child_id, a.found_at, a.recorded_at,
+	a.situation, a.response, a.staff_id, a.diary_id,
+	a.guardian_notice, a.guardian_noticed_at, a.guardian_notice_method, a.guardian_notice_person, d.status,
+	a.corrected_at, s.session_date
+	FROM t_nap_abnormal a ` + napAbnormalDiaryJoin + `
+	LEFT JOIN t_nap_session s ON s.nap_session_id = a.nap_session_id`
+
+// scanNapAbnormals は napAbnormalSelect の行を読む。名前と直せるかは、カーソルを閉じたあとに fillNapAbnormal で足す
+// （SQLite の接続は1本。db.go）
+func scanNapAbnormals(rows *sql.Rows) []napAbnormalView {
+	all := []napAbnormalView{}
+	for rows.Next() {
+		var (
+			x                              napAbnormalView
+			diaryID                        sql.NullInt64
+			notice, noticedAt, method, who sql.NullString
+			diaryStatus, corrected, date   sql.NullString
+		)
+		if rows.Scan(&x.NapAbnormalID, &x.NapSessionID, &x.ChildID, &x.FoundAt, &x.RecordedAt,
+			&x.Situation, &x.Response, &x.StaffID, &diaryID,
+			&notice, &noticedAt, &method, &who, &diaryStatus, &corrected, &date) == nil {
+			x.DiaryID = nullInt(diaryID)
+			x.DiaryDraft = diaryID.Valid && diaryStatus.String == diaryStatusDraft
+			x.GuardianNotice, x.GuardianNoticedAt = nullStr(notice), nullStr(noticedAt)
+			x.GuardianNoticeMethod, x.GuardianNoticePerson = nullStr(method), nullStr(who)
+			x.CorrectedAt = nullStr(corrected)
+			x.sessionDate = date.String
+			all = append(all, x)
+		}
+	}
+	return all
+}
+
+// fillNapAbnormal は、園児と記録者の名前と、この利用者が直せるか（can_correct）を足す
+func (a *app) fillNapAbnormal(u *SessionUser, x *napAbnormalView) {
+	x.ChildName = a.childName(x.ChildID)
+	x.StaffName = a.staffName(x.StaffID)
+	x.CanCorrect = a.napAbnormalCorrectDenied(u, x.ChildID, x.sessionDate) == ""
+}
+
+// napAbnormalViewByID は、異常時の記録を1件、一覧の行と同じ形で返す（修正の応答）。無ければ sql.ErrNoRows
+func (a *app) napAbnormalViewByID(u *SessionUser, id int64) (*napAbnormalView, error) {
+	rows, err := a.db.Query(napAbnormalSelect+` WHERE a.nap_abnormal_id = ?`, id)
+	if err != nil {
+		return nil, err
+	}
+	all := scanNapAbnormals(rows)
+	rows.Close()
+	if len(all) == 0 {
+		return nil, sql.ErrNoRows
+	}
+	a.fillNapAbnormal(u, &all[0])
+	return &all[0], nil
 }
 
 func (a *app) handleNapAbnormals(w http.ResponseWriter, r *http.Request) {
@@ -502,33 +563,12 @@ func (a *app) handleNapAbnormals(w http.ResponseWriter, r *http.Request) {
 	}
 	// 【仮置き】並びは発見時刻の新しい順、同じ時刻はあとで記録したものを先にする（web/仮置き値.md「一覧の並び順」）。
 	// 同じ時刻の並びを決めておかないと、モック（web/src/api/mock.ts の abnormals）と食い違う（GitHub Issue #177 の 7）
-	rows, err := a.db.Query(`SELECT a.nap_abnormal_id, a.nap_session_id, a.child_id, a.found_at, a.recorded_at,
-		a.situation, a.response, a.staff_id, a.diary_id,
-		a.guardian_notice, a.guardian_noticed_at, a.guardian_notice_method, a.guardian_notice_person, d.status
-		FROM t_nap_abnormal a ` + napAbnormalDiaryJoin + `
-		ORDER BY a.found_at DESC, a.nap_abnormal_id DESC`)
+	rows, err := a.db.Query(napAbnormalSelect + ` ORDER BY a.found_at DESC, a.nap_abnormal_id DESC`)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "異常時の記録を取得できませんでした")
 		return
 	}
-	all := []napAbnormalView{}
-	for rows.Next() {
-		var (
-			x                              napAbnormalView
-			diaryID                        sql.NullInt64
-			notice, noticedAt, method, who sql.NullString
-			diaryStatus                    sql.NullString
-		)
-		if rows.Scan(&x.NapAbnormalID, &x.NapSessionID, &x.ChildID, &x.FoundAt, &x.RecordedAt,
-			&x.Situation, &x.Response, &x.StaffID, &diaryID,
-			&notice, &noticedAt, &method, &who, &diaryStatus) == nil {
-			x.DiaryID = nullInt(diaryID)
-			x.DiaryDraft = diaryID.Valid && diaryStatus.String == diaryStatusDraft
-			x.GuardianNotice, x.GuardianNoticedAt = nullStr(notice), nullStr(noticedAt)
-			x.GuardianNoticeMethod, x.GuardianNoticePerson = nullStr(method), nullStr(who)
-			all = append(all, x)
-		}
-	}
+	all := scanNapAbnormals(rows)
 	rows.Close()
 
 	out := []napAbnormalView{}
@@ -536,8 +576,7 @@ func (a *app) handleNapAbnormals(w http.ResponseWriter, r *http.Request) {
 		if !a.canSeeChild(u, x.ChildID) {
 			continue
 		}
-		x.ChildName = a.childName(x.ChildID)
-		x.StaffName = a.staffName(x.StaffID)
+		a.fillNapAbnormal(u, &x)
 		out = append(out, x)
 	}
 	writeJSON(w, http.StatusOK, out)

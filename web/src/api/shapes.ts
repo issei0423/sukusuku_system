@@ -183,6 +183,13 @@ export interface NapAbnormalRow {
   guardian_notice_person: string | null;
   child_name: string;
   staff_name: string;
+  /**
+   * 最後に修正した時刻（行の「修正あり」）と、この利用者が直せるか（直せる行にだけ「修正」を出す）。
+   * 画面詳細図「異常時記録画面」(5-2) の項目17。判定はサーバ（server/api_nap_abnormal_correct.go の napAbnormalCorrectDenied）と
+   * モック（mock.ts の napCorrectDenied）。担保は POST /api/nap/abnormals/{id}/correct
+   */
+  corrected_at: string | null;
+  can_correct: boolean;
 }
 
 /**

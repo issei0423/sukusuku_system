@@ -162,6 +162,8 @@ func (a *app) routeNap(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/nap/report", a.handleNapReport)
 	// 午睡チェックの記録の修正。行を書き換え、修正前後の値と理由を操作ログに残す（api_nap_correct.go）
 	mux.HandleFunc("POST /api/nap/records/{id}/correct", a.handleCorrectNapRecord)
+	// 異常時の記録の修正。同じ規則で、発見時刻・状況・とった対応を直す（api_nap_abnormal_correct.go）
+	mux.HandleFunc("POST /api/nap/abnormals/{id}/correct", a.handleCorrectNapAbnormal)
 }
 
 // 発達チェック・身体測定（基本設計書 4-8）

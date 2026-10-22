@@ -29,7 +29,8 @@ import (
  * - 削除はしない（保存済みの記録は削除しない）
  *
  * 画面側のモック（web/src/api/mock.ts の correctNapRecord）と同じ規則にしてある。
- * 異常時の記録の修正（POST /api/nap/abnormals/{id}/correct）は、この PR では作らない。
+ * 異常時の記録の修正（POST /api/nap/abnormals/{id}/correct）は api_nap_abnormal_correct.go。直せる人の判定（napCorrectDenied）と
+ * 帳票の「修正の履歴」（napReportHistories）は、ここで両方の記録を扱う。
  */
 
 // 修正の文言。【仮置き】設計の「メッセージ一覧」(4-12) に無いため置いた（web/仮置き値.md「午睡チェックの記録の修正」）。
@@ -55,6 +56,25 @@ napRecordCorrectDenied は、その利用者がその午睡チェックの記録
 午睡記録検索の行の「修正」を出すか（can_correct）にも同じ判定を使う。
 */
 func (a *app) napRecordCorrectDenied(u *SessionUser, childID string, sessionID int64, sessionDate string) string {
+	if msg := a.napCorrectDenied(u, childID, sessionDate); msg != "" || u.isAdmin() {
+		return msg
+	}
+	var n int
+	if err := a.db.QueryRow(`SELECT COUNT(*) FROM t_nap_abnormal WHERE nap_session_id = ? AND child_id = ?`,
+		sessionID, childID).Scan(&n); err != nil || n > 0 {
+		return msgNapCorrectAbnormal
+	}
+	return ""
+}
+
+/*
+napCorrectDenied は、午睡チェックの記録と異常時の記録の修正に共通する、直せる人の判定（403 の文言。直せるときは空）。
+管理者なら直せる。一般なら、その園児について contactAccess(u, child).Write が真（その園児のクラスの担任。フリーの職員は直せない）で、
+実施の日がサーバの今日のときだけ（基本設計書「記録の修正と改ざん防止」(4-8)）。
+異常時の記録の修正（api_nap_abnormal_correct.go の napAbnormalCorrectDenied）はこれだけを使う。
+モック（web/src/api/mock.ts の napCorrectDenied）と同じ
+*/
+func (a *app) napCorrectDenied(u *SessionUser, childID, sessionDate string) string {
 	if u.isAdmin() {
 		return ""
 	}
@@ -63,11 +83,6 @@ func (a *app) napRecordCorrectDenied(u *SessionUser, childID string, sessionID i
 	}
 	if sessionDate != today() {
 		return msgNapCorrectPastDay
-	}
-	var n int
-	if err := a.db.QueryRow(`SELECT COUNT(*) FROM t_nap_abnormal WHERE nap_session_id = ? AND child_id = ?`,
-		sessionID, childID).Scan(&n); err != nil || n > 0 {
-		return msgNapCorrectAbnormal
 	}
 	return ""
 }
@@ -281,8 +296,9 @@ const napReportHistoryTitle = "修正の履歴"
 
 var napReportHistoryHeader = []string{"記録", "修正日時", "修正者", "修正前", "修正後", "理由"}
 
-// 修正前・修正後の列に出す項目の順。操作ログの項目名（napRecordFields）と同じ
-var napCorrectionKeys = []string{"体位", "呼吸", "顔色", "体温"}
+// 修正前・修正後の列に出す項目の順。操作ログの項目名（午睡チェックの記録は napRecordFields、異常時の記録は
+// api_nap_abnormal_correct.go の napAbnormalFields）と同じ
+var napCorrectionKeys = []string{"体位", "呼吸", "顔色", "体温", "発見時刻", "状況", "とった対応"}
 
 // napReportHistory は「修正の履歴」の1行。並べ替えの鍵（実施の日・クラス・園児のよみと ID・記録の時刻・修正日時・番号）と、出すセル
 type napReportHistory struct {
@@ -297,12 +313,14 @@ type napReportHistory struct {
 }
 
 /*
-napReportHistories は、帳票の期間（実施の日）とクラスに入る午睡チェックの記録の修正を、操作ログの修正の行
-（午睡 3・変更 2・t_nap_record）から集める。1回の修正で1行。
+napReportHistories は、帳票の期間（実施の日）とクラスに入る午睡チェックの記録と異常時の記録の修正を、操作ログの修正の行
+（午睡 3・変更 2・t_nap_record と t_nap_abnormal）から集める。1回の修正で1行（基本設計書「帳票の出力」(4-8)「午睡チェックの記録と
+異常時の記録の両方」）。異常時の記録の 午睡 3・変更 2 の行は、修正（api_nap_abnormal_correct.go）だけが書く。
 
-【仮置き】並びは一覧の行と同じ向きで、実施の日 → クラス → 園児 → 記録の時刻 → 修正日時 の古い順（同じなら操作ログの番号の順）。
-記録の列は「午睡チェックの記録（園児・チェックした時刻）」、修正前・修正後は「体位=うつ伏せ、体温=36.8」の形（体温が無いのは「なし」）。
-web/src/api/mock.ts の napReport と同じ。
+【仮置き】2つの記録の修正を1つの表に、一覧の行と同じ向きで、実施の日 → クラス → 園児 → 記録の時刻 → 修正日時 の古い順に並べる
+（同じなら操作ログの番号の順）。記録の時刻は、午睡チェックの記録はチェックした時刻、異常時の記録はいまの発見時刻。
+記録の列は「午睡チェックの記録（園児・チェックした時刻）」「異常時の記録（園児・発見時刻）」、修正前・修正後は
+「体位=うつ伏せ、体温=36.8」「発見時刻=…、状況=…」の形（体温が無いのは「なし」）。web/src/api/mock.ts の napReport と同じ。
 */
 func (a *app) napReportHistories(from, to string, classID int64, hasClass bool) ([]napReportHistory, error) {
 	cond := ` AND s.session_date >= ? AND s.session_date <= ?`
@@ -315,27 +333,34 @@ func (a *app) napReportHistories(from, to string, classID int64, hasClass bool) 
 		logID, accountID, classID   int64
 		at, childID, recordAt, date string
 		before, after               sql.NullString
+		label                       string
 	}
 	raws := []raw{}
-	rows, err := a.db.Query(`SELECT l.operation_log_id, l.account_id, l.operated_at, l.before_value, l.after_value,
-		r.child_id, r.checked_at, s.session_date, s.class_id
-		FROM t_operation_log l
-		JOIN t_nap_record r ON r.nap_record_id = l.target_id
-		JOIN t_nap_session s ON s.nap_session_id = r.nap_session_id
-		WHERE l.function_type = ? AND l.operation_type = ? AND l.target_table = 't_nap_record'`+cond, args...)
-	if err != nil {
-		return nil, err
+	// 記録の種類ごとに、つなぐ表・記録の時刻の列・記録の列の名前を変えて同じ形で読む
+	sources := []struct{ table, join, recordAt, label string }{
+		{"t_nap_record", `JOIN t_nap_record x ON x.nap_record_id = l.target_id`, "x.checked_at", "午睡チェックの記録"},
+		{"t_nap_abnormal", `JOIN t_nap_abnormal x ON x.nap_abnormal_id = l.target_id`, "x.found_at", "異常時の記録"},
 	}
-	for rows.Next() {
-		var x raw
-		if err := rows.Scan(&x.logID, &x.accountID, &x.at, &x.before, &x.after, &x.childID, &x.recordAt,
-			&x.date, &x.classID); err != nil {
-			rows.Close()
+	for _, src := range sources {
+		rows, err := a.db.Query(`SELECT l.operation_log_id, l.account_id, l.operated_at, l.before_value, l.after_value,
+			x.child_id, `+src.recordAt+`, s.session_date, s.class_id
+			FROM t_operation_log l `+src.join+`
+			JOIN t_nap_session s ON s.nap_session_id = x.nap_session_id
+			WHERE l.function_type = ? AND l.operation_type = ? AND l.target_table = '`+src.table+`'`+cond, args...)
+		if err != nil {
 			return nil, err
 		}
-		raws = append(raws, x)
+		for rows.Next() {
+			x := raw{label: src.label}
+			if err := rows.Scan(&x.logID, &x.accountID, &x.at, &x.before, &x.after, &x.childID, &x.recordAt,
+				&x.date, &x.classID); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			raws = append(raws, x)
+		}
+		rows.Close()
 	}
-	rows.Close()
 
 	// 名前とよみは、カーソルを閉じたあとに引く（SQLite の接続は1本。db.go）
 	kanaOf := map[string]string{}
@@ -350,7 +375,7 @@ func (a *app) napReportHistories(from, to string, classID int64, hasClass bool) 
 		}
 		out = append(out, napReportHistory{date: x.date, classID: x.classID, kana: kana, childID: x.childID,
 			recordAt: x.recordAt, at: x.at, logID: x.logID, cells: []string{
-				"午睡チェックの記録（" + a.childName(x.childID) + "・" + x.recordAt + "）",
+				x.label + "（" + a.childName(x.childID) + "・" + x.recordAt + "）",
 				x.at, a.accountName(x.accountID), napCorrectionText(x.before), napCorrectionText(x.after),
 				napCorrectionReason(x.after),
 			}})
@@ -388,7 +413,8 @@ func napCorrectionFields(v sql.NullString) map[string]any {
 	return m
 }
 
-// napCorrectionText は、修正前・修正後の値を「体位=うつ伏せ、体温=36.8」の形にする（napCorrectionKeys の順。理由は入れない）
+// napCorrectionText は、修正前・修正後の値を「体位=うつ伏せ、体温=36.8」「発見時刻=2026-10-22T13:05:00、状況=…」の形にする
+// （napCorrectionKeys の順。理由は入れない）
 func napCorrectionText(v sql.NullString) string {
 	m := napCorrectionFields(v)
 	if m == nil {
