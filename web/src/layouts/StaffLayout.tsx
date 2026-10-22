@@ -12,6 +12,7 @@ import LiveIndicator from '../components/LiveIndicator';
 import ConnectionBanner from '../components/ConnectionBanner';
 import { ToastHost } from '../components/feedback';
 import SessionTimeoutWarning from '../components/SessionTimeoutWarning';
+import ScreenErrorBoundary from '../components/ScreenErrorBoundary';
 
 const NAV = [
   { to: '/staff', label: 'ダッシュボード', end: true, adminOnly: false },
@@ -147,7 +148,10 @@ export default function StaffLayout() {
               </Alert>
             </div>
           )}
-          <Outlet />
+          {/* 画面の例外で真っ白にしない。画面を移ったら受け皿を作り直す */}
+          <ScreenErrorBoundary key={pathname}>
+            <Outlet />
+          </ScreenErrorBoundary>
         </main>
         <ToastHost />
         {/*
