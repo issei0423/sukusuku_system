@@ -35,10 +35,12 @@ describe('実施日は、形の崩れた値と未来日を断る', () => {
   });
 
   it('管理者の予定日の上書きも、形の崩れた日付を断る', async () => {
+    // デモデータの加藤 大和（C009）には、推奨で当てた予定が 1 件ある（mockDb.ts。GitHub Issue #164 の 3）。断った要求で変わらないことを見る
+    const before = JSON.stringify(db.developmentSchedules.filter((s) => s.child_id === 'C009'));
     for (const [d, manual] of [['2026-10-1', true], ['abc', false], ['', false]] as const) {
       await expect(api.setSchedule(admin, 'C009', d, manual)).rejects.toThrow('形式が正しくありません');
     }
-    expect(db.developmentSchedules.some((s) => s.child_id === 'C009')).toBe(false);
+    expect(JSON.stringify(db.developmentSchedules.filter((s) => s.child_id === 'C009'))).toBe(before);
   });
 });
 

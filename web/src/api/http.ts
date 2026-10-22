@@ -609,6 +609,10 @@ const apiGrowth = {
   setSchedule: (_u: SessionUser, childId: string, scheduledOn: string, manual: boolean) =>
     post<void>('/api/development/schedules', { child_id: childId, scheduled_on: scheduledOn, manual }),
 
+  /** 予定の無い在籍園児に推奨スケジュールを当てる（管理者のみ。server/dev_schedule.go） */
+  applyRecommendedSchedules: (_u: SessionUser) =>
+    post<{ applied: number }>('/api/development/schedules/apply', {}),
+
   shareSettings: (_u: SessionUser) =>
     get<{ item: DevelopmentItem; categoryName: string; isShareable: boolean }[]>(
       '/api/development/share-settings'),

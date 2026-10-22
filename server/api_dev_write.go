@@ -242,7 +242,9 @@ func (a *app) handleSaveDevelopmentCheck(w http.ResponseWriter, r *http.Request)
 /*
 advanceDevelopmentSchedule は、確定した実施が予定を満たしたときに次回の予定日を作る。
 
-次回の予定日は、実施日にマスタの推奨頻度（m_development_frequency）の日数を足した日とする。
+次回の予定日は、実施日を基準日として、最初の予定日と同じ規則で作る（基本設計書「推奨スケジュールの作り方」(4-9)
+「次の予定日｜確定したとき、実施日を基準日として同じ規則で作る」）。実施日の月齢の推奨頻度（m_development_frequency）の
+日数を足し、あいだに健診の節目があれば節目の日にする（dev_schedule.go の scheduleRule.next。GitHub Issue #164）。
 すでに実施日より先の予定があるとき（園児単位で手動上書きした予定を含む）は、それを残す。
 
 【仮置き】次回の予定日をいつ・何から計算し直すかは基本設計書が定めていない（web/仮置き値.md）。
@@ -269,13 +271,11 @@ func (a *app) advanceDevelopmentSchedule(u *SessionUser, checkID int64, childID,
 	if a.db.QueryRow(`SELECT birth_date FROM m_child WHERE child_id = ?`, childID).Scan(&birth) != nil {
 		return
 	}
-	var interval int
-	if a.db.QueryRow(`SELECT interval_days FROM m_development_frequency
-		WHERE ? BETWEEN age_month_from AND age_month_to LIMIT 1`, ageInMonths(birth, checkedOn)).Scan(&interval) != nil {
+	next, ok := a.loadScheduleRule().next(birth, checkedOn)
+	if !ok {
 		// 推奨頻度がマスタに無い月齢では、予定日を提案しない
 		return
 	}
-	next := addDays(checkedOn, interval)
 	// 作れなかったときは、操作ログに「次回予定日＝…」と残さない。記録と実際を食い違わせない
 	// （GitHub Issue #99）。チェックの保存そのものは済んでいるため、業務処理は止めない
 	if _, err := a.db.Exec(`INSERT INTO t_development_schedule (child_id, scheduled_on, is_manual_override, created_staff_id)

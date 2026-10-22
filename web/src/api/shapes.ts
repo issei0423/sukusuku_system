@@ -356,6 +356,11 @@ export interface StaffSummary {
   devOverdue: number;
   pending: number;
   abnormalWithoutDiary: number;
+  /**
+   * 誤送信への対応を記録していない取り消しの数。誤送信対応記録画面の「対応の記録がない取り消し」の一覧と同じ範囲。
+   * 記録するのは管理者のため、管理者にだけ数え、一般の職員には 0 を返す（GitHub Issue #141 の 3）
+   */
+  misdeliveryUnrecorded: number;
   activeNap: NapSession | null;
   /** 今日の家庭からの「未確認」「更新」の園児の数（詳細設計書「ダッシュボード」(4-8 (2))） */
   homeUnconfirmed: number;

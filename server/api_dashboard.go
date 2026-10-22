@@ -48,6 +48,21 @@ func (a *app) handleStaffSummary(w http.ResponseWriter, r *http.Request) {
 		a.db.QueryRow(`SELECT COUNT(*) FROM t_diary WHERE is_deleted = 0 AND status = '2'`).Scan(&pending)
 	}
 
+	// 誤送信への対応を記録していない取り消し。記録するのは管理者のため、管理者にのみ数える
+	// （図/画面詳細図.md「誤送信対応記録画面（管理者）」(4-4)「この記録は管理者が行う」。GitHub Issue #141 の 3）。
+	// 管理者が誤送信対応の画面を自分から開かないと気づけなかった。数える範囲は、同じ画面の「対応の記録がない取り消し」の
+	// 一覧と同じ（api_chat.go の retractedWithoutRecordClause）。画面側のモック（web/src/api/mock.ts の staffSummary）も同じ規則。
+	// 【仮置き】職員ダッシュボードの項目表（同「職員ダッシュボード」(2-6)）に無い行である（web/仮置き値.md）。
+	// 数え損ねたときは 0 件として返さず、エラーにする。「0 件」は「記録の漏れなし」と読まれるため
+	misdeliveryUnrecorded := 0
+	if u.isAdmin() {
+		if err := a.db.QueryRow(`SELECT COUNT(*) FROM t_chat_message m WHERE ` + retractedWithoutRecordClause).
+			Scan(&misdeliveryUnrecorded); err != nil {
+			writeErr(w, http.StatusInternalServerError, "集計に失敗しました")
+			return
+		}
+	}
+
 	children, err := a.visibleChildren(u)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "集計に失敗しました")
@@ -154,11 +169,13 @@ func (a *app) handleStaffSummary(w http.ResponseWriter, r *http.Request) {
 		"devOverdue":           overdueCount,
 		"pending":              pending,
 		"abnormalWithoutDiary": abnormalWithoutDiary,
-		"activeNap":            activeNap,
-		"homeUnconfirmed":      homeUnconfirmed,
-		"homeRevised":          homeRevised,
-		"napSleeping":          napSleeping,
-		"facilityUnsent":       facilityUnsent,
+		// 管理者のみ。一般の職員には 0 を返す
+		"misdeliveryUnrecorded": misdeliveryUnrecorded,
+		"activeNap":             activeNap,
+		"homeUnconfirmed":       homeUnconfirmed,
+		"homeRevised":           homeRevised,
+		"napSleeping":           napSleeping,
+		"facilityUnsent":        facilityUnsent,
 	})
 }
 

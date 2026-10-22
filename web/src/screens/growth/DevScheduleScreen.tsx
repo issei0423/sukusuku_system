@@ -13,6 +13,7 @@ import { onLive } from '../../live';
 import { useSession } from '../../session';
 import { api, selectableClasses } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Alert, Tag } from '../../components/ui';
+import { ConfirmDialog, notify } from '../../components/feedback';
 import { formatYMD, formatAge, today } from '../../api/util';
 
 export default function DevScheduleScreen() {
@@ -22,6 +23,8 @@ export default function DevScheduleScreen() {
   const [tick, setTick] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [edits, setEdits] = useState<Record<string, string>>({});
+  const [confirmingApply, setConfirmingApply] = useState(false);
+  const [applying, setApplying] = useState(false);
 
   // ほかの職員の確定・ほかの管理者の予定日の変更があったら、開いたままでも読み直す（live.ts）
   const { data, error: loadError, loading } = useAsync(() => api.schedules(user!, classId), [classId, tick],
@@ -34,6 +37,25 @@ export default function DevScheduleScreen() {
       setEdits((e) => { const n = { ...e }; delete n[childId]; return n; });
       setTick((n) => n + 1);
     } catch (e) { setError((e as Error).message); }
+  };
+
+  /*
+   * 予定の無い在籍園児に、推奨スケジュールを一括で当てる（基本設計書「推奨スケジュールの作り方」(4-9)
+   * 「予定の無い在籍園児には、管理者が一括で規則を当てる操作を置く」。GitHub Issue #164 の 3）。
+   * 【仮置き】すべてのクラスが対象。基準日は最後に確定した実施日、無ければ今日（web/仮置き値.md）
+   */
+  const applyRecommended = async () => {
+    setError(null);
+    setApplying(true);
+    try {
+      const { applied } = await api.applyRecommendedSchedules(user!);
+      setConfirmingApply(false);
+      notify(applied > 0 ? `${applied}名に予定日を当てました` : '予定日の無い園児はいませんでした');
+      setTick((n) => n + 1);
+    } catch (e) {
+      setConfirmingApply(false);
+      setError((e as Error).message);
+    } finally { setApplying(false); }
   };
 
   return (
@@ -107,6 +129,25 @@ export default function DevScheduleScreen() {
           </table>
         )}
       </section>
+
+      <section className="card card-sub">
+        <p style={{ marginTop: 0 }}>
+          次回の予定日が無い園児には、推奨の間隔から予定日を当てられます。すべてのクラスの園児が対象です。
+        </p>
+        <button onClick={() => setConfirmingApply(true)}>予定の無い園児に推奨を当てる</button>
+      </section>
+
+      {confirmingApply && (
+        <ConfirmDialog title="予定の無い園児に推奨を当てる" confirmLabel="当てる" busy={applying}
+          onConfirm={applyRecommended} onCancel={() => setConfirmingApply(false)}>
+          <p>
+            すべてのクラスで、次回の予定日が無い在籍園児に、推奨の間隔から予定日を当てます。
+            確定した発達チェックのある園児は最後の実施日から、無い園児は今日から数えます。
+            あいだに健診の節目があれば、節目の日を予定日にします。
+          </p>
+          <p>予定日のある園児は変えません。</p>
+        </ConfirmDialog>
+      )}
 
       <section className="card card-sub">
         <div className="muted">

@@ -11,7 +11,7 @@
  * メニューも隠れたままになるための提案（web/仮置き値.md）。幅の切り替えは CSS（app.css）で行う。
  */
 import { useEffect, useRef, useState } from 'react';
-import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useSession } from '../session';
 import { useAsync, AUTO_REFRESH_MS } from '../hooks';
 import { onLive } from '../live';
@@ -21,6 +21,7 @@ import { ConfirmDialog, ToastHost } from '../components/feedback';
 import ConnectionBanner from '../components/ConnectionBanner';
 import AiOptOutDialog from '../components/AiOptOutDialog';
 import AddChildDialog from '../components/AddChildDialog';
+import ScreenErrorBoundary from '../components/ScreenErrorBoundary';
 import { AI_OPT_OUT_TEXT, ADD_CHILD_TEXT } from '../messages';
 import { UnsavedInputContext, useUnsavedInputTracker } from '../unsavedInput';
 
@@ -44,6 +45,7 @@ const PC_WIDTH = '(min-width: 1024px)';
 export default function GuardianLayout() {
   const { user, logout } = useSession();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
   // 「AI の下書きの利用」のダイアログ（詳細設計書「AI の下書きの利用」(2-15 (4))）
   const [aiOptOutOpen, setAiOptOutOpen] = useState(false);
@@ -227,7 +229,10 @@ export default function GuardianLayout() {
           {/* 知らせが切れている・サーバに届かないときの帯（詳細設計書「つながっているかの表示」(2-8)） */}
           <ConnectionBanner audience="guardian" />
           <UnsavedInputContext.Provider value={unsaved.report}>
-            <Outlet key={screenKey} />
+            {/* 画面の例外で真っ白にしない。画面を移ったら受け皿を作り直す */}
+            <ScreenErrorBoundary key={pathname}>
+              <Outlet key={screenKey} />
+            </ScreenErrorBoundary>
           </UnsavedInputContext.Provider>
         </main>
       </div>

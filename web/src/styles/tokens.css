@@ -127,8 +127,12 @@
   --elevation-3: 0 4px 16px 3px rgba(0, 0, 0, .1), 0 1px 6px 0 rgba(0, 0, 0, .3);
 
   --header-h:  56px;
-  --sidenav-w: 200px;
-  --sidenav-w-portrait: 152px;
+  /*
+   * 左メニューの幅。項目名の文字に合わせて rem で決め、ブラウザの文字の大きさの設定を変えても項目名が1〜2文字ずつ折り返さないようにする。
+   * 既定（16px）では 200px・152px で、前と同じ
+   */
+  --sidenav-w: 12.5rem;
+  --sidenav-w-portrait: 9.5rem;
   /* メインコンテンツの余白。端まで広げる部品（午睡のタイマー帯など）が打ち消しに使う */
   --main-pad:  var(--sp-5);
 
