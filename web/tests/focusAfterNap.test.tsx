@@ -78,3 +78,17 @@ describe('午睡チェックを終了したあとのフォーカス（GitHub Iss
     await waitFor(() => expect(document.activeElement).toBe(start));
   });
 });
+
+describe('午睡チェックを開始したあとのフォーカス（GitHub Issue #213）', () => {
+  it('開始すると「午睡チェックを開始する」が消えるので、代わりに出る見出しの並びの押せる最初のもの（「異常を記録する」）へ移す', async () => {
+    // 実施中のものがあれば先に終える（このファイルの前のテストの続きでも、単独でも同じ形にする）
+    const active = await api.activeSession(1, today(), teacher);
+    if (active) await api.endSession(teacher, active.nap_session_id);
+    open('/staff/nap', teacher);
+    const start = await screen.findByRole('button', { name: '午睡チェックを開始する' }, { timeout: 3000 });
+    press(start);
+    const abnormal = await screen.findByRole('link', { name: '異常を記録する' }, { timeout: 3000 });
+    expect(start.isConnected).toBe(false);
+    await waitFor(() => expect(document.activeElement).toBe(abnormal));
+  });
+});
