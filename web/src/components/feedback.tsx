@@ -185,14 +185,16 @@ export function ToastHost() {
 }
 
 /** 確定する前に、何が起きるかを確かめる */
-export function ConfirmDialog({ title, children, confirmLabel, danger, busy, confirmDisabled, onConfirm, onCancel, returnTo }: {
+export function ConfirmDialog({ title, children, confirmLabel, danger, busy, confirmDisabled, onConfirm, onCancel, returnTo, returnWithin }: {
   title: string; children: ReactNode; confirmLabel: string; danger?: boolean; busy?: boolean; confirmDisabled?: boolean;
   onConfirm: () => void; onCancel: () => void;
   /** 閉じたときに開いた元が消えていたら、フォーカスを移す先（窓の部品 Modal の returnTo） */
   returnTo?: () => HTMLElement | null | undefined;
+  /** 開いた元を囲む範囲（狭い順）。閉じたあとの読み直しで開いた元が消えたときの移し先（窓の部品 Modal の returnWithin。GitHub Issue #213） */
+  returnWithin?: string[];
 }) {
   return (
-    <Modal title={title} onClose={onCancel} returnTo={returnTo}
+    <Modal title={title} onClose={onCancel} returnTo={returnTo} returnWithin={returnWithin}
       footer={<>
         <button onClick={onCancel} disabled={busy}>やめる</button>
         <button className={danger ? 'btn-danger' : 'btn-primary'} onClick={onConfirm} disabled={busy || confirmDisabled}>

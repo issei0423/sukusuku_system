@@ -180,8 +180,9 @@ export default function NapCheckScreen() {
             <button onClick={() => (recorded < rows.length || stillSleeping.length > 0 ? setEnding(true) : end())}>午睡チェックを終了</button>
           </div>
           {ending && (
+            /* 終了すると、読み直しで「午睡チェックを終了」が消える。同じ並びの押せる最初のもの、なければ本文へ（GitHub Issue #213） */
             <ConfirmDialog title={recorded < rows.length ? '記録していない園児がいます' : '「おきた」が記録されていない園児がいます'}
-              confirmLabel="このまま終了する" danger onConfirm={end} onCancel={() => setEnding(false)}>
+              confirmLabel="このまま終了する" danger onConfirm={end} onCancel={() => setEnding(false)} returnWithin={['.page-head']}>
               {recorded < rows.length && <p>{rows.length - recorded} 名の記録がありません。このまま午睡チェックを終了しますか。</p>}
               {stillSleeping.length > 0 && <p>「おきた」が記録されていない園児がいます（{stillSleeping.join('、')}）。このまま終了しますか。</p>}
               <p className="muted">終了したあとは、この実施へ記録を足せません。</p>

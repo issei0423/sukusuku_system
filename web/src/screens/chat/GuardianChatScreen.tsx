@@ -174,10 +174,19 @@ export default function GuardianChatScreen() {
   };
 
   /*
-   * 保存すると編集の欄とボタンが消え、押した「保存」からフォーカスが外れて body に落ちる。吹き出しへ戻す
+   * 保存する・やめると編集の欄とボタンが消え、押したボタンからフォーカスが外れて body に落ちる。吹き出しへ戻す
    * （一覧を閉じたときと同じ先。src/focusAfter.ts、WCAG 2.4.3、GitHub Issue #213）。
    * 吹き出しは編集の欄が消えてからフォーカスを受け取れる（tabIndex が付く）ので、それまで待つ
    */
+  const bubbleWhenReady = (messageId: number) => () => {
+    const bubble = document.querySelector<HTMLElement>(`[data-message-bubble="${messageId}"]`);
+    return bubble && bubble.tabIndex >= 0 ? bubble : null;
+  };
+  const cancelEdit = (messageId: number) => {
+    const pressed = focusedNow();
+    setEditingId(null);
+    focusAfter(pressed, bubbleWhenReady(messageId));
+  };
   const saveEdit = async (messageId: number) => {
     const pressed = focusedNow();
     setError(null);
@@ -186,10 +195,7 @@ export default function GuardianChatScreen() {
       setEditingId(null);
       messages.refresh();
       setStatus('メッセージを更新しました');
-      focusAfter(pressed, () => {
-        const bubble = document.querySelector<HTMLElement>(`[data-message-bubble="${messageId}"]`);
-        return bubble && bubble.tabIndex >= 0 ? bubble : null;
-      });
+      focusAfter(pressed, bubbleWhenReady(messageId));
     } catch (e) { setError((e as Error).message); }
   };
 
@@ -315,7 +321,7 @@ export default function GuardianChatScreen() {
                     <textarea aria-label="メッセージの編集" value={draft} onChange={(e) => setDraft(e.target.value)}
                       maxLength={1000} rows={4} style={{ width: '100%', boxSizing: 'border-box' }} />
                     <div className="row-end" style={{ marginTop: 4 }}>
-                      <button className="btn-sm" onClick={() => setEditingId(null)}>やめる</button>
+                      <button className="btn-sm" onClick={() => cancelEdit(m.chat_message_id)}>やめる</button>
                       <button className="btn-sm btn-primary" onClick={() => saveEdit(m.chat_message_id)}
                         disabled={!draft.trim()}>保存</button>
                     </div>

@@ -470,17 +470,23 @@ function MessageRow({ message, mine, canEdit, canDelete, showRole, readOnly, onR
   const [editError, setEditError] = useState('');
 
   /*
-   * 保存すると編集の欄とボタンが消え、押した「保存」からフォーカスが外れて body に落ちる。吹き出しへ戻す
+   * 保存する・やめると編集の欄とボタンが消え、押したボタンからフォーカスが外れて body に落ちる。吹き出しへ戻す
    * （一覧を閉じたとき・Esc と同じ先。src/focusAfter.ts、WCAG 2.4.3、GitHub Issue #213）。
    * 吹き出しは編集の欄が消えてからフォーカスを受け取れる（tabIndex が付く）ので、それまで待つ
    */
+  const bubbleWhenReady = () => (bubbleRef.current && bubbleRef.current.tabIndex >= 0 ? bubbleRef.current : null);
+  const cancelEdit = () => {
+    const pressed = focusedNow();
+    setDraft(message.body); setEditing(false);
+    focusAfter(pressed, bubbleWhenReady);
+  };
   const save = async () => {
     const pressed = focusedNow();
     setEditError('');
     try {
       await onEdit(draft);
       setEditing(false);
-      focusAfter(pressed, () => (bubbleRef.current && bubbleRef.current.tabIndex >= 0 ? bubbleRef.current : null));
+      focusAfter(pressed, bubbleWhenReady);
     } catch (e) {
       setEditError(e instanceof Error ? e.message : '編集できませんでした');
     }
@@ -518,7 +524,7 @@ function MessageRow({ message, mine, canEdit, canDelete, showRole, readOnly, onR
               maxLength={1000} rows={4} style={{ width: '100%', boxSizing: 'border-box' }} />
             {editError && <div className="weak">{editError}</div>}
             <div className="row-end" style={{ marginTop: 4 }}>
-              <button className="btn-sm" onClick={() => { setDraft(message.body); setEditing(false); }}>やめる</button>
+              <button className="btn-sm" onClick={cancelEdit}>やめる</button>
               <button className="btn-sm btn-primary" onClick={save} disabled={!draft.trim()}>保存</button>
             </div>
           </>

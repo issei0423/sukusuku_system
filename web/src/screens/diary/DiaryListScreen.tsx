@@ -170,7 +170,8 @@ export default function DiaryListScreen() {
         )}
       </section>
       {withdrawing && (
-        <ConfirmDialog title="申請の取り下げ" confirmLabel="取り下げる" busy={busy}
+        /* 取り下げると、読み直しで行の「申請を取り下げる」が消える。同じ行の押せる最初のもの（「開く」）へ（GitHub Issue #213） */
+        <ConfirmDialog title="申請の取り下げ" confirmLabel="取り下げる" busy={busy} returnWithin={['td', 'tr']}
           onConfirm={withdraw} onCancel={() => setWithdrawing(null)}>
           <p>申請を取り下げますか。下書きに戻り、承認待ちから外れます。</p>
         </ConfirmDialog>

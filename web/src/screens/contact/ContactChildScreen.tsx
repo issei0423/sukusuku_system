@@ -329,7 +329,9 @@ export default function ContactChildScreen() {
         </TemperaturePicker>
       )}
       {fix && (
-        <FixDialog target={fix.target} startMode={fix.mode} normalTemperature={findChild(childId)?.normal_temperature ?? null} onClose={() => setFix(null)} onDone={(message) => { setFix(null); notify(message); page.refresh(); }} />
+        /* 取り消すと記録（きょうのようすの行・園から）が消える。同じ行、なければ同じ欄の押せる最初のものへ移す（GitHub Issue #213） */
+        <FixDialog target={fix.target} startMode={fix.mode} normalTemperature={findChild(childId)?.normal_temperature ?? null} onClose={() => setFix(null)} onDone={(message) => { setFix(null); notify(message); page.refresh(); }}
+          returnWithin={['li', 'section']} />
       )}
       {photoOpen && data.class_id !== null && (
         <PhotoSendDialog classId={data.class_id} date={date} initialSubjects={[childId]} onClose={() => setPhotoOpen(false)}

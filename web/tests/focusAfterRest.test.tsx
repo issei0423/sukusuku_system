@@ -16,6 +16,7 @@ import { MemoryRouter } from 'react-router-dom';
 import App from '../src/App';
 import { SessionProvider } from '../src/session';
 import type { SessionUser } from '../src/api/types';
+import type { SettingsView } from '../src/api/shapes';
 import { api } from '../src/api/client';
 import { mockAi } from '../src/api/mock';
 import * as db from '../src/api/mockDb';
@@ -145,6 +146,31 @@ describe('AI の下書き：押したあとのフォーカス（GitHub Issue #21
   });
 });
 
+describe('AI の下書き：「閉じる」のあとのフォーカス（GitHub Issue #213）', () => {
+  it('メモの欄の「閉じる」は、欄を開いた「AI で下書き」へ戻す。結果の「閉じる」は入力欄へ移す', async () => {
+    setSetting('ai.enabled', '1');
+    open('/staff/contact/C001', teacher);
+    await screen.findByRole('heading', { name: '野原 太郎' }, { timeout: 3000 });
+    const section = document.getElementById('facility') as HTMLElement;
+    const opener = await within(section).findByRole('button', { name: AI_TEXT.draftButton }, { timeout: 3000 }) as HTMLButtonElement;
+    press(opener);
+    const closeMemo = within(section.querySelector<HTMLElement>('.ai-draft-memo')!).getByRole('button', { name: '閉じる' });
+    press(closeMemo);
+    expect(closeMemo.isConnected).toBe(false);
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+
+    const aside = screen.getByRole('complementary', { name: '記録する' });
+    const box = within(aside).getByLabelText('活動のひとこと') as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: 'たっくんは砂場で遊んでいました。' } });
+    fireEvent.click(within(aside).getByRole('button', { name: AI_TEXT.rephraseButton }));
+    await within(aside).findAllByRole('button', { name: AI_TEXT.useThis }, { timeout: 3000 });
+    const closeResult = within(aside.querySelector<HTMLElement>('.ai-draft-result')!).getByRole('button', { name: '閉じる' });
+    press(closeResult);
+    expect(closeResult.isConnected).toBe(false);
+    await waitFor(() => expect(document.activeElement).toBe(box));
+  });
+});
+
 describe('日誌・チャット・管理画面の「送る」「保存する」（GitHub Issue #213）', () => {
   const composer = () => screen.getByPlaceholderText('メッセージを入力') as HTMLTextAreaElement;
   const rowOf = (body: string) => Array.from(document.querySelectorAll<HTMLElement>('.msg'))
@@ -172,6 +198,14 @@ describe('日誌・チャット・管理画面の「送る」「保存する」�
     expect(save.isConnected).toBe(false);
     await waitFor(() => expect(bubble.textContent).toContain('F1 お迎えは17時30分の予定です。'), { timeout: 3000 });
     await waitFor(() => expect(document.activeElement).toBe(bubble));
+
+    // 編集の「やめる」も、編集の欄ごと消えるので吹き出しへ戻す
+    fireEvent.contextMenu(bubble, { button: 2, clientX: 120, clientY: 90 });
+    fireEvent.click(within(row).getByRole('button', { name: '編集' }));
+    const cancel = within(row).getByRole('button', { name: 'やめる' });
+    press(cancel);
+    expect(row.querySelector('textarea')).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(bubble));
   });
 
   it('チャット（保護者）：送れたら入力欄へ、編集の「保存」は吹き出しへ移す', async () => {
@@ -195,6 +229,13 @@ describe('日誌・チャット・管理画面の「送る」「保存する」�
     await waitFor(() => expect(row.querySelector('textarea')).toBeNull(), { timeout: 3000 });
     await waitFor(() => expect(bubble.textContent).toContain('G1 あしたは9時30分に登園します。'), { timeout: 3000 });
     await waitFor(() => expect(document.activeElement).toBe(bubble));
+
+    fireEvent.contextMenu(bubble, { button: 2, clientX: 120, clientY: 90 });
+    fireEvent.click(within(row).getByRole('button', { name: '編集' }));
+    const cancel = within(row).getByRole('button', { name: 'やめる' });
+    press(cancel);
+    expect(row.querySelector('textarea')).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(bubble));
   });
 
   it('日誌：「下書き保存」が保存できなかったときは、押せるようになった「下書き保存」へ戻す', async () => {
@@ -215,8 +256,6 @@ describe('日誌・チャット・管理画面の「送る」「保存する」�
     const opener = screen.getByRole('button', { name: '保存する' });
     press(opener);
     const dialog = await screen.findByRole('dialog', { name: '設定を保存しますか' });
-    // 区画は読んだ時刻（秒まで）を key にして描き直す。テストの時計は止まっているので、1秒進めて読み直しと同じ形にする
-    vi.setSystemTime(Date.now() + 1000);
     press(within(dialog).getByRole('button', { name: '保存する' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '設定を保存しますか' })).toBeNull(), { timeout: 3000 });
     expect(opener.isConnected).toBe(false);
@@ -285,5 +324,123 @@ describe('窓の部品（Modal）：閉じたときのフォーカス（GitHub I
     press(screen.getByRole('button', { name: '消して閉じる' }));
     await settle();
     expect(document.activeElement).toBe(document.querySelector('[data-return]'));
+  });
+});
+
+describe('窓を閉じたあとの読み直しで開いた元が消えるとき（窓の部品の returnWithin。GitHub Issue #213）', () => {
+  /** 行の中に開いた元を置き、閉じたあとに開いた元・行を消せる画面 */
+  function Rows() {
+    const [opened, setOpened] = useState(false);
+    const [state, setState] = useState<'both' | 'other' | 'none'>('both');
+    return (
+      <main tabIndex={-1}>
+        <table><tbody>
+          {state !== 'none' && (
+            <tr>
+              <td>
+                {state === 'both' && <button onClick={() => setOpened(true)}>取り消す</button>}
+                <button>開く</button>
+              </td>
+            </tr>
+          )}
+        </tbody></table>
+        <button onClick={() => setState('other')}>開いた元だけ消す</button>
+        <button onClick={() => setState('none')}>行ごと消す</button>
+        {opened && <Modal title="窓" onClose={() => setOpened(false)} returnWithin={['td', 'tr']}><p>中身</p></Modal>}
+      </main>
+    );
+  }
+  /** 利用者の操作（キー・ポインタ・フォーカス）を出さずに押す。読み直しで消えるのと同じにする */
+  const quietClick = (el: HTMLElement) => act(() => { el.click(); });
+
+  it('閉じたときは開いた元へ戻し、そのあと開いた元が消えたら、同じ行の押せる最初のものへ移す', async () => {
+    render(<Rows />);
+    const opener = screen.getByRole('button', { name: '取り消す' });
+    press(opener);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(document.activeElement).toBe(opener);
+    quietClick(screen.getByRole('button', { name: '開いた元だけ消す' }));
+    await settle();
+    expect(opener.isConnected).toBe(false);
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: '開く' }));
+  });
+
+  it('行ごと消えたら、本文（main）へ移す', async () => {
+    render(<Rows />);
+    press(screen.getByRole('button', { name: '取り消す' }));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    quietClick(screen.getByRole('button', { name: '行ごと消す' }));
+    await settle();
+    expect(document.activeElement).toBe(document.querySelector('main'));
+  });
+
+  it('連絡帳（園児）：きょうのようすの記録を取り消すと行が消えるので、同じ欄の押せるものへ移す', async () => {
+    open('/staff/contact/C001', teacher);
+    await screen.findByRole('heading', { name: '野原 太郎' }, { timeout: 3000 });
+    const todaySection = document.querySelector<HTMLElement>('section[aria-labelledby="child-today-title"]')!;
+    const fixes = await waitFor(() => {
+      const found = todaySection.querySelectorAll<HTMLButtonElement>('.contact-fix-button');
+      expect(found.length).toBeGreaterThan(1);
+      return found;
+    }, { timeout: 3000 });
+    const opener = fixes[fixes.length - 1];
+    press(opener);
+    fireEvent.click(await screen.findByRole('button', { name: 'この記録を取り消す' }));
+    const dialog = await screen.findByRole('dialog', { name: 'この記録を取り消しますか' });
+    const confirm = within(dialog).getByRole('button', { name: '取り消す' }) as HTMLButtonElement;
+    await waitFor(() => expect(confirm.disabled).toBe(false), { timeout: 3000 });
+    press(confirm);
+    await waitFor(() => expect(opener.isConnected).toBe(false), { timeout: 3000 });
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+    expect(todaySection.contains(document.activeElement)).toBe(true);
+  });
+
+  it('誤送信対応の記録：記録すると行が一覧から消えるので、同じ一覧の押せるもの（なければ本文）へ移す', async () => {
+    const sent = await api.send(teacher, 8, 'M1 取り消すメッセージ（テスト）');
+    await api.retract(teacher, sent.chat_message_id);
+    open('/staff/admin/misdelivery', admin);
+    const pendingTitle = await screen.findByRole('heading', { name: '対応の記録がない取消メッセージ' }, { timeout: 3000 });
+    const pending = pendingTitle.closest('section')!;
+    const openers = await within(pending).findAllByRole('button', { name: '対応を記録する' }, { timeout: 3000 });
+    const opener = openers[openers.length - 1];
+    press(opener);
+    const dialog = await screen.findByRole('dialog', { name: '誤送信への対応を記録する' });
+    fireEvent.change(dialog.querySelector('input[type="datetime-local"]')!, { target: { value: `${today()}T10:00` } });
+    fireEvent.click(within(dialog).getByRole('radio', { name: '既読は付いていなかった' }));
+    fireEvent.change(within(dialog).getByLabelText('とった対応'), { target: { value: '取り消したことを確かめた（テスト）' } });
+    press(within(dialog).getByRole('button', { name: '記録する' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '誤送信への対応を記録する' })).toBeNull(), { timeout: 3000 });
+    await waitFor(() => expect(opener.isConnected).toBe(false), { timeout: 3000 });
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+    const active = document.activeElement!;
+    expect(pending.contains(active) || active === document.querySelector('main')).toBe(true);
+  });
+});
+
+describe('設定画面：保存したら区画を描き直す（GitHub Issue #213 で見つけたもの）', () => {
+  it('時計を止めずに、読んだのと同じ秒のうちに保存しても、確認の窓が閉じて「保存しています…」が残らない', async () => {
+    const frozen = Date.now();
+    // このテストだけ、時計を本物の時間とともに進める（ほかのテストのために、終わったら止めた時計へ戻す）
+    vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true, now: frozen });
+    try {
+      const read = vi.spyOn(api, 'settings');
+      open('/staff/admin/settings', admin);
+      await screen.findByRole('heading', { name: 'AI の下書き' }, { timeout: 3000 });
+      const view = await (read.mock.results[0].value as Promise<SettingsView>);
+      fireEvent.click(screen.getByRole('radio', { name: '使う' }));
+      press(screen.getByRole('button', { name: '保存する' }));
+      const dialog = await screen.findByRole('dialog', { name: '設定を保存しますか' });
+      // 読んだ時刻（秒まで）の頭へ合わせてから保存する。時計は進み続けるが、同じ秒のうちに保存が済む
+      vi.setSystemTime(Date.parse(`${view.read_at}+09:00`));
+      const save = vi.spyOn(api, 'saveSettings');
+      press(within(dialog).getByRole('button', { name: '保存する' }));
+      const saved = await (save.mock.results[0].value as Promise<SettingsView>);
+      // 保存して返ってきた版の時刻が、読んだ時刻と同じ秒（同じ秒に保存したことの確かめ）
+      expect(saved.read_at).toBe(view.read_at);
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: '設定を保存しますか' })).toBeNull(), { timeout: 3000 });
+      expect(screen.queryByText('保存しています…')).toBeNull();
+    } finally {
+      vi.useFakeTimers({ toFake: ['Date'], now: frozen });
+    }
   });
 });

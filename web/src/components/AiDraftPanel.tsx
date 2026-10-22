@@ -102,7 +102,21 @@ export default function AiDraftPanel({ childId, date, field, max, text, disabled
     }
   };
 
-  // 「この文を使う」は候補のカードごと消えるので、文を入れた入力欄へ移す（GitHub Issue #213）
+  /*
+   * 押すと押したボタンごと消えるもの（GitHub Issue #213）：
+   *   - 「この文を使う」・結果の「閉じる」：候補・結果の欄が消えるので、入力欄へ移す
+   *   - メモの欄の「閉じる」：欄が消えるので、欄を開いた「AI で下書き」へ戻す（「下書きを作る」で作れたときと同じ）
+   */
+  const closeMemo = () => {
+    const pressed = focusedNow();
+    setMemoOpen(false);
+    focusAfter(pressed, () => draftButton.current);
+  };
+  const closeResult = () => {
+    const pressed = focusedNow();
+    setResult(null);
+    if (focusAfterUse) focusAfter(pressed, focusAfterUse);
+  };
   const use = (d: string) => {
     const pressed = focusedNow();
     onUse(d, result?.purpose === 'continue' ? 'append' : 'replace');
@@ -133,7 +147,7 @@ export default function AiDraftPanel({ childId, date, field, max, text, disabled
           <div className="contact-composer-actions">
             <button type="button" className="btn-primary" onClick={() => void make('facility_note')} disabled={making !== null}
               aria-busy={making === 'facility_note'}>{AI_TEXT.makeDraft}</button>
-            <button type="button" onClick={() => setMemoOpen(false)} disabled={making !== null}>閉じる</button>
+            <button type="button" onClick={closeMemo} disabled={making !== null}>閉じる</button>
           </div>
         </div>
       )}
@@ -155,7 +169,7 @@ export default function AiDraftPanel({ childId, date, field, max, text, disabled
           )}
           <p className="ai-draft-note">{AI_TEXT.checkBeforeSend}</p>
           {result.replaced && <p className="ai-draft-note">{AI_TEXT.replacedOthers}</p>}
-          <button type="button" className="btn-quiet" onClick={() => setResult(null)}>閉じる</button>
+          <button type="button" className="btn-quiet" onClick={closeResult}>閉じる</button>
         </div>
       )}
     </div>

@@ -331,7 +331,8 @@ export default function InvitationCodesScreen() {
       )}
 
       {revoking && (
-        <ConfirmDialog title="招待コードの失効" confirmLabel="失効する" danger
+        /* 失効すると、読み直しで行の「失効」が消える。同じ行の押せる最初のもの、なければ本文へ（GitHub Issue #213） */
+        <ConfirmDialog title="招待コードの失効" confirmLabel="失効する" danger returnWithin={['td', 'tr']}
           onConfirm={revoke} onCancel={() => setRevoking(null)}>
           <p>
             {revoking.childName} の招待コード
