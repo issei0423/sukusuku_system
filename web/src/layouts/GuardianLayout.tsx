@@ -2,11 +2,16 @@
  * 保護者（スマートフォン）の共通レイアウト
  * 典拠：図/画面詳細図.md「保護者（スマートフォン）」(1-2)
  *
- * サイドナビを持たず、ホームからの導線に絞る。片手操作を前提とするため。
+ * スマートフォンではサイドナビを持たず、ホームからの導線に絞る。片手操作を前提とするため。
  * ログアウトはメニュー内に置く（基本設計書「画面基本構成」(3-5)）。
+ *
+ * 【仮置き】PC の幅（1024px 以上）では、メニューを左に常に出し、緊急連絡の番号をヘッダに置く。
+ * 設計は保護者の画面をスマートフォン・縦向き・シングルカラムとだけ定め、PC で開いたときの見せ方を
+ * 決めていない（基本設計書「想定する端末と向き」(3-5)）。PC で開くと 480px の列が中央に出るだけで、
+ * メニューも隠れたままになるための提案（web/仮置き値.md）。幅の切り替えは CSS（app.css）で行う。
  */
 import { useEffect, useRef, useState } from 'react';
-import { Link, Outlet, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useSession } from '../session';
 import { useAsync, AUTO_REFRESH_MS } from '../hooks';
 import { onLive } from '../live';
@@ -18,6 +23,23 @@ import AiOptOutDialog from '../components/AiOptOutDialog';
 import AddChildDialog from '../components/AddChildDialog';
 import { AI_OPT_OUT_TEXT, ADD_CHILD_TEXT } from '../messages';
 import { UnsavedInputContext, useUnsavedInputTracker } from '../unsavedInput';
+
+/**
+ * メニューの行き先。スマートフォンのメニュー（ドロワー）と、PC の幅で常に出すメニューで同じものを並べる。
+ * あいだに、ダイアログを開く項目（お子さまの追加・AI の下書きの利用）を挟む（dialogItems）
+ */
+const MENU_PAGES = [
+  { to: '/guardian', label: 'ホーム' },
+  { to: '/guardian/chat', label: 'チャット・お知らせ' },
+  { to: '/guardian/handouts', label: '園からの配布物' },
+];
+const MENU_ACCOUNT = [
+  { to: '/guardian/password', label: 'パスワードの変更' },
+  { to: '/guardian/terms', label: '利用規約' },
+];
+
+/** PC とみなす幅。app.css の保護者レイアウトと同じ値（【仮置き】web/仮置き値.md） */
+const PC_WIDTH = '(min-width: 1024px)';
 
 export default function GuardianLayout() {
   const { user, logout } = useSession();
@@ -38,6 +60,16 @@ export default function GuardianLayout() {
   // （知らせが切れている間は数秒ごとに読み直す）。ここで使うのは未読の件数だけ
   const home = useAsync(() => api.guardianHome(user!), [user?.account_id],
     { refreshMs: AUTO_REFRESH_MS, live: onLive('chat') });
+
+  // PC の幅へ広げたら、開いていたメニューを閉じる。PC の幅ではメニューを左に常に出すため
+  useEffect(() => {
+    // matchMedia の無い環境（テストの jsdom）では見張らない
+    if (typeof window.matchMedia !== 'function') return;
+    const wide = window.matchMedia(PC_WIDTH);
+    const onChange = () => { if (wide.matches) setOpen(false); };
+    wide.addEventListener('change', onChange);
+    return () => wide.removeEventListener('change', onChange);
+  }, []);
 
   // 開いたらメニューに入り、閉じたら開いたボタンへ戻る
   useEffect(() => {
@@ -66,6 +98,34 @@ export default function GuardianLayout() {
     await logout();
     navigate('/');
   };
+  // 誰の保護者かを示す。「園児の氏名 保護者」と表す（図/画面詳細図.md の保護者の表し方）
+  const who = `${home.data?.map((h) => h.child.child_name).join('・') || user.display_name} 保護者`;
+  // ホームの次に、園児ごとの成長の記録を置く（図/画面詳細図「保護者（スマートフォン）」(1-2) の項目14）
+  const pages = [
+    MENU_PAGES[0],
+    ...(home.data ?? []).map((h) => ({
+      to: `/guardian/growth/${encodeURIComponent(h.child.child_id)}`,
+      label: `${h.child.child_name}の成長の記録`,
+    })),
+    ...MENU_PAGES.slice(1),
+  ];
+  /*
+   * ダイアログを開く項目。画面は移らない（図/画面詳細図「保護者（スマートフォン）」(1-2) の項目15・18）。
+   * 並びは設計の「お子さまの追加・連絡先の変更・通知の設定・AI の下書きの利用」の位置（連絡先の変更は
+   * 実装の順番の 15 の残り、通知の設定は【要決定】Web Push を作るかどうか）。
+   * お子さまの追加は常に置く。AI の下書きの利用は、区画を読めるまでは押させない（ダイアログの園児と初期値は区画から作る）。
+   * ドロワーでは、メニューを閉じてから開く（close）
+   */
+  const dialogItems = (close: () => void) => (
+    <>
+      <button type="button" className="drawer-item" aria-haspopup="dialog"
+        onClick={() => { close(); setAddChildOpen(true); }}>{ADD_CHILD_TEXT.title}</button>
+      {aiEnabled && (
+        <button type="button" className="drawer-item" aria-haspopup="dialog" disabled={!home.data}
+          onClick={() => { close(); setAiOptOutOpen(true); }}>{AI_OPT_OUT_TEXT.title}</button>
+      )}
+    </>
+  );
   /*
    * 保存していない入力（書きかけのメッセージなど）があれば、破棄される旨を表示して確認する
    * （基本設計書「ログアウト」(4-3)）。メニューは閉じてから確認を出す（メニューとダイアログを重ねない）
@@ -102,6 +162,11 @@ export default function GuardianLayout() {
           <img className="guardian-brand-wordmark" src="/login-wordmark-crayon.png" alt="すくすく" />
         </Link>
         <div className="spacer" />
+        {/* PC の幅では、緊急連絡の番号をヘッダにも置く（下端の案内は PC の幅では出さない） */}
+        <div className="guardian-header-phone">
+          <span>緊急のご連絡</span>
+          {phone && <a href={`tel:${phone.replace(/[^0-9+]/g, '')}`}>{phone}</a>}
+        </div>
         <button className="notify-btn" onClick={() => navigate('/guardian/chat')} title="通知" aria-label={`通知${unread > 0 ? ` ${unread}件` : ' 0件'}`}>
           <BellIcon />
           {unread > 0 && <span className="notify-badge">{unread}</span>}
@@ -117,38 +182,14 @@ export default function GuardianLayout() {
               それは見て分かる操作ではないため、閉じ方を文字で示す
             */}
             <div className="drawer-head">
-              {/* 誰の保護者かを示す。「園児の氏名 保護者」と表す（図/画面詳細図.md の保護者の表し方） */}
-              <div className="who">
-                {home.data?.map((h) => h.child.child_name).join('・') || user.display_name}
-                {' '}保護者
-              </div>
+              <div className="who">{who}</div>
               <button className="drawer-close" onClick={() => setOpen(false)} aria-label="メニューを閉じる">
                 <span aria-hidden="true">×</span> 閉じる
               </button>
             </div>
-            <Link to="/guardian" onClick={() => setOpen(false)}>ホーム</Link>
-            {/* 園児ごとの成長の記録（図/画面詳細図「保護者（スマートフォン）」(1-2) の項目14） */}
-            {home.data?.map((h) => (
-              <Link key={h.child.child_id} to={`/guardian/growth/${encodeURIComponent(h.child.child_id)}`} onClick={() => setOpen(false)}>
-                {h.child.child_name}の成長の記録
-              </Link>
-            ))}
-            <Link to="/guardian/chat" onClick={() => setOpen(false)}>チャット・お知らせ</Link>
-            <Link to="/guardian/handouts" onClick={() => setOpen(false)}>園からの配布物</Link>
-            {/*
-              ダイアログを開く項目。画面は移らない（図/画面詳細図「保護者（スマートフォン）」(1-2) の項目15・18）。
-              並びは設計の「お子さまの追加・連絡先の変更・通知の設定・AI の下書きの利用」の位置（連絡先の変更は
-              実装の順番の 15 の残り、通知の設定は【要決定】Web Push を作るかどうか）。
-              お子さまの追加は常に置く。AI の下書きの利用は、区画を読めるまでは押させない（ダイアログの園児と初期値は区画から作る）
-            */}
-            <button type="button" className="drawer-item" aria-haspopup="dialog"
-              onClick={() => { setOpen(false); setAddChildOpen(true); }}>{ADD_CHILD_TEXT.title}</button>
-            {aiEnabled && (
-              <button type="button" className="drawer-item" aria-haspopup="dialog" disabled={!home.data}
-                onClick={() => { setOpen(false); setAiOptOutOpen(true); }}>{AI_OPT_OUT_TEXT.title}</button>
-            )}
-            <Link to="/guardian/password" onClick={() => setOpen(false)}>パスワードの変更</Link>
-            <Link to="/guardian/terms" onClick={() => setOpen(false)}>利用規約</Link>
+            {pages.map((m) => <Link key={m.to} to={m.to} onClick={() => setOpen(false)}>{m.label}</Link>)}
+            {dialogItems(() => setOpen(false))}
+            {MENU_ACCOUNT.map((m) => <Link key={m.to} to={m.to} onClick={() => setOpen(false)}>{m.label}</Link>)}
             <div className="spacer" />
             {/* 保護者のログアウトはメニュー内（基本設計書 3-5） */}
             <button className="btn-block" onClick={onLogout}>ログアウト</button>
@@ -172,13 +213,24 @@ export default function GuardianLayout() {
         </ConfirmDialog>
       )}
 
-      <main className="guardian-main" tabIndex={-1}>
-        {/* 知らせが切れている・サーバに届かないときの帯（詳細設計書「つながっているかの表示」(2-8)） */}
-        <ConnectionBanner audience="guardian" />
-        <UnsavedInputContext.Provider value={unsaved.report}>
-          <Outlet key={screenKey} />
-        </UnsavedInputContext.Provider>
-      </main>
+      <div className="guardian-body">
+        {/* PC の幅で常に出すメニュー。スマートフォン・タブレットの幅では CSS で隠し、上のメニューから開く */}
+        <nav className="guardian-sidebar" aria-label="メニュー">
+          <div className="who">{who}</div>
+          {pages.map((m) => <NavLink key={m.to} to={m.to} end>{m.label}</NavLink>)}
+          {dialogItems(() => {})}
+          {MENU_ACCOUNT.map((m) => <NavLink key={m.to} to={m.to} end>{m.label}</NavLink>)}
+          <div className="spacer" />
+          <button className="btn-block" onClick={onLogout}>ログアウト</button>
+        </nav>
+        <main className="guardian-main" tabIndex={-1}>
+          {/* 知らせが切れている・サーバに届かないときの帯（詳細設計書「つながっているかの表示」(2-8)） */}
+          <ConnectionBanner audience="guardian" />
+          <UnsavedInputContext.Provider value={unsaved.report}>
+            <Outlet key={screenKey} />
+          </UnsavedInputContext.Provider>
+        </main>
+      </div>
 
       {/*
         緊急連絡の案内は、保護者向けの全画面に常時置く（基本設計書「画面基本構成」(3-5)）。

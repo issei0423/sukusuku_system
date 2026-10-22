@@ -345,6 +345,8 @@ describe('チャット画面の表示', () => {
     expect(screen.getByRole('button', { name: '了解' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '編集' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '取消' })).toBeTruthy();
+    // 吹き出しに aria-expanded を付けられないので、開いたことは role="status" で伝える
+    expect(screen.getAllByRole('status').map((el) => el.textContent)).toContain('メッセージの操作を開きました。Esc で閉じます。');
 
     // 長押しで開いた直後に指を離したときのクリックは、一覧のボタンに当たっても無視する
     // （一覧を見える位置へ送ると画面が動き、指の下にボタンが来るため）
@@ -353,9 +355,10 @@ describe('チャット画面の表示', () => {
     expect(screen.getByRole('group', { name: 'メッセージの操作' })).toBeTruthy();
     expect(document.querySelectorAll('.msg.mine .bubble.pressable').length).toBeGreaterThan(0);
 
-    // 一覧の外を押すと閉じる
+    // 一覧の外を押すと閉じる。閉じたら知らせは空にする（次に開いたときにまた伝わる）
     fireEvent.pointerDown(document.body);
     expect(screen.queryByRole('group', { name: 'メッセージの操作' })).toBeNull();
+    expect(screen.getAllByRole('status').map((el) => el.textContent)).not.toContain('メッセージの操作を開きました。Esc で閉じます。');
   });
 
   it('保護者：相手のメッセージの長押しでは、リアクションだけを出す', async () => {
@@ -371,14 +374,45 @@ describe('チャット画面の表示', () => {
     expect(screen.queryByRole('button', { name: '取消' })).toBeNull();
   });
 
-  it('保護者：長押しをせず、操作ボタンから一覧を開ける', async () => {
+  it('保護者：「操作」ボタンは置かず、キーボードでは吹き出しを選んで Enter で一覧を開ける', async () => {
     open('/guardian/chat', guardian);
     await settled();
     fireEvent.click(screen.getByText('担任の先生とのやりとり').closest('button')!);
-    await threadReady('.msg.mine .message-actions-trigger');
-    fireEvent.click(document.querySelector('.msg.mine .message-actions-trigger')!);
+    await threadReady('.msg.mine .bubble.pressable');
+    expect(screen.queryByRole('button', { name: /メッセージの操作/ })).toBeNull();
+    const bubble = document.querySelector<HTMLElement>('.msg.mine .bubble.pressable')!;
+    expect(bubble.tabIndex).toBe(0);
+    fireEvent.keyDown(bubble, { key: 'Enter' });
     expect(screen.getByRole('group', { name: 'メッセージの操作' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '編集' })).toBeTruthy();
+    // Esc で閉じると、選んでいた吹き出しへ戻る
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => { expect(screen.queryByRole('group', { name: 'メッセージの操作' })).toBeNull(); });
+    expect(document.activeElement).toBe(bubble);
+  });
+
+  it('保護者：PC の右クリックでは、右クリックした位置に一覧を出す', async () => {
+    open('/guardian/chat', guardian);
+    await settled();
+    fireEvent.click(screen.getByText('担任の先生とのやりとり').closest('button')!);
+    await threadReady('.msg.mine .bubble.pressable');
+    fireEvent.contextMenu(document.querySelector('.msg.mine .bubble.pressable')!, { button: 2, clientX: 120, clientY: 90 });
+    const wrap = (await screen.findByRole('group', { name: 'メッセージの操作' })).parentElement!;
+    expect(wrap.classList.contains('at-cursor')).toBe(true);
+    expect(wrap.style.left).toBe('120px');
+    expect(wrap.style.top).toBe('90px');
+  });
+
+  it('職員：「操作」ボタンは置かず、右クリックした位置に一覧を出す', async () => {
+    open('/staff/chat', teacher);
+    await settled();
+    await waitFor(() => { expect(document.querySelector('.msg .bubble.has-menu')).toBeTruthy(); }, { timeout: 3000 });
+    expect(document.querySelector('.message-actions-trigger')).toBeNull();
+    fireEvent.contextMenu(document.querySelector('.msg .bubble.has-menu')!, { button: 2, clientX: 300, clientY: 200 });
+    const wrap = (await screen.findByRole('group', { name: 'メッセージの操作' })).parentElement!;
+    expect(wrap.classList.contains('at-cursor')).toBe(true);
+    expect(wrap.style.left).toBe('300px');
+    expect(screen.getAllByRole('status').map((el) => el.textContent)).toContain('メッセージの操作を開きました。Esc で閉じます。');
   });
 });
 
