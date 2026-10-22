@@ -187,7 +187,8 @@ export default function StaffHandoutsScreen() {
       )}
 
       {withdrawing && (
-        <Modal title="配布物の取り下げ" onClose={() => setWithdrawing(null)}
+        /* 取り下げると、開いた行が一覧から消える。同じ一覧の押せる最初のもの、なければ本文へ（GitHub Issue #213） */
+        <Modal title="配布物の取り下げ" onClose={() => setWithdrawing(null)} returnWithin={['tr', 'section']}
           footer={<>
             <button onClick={() => setWithdrawing(null)}>やめる</button>
             <button className="btn-primary" onClick={withdraw}>取り下げる</button>

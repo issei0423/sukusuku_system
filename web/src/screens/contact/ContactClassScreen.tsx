@@ -485,8 +485,9 @@ export default function ContactClassScreen() {
         </TemperaturePicker>
       )}
       {fix && (
+        /* 取り消すと欄の「最後の記録」が消える。同じ欄、なければ同じ園児の行の押せる最初のものへ移す（GitHub Issue #213） */
         <FixDialog target={fix.target} normalTemperature={fix.normal} onClose={() => setFix(null)}
-          onDone={(message) => { setFix(null); notify(message); view.refresh(); }} />
+          onDone={(message) => { setFix(null); notify(message); view.refresh(); }} returnWithin={['td', 'tr']} />
       )}
       {photoOpen && classId > 0 && (
         <PhotoSendDialog classId={classId} date={date} onClose={() => setPhotoOpen(false)}

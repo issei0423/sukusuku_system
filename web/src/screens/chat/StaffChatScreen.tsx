@@ -22,6 +22,7 @@ import { formatHM, formatMD } from '../../api/util';
 import type { ChatMessage } from '../../api/types';
 import IncomingLog from './IncomingLog';
 import { useIncomingMessages } from './useIncomingMessages';
+import { focusAfter, focusedNow } from '../../focusAfter';
 
 // 詳細設計書「チャット」(2-9)。DB 上の部屋名は既存の「園児名の保護者」のままにする（同「園児の登録と個人チャット」(4-9)）。
 const roomLabel = (room: { room_type: string; room_name: string }) =>
@@ -97,6 +98,7 @@ export default function StaffChatScreen() {
   // メッセージは、見える位置まで送る。上へ戻って読んでいるときは動かさない
   const scrollRef = useRef<HTMLDivElement | null>(null);
   useFollowLatest(scrollRef, shownRoom, lastMessageId);
+  const input = useRef<HTMLTextAreaElement | null>(null);
 
   const current = rooms.data?.find((r) => r.room.chat_room_id === roomId);
   // 保護者が参加するチャンネルか。既読の人数は保護者の既読だけを数え、吹き出しに職員・保護者の印を添える
@@ -116,8 +118,14 @@ export default function StaffChatScreen() {
     setMenuId(null);
   };
 
+  /*
+   * 送れると欄が空になって「送信」が押せなくなり、押したボタンからフォーカスが外れて body に落ちる。
+   * 空になった入力欄へ移す（連絡帳の「送る」と同じ。src/focusAfter.ts、WCAG 2.4.3、GitHub Issue #213）。
+   * 送れなかったときは文が残り、「送信」も押せるままなので動かさない
+   */
   const send = async () => {
     if (!roomId || !text.trim()) return;
+    const pressed = focusedNow();
     // 送った先のチャンネルの書きかけだけを消す。送っている間に書き足されたら消さない
     const target = roomId;
     const body = text;
@@ -126,6 +134,7 @@ export default function StaffChatScreen() {
       await api.send(user!, target, body);
       setDrafts((d) => (d[target] === body ? { ...d, [target]: '' } : d));
       messages.refresh();
+      focusAfter(pressed, () => input.current);
     } catch (e) { setError((e as Error).message); }
   };
 
@@ -289,7 +298,7 @@ export default function StaffChatScreen() {
             )}
             {current?.canPost ? (
               <>
-                <textarea value={text} onChange={(e) => setText(e.target.value)} maxLength={1000}
+                <textarea ref={input} value={text} onChange={(e) => setText(e.target.value)} maxLength={1000}
                   placeholder="メッセージを入力" style={{ minHeight: 70 }} />
                 <div className="row-end">
                   <button onClick={() => alert('添付はモックでは未実装です')}>添付</button>
@@ -460,11 +469,24 @@ function MessageRow({ message, mine, canEdit, canDelete, showRole, readOnly, onR
   const [draft, setDraft] = useState(message.body);
   const [editError, setEditError] = useState('');
 
+  /*
+   * 保存する・やめると編集の欄とボタンが消え、押したボタンからフォーカスが外れて body に落ちる。吹き出しへ戻す
+   * （一覧を閉じたとき・Esc と同じ先。src/focusAfter.ts、WCAG 2.4.3、GitHub Issue #213）。
+   * 吹き出しは編集の欄が消えてからフォーカスを受け取れる（tabIndex が付く）ので、それまで待つ
+   */
+  const bubbleWhenReady = () => (bubbleRef.current && bubbleRef.current.tabIndex >= 0 ? bubbleRef.current : null);
+  const cancelEdit = () => {
+    const pressed = focusedNow();
+    setDraft(message.body); setEditing(false);
+    focusAfter(pressed, bubbleWhenReady);
+  };
   const save = async () => {
+    const pressed = focusedNow();
     setEditError('');
     try {
       await onEdit(draft);
       setEditing(false);
+      focusAfter(pressed, bubbleWhenReady);
     } catch (e) {
       setEditError(e instanceof Error ? e.message : '編集できませんでした');
     }
@@ -502,7 +524,7 @@ function MessageRow({ message, mine, canEdit, canDelete, showRole, readOnly, onR
               maxLength={1000} rows={4} style={{ width: '100%', boxSizing: 'border-box' }} />
             {editError && <div className="weak">{editError}</div>}
             <div className="row-end" style={{ marginTop: 4 }}>
-              <button className="btn-sm" onClick={() => { setDraft(message.body); setEditing(false); }}>やめる</button>
+              <button className="btn-sm" onClick={cancelEdit}>やめる</button>
               <button className="btn-sm btn-primary" onClick={save} disabled={!draft.trim()}>保存</button>
             </div>
           </>

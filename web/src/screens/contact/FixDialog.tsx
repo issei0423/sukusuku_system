@@ -84,7 +84,7 @@ export function cancelAction(user: SessionUser, t: FixTarget): ToastAction {
   };
 }
 
-export default function FixDialog({ target, normalTemperature, startMode = 'edit', onDone, onClose }: {
+export default function FixDialog({ target, normalTemperature, startMode = 'edit', onDone, onClose, returnWithin }: {
   target: FixTarget;
   /** 「取り消す」から開いたときは、取り消しの確認から始める */
   startMode?: 'edit' | 'cancel';
@@ -93,6 +93,8 @@ export default function FixDialog({ target, normalTemperature, startMode = 'edit
   /** 直した・取り消したあと。結果の文を受け取る */
   onDone: (message: string) => void;
   onClose: () => void;
+  /** 開いた元（「直す」など）を囲む範囲（狭い順）。取り消して記録が消えたあとの読み直しで開いた元が消えたときの移し先（窓の部品 Modal の returnWithin。GitHub Issue #213） */
+  returnWithin?: string[];
 }) {
   const { user } = useSession();
   const [mode, setMode] = useState<'edit' | 'cancel'>(startMode);
@@ -171,7 +173,7 @@ export default function FixDialog({ target, normalTemperature, startMode = 'edit
 
   if (mode === 'cancel') {
     return (
-      <Modal title="この記録を取り消しますか" onClose={onClose}
+      <Modal title="この記録を取り消しますか" onClose={onClose} returnWithin={returnWithin}
         footer={<>
           <button type="button" onClick={() => { if (startMode === 'cancel') onClose(); else { setMode('edit'); setError(null); } }} disabled={busy}>やめる</button>
           <button type="button" className="btn-danger" onClick={() => run(async () => { await cancelTarget(user!, target); return cancelledText(summary); })}
@@ -186,7 +188,7 @@ export default function FixDialog({ target, normalTemperature, startMode = 'edit
 
   const editable = target.kind === 'sleep' || (!!e && ['1', '2', '3', '4'].includes(e.event_type));
   return (
-    <Modal title="記録を直す" onClose={onClose}
+    <Modal title="記録を直す" onClose={onClose} returnWithin={returnWithin}
       footer={<>
         <button type="button" onClick={onClose} disabled={busy}>閉じる</button>
         <button type="button" className="btn-danger btn-quiet" onClick={() => { setMode('cancel'); setError(null); }} disabled={busy}>この記録を取り消す</button>

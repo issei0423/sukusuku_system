@@ -12,6 +12,34 @@
  * 待つ間に利用者が次の操作をした（キーを押した・画面を押した・ほかへフォーカスが入った）ら、待つのをやめる。
  */
 
+/** root の中の、Tab で止まれる部品（画面上の順） */
+export function focusableIn(root: HTMLElement | null): HTMLElement[] {
+  return Array.from(root?.querySelectorAll<HTMLElement>(
+    'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+  ) ?? []).filter((element) => element.getAttribute('aria-hidden') !== 'true' &&
+    !(element instanceof HTMLInputElement && element.type === 'hidden'))
+    // 複数のセレクタをまとめた検索は、環境によって画面上の順で返らない。Tab の折り返し先を誤らないよう並べ直す
+    .sort((x, y) => (x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+}
+
+/**
+ * el を囲む範囲（CSS のセレクタ。狭い順。例：['tr', 'section']）を、いま覚える。
+ * 返す関数は、まだ残っている範囲のうちいちばん狭いものの、押せる最初の部品を返す（無ければ null）。
+ * 押したもの・窓を開いた元が読み直しで消えたときの移し先（同じ行 → 一覧）に使う（GitHub Issue #213）。
+ * 範囲は消える前に覚える（消えたあとの el からは、囲んでいた範囲をたどれない）
+ */
+export function around(el: HTMLElement | null, selectors: string[]): () => HTMLElement | null {
+  const areas = selectors.map((selector) => el?.closest<HTMLElement>(selector) ?? null)
+    .filter((area): area is HTMLElement => area !== null);
+  return () => {
+    for (const area of areas) {
+      const first = area.isConnected ? focusableIn(area)[0] : undefined;
+      if (first) return first;
+    }
+    return null;
+  };
+}
+
 /** 押した時点で呼ぶ。いまフォーカスのある要素を返す（body なら null）。応答のあとに focusAfter へ渡す */
 export function focusedNow(): HTMLElement | null {
   if (typeof document === 'undefined') return null;

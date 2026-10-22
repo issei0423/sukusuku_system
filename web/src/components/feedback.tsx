@@ -170,8 +170,12 @@ export function ToastHost() {
         </div>
       )}
       {confirming && (
+        /*
+         * 「やめる」・Esc で閉じたとき、窓を開いている間に知らせが時間で消えていると、開いた元（知らせの「取り消す」）が無い。
+         * 「閉じる」と同じく、知らせへ入る前にいた部品へ、戻せなければ本文（main）へ移す（窓の部品の returnTo。GitHub Issue #213）
+         */
         <ConfirmDialog title={confirming.action.confirmTitle} confirmLabel={confirming.action.label} danger busy={confirming.busy}
-          onCancel={() => setConfirming(null)} onConfirm={runConfirmed}>
+          onCancel={() => setConfirming(null)} onConfirm={runConfirmed} returnTo={() => backTo(cameFrom.current)()}>
           {confirming.text === null ? <p>読み込んでいます…</p> : <p className="pre-wrap">{confirming.text}</p>}
           {confirming.error && <p className="contact-error" role="alert">{confirming.error}</p>}
         </ConfirmDialog>
@@ -181,12 +185,16 @@ export function ToastHost() {
 }
 
 /** 確定する前に、何が起きるかを確かめる */
-export function ConfirmDialog({ title, children, confirmLabel, danger, busy, confirmDisabled, onConfirm, onCancel }: {
+export function ConfirmDialog({ title, children, confirmLabel, danger, busy, confirmDisabled, onConfirm, onCancel, returnTo, returnWithin }: {
   title: string; children: ReactNode; confirmLabel: string; danger?: boolean; busy?: boolean; confirmDisabled?: boolean;
   onConfirm: () => void; onCancel: () => void;
+  /** 閉じたときに開いた元が消えていたら、フォーカスを移す先（窓の部品 Modal の returnTo） */
+  returnTo?: () => HTMLElement | null | undefined;
+  /** 開いた元を囲む範囲（狭い順）。閉じたあとの読み直しで開いた元が消えたときの移し先（窓の部品 Modal の returnWithin。GitHub Issue #213） */
+  returnWithin?: string[];
 }) {
   return (
-    <Modal title={title} onClose={onCancel}
+    <Modal title={title} onClose={onCancel} returnTo={returnTo} returnWithin={returnWithin}
       footer={<>
         <button onClick={onCancel} disabled={busy}>やめる</button>
         <button className={danger ? 'btn-danger' : 'btn-primary'} onClick={onConfirm} disabled={busy || confirmDisabled}>

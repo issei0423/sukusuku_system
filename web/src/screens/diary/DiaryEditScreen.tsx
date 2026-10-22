@@ -26,6 +26,7 @@ import { acquireDiaryLock, releaseDiaryLock, releaseDiaryLockNow, markDiaryLockH
 import { IncidentFields } from './IncidentFields';
 import { EMPTY_INCIDENT, incidentFormOf, incidentInputOf, incidentReady } from './incidentForm';
 import type { IncidentForm } from './incidentForm';
+import { focusAfter, focusedNow } from '../../focusAfter';
 
 // 本文の上限（基本設計書「入力項目の制約値」(4-9)）
 const BODY_MAX = 2000;
@@ -266,7 +267,13 @@ export default function DiaryEditScreen() {
     setDirty(true);
   };
 
+  /*
+   * 保存している間は「下書き保存」が押せなくなり、押したボタンからフォーカスが外れて body に落ちる。
+   * 応答のあと、押したボタンへ戻す（src/focusAfter.ts、WCAG 2.4.3、GitHub Issue #213）。
+   * 保存できて別の画面（新しい日誌は保存した日誌の画面）へ移るときは、画面の移り変わりが本文（main）へ移す（App.tsx）
+   */
   const save = async (status: '1' | '2') => {
+    const pressed = focusedNow();
     setBusy(true);
     setError(null);
     try {
@@ -285,6 +292,7 @@ export default function DiaryEditScreen() {
       setError((e as Error).message);
     } finally {
       setBusy(false);
+      focusAfter(pressed);
     }
   };
 
@@ -521,14 +529,15 @@ export default function DiaryEditScreen() {
         )}
 
         {withdrawing && (
-          <ConfirmDialog title="申請の取り下げ" confirmLabel="取り下げる" busy={busy}
+          /* 取り下げる・取り消して差し戻すと、読み直しで押したボタンが消える。同じ並びの押せる最初のものへ（GitHub Issue #213） */
+          <ConfirmDialog title="申請の取り下げ" confirmLabel="取り下げる" busy={busy} returnWithin={['.row-end']}
             onConfirm={withdraw} onCancel={() => setWithdrawing(false)}>
             <p>申請を取り下げますか。下書きに戻り、承認待ちから外れます。</p>
           </ConfirmDialog>
         )}
 
         {revoking && (
-          <ConfirmDialog title="承認の取り消し" confirmLabel="取り消して差し戻す" danger busy={busy}
+          <ConfirmDialog title="承認の取り消し" confirmLabel="取り消して差し戻す" danger busy={busy} returnWithin={['.row-end']}
             confirmDisabled={!revokeReason.trim()}
             onConfirm={revoke} onCancel={() => setRevoking(false)}>
             <p>承認を取り消して差し戻します。作成者の一覧に差し戻しとして出ます。保護者へは何も届いていません。</p>
