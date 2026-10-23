@@ -190,22 +190,32 @@ describe('保護者のログアウト：保存していない入力（#170 の 5
   });
 });
 
-describe('保護者ホーム：園からの配布物の「新しいもの」（#170 の 6）', () => {
-  it('掲載したばかりの配布物は、対象の月が前の月でも先頭に出る', async () => {
-    const [y, m] = today().split('-').map(Number);
-    const old = new Date(Date.UTC(y, m - 3, 1));
-    const oldMonth = `${old.getUTCFullYear()}-${String(old.getUTCMonth() + 1).padStart(2, '0')}`;
-    await api.postHandout(admin, {
-      handout_type: '1', title: '訂正版の園だより', target_month: oldMonth, class_id: null,
-      file_name: 'teisei.pdf', file_type: 'application/pdf', file_size: 1000,
-    });
-
+describe('園からの配布物はチャット・お知らせから開く（職員のチャット画面と同じ形）', () => {
+  it('保護者のメニューには「園からの配布物」を置かない', async () => {
     open('/guardian', guardian);
-    const panel = (await screen.findByRole('heading', { name: '園からの配布物' }, { timeout: 3000 }))
+    await screen.findByRole('heading', { name: 'こんにちは' }, { timeout: 3000 });
+    const menuLinks = Array.from(document.querySelectorAll('.guardian-sidebar a, .drawer a'))
+      .map((a) => a.textContent ?? '');
+    expect(menuLinks.some((t) => t.includes('チャット・お知らせ'))).toBe(true);
+    expect(menuLinks.some((t) => t.includes('園からの配布物'))).toBe(false);
+  });
+
+  it('保護者ホーム：配布物の区画は置かず、「チャット・お知らせ」の区画から配布物の一覧へ行ける', async () => {
+    open('/guardian', guardian);
+    const panel = (await screen.findAllByRole('heading', { name: 'チャット・お知らせ' }, { timeout: 3000 }))[0]
       .closest('section')!;
-    await waitFor(() => expect(panel.querySelectorAll('.guardian-record-list a').length).toBe(3));
-    const titles = Array.from(panel.querySelectorAll('.guardian-record-list a .handout-title'))
-      .map((e) => e.textContent ?? '');
-    expect(titles[0]).toContain('訂正版の園だより');
+    const link = within(panel).getByRole('link', { name: /園からの配布物を見る/ });
+    expect(link.getAttribute('href')).toBe('/guardian/handouts');
+    expect(screen.queryByRole('heading', { name: '園からの配布物' })).toBeNull();
+  });
+
+  it('チャット・お知らせ画面に「園からの配布物」を置き、配布物の一覧の「戻る」はチャット・お知らせへ戻る', async () => {
+    open('/guardian/chat', guardian);
+    const toHandouts = await screen.findByRole('link', { name: '園からの配布物' }, { timeout: 3000 });
+    expect(toHandouts.getAttribute('href')).toBe('/guardian/handouts');
+    fireEvent.click(toHandouts);
+    await screen.findByRole('heading', { name: '園からの配布物' }, { timeout: 3000 });
+    const back = screen.getByRole('link', { name: /チャット・お知らせへ/ });
+    expect(back.getAttribute('href')).toBe('/guardian/chat');
   });
 });

@@ -291,7 +291,7 @@
 
 /* 園からの配布物 */
 .handout-row { justify-content: space-between; text-align: left; gap: var(--sp-2); }
-/* 保護者の画面では、保護者ホームの配布物と同じ行の見た目にそろえる。ボタンでもリンクでも同じに見せる */
+/* 保護者の画面では、保護者ホームの記録の行と同じ見た目にそろえる */
 button.guardian-record-link {
   width: 100%; padding: var(--sp-1) 0; background: none; border: 0; border-bottom: 1px solid var(--c-border);
   border-radius: 0; font: inherit; font-weight: 400; cursor: pointer;
@@ -300,7 +300,10 @@ button.guardian-record-link {
   button.guardian-record-link:hover:not(:disabled) { border-color: var(--c-border); background: var(--c-surface-sub); }
 }
 .guardian-record-link .handout-title { padding: var(--sp-1) 0; }
-.guardian-handout-all { margin-top: var(--sp-4); }
+/* 保護者ホームの「チャット・お知らせ」の区画で、「チャットを開く」の下に置く */
+.guardian-handout-link { margin-top: var(--sp-2); }
+/* 「チャット・お知らせ」の画面の見出しの下に置く */
+.guardian-handout-button { align-self: flex-start; margin-top: var(--sp-2); }
 .handout-title { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; flex: 1; flex-wrap: wrap; }
 /* 題名が長くて折り返しても、「開く」は1行のまま右に置く */
 .handout-row > .muted { flex: none; white-space: nowrap; }

@@ -241,6 +241,8 @@ export default function GuardianChatScreen() {
           <span className="guardian-eyebrow">園とのやりとり</span>
           <h1>チャット・お知らせ</h1>
           <p>連絡先を選んで、メッセージを確認できます。</p>
+          {/* 園だより・献立表など、あとから見返すもの。職員のチャット画面の「園からの配布物」と同じ置き方 */}
+          <Link className="btn btn-sm guardian-handout-button" to="/guardian/handouts">園からの配布物</Link>
         </div>
         <div className="guardian-room-list">
           {rooms.data?.map((r) => (

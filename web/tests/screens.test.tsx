@@ -224,10 +224,10 @@ describe('保護者向けの緊急連絡の案内', () => {
 });
 
 describe('園からの配布物（2画面）', () => {
-  it('保護者ホーム：配布物の区画と、一覧への導線を出す', async () => {
+  it('保護者ホーム：「チャット・お知らせ」の区画から、配布物の一覧への導線を出す', async () => {
     open('/guardian', guardian);
     await settled();
-    await waitFor(() => { expect(screen.getByText('園だより・献立表をすべて見る')).toBeTruthy(); }, { timeout: 3000 });
+    await waitFor(() => { expect(screen.getAllByText('園からの配布物を見る').length).toBeGreaterThan(0); }, { timeout: 3000 });
   });
 
   it('配布物一覧画面（保護者）：月ごとにまとめて出し、開くと題名と形式が分かる', async () => {
