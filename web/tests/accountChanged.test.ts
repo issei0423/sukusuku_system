@@ -13,7 +13,7 @@ import { onAccountChanged, setSessionAccount, ACCOUNT_HEADER } from '../src/api/
 import type { SessionUser } from '../src/api/types';
 
 const guardian: SessionUser = {
-  account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
+  account_id: 6, email: 'nishida.t@example.jp', role: '3', display_name: '西田 拓也',
   staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };

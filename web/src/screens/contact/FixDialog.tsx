@@ -45,7 +45,7 @@ export function timeOptions(date: string, current?: string): string[] {
   return out.sort();
 }
 
-/** 取り消しの確認に出す要約（「12:10 給食 ぜんぶ（野原 太郎）」） */
+/** 取り消しの確認に出す要約（「12:10 給食 ぜんぶ（西田 太郎）」） */
 export function targetSummary(t: FixTarget): string {
   if (t.kind === 'event') return `${formatHM(t.event.recorded_at)} ${eventText(t.event).slice(0, 30)}（${t.childName}）`;
   if (t.kind === 'facility') return `${formatHM(t.facility.recorded_at)} 園から「${t.facility.body.slice(0, 20)}${[...t.facility.body].length > 20 ? '…' : ''}」（${t.childName}）`;

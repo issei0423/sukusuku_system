@@ -13,12 +13,12 @@ import { addDays, ageInMonths, today } from '../src/api/util';
 import type { SessionUser } from '../src/api/types';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
@@ -113,7 +113,7 @@ describe('デモデータの発達チェックは、日付ずらしで区分が�
   });
 
   it('一覧に、デモデータの前回の記録の「未入力」が出ない', async () => {
-    // 前回の記録があるのは 野原 太郎・上園 花子・宮城 美咲（ほかの園児は、このファイルの前のテストで記録が増えている）
+    // 前回の記録があるのは 西田 太郎・遠藤 花子・村田 美咲（ほかの園児は、このファイルの前のテストで記録が増えている）
     const rows = (await api.list(teacher, 1)).filter((r) => ['C001', 'C002', 'C004'].includes(r.child.child_id));
     expect(rows).toHaveLength(3);
     for (const r of rows) {
@@ -129,7 +129,7 @@ describe('デモデータの発達チェックは、日付ずらしで区分が�
  */
 describe('一覧の「未入力」は、下書きも含めた最新の記録で数える', () => {
   it('下書きに保存した項目は入力済み、保存していない項目は未入力。下書きは実施にならない', async () => {
-    const child = db.children.find((c) => c.child_id === 'C001')!; // 野原 太郎。前回の確定した記録がある
+    const child = db.children.find((c) => c.child_id === 'C001')!; // 西田 太郎。前回の確定した記録がある
     const items = await api.itemsFor(ageInMonths(child.birth_date, today()));
     const rowOf = async () => (await api.list(teacher, 1)).find((r) => r.child.child_id === 'C001')!;
 

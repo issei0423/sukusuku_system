@@ -20,8 +20,8 @@ import (
  */
 func TestNapAbnormalGuardianNotice(t *testing.T) {
 	a, h := newTestApp(t)
-	takanashi := loginAs(a, 3, "staff") // さくら組
-	s := startOwnNap(t, h, takanashi)
+	suzuki := loginAs(a, 3, "staff") // さくら組
+	s := startOwnNap(t, h, suzuki)
 	path := "/api/nap/session/" + itoa(s.NapSessionID) + "/abnormals"
 	found := today() + "T00:00:00"
 	body := func(notice string) string {
@@ -52,14 +52,14 @@ func TestNapAbnormalGuardianNotice(t *testing.T) {
 	}
 
 	t.Run("連絡の要否はシステムが判断しない。未記入のままでも記録でき、4列とも空になる", func(t *testing.T) {
-		x := storedOf(call(t, h, takanashi, "POST", path, body("")).Body.Bytes())
+		x := storedOf(call(t, h, suzuki, "POST", path, body("")).Body.Bytes())
 		if x.notice.Valid || x.at.Valid || x.method.Valid || x.person.Valid {
 			t.Fatalf("未記入のはずが値が入っています: %+v", x)
 		}
 	})
 
 	t.Run("「しない」は記録でき、日時・手段・相手は持たない", func(t *testing.T) {
-		x := storedOf(call(t, h, takanashi, "POST", path, body(
+		x := storedOf(call(t, h, suzuki, "POST", path, body(
 			`"guardian_notice":"2","guardian_noticed_at":"`+found+`","guardian_notice_method":"1","guardian_notice_person":"母"`)).Body.Bytes())
 		if x.notice.String != "2" || x.at.Valid || x.method.Valid || x.person.Valid {
 			t.Fatalf("しない = %+v", x)
@@ -79,7 +79,7 @@ func TestNapAbnormalGuardianNotice(t *testing.T) {
 			"した・しない以外":   `"guardian_notice":"3"`,
 		}
 		for name, c := range cases {
-			got := expectStatus(t, request(t, h, takanashi, "POST", path, body(c)), http.StatusBadRequest)
+			got := expectStatus(t, request(t, h, suzuki, "POST", path, body(c)), http.StatusBadRequest)
 			if !strings.Contains(got, "保護者") {
 				t.Fatalf("%s: 保護者への連絡の文言ではありません: %s", name, got)
 			}
@@ -91,16 +91,16 @@ func TestNapAbnormalGuardianNotice(t *testing.T) {
 
 	t.Run("「した」は日時・手段・相手を残し、一覧で返す。電話のあとに経過を書いた連絡帳・個人チャットも手段に選べる", func(t *testing.T) {
 		person := strings.Repeat("母", 49) + "）"
-		x := storedOf(call(t, h, takanashi, "POST", path, body(
+		x := storedOf(call(t, h, suzuki, "POST", path, body(
 			`"guardian_notice":"1","guardian_noticed_at":"`+found+`","guardian_notice_method":"1","guardian_notice_person":" `+person+` "`)).Body.Bytes())
 		if x.notice.String != "1" || x.at.String != found || x.method.String != "1" || x.person.String != person {
 			t.Fatalf("した = %+v", x)
 		}
-		storedOf(call(t, h, takanashi, "POST", path, body(
+		storedOf(call(t, h, suzuki, "POST", path, body(
 			`"guardian_notice":"1","guardian_noticed_at":"`+found+`","guardian_notice_method":"3","guardian_notice_person":"父"`)).Body.Bytes())
 
 		var list []napAbnormalView
-		if err := json.Unmarshal(call(t, h, takanashi, "GET", "/api/nap/abnormals", "").Body.Bytes(), &list); err != nil {
+		if err := json.Unmarshal(call(t, h, suzuki, "GET", "/api/nap/abnormals", "").Body.Bytes(), &list); err != nil {
 			t.Fatal(err)
 		}
 		methods := map[string]bool{}
@@ -121,7 +121,7 @@ func TestNapAbnormalGuardianNotice(t *testing.T) {
 	t.Run("連絡した日時は、ちょうど発見時刻なら通し、1分前は断る", func(t *testing.T) {
 		n := count()
 		earlier := addDays(today(), -1) + "T23:59:00" // 発見時刻（今日の 00:00）の1分前
-		got := expectStatus(t, request(t, h, takanashi, "POST", path, body(
+		got := expectStatus(t, request(t, h, suzuki, "POST", path, body(
 			`"guardian_notice":"1","guardian_noticed_at":"`+earlier+`","guardian_notice_method":"1","guardian_notice_person":"母"`)), http.StatusBadRequest)
 		if !strings.Contains(got, "発見時刻より前") {
 			t.Fatalf("発見時刻より前を断る文言ではありません: %s", got)
@@ -129,7 +129,7 @@ func TestNapAbnormalGuardianNotice(t *testing.T) {
 		if c := count(); c != n {
 			t.Fatalf("断ったはずの記録が %d 件できています", c-n)
 		}
-		x := storedOf(call(t, h, takanashi, "POST", path, body(
+		x := storedOf(call(t, h, suzuki, "POST", path, body(
 			`"guardian_notice":"1","guardian_noticed_at":"`+found+`","guardian_notice_method":"1","guardian_notice_person":"母"`)).Body.Bytes())
 		if x.at.String != found {
 			t.Fatalf("ちょうど発見時刻の連絡 = %+v, want %s", x, found)

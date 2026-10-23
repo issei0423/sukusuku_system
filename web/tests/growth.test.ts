@@ -23,14 +23,14 @@ const user = (account_id: number, role: SessionUser['role'], extra: Partial<Sess
 const admin = user(1, '1', { staff_id: 'S001' });
 const teacher = user(3, '2', { staff_id: 'S003', class_id: 1, class_name: 'さくら組' });
 const otherTeacher = user(5, '2', { staff_id: 'S005', class_id: 2, class_name: 'ひまわり組' });
-const taroGuardian = user(6, '3', { guardian_id: 'G001' }); // 野原 太郎（C001）の父
-const misakiGuardian = user(9, '3', { guardian_id: 'G004' }); // 宮城 美咲（C004）の父
+const taroGuardian = user(6, '3', { guardian_id: 'G001' }); // 西田 太郎（C001）の父
+const misakiGuardian = user(9, '3', { guardian_id: 'G004' }); // 村田 美咲（C004）の父
 
 /** server/api_growth_test.go の growthAccessCases と同じ行 */
 const growthAccessCases: [name: string, who: SessionUser, child: string, ok: boolean][] = [
   ['保護者は紐づけた自児', taroGuardian, 'C001', true],
   ['保護者はほかの家庭の園児を読めない', taroGuardian, 'C004', false],
-  ['ほかの家庭の保護者は野原 太郎を読めない', misakiGuardian, 'C001', false],
+  ['ほかの家庭の保護者は西田 太郎を読めない', misakiGuardian, 'C001', false],
   ['保護者は無い園児を読めない', taroGuardian, 'C999', false],
   ['さくら組の担任は自クラスの園児', teacher, 'C001', true],
   ['ひまわり組の担任はさくら組の園児を読めない', otherTeacher, 'C001', false],
@@ -91,7 +91,7 @@ describe('届くもの（詳細設計書「成長の記録に届くもの」(3-7
     try {
       check.note = '所見のひみつ';
       const g = await api.growthRecord(taroGuardian, 'C001');
-      expect(g.child_name).toBe('野原 太郎');
+      expect(g.child_name).toBe('西田 太郎');
       expect(g.share_physical).toBe(true);
       expect(g.disclaimer).toContain('判定・診断を行うものではありません');
       const dates = g.measurements.map((m) => m.measured_on);

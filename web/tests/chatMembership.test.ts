@@ -16,22 +16,22 @@ import * as db from '../src/api/mockDb';
 import type { SessionUser } from '../src/api/types';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
-const kinjo: SessionUser = {
-  account_id: 5, email: 'kinjo@hoiku.example.jp', role: '2', display_name: '金城 宗一郎',
+const kubota: SessionUser = {
+  account_id: 5, email: 'kubota@hoiku.example.jp', role: '2', display_name: '久保田 和也',
   staff_id: 'S005', guardian_id: null, class_id: 2, class_name: 'ひまわり組',
   is_temp_password: false, terms_agreed: true,
 };
 const guardian: SessionUser = {
-  account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
+  account_id: 6, email: 'nishida.t@example.jp', role: '3', display_name: '西田 拓也',
   staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
@@ -63,8 +63,8 @@ const staffUser = (accountId: number): SessionUser => {
 
 describe('グループ編成の API で編成できるのは目的別グループだけ（GitHub Issue #161 の 1）', () => {
   it('ほかのクラスの個人チャットに自分を足せない', async () => {
-    await expect(api.updateGroupMembers(kinjo, 6, [1, 3, 4, 6, 5])).rejects.toThrow('目的別グループだけ');
-    await expect(api.messages(kinjo, 6)).rejects.toThrow('参照する権限がありません');
+    await expect(api.updateGroupMembers(kubota, 6, [1, 3, 4, 6, 5])).rejects.toThrow('目的別グループだけ');
+    await expect(api.messages(kubota, 6)).rejects.toThrow('参照する権限がありません');
   });
 
   it('管理者でも、個人チャットから家庭を外せない', async () => {
@@ -73,7 +73,7 @@ describe('グループ編成の API で編成できるのは目的別グルー�
   });
 
   it('職員チャットに保護者を入れられない', async () => {
-    await expect(api.updateGroupMembers(kinjo, 2, [1, 2, 3, 4, 5, 6])).rejects.toThrow('目的別グループだけ');
+    await expect(api.updateGroupMembers(kubota, 2, [1, 2, 3, 4, 5, 6])).rejects.toThrow('目的別グループだけ');
     await expect(api.messages(guardian, 2)).rejects.toThrow('参照する権限がありません');
   });
 
@@ -104,43 +104,43 @@ describe('外した職員は、外したあとの投稿を読めず、書けな�
   it('外す前の過去ログは読めて、外したあとの投稿は読めない。投稿・反応・編集・取消はできない', async () => {
     // 外す前の投稿。外したのと同じ秒に入らないよう、日時を過去に置く
     const k0 = {
-      chat_message_id: 90_001, chat_room_id: 5, sender_account_id: 5, body: 'K0 金城の外される前の投稿',
+      chat_message_id: 90_001, chat_room_id: 5, sender_account_id: 5, body: 'K0 久保田の外される前の投稿',
       source_type: '1' as const, source_id: null, sent_at: '2026-01-05T10:00:00',
       edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null,
     };
     db.chatMessages.push(k0);
-    const unreadBefore = (await api.staffSummary(kinjo)).unreadChat;
+    const unreadBefore = (await api.staffSummary(kubota)).unreadChat;
 
     await api.updateGroupMembers(admin, 5, [1, 3]);
-    await api.send(admin, 5, 'L1 金城さんを外したあとの打ち合わせ');
+    await api.send(admin, 5, 'L1 久保田さんを外したあとの打ち合わせ');
 
-    const bodies = (await api.messages(kinjo, 5)).map((m) => m.body);
-    expect(bodies).not.toContain('L1 金城さんを外したあとの打ち合わせ');
-    expect(bodies).toContain('K0 金城の外される前の投稿');
+    const bodies = (await api.messages(kubota, 5)).map((m) => m.body);
+    expect(bodies).not.toContain('L1 久保田さんを外したあとの打ち合わせ');
+    expect(bodies).toContain('K0 久保田の外される前の投稿');
     expect(bodies).toContain('種目案を今週中にまとめましょう。');
 
-    const view = (await api.rooms(kinjo)).find((r) => r.room.chat_room_id === 5);
+    const view = (await api.rooms(kubota)).find((r) => r.room.chat_room_id === 5);
     expect(view).toBeDefined();
     expect(view!.canPost).toBe(false);
     expect(view!.left).toBe(true);
     expect(view!.unread).toBe(1); // デモデータの「種目案を…」だけ
-    expect((await api.staffSummary(kinjo)).unreadChat).toBe(unreadBefore);
+    expect((await api.staffSummary(kubota)).unreadChat).toBe(unreadBefore);
 
-    await expect(api.send(kinjo, 5, 'L2 外された金城からの投稿')).rejects.toThrow('外れている');
-    await expect(api.toggleReaction(kinjo, k0.chat_message_id, '1')).rejects.toThrow('外れている');
-    await expect(api.edit(kinjo, k0.chat_message_id, '書き換え')).rejects.toThrow('外れている');
-    await expect(api.retract(kinjo, k0.chat_message_id)).rejects.toThrow('外れている');
-    await expect(api.members(5, kinjo)).rejects.toThrow('参照する権限がありません');
+    await expect(api.send(kubota, 5, 'L2 外された久保田からの投稿')).rejects.toThrow('外れている');
+    await expect(api.toggleReaction(kubota, k0.chat_message_id, '1')).rejects.toThrow('外れている');
+    await expect(api.edit(kubota, k0.chat_message_id, '書き換え')).rejects.toThrow('外れている');
+    await expect(api.retract(kubota, k0.chat_message_id)).rejects.toThrow('外れている');
+    await expect(api.members(5, kubota)).rejects.toThrow('参照する権限がありません');
 
     // 既読にするのは読める範囲だけ
-    await api.markRead(kinjo, 5);
-    const l1 = db.chatMessages.find((m) => m.body === 'L1 金城さんを外したあとの打ち合わせ')!;
+    await api.markRead(kubota, 5);
+    const l1 = db.chatMessages.find((m) => m.body === 'L1 久保田さんを外したあとの打ち合わせ')!;
     expect(db.chatReads.some((r) => r.chat_message_id === l1.chat_message_id && r.account_id === 5)).toBe(false);
 
     // 入れ直すと、また読み書きできる
     await api.updateGroupMembers(admin, 5, [1, 3, 5]);
-    await api.send(kinjo, 5, 'L4 戻りました');
-    const back = (await api.rooms(kinjo)).find((r) => r.room.chat_room_id === 5)!;
+    await api.send(kubota, 5, 'L4 戻りました');
+    const back = (await api.rooms(kubota)).find((r) => r.room.chat_room_id === 5)!;
     expect(back.canPost).toBe(true);
     expect(back.left).toBe(false);
   });
@@ -166,16 +166,16 @@ describe('職員アカウントの発行・付け替え・停止がチャット�
   });
 
   it('担任を付け替えると、前のクラスから外れ、新しいクラスに入る', async () => {
-    await api.updateStaffAccount(admin, 'S005', { staff_name: '金城 宗一郎', role: '2', class_id: 1 });
+    await api.updateStaffAccount(admin, 'S005', { staff_name: '久保田 和也', role: '2', class_id: 1 });
     // 目的別グループ（5）は手で編成するものなので、付け替えでは動かさない
     expect(currentRooms(5)).toEqual([1, 2, 3, 5, 6, 7, 8, 9]);
-    await expect(api.send(kinjo, 8, '新しい担任の金城です。')).resolves.toBeTruthy();
-    await expect(api.send(kinjo, 4, '前のクラスへ')).rejects.toThrow('外れている');
-    const old = (await api.rooms(kinjo)).find((r) => r.room.chat_room_id === 4);
+    await expect(api.send(kubota, 8, '新しい担任の久保田です。')).resolves.toBeTruthy();
+    await expect(api.send(kubota, 4, '前のクラスへ')).rejects.toThrow('外れている');
+    const old = (await api.rooms(kubota)).find((r) => r.room.chat_room_id === 4);
     expect(old?.left).toBe(true);
     expect(old?.canPost).toBe(false);
 
-    await api.updateStaffAccount(admin, 'S003', { staff_name: '高梨 倫太朗', role: '2', class_id: 2 });
+    await api.updateStaffAccount(admin, 'S003', { staff_name: '鈴木 浩之', role: '2', class_id: 2 });
     expect(currentRooms(3)).toEqual([1, 2, 4, 5]);
     await expect(api.send(teacher, 8, '外れた家庭へ')).rejects.toThrow('外れている');
     // 未対応の個人チャットは、外れた担任のダッシュボードに数えない
@@ -183,9 +183,9 @@ describe('職員アカウントの発行・付け替え・停止がチャット�
   });
 
   it('一般を管理者にすると全クラスと個人チャットに入り、戻すと担当クラスだけになる', async () => {
-    await api.updateStaffAccount(admin, 'S003', { staff_name: '高梨 倫太朗', role: '1', class_id: 2 });
+    await api.updateStaffAccount(admin, 'S003', { staff_name: '鈴木 浩之', role: '1', class_id: 2 });
     expect(currentRooms(3)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
-    await api.updateStaffAccount(admin, 'S003', { staff_name: '高梨 倫太朗', role: '2', class_id: 1 });
+    await api.updateStaffAccount(admin, 'S003', { staff_name: '鈴木 浩之', role: '2', class_id: 1 });
     expect(currentRooms(3)).toEqual([1, 2, 3, 5, 6, 7, 8, 9]);
   });
 

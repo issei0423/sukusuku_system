@@ -16,8 +16,8 @@ const user = (account_id: number, role: '1' | '2' | '3', email: string, extra: P
   account_id, email, role, display_name: email, staff_id: null, guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true, ...extra,
 });
-const admin = user(1, '1', 'nohara@hoiku.example.jp', { staff_id: 'S001' });
-const teacher = user(3, '2', 'takanashi@hoiku.example.jp', { staff_id: 'S003', class_id: 1 });
+const admin = user(1, '1', 'nishida@hoiku.example.jp', { staff_id: 'S001' });
+const teacher = user(3, '2', 'suzuki@hoiku.example.jp', { staff_id: 'S003', class_id: 1 });
 
 describe('誤送信への対応の記録は、発生日時が無いと断る（GitHub Issue #178 の 1）', () => {
   it('空・秒の無い形・実在しない日時は断り、入れた発生日時のまま残す', async () => {

@@ -435,7 +435,7 @@ func (a *app) currentClassExists(classID int64) bool {
 emailTaken は、ログインIDがすでに使われているかを返す。
 
 ログインIDはロールをまたいで園内で一意（基本設計書 5-2）。【仮置き】大文字・小文字だけが違うものも
-同じとみなす（web/仮置き値.md）。NOHARA@… と nohara@… が別のアカウントになると、打ち方しだいで
+同じとみなす（web/仮置き値.md）。NISHIDA@… と nishida@… が別のアカウントになると、打ち方しだいで
 別の人のアカウントに入ろうとすることになる（GitHub Issue #167 の 1）。保護者の自己登録も同じ判定を使う
 */
 func (a *app) emailTaken(email string) bool {

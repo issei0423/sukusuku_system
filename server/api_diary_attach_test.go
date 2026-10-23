@@ -50,8 +50,8 @@ func samePhotos(got []string, want ...string) bool {
 // 下書き保存・申請のどちらでも、画面で足した写真が日誌に付き、開き直しても承認画面でも同じ写真が見える
 func TestDiaryPhotosAreSaved(t *testing.T) {
 	a, h := newTestApp(t)
-	teacher := loginAs(a, 3, "staff") // 高梨 倫太朗（S003・さくら組）
-	admin := loginAs(a, 1, "staff")   // 野原 一誠（S001・管理者）
+	teacher := loginAs(a, 3, "staff") // 鈴木 浩之（S003・さくら組）
+	admin := loginAs(a, 1, "staff")   // 西田 拓也（S001・管理者）
 
 	// 新しく書いて、写真 2 枚を付けて下書き保存する
 	rec := call(t, h, teacher, "POST", "/api/diaries",

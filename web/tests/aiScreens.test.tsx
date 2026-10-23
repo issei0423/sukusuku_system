@@ -19,17 +19,17 @@ import { today } from '../src/api/util';
 import { AI_TEXT, MSG } from '../src/messages';
 
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 園長',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 園長',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const guardian: SessionUser = {
-  account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
+  account_id: 6, email: 'nishida.t@example.jp', role: '3', display_name: '西田 拓也',
   staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
@@ -65,7 +65,7 @@ describe('連絡帳（園児）画面：AI の下書き', () => {
     clearFacility('C005');
     setSetting('ai.enabled', '0');
     open('/staff/contact/C005', teacher);
-    await screen.findByRole('heading', { name: '金城 陸' }, { timeout: 3000 });
+    await screen.findByRole('heading', { name: '久保田 陸' }, { timeout: 3000 });
     await waitFor(() => expect(within(facilitySection()).getByRole('button', { name: '定型文' })).toBeTruthy());
     expect(screen.queryByRole('button', { name: AI_TEXT.draftButton })).toBeNull();
     expect(screen.queryByRole('button', { name: AI_TEXT.rephraseButton })).toBeNull();
@@ -74,7 +74,7 @@ describe('連絡帳（園児）画面：AI の下書き', () => {
     setSetting('ai.enabled', '1');
     mockAi.keyPresent = false;
     open('/staff/contact/C005', teacher);
-    await screen.findByRole('heading', { name: '金城 陸' }, { timeout: 3000 });
+    await screen.findByRole('heading', { name: '久保田 陸' }, { timeout: 3000 });
     const box = within(facilitySection()).getByLabelText('園からのひとこと') as HTMLTextAreaElement;
     fireEvent.change(box, { target: { value: 'お迎えのときに、くわしくお話しします。' } });
     fireEvent.click(within(facilitySection()).getByRole('button', { name: '送る' }));
@@ -83,11 +83,11 @@ describe('連絡帳（園児）画面：AI の下書き', () => {
     expect(mockAi.calls).toBe(0);
   });
 
-  it('保護者がまだ同意していない子（上園）には、ボタンを出さない（理由も出さない）', async () => {
+  it('保護者がまだ同意していない子（遠藤）には、ボタンを出さない（理由も出さない）', async () => {
     clearFacility('C002');
     setSetting('ai.enabled', '1');
     open('/staff/contact/C002', teacher);
-    await screen.findByRole('heading', { name: '上園 花子' }, { timeout: 3000 });
+    await screen.findByRole('heading', { name: '遠藤 花子' }, { timeout: 3000 });
     await waitFor(() => expect(within(facilitySection()).getByRole('button', { name: '定型文' })).toBeTruthy());
     await new Promise((r) => setTimeout(r, 150));
     expect(screen.queryByRole('button', { name: AI_TEXT.draftButton })).toBeNull();
@@ -97,7 +97,7 @@ describe('連絡帳（園児）画面：AI の下書き', () => {
     clearFacility('C001');
     setSetting('ai.enabled', '1');
     open('/staff/contact/C001', teacher);
-    await screen.findByRole('heading', { name: '野原 太郎' }, { timeout: 3000 });
+    await screen.findByRole('heading', { name: '西田 太郎' }, { timeout: 3000 });
     const section = facilitySection();
     fireEvent.click(await within(section).findByRole('button', { name: AI_TEXT.draftButton }, { timeout: 3000 }));
     expect(within(section).getByText(AI_TEXT.memoNote)).toBeTruthy();
@@ -108,7 +108,7 @@ describe('連絡帳（園児）画面：AI の下書き', () => {
     expect(within(section).getByText(AI_TEXT.checkBeforeSend)).toBeTruthy();
     expect(within(section).getByText(AI_TEXT.replacedOthers)).toBeTruthy();
     // 外部へ送った文に、宛先の名前もほかの子の名前も無い
-    expect(mockAi.lastSent!.user).not.toMatch(/野原|太郎|たっくん|美咲|宮城/);
+    expect(mockAi.lastSent!.user).not.toMatch(/西田|太郎|たっくん|美咲|村田/);
     // 勝手には送らない。保護者の連絡帳にはまだ無い
     expect((await api.contactPage(guardian, 'C001')).facility).toBeNull();
     const draft = box.value;
@@ -119,7 +119,7 @@ describe('連絡帳（園児）画面：AI の下書き', () => {
   it('欄に文があれば置き換えずに候補として出し、「この文を使う」で入れる。言い換え・続きは文があるときだけ押せる', async () => {
     setSetting('ai.enabled', '1');
     open('/staff/contact/C001', teacher);
-    await screen.findByRole('heading', { name: '野原 太郎' }, { timeout: 3000 });
+    await screen.findByRole('heading', { name: '西田 太郎' }, { timeout: 3000 });
     const aside = recordAside();
     const rephrase = await within(aside).findByRole('button', { name: AI_TEXT.rephraseButton }, { timeout: 3000 }) as HTMLButtonElement;
     const cont = within(aside).getByRole('button', { name: AI_TEXT.continueButton }) as HTMLButtonElement;
@@ -152,7 +152,7 @@ describe('連絡帳（園児）画面：AI の下書き', () => {
   it('失敗したら応答の文をパネルに出し、入力欄の文は残す。上限に達したら上限の文を出す', async () => {
     setSetting('ai.enabled', '1');
     open('/staff/contact/C001', teacher);
-    await screen.findByRole('heading', { name: '野原 太郎' }, { timeout: 3000 });
+    await screen.findByRole('heading', { name: '西田 太郎' }, { timeout: 3000 });
     const aside = recordAside();
     const box = within(aside).getByLabelText('活動のひとこと') as HTMLTextAreaElement;
     fireEvent.change(box, { target: { value: '砂場で遊びました。' } });
@@ -172,7 +172,7 @@ describe('連絡帳（園児）画面：AI の下書き', () => {
   it('押せるものは 44px 以上の部品（contact-pick）で、作っている間は二度押しを止める', async () => {
     setSetting('ai.enabled', '1');
     open('/staff/contact/C001', teacher);
-    await screen.findByRole('heading', { name: '野原 太郎' }, { timeout: 3000 });
+    await screen.findByRole('heading', { name: '西田 太郎' }, { timeout: 3000 });
     const aside = recordAside();
     const box = within(aside).getByLabelText('活動のひとこと') as HTMLTextAreaElement;
     fireEvent.change(box, { target: { value: '砂場で遊びました。' } });

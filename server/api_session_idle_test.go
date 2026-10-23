@@ -80,7 +80,7 @@ func loginRemember(t *testing.T, h http.Handler, email, entrance string, remembe
 func TestStaffAutoLogoutCountsFromLastOperation(t *testing.T) {
 	a, h := newTestApp(t)
 	clock := useFakeClock(a, idleTestStart())
-	c := login(t, h, "kinjo@hoiku.example.jp", "pass1234", "staff")
+	c := login(t, h, "kubota@hoiku.example.jp", "pass1234", "staff")
 
 	// ログインから20分後と40分後に操作する。ログインから数えるなら、40分後には切れている
 	clock.advance(20 * time.Minute)
@@ -99,14 +99,14 @@ func TestStaffAutoLogoutCountsFromLastOperation(t *testing.T) {
 
 	// 切れたセッションはログイン中とみなさない。同じブラウザで、ログインし直せる（409 にならない）
 	rec := send(t, h, c, "POST", "/api/login",
-		`{"email":"kinjo@hoiku.example.jp","password":"pass1234","entrance":"staff"}`)
+		`{"email":"kubota@hoiku.example.jp","password":"pass1234","entrance":"staff"}`)
 	expectStatus(t, rec, http.StatusOK)
 }
 
 func TestAutoRefreshDoesNotExtendSession(t *testing.T) {
 	a, h := newTestApp(t)
 	clock := useFakeClock(a, idleTestStart())
-	refreshing := login(t, h, "kinjo@hoiku.example.jp", "pass1234", "staff")
+	refreshing := login(t, h, "kubota@hoiku.example.jp", "pass1234", "staff")
 	operating := loginAs(a, 5, "staff") // 同じ職員の別の端末。こちらは操作として送る
 
 	// 5分ごとに読み直す。印の付いた読み直しは操作に数えない
@@ -156,9 +156,9 @@ func TestNapCheckKeepsStarterLoggedIn(t *testing.T) {
 	clock := useFakeClock(a, start)
 	day := start.Format("2006-01-02")
 
-	teacher := login(t, h, "takanashi@hoiku.example.jp", "pass1234", "staff") // S003。さくら組の担任
-	admin := login(t, h, "nohara@hoiku.example.jp", "pass1234", "staff")      // S001。実施を開始していない
-	// 13:05 に高梨がさくら組の午睡チェックを開始した
+	teacher := login(t, h, "suzuki@hoiku.example.jp", "pass1234", "staff") // S003。さくら組の担任
+	admin := login(t, h, "nishida@hoiku.example.jp", "pass1234", "staff")  // S001。実施を開始していない
+	// 13:05 に鈴木がさくら組の午睡チェックを開始した
 	if _, err := a.db.Exec(`INSERT INTO t_nap_session (class_id, session_date, started_staff_id, started_at, is_auto_closed)
 		VALUES (1, ?, 'S003', ?, 0)`, day, day+"T13:05:00"); err != nil {
 		t.Fatal(err)
@@ -183,8 +183,8 @@ func TestNapCheckEndedRestartsAutoLogout(t *testing.T) {
 	clock := useFakeClock(a, start)
 	day := start.Format("2006-01-02")
 
-	teacher := login(t, h, "takanashi@hoiku.example.jp", "pass1234", "staff")
-	// 13:05 に高梨が開始し、13:40 に同じクラスの職員（宮城）が終了した
+	teacher := login(t, h, "suzuki@hoiku.example.jp", "pass1234", "staff")
+	// 13:05 に鈴木が開始し、13:40 に同じクラスの職員（村田）が終了した
 	if _, err := a.db.Exec(`INSERT INTO t_nap_session
 		(class_id, session_date, started_staff_id, started_at, ended_staff_id, ended_at, is_auto_closed)
 		VALUES (1, ?, 'S003', ?, 'S004', ?, 0)`, day, day+"T13:05:00", day+"T13:40:00"); err != nil {
@@ -203,12 +203,12 @@ func TestGuardianHasNoAutoLogout(t *testing.T) {
 	clock := useFakeClock(a, idleTestStart())
 
 	// 記憶を付けずにログインした保護者。3時間、何も操作しなくても切れない
-	plain := loginRemember(t, h, "nohara.i@example.jp", "guardian", false)
+	plain := loginRemember(t, h, "nishida.t@example.jp", "guardian", false)
 	clock.advance(3 * time.Hour)
 	expectGet(t, h, plain, "/api/dashboard/guardian", true, http.StatusOK)
 
 	// 記憶を付けた保護者は、保存期間（auth.remember_days = 30日）だけで制限する
-	remembered := loginRemember(t, h, "miyagi.r@example.jp", "guardian", true)
+	remembered := loginRemember(t, h, "murata.s@example.jp", "guardian", true)
 	if remembered.MaxAge != 30*24*60*60 {
 		t.Fatalf("記憶を付けたときの Cookie の保存期間 = %d 秒, want 30日", remembered.MaxAge)
 	}
@@ -223,13 +223,13 @@ func TestStaffRememberStillAutoLogout(t *testing.T) {
 	clock := useFakeClock(a, idleTestStart())
 
 	// 記憶を付けた職員にも自動ログアウトを課す（要件定義書「自動ログアウトを優先する」）
-	remembered := loginRemember(t, h, "kinjo@hoiku.example.jp", "staff", true)
+	remembered := loginRemember(t, h, "kubota@hoiku.example.jp", "staff", true)
 	clock.advance(30*time.Minute + time.Second)
 	expectGet(t, h, remembered, "/api/me", false, http.StatusUnauthorized)
 
 	// 記憶を付けない職員の Cookie は、ブラウザを閉じるまで残す。Cookie に期限を付けると、
 	// ブラウザがログインから数えて捨ててしまい、操作を続けても切れる
-	plain := loginRemember(t, h, "takanashi@hoiku.example.jp", "staff", false)
+	plain := loginRemember(t, h, "suzuki@hoiku.example.jp", "staff", false)
 	if plain.MaxAge != 0 || !plain.Expires.IsZero() {
 		t.Fatalf("記憶を付けない職員の Cookie に期限が付いている (MaxAge=%d, Expires=%v)", plain.MaxAge, plain.Expires)
 	}

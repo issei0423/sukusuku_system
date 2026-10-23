@@ -18,11 +18,11 @@ import (
 func TestAddMisdeliveryRecordRequiresOccurredAt(t *testing.T) {
 	a, h := newTestApp(t)
 	admin := loginAs(a, 1, "staff")
-	takanashi := loginAs(a, 3, "staff")
+	suzuki := loginAs(a, 3, "staff")
 
-	// 高梨（さくら組）が、さくら組のチャンネルへ送ったメッセージを取り消す
-	id := sentID(t, call(t, h, takanashi, "POST", "/api/chat/rooms/3/messages", `{"body":"（誤送信）明日の持ち物"}`).Body)
-	call(t, h, takanashi, "POST", "/api/chat/messages/"+itoa(id)+"/retract", "")
+	// 鈴木（さくら組）が、さくら組のチャンネルへ送ったメッセージを取り消す
+	id := sentID(t, call(t, h, suzuki, "POST", "/api/chat/rooms/3/messages", `{"body":"（誤送信）明日の持ち物"}`).Body)
+	call(t, h, suzuki, "POST", "/api/chat/messages/"+itoa(id)+"/retract", "")
 
 	for _, c := range []struct{ name, occurredAt string }{
 		{"空", ""},

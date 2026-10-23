@@ -13,12 +13,12 @@ import * as db from '../src/api/mockDb';
 import type { SessionUser } from '../src/api/types';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
@@ -86,7 +86,7 @@ describe('職員アカウント管理画面（GitHub Issue #167 の 1・2）', (
   it('管理者が2名のとき、片方を停止しようとすると「管理者が1名になります」と警告する', async () => {
     open('/staff/admin/staff-accounts', admin);
     await settled();
-    const row = (await screen.findByText('上園 謙心')).closest('tr')!;
+    const row = (await screen.findByText('遠藤 直人')).closest('tr')!;
     fireEvent.click(within(row).getByRole('button', { name: '停止' }));
     expect(await screen.findByText(/この停止で、管理者が1名になります/)).toBeTruthy();
   });

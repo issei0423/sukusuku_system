@@ -14,7 +14,7 @@ import type { SessionUser } from '../src/api/types';
 import { today } from '../src/api/util';
 
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
@@ -128,7 +128,7 @@ describe('デモのヒヤリハットと、異常時の記録からの起票', (
     expect(got.incident?.countermeasure).toMatch(/^午睡の確認のたびに/);
     expect(got.incident?.place).toBe('保育室（さくら組）');
 
-    // デモでは宮城が編集ロックを持っている（mockDb.ts）。外してから高梨が取る
+    // デモでは村田が編集ロックを持っている（mockDb.ts）。外してから鈴木が取る
     db.diaryLocks.splice(db.diaryLocks.findIndex((l) => l.diary_id === 3), 1);
     const token = await lockOf(teacher, 3);
     await api.saveDiary(teacher, incidentInput({

@@ -9,14 +9,14 @@ import { findOtherNames, findOtherNamesFor, checkOtherNames, otherNamesHitMessag
 import type { NameChild } from '../src/api/mock';
 
 const children: NameChild[] = [
-  { id: 'A', name: '野原 太郎', kana: 'のはら たろう', nickname: 'たっくん' },
+  { id: 'A', name: '西田 太郎', kana: 'にしだ たろう', nickname: 'たっくん' },
   { id: 'B', name: '伊藤 葵', kana: 'いとう あおい', nickname: 'あおちゃん' },
   { id: 'C', name: '小林 結衣', kana: 'こばやし ゆい', nickname: 'ゆいちゃん' },
   { id: 'D', name: '井上 空', kana: 'いのうえ そら', nickname: '' },
   { id: 'E', name: '前田 詩', kana: 'まえだ うた', nickname: '' },
   { id: 'F', name: '林 悠真', kana: 'はやし ゆうま', nickname: '' },
   { id: 'G', name: '山田 ゆい', kana: 'やまだ ゆい', nickname: '' },
-  { id: 'H', name: '野原 あい', kana: 'のはら あい', nickname: '' },
+  { id: 'H', name: '西田 あい', kana: 'にしだ あい', nickname: '' },
 ];
 
 /** server/namecheck_test.go の nameCheckCases と同じ行（宛先が空ならクラスあて） */
@@ -35,10 +35,10 @@ const nameCheckCases: [name: string, recipient: string, text: string, names: str
   ['宛先と同じ名の子を数えない（呼び名）', 'C', 'ゆいちゃんが笑っていました。', [], []],
   ['宛先と同じ名の子を数えない（よみ）', 'G', 'ゆいちゃんが笑っていました。', [], []],
   ['同じ名の子が2人いれば両方に当たる', 'A', 'ゆいちゃんと遊びました。', ['小林 結衣', '山田 ゆい'], [[0, 5]]],
-  ['クラスあては在籍園児の全員が相手', '', 'たっくんとあおちゃんが遊びました。', ['野原 太郎', '伊藤 葵'], [[0, 4], [5, 10]]],
+  ['クラスあては在籍園児の全員が相手', '', 'たっくんとあおちゃんが遊びました。', ['西田 太郎', '伊藤 葵'], [[0, 4], [5, 10]]],
   ['名前が無ければ当たらない', 'A', '園庭で砂場あそびをしました。', [], []],
-  ['同じ姓のきょうだいの氏名は、宛先の姓に重なっても当たる', 'A', '野原あいに伝えました。', ['野原 あい'], [[0, 4]]],
-  ['宛先の姓だけなら、同じ姓のきょうだいに当てない', 'A', '野原さんに伝えました。', [], []],
+  ['同じ姓のきょうだいの氏名は、宛先の姓に重なっても当たる', 'A', '西田あいに伝えました。', ['西田 あい'], [[0, 4]]],
+  ['宛先の姓だけなら、同じ姓のきょうだいに当てない', 'A', '西田さんに伝えました。', [], []],
 ];
 
 describe('他児の名前の照合（server/namecheck.go と同じ表）', () => {
@@ -57,20 +57,20 @@ describe('他児の名前の照合（server/namecheck.go と同じ表）', () =>
 const familyChildren: NameChild[] = [
   ...children,
   { id: 'I', name: '松本 咲良', kana: 'まつもと さくら', nickname: '' },
-  { id: 'J', name: '高梨 健', kana: 'たかなし けん', nickname: '' },
+  { id: 'J', name: '鈴木 健', kana: 'すずき けん', nickname: '' },
 ];
-const takanashi = ['高梨先生', '高梨せんせい', '高梨倫太朗先生', '高梨倫太朗せんせい', '高梨 倫太朗先生', '高梨 倫太朗せんせい', '高梨　倫太朗先生', '高梨　倫太朗せんせい'];
+const suzuki = ['鈴木先生', '鈴木せんせい', '鈴木浩之先生', '鈴木浩之せんせい', '鈴木 浩之先生', '鈴木 浩之せんせい', '鈴木　浩之先生', '鈴木　浩之せんせい'];
 
 const nameFamilyCases: [name: string, families: string[][], excluded: string[], text: string, names: string[], matches: [number, number][]][] = [
-  ['写っているもう1人の呼び名は、その子でない家庭への送信で当たる', [['A'], ['B']], [], 'たっくんが初めてひとりで立ちました。', ['野原 太郎'], [[0, 4]]],
-  ['写っている2人の名前が両方あれば両方に当たる', [['A'], ['B']], [], 'たっくんとあおちゃんが遊びました。', ['野原 太郎', '伊藤 葵'], [[0, 4], [5, 10]]],
+  ['写っているもう1人の呼び名は、その子でない家庭への送信で当たる', [['A'], ['B']], [], 'たっくんが初めてひとりで立ちました。', ['西田 太郎'], [[0, 4]]],
+  ['写っている2人の名前が両方あれば両方に当たる', [['A'], ['B']], [], 'たっくんとあおちゃんが遊びました。', ['西田 太郎', '伊藤 葵'], [[0, 4], [5, 10]]],
   ['写っていない子の名前は、家庭ごとの当たりを1つの位置にまとめる', [['A'], ['B']], [], 'ゆいちゃんと遊びました。', ['小林 結衣', '山田 ゆい'], [[0, 5]]],
   ['家庭が1つなら今までと同じ', [['A']], [], 'たっくんは砂場で遊びました。', [], []],
   ['クラス名の中の名前は当てない', [['A']], ['さくら組'], 'さくら組のみなさんと遊びました。', [], []],
   ['クラス名の外の同じ名前は当てる', [['A']], ['さくら組'], 'さくら組のさくらちゃん', ['松本 咲良'], [[5, 8]]],
-  ['「姓＋先生」の中の名前は当てない', [['A']], takanashi, '高梨先生と散歩しました。', [], []],
-  ['「せんせい」も除く', [['A']], takanashi, '高梨せんせいと散歩しました。', [], []],
-  ['「姓＋先生」の外の園児の氏名は当てる', [['A']], takanashi, '高梨健くんと高梨先生', ['高梨 健'], [[0, 3]]],
+  ['「姓＋先生」の中の名前は当てない', [['A']], suzuki, '鈴木先生と散歩しました。', [], []],
+  ['「せんせい」も除く', [['A']], suzuki, '鈴木せんせいと散歩しました。', [], []],
+  ['「姓＋先生」の外の園児の氏名は当てる', [['A']], suzuki, '鈴木健くんと鈴木先生', ['鈴木 健'], [[0, 3]]],
 ];
 
 describe('届く家庭ごとの照合と除く語（server/namecheck_family_test.go と同じ表）', () => {
@@ -83,16 +83,16 @@ describe('届く家庭ごとの照合と除く語（server/namecheck_family_test
 
   it('除く語は、今年度のクラス名と職員の「姓＋先生」「氏名＋先生」', () => {
     const words = nameCheckExclusions();
-    expect(words).toEqual(expect.arrayContaining(['さくら組', ...takanashi]));
+    expect(words).toEqual(expect.arrayContaining(['さくら組', ...suzuki]));
   });
 
-  it('デモデータで：「さくら組」「高梨先生」で注意が出ない。2人が写った写真は家庭ごとに照合し、家庭の数を添える', () => {
-    expect(checkOtherNames('さくら組のみなさんと高梨先生と散歩しました。', 'body', ['C001'], false)).toBeNull();
-    expect(checkOtherNames('高梨健くんと高梨先生と散歩しました。', 'body', ['C001'], false)?.names).toEqual(['高梨 健']);
+  it('デモデータで：「さくら組」「鈴木先生」で注意が出ない。2人が写った写真は家庭ごとに照合し、家庭の数を添える', () => {
+    expect(checkOtherNames('さくら組のみなさんと鈴木先生と散歩しました。', 'body', ['C001'], false)).toBeNull();
+    expect(checkOtherNames('鈴木健くんと鈴木先生と散歩しました。', 'body', ['C001'], false)?.names).toEqual(['鈴木 健']);
     const hit = checkOtherNames('たっくんが初めてひとりで立ちました。', 'body', ['C001', 'C006'], false);
-    expect(hit?.names).toEqual(['野原 太郎']);
-    expect(otherNamesHitMessage(hit!)).toBe('ほかのお子さんの名前（野原 太郎）が入っています。このまま送りますか。この文は写っている全員（2 家庭）に届きます。');
-    expect(checkOtherNames('たっくんが初めてひとりで立ちました。', 'body', ['C001', 'C006'], false, ['野原 太郎'])).toBeNull();
+    expect(hit?.names).toEqual(['西田 太郎']);
+    expect(otherNamesHitMessage(hit!)).toBe('ほかのお子さんの名前（西田 太郎）が入っています。このまま送りますか。この文は写っている全員（2 家庭）に届きます。');
+    expect(checkOtherNames('たっくんが初めてひとりで立ちました。', 'body', ['C001', 'C006'], false, ['西田 太郎'])).toBeNull();
     // 宛先が1人なら、家庭の数を添えない
     const one = checkOtherNames('あおちゃんと遊びました。', 'body', ['C001'], false);
     expect(otherNamesHitMessage(one!)).toBe('ほかのお子さんの名前（伊藤 葵）が入っています。このまま送りますか。');

@@ -112,7 +112,7 @@ func TestContactEventsRecord(t *testing.T) {
 		at := today() + "T00:00:00"
 		got := record(t, h, teacher, `{"child_id":"C001","event_type":"2","toilet_label":"うんち","recorded_at":"`+at+`"},
 			{"child_id":"C001","event_type":"3","temperature":29.5},{"child_id":"C001","event_type":"3","temperature":43.5}`)
-		if len(got.Events) != 3 || len(got.Skipped) != 0 || got.Events[0].RecordedAt != at || got.Events[0].StaffName != "高梨 倫太朗" {
+		if len(got.Events) != 3 || len(got.Skipped) != 0 || got.Events[0].RecordedAt != at || got.Events[0].StaffName != "鈴木 浩之" {
 			t.Fatalf("記録の応答: %+v", got)
 		}
 		body := call(t, h, guardian, "GET", "/api/contact/children/C001", "").Body.String()
@@ -121,7 +121,7 @@ func TestContactEventsRecord(t *testing.T) {
 				t.Errorf("保護者のページに %s が無い: %s", want, body)
 			}
 		}
-		for _, hidden := range []string{"staff_name", "updated_at", "高梨"} {
+		for _, hidden := range []string{"staff_name", "updated_at", "鈴木"} {
 			if strings.Contains(body, hidden) {
 				t.Errorf("保護者のページに %s が入っている", hidden)
 			}
@@ -172,29 +172,29 @@ func TestNotifyContactEvents(t *testing.T) {
 		"管理者":       listen(a, accAdmin),
 		"さくら組の担任":   listen(a, accTeacher),
 		"ひまわり組の担任":  listen(a, accOtherTeacher),
-		"野原 太郎の保護者": listen(a, accGuardian),
-		"宮城 美咲の保護者": listen(a, accOtherGuard),
+		"西田 太郎の保護者": listen(a, accGuardian),
+		"村田 美咲の保護者": listen(a, accOtherGuard),
 	}
 	drainAll(clients)
 	taro := liveEvent{Type: evContact, ChildID: childTaro}
 	misaki := liveEvent{Type: evContact, ChildID: childMisaki}
 
 	got := record(t, h, teacher, `{"child_id":"C001","event_type":"2","toilet_label":"おしっこ"},{"child_id":"C001","event_type":"3","temperature":36.6}`)
-	expect(t, "排せつと体温（1回だけ）", clients, to(who("管理者", "さくら組の担任", "野原 太郎の保護者"), taro))
+	expect(t, "排せつと体温（1回だけ）", clients, to(who("管理者", "さくら組の担任", "西田 太郎の保護者"), taro))
 
 	record(t, h, teacher, `{"child_id":"C001","event_type":"1","meal_kind":"2","meal_amount":"1"},{"child_id":"C004","event_type":"1","meal_kind":"2","meal_amount":"2"}`)
 	expect(t, "全員ぜんぶ（園児ごと）", clients, map[string][]liveEvent{
 		"管理者":       {taro, misaki},
 		"さくら組の担任":   {taro, misaki},
-		"野原 太郎の保護者": {taro},
-		"宮城 美咲の保護者": {misaki},
+		"西田 太郎の保護者": {taro},
+		"村田 美咲の保護者": {misaki},
 	})
 
 	call(t, h, teacher, "POST", "/api/contact/events/"+itoa(got.Events[0].ID)+"/correct",
 		`{"toilet_label":"うんち","updated_at":"`+got.Events[0].UpdatedAt+`"}`)
-	expect(t, "訂正", clients, to(who("管理者", "さくら組の担任", "野原 太郎の保護者"), taro))
+	expect(t, "訂正", clients, to(who("管理者", "さくら組の担任", "西田 太郎の保護者"), taro))
 	call(t, h, teacher, "POST", "/api/contact/events/"+itoa(got.Events[1].ID)+"/cancel", `{}`)
-	expect(t, "取り消し", clients, to(who("管理者", "さくら組の担任", "野原 太郎の保護者"), taro))
+	expect(t, "取り消し", clients, to(who("管理者", "さくら組の担任", "西田 太郎の保護者"), taro))
 
 	// 保護者に排せつを出さない設定の園では、排せつの知らせを保護者に送らない（知らせが届くこと自体が情報になる）
 	a.db.Exec(`UPDATE m_setting SET setting_value = 'nap,meal,temperature,comment,photo,class' WHERE setting_key = 'contact.show_items'`)
@@ -205,7 +205,7 @@ func TestNotifyContactEvents(t *testing.T) {
 /*
 fixCases は「直す人・記録の日 → 直せるか」の表（詳細設計書「訂正・取り消しのまとめ」(3-5)、基本設計書「取り消し・訂正」(4-2)）。
 その日はその園児のクラスの担任（記録した職員に限らない）、管理者はいつでも。web/tests/contactEvents.test.ts の同じ名前の表と同じ行にする。
-記録は管理者（野原 一誠）が付けたもの。
+記録は管理者（西田 拓也）が付けたもの。
 */
 var fixCases = []struct {
 	name     string
@@ -368,8 +368,8 @@ func TestNapSleepCorrectCancel(t *testing.T) {
 	a.db.Exec(`UPDATE t_nap_sleep SET slept_at = ?, updated_at = ? WHERE nap_sleep_id = ?`, start, start, slept.ID)
 	clients := map[string]*liveClient{
 		"さくら組の担任":   listen(a, accTeacher),
-		"野原 太郎の保護者": listen(a, accGuardian),
-		"宮城 美咲の保護者": listen(a, accOtherGuard),
+		"西田 太郎の保護者": listen(a, accGuardian),
+		"村田 美咲の保護者": listen(a, accOtherGuard),
 	}
 	path := "/api/nap/sleeps/" + itoa(slept.ID)
 
@@ -395,7 +395,7 @@ func TestNapSleepCorrectCancel(t *testing.T) {
 	}
 	expect(t, "ねた・おきたの訂正", clients, map[string][]liveEvent{
 		"さくら組の担任":   {{Type: evNap, ClassID: classSakura, ChildID: childTaro}, {Type: evContact, ChildID: childTaro}},
-		"野原 太郎の保護者": {{Type: evContact, ChildID: childTaro}},
+		"西田 太郎の保護者": {{Type: evContact, ChildID: childTaro}},
 	})
 	var page struct {
 		Sleeps []napSleepOut `json:"sleeps"`

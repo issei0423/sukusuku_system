@@ -30,7 +30,7 @@ describe('呼び名を園児情報入力と他児の名前の注意で共に使�
       class_id: 1, allergies: [], medical_histories: [],
     }, 'edit');
 
-    expect((await api.nameCheck(teacher, { child_ids: ['C001'], text: 'はなちゃんと砂場で遊びました' })).names).toEqual(['上園 花子']);
+    expect((await api.nameCheck(teacher, { child_ids: ['C001'], text: 'はなちゃんと砂場で遊びました' })).names).toEqual(['遠藤 花子']);
 
     const log = db.operationLogs.filter((l) => l.target_table === 'm_child' && l.target_child_id === 'C002').at(-1)!;
     expect(JSON.parse(log.before_value ?? '{}')).toEqual({ 呼び名: '' });
@@ -48,6 +48,6 @@ describe('呼び名を園児情報入力と他児の名前の注意で共に使�
     expect((await api.listChildren(admin)).find((c) => c.child_id === 'C001')?.nickname).toBe('たっくん');
     expect(db.children.find((c) => c.child_id === 'C001')?.nickname).toBe('たっくん');
     // 保護者の応答のあとでも、照合は園児の行の呼び名で当たる
-    expect((await api.nameCheck(teacher, { child_ids: ['C006'], text: 'たっくんと遊びました' })).names).toEqual(['野原 太郎']);
+    expect((await api.nameCheck(teacher, { child_ids: ['C006'], text: 'たっくんと遊びました' })).names).toEqual(['西田 太郎']);
   });
 });

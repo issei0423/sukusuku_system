@@ -15,17 +15,17 @@ import type { SessionUser } from '../src/api/types';
 import { today } from '../src/api/util';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
 const guardian: SessionUser = {
-  account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
+  account_id: 6, email: 'nishida.t@example.jp', role: '3', display_name: '西田 拓也',
   staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
@@ -119,7 +119,7 @@ describe('共通・認証（7画面）', () => {
   it('保護者ホーム', async () => {
     open('/guardian', guardian);
     await settled();
-    expect(screen.getByText('野原 太郎')).toBeTruthy();
+    expect(screen.getByText('西田 太郎')).toBeTruthy();
   });
 });
 
@@ -139,10 +139,10 @@ describe('日誌システム（6画面）', () => {
   });
 
   it('日誌作成・編集画面：他の職員が編集中ならその旨を出す', async () => {
-    // 日誌2は宮城 蓮（S004）がロックを保持している
+    // 日誌2は村田 真一（S004）がロックを保持している
     open('/staff/diary/3', teacher);
     await waitFor(() => {
-      expect(document.body.textContent).toContain('宮城 蓮さんが編集中です');
+      expect(document.body.textContent).toContain('村田 真一さんが編集中です');
     }, { timeout: 3000 });
   });
 
@@ -176,7 +176,7 @@ describe('日誌システム（6画面）', () => {
   it('園児タイムライン画面', async () => {
     open('/staff/diary/timeline/C001', teacher);
     await settled();
-    expect(screen.getByText('野原 太郎 の記録')).toBeTruthy();
+    expect(screen.getByText('西田 太郎 の記録')).toBeTruthy();
   });
 });
 
@@ -272,7 +272,7 @@ describe('保護者のメニュー', () => {
     await settled();
     fireEvent.click(screen.getByLabelText('メニューを開く'));
     await waitFor(() => {
-      expect(document.querySelector('.drawer .who')!.textContent!.replace(/\s+/g, ' ').trim()).toBe('野原 太郎 保護者');
+      expect(document.querySelector('.drawer .who')!.textContent!.replace(/\s+/g, ' ').trim()).toBe('西田 太郎 保護者');
     });
   });
 
@@ -449,7 +449,7 @@ describe('午睡チェック（3画面）', () => {
     expect(timerLabel).toBeTruthy();
     expect(screen.getByText('午睡チェックを終了')).toBeTruthy();
     // 記録済み 8 / 11 名（デモデータ）。園児の状態はセッション取得後に読み直すため待つ。
-    // 高梨 健（C003）は今日の実施で「対象外（欠席）」のため、数から外す（詳細設計書「タイマー」(2-4 (3))、「デモデータ」(5-5)）。
+    // 鈴木 健（C003）は今日の実施で「対象外（欠席）」のため、数から外す（詳細設計書「タイマー」(2-4 (3))、「デモデータ」(5-5)）。
     // 対象外の記録（13:01）は、デモデータを読み込んだ時刻より後なら入らない（未来の出来事を入れない）。そのときは 12 名
     await waitFor(() => {
       expect(document.body.textContent).toMatch(/記録済み 8 \/ (11|12) 名/);
@@ -667,7 +667,7 @@ describe('保護者から見える範囲', () => {
 
   it('共有日誌閲覧画面は無い。以前の経路を開いても日誌は出ない', async () => {
     // 日誌は園内の記録（詳細設計書「日誌の画面（作り直し）」(2-13 (1))「共有日誌閲覧画面は画面ごと外す」）。
-    // 日誌 5 は野原 太郎（自児）の承認済みの個人日誌。経路が無いため入口へ戻る
+    // 日誌 5 は西田 太郎（自児）の承認済みの個人日誌。経路が無いため入口へ戻る
     open('/guardian/diary/5', guardian);
     await settled();
     expect(document.body.textContent).not.toContain('砂場でスコップ');

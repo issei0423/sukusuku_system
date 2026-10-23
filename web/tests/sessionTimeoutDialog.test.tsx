@@ -24,12 +24,12 @@ import { today } from '../src/api/util';
 import type { SessionUser } from '../src/api/types';
 
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
 const guardian: SessionUser = {
-  account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
+  account_id: 6, email: 'nishida.t@example.jp', role: '3', display_name: '西田 拓也',
   staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
@@ -176,7 +176,7 @@ describe('ほかのタブ', () => {
 describe('出さないとき', () => {
   it('開始した午睡チェックの実施中は出さない。時間帯の終わりから数え直して、その2分前に出す', async () => {
     vi.setSystemTime(at('13:30'));
-    // 高梨（S003）が 13:05 にさくら組の午睡チェックを開始し、終えていない
+    // 鈴木（S003）が 13:05 にさくら組の午睡チェックを開始し、終えていない
     const nap = {
       nap_session_id: 90_002, class_id: 1, session_date: today(), started_staff_id: 'S003',
       started_at: `${today()}T13:05:00`, ended_staff_id: null, ended_at: null, is_auto_closed: false,

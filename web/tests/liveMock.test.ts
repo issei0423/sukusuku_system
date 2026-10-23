@@ -26,8 +26,8 @@ const admin = user(1, '1', { staff_id: 'S001' });
 const admin2 = user(2, '1', { staff_id: 'S002' });
 const teacher = user(3, '2', { staff_id: 'S003', class_id: 1, class_name: 'さくら組' }); // さくら組の担任
 const otherTeacher = user(5, '2', { staff_id: 'S005', class_id: 2, class_name: 'ひまわり組' }); // ひまわり組の担任
-const taroGuardian = user(6, '3', { guardian_id: 'G001' }); // 野原 太郎（C001）の保護者。個人チャットは 6
-const misakiGuardian = user(9, '3', { guardian_id: 'G004' }); // 宮城 美咲（C004）の保護者。個人チャットは 8
+const taroGuardian = user(6, '3', { guardian_id: 'G001' }); // 西田 太郎（C001）の保護者。個人チャットは 6
+const misakiGuardian = user(9, '3', { guardian_id: 'G004' }); // 村田 美咲（C004）の保護者。個人チャットは 8
 
 const stops: (() => void)[] = [];
 afterEach(() => { stops.splice(0).forEach((s) => s()); });
@@ -50,9 +50,9 @@ function watch(viewer: SessionUser): LiveSignal[] {
 describe('チャット', () => {
   it('個人チャットの送信は、その家庭の保護者にだけ届く（ほかの家庭には届かない）', async () => {
     const got = watch(misakiGuardian);
-    await api.send(teacher, 6, '野原さんへの連絡です。');
+    await api.send(teacher, 6, '西田さんへの連絡です。');
     expect(got).toEqual([]);
-    await api.send(teacher, 8, '宮城さんへの連絡です。');
+    await api.send(teacher, 8, '村田さんへの連絡です。');
     expect(got).toEqual([{ type: 'chat', room_id: 8 }]);
   });
 
@@ -84,7 +84,7 @@ describe('チャット', () => {
 
 describe('日誌', () => {
   it('承認は園内の確認で、その園児の保護者にも何も届かない（チャットの知らせも無い）', async () => {
-    // 日誌 7 は宮城 美咲（C004）の個人日誌（申請中）。日誌の知らせは保護者へ送らない
+    // 日誌 7 は村田 美咲（C004）の個人日誌（申請中）。日誌の知らせは保護者へ送らない
     // （詳細設計書「PR #196 からの変更」(6-1)・「日誌」(4-13 (2))）
     const misakiGot = watch(misakiGuardian);
     const approved = { ...(await api.approveDiary(admin, 7)) };
@@ -107,7 +107,7 @@ describe('日誌', () => {
   });
 
   it('申請の取り下げは、参照できる職員に届き、保護者には届かない', async () => {
-    // 日誌 2 はさくら組のクラス日誌（高梨が申請中）
+    // 日誌 2 はさくら組のクラス日誌（鈴木が申請中）
     const taroGot = watch(taroGuardian);
     const d = { ...(await api.getDiary(teacher, 2)) };
     await api.withdrawDiary(teacher, 2, d.updated_at);
@@ -247,7 +247,7 @@ describe('発達チェック・身体測定', () => {
       setting.setting_value = '1';
     }
     expect(taroGot).toEqual([]);
-    // 測定値 1 は野原 太郎の測定値。共有するので保護者へも届く
+    // 測定値 1 は西田 太郎の測定値。共有するので保護者へも届く
     await api.remove(admin, 1);
     expect(taroGot).toEqual([{ type: 'physical', child_id: 'C001' }]);
     // 確定は保護者の成長の記録に届くため、保護者へも送る（詳細設計書「知らせ」(6-2)）

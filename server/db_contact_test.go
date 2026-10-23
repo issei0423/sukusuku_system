@@ -38,7 +38,7 @@ func TestEnsureContactSchemaUpgradesOldDB(t *testing.T) {
 		  target_table TEXT NOT NULL, target_id INTEGER, target_child_id TEXT, before_value TEXT, after_value TEXT)`,
 		`CREATE TABLE m_setting (setting_key TEXT PRIMARY KEY, setting_value TEXT NOT NULL, description TEXT, updated_staff_id TEXT NOT NULL, updated_at TEXT NOT NULL)`,
 		`CREATE TABLE m_staff (staff_id TEXT PRIMARY KEY, staff_name TEXT NOT NULL)`,
-		`INSERT INTO m_staff VALUES ('S001','野原 一誠')`,
+		`INSERT INTO m_staff VALUES ('S001','西田 拓也')`,
 		`INSERT INTO t_guardian_child VALUES ('G001','C001','父','1','2025-06-10T10:00:00',NULL)`,
 		`INSERT INTO m_terms (terms_version, document_type, body, published_on) VALUES ('1.0','1','規約','2025-04-01')`,
 		`INSERT INTO t_operation_log (account_id, operated_at, function_type, operation_type, target_table) VALUES (3,'2026-09-01T09:00:00','1','1','t_diary')`,
@@ -103,13 +103,13 @@ func TestContactSchemaFreshDBAndShift(t *testing.T) {
 	if err := shiftDatesBy(a.db, -3); err != nil {
 		t.Fatalf("日付ずらし（戻す）: %v", err)
 	}
-	// 昨日の野原 太郎の家庭からは、日付ずらしのあとも昨日のページにある（デモデータ）
+	// 昨日の西田 太郎の家庭からは、日付ずらしのあとも昨日のページにある（デモデータ）
 	var n int
 	a.db.QueryRow(`SELECT COUNT(*) FROM t_contact_home WHERE child_id = 'C001' AND contact_date = ?`, daysFromToday(-1)).Scan(&n)
 	if n != 1 {
 		t.Errorf("昨日の C001 の家庭から = %d 行, want 1", n)
 	}
-	// 野原 太郎の今日は、家庭から・ねた・園からを空けておく（デモの①②③を押して見せる）
+	// 西田 太郎の今日は、家庭から・ねた・園からを空けておく（デモの①②③を押して見せる）
 	for _, q := range []string{
 		`SELECT COUNT(*) FROM t_contact_home WHERE child_id = 'C001' AND contact_date = ?`,
 		`SELECT COUNT(*) FROM t_nap_sleep WHERE child_id = 'C001' AND substr(slept_at, 1, 10) = ?`,

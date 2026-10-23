@@ -64,7 +64,7 @@ async function asOther(page: Page, call: 'saveHome' | 'send', args: unknown[]) {
   }, { call, args });
 }
 
-const guardian = { account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠', staff_id: null, guardian_id: 'G001', class_id: null, class_name: null, is_temp_password: false, terms_agreed: true };
+const guardian = { account_id: 6, email: 'nishida.t@example.jp', role: '3', display_name: '西田 拓也', staff_id: null, guardian_id: 'G001', class_id: null, class_name: null, is_temp_password: false, terms_agreed: true };
 
 test.describe('[staff] 相手の操作で読み上げへ伝えるもの', () => {
   test('② 連絡帳（クラス）画面：保護者が家庭からを送ると、「家庭からが1件届きました（〇〇さん）」を1回だけ伝える', async ({ page }) => {
@@ -74,9 +74,9 @@ test.describe('[staff] 相手の操作で読み上げへ伝えるもの', () => 
       temperature: 36.6, night_sleep_from: null, night_sleep_to: null, breakfast: '1', mood_label: 'ごきげん',
       pickup_type: '1', pickup_person: null, pickup_time: null, message: null, updated_at: null,
     }]);
-    await expect(page.locator('[data-home-arrival]')).toHaveText('家庭からが1件届きました（野原 太郎さん）');
+    await expect(page.locator('[data-home-arrival]')).toHaveText('家庭からが1件届きました（西田 太郎さん）');
     await ready(page);
-    expect(await said()).toEqual(['家庭からが1件届きました（野原 太郎さん）']);
+    expect(await said()).toEqual(['家庭からが1件届きました（西田 太郎さん）']);
     expect(errors, 'ブラウザ実行エラー').toEqual([]);
   });
 
@@ -113,16 +113,16 @@ test.describe('[staff] 相手の操作で読み上げへ伝えるもの', () => 
   test('① チャット画面（職員）：保護者から届いたものだけを role="log" で伝え、自分が送ったものは伝えない', async ({ page }) => {
     const errors = await open(page, 'staff-chat');
     // 職員のチャット一覧は、個人チャットを「〇〇の園とのやりとり」と出す（#198。StaffChatScreen の roomLabel、詳細設計書「チャット」(2-9)）
-    await page.locator('button.channel', { hasText: '野原 太郎の園とのやりとり' }).click();
+    await page.locator('button.channel', { hasText: '西田 太郎の園とのやりとり' }).click();
     await ready(page);
     const said = await watchLive(page);
     await asOther(page, 'send', [guardian, 6, '熱は下がりました。']);
-    await expect(page.getByRole('log')).toHaveText('野原 一誠（保護者）から：熱は下がりました。');
+    await expect(page.getByRole('log')).toHaveText('西田 拓也（保護者）から：熱は下がりました。');
     await page.getByPlaceholder('メッセージを入力').fill('承知しました。');
     await page.getByRole('button', { name: '送信' }).click();
     await expect(page.locator('.bubble', { hasText: '承知しました。' })).toBeVisible();
     await ready(page);
-    expect(await said()).toEqual(['野原 一誠（保護者）から：熱は下がりました。']);
+    expect(await said()).toEqual(['西田 拓也（保護者）から：熱は下がりました。']);
     expect(errors, 'ブラウザ実行エラー').toEqual([]);
   });
 });

@@ -11,7 +11,7 @@ import * as db from '../src/api/mockDb';
 import type { SessionUser } from '../src/api/types';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
@@ -62,8 +62,8 @@ describe('保護者の氏名・続柄・メールアドレスの検査（GitHub 
     ['続柄が選択肢にない', { relationship: 'おじ' }, '続柄'],
     ['続柄が空', { relationship: '' }, '続柄'],
     ['続柄が無い', { relationship: undefined }, '続柄'],
-    ['大文字・小文字だけが違う既存のメールアドレス', { email: 'NOHARA.I@EXAMPLE.JP' }, 'すでに登録されています'],
-    ['大文字・小文字だけが違う職員のログインID', { email: 'Takanashi@Hoiku.Example.JP' }, 'すでに登録されています'],
+    ['大文字・小文字だけが違う既存のメールアドレス', { email: 'NISHIDA.T@EXAMPLE.JP' }, 'すでに登録されています'],
+    ['大文字・小文字だけが違う職員のログインID', { email: 'Suzuki@Hoiku.Example.JP' }, 'すでに登録されています'],
   ])('%s なら登録せず、招待コードも使わない', async (_name, overrides, message) => {
     const code = await api.issueOneInvitationCode(admin, 'C006', 30);
     await expect(api.signUpGuardian(input(code, { email: 'fields@example.jp', ...overrides }))).rejects.toThrow(message);

@@ -58,11 +58,11 @@ describe('園からのひとこと（詳細設計書 (4-5 (1))）', () => {
     expect([e.kind, e.names, e.message]).toEqual(['other_child_names', ['伊藤 葵'], 'ほかのお子さんの名前（伊藤 葵）が入っています。このまま送りますか。']);
     expect(e.matches?.map((m) => [m.start, m.end])).toEqual([[0, 5]]);
     const sent = await api.sendFacility(teacher, 'C001', body, ['伊藤 葵']);
-    expect([sent.body, sent.staff_name]).toEqual([body, '高梨 倫太朗']);
+    expect([sent.body, sent.staff_name]).toEqual([body, '鈴木 浩之']);
     expect(misaki).toEqual([]);
     const page = await api.contactPage(taroGuardian, 'C001');
     expect(page.facility?.body).toBe(body);
-    expect(JSON.stringify(page)).not.toMatch(/staff_name|高梨|recipient/);
+    expect(JSON.stringify(page)).not.toMatch(/staff_name|鈴木|recipient/);
     const twice = await rejection(api.sendFacility(teacher, 'C001', 'もう一度送ります。'));
     expect([twice.kind, twice.message]).toEqual(['already_exists', MSG.facilitySent]);
   });
@@ -116,7 +116,7 @@ describe('定型文・宛先・照合の経路・ダッシュボード', () => {
   });
 
   it('宛先は職員の応答だけに入る。保護者が未登録の園児は続柄が空', async () => {
-    expect((await api.contactPage(teacher, 'C001')).recipient).toEqual({ child_id: 'C001', child_name: '野原 太郎', has_face_photo: false, relationships: ['父'] });
+    expect((await api.contactPage(teacher, 'C001')).recipient).toEqual({ child_id: 'C001', child_name: '西田 太郎', has_face_photo: false, relationships: ['父'] });
     expect((await api.contactPage(teacher, 'C003')).recipient?.relationships).toEqual([]);
     expect((await api.contactPage(taroGuardian, 'C001')).recipient).toBeUndefined();
     expect((await api.contactClass(teacher, 1)).rows.every((r) => r.recipient.child_id === r.child.child_id)).toBe(true);
@@ -132,7 +132,7 @@ describe('定型文・宛先・照合の経路・ダッシュボード', () => {
 
   it('照合の経路も、写っている2人なら家庭ごとに照合し、クラス名と「〇〇先生」を除く（server/namecheck_family_test.go と同じ）', async () => {
     expect((await api.nameCheck(teacher, { child_ids: ['C001', 'C006'], text: 'たっくんとあおちゃん' })).names).toHaveLength(2);
-    expect((await api.nameCheck(teacher, { child_ids: ['C001'], text: 'さくら組の高梨先生' })).names).toEqual([]);
+    expect((await api.nameCheck(teacher, { child_ids: ['C001'], text: 'さくら組の鈴木先生' })).names).toEqual([]);
   });
 
   it('ダッシュボードの園から未送信：送ると減り、今日の午睡で欠席にした子は数えない', async () => {

@@ -21,7 +21,7 @@ func TestNicknameFromChildInputReachesNameCheck(t *testing.T) {
 	admin := loginAs(a, accAdmin, "staff")
 	teacher := loginAs(a, accTeacher, "staff")
 
-	// 上園 花子（C002・さくら組）はデモで呼び名が無い（列は NULL）
+	// 遠藤 花子（C002・さくら組）はデモで呼び名が無い（列は NULL）
 	var in childInput
 	var temp float64
 	if err := a.db.QueryRow(`SELECT child_id, child_name, child_name_kana, birth_date, sex, normal_temperature, photo_consent_level
@@ -37,7 +37,7 @@ func TestNicknameFromChildInputReachesNameCheck(t *testing.T) {
 		Names []string `json:"names"`
 	}
 	decode(t, call(t, h, teacher, "POST", "/api/contact/name-check", `{"child_ids":["C001"],"text":"はなちゃんと砂場で遊びました"}`), &res)
-	if len(res.Names) != 1 || res.Names[0] != "上園 花子" {
+	if len(res.Names) != 1 || res.Names[0] != "遠藤 花子" {
 		t.Errorf("園児情報入力で入れた呼び名が照合に当たらない: %+v", res)
 	}
 

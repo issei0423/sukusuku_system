@@ -45,15 +45,15 @@ func expectAccountChanged(t *testing.T, rec *httptest.ResponseRecorder) {
 	}
 }
 
-// 野原 太郎の個人チャット（保護者 6 と担任の高梨 3 が入っている）
-func noharaPersonalRoom(t *testing.T, a *app) int64 {
+// 西田 太郎の個人チャット（保護者 6 と担任の鈴木 3 が入っている）
+func nishidaPersonalRoom(t *testing.T, a *app) int64 {
 	t.Helper()
 	var id int64
 	if err := a.db.QueryRow(`SELECT r.chat_room_id FROM m_chat_room r
 		JOIN t_chat_member m6 ON m6.chat_room_id = r.chat_room_id AND m6.account_id = 6
 		JOIN t_chat_member m3 ON m3.chat_room_id = r.chat_room_id AND m3.account_id = 3
 		WHERE r.room_type = '4' LIMIT 1`).Scan(&id); err != nil {
-		t.Fatalf("野原 太郎の個人チャットが見つからない: %v", err)
+		t.Fatalf("西田 太郎の個人チャットが見つからない: %v", err)
 	}
 	return id
 }
@@ -70,8 +70,8 @@ func TestAccountHeaderMatchesSession(t *testing.T) {
 
 func TestSendFromStaleTabIsRefused(t *testing.T) {
 	a, h := newTestApp(t)
-	room := noharaPersonalRoom(t, a)
-	// 保護者のタブを開いたまま、別のタブでログアウトして職員（高梨）でログインし直した。Cookie は職員のもの
+	room := nishidaPersonalRoom(t, a)
+	// 保護者のタブを開いたまま、別のタブでログアウトして職員（鈴木）でログインし直した。Cookie は職員のもの
 	staff := loginAs(a, 3, "staff")
 
 	var before int
@@ -95,7 +95,7 @@ func TestSendFromStaleTabIsRefused(t *testing.T) {
 
 func TestEditFromStaleTabIsRefused(t *testing.T) {
 	a, h := newTestApp(t)
-	room := noharaPersonalRoom(t, a)
+	room := nishidaPersonalRoom(t, a)
 	guardian := loginAs(a, 6, "guardian")
 	path := fmt.Sprintf("/api/chat/rooms/%d/messages", room)
 	expectStatus(t, sendAs(t, h, guardian, 6, "POST", path, `{"body":"編集する前の本文"}`), http.StatusOK)

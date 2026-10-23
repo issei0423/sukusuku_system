@@ -116,7 +116,7 @@ describe('AI の下書きの利用：断ったら、その子には AI の下書
   });
 
   it('きょうだいは園児ごと。片方だけ断ったとき、もう片方は使える', async () => {
-    // 野原さん（G001）に、きょうだいとして C006（さくら組。ほかに保護者はいない）を紐づける
+    // 西田さん（G001）に、きょうだいとして C006（さくら組。ほかに保護者はいない）を紐づける
     db.guardianChildren.push({ guardian_id: 'G001', child_id: 'C006', relationship: '父', link_status: '1', linked_at: '2026-04-01T09:00:00', ended_at: null });
     expect(aiAvailableFor(teacher, { child_id: 'C001' })).toBe(true);
     expect(aiAvailableFor(teacher, { child_id: 'C006' })).toBe(true);

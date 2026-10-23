@@ -26,17 +26,17 @@ import { Modal } from '../src/components/ui';
 import { AI_TEXT } from '../src/messages';
 
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
-const miyagi: SessionUser = {
-  account_id: 9, email: 'miyagi.r@example.jp', role: '3', display_name: '宮城 蓮',
+const murata: SessionUser = {
+  account_id: 9, email: 'murata.s@example.jp', role: '3', display_name: '村田 真一',
   staff_id: null, guardian_id: 'G004', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 園長',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 園長',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
@@ -88,7 +88,7 @@ describe('AI の下書き：押したあとのフォーカス（GitHub Issue #21
   async function openChild() {
     setSetting('ai.enabled', '1');
     open('/staff/contact/C001', teacher);
-    await screen.findByRole('heading', { name: '野原 太郎' }, { timeout: 3000 });
+    await screen.findByRole('heading', { name: '西田 太郎' }, { timeout: 3000 });
   }
 
   it('「言い換え」：作っている間に外れたフォーカスを、作り終えたら押した「言い換え」へ戻す', async () => {
@@ -150,7 +150,7 @@ describe('AI の下書き：「閉じる」のあとのフォーカス（GitHub 
   it('メモの欄の「閉じる」は、欄を開いた「AI で下書き」へ戻す。結果の「閉じる」は入力欄へ移す', async () => {
     setSetting('ai.enabled', '1');
     open('/staff/contact/C001', teacher);
-    await screen.findByRole('heading', { name: '野原 太郎' }, { timeout: 3000 });
+    await screen.findByRole('heading', { name: '西田 太郎' }, { timeout: 3000 });
     const section = document.getElementById('facility') as HTMLElement;
     const opener = await within(section).findByRole('button', { name: AI_TEXT.draftButton }, { timeout: 3000 }) as HTMLButtonElement;
     press(opener);
@@ -178,7 +178,7 @@ describe('日誌・チャット・管理画面の「送る」「保存する」�
 
   it('チャット（職員）：送れたら欄が空になって「送信」が押せなくなるので、入力欄へ移す。編集の「保存」は吹き出しへ戻す', async () => {
     open('/staff/chat?room=8', teacher);
-    await waitFor(() => expect(document.querySelector('.channel.current')?.textContent).toContain('宮城 美咲の園とのやりとり'), { timeout: 3000 });
+    await waitFor(() => expect(document.querySelector('.channel.current')?.textContent).toContain('村田 美咲の園とのやりとり'), { timeout: 3000 });
     fireEvent.change(composer(), { target: { value: 'F1 お迎えは17時の予定です。' } });
     const send = screen.getByRole('button', { name: '送信' }) as HTMLButtonElement;
     press(send);
@@ -209,7 +209,7 @@ describe('日誌・チャット・管理画面の「送る」「保存する」�
   });
 
   it('チャット（保護者）：送れたら入力欄へ、編集の「保存」は吹き出しへ移す', async () => {
-    open('/guardian/chat', miyagi);
+    open('/guardian/chat', murata);
     fireEvent.click((await screen.findByText('担任の先生とのやりとり', undefined, { timeout: 3000 })).closest('button')!);
     const input = await screen.findByRole('textbox', { name: 'メッセージを入力' }, { timeout: 3000 }) as HTMLInputElement;
     fireEvent.change(input, { target: { value: 'G1 あしたは9時に登園します。' } });
@@ -376,7 +376,7 @@ describe('窓を閉じたあとの読み直しで開いた元が消えるとき�
 
   it('連絡帳（園児）：きょうのようすの記録を取り消すと行が消えるので、同じ欄の押せるものへ移す', async () => {
     open('/staff/contact/C001', teacher);
-    await screen.findByRole('heading', { name: '野原 太郎' }, { timeout: 3000 });
+    await screen.findByRole('heading', { name: '西田 太郎' }, { timeout: 3000 });
     const todaySection = document.querySelector<HTMLElement>('section[aria-labelledby="child-today-title"]')!;
     const fixes = await waitFor(() => {
       const found = todaySection.querySelectorAll<HTMLButtonElement>('.contact-fix-button');

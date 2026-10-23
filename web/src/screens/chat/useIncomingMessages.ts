@@ -44,7 +44,7 @@ export function useIncomingMessages(list: ChatMessage[] | null | undefined, load
   return entries.room === roomId ? entries.items : [];
 }
 
-/** 読み上げる文。「高梨 倫太朗（職員）から：本文」【仮置き】（web/仮置き値.md） */
+/** 読み上げる文。「鈴木 浩之（職員）から：本文」【仮置き】（web/仮置き値.md） */
 export function incomingText(m: ChatMessage): string {
   const who = m.sender_name ?? accountName(m.sender_account_id);
   const kind = m.sender_role ? `（${SENDER_KIND[m.sender_role]}）` : '';

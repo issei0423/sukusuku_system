@@ -45,20 +45,20 @@ export const classes: ClassRoom[] = [
 
 /* ============ 職員（m_staff） ============ */
 export const staff: Staff[] = [
-  { staff_id: 'S001', account_id: 1, staff_name: '野原 一誠', created_at: '2024-04-01T09:00:00', updated_at: '2024-04-01T09:00:00' },
-  { staff_id: 'S002', account_id: 2, staff_name: '上園 謙心', created_at: '2024-04-01T09:00:00', updated_at: '2024-04-01T09:00:00' },
-  { staff_id: 'S003', account_id: 3, staff_name: '高梨 倫太朗', created_at: '2024-04-01T09:00:00', updated_at: '2026-04-01T09:00:00' },
-  { staff_id: 'S004', account_id: 4, staff_name: '宮城 蓮', created_at: '2025-04-01T09:00:00', updated_at: '2026-04-01T09:00:00' },
-  { staff_id: 'S005', account_id: 5, staff_name: '金城 宗一郎', created_at: '2025-04-01T09:00:00', updated_at: '2026-04-01T09:00:00' },
+  { staff_id: 'S001', account_id: 1, staff_name: '西田 拓也', created_at: '2024-04-01T09:00:00', updated_at: '2024-04-01T09:00:00' },
+  { staff_id: 'S002', account_id: 2, staff_name: '遠藤 直人', created_at: '2024-04-01T09:00:00', updated_at: '2024-04-01T09:00:00' },
+  { staff_id: 'S003', account_id: 3, staff_name: '鈴木 浩之', created_at: '2024-04-01T09:00:00', updated_at: '2026-04-01T09:00:00' },
+  { staff_id: 'S004', account_id: 4, staff_name: '村田 真一', created_at: '2025-04-01T09:00:00', updated_at: '2026-04-01T09:00:00' },
+  { staff_id: 'S005', account_id: 5, staff_name: '久保田 和也', created_at: '2025-04-01T09:00:00', updated_at: '2026-04-01T09:00:00' },
 ];
 
 /* ============ 保護者（m_guardian） ============ */
 export const guardians: Guardian[] = [
-  { guardian_id: 'G001', account_id: 6, guardian_name: '野原 一誠', phone_number: '090-0000-0001', created_at: '2025-06-10T10:00:00', updated_at: '2025-06-10T10:00:00' },
-  { guardian_id: 'G002', account_id: 7, guardian_name: '上園 謙心', phone_number: '090-0000-0002', created_at: '2025-04-05T10:00:00', updated_at: '2025-04-05T10:00:00' },
-  { guardian_id: 'G003', account_id: 8, guardian_name: '高梨 倫太朗', phone_number: null, created_at: '2025-06-20T10:00:00', updated_at: '2025-06-20T10:00:00' },
-  { guardian_id: 'G004', account_id: 9, guardian_name: '宮城 蓮', phone_number: '090-0000-0004', created_at: '2025-07-01T10:00:00', updated_at: '2025-07-01T10:00:00' },
-  { guardian_id: 'G005', account_id: 10, guardian_name: '金城 宗一郎', phone_number: '090-0000-0005', created_at: '2025-07-05T10:00:00', updated_at: '2025-07-05T10:00:00' },
+  { guardian_id: 'G001', account_id: 6, guardian_name: '西田 拓也', phone_number: '090-0000-0001', created_at: '2025-06-10T10:00:00', updated_at: '2025-06-10T10:00:00' },
+  { guardian_id: 'G002', account_id: 7, guardian_name: '遠藤 直人', phone_number: '090-0000-0002', created_at: '2025-04-05T10:00:00', updated_at: '2025-04-05T10:00:00' },
+  { guardian_id: 'G003', account_id: 8, guardian_name: '鈴木 浩之', phone_number: null, created_at: '2025-06-20T10:00:00', updated_at: '2025-06-20T10:00:00' },
+  { guardian_id: 'G004', account_id: 9, guardian_name: '村田 真一', phone_number: '090-0000-0004', created_at: '2025-07-01T10:00:00', updated_at: '2025-07-01T10:00:00' },
+  { guardian_id: 'G005', account_id: 10, guardian_name: '久保田 和也', phone_number: '090-0000-0005', created_at: '2025-07-05T10:00:00', updated_at: '2025-07-05T10:00:00' },
 ];
 
 /* ============ アカウント（m_account） ============
@@ -67,18 +67,18 @@ export const guardians: Guardian[] = [
  */
 const T0 = '2024-04-01T09:00:00';
 export const accounts: Account[] = [
-  { account_id: 1, email: 'nohara@hoiku.example.jp', password_hash: 'pass1234', role: '1', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
-  { account_id: 2, email: 'uezono@hoiku.example.jp',    password_hash: 'pass1234', role: '1', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
-  { account_id: 3, email: 'takanashi@hoiku.example.jp',    password_hash: 'pass1234', role: '2', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
+  { account_id: 1, email: 'nishida@hoiku.example.jp', password_hash: 'pass1234', role: '1', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
+  { account_id: 2, email: 'endo@hoiku.example.jp',    password_hash: 'pass1234', role: '1', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
+  { account_id: 3, email: 'suzuki@hoiku.example.jp',    password_hash: 'pass1234', role: '2', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
   // 一時パスワードでログインした状態を再現する。真の間は他機能を使わせない（基本設計書 5-2）
-  { account_id: 4, email: 'miyagi@hoiku.example.jp',      password_hash: 'temp0901', role: '2', status: '1', is_temp_password: true,  temp_password_expires_at: '2026-09-03T09:00:00', failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
-  { account_id: 5, email: 'kinjo@hoiku.example.jp',    password_hash: 'pass1234', role: '2', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
-  { account_id: 6, email: 'nohara.i@example.jp',        password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: '2025-06-10T10:00:00', created_at: '2025-06-10T10:00:00', updated_at: '2025-06-10T10:00:00' },
+  { account_id: 4, email: 'murata@hoiku.example.jp',      password_hash: 'temp0901', role: '2', status: '1', is_temp_password: true,  temp_password_expires_at: '2026-09-03T09:00:00', failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
+  { account_id: 5, email: 'kubota@hoiku.example.jp',    password_hash: 'pass1234', role: '2', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: T0, created_at: T0, updated_at: T0 },
+  { account_id: 6, email: 'nishida.t@example.jp',        password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: '2025-06-10T10:00:00', created_at: '2025-06-10T10:00:00', updated_at: '2025-06-10T10:00:00' },
   // 規約の改定後、まだ再同意していない状態を再現する。次回ログインで同意画面を出す（基本設計書 3-4）
-  { account_id: 7, email: 'uezono.k@example.jp',        password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '0.9', terms_agreed_at: '2025-04-05T10:00:00', created_at: '2025-04-05T10:00:00', updated_at: '2025-04-05T10:00:00' },
-  { account_id: 8, email: 'takanashi.r@example.jp',          password_hash: 'pass1234', role: '3', status: '2', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: '2025-06-20T10:00:00', created_at: '2025-06-20T10:00:00', updated_at: '2026-08-20T10:00:00' },
-  { account_id: 9, email: 'miyagi.r@example.jp', password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: '2025-07-01T10:00:00', created_at: '2025-07-01T10:00:00', updated_at: '2025-07-01T10:00:00' },
-  { account_id: 10, email: 'kinjo.s@example.jp', password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: '2025-07-05T10:00:00', created_at: '2025-07-05T10:00:00', updated_at: '2025-07-05T10:00:00' },
+  { account_id: 7, email: 'endo.n@example.jp',        password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '0.9', terms_agreed_at: '2025-04-05T10:00:00', created_at: '2025-04-05T10:00:00', updated_at: '2025-04-05T10:00:00' },
+  { account_id: 8, email: 'suzuki.h@example.jp',          password_hash: 'pass1234', role: '3', status: '2', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: '2025-06-20T10:00:00', created_at: '2025-06-20T10:00:00', updated_at: '2026-08-20T10:00:00' },
+  { account_id: 9, email: 'murata.s@example.jp', password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: '2025-07-01T10:00:00', created_at: '2025-07-01T10:00:00', updated_at: '2025-07-01T10:00:00' },
+  { account_id: 10, email: 'kubota.k@example.jp', password_hash: 'pass1234', role: '3', status: '1', is_temp_password: false, temp_password_expires_at: null, failed_login_count: 0, locked_until: null, terms_version: '1.1', terms_agreed_at: '2025-07-05T10:00:00', created_at: '2025-07-05T10:00:00', updated_at: '2025-07-05T10:00:00' },
 ];
 
 /**
@@ -109,11 +109,11 @@ function child(
 
 export const children: Child[] = [
   // さくら組（1歳児）
-  child('C001', '野原 太郎', 'のはら たろう', '2025-06-01', '1', 36.6),
-  child('C002', '上園 花子', 'うえぞの はなこ', '2025-03-12', '2', 36.8),
-  child('C003', '高梨 健',   'たかなし けん',   '2025-05-20', '1', 36.5),
-  child('C004', '宮城 美咲', 'みやぎ みさき', '2025-04-08', '2', 36.7),
-  child('C005', '金城 陸',   'きんじょう りく', '2025-07-15', '1', 36.4),
+  child('C001', '西田 太郎', 'にしだ たろう', '2025-06-01', '1', 36.6),
+  child('C002', '遠藤 花子', 'えんどう はなこ', '2025-03-12', '2', 36.8),
+  child('C003', '鈴木 健',   'すずき けん',   '2025-05-20', '1', 36.5),
+  child('C004', '村田 美咲', 'むらた みさき', '2025-04-08', '2', 36.7),
+  child('C005', '久保田 陸',   'くぼた りく', '2025-07-15', '1', 36.4),
   child('C006', '伊藤 葵',   'いとう あおい', '2025-02-28', '2', 36.6),
   child('C007', '中村 蓮',   'なかむら れん', '2025-08-03', '1', 36.9),
   // 月末生まれ。応当日が存在しない月の扱いを確かめるための例（要件定義書 7-1 No.6）。
@@ -372,10 +372,10 @@ export const chatRooms: ChatRoomRow[] = [
   { chat_room_id: 3, room_type: '2', class_id: 1,    room_name: 'さくら組',         is_archived: false, thread_status: null },
   { chat_room_id: 4, room_type: '2', class_id: 2,    room_name: 'ひまわり組',       is_archived: false, thread_status: null },
   { chat_room_id: 5, room_type: '3', class_id: null, room_name: '運動会実行委員',   is_archived: false, thread_status: null },
-  { chat_room_id: 6, room_type: '4', class_id: 1,    room_name: '野原 太郎の保護者', is_archived: false, thread_status: '1',  child_id: 'C001' },
-  { chat_room_id: 7, room_type: '4', class_id: 1,    room_name: '上園 花子の保護者', is_archived: false, thread_status: null, child_id: 'C002' },
-  { chat_room_id: 8, room_type: '4', class_id: 1,    room_name: '宮城 美咲の保護者', is_archived: false, thread_status: null, child_id: 'C004' },
-  { chat_room_id: 9, room_type: '4', class_id: 1,    room_name: '金城 陸の保護者',   is_archived: false, thread_status: null, child_id: 'C005' },
+  { chat_room_id: 6, room_type: '4', class_id: 1,    room_name: '西田 太郎の保護者', is_archived: false, thread_status: '1',  child_id: 'C001' },
+  { chat_room_id: 7, room_type: '4', class_id: 1,    room_name: '遠藤 花子の保護者', is_archived: false, thread_status: null, child_id: 'C002' },
+  { chat_room_id: 8, room_type: '4', class_id: 1,    room_name: '村田 美咲の保護者', is_archived: false, thread_status: null, child_id: 'C004' },
+  { chat_room_id: 9, room_type: '4', class_id: 1,    room_name: '久保田 陸の保護者',   is_archived: false, thread_status: null, child_id: 'C005' },
   // 詳細設計書「デモデータ」(5-5)。保護者未登録でも在籍園児には個人チャットがある。
   ...children.filter((c) => !['C001', 'C002', 'C004', 'C005'].includes(c.child_id)).map((c, i) => ({
     chat_room_id: 10 + i, room_type: '4' as const,
@@ -470,7 +470,7 @@ export const napAbnormals: NapAbnormal[] = [
 ];
 
 /* ============ 連絡帳と、ねた・おきた（詳細設計書「デモデータ」(5-5)） ============
- * Go の server/seed.sql と同じ ID・同じ内容。野原 太郎（C001）の今日は「家庭から」「ねた」「園から」を空けておき、
+ * Go の server/seed.sql と同じ ID・同じ内容。西田 太郎（C001）の今日は「家庭から」「ねた」「園から」を空けておき、
  * デモで押して見せる。起動した時刻より後の今日の記録は、下の日付ずらしのあとで外す（詳細設計書「未来の出来事を入れない」(5-5)）
  */
 function home(id: number, childId: string, date: string, guardianId: string, v: Partial<ContactHomeRecord> & { submitted_at: string }): ContactHomeRecord {
@@ -740,9 +740,9 @@ export const developmentSchedules: DevelopmentSchedule[] = [
  * サーバ側（server/seed.sql）も同じ
  */
 export const developmentChecks: DevelopmentCheck[] = [
-  // 成長の記録（詳細設計書「デモデータ」(5-5)）：野原 太郎の確定に、確定した日時と保護者へのひとこと（評価の言葉を入れない）。
+  // 成長の記録（詳細設計書「デモデータ」(5-5)）：西田 太郎の確定に、確定した日時と保護者へのひとこと（評価の言葉を入れない）。
   // ほかの確定は「いまのデータの移し方」と同じく実施日の 00:00 を確定した日時とした（server/seed.sql と同じ）
-  // 【仮置き】野原 太郎のひとことは、確定した日のうちに担任が書き換えたものとして「訂正しました（日付）」の印を置く
+  // 【仮置き】西田 太郎のひとことは、確定した日のうちに担任が書き換えたものとして「訂正しました（日付）」の印を置く
   // （決めたこと D-51。PR #216 で決まった設計。web/仮置き値.md。server/seed.sql と同じ）
   { development_check_id: 1, child_id: 'C001', development_schedule_id: null, checked_on: '2026-05-15', status: '2', staff_id: 'S003', share_status: '2',
     guardian_message: 'ボールを転がすと、追いかけて両手でつかもうとしていました。', finalized_at: '2026-05-15T16:00:00',
@@ -1003,7 +1003,7 @@ function shiftRows(rows: Record<string, unknown>[], days: number): void {
 
     /*
      * 一時パスワードの有効期限はマスタ（accounts）にあるが、デモの「今日」から 48 時間として決めた日時なので、
-     * あわせてずらす。ずらさないと、デモの 宮城 蓮 は起動した日によって期限切れになり、一時パスワードでの
+     * あわせてずらす。ずらさないと、デモの 村田 真一 は起動した日によって期限切れになり、一時パスワードでの
      * ログインを見せられない（GitHub Issue #159。サーバ側は server/seed_shift.go の seedShiftMasterColumns）
      */
     for (const a of accounts) {
@@ -1013,7 +1013,7 @@ function shiftRows(rows: Record<string, unknown>[], days: number): void {
     /*
      * 園児の生年月日も、デモの「今日」に何か月の子かを決めて入れてある。記録と同じ日数だけずらし、
      * 起動した日にもデモの園児の月齢（今日の時点・実施日の時点・測定日の時点）を保つ。ずらさないと、実施日だけが動いて
-     * 上園 花子・宮城 美咲の前回の発達チェックが別の発達過程区分になり、一覧に「未入力 5 件」と出る（GitHub Issue #164）。
+     * 遠藤 花子・村田 美咲の前回の発達チェックが別の発達過程区分になり、一覧に「未入力 5 件」と出る（GitHub Issue #164）。
      * 日付をずらすので、月末生まれ（小林 結衣）は起動した日によって月末でなくなる。
      * サーバ側は server/seed_shift.go の seedShiftMasterColumns
      */

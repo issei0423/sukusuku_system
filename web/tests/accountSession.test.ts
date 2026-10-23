@@ -16,29 +16,29 @@ import { now, plusMinutes, today } from '../src/api/util';
 import type { SessionUser } from '../src/api/types';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
 const himawariTeacher: SessionUser = {
-  account_id: 5, email: 'kinjo@hoiku.example.jp', role: '2', display_name: '金城 宗一郎',
+  account_id: 5, email: 'kubota@hoiku.example.jp', role: '2', display_name: '久保田 和也',
   staff_id: 'S005', guardian_id: null, class_id: 2, class_name: 'ひまわり組',
   is_temp_password: false, terms_agreed: true,
 };
-// 野原 太郎（C001・さくら組）の保護者
-const noharaGuardian: SessionUser = {
-  account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
+// 西田 太郎（C001・さくら組）の保護者
+const nishidaGuardian: SessionUser = {
+  account_id: 6, email: 'nishida.t@example.jp', role: '3', display_name: '西田 拓也',
   staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
-// 宮城 美咲（C004・さくら組）の保護者
-const miyagiGuardian: SessionUser = {
-  account_id: 9, email: 'miyagi.r@example.jp', role: '3', display_name: '宮城 蓮',
+// 村田 美咲（C004・さくら組）の保護者
+const murataGuardian: SessionUser = {
+  account_id: 9, email: 'murata.s@example.jp', role: '3', display_name: '村田 真一',
   staff_id: null, guardian_id: 'G004', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
@@ -66,56 +66,56 @@ describe('停止・紐づけの解除のあとは、ログインしていた利�
 
   it('有効な紐づけがゼロになった保護者は、個人チャットを読み書きできない', async () => {
     await api.endGuardianLink(admin, 'G001', 'C001');
-    await expect(api.rooms(noharaGuardian)).rejects.toThrow('ログインしていません');
-    await expect(api.messages(noharaGuardian, 6)).rejects.toThrow('ログインしていません');
-    await expect(api.send(noharaGuardian, 6, '解除後の投稿')).rejects.toThrow('ログインしていません');
+    await expect(api.rooms(nishidaGuardian)).rejects.toThrow('ログインしていません');
+    await expect(api.messages(nishidaGuardian, 6)).rejects.toThrow('ログインしていません');
+    await expect(api.send(nishidaGuardian, 6, '解除後の投稿')).rejects.toThrow('ログインしていません');
     await api.restoreGuardianLink(admin, 'G001', 'C001');
   });
 
   it('きょうだいの紐づけが残る保護者は、解除した園児の個人チャットだけを参照できなくなり、戻すと戻る', async () => {
-    // 宮城 美咲（C004）の保護者に、きょうだいとして伊藤 葵（C006、同じさくら組）を足す
+    // 村田 美咲（C004）の保護者に、きょうだいとして伊藤 葵（C006、同じさくら組）を足す
     db.guardianChildren.push({
       guardian_id: 'G004', child_id: 'C006', relationship: '父', link_status: '1',
       linked_at: '2026-04-01T09:00:00', ended_at: null,
     });
-    const personalRoom = 8; // 宮城 美咲の保護者
+    const personalRoom = 8; // 村田 美咲の保護者
     const classRoom = 3;    // さくら組
-    expect(await roomIds(miyagiGuardian)).toEqual(expect.arrayContaining([personalRoom, classRoom]));
+    expect(await roomIds(murataGuardian)).toEqual(expect.arrayContaining([personalRoom, classRoom]));
 
     await api.endGuardianLink(admin, 'G004', 'C004');
-    const rooms = await roomIds(miyagiGuardian);
+    const rooms = await roomIds(murataGuardian);
     expect(rooms).not.toContain(personalRoom);
     expect(rooms).toContain(classRoom);
-    await expect(api.messages(miyagiGuardian, personalRoom)).rejects.toThrow();
-    await expect(api.send(miyagiGuardian, personalRoom, '解除後の投稿')).rejects.toThrow();
+    await expect(api.messages(murataGuardian, personalRoom)).rejects.toThrow();
+    await expect(api.send(murataGuardian, personalRoom, '解除後の投稿')).rejects.toThrow();
 
     await api.restoreGuardianLink(admin, 'G004', 'C004');
-    expect(await roomIds(miyagiGuardian)).toContain(personalRoom);
-    await expect(api.messages(miyagiGuardian, personalRoom)).resolves.toBeTruthy();
+    expect(await roomIds(murataGuardian)).toContain(personalRoom);
+    await expect(api.messages(murataGuardian, personalRoom)).resolves.toBeTruthy();
   });
 });
 
 describe('一時パスワードの有効期限（GitHub Issue #159 の 2）', () => {
-  const miyagi = () => db.accounts.find((a) => a.account_id === 4)!;
+  const murata = () => db.accounts.find((a) => a.account_id === 4)!;
 
   it('デモの一時パスワードは、起動した日から見て期限内にずらしてある', () => {
-    expect(miyagi().temp_password_expires_at! > now()).toBe(true);
+    expect(murata().temp_password_expires_at! > now()).toBe(true);
   });
 
   it('期限の切れた一時パスワードでは、正しくてもログインできない。誤ったパスワードでは期限切れを明かさない', async () => {
-    const before = miyagi().temp_password_expires_at;
-    miyagi().temp_password_expires_at = plusMinutes(now(), -1);
-    await expect(api.login('miyagi@hoiku.example.jp', 'temp0901', 'staff')).rejects.toThrow(/temp_expired/);
-    await expect(api.login('miyagi@hoiku.example.jp', 'wrong-pass', 'staff')).rejects.toThrow(/credential/);
-    miyagi().temp_password_expires_at = before;
-    miyagi().failed_login_count = 0;
+    const before = murata().temp_password_expires_at;
+    murata().temp_password_expires_at = plusMinutes(now(), -1);
+    await expect(api.login('murata@hoiku.example.jp', 'temp0901', 'staff')).rejects.toThrow(/temp_expired/);
+    await expect(api.login('murata@hoiku.example.jp', 'wrong-pass', 'staff')).rejects.toThrow(/credential/);
+    murata().temp_password_expires_at = before;
+    murata().failed_login_count = 0;
   });
 });
 
 describe('保護者ホームは保護者だけが使える（GitHub Issue #159 の 3）', () => {
   it('職員が呼ぶと断る', async () => {
     await expect(api.guardianHome(admin)).rejects.toThrow(/保護者/);
-    await expect(api.guardianHome(miyagiGuardian)).resolves.toBeTruthy();
+    await expect(api.guardianHome(murataGuardian)).resolves.toBeTruthy();
   });
 });
 
@@ -142,20 +142,20 @@ describe('パスワードの長さとよく使われるパスワード（GitHub 
 
 describe('停止中であることは、正しいパスワードのときだけ示す（GitHub Issue #159 の 5）', () => {
   it('誤ったパスワードでは、ほかの失敗と同じ応答にする', async () => {
-    await expect(api.login('takanashi.r@example.jp', 'wrong-password', 'guardian')).rejects.toThrow(/credential/);
-    await expect(api.login('takanashi.r@example.jp', 'pass1234', 'guardian')).rejects.toThrow(/suspended/);
+    await expect(api.login('suzuki.h@example.jp', 'wrong-password', 'guardian')).rejects.toThrow(/credential/);
+    await expect(api.login('suzuki.h@example.jp', 'pass1234', 'guardian')).rejects.toThrow(/suspended/);
   });
 });
 
 describe('個人チャットは園児ID で結ぶ（GitHub Issue #163 の 1）', () => {
   it('同じ氏名の別の園児の保護者は、その家庭の個人チャットに入らない。日誌の共有も流れない', async () => {
     await api.saveChild(admin, {
-      child_id: 'C023', child_name: '野原 太郎', child_name_kana: 'のはら たろう', birth_date: '2024-05-01',
+      child_id: 'C023', child_name: '西田 太郎', child_name_kana: 'にしだ たろう', birth_date: '2024-05-01',
       sex: '1', normal_temperature: null, photo_consent_level: '2', class_id: 2, allergies: [], medical_histories: [],
     }, 'create');
     const code = await api.issueOneInvitationCode(admin, 'C023', 30);
     const hanako = await api.signUpGuardian({
-      code, email: 'other.nohara@example.jp', password: 'hanako-5678', guardian_name: '野原 花子', relationship: '母',
+      code, email: 'other.nishida@example.jp', password: 'hanako-5678', guardian_name: '西田 花子', relationship: '母',
       terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION,
     });
     expect(await roomIds(hanako)).not.toContain(6);
@@ -173,7 +173,7 @@ describe('個人チャットは園児ID で結ぶ（GitHub Issue #163 の 1）',
   it('元の家庭（C001）の新しい保護者は、これまでどおり C001 の個人チャットへ入る', async () => {
     const code = await api.issueOneInvitationCode(admin, 'C001', 30);
     const mama = await api.signUpGuardian({
-      code, email: 'nohara.m@example.jp', password: 'mama-5678-x', guardian_name: '野原 みさえ', relationship: '母',
+      code, email: 'nishida.m@example.jp', password: 'mama-5678-x', guardian_name: '西田 みさえ', relationship: '母',
       terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION,
     });
     expect(await roomIds(mama)).toContain(6);

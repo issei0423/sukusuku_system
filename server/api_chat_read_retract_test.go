@@ -59,7 +59,7 @@ func TestMarkReadSkipsMessagesBeforeJoined(t *testing.T) {
 	a, h := newTestApp(t)
 	admin := loginAs(a, 1, "staff")
 
-	// 上園 花子（C002）の家庭に、新しい保護者（上園 母）が招待コードで加わる
+	// 遠藤 花子（C002）の家庭に、新しい保護者（遠藤 母）が招待コードで加わる
 	var issued struct {
 		Code string `json:"code"`
 	}
@@ -67,12 +67,12 @@ func TestMarkReadSkipsMessagesBeforeJoined(t *testing.T) {
 		`{"child_id":"C002","valid_days":14}`).Body.Bytes(), &issued); err != nil {
 		t.Fatal(err)
 	}
-	rec := send(t, h, nil, "POST", "/api/signup", `{"code":"`+issued.Code+`","email":"uezono.haha@example.jp",
-		"password":"uezono-5678","guardian_name":"上園 母","relationship":"母","terms_agreed":true,"terms_version":"1.1"}`)
+	rec := send(t, h, nil, "POST", "/api/signup", `{"code":"`+issued.Code+`","email":"endo.haha@example.jp",
+		"password":"endo-5678","guardian_name":"遠藤 母","relationship":"母","terms_agreed":true,"terms_version":"1.1"}`)
 	expectStatus(t, rec, http.StatusOK)
 	haha := sessionCookieOf(t, rec)
 
-	const personalRoom = "7" // 上園 花子の保護者。ID 7（担任が送ったメッセージ）は登録より前のもの
+	const personalRoom = "7" // 遠藤 花子の保護者。ID 7（担任が送ったメッセージ）は登録より前のもの
 	if got := chatMessagesOf(t, h, haha, personalRoom); len(got) != 0 {
 		t.Fatalf("登録より前のメッセージが見えている: %v", got)
 	}
@@ -81,25 +81,25 @@ func TestMarkReadSkipsMessagesBeforeJoined(t *testing.T) {
 
 	var n int
 	a.db.QueryRow(`SELECT COUNT(*) FROM t_chat_read r JOIN m_account ac ON ac.account_id = r.account_id
-		WHERE r.chat_message_id = 7 AND ac.email = 'uezono.haha@example.jp'`).Scan(&n)
+		WHERE r.chat_message_id = 7 AND ac.email = 'endo.haha@example.jp'`).Scan(&n)
 	if n != 0 {
 		t.Fatalf("見えない登録前のメッセージが既読になった（%d 件）", n)
 	}
-	takanashi := loginAs(a, 3, "staff")
-	if got := chatMessagesOf(t, h, takanashi, personalRoom)[7].ReadCount; got != 0 {
+	suzuki := loginAs(a, 3, "staff")
+	if got := chatMessagesOf(t, h, suzuki, personalRoom)[7].ReadCount; got != 0 {
 		t.Fatalf("職員の画面の既読 = %d, want 0", got)
 	}
 
 	t.Run("登録のあとに届いたものは、開けば既読になる", func(t *testing.T) {
 		// 登録と同じ秒に送られたものは見せない側へ倒す（beforeJoinedClause）。登録を数秒前へずらしておく
 		if _, err := a.db.Exec(`UPDATE t_chat_member SET joined_at = replace(datetime(joined_at, '-5 seconds'), ' ', 'T')
-			WHERE account_id = (SELECT account_id FROM m_account WHERE email = 'uezono.haha@example.jp')`); err != nil {
+			WHERE account_id = (SELECT account_id FROM m_account WHERE email = 'endo.haha@example.jp')`); err != nil {
 			t.Fatal(err)
 		}
-		id := sentID(t, call(t, h, takanashi, "POST", "/api/chat/rooms/"+personalRoom+"/messages",
+		id := sentID(t, call(t, h, suzuki, "POST", "/api/chat/rooms/"+personalRoom+"/messages",
 			`{"body":"ご登録ありがとうございます。"}`).Body)
 		call(t, h, haha, "POST", "/api/chat/rooms/"+personalRoom+"/read", "")
-		if got := chatMessagesOf(t, h, takanashi, personalRoom)[id].ReadCount; got != 1 {
+		if got := chatMessagesOf(t, h, suzuki, personalRoom)[id].ReadCount; got != 1 {
 			t.Fatalf("既読 = %d, want 1", got)
 		}
 	})
@@ -109,40 +109,40 @@ func TestMarkReadSkipsMessagesBeforeJoined(t *testing.T) {
 func TestGuardianCountExcludesSuspendedAccounts(t *testing.T) {
 	a, h := newTestApp(t)
 	admin := loginAs(a, 1, "staff")
-	takanashi := loginAs(a, 3, "staff")
+	suzuki := loginAs(a, 3, "staff")
 
-	// 園全体の保護者のうち、アカウント 8（高梨 倫太朗）は紐づけを終えて停止している。読めるのは 6・7・9・10 の 4 名
-	if got := roomViews(t, h, takanashi)[1].GuardianCount; got != 4 {
+	// 園全体の保護者のうち、アカウント 8（鈴木 浩之）は紐づけを終えて停止している。読めるのは 6・7・9・10 の 4 名
+	if got := roomViews(t, h, suzuki)[1].GuardianCount; got != 4 {
 		t.Fatalf("園全体の保護者 = %d, want 4（停止中のアカウント 8 を数えない）", got)
 	}
-	if memberIDsOf(t, h, takanashi, "1")[8] {
+	if memberIDsOf(t, h, suzuki, "1")[8] {
 		t.Fatal("園全体のメンバー欄に、停止中の保護者（アカウント 8）が出ている")
 	}
 
-	// 金城 陸（C005）と保護者（G005・アカウント 10）の紐づけを終える。有効な紐づけが無くなりアカウントは停止になる
+	// 久保田 陸（C005）と保護者（G005・アカウント 10）の紐づけを終える。有効な紐づけが無くなりアカウントは停止になる
 	call(t, h, admin, "POST", "/api/admin/guardian-links/end", `{"guardian_id":"G005","child_id":"C005"}`)
 
-	views := roomViews(t, h, takanashi)
+	views := roomViews(t, h, suzuki)
 	for _, c := range []struct {
 		room int64
 		name string
 		want int
-	}{{1, "園全体", 3}, {3, "さくら組", 3}, {9, "金城 陸の保護者", 0}} {
+	}{{1, "園全体", 3}, {3, "さくら組", 3}, {9, "久保田 陸の保護者", 0}} {
 		if got := views[c.room].GuardianCount; got != c.want {
 			t.Errorf("%s の保護者 = %d, want %d", c.name, got, c.want)
 		}
 	}
 	for _, room := range []string{"1", "3", "9"} {
-		if memberIDsOf(t, h, takanashi, room)[10] {
+		if memberIDsOf(t, h, suzuki, room)[10] {
 			t.Errorf("room %s のメンバー欄に、紐づけを終えて停止した保護者（アカウント 10）が出ている", room)
 		}
 	}
 
 	t.Run("紐づけを戻してアカウントが再開すると、また数える", func(t *testing.T) {
 		call(t, h, admin, "POST", "/api/admin/guardian-links/restore", `{"guardian_id":"G005","child_id":"C005"}`)
-		views := roomViews(t, h, takanashi)
+		views := roomViews(t, h, suzuki)
 		if views[1].GuardianCount != 4 || views[9].GuardianCount != 1 {
-			t.Fatalf("園全体 = %d・金城 陸の保護者 = %d, want 4・1", views[1].GuardianCount, views[9].GuardianCount)
+			t.Fatalf("園全体 = %d・久保田 陸の保護者 = %d, want 4・1", views[1].GuardianCount, views[9].GuardianCount)
 		}
 	})
 }
@@ -150,22 +150,22 @@ func TestGuardianCountExcludesSuspendedAccounts(t *testing.T) {
 // #171 の 5：既読の人数に職員が入り、保護者が何人読んだかが分からない
 func TestReadCountCountsGuardiansInGuardianRooms(t *testing.T) {
 	a, h := newTestApp(t)
-	takanashi := loginAs(a, 3, "staff")
+	suzuki := loginAs(a, 3, "staff")
 
 	t.Run("保護者が参加するチャンネルでは、保護者の既読だけを数える", func(t *testing.T) {
 		// さくら組の「9時に園庭でお願いします。」（ID 3）は、職員 3 名（1・2・4）が読み、保護者は誰も読んでいない
-		if got := chatMessagesOf(t, h, takanashi, "3")[3].ReadCount; got != 0 {
+		if got := chatMessagesOf(t, h, suzuki, "3")[3].ReadCount; got != 0 {
 			t.Fatalf("既読 = %d, want 0（職員の既読を数えない）", got)
 		}
 		call(t, h, loginAs(a, 6, "guardian"), "POST", "/api/chat/rooms/3/read", "")
-		if got := chatMessagesOf(t, h, takanashi, "3")[3].ReadCount; got != 1 {
+		if got := chatMessagesOf(t, h, suzuki, "3")[3].ReadCount; got != 1 {
 			t.Fatalf("保護者が読んだあとの既読 = %d, want 1", got)
 		}
 	})
 
 	t.Run("職員だけのチャンネルでは、職員の既読を数える", func(t *testing.T) {
-		// 職員チャットの「来週の職員会議は水曜16時からです。」（ID 8、上園が送った）
-		call(t, h, takanashi, "POST", "/api/chat/rooms/2/read", "")
+		// 職員チャットの「来週の職員会議は水曜16時からです。」（ID 8、遠藤が送った）
+		call(t, h, suzuki, "POST", "/api/chat/rooms/2/read", "")
 		if got := chatMessagesOf(t, h, loginAs(a, 2, "staff"), "2")[8].ReadCount; got != 1 {
 			t.Fatalf("職員チャットの既読 = %d, want 1", got)
 		}
@@ -180,7 +180,7 @@ func TestChatMessageCarriesSenderRole(t *testing.T) {
 		cookie *http.Cookie
 	}{{"職員", loginAs(a, 3, "staff")}, {"保護者", loginAs(a, 6, "guardian")}} {
 		got := chatMessagesOf(t, h, viewer.cookie, "6")
-		// ID 4 は担任（高梨）が送ったもの、ID 5 は保護者（野原 一誠）が送ったもの
+		// ID 4 は担任（鈴木）が送ったもの、ID 5 は保護者（西田 拓也）が送ったもの
 		if got[4].SenderRole != roleGeneralStaff || got[5].SenderRole != roleGuardian {
 			t.Errorf("%sの画面：送信者のロール = %q・%q, want %q・%q", viewer.name,
 				got[4].SenderRole, got[5].SenderRole, roleGeneralStaff, roleGuardian)
@@ -193,14 +193,14 @@ func TestRetractedWithoutRecordExcludesGuardianMessages(t *testing.T) {
 	a, h := newTestApp(t)
 	admin := loginAs(a, 1, "staff")
 	guardian := loginAs(a, 9, "guardian")
-	takanashi := loginAs(a, 3, "staff")
+	suzuki := loginAs(a, 3, "staff")
 
 	byGuardian := sentID(t, call(t, h, guardian, "POST", "/api/chat/rooms/8/messages",
 		`{"body":"明日はお休みします（打ちまちがい）"}`).Body)
 	call(t, h, guardian, "POST", "/api/chat/messages/"+itoa(byGuardian)+"/retract", "")
-	byStaff := sentID(t, call(t, h, takanashi, "POST", "/api/chat/rooms/8/messages",
-		`{"body":"（誤送信）野原 太郎くんの発熱の記録"}`).Body)
-	call(t, h, takanashi, "POST", "/api/chat/messages/"+itoa(byStaff)+"/retract", "")
+	byStaff := sentID(t, call(t, h, suzuki, "POST", "/api/chat/rooms/8/messages",
+		`{"body":"（誤送信）西田 太郎くんの発熱の記録"}`).Body)
+	call(t, h, suzuki, "POST", "/api/chat/messages/"+itoa(byStaff)+"/retract", "")
 
 	var pending []struct {
 		ChatMessageID int64 `json:"chat_message_id"`
@@ -223,13 +223,13 @@ func TestRetractedWithoutRecordExcludesGuardianMessages(t *testing.T) {
 // #172 の 4：一般の職員のグループ編成画面に、自分の入っていないグループが出る
 func TestChatGroupsListsOnlyEditableGroups(t *testing.T) {
 	a, h := newTestApp(t)
-	takanashi := loginAs(a, 3, "staff")
-	kinjo := loginAs(a, 5, "staff")
+	suzuki := loginAs(a, 3, "staff")
+	kubota := loginAs(a, 5, "staff")
 	admin := loginAs(a, 1, "staff")
 
 	var created ChatRoom
-	if err := json.Unmarshal(call(t, h, takanashi, "POST", "/api/chat/groups",
-		`{"name":"G 遠足下見（高梨・宮城）","account_ids":[4]}`).Body.Bytes(), &created); err != nil {
+	if err := json.Unmarshal(call(t, h, suzuki, "POST", "/api/chat/groups",
+		`{"name":"G 遠足下見（鈴木・村田）","account_ids":[4]}`).Body.Bytes(), &created); err != nil {
 		t.Fatal(err)
 	}
 	groupIDs := func(c *http.Cookie) map[int64]bool {
@@ -244,15 +244,15 @@ func TestChatGroupsListsOnlyEditableGroups(t *testing.T) {
 		return out
 	}
 
-	if got := groupIDs(kinjo); got[created.ChatRoomID] || !got[5] {
-		t.Fatalf("金城（運動会実行委員だけに参加）のグループ = %v", got)
+	if got := groupIDs(kubota); got[created.ChatRoomID] || !got[5] {
+		t.Fatalf("久保田（運動会実行委員だけに参加）のグループ = %v", got)
 	}
 	if got := groupIDs(admin); !got[created.ChatRoomID] || !got[5] {
 		t.Fatalf("管理者には、参加していないグループも出す（全グループを参照・編成できる）: %v", got)
 	}
 	t.Run("外されたグループは、編成できないので出さない", func(t *testing.T) {
 		call(t, h, admin, "POST", "/api/chat/groups/5/members", `{"account_ids":[1,3]}`)
-		if got := groupIDs(kinjo); got[5] {
+		if got := groupIDs(kubota); got[5] {
 			t.Fatalf("外された運動会実行委員が出ている: %v", got)
 		}
 	})

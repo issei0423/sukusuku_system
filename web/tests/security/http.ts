@@ -29,14 +29,14 @@ export interface Account {
 }
 
 export const ACCOUNTS = {
-  admin: { label: '管理者（園長）', email: 'nohara@hoiku.example.jp', password: 'pass1234', entrance: 'staff' },
-  sakura: { label: '一般（さくら組担任）', email: 'takanashi@hoiku.example.jp', password: 'pass1234', entrance: 'staff' },
-  himawari: { label: '一般（ひまわり組担任）', email: 'kinjo@hoiku.example.jp', password: 'pass1234', entrance: 'staff' },
-  spareAdmin: { label: '管理者（予備）', email: 'uezono@hoiku.example.jp', password: 'pass1234', entrance: 'staff' },
-  tempPassword: { label: '一時パスワード中の職員', email: 'miyagi@hoiku.example.jp', password: 'temp0901', entrance: 'staff' },
-  termsStale: { label: '規約の再同意が必要な保護者', email: 'uezono.k@example.jp', password: 'pass1234', entrance: 'guardian' },
-  suspended: { label: '停止中の保護者', email: 'takanashi.r@example.jp', password: 'pass1234', entrance: 'guardian' },
-  guardian: { label: '保護者（野原 太郎の保護者）', email: 'nohara.i@example.jp', password: 'pass1234', entrance: 'guardian' },
+  admin: { label: '管理者（園長）', email: 'nishida@hoiku.example.jp', password: 'pass1234', entrance: 'staff' },
+  sakura: { label: '一般（さくら組担任）', email: 'suzuki@hoiku.example.jp', password: 'pass1234', entrance: 'staff' },
+  himawari: { label: '一般（ひまわり組担任）', email: 'kubota@hoiku.example.jp', password: 'pass1234', entrance: 'staff' },
+  spareAdmin: { label: '管理者（予備）', email: 'endo@hoiku.example.jp', password: 'pass1234', entrance: 'staff' },
+  tempPassword: { label: '一時パスワード中の職員', email: 'murata@hoiku.example.jp', password: 'temp0901', entrance: 'staff' },
+  termsStale: { label: '規約の再同意が必要な保護者', email: 'endo.n@example.jp', password: 'pass1234', entrance: 'guardian' },
+  suspended: { label: '停止中の保護者', email: 'suzuki.h@example.jp', password: 'pass1234', entrance: 'guardian' },
+  guardian: { label: '保護者（西田 太郎の保護者）', email: 'nishida.t@example.jp', password: 'pass1234', entrance: 'guardian' },
 } as const satisfies Record<string, Account>;
 
 export interface Call {

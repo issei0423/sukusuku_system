@@ -12,30 +12,30 @@ import type { SessionUser } from '../src/api/types';
 import { today, addDays } from '../src/api/util';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
 // ひまわり組（class_id 2）の担任
 const otherTeacher: SessionUser = {
-  account_id: 5, email: 'kinjo@hoiku.example.jp', role: '2', display_name: '金城 宗一郎',
+  account_id: 5, email: 'kubota@hoiku.example.jp', role: '2', display_name: '久保田 和也',
   staff_id: 'S005', guardian_id: null, class_id: 2, class_name: 'ひまわり組',
   is_temp_password: false, terms_agreed: true,
 };
-// 野原 太郎（C001）の保護者。個人チャットは chat_room_id 6
+// 西田 太郎（C001）の保護者。個人チャットは chat_room_id 6
 const guardian: SessionUser = {
-  account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
+  account_id: 6, email: 'nishida.t@example.jp', role: '3', display_name: '西田 拓也',
   staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
-// 上園 花子（C002）の保護者。野原 太郎の個人チャットには参加していない
+// 遠藤 花子（C002）の保護者。西田 太郎の個人チャットには参加していない
 const otherGuardian: SessionUser = {
-  account_id: 7, email: 'uezono.k@example.jp', role: '3', display_name: '上園 謙心',
+  account_id: 7, email: 'endo.n@example.jp', role: '3', display_name: '遠藤 直人',
   staff_id: null, guardian_id: 'G002', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
@@ -98,7 +98,7 @@ describe('メッセージの取消とリアクション（GitHub Issue #98・#10
     const old = db.chatMessages.find((m) => m.chat_room_id === 6 && !m.is_deleted)!;
     const code = await api.issueOneInvitationCode(admin, 'C001', 30);
     const late = await api.signUpGuardian({
-      code, email: 'late.review@example.jp', password: 'pass12345', guardian_name: '野原 節子', relationship: '祖母',
+      code, email: 'late.review@example.jp', password: 'pass12345', guardian_name: '西田 節子', relationship: '祖母',
       terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION,
     });
     await expect(api.toggleReaction(late, old.chat_message_id, '1')).rejects.toThrow('メッセージが見つかりません');
@@ -112,7 +112,7 @@ describe('メッセージの取消とリアクション（GitHub Issue #98・#10
     const sent = await api.send(teacher, 6, '登録の直前のメッセージ');
     const code = await api.issueOneInvitationCode(admin, 'C001', 30);
     const late = await api.signUpGuardian({
-      code, email: 'late.same@example.jp', password: 'pass12345', guardian_name: '野原 茂', relationship: '祖父',
+      code, email: 'late.same@example.jp', password: 'pass12345', guardian_name: '西田 茂', relationship: '祖父',
       terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION,
     });
     // テストの時計は止めてあるので、送信と登録は必ず同じ秒になる（tests/setup-clock.ts）

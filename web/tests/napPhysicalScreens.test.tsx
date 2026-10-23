@@ -18,13 +18,13 @@ import type { SessionUser } from '../src/api/types';
 import { addDays, today } from '../src/api/util';
 
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
 // 午睡記録の CSV（帳票）は管理者だけが出せる（画面詳細図「午睡記録検索画面」(5-3) の項目9・10）
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
@@ -103,8 +103,8 @@ describe('午睡チェック画面の園児カード（GitHub Issue #142 の 3�
   it('呼吸に問題が無い記録は、これまでどおり時刻と体位だけを出し、異常時の記録への導線を出さない', async () => {
     open('/staff/nap', teacher);
     await settled();
-    await waitFor(() => expect(cardOf('野原 太郎').textContent).toContain('前回 13:20 仰向け'), { timeout: 3000 });
-    const card = cardOf('野原 太郎');
+    await waitFor(() => expect(cardOf('西田 太郎').textContent).toContain('前回 13:20 仰向け'), { timeout: 3000 });
+    const card = cardOf('西田 太郎');
     // 「確認できず」は呼吸の選択肢にもあるため、記録の表示（「呼吸 確認できず」）で見る
     expect(card.textContent).not.toContain('呼吸 確認できず');
     expect(within(card).queryByRole('link', { name: '異常時の記録を残す' })).toBeNull();
@@ -117,14 +117,14 @@ describe('午睡チェック画面の園児カード（GitHub Issue #142 の 3�
     open('/staff/nap', teacher);
     await settled();
     await waitFor(() => expect(cardOf('松本 咲良').textContent).toContain('異常時の記録あり 13:25'), { timeout: 3000 });
-    expect(cardOf('野原 太郎').textContent).not.toContain('異常時の記録あり');
+    expect(cardOf('西田 太郎').textContent).not.toContain('異常時の記録あり');
   });
 
   it('体温は小数第1位までしか設定できない（基本設計書「入力項目の制約値」(4-9)）', async () => {
     open('/staff/nap', teacher);
     await settled();
-    await waitFor(() => expect(cardOf('金城 陸')).toBeTruthy(), { timeout: 3000 });
-    fireEvent.click(within(cardOf('金城 陸')).getByRole('button', { name: /^金城 陸の体温/ }));
+    await waitFor(() => expect(cardOf('久保田 陸')).toBeTruthy(), { timeout: 3000 });
+    fireEvent.click(within(cardOf('久保田 陸')).getByRole('button', { name: /^久保田 陸の体温/ }));
     fireEvent.click(screen.getByText('範囲外の値を入力'));
     const input = screen.getByLabelText('範囲外の体温');
     const setButton = screen.getByRole('button', { name: '設定' }) as HTMLButtonElement;
@@ -136,7 +136,7 @@ describe('午睡チェック画面の園児カード（GitHub Issue #142 の 3�
     fireEvent.change(input, { target: { value: '34.9' } });
     expect(setButton.disabled).toBe(false);
     fireEvent.click(setButton);
-    expect(within(cardOf('金城 陸')).getByRole('button', { name: /^金城 陸の体温/ }).textContent).toContain('34.9℃');
+    expect(within(cardOf('久保田 陸')).getByRole('button', { name: /^久保田 陸の体温/ }).textContent).toContain('34.9℃');
   });
 });
 

@@ -19,12 +19,12 @@ const user = (account_id: number, role: '1' | '2' | '3', email: string, extra: P
   account_id, email, role, display_name: email, staff_id: null, guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true, ...extra,
 });
-const admin = user(1, '1', 'nohara@hoiku.example.jp', { staff_id: 'S001' });
-const uezono = user(2, '1', 'uezono@hoiku.example.jp', { staff_id: 'S002' });
-const teacher = user(3, '2', 'takanashi@hoiku.example.jp', { staff_id: 'S003', class_id: 1 });
-const kinjo = user(5, '2', 'kinjo@hoiku.example.jp', { staff_id: 'S005', class_id: 2 });
-const nohara = user(6, '3', 'nohara.i@example.jp', { guardian_id: 'G001' });
-const miyagi = user(9, '3', 'miyagi.r@example.jp', { guardian_id: 'G004' });
+const admin = user(1, '1', 'nishida@hoiku.example.jp', { staff_id: 'S001' });
+const endo = user(2, '1', 'endo@hoiku.example.jp', { staff_id: 'S002' });
+const teacher = user(3, '2', 'suzuki@hoiku.example.jp', { staff_id: 'S003', class_id: 1 });
+const kubota = user(5, '2', 'kubota@hoiku.example.jp', { staff_id: 'S005', class_id: 2 });
+const nishida = user(6, '3', 'nishida.t@example.jp', { guardian_id: 'G001' });
+const murata = user(9, '3', 'murata.s@example.jp', { guardian_id: 'G004' });
 
 const messagesOf = async (viewer: SessionUser, roomId: number) =>
   new Map((await api.messages(viewer, roomId)).map((m) => [m.chat_message_id, m]));
@@ -37,7 +37,7 @@ describe('後から登録した保護者は、見えない登録前のメッセ�
   it('開いても、登録より前のメッセージは既読にならない。登録のあとに届いたものは既読になる', async () => {
     const code = await api.issueOneInvitationCode(admin, 'C002', 14);
     const haha = await api.signUpGuardian({
-      code, email: 'uezono.haha@example.jp', password: 'uezono-5678', guardian_name: '上園 母', relationship: '母',
+      code, email: 'endo.haha@example.jp', password: 'endo-5678', guardian_name: '遠藤 母', relationship: '母',
       terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION, // 規約への同意（GitHub Issue #170）
     });
     expect(await api.messages(haha, 7)).toHaveLength(0);
@@ -57,7 +57,7 @@ describe('後から登録した保護者は、見えない登録前のメッセ�
 describe('「保護者 n 名にも届きます」の n とメンバー欄に、停止した保護者を入れない（GitHub Issue #171 の 2・#141 の 4）', () => {
   it('停止中の保護者は数えず、紐づけを終えて停止した保護者も減る。戻すとまた数える', async () => {
     // 同じファイルの前のテストで保護者が増えていることがあるため、件数は始めの値からの増減で見る
-    // アカウント 8（高梨 倫太朗）は紐づけを終えて停止しているが、園全体の参加の行は残っている
+    // アカウント 8（鈴木 浩之）は紐づけを終えて停止しているが、園全体の参加の行は残っている
     expect(db.chatMembers.some((m) => m.chat_room_id === 1 && m.account_id === 8 && m.left_at === null)).toBe(true);
     expect(await memberIds(teacher, 1)).not.toContain(8);
     const before = await guardianCounts(teacher);
@@ -82,19 +82,19 @@ describe('既読の人数（GitHub Issue #171 の 5）', () => {
   it('保護者が参加するチャンネルでは、保護者の既読だけを数える', async () => {
     // さくら組の「9時に園庭でお願いします。」（ID 3）は、職員 3 名が読み、保護者は誰も読んでいない
     expect((await messagesOf(teacher, 3)).get(3)?.read_count).toBe(0);
-    await api.markRead(nohara, 3);
+    await api.markRead(nishida, 3);
     expect((await messagesOf(teacher, 3)).get(3)?.read_count).toBe(1);
   });
 
   it('職員だけのチャンネルでは、職員の既読を数える', async () => {
     await api.markRead(teacher, 2);
-    expect((await messagesOf(uezono, 2)).get(8)?.read_count).toBe(1);
+    expect((await messagesOf(endo, 2)).get(8)?.read_count).toBe(1);
   });
 });
 
 describe('送信者が職員か保護者かを返す（GitHub Issue #141 の 1）', () => {
   it('職員の画面にも保護者の画面にも、送信者のロールを添える', async () => {
-    for (const viewer of [teacher, nohara]) {
+    for (const viewer of [teacher, nishida]) {
       const got = await messagesOf(viewer, 6);
       expect(got.get(4)?.sender_role).toBe('2');
       expect(got.get(5)?.sender_role).toBe('3');
@@ -104,9 +104,9 @@ describe('送信者が職員か保護者かを返す（GitHub Issue #141 の 1�
 
 describe('保護者が自分で取り消したメッセージは、誤送信対応の対象に並べない（GitHub Issue #171 の 4）', () => {
   it('保護者の取消は並ばず、職員の取消は並ぶ', async () => {
-    const byGuardian = await api.send(miyagi, 8, '明日はお休みします（打ちまちがい）');
-    await api.retract(miyagi, byGuardian.chat_message_id);
-    const byStaff = await api.send(teacher, 8, '（誤送信）野原 太郎くんの発熱の記録');
+    const byGuardian = await api.send(murata, 8, '明日はお休みします（打ちまちがい）');
+    await api.retract(murata, byGuardian.chat_message_id);
+    const byStaff = await api.send(teacher, 8, '（誤送信）西田 太郎くんの発熱の記録');
     await api.retract(teacher, byStaff.chat_message_id);
 
     const pending = (await api.retractedWithoutRecord(admin)).map((r) => r.chat_message_id);
@@ -117,16 +117,16 @@ describe('保護者が自分で取り消したメッセージは、誤送信対�
 
 describe('グループ編成画面に並べるグループ（GitHub Issue #172 の 4）', () => {
   it('一般の職員には、いま参加しているグループだけを返す。管理者にはすべて返す', async () => {
-    const created = await api.createGroup(teacher, 'G 遠足下見（高梨・宮城）', [4]);
+    const created = await api.createGroup(teacher, 'G 遠足下見（鈴木・村田）', [4]);
     const ids = async (viewer: SessionUser) => (await api.groups(viewer)).map((g) => g.chat_room_id);
 
-    expect(await ids(kinjo)).toContain(5);
-    expect(await ids(kinjo)).not.toContain(created.chat_room_id);
+    expect(await ids(kubota)).toContain(5);
+    expect(await ids(kubota)).not.toContain(created.chat_room_id);
     expect(await ids(admin)).toEqual(expect.arrayContaining([5, created.chat_room_id]));
 
     // 外されたグループは、編成できないので出さない
     await api.updateGroupMembers(admin, 5, [1, 3]);
-    expect(await ids(kinjo)).not.toContain(5);
+    expect(await ids(kubota)).not.toContain(5);
   });
 });
 
@@ -138,10 +138,10 @@ describe('グループ編成画面に並べるグループ（GitHub Issue #172 �
  */
 describe('取り消したメッセージは、もう一度取り消せず、編集もできない', () => {
   it('2回目の取消と、取消のあとの編集は失敗し、本文は空のまま', async () => {
-    const m = await api.send(miyagi, 8, '取り消す本文');
-    await api.retract(miyagi, m.chat_message_id);
-    await expect(api.retract(miyagi, m.chat_message_id)).rejects.toThrow('このメッセージはすでに取り消されています');
-    await expect(api.edit(miyagi, m.chat_message_id, '書き換えた本文')).rejects.toThrow('取り消したメッセージは編集できません');
+    const m = await api.send(murata, 8, '取り消す本文');
+    await api.retract(murata, m.chat_message_id);
+    await expect(api.retract(murata, m.chat_message_id)).rejects.toThrow('このメッセージはすでに取り消されています');
+    await expect(api.edit(murata, m.chat_message_id, '書き換えた本文')).rejects.toThrow('取り消したメッセージは編集できません');
     const stored = db.chatMessages.find((x) => x.chat_message_id === m.chat_message_id)!;
     expect(stored.is_deleted).toBeTruthy();
     expect(stored.body).toBe('');

@@ -4,7 +4,7 @@
  *      詳細設計書.md「訂正・取り消しのまとめ」(3-5)、図/画面詳細図.md「異常時記録画面」(5-2) の項目17、図/インタフェース一覧.md
  *
  * Go サーバ側（server/api_nap_abnormal_correct_test.go）と同じ観点を、モック（api/mock.ts）に対して確かめる。
- * デモ：異常時の記録 1（高梨 健、2日前の実施 3、ヒヤリハット起票済み）と記録 2（金城 陸、昨日の実施 2、未起票）。
+ * デモ：異常時の記録 1（鈴木 健、2日前の実施 3、ヒヤリハット起票済み）と記録 2（久保田 陸、昨日の実施 2、未起票）。
  * どちらもさくら組。今日の実施 1（さくら組）に記録は無いので、テストが足す
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -16,22 +16,22 @@ import type { NapAbnormal, SessionUser } from '../src/api/types';
 import { fromNowMinutes } from '../src/api/util';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
 const otherTeacher: SessionUser = {
-  account_id: 5, email: 'kinjo@hoiku.example.jp', role: '2', display_name: '金城 宗一郎',
+  account_id: 5, email: 'kubota@hoiku.example.jp', role: '2', display_name: '久保田 和也',
   staff_id: 'S005', guardian_id: null, class_id: 2, class_name: 'ひまわり組',
   is_temp_password: false, terms_agreed: true,
 };
 const guardian: SessionUser = {
-  account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
+  account_id: 6, email: 'nishida.t@example.jp', role: '3', display_name: '西田 拓也',
   staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
@@ -68,7 +68,7 @@ afterEach(() => {
 });
 
 /**
- * 今日の実施 1（さくら組）に、野原 太郎（C001）の異常時の記録を足す。記録した職員は S004（さくら組のもう1人の担任）。
+ * 今日の実施 1（さくら組）に、西田 太郎（C001）の異常時の記録を足す。記録した職員は S004（さくら組のもう1人の担任）。
  * noticedAt があれば、保護者へ「した」（電話・母）として連絡した日時を入れる（server/api_nap_abnormal_correct_test.go の addTodayAbnormal）
  */
 function addTodayAbnormal(id: number, foundAt: string, recordedAt: string, noticedAt?: string): NapAbnormal {
@@ -96,7 +96,7 @@ describe('異常時の記録の修正', () => {
     expect(got).toMatchObject({
       found_at: newFound, situation: '寝返りでうつ伏せになっていた', response: '仰向けに直した', can_correct: true,
       // 保存時刻・記録した職員は変えない
-      recorded_at: recordedAt, staff_id: 'S004', child_id: 'C001', child_name: '野原 太郎',
+      recorded_at: recordedAt, staff_id: 'S004', child_id: 'C001', child_name: '西田 太郎',
     });
     expect(got.corrected_at).toBeTruthy();
     expect(abnormalOf(900801)).toMatchObject({ found_at: newFound, situation: '寝返りでうつ伏せになっていた' });
@@ -231,7 +231,7 @@ describe('帳票の異常時の記録の修正あり・修正の履歴', () => {
     expect(before.abnormals.every((r) => r.length === NAP_ABNORMAL_HEADER.length && r[6] === '')).toBe(true);
     expect(before.hasHistory).toBe(false);
 
-    // 記録 2（金城 陸、未起票）の発見時刻と状況、記録 1（高梨 健、起票済み）のとった対応、今日の午睡チェックの記録 1 を直す
+    // 記録 2（久保田 陸、未起票）の発見時刻と状況、記録 1（鈴木 健、起票済み）のとった対応、今日の午睡チェックの記録 1 を直す
     await api.correctNapAbnormal(admin, 2, {
       found_at: `${yesterday()}T14:05:00`, situation: '顔色が紅潮していた。体温37.4度。', reason: '時刻を見直した',
     });
@@ -241,18 +241,18 @@ describe('帳票の異常時の記録の修正あり・修正の履歴', () => {
     const f = await report();
     // 起票済みの記録は、ヒヤリハット側の文のまま「修正あり」を付ける。未起票の記録は、直したあとの発見時刻と状況で出す
     expect(f.abnormals.map((r) => [r[0], r[1], r[2], r[5], r[6]])).toEqual([
-      [`${twoDaysAgo()}T13:40:00`, '高梨 健', '午睡中にうつ伏せの体位を確認した。', '起票済み', '修正あり'],
-      [`${yesterday()}T14:05:00`, '金城 陸', '顔色が紅潮していた。体温37.4度。', '未起票', '修正あり'],
+      [`${twoDaysAgo()}T13:40:00`, '鈴木 健', '午睡中にうつ伏せの体位を確認した。', '起票済み', '修正あり'],
+      [`${yesterday()}T14:05:00`, '久保田 陸', '顔色が紅潮していた。体温37.4度。', '未起票', '修正あり'],
     ]);
 
     // 修正の履歴：一覧と同じ向き（実施の日の古い順）で、異常時の記録と午睡チェックの記録を1つの表に並べる
     expect(f.histories.map((h) => [h[0], h[2], h[3], h[4], h[5]])).toEqual([
-      [`異常時の記録（高梨 健・${twoDaysAgo()}T13:40:00）`, '野原 一誠',
+      [`異常時の記録（鈴木 健・${twoDaysAgo()}T13:40:00）`, '西田 拓也',
         'とった対応=仰向けに直し、5分後に再度確認した。保護者へは降園時に口頭で伝えた。', 'とった対応=仰向けに直した。', '書き足した'],
-      [`異常時の記録（金城 陸・${yesterday()}T14:05:00）`, '野原 一誠',
+      [`異常時の記録（久保田 陸・${yesterday()}T14:05:00）`, '西田 拓也',
         `発見時刻=${yesterday()}T14:10:00、状況=顔色がやや紅潮していた。体温37.4度。`,
         `発見時刻=${yesterday()}T14:05:00、状況=顔色が紅潮していた。体温37.4度。`, '時刻を見直した'],
-      [`午睡チェックの記録（野原 太郎・${today()}T13:20:00）`, '高梨 倫太朗', '体位=仰向け', '体位=うつ伏せ', '押し間違い'],
+      [`午睡チェックの記録（西田 太郎・${today()}T13:20:00）`, '鈴木 浩之', '体位=仰向け', '体位=うつ伏せ', '押し間違い'],
     ]);
     expect(f.histories.every((h) => h.length === NAP_HISTORY_HEADER.length && h[1] !== '')).toBe(true);
 

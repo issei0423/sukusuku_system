@@ -88,7 +88,7 @@ func (n nullString) ptr() *string {
 
 func TestIncidentFieldsAreSavedAndReturned(t *testing.T) {
 	a, h := newTestApp(t)
-	teacher := loginAs(a, 3, "staff") // 高梨（さくら組の担任）
+	teacher := loginAs(a, 3, "staff") // 鈴木（さくら組の担任）
 
 	t.Run("状況・とった対応・今後の対策を見出しでつないで本文に持ち、読むときは分けて返す", func(t *testing.T) {
 		saved := diaryOf(t, call(t, h, teacher, "POST", "/api/diaries", incidentRequest(t, 0, "", map[string]string{
@@ -221,7 +221,7 @@ func TestIncidentFieldsAreValidated(t *testing.T) {
 func TestIncidentDemoDiaryCanBeEdited(t *testing.T) {
 	a, h := newTestApp(t)
 	teacher := loginAs(a, 3, "staff")
-	// デモでは、差し戻しの日誌 3 の編集ロックを宮城が持っている（seed.sql）。テストの DB で外してから高梨が取る
+	// デモでは、差し戻しの日誌 3 の編集ロックを村田が持っている（seed.sql）。テストの DB で外してから鈴木が取る
 	a.db.Exec(`DELETE FROM t_diary_lock WHERE diary_id = 3`)
 
 	got := diaryOf(t, call(t, h, teacher, "GET", "/api/diaries/3", "").Body.Bytes())

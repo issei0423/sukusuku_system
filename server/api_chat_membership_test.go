@@ -118,15 +118,15 @@ func contains(list []string, s string) bool {
 
 func TestGroupMembersOnlyPurposeGroups(t *testing.T) {
 	a, h := newTestApp(t)
-	kinjo := loginAs(a, 5, "staff") // ひまわり組の担任
+	kubota := loginAs(a, 5, "staff") // ひまわり組の担任
 	admin := loginAs(a, 1, "staff")
-	guardian := loginAs(a, 6, "guardian") // 野原 太郎の保護者
+	guardian := loginAs(a, 6, "guardian") // 西田 太郎の保護者
 
 	t.Run("ほかのクラスの個人チャットに自分を足せない", func(t *testing.T) {
-		if rec := chatReq(h, kinjo, "POST", "/api/chat/groups/6/members", `{"account_ids":[1,3,4,6,5]}`); rec.Code != http.StatusBadRequest {
+		if rec := chatReq(h, kubota, "POST", "/api/chat/groups/6/members", `{"account_ids":[1,3,4,6,5]}`); rec.Code != http.StatusBadRequest {
 			t.Fatalf("status = %d, want 400 (%s)", rec.Code, rec.Body.String())
 		}
-		if rec := chatReq(h, kinjo, "GET", "/api/chat/rooms/6/messages", ""); rec.Code != http.StatusForbidden {
+		if rec := chatReq(h, kubota, "GET", "/api/chat/rooms/6/messages", ""); rec.Code != http.StatusForbidden {
 			t.Fatalf("編成のあと、ほかのクラスの個人チャットが読める: %d", rec.Code)
 		}
 	})
@@ -136,12 +136,12 @@ func TestGroupMembersOnlyPurposeGroups(t *testing.T) {
 			t.Fatalf("status = %d, want 400", rec.Code)
 		}
 		if !sameRooms(currentRooms(t, a, 10), 1, 3, 9) {
-			t.Fatalf("保護者（金城 陸の保護者）の参加が変わった: %v", currentRooms(t, a, 10))
+			t.Fatalf("保護者（久保田 陸の保護者）の参加が変わった: %v", currentRooms(t, a, 10))
 		}
 	})
 
 	t.Run("職員チャットに保護者を入れられない", func(t *testing.T) {
-		if rec := chatReq(h, kinjo, "POST", "/api/chat/groups/2/members", `{"account_ids":[1,2,3,4,5,6]}`); rec.Code != http.StatusBadRequest {
+		if rec := chatReq(h, kubota, "POST", "/api/chat/groups/2/members", `{"account_ids":[1,2,3,4,5,6]}`); rec.Code != http.StatusBadRequest {
 			t.Fatalf("status = %d, want 400", rec.Code)
 		}
 		if rec := chatReq(h, guardian, "GET", "/api/chat/rooms/2/messages", ""); rec.Code != http.StatusForbidden {
@@ -196,29 +196,29 @@ func TestGroupMembersOnlyPurposeGroups(t *testing.T) {
 func TestRemovedStaffCannotReadOrWriteAfterLeaving(t *testing.T) {
 	a, h := newTestApp(t)
 	admin := loginAs(a, 1, "staff")
-	kinjo := loginAs(a, 5, "staff")
+	kubota := loginAs(a, 5, "staff")
 
 	// 外す前のやりとり。外したのと同じ秒に入らないよう、日時を過去に置く
 	if _, err := a.db.Exec(`INSERT INTO t_chat_message
 		(chat_room_id, sender_account_id, body, source_type, sent_at, is_deleted)
-		VALUES (5, 5, 'K0 金城の外される前の投稿', '1', '2026-01-05T10:00:00', 0)`); err != nil {
+		VALUES (5, 5, 'K0 久保田の外される前の投稿', '1', '2026-01-05T10:00:00', 0)`); err != nil {
 		t.Fatal(err)
 	}
 	var k0 int64
-	a.db.QueryRow(`SELECT chat_message_id FROM t_chat_message WHERE body = 'K0 金城の外される前の投稿'`).Scan(&k0)
+	a.db.QueryRow(`SELECT chat_message_id FROM t_chat_message WHERE body = 'K0 久保田の外される前の投稿'`).Scan(&k0)
 
 	call(t, h, admin, "POST", "/api/chat/groups/5/members", `{"account_ids":[1,3]}`)
-	call(t, h, admin, "POST", "/api/chat/rooms/5/messages", `{"body":"L1 金城さんを外したあとの打ち合わせ"}`)
+	call(t, h, admin, "POST", "/api/chat/rooms/5/messages", `{"body":"L1 久保田さんを外したあとの打ち合わせ"}`)
 
 	t.Run("外したあとの投稿は読めず、未読にも数えない。外す前のものは読める", func(t *testing.T) {
-		bodies := messageBodies(t, h, kinjo, "5")
-		if contains(bodies, "L1 金城さんを外したあとの打ち合わせ") {
+		bodies := messageBodies(t, h, kubota, "5")
+		if contains(bodies, "L1 久保田さんを外したあとの打ち合わせ") {
 			t.Fatalf("外したあとの投稿が読める: %v", bodies)
 		}
-		if !contains(bodies, "K0 金城の外される前の投稿") || !contains(bodies, "種目案を今週中にまとめましょう。") {
+		if !contains(bodies, "K0 久保田の外される前の投稿") || !contains(bodies, "種目案を今週中にまとめましょう。") {
 			t.Fatalf("所属していた期間の過去ログが読めない: %v", bodies)
 		}
-		v, ok := roomViews(t, h, kinjo)[5]
+		v, ok := roomViews(t, h, kubota)[5]
 		if !ok {
 			t.Fatalf("過去ログを読めるチャンネルが一覧から消えた")
 		}
@@ -237,31 +237,31 @@ func TestRemovedStaffCannotReadOrWriteAfterLeaving(t *testing.T) {
 		var before struct {
 			UnreadChat int `json:"unreadChat"`
 		}
-		json.Unmarshal(call(t, h, kinjo, "GET", "/api/dashboard/staff", "").Body.Bytes(), &before)
+		json.Unmarshal(call(t, h, kubota, "GET", "/api/dashboard/staff", "").Body.Bytes(), &before)
 		call(t, h, admin, "POST", "/api/chat/rooms/5/messages", `{"body":"L3 もう1件"}`)
-		json.Unmarshal(call(t, h, kinjo, "GET", "/api/dashboard/staff", "").Body.Bytes(), &got)
+		json.Unmarshal(call(t, h, kubota, "GET", "/api/dashboard/staff", "").Body.Bytes(), &got)
 		if got.UnreadChat != before.UnreadChat {
 			t.Fatalf("unreadChat = %d → %d", before.UnreadChat, got.UnreadChat)
 		}
 	})
 
 	t.Run("投稿・リアクション・編集・取消はできない", func(t *testing.T) {
-		if rec := chatReq(h, kinjo, "POST", "/api/chat/rooms/5/messages", `{"body":"L2 外された金城からの投稿"}`); rec.Code != http.StatusForbidden {
+		if rec := chatReq(h, kubota, "POST", "/api/chat/rooms/5/messages", `{"body":"L2 外された久保田からの投稿"}`); rec.Code != http.StatusForbidden {
 			t.Fatalf("投稿: status = %d, want 403", rec.Code)
 		}
-		if rec := chatReq(h, kinjo, "POST", "/api/chat/messages/"+itoa64(k0)+"/reactions", `{"reaction_type":"1"}`); rec.Code != http.StatusForbidden {
+		if rec := chatReq(h, kubota, "POST", "/api/chat/messages/"+itoa64(k0)+"/reactions", `{"reaction_type":"1"}`); rec.Code != http.StatusForbidden {
 			t.Fatalf("リアクション: status = %d, want 403", rec.Code)
 		}
-		if rec := chatReq(h, kinjo, "POST", "/api/chat/messages/"+itoa64(k0)+"/edit", `{"body":"書き換え"}`); rec.Code != http.StatusForbidden {
+		if rec := chatReq(h, kubota, "POST", "/api/chat/messages/"+itoa64(k0)+"/edit", `{"body":"書き換え"}`); rec.Code != http.StatusForbidden {
 			t.Fatalf("編集: status = %d, want 403", rec.Code)
 		}
-		if rec := chatReq(h, kinjo, "POST", "/api/chat/messages/"+itoa64(k0)+"/retract", ""); rec.Code != http.StatusForbidden {
+		if rec := chatReq(h, kubota, "POST", "/api/chat/messages/"+itoa64(k0)+"/retract", ""); rec.Code != http.StatusForbidden {
 			t.Fatalf("取消: status = %d, want 403", rec.Code)
 		}
 	})
 
 	t.Run("既読にするのは、読める範囲のメッセージだけ", func(t *testing.T) {
-		call(t, h, kinjo, "POST", "/api/chat/rooms/5/read", "")
+		call(t, h, kubota, "POST", "/api/chat/rooms/5/read", "")
 		var n int
 		a.db.QueryRow(`SELECT COUNT(*) FROM t_chat_read x JOIN t_chat_message m ON m.chat_message_id = x.chat_message_id
 			WHERE x.account_id = 5 AND m.body LIKE 'L%'`).Scan(&n)
@@ -271,15 +271,15 @@ func TestRemovedStaffCannotReadOrWriteAfterLeaving(t *testing.T) {
 	})
 
 	t.Run("いまの参加者の一覧は返さない", func(t *testing.T) {
-		if rec := chatReq(h, kinjo, "GET", "/api/chat/rooms/5/members", ""); rec.Code != http.StatusForbidden {
+		if rec := chatReq(h, kubota, "GET", "/api/chat/rooms/5/members", ""); rec.Code != http.StatusForbidden {
 			t.Fatalf("status = %d, want 403", rec.Code)
 		}
 	})
 
 	t.Run("入れ直すと、また読み書きできる", func(t *testing.T) {
 		call(t, h, admin, "POST", "/api/chat/groups/5/members", `{"account_ids":[1,3,5]}`)
-		call(t, h, kinjo, "POST", "/api/chat/rooms/5/messages", `{"body":"L4 戻りました"}`)
-		if v := roomViews(t, h, kinjo)[5]; !v.CanPost || v.Left {
+		call(t, h, kubota, "POST", "/api/chat/rooms/5/messages", `{"body":"L4 戻りました"}`)
+		if v := roomViews(t, h, kubota)[5]; !v.CanPost || v.Left {
 			t.Fatalf("入れ直したあと: canPost=%v left=%v", v.CanPost, v.Left)
 		}
 	})
@@ -291,7 +291,7 @@ func TestStaffAccountChangesFollowChatMembers(t *testing.T) {
 
 	t.Run("管理者は、保護者との個人チャットにも参加している", func(t *testing.T) {
 		if !sameRooms(currentRooms(t, a, 2), 1, 2, 3, 4, 6, 7, 8, 9) {
-			t.Fatalf("上園（管理者）の参加: %v", currentRooms(t, a, 2))
+			t.Fatalf("遠藤（管理者）の参加: %v", currentRooms(t, a, 2))
 		}
 	})
 
@@ -313,24 +313,24 @@ func TestStaffAccountChangesFollowChatMembers(t *testing.T) {
 	})
 
 	t.Run("担任を付け替えると、前のクラスから外れ、新しいクラスに入る", func(t *testing.T) {
-		kinjo := loginAs(a, 5, "staff")
-		call(t, h, admin, "POST", "/api/admin/staff-accounts/S005", `{"staff_name":"金城 宗一郎","role":"2","class_id":1}`)
+		kubota := loginAs(a, 5, "staff")
+		call(t, h, admin, "POST", "/api/admin/staff-accounts/S005", `{"staff_name":"久保田 和也","role":"2","class_id":1}`)
 		// 目的別グループ（5）は手で編成するものなので、付け替えでは動かさない
 		if !sameRooms(currentRooms(t, a, 5), 1, 2, 3, 5, 6, 7, 8, 9) {
-			t.Fatalf("金城の参加: %v", currentRooms(t, a, 5))
+			t.Fatalf("久保田の参加: %v", currentRooms(t, a, 5))
 		}
-		call(t, h, kinjo, "POST", "/api/chat/rooms/8/messages", `{"body":"新しい担任の金城です。"}`)
-		if rec := chatReq(h, kinjo, "POST", "/api/chat/rooms/4/messages", `{"body":"前のクラスへ"}`); rec.Code != http.StatusForbidden {
+		call(t, h, kubota, "POST", "/api/chat/rooms/8/messages", `{"body":"新しい担任の久保田です。"}`)
+		if rec := chatReq(h, kubota, "POST", "/api/chat/rooms/4/messages", `{"body":"前のクラスへ"}`); rec.Code != http.StatusForbidden {
 			t.Fatalf("前のクラスへ投稿できる: %d", rec.Code)
 		}
-		if v, ok := roomViews(t, h, kinjo)[4]; !ok || v.CanPost || !v.Left {
+		if v, ok := roomViews(t, h, kubota)[4]; !ok || v.CanPost || !v.Left {
 			t.Fatalf("前のクラスは閲覧のみで残る: %+v ok=%v", v, ok)
 		}
 
 		teacher := loginAs(a, 3, "staff")
-		call(t, h, admin, "POST", "/api/admin/staff-accounts/S003", `{"staff_name":"高梨 倫太朗","role":"2","class_id":2}`)
+		call(t, h, admin, "POST", "/api/admin/staff-accounts/S003", `{"staff_name":"鈴木 浩之","role":"2","class_id":2}`)
 		if !sameRooms(currentRooms(t, a, 3), 1, 2, 4, 5) {
-			t.Fatalf("高梨の参加: %v", currentRooms(t, a, 3))
+			t.Fatalf("鈴木の参加: %v", currentRooms(t, a, 3))
 		}
 		if rec := chatReq(h, teacher, "POST", "/api/chat/rooms/8/messages", `{"body":"外れた家庭へ"}`); rec.Code != http.StatusForbidden {
 			t.Fatalf("外れた家庭へ投稿できる: %d", rec.Code)
@@ -342,11 +342,11 @@ func TestStaffAccountChangesFollowChatMembers(t *testing.T) {
 	})
 
 	t.Run("一般を管理者にすると全クラスと個人チャットに入り、戻すと担当クラスだけになる", func(t *testing.T) {
-		call(t, h, admin, "POST", "/api/admin/staff-accounts/S003", `{"staff_name":"高梨 倫太朗","role":"1","class_id":2}`)
+		call(t, h, admin, "POST", "/api/admin/staff-accounts/S003", `{"staff_name":"鈴木 浩之","role":"1","class_id":2}`)
 		if !sameRooms(currentRooms(t, a, 3), 1, 2, 3, 4, 5, 6, 7, 8, 9) {
 			t.Fatalf("管理者にしたあと: %v", currentRooms(t, a, 3))
 		}
-		call(t, h, admin, "POST", "/api/admin/staff-accounts/S003", `{"staff_name":"高梨 倫太朗","role":"2","class_id":1}`)
+		call(t, h, admin, "POST", "/api/admin/staff-accounts/S003", `{"staff_name":"鈴木 浩之","role":"2","class_id":1}`)
 		if !sameRooms(currentRooms(t, a, 3), 1, 2, 3, 5, 6, 7, 8, 9) {
 			t.Fatalf("一般に戻したあと: %v", currentRooms(t, a, 3))
 		}

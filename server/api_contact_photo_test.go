@@ -282,7 +282,7 @@ func TestContactPhotoConsent(t *testing.T) {
 	t.Run("1人：同意 1 は 400 で名前が入る。2 なら送れる", func(t *testing.T) {
 		setConsent(t, a, childTaro, "1")
 		b := expectStatus(t, sendPhoto(t, h, teacher, map[string]string{"subject_child_ids": "C001"}, jpg), http.StatusBadRequest)
-		want := "野原 太郎さんは写真の同意が『園内記録として保持』のため送れません。写真を外すか、写っている子を見直してください。"
+		want := "西田 太郎さんは写真の同意が『園内記録として保持』のため送れません。写真を外すか、写っている子を見直してください。"
 		if !strings.Contains(b, want) {
 			t.Errorf("同意 1 の文言: %s", b)
 		}
@@ -301,8 +301,8 @@ func TestContactPhotoConsent(t *testing.T) {
 		setConsent(t, a, "C006", "1")
 		setConsent(t, a, "C002", "2")
 		b := expectStatus(t, sendPhoto(t, h, teacher, map[string]string{"subject_child_ids": "C001,C006,C002"}, jpg), http.StatusBadRequest)
-		want := "伊藤 葵さん・上園 花子さんは、ほかの保護者にも見える場への写真の同意がないため送れません。写真を外すか、写っている子を見直してください。"
-		if !strings.Contains(b, want) || strings.Contains(b, "野原") {
+		want := "伊藤 葵さん・遠藤 花子さんは、ほかの保護者にも見える場への写真の同意がないため送れません。写真を外すか、写っている子を見直してください。"
+		if !strings.Contains(b, want) || strings.Contains(b, "西田") {
 			t.Errorf("2人以上の文言: %s", b)
 		}
 		setConsent(t, a, "C006", "3")
@@ -353,20 +353,20 @@ func TestContactPhotoNameCheckPerFamily(t *testing.T) {
 	// 1人なら「たっくん」は宛先の子の呼び名で、注意は出ない
 	decodePhoto(t, sendPhoto(t, h, teacher, map[string]string{"subject_child_ids": "C001", "body": body}, jpg))
 
-	// 2人が写ると、伊藤 葵の家庭には野原 太郎の呼び名が届く。写っている子どうしを互いに宛先にすると見落とす
+	// 2人が写ると、伊藤 葵の家庭には西田 太郎の呼び名が届く。写っている子どうしを互いに宛先にすると見落とす
 	fields := map[string]string{"subject_child_ids": "C001,C006", "body": body}
 	before := countRows(t, a, `SELECT COUNT(*) FROM t_contact_photo`)
 	raw := expectStatus(t, sendPhoto(t, h, teacher, fields, jpg), http.StatusConflict)
 	var e otherNamesResp
 	json.Unmarshal([]byte(raw), &e)
-	if e.Kind != kindOtherChildNames || strings.Join(e.Names, ",") != "野原 太郎" || !strings.Contains(e.Message, "（2 家庭）") ||
+	if e.Kind != kindOtherChildNames || strings.Join(e.Names, ",") != "西田 太郎" || !strings.Contains(e.Message, "（2 家庭）") ||
 		len(e.Matches) != 1 || e.Matches[0].Start != 0 || e.Matches[0].End != 4 {
 		t.Fatalf("家庭ごとの注意: %s", raw)
 	}
 	if countRows(t, a, `SELECT COUNT(*) FROM t_contact_photo`) != before || filesUnder(t, a.filesDir) != before {
 		t.Fatal("注意を返したのに保存した")
 	}
-	fields["acknowledged_names"] = "野原 太郎"
+	fields["acknowledged_names"] = "西田 太郎"
 	got := decodePhoto(t, sendPhoto(t, h, teacher, fields, jpg))
 	if len(got.Events) != 2 || got.Events[0].Body == nil || *got.Events[0].Body != body {
 		t.Fatalf("承諾して送った写真: %+v", got.Events)
@@ -421,8 +421,8 @@ func TestContactPhotoSaveAndServe(t *testing.T) {
 	clients := map[string]*liveClient{
 		"さくら組の担任":   listen(a, accTeacher),
 		"ひまわり組の担任":  listen(a, accOtherTeacher),
-		"野原 太郎の保護者": listen(a, accGuardian),
-		"宮城 美咲の保護者": listen(a, accOtherGuard),
+		"西田 太郎の保護者": listen(a, accGuardian),
+		"村田 美咲の保護者": listen(a, accOtherGuard),
 	}
 
 	drainAll(clients)
@@ -433,7 +433,7 @@ func TestContactPhotoSaveAndServe(t *testing.T) {
 		t.Fatalf("送った写真: %+v", got)
 	}
 	expect(t, "写っている子を読める人にだけ知らせる", clients,
-		to(who("さくら組の担任", "野原 太郎の保護者"), liveEvent{Type: evContact, ChildID: childTaro}))
+		to(who("さくら組の担任", "西田 太郎の保護者"), liveEvent{Type: evContact, ChildID: childTaro}))
 
 	t.Run("-files の下の contact/YYYY/MM/<32文字>.jpg に、付帯情報を落として描き直して置く", func(t *testing.T) {
 		var rel string

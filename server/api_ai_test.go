@@ -162,7 +162,7 @@ func insertTodayRecords(t *testing.T, a *app) {
 	mustExec(t, a, ev, d, "1", at("00:10:00"), "1", "1", nil, nil, nil, at("00:10:00"), at("00:10:00"))
 	mustExec(t, a, ev, d, "2", at("00:11:00"), nil, nil, "うんち", nil, nil, at("00:11:00"), at("00:11:00"))
 	mustExec(t, a, ev, d, "3", at("00:12:00"), nil, nil, nil, 37.8, nil, at("00:12:00"), at("00:12:00"))
-	mustExec(t, a, ev, d, "4", at("00:13:00"), nil, nil, nil, nil, "野原太郎くんは、あおちゃんと砂場で型抜きをくり返していました。", at("00:13:00"), at("00:13:00"))
+	mustExec(t, a, ev, d, "4", at("00:13:00"), nil, nil, nil, nil, "西田太郎くんは、あおちゃんと砂場で型抜きをくり返していました。", at("00:13:00"), at("00:13:00"))
 	// 取り消したひとことは送らない
 	mustExec(t, a, ev, d, "4", at("00:14:00"), nil, nil, nil, nil, "取り消した文", at("00:14:00"), at("00:14:00"))
 	mustExec(t, a, `UPDATE t_contact_event SET is_deleted = 1 WHERE body = '取り消した文'`)
@@ -182,8 +182,8 @@ func TestAiDraftSendsNoNamesAndRestores(t *testing.T) {
 	enableAI(t, a, fake)
 	insertTodayRecords(t, a)
 	teacher := loginAs(a, accTeacher, "staff")
-	// メモには AI を使える子（宮城 美咲。保護者が同意している）の名前を書く。使えない子の名前なら呼ばずに 400（TestAiDraftRejections）
-	memo := "美咲ちゃんとしゃぼん玉を追いかけた。電話は 090-1234-5678、メールは nohara.i@example.jp。野原一誠さんと金城先生に伝えた"
+	// メモには AI を使える子（村田 美咲。保護者が同意している）の名前を書く。使えない子の名前なら呼ばずに 400（TestAiDraftRejections）
+	memo := "美咲ちゃんとしゃぼん玉を追いかけた。電話は 090-1234-5678、メールは nishida.t@example.jp。西田拓也さんと久保田先生に伝えた"
 	var res aiDraftResult
 	decode(t, call(t, h, teacher, "POST", "/api/ai/drafts",
 		jsonBody(t, map[string]any{"purpose": "facility_note", "child_id": "C001", "date": today(), "memo": memo})), &res)
@@ -194,8 +194,8 @@ func TestAiDraftSendsNoNamesAndRestores(t *testing.T) {
 	sent := fake.last()
 	var birth string
 	a.db.QueryRow(`SELECT birth_date FROM m_child WHERE child_id = 'C001'`).Scan(&birth)
-	for _, ng := range []string{"野原", "太郎", "たっくん", "のはら", "たろう", "伊藤", "あおちゃん", "あおい", "小林", "ゆいちゃん", "宮城", "美咲",
-		birth, "37.8", "36.9", "36.4", "一誠", "金城", "うんち", "おしっこ", "090", "1234", "@", "example", "さくら組", "高梨", "家庭からの連絡の文", "取り消した文", "卵"} {
+	for _, ng := range []string{"西田", "太郎", "たっくん", "にしだ", "たろう", "伊藤", "あおちゃん", "あおい", "小林", "ゆいちゃん", "村田", "美咲",
+		birth, "37.8", "36.9", "36.4", "拓也", "久保田", "うんち", "おしっこ", "090", "1234", "@", "example", "さくら組", "鈴木", "家庭からの連絡の文", "取り消した文", "卵"} {
 		if strings.Contains(sent.User, ng) || strings.Contains(sent.System, ng) {
 			t.Errorf("送った文に %q が入っている: %s", ng, sent.User)
 		}
@@ -302,7 +302,7 @@ func TestAiDraftRejections(t *testing.T) {
 		{"ほかのクラスの担任", otherTeacher, base(nil), 403, msgAiUnavailableForTarget, ""},
 		{"保護者", guardian, base(nil), 403, "職員のみが行えます", ""},
 		{"断った子・未同意の子", teacher, base(map[string]any{"child_id": "C002"}), 403, msgAiUnavailableForTarget, ""},
-		{"メモに AI を使えない子の名前（C002 上園の子）", teacher, base(map[string]any{"memo": "上園さんとボール遊び"}), 400, msgAiExcludedName, kindAiExcludedName},
+		{"メモに AI を使えない子の名前（C002 遠藤の子）", teacher, base(map[string]any{"memo": "遠藤さんとボール遊び"}), 400, msgAiExcludedName, kindAiExcludedName},
 		{"言い換える文に AI を使えない子の名前（呼び名 あおちゃん）", teacher, base(map[string]any{"purpose": "rephrase", "text": "あおちゃんと遊びました。"}), 400, msgAiExcludedName, kindAiExcludedName},
 	} {
 		code, body := post(c.who, c.body)

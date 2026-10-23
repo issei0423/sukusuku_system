@@ -20,28 +20,28 @@ import { useAsync, AUTO_REFRESH_MS } from '../src/hooks';
 import type { SessionUser } from '../src/api/types';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
 // ひまわり組の担任。さくら組の個人チャットには参加していない
 const otherTeacher: SessionUser = {
-  account_id: 5, email: 'kinjo@hoiku.example.jp', role: '2', display_name: '金城 翔',
+  account_id: 5, email: 'kubota@hoiku.example.jp', role: '2', display_name: '久保田 翔',
   staff_id: 'S005', guardian_id: null, class_id: 2, class_name: 'ひまわり組',
   is_temp_password: false, terms_agreed: true,
 };
 const guardian: SessionUser = {
-  account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
+  account_id: 6, email: 'nishida.t@example.jp', role: '3', display_name: '西田 拓也',
   staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 
-/** 野原 太郎の保護者との個人チャット（デモデータでは未対応から始まる） */
+/** 西田 太郎の保護者との個人チャット（デモデータでは未対応から始まる） */
 const personalRoom = 6;
 
 function open(path: string, user: SessionUser) {
@@ -190,7 +190,7 @@ describe('未対応の個人チャットの集計（モック。server/api_dashb
   it('参加している個人チャットのうち、未対応のものを数え、先頭のチャンネルを返す', async () => {
     const s = await api.staffSummary(teacher);
     expect(s.unhandledChat).toBe(1);
-    expect(s.unhandledChatRoom).toEqual({ chat_room_id: personalRoom, room_name: '野原 太郎の保護者' });
+    expect(s.unhandledChatRoom).toEqual({ chat_room_id: personalRoom, room_name: '西田 太郎の保護者' });
     // 管理者もデモデータでは参加している
     expect((await api.staffSummary(admin)).unhandledChat).toBe(1);
   });
@@ -217,7 +217,7 @@ describe('保育士と保護者の画面を並べたとき', () => {
     open('/staff', teacher);
     await settled();
     expect(screen.getByText('未対応の個人チャット')).toBeTruthy();
-    expect(screen.getByText('野原 太郎の保護者')).toBeTruthy();
+    expect(screen.getByText('西田 太郎の保護者')).toBeTruthy();
     const link = screen.getByText('未対応の個人チャット').closest('tr')!.querySelector('a')!;
     expect(link.getAttribute('href')).toBe(`/staff/chat?room=${personalRoom}`);
 
@@ -228,13 +228,13 @@ describe('保育士と保護者の画面を並べたとき', () => {
     await api.setThreadStatus(teacher, personalRoom, '2');
     await tickRefresh();
     await waitFor(() => expect(countOf()).toBe('0 件'));
-    expect(screen.queryByText('野原 太郎の保護者')).toBeNull();
+    expect(screen.queryByText('西田 太郎の保護者')).toBeNull();
 
     // 保護者が送る → 未対応へ戻り、ダッシュボードの件数に出る
     await api.send(guardian, personalRoom, '昨夜37.4℃ありました。今朝は36.8℃です。');
     await tickRefresh();
     await waitFor(() => expect(countOf()).toBe('1 件'));
-    expect(screen.getByText('野原 太郎の保護者')).toBeTruthy();
+    expect(screen.getByText('西田 太郎の保護者')).toBeTruthy();
     watch.stop();
     expect(watch.seen()).toBe(false);
   });
@@ -242,7 +242,7 @@ describe('保育士と保護者の画面を並べたとき', () => {
   it('チャット（職員）：導線から開くとそのチャンネルを選んでおり、保護者の送信が入力中の文字を消さずに表れる', async () => {
     open(`/staff/chat?room=${personalRoom}`, teacher);
     await settled();
-    await waitFor(() => expect(document.querySelector('.channel.current')?.textContent).toContain('野原 太郎の園とのやりとり'));
+    await waitFor(() => expect(document.querySelector('.channel.current')?.textContent).toContain('西田 太郎の園とのやりとり'));
 
     // 返信を書きかけておく
     const box = screen.getByPlaceholderText('メッセージを入力') as HTMLTextAreaElement;

@@ -14,23 +14,23 @@ import { today } from '../src/api/util';
 import type { SessionUser } from '../src/api/types';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
 const otherTeacher: SessionUser = {
-  account_id: 5, email: 'kinjo@hoiku.example.jp', role: '2', display_name: '金城 宗一郎',
+  account_id: 5, email: 'kubota@hoiku.example.jp', role: '2', display_name: '久保田 和也',
   staff_id: 'S005', guardian_id: null, class_id: 2, class_name: 'ひまわり組',
   is_temp_password: false, terms_agreed: true,
 };
-// 野原 太郎（C001・さくら組）の保護者
+// 西田 太郎（C001・さくら組）の保護者
 const guardian: SessionUser = {
-  account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
+  account_id: 6, email: 'nishida.t@example.jp', role: '3', display_name: '西田 拓也',
   staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
@@ -53,7 +53,7 @@ describe('Issue #177 の再現手順で、モックがサーバと同じ結果�
   };
 
   it('1：一般は他クラスのクラス日誌を開けず、保護者には日誌を返さない', async () => {
-    // 日誌 6 はひまわり組のクラス日誌（申請中）。日誌 1 は 野原 太郎 の下書き、日誌 2 はさくら組のクラス日誌（申請中）
+    // 日誌 6 はひまわり組のクラス日誌（申請中）。日誌 1 は 西田 太郎 の下書き、日誌 2 はさくら組のクラス日誌（申請中）
     await expect(api.getDiary(teacher, 6)).rejects.toThrow('この日誌を参照する権限がありません');
     // 日誌は園内の記録。保護者にはどの状態の日誌も返さない（詳細設計書「日誌」(4-13)）
     for (const id of [1, 2, 6]) await expect(api.getDiary(guardian, id)).rejects.toThrow('この日誌を参照する権限がありません');
@@ -80,7 +80,7 @@ describe('Issue #177 の再現手順で、モックがサーバと同じ結果�
 
 describe('職員・管理者だけの API を、保護者と担当外の職員に使わせない（Issue #177 の 3）', () => {
   it('前回の発達チェックと当日の下書きは、その園児を参照できる職員に限る', async () => {
-    // 野原 太郎（C001・さくら組）には、確定した前回の記録がある
+    // 西田 太郎（C001・さくら組）には、確定した前回の記録がある
     await expect(api.previousCheck(guardian, 'C001', today())).rejects.toThrow('職員のみが行えます');
     await expect(api.draftFor(guardian, 'C001', today())).rejects.toThrow('職員のみが行えます');
     await expect(api.previousCheck(otherTeacher, 'C001', today())).rejects.toThrow('権限がありません');
@@ -92,7 +92,7 @@ describe('職員・管理者だけの API を、保護者と担当外の職員�
 
   it('アレルギー一覧は職員に限る。一般にも、自クラスに限らず全園児を返す（基本設計書 6-1 ○※2）', async () => {
     await expect(api.allAllergies(guardian)).rejects.toThrow('職員のみが行えます');
-    // 金城（ひまわり組）にも、さくら組の 野原 太郎 の「卵」が出る
+    // 久保田（ひまわり組）にも、さくら組の 西田 太郎 の「卵」が出る
     const rows = await api.allAllergies(otherTeacher);
     expect(rows.find((r) => r.child.child_id === 'C001')?.allergies.map((a) => a.target_food)).toEqual(['卵']);
   });
@@ -126,7 +126,7 @@ describe('職員・管理者だけの API を、保護者と担当外の職員�
 
 describe('発達チェックを初めて保存したときの操作ログは「作成」（Issue #177 の 6）', () => {
   it('当日の記録が無い園児の下書き保存は「作成」、同じ記録の保存し直しは「変更」として残す', async () => {
-    // 高梨 健（C003・さくら組）。デモデータに当日の記録は無い
+    // 鈴木 健（C003・さくら組）。デモデータに当日の記録は無い
     expect(db.developmentChecks.some((c) => c.child_id === 'C003' && c.checked_on === today())).toBe(false);
     const latestLog = () => db.operationLogs.find((l) => l.target_table === 't_development_check' && l.target_child_id === 'C003')!;
 
@@ -141,7 +141,7 @@ describe('発達チェックを初めて保存したときの操作ログは「�
 describe('一覧の並び順を Go サーバとそろえる（Issue #177 の 7。web/仮置き値.md「一覧の並び順」）', () => {
   it('アレルギー一覧は園児のよみ順', async () => {
     const ids = (await api.allAllergies(admin)).map((r) => r.child.child_id);
-    // 井上 空 → 野原 太郎 → 橋本 莉子 → 宮城 美咲
+    // 井上 空 → 西田 太郎 → 橋本 莉子 → 村田 美咲
     expect(ids).toEqual(['C013', 'C001', 'C020', 'C004']);
   });
 
@@ -172,7 +172,7 @@ describe('一覧の並び順を Go サーバとそろえる（Issue #177 の 7�
 
   it('招待コードは園児のよみ順にまとめ、同じ園児の中は発行の古い順', async () => {
     const ids = (await api.invitationCodes(admin, {})).map((r) => r.invitation_code_id).filter((id) => id <= 7);
-    // 上園 花子（3・4）→ 金城 陸（7）→ 高梨 健（5）→ 野原 太郎（1・2）→ 宮城 美咲（6）
+    // 遠藤 花子（3・4）→ 久保田 陸（7）→ 鈴木 健（5）→ 西田 太郎（1・2）→ 村田 美咲（6）
     expect(ids).toEqual([3, 4, 7, 5, 1, 2, 6]);
   });
 

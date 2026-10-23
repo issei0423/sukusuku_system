@@ -26,10 +26,10 @@ const user = (account_id: number, role: '1' | '2' | '3', email: string, display_
   account_id, email, role, display_name, staff_id: null, guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true, ...extra,
 });
-const admin = user(1, '1', 'nohara@hoiku.example.jp', '野原 一誠', { staff_id: 'S001' });
-const teacher = user(3, '2', 'takanashi@hoiku.example.jp', '高梨 倫太朗', { staff_id: 'S003', class_id: 1, class_name: 'さくら組' });
-const kinjo = user(5, '2', 'kinjo@hoiku.example.jp', '金城 宗一郎', { staff_id: 'S005', class_id: 2, class_name: 'ひまわり組' });
-const miyagi = user(9, '3', 'miyagi.r@example.jp', '宮城 蓮', { guardian_id: 'G004' });
+const admin = user(1, '1', 'nishida@hoiku.example.jp', '西田 拓也', { staff_id: 'S001' });
+const teacher = user(3, '2', 'suzuki@hoiku.example.jp', '鈴木 浩之', { staff_id: 'S003', class_id: 1, class_name: 'さくら組' });
+const kubota = user(5, '2', 'kubota@hoiku.example.jp', '久保田 和也', { staff_id: 'S005', class_id: 2, class_name: 'ひまわり組' });
+const murata = user(9, '3', 'murata.s@example.jp', '村田 真一', { guardian_id: 'G004' });
 
 function open(path: string, u: SessionUser) {
   return render(
@@ -68,11 +68,11 @@ describe('書きかけの本文は、書いていたチャンネルにだけ結�
   it('職員：チャンネルを切り替えると入力欄は空になり、別の家庭へは送れない。戻ると書きかけが戻る', async () => {
     open('/staff/chat?room=8', teacher);
     await settled();
-    await waitFor(() => expect(document.querySelector('.channel.current')?.textContent).toContain('宮城 美咲の園とのやりとり'));
+    await waitFor(() => expect(document.querySelector('.channel.current')?.textContent).toContain('村田 美咲の園とのやりとり'));
     fireEvent.change(composer(), { target: { value: 'A1 美咲ちゃんは今日、少し熱っぽかったです。' } });
 
-    fireEvent.click(channel('金城 陸の園とのやりとり'));
-    await waitFor(() => expect(document.querySelector('.channel.current')?.textContent).toContain('金城 陸の園とのやりとり'));
+    fireEvent.click(channel('久保田 陸の園とのやりとり'));
+    await waitFor(() => expect(document.querySelector('.channel.current')?.textContent).toContain('久保田 陸の園とのやりとり'));
     expect(composer().value).toBe('');
     expect((screen.getByRole('button', { name: '送信' }) as HTMLButtonElement).disabled).toBe(true);
 
@@ -82,17 +82,17 @@ describe('書きかけの本文は、書いていたチャンネルにだけ結�
     expect(db.chatMessages.some((m) => m.chat_room_id === 9 && m.body.startsWith('A1'))).toBe(false);
     expect(composer().value).toBe('');
 
-    fireEvent.click(channel('宮城 美咲の園とのやりとり'));
-    await waitFor(() => expect(document.querySelector('.channel.current')?.textContent).toContain('宮城 美咲の園とのやりとり'));
+    fireEvent.click(channel('村田 美咲の園とのやりとり'));
+    await waitFor(() => expect(document.querySelector('.channel.current')?.textContent).toContain('村田 美咲の園とのやりとり'));
     expect(composer().value).toBe('A1 美咲ちゃんは今日、少し熱っぽかったです。');
   });
 
   it('保護者：きょうだいの個人チャットを切り替えても、書きかけは持ち越さない', async () => {
-    // 宮城 蓮に、上園 花子の家庭の個人チャット（room 7）をきょうだいのものとして足す（画面の確かめのためだけ）
+    // 村田 真一に、遠藤 花子の家庭の個人チャット（room 7）をきょうだいのものとして足す（画面の確かめのためだけ）
     const sibling = { chat_room_id: 7, account_id: 9, joined_at: '2025-07-01T10:00:00', left_at: null };
     db.chatMembers.push(sibling);
     try {
-      open('/guardian/chat', miyagi);
+      open('/guardian/chat', murata);
       await settled();
       const rooms = () => screen.getAllByText('担任の先生とのやりとり');
       await waitFor(() => expect(rooms()).toHaveLength(2));
@@ -209,8 +209,8 @@ describe('取消は確かめてから行い、できなかったときは知ら�
   });
 
   it('保護者：「取消」を押しても、確かめるまでは取り消さない', async () => {
-    const sent = await api.send(miyagi, 8, 'G1 明日はお休みします');
-    open('/guardian/chat', miyagi);
+    const sent = await api.send(murata, 8, 'G1 明日はお休みします');
+    open('/guardian/chat', murata);
     await settled();
     fireEvent.click(screen.getByText('担任の先生とのやりとり').closest('button')!);
     openMenu(await findRow('G1 明日はお休みします'));
@@ -224,10 +224,10 @@ describe('取消は確かめてから行い、できなかったときは知ら�
 
 describe('管理者は、他者の誤送信メッセージをチャット画面から削除できる（GitHub Issue #171 の 3）', () => {
   it('管理者には他者のメッセージに「削除」を出し、既読の有無を示して確かめてから削除する', async () => {
-    const sent = await api.send(teacher, 7, 'B1 （誤送信）野原 太郎くんの発熱の記録');
+    const sent = await api.send(teacher, 7, 'B1 （誤送信）西田 太郎くんの発熱の記録');
     open('/staff/chat?room=7', admin);
     await settled();
-    openMenu(await findRow('B1 （誤送信）野原 太郎くんの発熱の記録'));
+    openMenu(await findRow('B1 （誤送信）西田 太郎くんの発熱の記録'));
     expect(screen.queryByRole('button', { name: '取消' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '削除' }));
     const dialog = await screen.findByRole('dialog');
@@ -238,7 +238,7 @@ describe('管理者は、他者の誤送信メッセージをチャット画面�
   });
 
   it('保護者の発言の削除は誤送信への対応として扱わず、既読や記録の案内を出さない', async () => {
-    const sent = await api.send(miyagi, 8, 'B3 保護者の発言');
+    const sent = await api.send(murata, 8, 'B3 保護者の発言');
     open('/staff/chat?room=8', admin);
     await settled();
     openMenu(await findRow('B3 保護者の発言'));
@@ -276,7 +276,7 @@ describe('操作の一覧を閉じたら、開いた吹き出しへ戻る（GitH
 
   it('保護者：リアクションを選んだあと', async () => {
     await api.send(teacher, 8, 'F2 フォーカスの確かめ（保護者）');
-    open('/guardian/chat', miyagi);
+    open('/guardian/chat', murata);
     await settled();
     fireEvent.click(screen.getByText('担任の先生とのやりとり').closest('button')!);
     const row = await findRow('F2 フォーカスの確かめ（保護者）');
@@ -291,10 +291,10 @@ describe('取り消されたメッセージの表示（GitHub Issue #171 の 6�
   it('保護者：誰の・いつのものかを出し、自分のものは自分の側に寄せる', async () => {
     const byStaff = await api.send(teacher, 8, 'R1 職員が取り消す');
     await api.retract(teacher, byStaff.chat_message_id);
-    const byMe = await api.send(miyagi, 8, 'R2 保護者が取り消す');
-    await api.retract(miyagi, byMe.chat_message_id);
+    const byMe = await api.send(murata, 8, 'R2 保護者が取り消す');
+    await api.retract(murata, byMe.chat_message_id);
 
-    open('/guardian/chat', miyagi);
+    open('/guardian/chat', murata);
     await settled();
     fireEvent.click(screen.getByText('担任の先生とのやりとり').closest('button')!);
     await waitFor(() => expect(document.querySelectorAll('.bubble.retracted').length).toBeGreaterThan(1));
@@ -305,7 +305,7 @@ describe('取り消されたメッセージの表示（GitHub Issue #171 の 6�
     expect(mine.at(-1)!.querySelector('.meta')?.textContent).toContain('私');
     expect(mine.at(-1)!.querySelector('.meta')?.textContent).toContain(date);
     const others = rows.filter((r) => !r.classList.contains('mine'));
-    expect(others.at(-1)!.querySelector('.meta')?.textContent).toContain('高梨 倫太朗');
+    expect(others.at(-1)!.querySelector('.meta')?.textContent).toContain('鈴木 浩之');
   });
 
   it('職員：取り消されたメッセージにも日付を出す', async () => {
@@ -332,11 +332,11 @@ describe('送信者が職員か保護者かを吹き出しに添える（GitHub 
 
 describe('グループ編成画面（GitHub Issue #172 の 4・5）', () => {
   it('一般の職員には、参加していないグループを出さない', async () => {
-    await api.createGroup(teacher, 'G 遠足下見（高梨・宮城）', [4]);
-    open('/staff/chat/groups', kinjo);
+    await api.createGroup(teacher, 'G 遠足下見（鈴木・村田）', [4]);
+    open('/staff/chat/groups', kubota);
     await settled();
     await waitFor(() => expect(screen.getByText('運動会実行委員')).toBeTruthy());
-    expect(screen.queryByText('G 遠足下見（高梨・宮城）')).toBeNull();
+    expect(screen.queryByText('G 遠足下見（鈴木・村田）')).toBeNull();
   });
 
   it('メンバーを編成して保存すると、一覧のメンバー欄がすぐに新しくなる', async () => {
@@ -344,16 +344,16 @@ describe('グループ編成画面（GitHub Issue #172 の 4・5）', () => {
     open('/staff/chat/groups', admin);
     await settled();
     const rowOfGroup = () => screen.getByText('運動会実行委員').closest('tr')!;
-    await waitFor(() => expect(rowOfGroup().textContent).toContain('金城 宗一郎'));
+    await waitFor(() => expect(rowOfGroup().textContent).toContain('久保田 和也'));
     fireEvent.click(rowOfGroup().querySelector('button')!);
     const dialog = await screen.findByRole('dialog');
-    const kinjoBox = Array.from(dialog.querySelectorAll('label')).find((l) => l.textContent?.includes('金城 宗一郎'))!
+    const kubotaBox = Array.from(dialog.querySelectorAll('label')).find((l) => l.textContent?.includes('久保田 和也'))!
       .querySelector('input')!;
-    await waitFor(() => expect(kinjoBox.checked).toBe(true));
-    fireEvent.click(kinjoBox);
+    await waitFor(() => expect(kubotaBox.checked).toBe(true));
+    fireEvent.click(kubotaBox);
     fireEvent.click(screen.getByRole('button', { name: '保存する' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    await waitFor(() => expect(rowOfGroup().textContent).not.toContain('金城 宗一郎'));
-    expect(rowOfGroup().textContent).toContain('高梨 倫太朗');
+    await waitFor(() => expect(rowOfGroup().textContent).not.toContain('久保田 和也'));
+    expect(rowOfGroup().textContent).toContain('鈴木 浩之');
   });
 });

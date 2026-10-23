@@ -71,7 +71,7 @@ func TestRemoveChildRequiresNoRecords(t *testing.T) {
 	admin := loginAs(a, 1, "staff")
 
 	t.Run("記録のある園児は取り消せない", func(t *testing.T) {
-		// 野原 太郎（C001）は日誌・身体測定・午睡・個人チャットの記録がある
+		// 西田 太郎（C001）は日誌・身体測定・午睡・個人チャットの記録がある
 		body := expectStatus(t, request(t, h, admin, "DELETE", "/api/children/C001", ""), http.StatusBadRequest)
 		if !strings.Contains(body, "記録が登録されている園児は取り消せません。在籍状態を変更してください。") {
 			t.Fatalf("文言が違います: %s", body)
@@ -125,15 +125,15 @@ func TestChildEditLogsChangedFields(t *testing.T) {
 	a, h := newTestApp(t)
 	admin := loginAs(a, 1, "staff")
 
-	// 上園 花子（C002・さくら組・平熱 36.8・写真の利用同意 2）のクラス・平熱・写真の利用同意・アレルギーを変える。
+	// 遠藤 花子（C002・さくら組・平熱 36.8・写真の利用同意 2）のクラス・平熱・写真の利用同意・アレルギーを変える。
 	// 生年月日はデモの日付ずらし（seed_shift.go）で起動した日に合わせて動くので、いまの値をそのまま送る
 	// （GitHub Issue #164。モック側の web/tests/adminChecks.test.ts と同じく、変えない項目はいまの値で送る）
 	var birthDate string
 	if err := a.db.QueryRow(`SELECT birth_date FROM m_child WHERE child_id = 'C002'`).Scan(&birthDate); err != nil {
 		t.Fatal(err)
 	}
-	call(t, h, admin, "POST", "/api/children", `{"mode":"edit","child_id":"C002","child_name":"上園 花子",`+
-		`"child_name_kana":"うえぞの はなこ","birth_date":"`+birthDate+`","sex":"2","normal_temperature":37.2,`+
+	call(t, h, admin, "POST", "/api/children", `{"mode":"edit","child_id":"C002","child_name":"遠藤 花子",`+
+		`"child_name_kana":"えんどう はなこ","birth_date":"`+birthDate+`","sex":"2","normal_temperature":37.2,`+
 		`"photo_consent_level":"3","class_id":2,`+
 		`"allergies":[{"target_food":"えび","symptom":"じんましん","response":"除去食"}],"medical_histories":[]}`)
 
@@ -204,7 +204,7 @@ func TestUnlockAndRevokeCheckCurrentState(t *testing.T) {
 	before := logCount(t, a)
 
 	expectStatus(t, request(t, h, admin, "POST", "/api/admin/accounts/9999/unlock", ""), http.StatusNotFound)
-	// 金城（account 5）はロックされていない
+	// 久保田（account 5）はロックされていない
 	expectStatus(t, request(t, h, admin, "POST", "/api/admin/accounts/5/unlock", ""), http.StatusBadRequest)
 	// 招待コード 4 はデモデータで失効済み、2 は使用済み、9999 は無い
 	expectStatus(t, request(t, h, admin, "POST", "/api/admin/invitations/4/revoke", ""), http.StatusBadRequest)
@@ -234,7 +234,7 @@ func TestCreateStaffAccountValidatesInput(t *testing.T) {
 		name, body, want string
 	}{
 		{"ログインIDがメールアドレスの形でない", body("S020", "形式 確認", "abc2", "2", "null"), "形式"},
-		{"大文字・小文字だけが違うログインID", body("S021", "重複 確認", "NOHARA@hoiku.example.jp", "2", "null"), "すでに使われています"},
+		{"大文字・小文字だけが違うログインID", body("S021", "重複 確認", "NISHIDA@hoiku.example.jp", "2", "null"), "すでに使われています"},
 		{"すべて空", body("", "", "", "2", "null"), "入力してください"},
 		{"氏名が 51 文字", body("S022", strings.Repeat("あ", 51), "long-name@hoiku.example.jp", "2", "null"), "50文字以内"},
 		{"職員IDが 21 文字", body(strings.Repeat("S", 21), "長い 職員ID", "long-id@hoiku.example.jp", "2", "null"), "20文字以内"},

@@ -23,7 +23,7 @@ const USED = 'この招待コードはすでに使われています。園に新
 const REVOKED = 'この招待コードは失効しています。園に新しい招待コードの発行をご依頼ください';
 const EXPIRED = 'この招待コードは有効期限が切れています。園に新しい招待コードの発行をご依頼ください';
 
-// 野原 太郎（C001）の保護者（mockDb.ts。server/seed.sql と同じ）
+// 西田 太郎（C001）の保護者（mockDb.ts。server/seed.sql と同じ）
 const taroGuardian: SessionUser = {
   account_id: 6, email: '6@example.jp', role: '3', display_name: 'アカウント6',
   staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
@@ -31,7 +31,7 @@ const taroGuardian: SessionUser = {
 };
 
 // server/api_guardian_add_test.go と同じコード
-const codeHanako = 'QRST-9012-UVWX'; // C002（上園 花子）の未使用のコード
+const codeHanako = 'QRST-9012-UVWX'; // C002（遠藤 花子）の未使用のコード
 const codeUsed = 'IJKL-5678-MNOP';
 const codeRevoked = 'YZAB-3456-CDEF';
 

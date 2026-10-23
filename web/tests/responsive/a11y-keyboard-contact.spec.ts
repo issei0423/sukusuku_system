@@ -275,14 +275,14 @@ test.describe('[staff] contact キーボードだけで通す', () => {
     await key(page, 'ArrowDown');
     await expect(sort).toHaveValue('home');
     await ready(page);
-    await expect(page.getByRole('rowheader').first()).toHaveText('上園 花子');
+    await expect(page.getByRole('rowheader').first()).toHaveText('遠藤 花子');
 
-    const confirm = page.getByRole('button', { name: '金城 陸の家庭からを確認しました' });
+    const confirm = page.getByRole('button', { name: '久保田 陸の家庭からを確認しました' });
     await tabTo(page, confirm);
     // 押したボタンは消え、確認した行は「未確認を上に」の並びで下へ移る。フォーカスはその行の「園が確認しました」へ移る（GitHub Issue #213）
-    const row = page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: '金城 陸' }) });
+    const row = page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: '久保田 陸' }) });
     await pressAndExpectFocus(page, 'Enter', row.locator('.contact-confirmed'));
-    await expect(row).toContainText('園が確認しました 13:30 高梨 倫太朗');
+    await expect(row).toContainText('園が確認しました 13:30 鈴木 浩之');
     await expect(confirm).toHaveCount(0);
     // 次の Tab は表の中の続き（同じ行の食事）へ進み、ページの先頭へ戻らない
     await key(page, 'Tab');
@@ -307,14 +307,14 @@ test.describe('[staff] contact キーボードだけで通す', () => {
   test('連絡帳（クラス）画面で体温の一覧から値を選んで記録したあと、開いた元の「＋体温」にフォーカスが戻る', async ({ page }) => {
     // 値を押すと窓が閉じて送る。送っている間は「＋体温」が押せず、窓の部品が開いた元へ戻せない。応答のあとに戻す（GitHub Issue #213）
     const errors = await open(page, 'contact-class');
-    const add = page.getByRole('button', { name: '上園 花子の体温を記録する' });
+    const add = page.getByRole('button', { name: '遠藤 花子の体温を記録する' });
     await tabTo(page, add);
     await key(page, 'Enter');
-    const picker = page.getByRole('dialog', { name: '上園 花子の体温' });
+    const picker = page.getByRole('dialog', { name: '遠藤 花子の体温' });
     await expectFocusInside(page, picker);
     await expect(picker.getByRole('button', { name: '36.8', exact: true })).toBeFocused();
     await pressAndExpectFocus(page, 'Enter', add);
-    await expect(page.getByRole('button', { name: /^上園 花子の体温 36\.8℃/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^遠藤 花子の体温 36\.8℃/ })).toBeVisible();
     expect(errors, 'ブラウザ実行エラー').toEqual([]);
   });
 
@@ -324,11 +324,11 @@ test.describe('[staff] contact キーボードだけで通す', () => {
     const add = page.getByRole('button', { name: '体温を記録する', exact: true });
     await tabTo(page, add);
     await key(page, 'Enter');
-    const picker = page.getByRole('dialog', { name: '野原 太郎の体温' });
+    const picker = page.getByRole('dialog', { name: '西田 太郎の体温' });
     await expectFocusInside(page, picker);
     await pressAndExpectFocus(page, 'Enter', add);
     const toast = page.locator('.toast');
-    await expect(toast).toContainText('野原 太郎さんの「');
+    await expect(toast).toContainText('西田 太郎さんの「');
     // 本文の続きを Tab で進んで結果の表示へ入り、「閉じる」を Enter
     const before = await tabIntoToast(page);
     await tabTo(page, toast.getByRole('button', { name: '閉じる' }), { max: 3 });
@@ -345,7 +345,7 @@ test.describe('[staff] contact キーボードだけで通す', () => {
     const add = page.getByRole('button', { name: '体温を記録する', exact: true });
     await tabTo(page, add);
     await key(page, 'Enter');
-    await expectFocusInside(page, page.getByRole('dialog', { name: '野原 太郎の体温' }));
+    await expectFocusInside(page, page.getByRole('dialog', { name: '西田 太郎の体温' }));
     await pressAndExpectFocus(page, 'Enter', add);
     const toast = page.locator('.toast');
     const before = await tabIntoToast(page);
@@ -380,11 +380,11 @@ test.describe('[staff] contact キーボードだけで通す', () => {
       // 結果の表示（トースト）は画面の下端に重ねて固定する。出ている間はその高さぶんを送る先からずらす（WCAG 2.4.11、GitHub Issue #212）。
       // 直す前は、Tab で画面の下端まで送られた「確認しました」を押すと、移った先が表示の下にすっかり隠れた
       const errors = await open(page, 'contact-class');
-      const confirm = page.getByRole('button', { name: '金城 陸の家庭からを確認しました' });
+      const confirm = page.getByRole('button', { name: '久保田 陸の家庭からを確認しました' });
       await tabTo(page, confirm);
-      const row = page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: '金城 陸' }) });
+      const row = page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: '久保田 陸' }) });
       await pressAndExpectFocus(page, 'Enter', row.locator('.contact-confirmed'));
-      await expect(page.locator('.toast'), '結果の表示が出ている間に確かめた').toContainText('金城 陸さんの家庭からを確認しました');
+      await expect(page.locator('.toast'), '結果の表示が出ている間に確かめた').toContainText('久保田 陸さんの家庭からを確認しました');
       expect(errors, 'ブラウザ実行エラー').toEqual([]);
     });
 
@@ -424,17 +424,17 @@ test.describe('[staff] contact キーボードだけで通す', () => {
 
   test('② 職員が午睡チェック画面の園児の行で ねた・おきた を記録する', async ({ page }) => {
     const errors = await open(page, 'nap');
-    const row = page.getByRole('region', { name: '野原 太郎の午睡チェック' });
+    const row = page.getByRole('region', { name: '西田 太郎の午睡チェック' });
     const state = row.locator('.nap-sleep-state');
-    await tabTo(page, row.getByRole('button', { name: '野原 太郎のねた' }));
+    await tabTo(page, row.getByRole('button', { name: '西田 太郎のねた' }));
     // 同じボタンが「おきた」になり、フォーカスはそのボタンに残る（GitHub Issue #213）。続けて Enter で「おきた」を記録できる
-    await pressAndExpectFocus(page, 'Enter', row.getByRole('button', { name: '野原 太郎のおきた' }));
+    await pressAndExpectFocus(page, 'Enter', row.getByRole('button', { name: '西田 太郎のおきた' }));
     await expect(state).toHaveText('13:30 ねた');
-    await pressAndExpectFocus(page, 'Enter', row.getByRole('button', { name: '野原 太郎のもう一度ねた' }));
+    await pressAndExpectFocus(page, 'Enter', row.getByRole('button', { name: '西田 太郎のもう一度ねた' }));
     await expect(state).toContainText('13:30〜13:30');
 
     // 押し間違いを直す窓：Tab で「直す・取り消す」へ。開くと中へ、Esc で閉じると開いた元へ
-    const fix = row.getByRole('button', { name: '野原 太郎のねた・おきたを直す・取り消す' });
+    const fix = row.getByRole('button', { name: '西田 太郎のねた・おきたを直す・取り消す' });
     await key(page, 'Tab');
     await expect(fix).toBeFocused();
     await key(page, 'Enter');
@@ -450,11 +450,11 @@ test.describe('[staff] contact キーボードだけで通す', () => {
     // 理由を押すとそのまま送り、窓が閉じる。開いた元の「対象外」は読み直すと消えるので、同じ行の「戻す」へ移す（GitHub Issue #213）。
     // 「戻す」も、戻すと消えて「ねた」「対象外」に替わるので、同じ行の「対象外」へ移す
     const errors = await open(page, 'nap');
-    const row = page.getByRole('region', { name: '野原 太郎の午睡チェック' });
-    const opener = row.getByRole('button', { name: '野原 太郎をきょうは対象外にする' });
+    const row = page.getByRole('region', { name: '西田 太郎の午睡チェック' });
+    const opener = row.getByRole('button', { name: '西田 太郎をきょうは対象外にする' });
     await tabTo(page, opener);
     await key(page, 'Enter');
-    const dialog = page.getByRole('dialog', { name: '野原 太郎をきょうは対象外にする' });
+    const dialog = page.getByRole('dialog', { name: '西田 太郎をきょうは対象外にする' });
     await expectFocusInside(page, dialog);
     await expect(dialog.getByRole('button', { name: 'やめる' })).toBeFocused();
     await key(page, 'Escape');
@@ -465,17 +465,17 @@ test.describe('[staff] contact キーボードだけで通す', () => {
     await key(page, 'Enter');
     await expectFocusBack(page, opener);
     await expect(row.locator('.nap-sleep-state')).toHaveCount(0);
-    await expect(row.getByRole('button', { name: '野原 太郎のねた' })).toBeVisible();
+    await expect(row.getByRole('button', { name: '西田 太郎のねた' })).toBeVisible();
     // もう一度開き、Tab で理由「欠席」へ（窓の中で折り返す）進めて Enter
     await key(page, 'Enter');
     await expectFocusInside(page, dialog);
     await tabTo(page, dialog.getByRole('button', { name: '欠席' }), { max: 3 });
-    await pressAndExpectFocus(page, 'Enter', row.getByRole('button', { name: '野原 太郎の対象外を戻す' }));
+    await pressAndExpectFocus(page, 'Enter', row.getByRole('button', { name: '西田 太郎の対象外を戻す' }));
     await expect(dialog).toHaveCount(0);
     await expect(row.locator('.nap-sleep-state')).toHaveText('対象外（欠席）');
     await pressAndExpectFocus(page, 'Enter', opener);
-    await expect(row.getByRole('button', { name: '野原 太郎の対象外を戻す' })).toHaveCount(0);
-    await expect(row.getByRole('button', { name: '野原 太郎のねた' })).toBeVisible();
+    await expect(row.getByRole('button', { name: '西田 太郎の対象外を戻す' })).toHaveCount(0);
+    await expect(row.getByRole('button', { name: '西田 太郎のねた' })).toBeVisible();
     expect(errors, 'ブラウザ実行エラー').toEqual([]);
   });
 
@@ -504,7 +504,7 @@ test.describe('[staff] contact キーボードだけで通す', () => {
 
     // 宛先：「送る」のすぐ上に、園児名・クラス・届く保護者
     const recipient = facility.getByRole('note', { name: '宛先' });
-    await expect(recipient).toContainText('野原 太郎（さくら組）');
+    await expect(recipient).toContainText('西田 太郎（さくら組）');
     await expect(recipient).toContainText('父に届きます');
 
     // 送る → 他児の名前の注意（フォーカスは窓の中）。Esc（直す）で閉じると「送る」へ戻り、入力は残る
@@ -525,7 +525,7 @@ test.describe('[staff] contact キーボードだけで通す', () => {
     await tabTo(page, check.getByRole('button', { name: 'このまま送る' }), { max: 3 });
     await pressAndExpectFocus(page, 'Enter', facility.getByRole('button', { name: '直す', exact: true }));
     await expect(check).toHaveCount(0);
-    await expect(facility).toContainText('送った 13:30 高梨 倫太朗');
+    await expect(facility).toContainText('送った 13:30 鈴木 浩之');
     await expect(facility).toContainText('あおちゃんとしゃぼん玉を追いかけていました。明日もよろしくお願いします。');
     expect(errors, 'ブラウザ実行エラー').toEqual([]);
   });

@@ -25,7 +25,7 @@ import TodayTimeline from '../src/screens/contact/TodayTimeline';
 import { MSG, TEXT } from '../src/messages';
 
 const guardian: SessionUser = {
-  account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
+  account_id: 6, email: 'nishida.t@example.jp', role: '3', display_name: '西田 拓也',
   staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
@@ -47,7 +47,7 @@ const screensCss = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)),
 describe('成長の記録画面（保護者）', () => {
   it('園児名・身長と体重（グラフと測った値）・できたこと・免責を出す。所見・「一部」「未確認」・判定の言葉は出さない', async () => {
     open('/guardian/growth/C001', guardian);
-    await screen.findByRole('heading', { name: '野原 太郎の成長の記録' }, { timeout: 3000 });
+    await screen.findByRole('heading', { name: '西田 太郎の成長の記録' }, { timeout: 3000 });
     // 身長・体重：切り替えとグラフ。測った値は新しい順で、体重は小数第2位まで
     expect(screen.getByRole('button', { name: '身長' }).getAttribute('aria-pressed')).toBe('true');
     expect(document.querySelector('svg.growth-chart')).toBeTruthy();
@@ -72,13 +72,13 @@ describe('成長の記録画面（保護者）', () => {
     // 免責は常に出す。顔写真・判定の言葉・「一部」「未確認」の項目・職員の名前は出さない
     expect(document.querySelector('.disclaimer')?.textContent).toContain('発育の判定・診断を行うものではありません。');
     const text = document.querySelector('.growth-page')!.textContent ?? '';
-    expect(text).not.toMatch(/やせ|肥満|標準|順調|遅れ|異常|良好|未確認|一部|パパ|自分でやりたい|高梨/);
+    expect(text).not.toMatch(/やせ|肥満|標準|順調|遅れ|異常|良好|未確認|一部|パパ|自分でやりたい|鈴木/);
     expect(document.querySelector('.growth-page img')).toBeNull();
   });
 
   it('「身長」「体重」の切り替えは、選んでいる側を色のほかに「✓」・太字・aria-pressed で示す（WCAG 1.4.1、GitHub Issue #211）', async () => {
     open('/guardian/growth/C001', guardian);
-    await screen.findByRole('heading', { name: '野原 太郎の成長の記録' }, { timeout: 3000 });
+    await screen.findByRole('heading', { name: '西田 太郎の成長の記録' }, { timeout: 3000 });
     const height = screen.getByRole('button', { name: '身長' });
     const weight = screen.getByRole('button', { name: '体重' });
     const mark = (button: HTMLElement) => button.querySelector('[aria-hidden="true"]')?.textContent ?? null;
@@ -109,10 +109,10 @@ describe('成長の記録画面（保護者）', () => {
     const setting = db.settings.find((s) => s.setting_key === 'growth.share_physical')!;
     setting.setting_value = '0';
     try {
-      // C002（上園 花子）の保護者。ひとことの無い確定（確認できた項目あり）だけがある
-      const other: SessionUser = { ...guardian, account_id: 7, guardian_id: 'G002', email: 'uezono.k@example.jp' };
+      // C002（遠藤 花子）の保護者。ひとことの無い確定（確認できた項目あり）だけがある
+      const other: SessionUser = { ...guardian, account_id: 7, guardian_id: 'G002', email: 'endo.n@example.jp' };
       open('/guardian/growth/C002', other);
-      await screen.findByRole('heading', { name: '上園 花子の成長の記録' }, { timeout: 3000 });
+      await screen.findByRole('heading', { name: '遠藤 花子の成長の記録' }, { timeout: 3000 });
       expect(screen.queryByRole('region', { name: '身長・体重' })).toBeNull();
       expect(document.querySelector('.disclaimer')).toBeTruthy();
     } finally {
@@ -148,19 +148,19 @@ describe('成長の記録画面（保護者）', () => {
 describe('入口（保護者ホームの区画・メニュー）', () => {
   it('区画に「成長の記録」、メニューに「〇〇の成長の記録」を出す。きょう測ったものがあれば「新しい記録があります」', async () => {
     open('/guardian', guardian);
-    const card = await screen.findByRole('region', { name: '野原 太郎さんのきょう' }, { timeout: 3000 });
+    const card = await screen.findByRole('region', { name: '西田 太郎さんのきょう' }, { timeout: 3000 });
     const link = within(card).getByRole('link', { name: /成長の記録/ });
     expect(link.getAttribute('href')).toBe('/guardian/growth/C001');
-    // デモの今日の身体測定（野原 太郎）がある
+    // デモの今日の身体測定（西田 太郎）がある
     expect(link.textContent).toContain('新しい記録があります');
     fireEvent.click(screen.getByRole('button', { name: 'メニューを開く' }));
     const menu = screen.getByRole('dialog', { name: 'メニュー' });
-    expect(within(menu).getByRole('link', { name: '野原 太郎の成長の記録' }).getAttribute('href')).toBe('/guardian/growth/C001');
+    expect(within(menu).getByRole('link', { name: '西田 太郎の成長の記録' }).getAttribute('href')).toBe('/guardian/growth/C001');
   });
 });
 
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
@@ -228,8 +228,8 @@ describe('発達チェック入力画面の保護者へのひとこと（詳細�
     const confirm = await screen.findByRole('button', { name: 'このまま確定する' }, { timeout: 3000 }).catch(() => null);
     if (confirm) fireEvent.click(confirm);
     await screen.findByText('確定しました。保護者が見られる状態です。', undefined, { timeout: 3000 });
-    const uezono: SessionUser = { ...guardian, account_id: 7, guardian_id: 'G002', email: 'uezono.k@example.jp' };
-    expect(JSON.stringify(await api.growthRecord(uezono, 'C002'))).toContain('お友だちに手を振っていました');
+    const endo: SessionUser = { ...guardian, account_id: 7, guardian_id: 'G002', email: 'endo.n@example.jp' };
+    expect(JSON.stringify(await api.growthRecord(endo, 'C002'))).toContain('お友だちに手を振っていました');
   });
 });
 
@@ -239,10 +239,10 @@ describe('発達チェック入力画面の保護者へのひとこと（詳細�
  */
 describe('確定した保護者へのひとことの訂正（D-51）', () => {
   it('保護者の成長の記録で、書き換えたひとことに「訂正しました（日付）」を出す', async () => {
-    // デモデータ：野原 太郎のひとことは確定した日のうちに書き換えてある（mockDb.ts・seed.sql）
+    // デモデータ：西田 太郎のひとことは確定した日のうちに書き換えてある（mockDb.ts・seed.sql）
     const corrected = db.developmentChecks.find((c) => c.development_check_id === 1)!.guardian_message_corrected_at!;
     open('/guardian/growth/C001', guardian);
-    await screen.findByRole('heading', { name: '野原 太郎の成長の記録' }, { timeout: 3000 });
+    await screen.findByRole('heading', { name: '西田 太郎の成長の記録' }, { timeout: 3000 });
     const done = screen.getByRole('region', { name: 'できたこと' });
     const label = `訂正しました（${Number(corrected.slice(5, 7))}月${Number(corrected.slice(8, 10))}日）`;
     expect(within(done).getByText(label)).toBeTruthy();
@@ -251,7 +251,7 @@ describe('確定した保護者へのひとことの訂正（D-51）', () => {
   });
 
   it('確定した日を過ぎたひとことは、担任には読むだけにして断る文言を添え、管理者には訂正の案内を出す', async () => {
-    // デモデータ：上園 花子の確定（確定した日は実施日の 00:00。今日より前）
+    // デモデータ：遠藤 花子の確定（確定した日は実施日の 00:00。今日より前）
     const past = db.developmentChecks.find((c) => c.development_check_id === 2)!;
     const box = async () => {
       fireEvent.change(await screen.findByLabelText('実施日', undefined, { timeout: 3000 }), { target: { value: past.checked_on } });

@@ -16,7 +16,7 @@ import { AI_OPT_OUT_TEXT } from '../src/messages';
 import type { SessionUser } from '../src/api/types';
 
 const guardian: SessionUser = {
-  account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
+  account_id: 6, email: 'nishida.t@example.jp', role: '3', display_name: '西田 拓也',
   staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
@@ -44,7 +44,7 @@ function openHome() {
 async function openMenu() {
   fireEvent.click(await screen.findByRole('button', { name: 'メニューを開く' }));
   const menu = screen.getByRole('dialog', { name: 'メニュー' });
-  await within(menu).findAllByText(/野原 太郎/, {}, { timeout: 3000 });
+  await within(menu).findAllByText(/西田 太郎/, {}, { timeout: 3000 });
   return menu;
 }
 
@@ -73,11 +73,11 @@ describe('保護者のメニュー：AI の下書きの利用', () => {
 
     const dialog = await screen.findByRole('dialog', { name: AI_OPT_OUT_TEXT.title });
     expect(dialog.textContent).toContain(AI_OPT_OUT_TEXT.explain);
-    const box = within(dialog).getByRole('checkbox', { name: AI_OPT_OUT_TEXT.label('野原 太郎') }) as HTMLInputElement;
+    const box = within(dialog).getByRole('checkbox', { name: AI_OPT_OUT_TEXT.label('西田 太郎') }) as HTMLInputElement;
     expect(box.checked).toBe(false);
 
     fireEvent.click(box);
-    expect(await screen.findByText(AI_OPT_OUT_TEXT.optedOut('野原 太郎'))).toBeTruthy();
+    expect(await screen.findByText(AI_OPT_OUT_TEXT.optedOut('西田 太郎'))).toBeTruthy();
     expect(link('G001', 'C001')!.ai_opt_out).toBe(true);
     await waitFor(() => expect(box.checked).toBe(true));
     // 確認のダイアログは出さない（2-15 (4)）
@@ -103,7 +103,7 @@ describe('保護者のメニュー：AI の下書きの利用', () => {
     const dialog = await screen.findByRole('dialog', { name: AI_OPT_OUT_TEXT.title });
     const boxes = within(dialog).getAllByRole('checkbox') as HTMLInputElement[];
     expect(boxes.map((b) => b.closest('label')?.textContent)).toEqual([
-      AI_OPT_OUT_TEXT.label('伊藤 葵'), AI_OPT_OUT_TEXT.label('野原 太郎'),
+      AI_OPT_OUT_TEXT.label('伊藤 葵'), AI_OPT_OUT_TEXT.label('西田 太郎'),
     ]);
     expect(boxes.map((b) => b.checked)).toEqual([false, true]);
 

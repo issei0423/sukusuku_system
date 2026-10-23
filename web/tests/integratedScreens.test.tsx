@@ -11,12 +11,12 @@ import { addDays, today } from '../src/api/util';
 import type { SessionUser } from '../src/api/types';
 
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
-const admin: SessionUser = { ...teacher, account_id: 1, email: 'nohara@hoiku.example.jp', role: '1',
-  display_name: '野原 一誠', staff_id: 'S001', class_id: null, class_name: null };
+const admin: SessionUser = { ...teacher, account_id: 1, email: 'nishida@hoiku.example.jp', role: '1',
+  display_name: '西田 拓也', staff_id: 'S001', class_id: null, class_name: null };
 const openApp = (path: string, user: SessionUser) => render(<MemoryRouter initialEntries={[path]}>
   <SessionProvider initialUser={user}><App /></SessionProvider>
 </MemoryRouter>);
@@ -65,7 +65,7 @@ it('発見が午睡のチェックより前でも、保存後は再記録を促�
   db.napAbnormals.push(abnormal);
   try {
     openApp('/staff/nap', teacher);
-    const card = await screen.findByLabelText('野原 太郎の午睡チェック');
+    const card = await screen.findByLabelText('西田 太郎の午睡チェック');
     await waitFor(() => expect(card.textContent).toContain('異常時の記録あり'));
     expect(card.textContent).not.toContain('異常時の記録を残してください');
   } finally {

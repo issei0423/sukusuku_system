@@ -17,12 +17,12 @@ import { today } from '../src/api/util';
 import type { SessionUser } from '../src/api/types';
 
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
 const guardian: SessionUser = {
-  account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
+  account_id: 6, email: 'nishida.t@example.jp', role: '3', display_name: '西田 拓也',
   staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
@@ -95,7 +95,7 @@ describe('職員の期限（最後の操作から数える）', () => {
 
 describe('午睡チェックの実施中と保護者', () => {
   it('開始した午睡チェックの実施中は期限を返さず、時間帯の終わりから数え直す', async () => {
-    // 高梨（S003）が今日の 13:05 にさくら組の午睡チェックを開始し、終えていない。
+    // 鈴木（S003）が今日の 13:05 にさくら組の午睡チェックを開始し、終えていない。
     // デモデータの実施は、ほかのテストの読み直しで自動の解除が済んでいることがあるので、ここで足す
     const nap = {
       nap_session_id: 90_001, class_id: 1, session_date: today(), started_staff_id: 'S003',

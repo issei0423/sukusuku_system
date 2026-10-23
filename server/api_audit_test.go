@@ -16,7 +16,7 @@ func TestAllergyListPrintIsForStaff(t *testing.T) {
 	a, h := newTestApp(t)
 	admin := loginAs(a, 1, "staff")
 	teacher := loginAs(a, 3, "staff")     // さくら組の担任。全園児のアレルギー一覧を印刷できる
-	guardian := loginAs(a, 6, "guardian") // 野原 太郎（C001）の保護者
+	guardian := loginAs(a, 6, "guardian") // 西田 太郎（C001）の保護者
 
 	printed := func(t *testing.T, accountID int64) int {
 		t.Helper()

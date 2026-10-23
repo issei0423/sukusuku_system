@@ -22,15 +22,15 @@ import { consentMark } from '../src/components/photoConsent';
 import ContactPhotoImage from '../src/screens/contact/ContactPhotoImage';
 
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組', is_temp_password: false, terms_agreed: true,
 };
 const taroGuardian: SessionUser = {
-  account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
+  account_id: 6, email: 'nishida.t@example.jp', role: '3', display_name: '西田 拓也',
   staff_id: null, guardian_id: 'G001', class_id: null, class_name: null, is_temp_password: false, terms_agreed: true,
 };
 const misakiGuardian: SessionUser = {
-  account_id: 9, email: 'miyagi.r@example.jp', role: '3', display_name: '宮城',
+  account_id: 9, email: 'murata.s@example.jp', role: '3', display_name: '村田',
   staff_id: null, guardian_id: 'G004', class_id: null, class_name: null, is_temp_password: false, terms_agreed: true,
 };
 
@@ -113,12 +113,12 @@ describe('写真を送る（連絡帳（クラス）画面の「写真を送る�
     const picker = pickerDialog();
     expect((within(picker).getByRole('button', { name: '決める' }) as HTMLButtonElement).disabled).toBe(true);
     expect(within(picker).getByText(MSG.photoSubjectRequired)).toBeTruthy();
-    fireEvent.click(within(picker).getByRole('button', { name: '野原 太郎' }));
+    fireEvent.click(within(picker).getByRole('button', { name: '西田 太郎' }));
     fireEvent.click(within(picker).getByRole('button', { name: '決める' }));
     await waitFor(() => expect(document.activeElement?.textContent).toBe('写っている子を選ぶ'));
-    expect(sendDialog().textContent).toContain('写っている子：野原 太郎');
+    expect(sendDialog().textContent).toContain('写っている子：西田 太郎');
     // 宛先を大きく示す（園児名・クラス・届く続柄）
-    expect(within(sendDialog()).getByRole('note', { name: '宛先' }).textContent).toContain('野原 太郎（さくら組）父に届きます');
+    expect(within(sendDialog()).getByRole('note', { name: '宛先' }).textContent).toContain('西田 太郎（さくら組）父に届きます');
     expect(sendButton().disabled).toBe(false);
     fireEvent.click(within(sendDialog()).getByRole('button', { name: 'やめる' }));
     await waitFor(() => expect(document.activeElement?.textContent).toBe('写真を送る'));
@@ -128,14 +128,14 @@ describe('写真を送る（連絡帳（クラス）画面の「写真を送る�
     await withConsent({ C001: '1' }, async () => {
       const dialog = await openSendFromClass();
       fireEvent.click(within(dialog).getByRole('button', { name: '写っている子を選ぶ' }));
-      fireEvent.click(within(pickerDialog()).getByRole('button', { name: '野原 太郎' }));
-      expect(within(pickerDialog()).getByRole('button', { name: '野原 太郎（園内記録のみ）' }).textContent).toContain('園内記録のみ');
+      fireEvent.click(within(pickerDialog()).getByRole('button', { name: '西田 太郎' }));
+      expect(within(pickerDialog()).getByRole('button', { name: '西田 太郎（園内記録のみ）' }).textContent).toContain('園内記録のみ');
       // 2人目を選ぶと、同意 2 の子にも「ほかの家庭には出せない」
       fireEvent.click(within(pickerDialog()).getByRole('button', { name: '伊藤 葵' }));
       expect(within(pickerDialog()).getByRole('button', { name: '伊藤 葵（ほかの家庭には出せない）' })).toBeTruthy();
       fireEvent.click(within(pickerDialog()).getByRole('button', { name: '決める' }));
       await waitFor(() => expect(sendDialog().textContent)
-        .toContain('野原 太郎さん・伊藤 葵さんは、ほかの保護者にも見える場への写真の同意がないため送れません。'));
+        .toContain('西田 太郎さん・伊藤 葵さんは、ほかの保護者にも見える場への写真の同意がないため送れません。'));
       expect(sendButton().disabled).toBe(true);
     });
     expect([consentMark('1', 1), consentMark('2', 1), consentMark('2', 2), consentMark('3', 2)])
@@ -146,12 +146,12 @@ describe('写真を送る（連絡帳（クラス）画面の「写真を送る�
     const before = db.contactPhotos.length;
     const dialog = await openSendFromClass();
     fireEvent.click(within(dialog).getByRole('button', { name: '写っている子を選ぶ' }));
-    fireEvent.click(within(pickerDialog()).getByRole('button', { name: '野原 太郎' }));
+    fireEvent.click(within(pickerDialog()).getByRole('button', { name: '西田 太郎' }));
     fireEvent.click(within(pickerDialog()).getByRole('button', { name: '決める' }));
     await waitFor(() => expect(sendButton().disabled).toBe(false));
     fireEvent.change(within(sendDialog()).getByLabelText('添える文（なくても送れます）'), { target: { value: '砂場で型抜きをしました。' } });
     fireEvent.click(sendButton());
-    await waitFor(() => expect(toast()?.textContent).toContain('野原 太郎さんへの写真：送りました。保護者が見られる状態です。'), { timeout: 3000 });
+    await waitFor(() => expect(toast()?.textContent).toContain('西田 太郎さんへの写真：送りました。保護者が見られる状態です。'), { timeout: 3000 });
     expect(within(toast() as HTMLElement).getByRole('button', { name: '取り消す' })).toBeTruthy();
     expect(screen.queryByRole('dialog', { name: '写真を送る' })).toBeNull();
     expect(db.contactPhotos.length).toBe(before + 1);
@@ -162,7 +162,7 @@ describe('写真を送る（連絡帳（クラス）画面の「写真を送る�
     const misaki = await api.contactPage(misakiGuardian, 'C004');
     expect(misaki.events.some((e) => e.event_type === '5')).toBe(false);
     // 表の「ひとこと・写真」に、その日の新しい写真が小さく出る
-    await screen.findByRole('button', { name: /^野原 太郎の写真（\d\d:\d\d）を大きく見る$/ }, { timeout: 3000 });
+    await screen.findByRole('button', { name: /^西田 太郎の写真（\d\d:\d\d）を大きく見る$/ }, { timeout: 3000 });
   });
 
   it('子どもが写っていないときは、届ける子を1人選んで送れる', async () => {
@@ -170,11 +170,11 @@ describe('写真を送る（連絡帳（クラス）画面の「写真を送る�
     fireEvent.click(within(dialog).getByRole('button', { name: '写っている子を選ぶ' }));
     fireEvent.click(within(pickerDialog()).getByRole('button', { name: '子どもは写っていない' }));
     expect((within(pickerDialog()).getByRole('button', { name: '決める' }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(within(pickerDialog()).getByRole('button', { name: '宮城 美咲に届ける' }));
+    fireEvent.click(within(pickerDialog()).getByRole('button', { name: '村田 美咲に届ける' }));
     fireEvent.click(within(pickerDialog()).getByRole('button', { name: '決める' }));
-    await waitFor(() => expect(sendDialog().textContent).toContain('子どもは写っていない（届ける子：宮城 美咲）'));
+    await waitFor(() => expect(sendDialog().textContent).toContain('子どもは写っていない（届ける子：村田 美咲）'));
     fireEvent.click(sendButton());
-    await waitFor(() => expect(toast()?.textContent).toContain('宮城 美咲さんへの写真：送りました。'), { timeout: 3000 });
+    await waitFor(() => expect(toast()?.textContent).toContain('村田 美咲さんへの写真：送りました。'), { timeout: 3000 });
     const page = await api.contactPage(misakiGuardian, 'C004');
     expect(page.events.some((e) => e.event_type === '5')).toBe(true);
   });
@@ -183,7 +183,7 @@ describe('写真を送る（連絡帳（クラス）画面の「写真を送る�
     await withConsent({ C001: '3', C006: '3' }, async () => {
       const dialog = await openSendFromClass();
       fireEvent.click(within(dialog).getByRole('button', { name: '写っている子を選ぶ' }));
-      fireEvent.click(within(pickerDialog()).getByRole('button', { name: '野原 太郎' }));
+      fireEvent.click(within(pickerDialog()).getByRole('button', { name: '西田 太郎' }));
       fireEvent.click(within(pickerDialog()).getByRole('button', { name: '伊藤 葵' }));
       fireEvent.click(within(pickerDialog()).getByRole('button', { name: '決める' }));
       await waitFor(() => expect(sendButton().disabled).toBe(false));
@@ -192,14 +192,14 @@ describe('写真を送る（連絡帳（クラス）画面の「写真を送る�
       fireEvent.change(within(sendDialog()).getByLabelText('添える文（なくても送れます）'), { target: { value: 'たっくんがスコップで砂を運んでいました。' } });
       fireEvent.click(sendButton());
       const check = await screen.findByRole('dialog', { name: 'ほかのお子さんの名前の注意' }, { timeout: 3000 });
-      expect(check.textContent).toContain('ほかのお子さんの名前（野原 太郎）が入っています。');
+      expect(check.textContent).toContain('ほかのお子さんの名前（西田 太郎）が入っています。');
       expect(check.querySelector('mark')?.textContent).toBe('たっくん');
       fireEvent.click(within(check).getByRole('button', { name: '直す' }));
       await waitFor(() => expect(document.activeElement).toBe(within(sendDialog()).getByLabelText('添える文（なくても送れます）')));
       expect((document.activeElement as HTMLTextAreaElement).value).toBe('たっくんがスコップで砂を運んでいました。');
       fireEvent.click(sendButton());
       fireEvent.click(within(await screen.findByRole('dialog', { name: 'ほかのお子さんの名前の注意' }, { timeout: 3000 })).getByRole('button', { name: 'このまま送る' }));
-      await waitFor(() => expect(toast()?.textContent).toContain('野原 太郎さん・伊藤 葵さんへの写真：送りました。'), { timeout: 3000 });
+      await waitFor(() => expect(toast()?.textContent).toContain('西田 太郎さん・伊藤 葵さんへの写真：送りました。'), { timeout: 3000 });
     });
   });
 
@@ -248,10 +248,10 @@ describe('成長の記録に残す（詳細設計書「職員の画面から成�
 
   it('初期値はオフ。触らずに送ると、出来事に付かない', async () => {
     await openSendFromClass();
-    await pick('野原 太郎');
+    await pick('西田 太郎');
     expect(keepBox().checked).toBe(false);
     fireEvent.click(sendButton());
-    await waitFor(() => expect(toast()?.textContent).toContain('野原 太郎さんへの写真：送りました。'), { timeout: 3000 });
+    await waitFor(() => expect(toast()?.textContent).toContain('西田 太郎さんへの写真：送りました。'), { timeout: 3000 });
     expect(latestEvents()).toEqual([['C001', false]]);
   });
 
@@ -264,7 +264,7 @@ describe('成長の記録に残す（詳細設計書「職員の画面から成�
     await reopen();
     expect(keepBox().checked).toBe(false);
 
-    await pick('野原 太郎');
+    await pick('西田 太郎');
     fireEvent.click(keepBox());
     // 送っている間（サーバの応答を待つ間）は押せない
     const original = api.sendPhoto;
@@ -274,7 +274,7 @@ describe('成長の記録に残す（詳細設計書「職員の画面から成�
     fireEvent.click(sendButton());
     await waitFor(() => expect(keepBox().disabled).toBe(true));
     release();
-    await waitFor(() => expect(toast()?.textContent).toContain('野原 太郎さんへの写真：送りました。'), { timeout: 3000 });
+    await waitFor(() => expect(toast()?.textContent).toContain('西田 太郎さんへの写真：送りました。'), { timeout: 3000 });
     expect(spy.mock.calls.map(([, input]) => input.keep_in_growth)).toEqual([true]);
     expect(latestEvents()).toEqual([['C001', true]]);
   });
@@ -283,13 +283,13 @@ describe('成長の記録に残す（詳細設計書「職員の画面から成�
     await withConsent({ C001: '3', C006: '3' }, async () => {
       const spy = vi.spyOn(api, 'sendPhoto');
       await openSendFromClass();
-      await pick('野原 太郎', '伊藤 葵');
+      await pick('西田 太郎', '伊藤 葵');
       fireEvent.click(keepBox());
       fireEvent.change(within(sendDialog()).getByLabelText('添える文（なくても送れます）'), { target: { value: 'たっくんがスコップで砂を運んでいました。' } });
       fireEvent.click(sendButton());
       fireEvent.click(within(await screen.findByRole('dialog', { name: 'ほかのお子さんの名前の注意' }, { timeout: 3000 })).getByRole('button', { name: 'このまま送る' }));
-      await waitFor(() => expect(toast()?.textContent).toContain('野原 太郎さん・伊藤 葵さんへの写真：送りました。'), { timeout: 3000 });
-      expect(spy.mock.calls.map(([, input]) => [input.keep_in_growth, input.acknowledged_names])).toEqual([[true, []], [true, ['野原 太郎']]]);
+      await waitFor(() => expect(toast()?.textContent).toContain('西田 太郎さん・伊藤 葵さんへの写真：送りました。'), { timeout: 3000 });
+      expect(spy.mock.calls.map(([, input]) => [input.keep_in_growth, input.acknowledged_names])).toEqual([[true, []], [true, ['西田 太郎']]]);
       expect(latestEvents()).toEqual([['C001', true], ['C006', true]]);
     });
   });
@@ -298,9 +298,9 @@ describe('成長の記録に残す（詳細設計書「職員の画面から成�
 describe('連絡帳（園児）画面の「写真を送る」', () => {
   it('写っている子はこの子を選んだ状態で開く', async () => {
     open('/staff/contact/C001', teacher);
-    await screen.findByRole('heading', { name: '野原 太郎' }, { timeout: 3000 });
+    await screen.findByRole('heading', { name: '西田 太郎' }, { timeout: 3000 });
     fireEvent.click(screen.getByRole('button', { name: '写真を送る' }));
-    await waitFor(() => expect(sendDialog().textContent).toContain('写っている子：野原 太郎'), { timeout: 3000 });
+    await waitFor(() => expect(sendDialog().textContent).toContain('写っている子：西田 太郎'), { timeout: 3000 });
   });
 });
 

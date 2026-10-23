@@ -17,12 +17,12 @@ import * as db from '../src/api/mockDb';
 import { today } from '../src/api/util';
 
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
 const guardian: SessionUser = {
-  account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
+  account_id: 6, email: 'nishida.t@example.jp', role: '3', display_name: '西田 拓也',
   staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
@@ -44,10 +44,10 @@ describe('連絡帳（園児）画面：園からのひとこと', () => {
   it('定型文 → 候補 → 送るの3タップで送れる。「送る」のすぐ上に宛先（園児名・クラス・届く続柄）を大きく示す', async () => {
     for (const f of db.contactFacilities) if (f.child_id === 'C001' && f.contact_date === today()) f.is_deleted = true;
     open('/staff/contact/C001', teacher);
-    await screen.findByRole('heading', { name: '野原 太郎' }, { timeout: 3000 });
+    await screen.findByRole('heading', { name: '西田 太郎' }, { timeout: 3000 });
     const section = facilitySection();
     const badge = within(section).getByRole('note', { name: '宛先' });
-    expect(badge.textContent).toContain('野原 太郎（さくら組）');
+    expect(badge.textContent).toContain('西田 太郎（さくら組）');
     expect(badge.textContent).toContain('父に届きます');
     // 宛先は「送る」と同じ領域の、すぐ上
     const send = within(section).getByRole('button', { name: '送る' });
@@ -58,7 +58,7 @@ describe('連絡帳（園児）画面：園からのひとこと', () => {
     fireEvent.click(await screen.findByRole('button', { name: '今日も一日ありがとうございました。' }, { timeout: 3000 })); // 2
     expect((within(section).getByLabelText('園からのひとこと') as HTMLTextAreaElement).value).toBe('今日も一日ありがとうございました。');
     fireEvent.click(within(section).getByRole('button', { name: '送る' })); // 3
-    await waitFor(() => expect(toast()?.textContent).toContain('野原 太郎さんの園から：送りました。保護者が見られる状態です。'), { timeout: 3000 });
+    await waitFor(() => expect(toast()?.textContent).toContain('西田 太郎さんの園から：送りました。保護者が見られる状態です。'), { timeout: 3000 });
     expect(within(toast() as HTMLElement).getByRole('button', { name: '取り消す' })).toBeTruthy();
     expect((await api.contactPage(guardian, 'C001')).facility?.body).toBe('今日も一日ありがとうございました。');
     // 送ったあとは、送った文と「直す」「取り消す」
@@ -73,7 +73,7 @@ describe('連絡帳（園児）画面：園からのひとこと', () => {
     const box = within(facilitySection()).getByLabelText('園から（直して送る）') as HTMLTextAreaElement;
     fireEvent.change(box, { target: { value: '園庭で砂場あそびをしました。' } });
     fireEvent.click(within(facilitySection()).getByRole('button', { name: '直して送る' }));
-    await waitFor(() => expect(toast()?.textContent).toContain('野原 太郎さんの園からを直しました。'), { timeout: 3000 });
+    await waitFor(() => expect(toast()?.textContent).toContain('西田 太郎さんの園からを直しました。'), { timeout: 3000 });
     const fixed = (await api.contactPage(guardian, 'C001')).facility!;
     expect([fixed.body, fixed.corrected_at !== null]).toEqual(['園庭で砂場あそびをしました。', true]);
 
@@ -88,19 +88,19 @@ describe('連絡帳（園児）画面：園からのひとこと', () => {
 
   it('保護者がまだ登録していない園児には、そのことを宛先に示し、送ったあとも「登録すると読めます」と出す', async () => {
     open('/staff/contact/C003', teacher);
-    await screen.findByRole('heading', { name: '高梨 健' }, { timeout: 3000 });
+    await screen.findByRole('heading', { name: '鈴木 健' }, { timeout: 3000 });
     const section = facilitySection();
     expect(within(section).getByRole('note', { name: '宛先' }).textContent).toContain('まだ保護者が登録していません（登録すると読めます）');
     fireEvent.change(within(section).getByLabelText('園からのひとこと'), { target: { value: 'お迎えのときに、くわしくお話しします。' } });
     fireEvent.click(within(section).getByRole('button', { name: '送る' }));
-    await waitFor(() => expect(toast()?.textContent).toContain('高梨 健さんの園から：送りました。保護者が登録すると読めます。'), { timeout: 3000 });
+    await waitFor(() => expect(toast()?.textContent).toContain('鈴木 健さんの園から：送りました。保護者が登録すると読めます。'), { timeout: 3000 });
   });
 });
 
 describe('連絡帳（園児）画面：活動のひとことと他児の名前の注意', () => {
   it('ほかの子の名前が入っていれば注意を出し、当たった語を強調する。「直す」で入力に戻り、「このまま送る」で送る', async () => {
     open('/staff/contact/C001', teacher);
-    await screen.findByRole('heading', { name: '野原 太郎' }, { timeout: 3000 });
+    await screen.findByRole('heading', { name: '西田 太郎' }, { timeout: 3000 });
     const box = screen.getByLabelText('活動のひとこと') as HTMLTextAreaElement;
     fireEvent.change(box, { target: { value: 'あおちゃんとしゃぼん玉を追いかけていました。' } });
     fireEvent.click(screen.getByRole('button', { name: 'ひとことを送る' }));
@@ -115,17 +115,17 @@ describe('連絡帳（園児）画面：活動のひとことと他児の名前�
 
     fireEvent.click(screen.getByRole('button', { name: 'ひとことを送る' }));
     fireEvent.click(within(await screen.findByRole('dialog', { name: 'ほかのお子さんの名前の注意' }, { timeout: 3000 })).getByRole('button', { name: 'このまま送る' }));
-    await waitFor(() => expect(toast()?.textContent).toContain('野原 太郎さんへのひとこと：送りました。保護者が見られる状態です。'), { timeout: 3000 });
+    await waitFor(() => expect(toast()?.textContent).toContain('西田 太郎さんへのひとこと：送りました。保護者が見られる状態です。'), { timeout: 3000 });
     expect((await api.contactPage(guardian, 'C001')).events.some((e) => e.body === 'あおちゃんとしゃぼん玉を追いかけていました。')).toBe(true);
     expect(box.value).toBe('');
   });
 
   it('宛先の子の呼び名だけなら注意を出さずに送れる', async () => {
     open('/staff/contact/C001', teacher);
-    await screen.findByRole('heading', { name: '野原 太郎' }, { timeout: 3000 });
+    await screen.findByRole('heading', { name: '西田 太郎' }, { timeout: 3000 });
     fireEvent.change(screen.getByLabelText('活動のひとこと'), { target: { value: 'たっくんは最後まで走っていました。' } });
     fireEvent.click(screen.getByRole('button', { name: 'ひとことを送る' }));
-    await waitFor(() => expect(toast()?.textContent).toContain('野原 太郎さんへのひとこと：送りました。'), { timeout: 3000 });
+    await waitFor(() => expect(toast()?.textContent).toContain('西田 太郎さんへのひとこと：送りました。'), { timeout: 3000 });
     expect(screen.queryByRole('dialog', { name: 'ほかのお子さんの名前の注意' })).toBeNull();
   });
 });
@@ -145,9 +145,9 @@ describe('職員ダッシュボードと連絡帳（クラス）画面の「園�
     const firstSent = texts.findIndex((t) => t !== '書く');
     expect(firstSent).toBeGreaterThan(0);
     expect(texts.slice(firstSent).includes('書く')).toBe(false);
-    // 今日の午睡で欠席にした子（デモの高梨 健）は「欠席」
+    // 今日の午睡で欠席にした子（デモの鈴木 健）は「欠席」
     if (db.napExclusions.some((x) => x.child_id === 'C003' && x.reason === '1' && !x.is_deleted)) {
-      expect(screen.getByRole('link', { name: /^高梨 健の園から / }).textContent).toMatch(/欠席|送った/);
+      expect(screen.getByRole('link', { name: /^鈴木 健の園から / }).textContent).toMatch(/欠席|送った/);
     }
   });
 
@@ -160,11 +160,11 @@ describe('職員ダッシュボードと連絡帳（クラス）画面の「園�
     for (const e of db.contactEvents) if (e.child_id === 'C002' && e.contact_date === today() && (e.event_type === '4' || e.event_type === '5')) e.is_deleted = true;
     for (const f of db.contactFacilities) if (f.child_id === 'C002' && f.contact_date === today()) f.is_deleted = true;
     open('/staff/contact', teacher);
-    const comment = await screen.findByRole('link', { name: '上園 花子のひとことを書く' }, { timeout: 3000 });
+    const comment = await screen.findByRole('link', { name: '遠藤 花子のひとことを書く' }, { timeout: 3000 });
     expect(comment.textContent).toBe('書く');
     expect(comment.getAttribute('href')).toBe('/staff/contact/C002');
     expect(comment.classList.contains('btn')).toBe(true);
-    const facility = screen.getByRole('link', { name: '上園 花子の園からを書く' });
+    const facility = screen.getByRole('link', { name: '遠藤 花子の園からを書く' });
     expect(facility.textContent).toBe('書く');
     expect(facility.getAttribute('href')).toBe('/staff/contact/C002#facility');
     expect(facility.classList.contains('btn')).toBe(true);
@@ -177,6 +177,6 @@ describe('職員ダッシュボードと連絡帳（クラス）画面の「園�
     expect(names.every((n) => /^.+の(ひとこと|園から)を書く$/.test(n ?? ''))).toBe(true);
     expect(new Set(names).size).toBe(names.length);
     fireEvent.click(facility);
-    await screen.findByRole('heading', { name: '上園 花子' }, { timeout: 3000 });
+    await screen.findByRole('heading', { name: '遠藤 花子' }, { timeout: 3000 });
   });
 });

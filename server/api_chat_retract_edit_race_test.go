@@ -20,7 +20,7 @@ import (
  * 順に押したときの応答は web/tests/chatReadRetract.test.ts が確かめる。
  */
 
-// guardianSends は、野原 太郎の個人チャットへ保護者 6 として送り、そのメッセージの ID を返す
+// guardianSends は、西田 太郎の個人チャットへ保護者 6 として送り、そのメッセージの ID を返す
 func guardianSends(t *testing.T, h http.Handler, guardian *http.Cookie, room int64, body string) int64 {
 	t.Helper()
 	return sentID(t, call(t, h, guardian, "POST", "/api/chat/rooms/"+itoa(room)+"/messages", `{"body":"`+body+`"}`).Body)
@@ -57,7 +57,7 @@ func retractLogs(a *app, id int64) int {
 // 取消を2つのタブから同時に押しても、通るのは1つ。もう1つは順に押したときと同じ 409 を返し、操作ログは1件
 func TestRetractTwiceAtOnce(t *testing.T) {
 	a, h := newTestApp(t)
-	room := noharaPersonalRoom(t, a)
+	room := nishidaPersonalRoom(t, a)
 	guardian := loginAs(a, 6, "guardian")
 	for i := 0; i < 40; i++ {
 		id := guardianSends(t, h, guardian, room, "取り消す本文")
@@ -87,7 +87,7 @@ func TestRetractTwiceAtOnce(t *testing.T) {
 // 取消が先なら編集は 409。編集が先なら、そのあとの取消で本文が消える
 func TestEditAndRetractAtOnce(t *testing.T) {
 	a, h := newTestApp(t)
-	room := noharaPersonalRoom(t, a)
+	room := nishidaPersonalRoom(t, a)
 	guardian := loginAs(a, 6, "guardian")
 	for i := 0; i < 40; i++ {
 		id := guardianSends(t, h, guardian, room, "編集する前の本文")
