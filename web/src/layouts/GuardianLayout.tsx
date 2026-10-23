@@ -31,8 +31,8 @@ import { UnsavedInputContext, useUnsavedInputTracker } from '../unsavedInput';
  */
 const MENU_PAGES = [
   { to: '/guardian', label: 'ホーム' },
+  // 園からの配布物はチャットの一部なので、メニューには置かず「チャット・お知らせ」の画面から開く（職員と同じ形）
   { to: '/guardian/chat', label: 'チャット・お知らせ' },
-  { to: '/guardian/handouts', label: '園からの配布物' },
 ];
 const MENU_ACCOUNT = [
   { to: '/guardian/password', label: 'パスワードの変更' },

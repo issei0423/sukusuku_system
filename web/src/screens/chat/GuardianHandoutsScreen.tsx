@@ -33,7 +33,7 @@ export default function GuardianHandoutsScreen() {
   return (
     <div className="guardian-home">
       <div className="guardian-page-intro">
-        <Link className="btn btn-quiet btn-sm" to="/guardian">&lt; ホームへ</Link>
+        <Link className="btn btn-quiet btn-sm" to="/guardian/chat">&lt; チャット・お知らせへ</Link>
         <span className="guardian-eyebrow" style={{ marginTop: 8 }}>園からのおたより</span>
         <h1>園からの配布物</h1>
         <p>園だより・献立表などを、月ごとに見返せます。</p>
