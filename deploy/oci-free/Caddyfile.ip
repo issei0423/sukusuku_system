@@ -1,0 +1,13 @@
+{
+    # IP アドレス宛ての TLS 接続は SNI を送らないクライアントがある。
+    default_sni 217.142.235.206
+}
+
+https://217.142.235.206 {
+    tls {
+        issuer acme {
+            profile shortlived
+        }
+    }
+    reverse_proxy 127.0.0.1:8080
+}
