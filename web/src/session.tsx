@@ -5,9 +5,10 @@
  * モックではメモリ上にのみ保持し、再読み込みでログアウトする。
  * Cookie / localStorage のどちらを採るかは Go サーバの実装時に決める。
  */
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
 import type { SessionUser } from './api/types';
 import { api } from './api/client';
+import { setSessionAccount } from './api/sessionAccount';
 
 interface SessionValue {
   user: SessionUser | null;
@@ -22,7 +23,18 @@ interface SessionValue {
 const Ctx = createContext<SessionValue | null>(null);
 
 export function SessionProvider({ children, initialUser = null }: { children: ReactNode; initialUser?: SessionUser | null }) {
-  const [user, setUser] = useState<SessionUser | null>(initialUser);
+  const [user, setUserState] = useState<SessionUser | null>(() => {
+    setSessionAccount(initialUser?.account_id ?? null);
+    return initialUser;
+  });
+  /*
+   * 画面の利用者と、要求に添える利用者（api/sessionAccount.ts）を同時に入れ替える。
+   * 描画を待ってから入れ替えると、切り替えた直後の画面が最初に送る要求に前の利用者が付き、サーバに止められる
+   */
+  const setUser = useCallback((u: SessionUser | null) => {
+    setSessionAccount(u?.account_id ?? null);
+    setUserState(u);
+  }, []);
   const [entrance, setEntrance] = useState<'staff' | 'guardian'>('staff');
 
   /*

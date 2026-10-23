@@ -32,6 +32,9 @@ import {
   ProcedureRequiredError, isProcedureKind, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
 } from './procedure';
 import { startLive } from '../live';
+import {
+  ACCOUNT_CHANGED_KIND, ACCOUNT_HEADER, ACCOUNT_QUERY, notifyAccountChanged, sessionAccount, setSessionAccount,
+} from './sessionAccount';
 import { setReachable } from './reachability';
 import { TEXT } from '../messages';
 import type { NapReportFilter } from './napReport';
@@ -48,12 +51,11 @@ export type {
 
 /**
  * 開いている画面への知らせ（server/events.go の GET /api/events。SSE）につなぐ。返す関数で切る。
- * App.tsx がログイン中に1か所で呼ぶ。だれの知らせかはサーバがセッションで決めるため、引数は使わない
- * （モック（api/mock.ts の connectLive）と同じ形にしてある）
+ * App.tsx がログイン中に1か所で呼ぶ。だれの知らせかはサーバがセッションで決める。
+ * 画面が思っている利用者は、EventSource がヘッダを付けられないのでクエリで添える（api/sessionAccount.ts）
  */
 export function connectLive(accountId: number): () => void {
-  void accountId;
-  return startLive('/api/events');
+  return startLive(`/api/events?${ACCOUNT_QUERY}=${accountId}`);
 }
 
 class ApiError extends Error {
@@ -86,7 +88,7 @@ const UNREACHABLE_MESSAGE = `${TEXT.unreachableBanner}。つながったら、�
 /** ログインの失敗理由（LoginError）。画面（TopScreen）が JSON にして分岐に使う */
 const LOGIN_KINDS = new Set(['credential', 'locked', 'suspended', 'wrong_entrance', 'temp_expired', 'already_logged_in', 'too_many_attempts']);
 
-async function request<T>(method: string, path: string, body?: unknown, timeoutMs = REQUEST_TIMEOUT_MS): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, timeoutMs = REQUEST_TIMEOUT_MS, withAccount = true): Promise<T> {
   let res: Response;
   // 写真（multipart/form-data）は FormData のまま送る。境界の入った Content-Type はブラウザが付ける
   const form = typeof FormData !== 'undefined' && body instanceof FormData;
@@ -97,6 +99,12 @@ async function request<T>(method: string, path: string, body?: unknown, timeoutM
    * await より前に読む。読み直しの関数がその場で始めた要求だけに付けるため
    */
   if (isAutomatic()) headers[AUTO_REFRESH_HEADER] = '1';
+  /*
+   * 画面が思っている利用者を添える。サーバは Cookie のセッションの利用者と違えば止める（api/sessionAccount.ts）。
+   * セッションを読み直す GET /api/me（bootstrap）は、いまの Cookie の利用者を知るためのものなので添えない
+   */
+  const expected = sessionAccount();
+  if (withAccount && expected !== null) headers[ACCOUNT_HEADER] = String(expected);
   try {
     res = await fetch(path, {
       method,
@@ -138,6 +146,14 @@ async function request<T>(method: string, path: string, body?: unknown, timeoutM
       throw new ProcedureRequiredError(err.kind, err.message);
     }
     /*
+     * 別のタブで別のアカウントにログインし直されていた（api/sessionAccount.ts）。サーバは何もしていない。
+     * 画面（App.tsx）へ知らせ、セッションを読み直していまのアカウントの画面へ切り替えさせる
+     */
+    if (res.status === 409 && err.kind === ACCOUNT_CHANGED_KIND) {
+      notifyAccountChanged();
+      throw err;
+    }
+    /*
      * セッションが無い・切られた（停止・紐づけの解除・ほかの端末でのパスワードの変更など。GitHub Issue #159）。
      * 参照表（園児名・職員名）を捨て、画面（App.tsx）へ知らせて入口へ戻させる。
      * ログインそのものの失敗は、まだログインしていないため知らせない
@@ -169,7 +185,12 @@ async function request<T>(method: string, path: string, body?: unknown, timeoutM
 async function requestText(path: string): Promise<string> {
   let res: Response;
   try {
-    res = await fetch(path, { credentials: 'same-origin', signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    const expected = sessionAccount();
+    res = await fetch(path, {
+      credentials: 'same-origin',
+      headers: expected !== null ? { [ACCOUNT_HEADER]: String(expected) } : undefined,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
   } catch {
     setReachable(false);
     throw new ApiError({ message: UNREACHABLE_MESSAGE, kind: 'unreachable' });
@@ -188,6 +209,7 @@ async function requestText(path: string): Promise<string> {
       notifyProcedureRequired(err.kind);
       throw new ProcedureRequiredError(err.kind, err.message);
     }
+    if (res.status === 409 && err.kind === ACCOUNT_CHANGED_KIND) notifyAccountChanged();
     if (res.status === 401) {
       clearReference();
       notifySessionEnded();
@@ -333,7 +355,11 @@ const apiAuth = {
   /** ページを開き直したときにセッションを復元する。未ログインなら null */
   async bootstrap(): Promise<SessionUser | null> {
     try {
-      const u = await get<SessionUser>('/api/me');
+      // いまの Cookie の利用者を知るためのものなので、画面が思っている利用者を添えない（api/sessionAccount.ts）
+      const u = await request<SessionUser>('GET', '/api/me', undefined, REQUEST_TIMEOUT_MS, false);
+      // 続く参照表の読み込みには、いまの Cookie の利用者を添える。別のタブで入れ替わったあとの読み直しで、
+      // 前の利用者を添えて止められないようにするため（呼んだ側は、続けてこの利用者を setUser する）
+      setSessionAccount(u.account_id);
       await loadReferenceFor(u);
       return u;
     } catch {

@@ -12,17 +12,19 @@
  * 「チャット・お知らせ」の区画から開く。職員がチャット画面から配布物を開くのと同じ形にそろえた。
  */
 import { useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useAsync, AUTO_REFRESH_MS } from '../../hooks';
 import { onLive } from '../../live';
 import { useSession } from '../../session';
 import { api } from '../../api/client';
-import { Loading, ErrorBox, Empty } from '../../components/ui';
+import { Loading, ErrorBox, Empty, Alert } from '../../components/ui';
+import { ACCOUNT_CHANGED_TEXT } from '../../messages';
 import { formatAge, today } from '../../api/util';
 import TodayCard from '../contact/TodayCard';
 
 export default function GuardianHome() {
   const { user } = useSession();
+  const accountChanged = (useLocation().state as { accountChanged?: boolean } | null)?.accountChanged === true;
   /*
    * 開いたままでも、連絡帳（家庭からの確認・ねた・おきた・きょうのようす）・チャットの未読・発達と身体測定が
    * すぐに表れるよう、知らせ（live.ts）を受けて読み直す（詳細設計書「画面ごとの読み直し」(6-5)）。
@@ -80,6 +82,8 @@ export default function GuardianHome() {
         <h1>こんにちは</h1>
         <p>園からの連絡と、お子さまの記録を確認できます。</p>
       </div>
+      {/* 別のタブで別のアカウントにログインし直されたため、このタブも切り替えたとき（App.tsx） */}
+      {accountChanged && <Alert soft>{ACCOUNT_CHANGED_TEXT}</Alert>}
       {data.map((h) => (
         <div className="guardian-child-section" key={h.child.child_id}>
           <section className="guardian-child-card" aria-label={`${h.child.child_name}さんの情報`}>
