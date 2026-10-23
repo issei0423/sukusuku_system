@@ -119,13 +119,13 @@ npm run agent -- review --pr 275 --force          # 同じ先頭の commit で�
 | `--max-usd X` / `--per-item-usd Y` / `--effort E` / `--dry-run` | ほかのコマンドと同じ（既定 $10・$3・medium） |
 
 1. **コードが PR を選ぶ**：開いている PR を古い順に並べる。飛ばす：フォーク、下書き（`--include-drafts`・`--pr N` なら見る）、ラベル `agent-skip`、**同じ先頭の commit をレビュー済みのもの**（`--force` で見直す）
-   - レビュー済みの見分け方：PR のコメントに印 `<!-- api-agent-review head=<40桁の sha> -->` があるか。PR に push があって先頭が変われば、また見る
+   - レビュー済みの見分け方：PR のコメントに印 `<!-- api-agent-review head=<40桁の sha> -->` があるか。**数えるのは、いまの gh のアカウント（`gh api user --jq .login` で実行の初めに1回取る）が書いたコメントの印だけ**（他人は印を書けるので信じない）。アカウントが取れないときは印を信じず、どの PR も「レビューしていない」と見て、記録のメモに残す。PR に push があって先頭が変われば、また見る
 2. PR ごとに worktree を作る：`<worktree の根>/agent-review-<n>`、PR の先頭の commit を切り離した HEAD で（根は merge と同じ。既にあれば、きれいなときだけ先頭に合わせて使い回す）
-3. エージェントに `prompts/review.md` を渡す：`claude-review.yml` の4つの観点（バグ・動かなくなるところ／セキュリティ／読みやすさ／保育の現場で困る動き）と書き方（読んで確かめた指摘だけ・確かめられないものは「未確認」・問題がなければ短く）に、リポジトリの決まり（Go とモックの両方・【仮置き】と `web/仮置き値.md`）を足した。`.github/` を変える PR には、ワークフローの安全（きっかけ・権限・秘密・self-hosted runner）の観点を足す。差分は `git diff origin/<base>...HEAD`、本文は `gh pr view <n>` で読ませる
+3. エージェントに `prompts/review.md` を渡す：`claude-review.yml` の4つの観点（バグ・動かなくなるところ／セキュリティ／読みやすさ／保育の現場で困る動き）と書き方（読んで確かめた指摘だけ・確かめられないものは「未確認」・問題がなければ短く）に、リポジトリの決まり（Go とモックの両方・【仮置き】と `web/仮置き値.md`）を足した。`.github/` を変える PR には、ワークフローの安全（きっかけ・権限・秘密・self-hosted runner）の観点を足す。差分は `git diff origin/<base>...HEAD`、本文は `gh pr view <n>` で読ませる。`.github/` を変えたかの判定（`git diff`）が失敗したときは、黙って外さずワークフローの観点を足し、PR の記録に「判定に失敗したので、ワークフローの観点を足した」と残す
 4. **コードが** `gh pr comment <n> --body-file …` で、エージェントの最後の文を送る。送る前に秘密を伏せ、末尾に費用と先頭の sha の行と、上の印を付ける。レビューが済まなかったとき（上限・時間・往復・認証）は送らない
 5. 結果は記録（`runs/<日時>-review.md`）に1件ずつ残る
 
-- **エージェントは読むだけ**：`allowPush` は false。頼みの文で PR・Issue への書き込み（`gh pr comment`・`gh pr review`）も禁じている。守りのフック（`src/safety.ts`）も `allowGhWrite: false` で `gh pr comment`・`gh pr review` などを断る（頼みの文と二重に止める）。コメントの印はコードだけが付ける
+- **エージェントは読むだけ**：`allowPush` は false。頼みの文で PR・Issue への書き込み（`gh pr comment`・`gh pr review`）も禁じている。守りのフック（`src/safety.ts`）も `allowGhWrite: false` では読むだけの gh の許可リストしか通さない（頼みの文と二重に止める。下の「守り・止まるとき」）。コメントの印はコードだけが付ける
 - 費用の目安（**推測**。まだ本物のキーで回していない）：1件 $0.3〜2。差分が大きい PR や、`.github/` を変える PR は上の方。既定の上限は1件 $3・1回 $10。PR が多いときは `--max-usd` で止まり、残りは次の実行で拾う（印の無いものだけ見るので、同じ PR を二重に払わない）
 - 定時に回す例（毎朝 8:00 と夜 20:00。Actions が止まっている間だけ）：
 
@@ -151,7 +151,8 @@ schtasks /Create /SC DAILY /ST 20:00 /TN "sukusuku-api-agent-review-pm" /TR "cmd
 - `git rebase`・`git pull --rebase`・`git reset --hard`（`git reset --hard origin/<いまのブランチ>` だけは許す）
 - `git branch -d/-D`・`git push --delete`・`git worktree remove/prune`・タグや ref の削除、`rm -rf` など（worktree とログの置き場の中は許す。worktree そのもの・`.git` は不可）
 - `gh pr merge`（マージはコードだけ）、`gh pr close`、「マージ」のラベルの付け外し、`gh repo delete/edit`・`gh issue delete`、`gh api` の書き込み（GET と mutation の無い graphql だけ許す）、`gh auth token`・`gh secret`・`gh workflow run`
-- `allowGhWrite` が false の仕事（review・task・merge のぶつかり／CI の見立て）では、`gh pr`・`gh issue` の `comment`・`review`・`create`・`edit`・`close`・`reopen` ほか、`gh label`・`gh release` の書き込みも断る（読む `gh pr view`・`gh pr diff`・`gh issue view`・`gh pr list` は通る）。true なのは issues の流れだけ
+- **`allowGhWrite` の true・false によらず常に断る**：`gh alias`（別名で push を作ると、push を断る守りをすり抜けられる）・`gh extension`、`gh gist` の create・edit・delete・clone、`gh repo` の create・fork・sync・delete・rename・archive・unarchive・edit・set-default・clone、`gh pr update-branch`・`gh pr lock`・`gh pr unlock`、`gh issue develop`・`gh issue lock`・`gh issue unlock`
+- **`allowGhWrite` が false の仕事**（review・task・merge のぶつかり／CI の見立て）では、**許可リスト**にある読むだけの gh しか通さない。リストの外は断る（`gh pr comment`・`gh issue create`・`gh label create`・`gh browse`・知らないサブコマンドも）。通すのは次だけ：`gh pr view|list|diff|checks|status`・`gh issue view|list|status`・`gh repo view`・`gh api` の GET・`gh auth status`・`gh label list`・`gh release view|list`・`gh run view|list`・`gh workflow view|list`・`gh search *`・`gh status`。true なのは issues の流れだけ（`gh pr create`・`gh issue close --comment`・`gh issue comment` などが要る）
 - 秘密を出すもの：`printenv`・`env`・`set`・`export -p`・`$…KEY`・`$…TOKEN`・`process.env` をまるごと・`.env` を読む・`git credential`
 - 持ち主のメインの作業ツリー・`~/.claude`・gh の設定を指すパス、作業用の worktree の外への Edit・Write、worktree とログの置き場・一時フォルダの外への書き込み（リダイレクト・tee・cp・mv）
 - Web・サブエージェント・MCP の道具

@@ -10,7 +10,7 @@ import type { Args } from './args.ts';
 import { BASE_BRANCH, REVIEW_MAX_TURNS, REVIEW_TIMEOUT_MIN, SKIP_LABELS_REVIEW, reviewWorktreeName, worktreeRoot } from './config.ts';
 import { redact, usd, type Budget, type ItemRecord } from './report.ts';
 import { byOldest, type PrInfo, type Skipped } from './select.ts';
-import { addDetachedWorktree, checkoutDetached, commentPr, fetchOrigin, headSha, isCleanWorktree, listOpenPrsWithComments, run } from './shell.ts';
+import { addDetachedWorktree, checkoutDetached, commentPr, fetchOrigin, ghLogin, headSha, isCleanWorktree, listOpenPrsWithComments, run } from './shell.ts';
 
 // ───────────────────────── 印 ─────────────────────────
 
@@ -22,16 +22,30 @@ export function reviewMarker(sha: string): string {
   return `<!-- api-agent-review head=${sha} -->`;
 }
 
-/** コメントの本文から、レビュー済みの先頭の commit（sha）を全部読み取る（40桁の小文字16進だけ） */
-export function reviewedHeads(commentBodies: string[]): Set<string> {
+export interface PrComment {
+  body: string;
+  author?: { login?: string } | null;
+}
+
+/**
+ * コメントから、レビュー済みの先頭の commit（sha）を全部読み取る（40桁の小文字16進だけ）。
+ * 数えるのは、いまの gh のアカウント（me）が書いたコメントの印だけ。だれでも印を書けるので、他人の印は信じない。
+ * me が分からないときは何も数えない（レビューしていないと見る）。GitHub のログインは大文字小文字を区別しない。
+ */
+export function reviewedHeads(comments: PrComment[], me: string | undefined): Set<string> {
   const found = new Set<string>();
-  for (const body of commentBodies) for (const m of (body ?? '').matchAll(MARKER_RE)) found.add(m[1]!);
+  const mine = me?.trim().toLowerCase();
+  if (!mine) return found;
+  for (const c of comments) {
+    if (c.author?.login?.toLowerCase() !== mine) continue;
+    for (const m of (c.body ?? '').matchAll(MARKER_RE)) found.add(m[1]!);
+  }
   return found;
 }
 
 // ───────────────────────── 選び方 ─────────────────────────
 
-export type ReviewPr = PrInfo & { comments?: { body: string }[] };
+export type ReviewPr = PrInfo & { comments?: PrComment[] };
 
 export interface ReviewPlan {
   picked: ReviewPr[];
@@ -39,7 +53,7 @@ export interface ReviewPlan {
 }
 
 /** 開いている PR から、レビューするものを古い順に選ぶ。飛ばしたわけも返す */
-export function planReviews(prs: ReviewPr[], opts: { only?: number; includeDrafts?: boolean; force?: boolean } = {}): ReviewPlan {
+export function planReviews(prs: ReviewPr[], opts: { only?: number; includeDrafts?: boolean; force?: boolean; me?: string } = {}): ReviewPlan {
   const picked: ReviewPr[] = [];
   const skipped: Skipped[] = [];
   const pool = opts.only === undefined ? prs : prs.filter((p) => p.number === opts.only);
@@ -49,7 +63,7 @@ export function planReviews(prs: ReviewPr[], opts: { only?: number; includeDraft
     if (pr.isCrossRepository) skipped.push({ number: pr.number, reason: 'フォークからの PR' });
     else if (label) skipped.push({ number: pr.number, reason: `ラベル ${label}` });
     else if (pr.isDraft && !opts.includeDrafts && opts.only === undefined) skipped.push({ number: pr.number, reason: '下書き（--include-drafts か --pr N で見る）' });
-    else if (!opts.force && reviewedHeads((pr.comments ?? []).map((c) => c.body)).has(pr.headRefOid)) {
+    else if (!opts.force && reviewedHeads(pr.comments ?? [], opts.me).has(pr.headRefOid)) {
       skipped.push({ number: pr.number, reason: `先頭 ${pr.headRefOid.slice(0, 8)} はレビュー済み（--force で見直す）` });
     } else picked.push(pr);
   }
@@ -99,7 +113,9 @@ export async function runReview(args: Args, budget: Budget, ctx: AgentContext): 
   const { log, repoRoot, mainRoot } = ctx;
   if (!args.dryRun) await fetchOrigin(repoRoot);
   const prs = await listOpenPrsWithComments(repoRoot);
-  const plan = planReviews(prs, { only: args.pr, includeDrafts: args.includeDrafts, force: args.force });
+  const me = await ghLogin(repoRoot);
+  if (!me) log.note('いまの gh のアカウントが取れなかったので、レビュー済みの印を信じず、どの PR も「レビューしていない」と見た');
+  const plan = planReviews(prs, { only: args.pr, includeDrafts: args.includeDrafts, force: args.force, me });
   console.log(`\n■ レビュー：開いている PR ${prs.length} 件・選んだ ${plan.picked.length} 件・飛ばした ${plan.skipped.length} 件`);
   for (const s of plan.skipped) log.skipped.push({ kind: 'review', ...s });
   for (const s of plan.skipped) console.log(`  - 飛ばす #${s.number}：${s.reason}`);
@@ -149,11 +165,13 @@ async function reviewOne(pr: ReviewPr, rec: ItemRecord, args: Args, budget: Budg
     rec.outcome = '飛ばした（上限の残りが無い）';
     return;
   }
+  const wf = await changesWorkflows(pr, wt);
+  if (wf.failed) rec.notes.push('.github/ を変えたかの判定に失敗したので、ワークフローの観点を足した');
   const res = await runAgent(
     {
       kind: 'review',
       label: `review-pr${pr.number}`,
-      prompt: reviewPrompt(pr, wt, await changesWorkflows(pr, wt)),
+      prompt: reviewPrompt(pr, wt, wf.workflow),
       cwd: wt,
       maxUsd: cap,
       maxTurns: REVIEW_MAX_TURNS,
@@ -180,7 +198,12 @@ async function reviewOne(pr: ReviewPr, rec: ItemRecord, args: Args, budget: Budg
   rec.outcome = `コメントした（${res.subtype}・${res.turns} 往復・先頭 ${pr.headRefOid.slice(0, 8)}）`;
 }
 
-async function changesWorkflows(pr: ReviewPr, wt: string): Promise<boolean> {
-  const r = await run('git', ['diff', '--name-only', `origin/${pr.baseRefName}...HEAD`], { cwd: wt });
-  return r.code === 0 && touchesWorkflows(r.stdout.split(/\r?\n/).filter(Boolean));
+/** git diff の結果から、ワークフローの観点を足すかを決める。diff が失敗したら、黙って外さず足す（failed を立てる） */
+export function workflowVerdict(diff: { code: number; stdout: string }): { workflow: boolean; failed: boolean } {
+  if (diff.code !== 0) return { workflow: true, failed: true };
+  return { workflow: touchesWorkflows(diff.stdout.split(/\r?\n/).filter(Boolean)), failed: false };
+}
+
+async function changesWorkflows(pr: ReviewPr, wt: string): Promise<{ workflow: boolean; failed: boolean }> {
+  return workflowVerdict(await run('git', ['diff', '--name-only', `origin/${pr.baseRefName}...HEAD`], { cwd: wt }));
 }

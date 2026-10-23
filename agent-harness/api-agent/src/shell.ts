@@ -75,7 +75,14 @@ export const viewIssue = (n: number, cwd: string) =>
 
 /** review 用：開いている PR とコメント（印を探すため） */
 export const listOpenPrsWithComments = (cwd: string) =>
-  ghJson<(PrInfo & { comments: { body: string }[] })[]>(['pr', 'list', '--state', 'open', '--limit', '300', '--json', `${PR_FIELDS},comments`], cwd);
+  ghJson<(PrInfo & { comments: { body: string; author?: { login?: string } | null }[] })[]>(['pr', 'list', '--state', 'open', '--limit', '300', '--json', `${PR_FIELDS},comments`], cwd);
+
+/** いまの gh のアカウントのログイン名（レビュー済みの印の書き手を確かめる）。取れなければ undefined */
+export async function ghLogin(cwd: string): Promise<string | undefined> {
+  const r = await run('gh', ['api', 'user', '--jq', '.login'], { cwd, env: { ...process.env, ...GH_ENV } });
+  const login = r.stdout.trim();
+  return r.code === 0 && login ? login : undefined;
+}
 
 /** 土台のブランチの PR の状態 */
 export async function baseStateOf(branch: string, cwd: string): Promise<BaseState> {

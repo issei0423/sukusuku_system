@@ -1,9 +1,11 @@
 // review の選び方・印・コメントの組み立て（src/review.ts）
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { buildReviewComment, planReviews, reviewedHeads, reviewMarker, reviewPrompt, touchesWorkflows, type ReviewPr } from '../src/review.ts';
+import { buildReviewComment, planReviews, reviewedHeads, reviewMarker, reviewPrompt, touchesWorkflows, workflowVerdict, type ReviewPr } from '../src/review.ts';
 
 const sha = (c: string) => c.repeat(40);
+const ME = 'bot-me';
+const mine = (body: string) => ({ body, author: { login: ME } });
 
 const pr = (number: number, createdAt: string, over: Partial<ReviewPr> = {}): ReviewPr => ({
   number,
@@ -29,15 +31,42 @@ describe('印', () => {
   });
 
   it('読み取り：40桁の小文字16進だけ。複数あれば全部', () => {
-    const got = reviewedHeads([
-      `本文\n${reviewMarker(sha('a'))}`,
-      '<!-- api-agent-review head=abc -->',
-      `<!-- api-agent-review head=${'b'.repeat(41)} -->`,
-      `<!-- api-agent-review head=${'C'.repeat(40)} -->`,
-      `<!--api-agent-review head=${sha('d')}-->`,
-      reviewMarker(sha('e')),
-    ]);
+    const got = reviewedHeads(
+      [
+        `本文\n${reviewMarker(sha('a'))}`,
+        '<!-- api-agent-review head=abc -->',
+        `<!-- api-agent-review head=${'b'.repeat(41)} -->`,
+        `<!-- api-agent-review head=${'C'.repeat(40)} -->`,
+        `<!--api-agent-review head=${sha('d')}-->`,
+        reviewMarker(sha('e')),
+      ].map(mine),
+      ME,
+    );
     assert.deepEqual([...got].sort(), [sha('a'), sha('e')]);
+  });
+});
+
+describe('印の書き手', () => {
+  it('他人の印は数えない。自分の印は数える（ログインは大文字小文字を区別しない）', () => {
+    const comments = [
+      { body: reviewMarker(sha('a')), author: { login: 'someone-else' } },
+      { body: reviewMarker(sha('b')), author: { login: 'Bot-Me' } },
+      { body: reviewMarker(sha('c')), author: null },
+      { body: reviewMarker(sha('d')) },
+    ];
+    assert.deepEqual([...reviewedHeads(comments, ME)], [sha('b')]);
+  });
+
+  it('アカウントが取れないときは、自分の印も信じない', () => {
+    assert.equal(reviewedHeads([mine(reviewMarker(sha('a')))], undefined).size, 0);
+    assert.equal(reviewedHeads([mine(reviewMarker(sha('a')))], '').size, 0);
+  });
+
+  it('planReviews：他人の印だけの PR は見る。自分の印があれば飛ばす。アカウント不明なら見る', () => {
+    const other = pr(1, '2026-10-01T00:00:00Z', { comments: [{ body: reviewMarker(sha('a')), author: { login: 'attacker' } }] });
+    const own = pr(2, '2026-10-02T00:00:00Z', { comments: [mine(reviewMarker(sha('a')))] });
+    assert.deepEqual(planReviews([other, own], { me: ME }).picked.map((p) => p.number), [1]);
+    assert.deepEqual(planReviews([other, own]).picked.map((p) => p.number), [1, 2]);
   });
 });
 
@@ -77,12 +106,12 @@ describe('planReviews', () => {
   });
 
   it('印のある先頭は飛ばす。先頭が進んだら見る。--force なら見直す', () => {
-    const marked = pr(1, '2026-10-01T00:00:00Z', { comments: [{ body: `指摘なし\n${reviewMarker(sha('a'))}` }] });
-    const moved = pr(2, '2026-10-02T00:00:00Z', { headRefOid: sha('b'), comments: [{ body: reviewMarker(sha('a')) }] });
-    const plan = planReviews([marked, moved]);
+    const marked = pr(1, '2026-10-01T00:00:00Z', { comments: [mine(`指摘なし\n${reviewMarker(sha('a'))}`)] });
+    const moved = pr(2, '2026-10-02T00:00:00Z', { headRefOid: sha('b'), comments: [mine(reviewMarker(sha('a')))] });
+    const plan = planReviews([marked, moved], { me: ME });
     assert.deepEqual(plan.picked.map((p) => p.number), [2]);
     assert.match(plan.skipped[0]!.reason, /レビュー済み/);
-    assert.deepEqual(planReviews([marked, moved], { force: true }).picked.map((p) => p.number), [1, 2]);
+    assert.deepEqual(planReviews([marked, moved], { force: true, me: ME }).picked.map((p) => p.number), [1, 2]);
   });
 
   it('コメントの無い PR（comments が undefined）も選ぶ', () => {
@@ -97,7 +126,7 @@ describe('buildReviewComment', () => {
     assert.equal(lines[0], '**判断：マージしてよい**');
     assert.equal(lines.at(-2), 'API の Sonnet 5.5（api-agent）がレビューしました。費用 $0.46・先頭 aaaaaaaa');
     assert.equal(lines.at(-1), reviewMarker(sha('a')));
-    assert.ok(reviewedHeads([body]).has(sha('a')));
+    assert.ok(reviewedHeads([mine(body)], ME).has(sha('a')));
   });
 
   it('redact が効く（キーらしい文字と、環境変数の秘密の値）', () => {
@@ -112,7 +141,7 @@ describe('buildReviewComment', () => {
   it('長すぎる本文は切っても、印は残る', () => {
     const body = buildReviewComment('あ'.repeat(70000), sha('a'), 1, {});
     assert.ok(body.length < 65536);
-    assert.ok(reviewedHeads([body]).has(sha('a')));
+    assert.ok(reviewedHeads([mine(body)], ME).has(sha('a')));
   });
 
   it('sha が40桁でなければ止める', () => {
@@ -130,6 +159,12 @@ describe('頼みの文', () => {
     assert.ok(!plain.includes('self-hosted'));
     assert.ok(!/\{\{/.test(plain));
     assert.ok(reviewPrompt(p, 'C:/wt/agent-review-5', true).includes('self-hosted runner'));
+  });
+
+  it('git diff が失敗したら、ワークフローの観点を足し、失敗を知らせる', () => {
+    assert.deepEqual(workflowVerdict({ code: 128, stdout: '' }), { workflow: true, failed: true });
+    assert.deepEqual(workflowVerdict({ code: 0, stdout: 'server/a.go\n' }), { workflow: false, failed: false });
+    assert.deepEqual(workflowVerdict({ code: 0, stdout: 'web/a.ts\r\n.github/workflows/ci.yml\r\n' }), { workflow: true, failed: false });
   });
 
   it('.github/ を変える PR の見分け', () => {

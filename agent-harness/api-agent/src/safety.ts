@@ -361,33 +361,72 @@ function checkHardReset(args: string[], ctx: SafetyContext): Decision {
 
 // ───────────────────────── gh ─────────────────────────
 
-/** gh の書き込みになるサブコマンド（読むだけの view・list・diff・checks・status などは入れない） */
-const GH_WRITE: Record<string, string[]> = {
-  pr: ['comment', 'review', 'create', 'edit', 'close', 'reopen', 'ready', 'merge'],
-  issue: ['comment', 'create', 'edit', 'close', 'reopen', 'delete', 'transfer', 'pin', 'unpin', 'lock', 'unlock'],
-  label: ['create', 'edit', 'delete', 'clone'],
-  release: ['create', 'edit', 'delete', 'delete-asset', 'upload'],
+/**
+ * 常に断る gh（allowGhWrite が true でも）。別名・拡張は push を断る守りをすり抜けられる（`gh alias set x '!git push …'`）。
+ * 書き換えるもの（repo・gist・PR の更新やロック）は、どの仕事でも要らない。
+ */
+const GH_ALWAYS_DENY: Record<string, { subs: string[] | 'all'; why: string }> = {
+  alias: { subs: 'all', why: '別名で任意のコマンド（git push など）を作れて、守りをすり抜けられる' },
+  extension: { subs: 'all', why: '拡張は任意のコードを動かせて、守りをすり抜けられる' },
+  extensions: { subs: 'all', why: '拡張は任意のコードを動かせて、守りをすり抜けられる' },
+  ext: { subs: 'all', why: '拡張は任意のコードを動かせて、守りをすり抜けられる' },
+  gist: { subs: ['create', 'edit', 'delete', 'clone'], why: 'gist はこの仕事の外へ内容を公開・複製する' },
+  repo: { subs: ['create', 'fork', 'sync', 'delete', 'rename', 'archive', 'unarchive', 'edit', 'set-default', 'clone'], why: 'リポジトリそのものを変える・増やすことはしない' },
+  pr: { subs: ['update-branch', 'lock', 'unlock'], why: '本線との取り込みやロックは持ち主がする（update-branch は PR のブランチへ push する）' },
+  issue: { subs: ['develop', 'lock', 'unlock'], why: 'ブランチの作成やロックは持ち主がする' },
 };
 
-function checkGhWrite(rest: string[]): Decision {
-  // -R owner/repo は、サブコマンドの前後どこにあっても読み飛ばす
+/** allowGhWrite が false のとき通す、読むだけの gh（グループ → サブコマンド。'*' は全部）。ここに無いものは断る */
+const GH_READ_ONLY: Record<string, string[]> = {
+  pr: ['view', 'list', 'diff', 'checks', 'status'],
+  issue: ['view', 'list', 'status'],
+  repo: ['view'],
+  api: ['*'], // GET だけ（checkGhApi が見る）
+  auth: ['status'],
+  label: ['list'],
+  release: ['view', 'list'],
+  run: ['view', 'list'],
+  workflow: ['view', 'list'],
+  search: ['*'],
+  status: ['*'],
+};
+
+/** -R owner/repo やほかのオプションを読み飛ばした、gh の語（グループ・サブコマンド…） */
+function ghWords(rest: string[]): string[] {
   const words: string[] = [];
   for (let k = 0; k < rest.length; k++) {
     if (rest[k] === '-R' || rest[k] === '--repo') k++;
     else if (!rest[k]!.startsWith('-')) words.push(rest[k]!);
   }
+  return words;
+}
+
+function checkGhAlwaysDeny(words: string[]): Decision {
   const [g, s] = words;
-  const writes = g ? GH_WRITE[g] : undefined;
-  if (writes && s && writes.includes(s)) {
-    return deny(`この仕事では GitHub へ書かない（gh ${g} ${s}）。書くのはコードだけ。読むだけの gh pr view・gh pr diff・gh issue view などは使える`);
+  const rule = g ? GH_ALWAYS_DENY[g] : undefined;
+  if (rule && (rule.subs === 'all' || (s !== undefined && rule.subs.includes(s)))) {
+    return deny(`gh ${[g, s].filter(Boolean).join(' ')} は、どの仕事でも使わない（${rule.why}）`);
   }
   return OK;
 }
 
+function checkGhReadOnly(words: string[]): Decision {
+  const [g, s] = words;
+  if (!g) return OK; // gh だけ・gh --version
+  const subs = GH_READ_ONLY[g];
+  if (subs && (subs.includes('*') || (s !== undefined && subs.includes(s)))) return OK;
+  return deny(
+    `この仕事では GitHub へ書かない（gh ${[g, s].filter(Boolean).join(' ')}）。書くのはコードだけ。通すのは読むだけの gh pr view|list|diff|checks|status・gh issue view|list|status・gh repo view・gh api の GET・gh auth status・gh label list・gh release view|list・gh run view|list・gh workflow view|list・gh search・gh status`,
+  );
+}
+
 function checkGh(rest: string[], ctx: SafetyContext): Decision {
+  const words = ghWords(rest);
+  const always = checkGhAlwaysDeny(words);
+  if (!always.ok) return always;
   if (!ctx.allowGhWrite) {
-    const w = checkGhWrite(rest);
-    if (!w.ok) return w;
+    const r = checkGhReadOnly(words);
+    if (!r.ok) return r;
   }
   const g = rest[0];
   const s = rest[1];

@@ -258,6 +258,75 @@ describe('GitHub への書き込み（allowGhWrite）', () => {
   });
 });
 
+describe('gh の常に断るもの・許可リスト', () => {
+  const off = { ...ctx, allowGhWrite: false };
+  const ALWAYS = [
+    'gh alias set pp "!git push origin mockup-go-react"',
+    'gh alias list',
+    'gh extension install o/gh-x',
+    'gh extension exec x',
+    'gh gist create f.txt',
+    'gh gist edit abc',
+    'gh gist delete abc',
+    'gh gist clone abc',
+    'gh repo create x',
+    'gh repo fork o/r',
+    'gh repo sync',
+    'gh repo delete o/r',
+    'gh repo rename y',
+    'gh repo archive o/r',
+    'gh repo unarchive o/r',
+    'gh repo edit --visibility public',
+    'gh repo set-default o/r',
+    'gh repo clone o/r',
+    'gh pr update-branch 12',
+    'gh pr lock 12',
+    'gh pr unlock 12',
+    'gh issue develop 12',
+    'gh issue lock 12',
+    'gh issue unlock 12',
+    'gh -R o/r pr update-branch 12',
+    'gh pr merge 12',
+    'gh workflow run ci.yml',
+    'gh secret set X',
+    'gh auth token',
+    'gh api -X POST repos/o/r/issues -f title=x',
+  ];
+  for (const c of ALWAYS) {
+    for (const [name, k] of [['true', ctx], ['false', off]] as const) {
+      it(`${name} でも断る：${c}`, () => {
+        const d = bash(c, k);
+        assert.equal(d.ok, false);
+        assert.ok(!d.ok && /[぀-ヿ一-鿿]/.test(d.reason), '日本語でわけを書く');
+      });
+    }
+  }
+  const OUTSIDE = ['gh pr comment 12 --body x', 'gh issue create --title t', 'gh pr update-branch 12', 'gh label create x', 'gh foo bar', 'gh browse', 'gh pr checkout 12', 'gh run rerun 1', 'gh release create v1', 'gh pr', 'gh auth login', 'gh auth status --show-token'];
+  for (const c of OUTSIDE) {
+    it(`false の許可リストの外は断る：${c}`, () => {
+      assert.equal(bash(c, off).ok, false);
+    });
+  }
+  const INSIDE = [
+    'gh pr view 12', 'gh pr list', 'gh pr diff 12', 'gh pr checks 12', 'gh pr status',
+    'gh issue view 12', 'gh issue list', 'gh issue status', 'gh repo view', 'gh api repos/o/r/pulls/12',
+    'gh api user --jq .login', 'gh auth status', 'gh label list', 'gh release view v1', 'gh release list',
+    'gh run view 1', 'gh run list', 'gh workflow view ci.yml', 'gh workflow list', 'gh search issues x', 'gh search prs x', 'gh status',
+    'gh -R o/r pr view 12',
+  ];
+  for (const c of INSIDE) {
+    it(`false でも許可リストの中は通る：${c}`, () => {
+      assert.equal(bash(c, off).ok, true);
+    });
+  }
+  const FLOW = ['gh pr create --base mockup-go-react --head agent/issue-12 --title t', 'gh issue close 12 --comment "直っている"', 'gh issue comment 12 --body x'];
+  for (const c of FLOW) {
+    it(`true なら、issues の流れで要るものが通る：${c}`, () => {
+      assert.equal(bash(c).ok, true);
+    });
+  }
+});
+
 describe('push の条件', () => {
   it('マージの流れ（allowPush: false）では push を断る', () => {
     assert.equal(bash('git push -u origin agent/issue-12', { ...ctx, allowPush: false }).ok, false);
