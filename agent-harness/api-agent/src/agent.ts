@@ -121,7 +121,7 @@ export function finalLine(text: string, label: '結果' | '判定'): string | un
 // ───────────────────────── query() ─────────────────────────
 
 export interface AgentTask {
-  kind: 'issue' | 'conflict' | 'ci' | 'task';
+  kind: 'issue' | 'conflict' | 'ci' | 'task' | 'review';
   /** 記録の見出し（issue#12・pr#34-conflict など） */
   label: string;
   prompt: string;
@@ -133,6 +133,8 @@ export interface AgentTask {
   effort: Effort;
   /** エージェントが push してよいか */
   allowPush: boolean;
+  /** エージェントが GitHub へ書いてよいか（issues の流れだけ true。gh pr create・gh issue close --comment をエージェントがする） */
+  allowGhWrite: boolean;
   /** 書いてよいフォルダを足す（task の --allow-dir）。守りのフォルダと重ならないことは呼ぶ側が確かめる */
   extraDirs?: string[];
 }
@@ -169,7 +171,7 @@ export function protectedDirsFor(roots: { mainRoot: string; repoRoot: string }):
   ];
 }
 
-export function safetyContextFor(task: Pick<AgentTask, 'cwd' | 'allowPush' | 'extraDirs'>, ctx: Pick<AgentContext, 'log' | 'mainRoot' | 'repoRoot'>): SafetyContext {
+export function safetyContextFor(task: Pick<AgentTask, 'cwd' | 'allowPush' | 'allowGhWrite' | 'extraDirs'>, ctx: Pick<AgentContext, 'log' | 'mainRoot' | 'repoRoot'>): SafetyContext {
   return {
     platform: process.platform === 'win32' ? 'win32' : 'posix',
     workdir: task.cwd,
@@ -181,6 +183,7 @@ export function safetyContextFor(task: Pick<AgentTask, 'cwd' | 'allowPush' | 'ex
     tmpDir: TMP_DIR,
     protectedBranches: PROTECTED_BRANCHES,
     allowPush: task.allowPush,
+    allowGhWrite: task.allowGhWrite,
   };
 }
 

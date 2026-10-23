@@ -108,6 +108,7 @@ export async function runTask(args: Args, budget: Budget, ctx: AgentContext): Pr
       timeoutMin: t.timeoutMin,
       effort: args.effort,
       allowPush: false,
+      allowGhWrite: false,
       extraDirs: t.allowDirs,
     },
     ctx,

@@ -19,9 +19,31 @@ describe('parseArgs', () => {
       perItemUsd: DEFAULT_PER_ITEM_USD,
       dryRun: false,
       trustGhChecks: false,
+      includeDrafts: false,
+      force: false,
       effort: DEFAULT_EFFORT,
     });
     assert.equal(DEFAULT_EFFORT, 'medium');
+  });
+
+  it('review の既定と、--pr・--include-drafts・--force の組み合わせ', () => {
+    const d = parseArgs(['review']);
+    assert.equal(d.command, 'review');
+    assert.equal(d.pr, undefined);
+    assert.equal(d.includeDrafts, false);
+    assert.equal(d.force, false);
+    assert.equal(d.maxUsd, DEFAULT_MAX_USD);
+    assert.equal(d.perItemUsd, DEFAULT_PER_ITEM_USD);
+    const a = parseArgs(['review', '--pr', '7', '--include-drafts', '--force', '--max-usd', '4', '--per-item-usd=1.5', '--dry-run']);
+    assert.equal(a.pr, 7);
+    assert.equal(a.includeDrafts, true);
+    assert.equal(a.force, true);
+    assert.equal(a.maxUsd, 4);
+    assert.equal(a.perItemUsd, 1.5);
+    assert.equal(a.dryRun, true);
+    const f = parseArgs(['review', '--force']);
+    assert.equal(f.force, true);
+    assert.equal(f.includeDrafts, false);
   });
 
   it('issues のオプション（空白でも = でも）', () => {
@@ -48,6 +70,12 @@ describe('parseArgs', () => {
   });
 
   const bad: [string, string[]][] = [
+    ['review に --issue', ['review', '--issue', '3']],
+    ['review に --trust-gh-checks', ['review', '--trust-gh-checks']],
+    ['issues に --force', ['issues', '--force']],
+    ['all に --force', ['all', '--force']],
+    ['merge に --include-drafts', ['merge', '--include-drafts']],
+    ['--force に値', ['review', '--force=yes']],
     ['知らないコマンド', ['deploy']],
     ['知らないオプション', ['issues', '--force']],
     ['値が無い', ['issues', '--issue']],

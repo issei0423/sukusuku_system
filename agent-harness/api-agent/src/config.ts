@@ -30,6 +30,9 @@ export const MIN_CALL_USD = 0.05;
 export const MAX_TURNS = { issue: 200, conflict: 80, ci: 120 } as const;
 /** 1回の query() の時間の上限（分）【仮置き】 */
 export const QUERY_TIMEOUT_MIN = { issue: 120, conflict: 45, ci: 90 } as const;
+/** review の 1件の往復の上限・時間の上限（分）【仮置き】 */
+export const REVIEW_MAX_TURNS = 80;
+export const REVIEW_TIMEOUT_MIN = 30;
 /** task コマンドの既定：往復の上限・時間の上限（分）【仮置き】 */
 export const TASK_MAX_TURNS = 200;
 export const TASK_TIMEOUT_MIN = 60;
@@ -41,6 +44,8 @@ export const MAINLINE_RETRIES = 2;
 /** 飛ばすラベル */
 export const SKIP_LABELS_ISSUE = ['agent-skip', 'tracking'];
 export const SKIP_LABELS_PR = ['agent-skip', 'do-not-merge'];
+/** review で飛ばすラベル */
+export const SKIP_LABELS_REVIEW = ['agent-skip'];
 /** 題にこれがある PR はマージしない */
 export const NO_MERGE_TITLE_MARK = '（マージしない）';
 
@@ -62,6 +67,7 @@ export function worktreeRoot(mainRoot: string): string {
 export const issueBranch = (n: number) => `agent/issue-${n}`;
 export const issueWorktreeName = (n: number) => `agent-issue-${n}`;
 export const prWorktreeName = (n: number) => `agent-pr-${n}`;
+export const reviewWorktreeName = (n: number) => `agent-review-${n}`;
 
 export const HOME_DIR = os.homedir();
 export const TMP_DIR = os.tmpdir();

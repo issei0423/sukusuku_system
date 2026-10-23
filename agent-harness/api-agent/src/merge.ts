@@ -110,7 +110,7 @@ async function handlePr(item: PrPlanItem, rec: ItemRecord, args: Args, budget: B
     const cap = budget.capForCall(itemSpent);
     if (cap === 0) return undefined;
     const res = await runAgent(
-      { kind, label, prompt, cwd: wt, maxUsd: cap, maxTurns: MAX_TURNS[kind], timeoutMin: QUERY_TIMEOUT_MIN[kind], effort: args.effort, allowPush: false },
+      { kind, label, prompt, cwd: wt, maxUsd: cap, maxTurns: MAX_TURNS[kind], timeoutMin: QUERY_TIMEOUT_MIN[kind], effort: args.effort, allowPush: false, allowGhWrite: false },
       ctx,
     );
     budget.add(res.costUsd);

@@ -130,6 +130,7 @@ describe('task の書いてよいフォルダ（safety）', () => {
     tmpDir: 'C:\\Users\\u\\AppData\\Local\\Temp',
     protectedBranches: PROTECTED_BRANCHES,
     allowPush: false,
+    allowGhWrite: false,
     currentBranch: 'qa/x',
   };
   const write = (file: string, c = ctx) => checkToolUse('Write', { file_path: file }, c).ok;
