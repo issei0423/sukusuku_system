@@ -25,12 +25,12 @@ const user = (account_id: number, role: SessionUser['role'], extra: Partial<Sess
 // デモデータの人物（mockDb.ts。server/seed.sql と同じ）
 const admin = user(1, '1', { staff_id: 'S001' });
 const teacher = user(3, '2', { staff_id: 'S003', class_id: 1, class_name: 'さくら組' });
-const taroGuardian = user(6, '3', { guardian_id: 'G001' }); // 野原 太郎（C001）の保護者。個人チャットは 6
-const misakiGuardian = user(9, '3', { guardian_id: 'G004' }); // 宮城 美咲（C004）の保護者
+const taroGuardian = user(6, '3', { guardian_id: 'G001' }); // 西田 太郎（C001）の保護者。個人チャットは 6
+const misakiGuardian = user(9, '3', { guardian_id: 'G004' }); // 村田 美咲（C004）の保護者
 
 // server/api_guardian_add_test.go と同じコード
-const codeHanako = 'QRST-9012-UVWX'; // C002（上園 花子。さくら組・個人チャット 7。上園さんが連絡順 1 で紐づく）の未使用のコード
-const codeTaro = 'ABCD-1234-EFGH'; // C001（野原 太郎）の未使用のコード
+const codeHanako = 'QRST-9012-UVWX'; // C002（遠藤 花子。さくら組・個人チャット 7。遠藤さんが連絡順 1 で紐づく）の未使用のコード
+const codeTaro = 'ABCD-1234-EFGH'; // C001（西田 太郎）の未使用のコード
 const codeUsed = 'IJKL-5678-MNOP';
 const codeRevoked = 'YZAB-3456-CDEF';
 
@@ -76,7 +76,7 @@ describe('招待コードの確認：ログインしている保護者にだけ�
     expect(await api.verifyInvitationCode(codeHanako, teacher)).toEqual({ ok: true });
     // 大文字小文字を区別せず、ハイフンは省いてよい（新規登録と同じ形）
     expect(await api.verifyInvitationCode('qrst9012uvwx', taroGuardian))
-      .toEqual({ ok: true, child_name: '上園 花子', relationship: '父' });
+      .toEqual({ ok: true, child_name: '遠藤 花子', relationship: '父' });
     // 確かめるだけでは、コードを使わない
     expect(codeUse(codeHanako)).toBe('1/');
   });
@@ -86,7 +86,7 @@ describe('招待コードの確認：ログインしている保護者にだけ�
     Object.assign(link('G001', 'C001')!, { link_status: '3', grace_ends_on: '2099-03-31' });
     await expect(api.verifyInvitationCode(codeTaro, taroGuardian)).rejects.toThrow(MSG.childAlreadyAdded);
     Object.assign(link('G001', 'C001')!, { link_status: '2', grace_ends_on: null, ended_at: '2026-08-20T10:00:00' });
-    expect((await api.verifyInvitationCode(codeTaro, taroGuardian)).child_name).toBe('野原 太郎');
+    expect((await api.verifyInvitationCode(codeTaro, taroGuardian)).child_name).toBe('西田 太郎');
   });
 });
 
@@ -130,7 +130,7 @@ describe('お子さまの追加：成功', () => {
     const sakuraBefore = { ...member(3, 6)! };
     expect(await api.addChild(taroGuardian, 'qrst-9012-uvwx', ' 母 ')).toEqual({ ok: true, child_id: 'C002' });
 
-    // 続柄は前後の空白を落とす。連絡順は、上園さん（1）の次。AI の下書きは断っていない
+    // 続柄は前後の空白を落とす。連絡順は、遠藤さん（1）の次。AI の下書きは断っていない
     expect(link('G001', 'C002')).toMatchObject({ link_status: '1', relationship: '母', contact_order: 2, ai_opt_out: false, linked_at: now(), ended_at: null });
     expect(codeUse(codeHanako)).toBe('2/6');
     expect(codeOf(codeHanako).used_at).toBe(now());

@@ -12,17 +12,17 @@ import type { SessionUser } from '../src/api/types';
 import { today } from '../src/api/util';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const admin2: SessionUser = {
-  account_id: 2, email: 'uezono@hoiku.example.jp', role: '1', display_name: '上園 謙心',
+  account_id: 2, email: 'endo@hoiku.example.jp', role: '1', display_name: '遠藤 直人',
   staff_id: 'S002', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
@@ -52,7 +52,7 @@ describe('日誌の承認', () => {
 
 describe('編集ロック', () => {
   it('ログアウトすると、保持している編集ロックが外れる', async () => {
-    await api.login('nohara@hoiku.example.jp', 'pass1234', 'staff');
+    await api.login('nishida@hoiku.example.jp', 'pass1234', 'staff');
     await api.acquireLock(admin, 1);
     expect(db.diaryLocks.some((l) => l.diary_id === 1 && l.locked_staff_id === 'S001')).toBe(true);
 
@@ -70,13 +70,13 @@ describe('編集ロック', () => {
     const row = logs.rows.find((l) => l.target_table === 't_diary_lock' && l.target_id === 3);
     expect(row?.after_value).toBe('管理者が強制解除');
     expect(row?.target_label).toContain('ヒヤリハット');
-    expect(row?.target_label).toContain('高梨 健');
+    expect(row?.target_label).toContain('鈴木 健');
   });
 });
 
 describe('職員アカウント', () => {
   it('発行後に、氏名・ロール・担当クラスを変えられる', async () => {
-    await api.updateStaffAccount(admin, 'S005', { staff_name: '金城 宗一郎', role: '2', class_id: 3 });
+    await api.updateStaffAccount(admin, 'S005', { staff_name: '久保田 和也', role: '2', class_id: 3 });
     const rows = await api.staffAccounts(admin);
     expect(rows.find((r) => r.staff.staff_id === 'S005')?.className).toBe('もも組');
 
@@ -85,19 +85,19 @@ describe('職員アカウント', () => {
       && db.classes.some((c) => c.class_id === cs.class_id && c.fiscal_year === db.FISCAL_YEAR));
     expect(current).toEqual([{ class_id: 3, staff_id: 'S005' }]);
 
-    await api.updateStaffAccount(admin, 'S005', { staff_name: '金城 宗一郎', role: '2', class_id: 2 });
+    await api.updateStaffAccount(admin, 'S005', { staff_name: '久保田 和也', role: '2', class_id: 2 });
   });
 
   it('過年度の担当クラスの割り当ては残す', async () => {
     // S003 は 2025 年度のさくら組（class_id 11）の担任だった
-    await api.updateStaffAccount(admin, 'S003', { staff_name: '高梨 倫太朗', role: '2', class_id: 1 });
+    await api.updateStaffAccount(admin, 'S003', { staff_name: '鈴木 浩之', role: '2', class_id: 1 });
     expect(db.classStaff.some((cs) => cs.staff_id === 'S003' && cs.class_id === 11)).toBe(true);
   });
 
   it('自分のロールは変えられない。一般の職員は変更できない', async () => {
-    await expect(api.updateStaffAccount(admin, 'S001', { staff_name: '野原 一誠', role: '2', class_id: null }))
+    await expect(api.updateStaffAccount(admin, 'S001', { staff_name: '西田 拓也', role: '2', class_id: null }))
       .rejects.toThrow('自分のロールは変更できません');
-    await expect(api.updateStaffAccount(teacher, 'S005', { staff_name: '金城 宗一郎', role: '1', class_id: 2 }))
+    await expect(api.updateStaffAccount(teacher, 'S005', { staff_name: '久保田 和也', role: '1', class_id: 2 }))
       .rejects.toThrow('管理者のみ');
   });
 
@@ -105,14 +105,14 @@ describe('職員アカウント', () => {
     await api.setAccountStatus(admin, 5, '2');
     const logs = await api.operationLogs(admin, {});
     const row = logs.rows.find((l) => l.target_table === 'm_account' && l.target_id === 5 && l.after_value === '停止');
-    expect(row?.target_label).toBe('金城 宗一郎');
+    expect(row?.target_label).toBe('久保田 和也');
     await api.setAccountStatus(admin, 5, '1');
   });
 });
 
 describe('保護者アカウントと紐づけ', () => {
   it('有効な紐づけが無い保護者アカウントは再開できない', async () => {
-    // 高梨 倫太朗（アカウント8・G003）は、紐づけが終了して停止している
+    // 鈴木 浩之（アカウント8・G003）は、紐づけが終了して停止している
     await expect(api.setAccountStatus(admin, 8, '1')).rejects.toThrow('有効な紐づけが無いため再開できません');
     expect(db.accounts.find((a) => a.account_id === 8)?.status).toBe('2');
   });
@@ -127,15 +127,15 @@ describe('保護者アカウントと紐づけ', () => {
     // 操作ログから、どの保護者の紐づけかが分かる
     const logs = await api.operationLogs(admin, {});
     const row = logs.rows.find((l) => l.target_table === 't_guardian_child' && l.before_value === '終了');
-    expect(row?.target_label).toBe('高梨 倫太朗');
-    expect(row?.child_name).toBe('高梨 健');
+    expect(row?.target_label).toBe('鈴木 浩之');
+    expect(row?.child_name).toBe('鈴木 健');
   });
 
   it('紐づけを解除した操作ログにも、保護者の名前が残る', async () => {
     await api.endGuardianLink(admin, 'G003', 'C003');
     const logs = await api.operationLogs(admin, {});
     const row = logs.rows.find((l) => l.target_table === 't_guardian_child' && l.before_value === '有効');
-    expect(row?.target_label).toBe('高梨 倫太朗');
+    expect(row?.target_label).toBe('鈴木 浩之');
     expect(db.accounts.find((a) => a.account_id === 8)?.status).toBe('2');
   });
 });

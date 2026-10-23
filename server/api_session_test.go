@@ -72,7 +72,7 @@ func TestSessionStatusReturnsServerDeadline(t *testing.T) {
 	a, h := newTestApp(t)
 	start := idleTestStart()
 	clock := useFakeClock(a, start)
-	c := login(t, h, "kinjo@hoiku.example.jp", "pass1234", "staff")
+	c := login(t, h, "kubota@hoiku.example.jp", "pass1234", "staff")
 
 	// 期限はログイン（最初の操作）から30分。サーバが時刻と残りの秒数を返す
 	expectDeadline(t, getSessionStatus(t, h, c), start.Add(30*time.Minute), 1800)
@@ -92,7 +92,7 @@ func TestSessionStatusFollowsOperationsInOtherTabs(t *testing.T) {
 	a, h := newTestApp(t)
 	start := idleTestStart()
 	clock := useFakeClock(a, start)
-	c := login(t, h, "kinjo@hoiku.example.jp", "pass1234", "staff")
+	c := login(t, h, "kubota@hoiku.example.jp", "pass1234", "staff")
 
 	// 予告を出す少し前に、同じブラウザのほかのタブ（同じ Cookie）で操作した。尋ね直せば延びた期限が返る
 	clock.advance(27 * time.Minute)
@@ -109,7 +109,7 @@ func TestExtendSession(t *testing.T) {
 	a, h := newTestApp(t)
 	start := idleTestStart()
 	clock := useFakeClock(a, start)
-	c := login(t, h, "kinjo@hoiku.example.jp", "pass1234", "staff")
+	c := login(t, h, "kubota@hoiku.example.jp", "pass1234", "staff")
 
 	// 予告が出ている（残り2分）ところで「続ける」を押した。押した時刻から30分に延び、延びた期限を返す
 	clock.advance(28 * time.Minute)
@@ -133,9 +133,9 @@ func TestSessionStatusDuringNapCheck(t *testing.T) {
 	clock := useFakeClock(a, start)
 	day := start.Format("2006-01-02")
 
-	teacher := login(t, h, "takanashi@hoiku.example.jp", "pass1234", "staff") // S003。さくら組の担任
-	admin := login(t, h, "nohara@hoiku.example.jp", "pass1234", "staff")      // S001。実施を開始していない
-	// 13:05 に高梨がさくら組の午睡チェックを開始した
+	teacher := login(t, h, "suzuki@hoiku.example.jp", "pass1234", "staff") // S003。さくら組の担任
+	admin := login(t, h, "nishida@hoiku.example.jp", "pass1234", "staff")  // S001。実施を開始していない
+	// 13:05 に鈴木がさくら組の午睡チェックを開始した
 	if _, err := a.db.Exec(`INSERT INTO t_nap_session (class_id, session_date, started_staff_id, started_at, is_auto_closed)
 		VALUES (1, ?, 'S003', ?, 0)`, day, day+"T13:05:00"); err != nil {
 		t.Fatal(err)
@@ -160,7 +160,7 @@ func TestGuardianSessionStatusHasNoAutoLogout(t *testing.T) {
 	useFakeClock(a, idleTestStart())
 
 	// 保護者には自動ログアウトが無いので、予告の期限も返さない（画面も保護者には予告を置かない）
-	c := loginRemember(t, h, "nohara.i@example.jp", "guardian", false)
+	c := loginRemember(t, h, "nishida.t@example.jp", "guardian", false)
 	st := getSessionStatus(t, h, c)
 	if st.AutoLogout || st.NapExempt || st.ExpiresAt != nil || st.RemainingSeconds != nil {
 		t.Fatalf("保護者の期限 = %+v, want 自動ログアウトなし", st)

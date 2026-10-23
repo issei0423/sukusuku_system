@@ -32,7 +32,7 @@ var contactAccessCases = []struct {
 	{"ひまわり組の担任はさくら組の園児を読めない", accOtherTeacher, "C001", false, false},
 	{"保護者は有効な紐づけの自児", accGuardian, "C001", true, true},
 	{"保護者はほかの家庭の園児を読めない", accGuardian, "C004", false, false},
-	{"ほかの家庭の保護者は野原 太郎を読めない", accOtherGuard, "C001", false, false},
+	{"ほかの家庭の保護者は西田 太郎を読めない", accOtherGuard, "C001", false, false},
 	{"紐づけを終えた保護者は読めない", 8, "C003", false, false},
 }
 
@@ -206,7 +206,7 @@ func TestContactHomeFlow(t *testing.T) {
 		}
 		var confirmed homeResp
 		decode(t, call(t, h, teacher, "POST", confirm, `{"updated_at":"`+home.UpdatedAt+`"}`), &confirmed)
-		if confirmed.ConfirmedAt == nil || confirmed.StaffName != "高梨 倫太朗" || confirmed.GuardianRel != "父" {
+		if confirmed.ConfirmedAt == nil || confirmed.StaffName != "鈴木 浩之" || confirmed.GuardianRel != "父" {
 			t.Fatalf("確認しました: %+v", confirmed)
 		}
 		// 二重の確認は書き換えない（200 で今の行）
@@ -218,7 +218,7 @@ func TestContactHomeFlow(t *testing.T) {
 		home = confirmed
 		// 保護者の画面には「園が確認しました（時刻）」。職員の名前は出さない
 		pb := call(t, h, guardian, "GET", "/api/contact/children/C001", "").Body.String()
-		if !strings.Contains(pb, `"confirmed_at":"`+*confirmed.ConfirmedAt+`"`) || strings.Contains(pb, "高梨") {
+		if !strings.Contains(pb, `"confirmed_at":"`+*confirmed.ConfirmedAt+`"`) || strings.Contains(pb, "鈴木") {
 			t.Errorf("保護者のページ: %s", pb)
 		}
 		if u, r := summary(); u != u0 || r != r0 {
@@ -375,8 +375,8 @@ func TestNotifyContactAudience(t *testing.T) {
 		"管理者":       listen(a, accAdmin),
 		"さくら組の担任":   listen(a, accTeacher),
 		"ひまわり組の担任":  listen(a, accOtherTeacher),
-		"野原 太郎の保護者": listen(a, accGuardian),
-		"宮城 美咲の保護者": listen(a, accOtherGuard),
+		"西田 太郎の保護者": listen(a, accGuardian),
+		"村田 美咲の保護者": listen(a, accOtherGuard),
 	}
 	drainAll(clients)
 	taro := liveEvent{Type: evContact, ChildID: childTaro}
@@ -387,21 +387,21 @@ func TestNotifyContactAudience(t *testing.T) {
 	expect(t, "ねた（職員には nap と contact、保護者には contact だけ。ほかの家庭には届かない）", clients, map[string][]liveEvent{
 		"管理者":       {napTaro, taro},
 		"さくら組の担任":   {napTaro, taro},
-		"野原 太郎の保護者": {taro},
+		"西田 太郎の保護者": {taro},
 	})
 
 	call(t, h, teacher, "POST", "/api/nap/sleeps/"+itoa(slept.ID)+"/wake", "")
 	expect(t, "おきた", clients, map[string][]liveEvent{
 		"管理者":       {napTaro, taro},
 		"さくら組の担任":   {napTaro, taro},
-		"野原 太郎の保護者": {taro},
+		"西田 太郎の保護者": {taro},
 	})
 
 	var home homeResp
 	decode(t, call(t, h, guardian, "PUT", "/api/contact/children/C001/home", `{"breakfast":"1","updated_at":null}`), &home)
-	expect(t, "家庭から", clients, to(who("管理者", "さくら組の担任", "野原 太郎の保護者"), taro))
+	expect(t, "家庭から", clients, to(who("管理者", "さくら組の担任", "西田 太郎の保護者"), taro))
 	call(t, h, teacher, "POST", "/api/contact/home/"+itoa(home.ID)+"/confirm", `{"updated_at":"`+home.UpdatedAt+`"}`)
-	expect(t, "確認しました", clients, to(who("管理者", "さくら組の担任", "野原 太郎の保護者"), taro))
+	expect(t, "確認しました", clients, to(who("管理者", "さくら組の担任", "西田 太郎の保護者"), taro))
 
 	// 保護者に午睡を出さない設定の園では、「ねた」の知らせも保護者に送らない（知らせが届くこと自体が情報になる）
 	a.db.Exec(`UPDATE m_setting SET setting_value = 'meal,toilet,temperature,comment,photo,class' WHERE setting_key = 'contact.show_items'`)
@@ -462,7 +462,7 @@ func TestNapExclusion(t *testing.T) {
 	base := "/api/nap/session/" + itoa(s.NapSessionID)
 	clients := map[string]*liveClient{
 		"さくら組の担任":   listen(a, accTeacher),
-		"野原 太郎の保護者": listen(a, accGuardian),
+		"西田 太郎の保護者": listen(a, accGuardian),
 	}
 	drainAll(clients)
 

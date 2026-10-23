@@ -14,17 +14,17 @@ import type { SessionUser } from '../src/api/types';
 import { addDays, now, today } from '../src/api/util';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const admin2: SessionUser = {
-  account_id: 2, email: 'uezono@hoiku.example.jp', role: '1', display_name: '上園 謙心',
+  account_id: 2, email: 'endo@hoiku.example.jp', role: '1', display_name: '遠藤 直人',
   staff_id: 'S002', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
@@ -45,7 +45,7 @@ const statusOf = (id: number) => db.diaries.find((d) => d.diary_id === id)?.stat
 
 describe('自分が申請した日誌は承認できない（基本設計書「日誌の作成から保護者への共有」(4-5)。#174 の 1）', () => {
   it('担任の下書きを書き直して申請した管理者は承認できず、日誌を開くと申請した職員が分かる', async () => {
-    // 日誌 1 は高梨（S003）が書いた野原 太郎（C001）の下書き。園長が本文を書き直して申請する
+    // 日誌 1 は鈴木（S003）が書いた西田 太郎（C001）の下書き。園長が本文を書き直して申請する
     await api.saveDiary(admin, personal({
       diary_id: 1, child_id: 'C001', body: '園長が書き直した本文です。', lock_token: await lockOf(admin, 1),
     }), '2');
@@ -60,17 +60,17 @@ describe('自分が申請した日誌は承認できない（基本設計書「�
   it('差し戻され、作成者が直して申請し直したものは、最後に申請した人で判定する', async () => {
     await api.returnDiary(admin2, 1, '作成者が直してください');
     await api.saveDiary(teacher, personal({
-      diary_id: 1, child_id: 'C001', body: '高梨が直した本文です。', lock_token: await lockOf(teacher, 1),
+      diary_id: 1, child_id: 'C001', body: '鈴木が直した本文です。', lock_token: await lockOf(teacher, 1),
     }), '2');
     expect((await api.getDiary(admin, 1)).applied_staff_id).toBe('S003');
     await expect(api.approveDiary(admin, 1)).resolves.toMatchObject({ status: '3' });
   });
 
   it('ほかの管理者が書き直して申請したものは、別の管理者が承認できる', async () => {
-    // 日誌 7 は宮城（S004）が書いた申請中の個人日誌。差し戻して、上園が書き直して申請する
+    // 日誌 7 は村田（S004）が書いた申請中の個人日誌。差し戻して、遠藤が書き直して申請する
     await api.returnDiary(admin, 7, '書き直します');
     await api.saveDiary(admin2, personal({
-      diary_id: 7, body: '上園が書き直した本文です。', lock_token: await lockOf(admin2, 7),
+      diary_id: 7, body: '遠藤が書き直した本文です。', lock_token: await lockOf(admin2, 7),
     }), '2');
     await expect(api.approveDiary(admin2, 7)).rejects.toThrow('自分が申請した日誌は承認できません');
     await expect(api.approveDiary(admin, 7)).resolves.toMatchObject({ status: '3' });
@@ -180,7 +180,7 @@ describe('ダッシュボードの「差し戻された日誌」と日誌一覧�
     const ids = mine.rows.map((d) => d.diary_id);
     expect(mine.total).toBe(returned);
     expect(ids).toEqual(expect.arrayContaining([old.diary_id, legacyId]));
-    expect(ids).not.toContain(3); // 宮城のヒヤリハット（差し戻し）は自分が書いたものではない
+    expect(ids).not.toContain(3); // 村田のヒヤリハット（差し戻し）は自分が書いたものではない
 
     // クラスで絞っても、クラスの空いた個人日誌は園児の在籍クラスで拾う
     const sakura = (await api.listDiaries(teacher, { status: '4', mine: true, classId: 1 })).rows.map((d) => d.diary_id);

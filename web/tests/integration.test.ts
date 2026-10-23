@@ -62,13 +62,13 @@ run('Go サーバとの結合', () => {
   };
 
   it('誤った系統の入口ではログインできない', async () => {
-    await expect(http.api.login('nohara.i@example.jp', 'pass1234', 'staff'))
+    await expect(http.api.login('nishida.t@example.jp', 'pass1234', 'staff'))
       .rejects.toThrow(/wrong_entrance/);
   });
 
   it('職員でログインすると所属クラスが付く', async () => {
-    const u = await http.api.login('takanashi@hoiku.example.jp', 'pass1234', 'staff');
-    expect(u.display_name).toBe('高梨 倫太朗');
+    const u = await http.api.login('suzuki@hoiku.example.jp', 'pass1234', 'staff');
+    expect(u.display_name).toBe('鈴木 浩之');
     expect(u.class_name).toBe('さくら組');
     expect(u.role).toBe('2');
   });
@@ -77,9 +77,9 @@ run('Go サーバとの結合', () => {
     // 一般（さくら組担任）に見えるのは自クラスの12名
     expect(http.visibleChildren(dummy)).toHaveLength(12);
     expect(http.selectableClasses(dummy).map((c) => c.class_name)).toEqual(['さくら組']);
-    expect(http.childName('C001')).toBe('野原 太郎');
+    expect(http.childName('C001')).toBe('西田 太郎');
     expect(http.className(1)).toBe('さくら組');
-    expect(http.staffName('S003')).toBe('高梨 倫太朗');
+    expect(http.staffName('S003')).toBe('鈴木 浩之');
     expect(http.settingNumber('ui.diary_lock_minutes', 0)).toBe(15);
   });
 
@@ -105,11 +105,11 @@ run('Go サーバとの結合', () => {
 
   it('編集ロックを保持している日誌は、保持者の氏名が返る', async () => {
     const r = await http.api.acquireLock(dummy, 3);
-    expect(r).toHaveProperty('heldBy', '宮城 蓮');
+    expect(r).toHaveProperty('heldBy', '村田 真一');
   });
 
   it('編集ロックは本人の識別子でだけ保存・操作の知らせ・解除ができ、状態に識別子は返らない（GitHub Issue #166）', async () => {
-    // 日誌 1 は高梨（さくら組）の下書き。いまは高梨でログインしている
+    // 日誌 1 は鈴木（さくら組）の下書き。いまは鈴木でログインしている
     const r = await http.api.acquireLock(dummy, 1);
     if (!('token' in r)) throw new Error(`ロックを取れませんでした（${r.heldBy}さんが編集中）`);
     expect(await http.api.lockOf(dummy, 1)).not.toHaveProperty('lock_token');
@@ -127,13 +127,13 @@ run('Go サーバとの結合', () => {
 
     // 識別子を添えない解除では外れず、本人の識別子で外れる
     await http.api.releaseLock(dummy, 1);
-    expect(await http.api.lockOf(dummy, 1)).toMatchObject({ staff_name: '高梨 倫太朗' });
+    expect(await http.api.lockOf(dummy, 1)).toMatchObject({ staff_name: '鈴木 浩之' });
     await http.api.releaseLock(dummy, 1, false, r.token);
     expect(await http.api.lockOf(dummy, 1)).toBeNull();
   });
 
   it('日誌の写真は保存のときに日誌へ付き、空の並びで外れる（GitHub Issue #175 の 2）', async () => {
-    // 日誌 1 は高梨（さくら組）の下書きで、写真は付いていない。終わったら元の 0 枚へ戻す
+    // 日誌 1 は鈴木（さくら組）の下書きで、写真は付いていない。終わったら元の 0 枚へ戻す
     const r = await http.api.acquireLock(dummy, 1);
     if (!('token' in r)) throw new Error(`ロックを取れませんでした（${r.heldBy}さんが編集中）`);
     const d = await http.api.getDiary(dummy, 1);
@@ -290,7 +290,7 @@ run('Go サーバとの結合', () => {
     const me = await http.api.bootstrap();
     const zen = (await http.api.rooms(dummy)).find((r) => r.room.room_type === '1')!;
     const members = await http.api.members(zen.room.chat_room_id);
-    // デモの アカウント 8（高梨 倫太朗・保護者）は紐づけを終えて停止している
+    // デモの アカウント 8（鈴木 浩之・保護者）は紐づけを終えて停止している
     expect(members.map((m) => m.account_id)).not.toContain(8);
     expect(zen.guardianCount).toBe(members.filter((m) => m.role === '3').length);
 
@@ -308,7 +308,7 @@ run('Go サーバとの結合', () => {
     // 使用済みのコードをハイフンなし・小文字で入れる。「確認できません」ではなく使用済みの文が返る（基本設計書「メッセージ一覧」(4-12)）
     await expect(http.api.verifyInvitationCode('ijkl5678mnop')).rejects.toThrow(MSG.invitationUsed);
 
-    await switchTo('nohara@hoiku.example.jp', 'pass1234', 'staff');
+    await switchTo('nishida@hoiku.example.jp', 'pass1234', 'staff');
     const code = await http.api.issueOneInvitationCode(dummy, 'C001', 30);
     const adminCookie = cookie;
     try {
@@ -325,7 +325,7 @@ run('Go サーバとの結合', () => {
       // 規約に同意していない登録・大文字違いの既存のメールアドレスは受け付けない（GitHub Issue #170）
       await expect(http.api.signUpGuardian({ ...base, email: 'noagree@example.jp', terms_agreed: false }))
         .rejects.toThrow(/利用規約/);
-      await expect(http.api.signUpGuardian({ ...base, email: 'NOHARA.I@EXAMPLE.JP' })).rejects.toThrow(/すでに登録/);
+      await expect(http.api.signUpGuardian({ ...base, email: 'NISHIDA.T@EXAMPLE.JP' })).rejects.toThrow(/すでに登録/);
     } finally {
       cookie = adminCookie;
       const row = (await http.api.invitationCodes(dummy)).find((c) => c.code === code)!;
@@ -334,7 +334,7 @@ run('Go サーバとの結合', () => {
   });
 
   it('配布物を掲載すると保護者の一覧に出て、取り下げると消える', async () => {
-    await switchTo('nohara@hoiku.example.jp', 'pass1234', 'staff');
+    await switchTo('nishida@hoiku.example.jp', 'pass1234', 'staff');
     const month = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 7);
     const before = await http.api.handouts(dummy);
     expect(before.length).toBeGreaterThan(0);
@@ -348,14 +348,14 @@ run('Go サーバとの結合', () => {
         file_name: 'a.docx', file_type: 'application/msword', file_size: 100,
       })).rejects.toThrow(/PDF・JPEG・PNG/);
 
-      await switchTo('nohara.i@example.jp', 'pass1234', 'guardian');
+      await switchTo('nishida.t@example.jp', 'pass1234', 'guardian');
       expect((await http.api.handouts(dummy)).some((h) => h.handout_id === handout_id)).toBe(true);
       await expect(http.api.postHandout(dummy, {
         handout_type: '3', title: '保護者からは掲載できない', target_month: month, class_id: null,
         file_name: 'x.pdf', file_type: 'application/pdf', file_size: 100,
       })).rejects.toThrow(/管理者のみ/);
     } finally {
-      await switchTo('nohara@hoiku.example.jp', 'pass1234', 'staff');
+      await switchTo('nishida@hoiku.example.jp', 'pass1234', 'staff');
       await http.api.withdrawHandout(dummy, handout_id);
     }
     expect((await http.api.handouts(dummy)).some((h) => h.handout_id === handout_id)).toBe(false);
@@ -366,13 +366,13 @@ run('Go サーバとの結合', () => {
    * 自児の承認済みの日誌（日誌 5）も、本物のサーバが 403 で断る。職員には作成者・承認者の氏名が載る
    */
   it('保護者には日誌を返さず、職員には作成者・承認者の氏名が載る（職員IDではない）', async () => {
-    await switchTo('nohara.i@example.jp', 'pass1234', 'guardian');
+    await switchTo('nishida.t@example.jp', 'pass1234', 'guardian');
     const home = await http.api.guardianHome(dummy);
     expect(home.every((h) => !('sharedDiaries' in h))).toBe(true);
     await expect(http.api.getDiary(dummy, 5)).rejects.toThrow('この日誌を参照する権限がありません');
     await expect(http.api.listDiaries(dummy, {})).rejects.toThrow('この日誌を参照する権限がありません');
 
-    await switchTo('nohara@hoiku.example.jp', 'pass1234', 'staff');
+    await switchTo('nishida@hoiku.example.jp', 'pass1234', 'staff');
     const d = await http.api.getDiary(dummy, 5);
     expect(d.staff_name).toBeTruthy();
     expect(d.staff_name).not.toMatch(/^S\d+$/);
@@ -388,7 +388,7 @@ run('Go サーバとの結合', () => {
    * （基本設計書「画面基本構成」(3-5)）。
    */
   it('ログアウトするとサーバ側のセッションも捨てられる', async () => {
-    await switchTo('nohara@hoiku.example.jp', 'pass1234', 'staff');
+    await switchTo('nishida@hoiku.example.jp', 'pass1234', 'staff');
     expect(await http.api.bootstrap()).not.toBeNull();
 
     await http.api.logout();
@@ -403,14 +403,14 @@ run('Go サーバとの結合', () => {
    * 一時パスワード中は、手続き以外の API を理由つきで拒否する（GitHub Issue #153）。
    * 参照表（/api/reference）も拒否されるため、ログインと開き直しが失敗しないことも確かめる。
    * パスワードは変えない。デモアカウントの一時パスワードを残すため。
-   * ログアウトもしない。宮城 蓮が持っているデモの編集ロック（日誌2）が、ログアウトで外れるため
+   * ログアウトもしない。村田 真一が持っているデモの編集ロック（日誌2）が、ログアウトで外れるため
    */
   it('一時パスワード中でもログインでき、手続き以外の API は理由つきで拒否される', async () => {
     const procedure = await import('../src/api/procedure');
     const seen: string[] = [];
     const stop = procedure.onProcedureRequired((kind) => seen.push(kind));
     try {
-      const u = await switchTo('miyagi@hoiku.example.jp', 'temp0901', 'staff');
+      const u = await switchTo('murata@hoiku.example.jp', 'temp0901', 'staff');
       expect(u.is_temp_password).toBe(true);
       // 手続きを終えるまで、園児名などの参照表は持たない
       expect(http.visibleChildren(dummy)).toHaveLength(0);
@@ -426,11 +426,11 @@ run('Go サーバとの結合', () => {
 
   /*
    * 自動ログアウトの予告と「続ける」（GitHub Issue #210）。期限はサーバが決めて返す。
-   * 尋ねるだけでは延びず、「続ける」で延びる（server/api_session.go）。野原（S001）は午睡チェックを開始しないので、
+   * 尋ねるだけでは延びず、「続ける」で延びる（server/api_session.go）。西田（S001）は午睡チェックを開始しないので、
    * 午睡の時間帯に回しても期限が返る
    */
   it('ログインの期限はサーバが返し、尋ねても延びず、「続ける」で延びる（GitHub Issue #210）', async () => {
-    await switchTo('nohara@hoiku.example.jp', 'pass1234', 'staff');
+    await switchTo('nishida@hoiku.example.jp', 'pass1234', 'staff');
     try {
       const first = await http.api.sessionStatus(dummy);
       expect(first).toMatchObject({ auto_logout: true, nap_exempt: false });
@@ -451,7 +451,7 @@ run('Go サーバとの結合', () => {
   });
 
   it('担当外の日誌の添付・編集ロック、園児の所属クラスは拒否される（GitHub Issue #153）', async () => {
-    await switchTo('kinjo@hoiku.example.jp', 'pass1234', 'staff');
+    await switchTo('kubota@hoiku.example.jp', 'pass1234', 'staff');
     try {
       await expect(http.api.attachmentsOf(dummy, 4)).rejects.toThrow(/権限がありません/);
       await expect(http.api.acquireLock(dummy, 1)).rejects.toThrow(/権限がありません/);
@@ -464,14 +464,14 @@ run('Go サーバとの結合', () => {
   });
 
   it('同じ氏名・生年月日の園児を引ける。CSV 一括登録の取込内容でも確認を促す（GitHub Issue #144 の 2）', async () => {
-    await switchTo('nohara@hoiku.example.jp', 'pass1234', 'staff');
+    await switchTo('nishida@hoiku.example.jp', 'pass1234', 'staff');
     try {
       const c001 = await http.api.getChild(dummy, 'C001');
-      expect((await http.api.sameNameBirthChildren(dummy, '野原　太郎', c001.birth_date)).map((c) => c.child_id))
+      expect((await http.api.sameNameBirthChildren(dummy, '西田　太郎', c001.birth_date)).map((c) => c.child_id))
         .toEqual(['C001']);
-      expect(await http.api.sameNameBirthChildren(dummy, '野原 次郎', c001.birth_date)).toEqual([]);
+      expect(await http.api.sameNameBirthChildren(dummy, '西田 次郎', c001.birth_date)).toEqual([]);
       const { rows } = await http.api.parseChildCsv(
-        `園児ID,氏名,氏名かな,生年月日,性別,クラス名,平熱\nC501,野原 太郎,のはら たろう,${c001.birth_date},1,さくら組,36.5`);
+        `園児ID,氏名,氏名かな,生年月日,性別,クラス名,平熱\nC501,西田 太郎,にしだ たろう,${c001.birth_date},1,さくら組,36.5`);
       expect(rows[0].error).toBeNull();
       expect(rows[0].warning).toContain('C001');
     } finally {
@@ -480,20 +480,20 @@ run('Go サーバとの結合', () => {
   });
 
   it('ログイン中は、別のアカウントのログインを成立させず、前のセッションを残す（GitHub Issue #159）', async () => {
-    await switchTo('kinjo@hoiku.example.jp', 'pass1234', 'staff');
-    await expect(http.api.login('nohara@hoiku.example.jp', 'pass1234', 'staff')).rejects.toThrow(/already_logged_in/);
-    expect((await http.api.bootstrap())?.email).toBe('kinjo@hoiku.example.jp');
+    await switchTo('kubota@hoiku.example.jp', 'pass1234', 'staff');
+    await expect(http.api.login('nishida@hoiku.example.jp', 'pass1234', 'staff')).rejects.toThrow(/already_logged_in/);
+    expect((await http.api.bootstrap())?.email).toBe('kubota@hoiku.example.jp');
   });
 
   it('停止したアカウントのセッションは、その場で切れて画面へ知らせる（GitHub Issue #159）', async () => {
     const procedure = await import('../src/api/procedure');
-    const kinjo = await switchTo('kinjo@hoiku.example.jp', 'pass1234', 'staff');
-    const kinjoCookie = cookie;
-    await switchTo('nohara@hoiku.example.jp', 'pass1234', 'staff');
+    const kubota = await switchTo('kubota@hoiku.example.jp', 'pass1234', 'staff');
+    const kubotaCookie = cookie;
+    await switchTo('nishida@hoiku.example.jp', 'pass1234', 'staff');
     const adminCookie = cookie;
-    await http.api.setAccountStatus(dummy, kinjo.account_id, '2');
+    await http.api.setAccountStatus(dummy, kubota.account_id, '2');
     try {
-      cookie = kinjoCookie;
+      cookie = kubotaCookie;
       let ended = 0;
       const stop = procedure.onSessionEnded(() => { ended += 1; });
       try {
@@ -505,7 +505,7 @@ run('Go サーバとの結合', () => {
       }
     } finally {
       cookie = adminCookie;
-      await http.api.setAccountStatus(dummy, kinjo.account_id, '1');
+      await http.api.setAccountStatus(dummy, kubota.account_id, '1');
       await http.api.logout();
     }
   });
@@ -518,21 +518,21 @@ run('Go サーバとの結合', () => {
   it('職員・管理者だけの一覧は保護者と担当外の職員に返さず、並び順はモックと同じ（GitHub Issue #177）', async () => {
     const todayJST = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
 
-    await switchTo('nohara.i@example.jp', 'pass1234', 'guardian');
+    await switchTo('nishida.t@example.jp', 'pass1234', 'guardian');
     await expect(http.api.previousCheck(dummy, 'C001', todayJST)).rejects.toThrow('職員のみが行えます');
     await expect(http.api.draftFor(dummy, 'C001', todayJST)).rejects.toThrow('職員のみが行えます');
     await expect(http.api.allAllergies(dummy)).rejects.toThrow('職員のみが行えます');
     await expect(http.api.abnormals(dummy)).rejects.toThrow('職員のみが行えます');
     await expect(http.api.retractedWithoutRecord(dummy)).rejects.toThrow('管理者のみ');
 
-    // 金城（ひまわり組）は、さくら組の園児の発達チェックを読めない。アレルギー一覧は全園児をよみ順で返す
-    await switchTo('kinjo@hoiku.example.jp', 'pass1234', 'staff');
+    // 久保田（ひまわり組）は、さくら組の園児の発達チェックを読めない。アレルギー一覧は全園児をよみ順で返す
+    await switchTo('kubota@hoiku.example.jp', 'pass1234', 'staff');
     await expect(http.api.previousCheck(dummy, 'C001', todayJST)).rejects.toThrow('権限がありません');
     await expect(http.api.draftFor(dummy, 'C001', todayJST)).rejects.toThrow('権限がありません');
     expect((await http.api.allAllergies(dummy)).map((r) => r.child.child_id)).toEqual(['C013', 'C001', 'C020', 'C004']);
 
     // 招待コードは園児のよみ順にまとめ、同じ園児の中は発行の古い順（デモデータの 7 枚で見る）
-    await switchTo('nohara@hoiku.example.jp', 'pass1234', 'staff');
+    await switchTo('nishida@hoiku.example.jp', 'pass1234', 'staff');
     const codes = (await http.api.invitationCodes(dummy, {})).map((r) => r.invitation_code_id).filter((id) => id <= 7);
     expect(codes).toEqual([3, 4, 7, 5, 1, 2, 6]);
     const abnormals = await http.api.abnormals(dummy);
@@ -544,7 +544,7 @@ run('Go サーバとの結合', () => {
    * 記録してから、開いている保護者の画面に出るまで3秒以内（詳細設計書「3秒の目標を計る」(6-7)、決めたこと D-20）。
    * 保護者のセッションで GET /api/events を開いたまま、職員のセッションで「ねた」を押し、
    * 知らせ（contact）が届くまでと、続けて GET /api/contact/children/C001 が「おひるね中」を返すまでを計る。
-   * ほかの家庭（宮城 美咲の保護者）には知らせが届かないことも確かめる
+   * ほかの家庭（村田 美咲の保護者）には知らせが届かないことも確かめる
    */
   it('「ねた」を押してから3秒以内に、開いている保護者の画面に「おひるね中」が出る。ほかの家庭には届かない', async () => {
     const send = async (path: string, init: RequestInit = {}, jar?: string) => {
@@ -559,11 +559,11 @@ run('Go サーバとの結合', () => {
       expect(res.status).toBe(200);
       return (res.headers.getSetCookie?.() ?? [])[0].split(';')[0];
     };
-    const staff = await loginAs('takanashi@hoiku.example.jp', 'staff');
-    const guardian = await loginAs('nohara.i@example.jp', 'guardian');
-    const other = await loginAs('miyagi.r@example.jp', 'guardian');
+    const staff = await loginAs('suzuki@hoiku.example.jp', 'staff');
+    const guardian = await loginAs('nishida.t@example.jp', 'guardian');
+    const other = await loginAs('murata.s@example.jp', 'guardian');
 
-    // さくら組の実施（無ければ始める）。野原 太郎がおひるね中なら、先に「おきた」にしておく
+    // さくら組の実施（無ければ始める）。西田 太郎がおひるね中なら、先に「おきた」にしておく
     const session = await (await send('/api/nap/session', { method: 'POST', body: JSON.stringify({ class_id: 1 }) }, staff)).json() as { nap_session_id: number };
     const before = await (await send('/api/contact/children/C001', {}, staff)).json() as { sleeps: { nap_sleep_id: number; woke_at: string | null; nap_session_id?: number }[] };
     for (const sl of before.sleeps.filter((x) => !x.woke_at && x.nap_session_id === session.nap_session_id)) {
@@ -626,7 +626,7 @@ run('Go サーバとの結合', () => {
 /*
  * きょうのようすの記録と、訂正・取り消しも、開いている保護者の画面に3秒以内に出る（詳細設計書「3秒の目標を計る」(6-7)）。
  * 排せつを記録 → 直す → 取り消すの3つで、知らせが届いて GET /api/contact/children/C001 が新しい内容を返すまでを計る。
- * ほかの家庭（宮城 美咲の保護者）には知らせが届かない
+ * ほかの家庭（村田 美咲の保護者）には知らせが届かない
  */
 run('結合：きょうのようすの記録・訂正・取り消しが3秒以内に届く', () => {
   const send = async (path: string, init: RequestInit = {}, jar?: string) => {
@@ -644,9 +644,9 @@ run('結合：きょうのようすの記録・訂正・取り消しが3秒以�
   type Ev = { contact_event_id: number; toilet_label: string | null; corrected_at: string | null; updated_at?: string };
 
   it('排せつの記録・訂正・取り消しが、知らせと読み直しで3秒以内に保護者の画面に出る。ほかの家庭には届かない', async () => {
-    const staff = await loginAs('takanashi@hoiku.example.jp', 'staff');
-    const guardian = await loginAs('nohara.i@example.jp', 'guardian');
-    const other = await loginAs('miyagi.r@example.jp', 'guardian');
+    const staff = await loginAs('suzuki@hoiku.example.jp', 'staff');
+    const guardian = await loginAs('nishida.t@example.jp', 'guardian');
+    const other = await loginAs('murata.s@example.jp', 'guardian');
     const controller = new AbortController();
     const open = async (jar: string) => {
       const res = await send('/api/events', { signal: controller.signal }, jar);
@@ -724,9 +724,9 @@ run('結合：きょうのようすの記録・訂正・取り消しが3秒以�
     const tinyJpeg = Uint8Array.from(atob(
       '/9j/2wCEABALDA4MChAODQ4SERATGCgaGBYWGDEjJR0oOjM9PDkzODdASFxOQERXRTc4UG1RV19iZ2hnPk1xeXBkeFxlZ2MBERISGBUYLxoaL2NCOEJjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY//AABEIAAIAAgMBIgACEQEDEQH/xAGiAAABBQEBAQEBAQAAAAAAAAAAAQIDBAUGBwgJCgsQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+gEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoLEQACAQIEBAMEBwUEBAABAncAAQIDEQQFITEGEkFRB2FxEyIygQgUQpGhscEJIzNS8BVictEKFiQ04SXxFxgZGiYnKCkqNTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqCg4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2dri4+Tl5ufo6ery8/T19vf4+fr/2gAMAwEAAhEDEQA/AJaKKK8s9U//2Q==',
     ), (c) => c.charCodeAt(0));
-    const staff = await loginAs('takanashi@hoiku.example.jp', 'staff');
-    const guardian = await loginAs('nohara.i@example.jp', 'guardian');
-    const other = await loginAs('miyagi.r@example.jp', 'guardian');
+    const staff = await loginAs('suzuki@hoiku.example.jp', 'staff');
+    const guardian = await loginAs('nishida.t@example.jp', 'guardian');
+    const other = await loginAs('murata.s@example.jp', 'guardian');
     // multipart は境界の入った Content-Type を fetch に付けさせる（send は JSON の Content-Type を付けるため使わない）
     const sendForm = (form: FormData, jar: string) =>
       realFetch(BASE + '/api/contact/photos', { method: 'POST', body: form, headers: { Origin: BASE, Cookie: jar } });
@@ -760,9 +760,9 @@ run('結合：きょうのようすの記録・訂正・取り消しが3秒以�
    * 3秒以内に開いている保護者の画面に出る（詳細設計書「園からのひとことと他児の名前」(4-5)・(6-7)）。ほかの家庭には届かない
    */
   it('園からのひとことは他児の名前の注意を通り、承諾を付けて送ると3秒以内に保護者の画面に出る', async () => {
-    const staff = await loginAs('takanashi@hoiku.example.jp', 'staff');
-    const guardian = await loginAs('nohara.i@example.jp', 'guardian');
-    const other = await loginAs('miyagi.r@example.jp', 'guardian');
+    const staff = await loginAs('suzuki@hoiku.example.jp', 'staff');
+    const guardian = await loginAs('nishida.t@example.jp', 'guardian');
+    const other = await loginAs('murata.s@example.jp', 'guardian');
     const controller = new AbortController();
     try {
       // 今日の園からが既にあれば取り消しておく（手での確かめのあとでも回せるように）
@@ -804,7 +804,7 @@ run('結合：きょうのようすの記録・訂正・取り消しが3秒以�
       expect(elapsed).toBeLessThan(3000);
       console.log(`園からのひとことから保護者の画面の読み直しまで ${elapsed} ミリ秒`);
       expect(await otherWait('"child_id":"C001"', 500)).toBe(false);
-      expect(JSON.stringify(page)).not.toMatch(/staff_name|recipient|高梨/);
+      expect(JSON.stringify(page)).not.toMatch(/staff_name|recipient|鈴木/);
     } finally {
       controller.abort();
       for (const jar of [staff, guardian, other]) await send('/api/logout', { method: 'POST', body: '{}' }, jar);
@@ -816,8 +816,8 @@ run('結合：きょうのようすの記録・訂正・取り消しが3秒以�
    * 本物の AI は呼ばない。CI はキーを置かずにサーバを立てる。キーを置いて立てたサーバでは、キーが無いときの確かめを飛ばす
    */
   it('API キーが無いサーバでは、園が AI を有効にしてもボタンを出さず（status が偽）、下書きは 403。キーそのものは返さない', async () => {
-    const admin = await loginAs('nohara@hoiku.example.jp', 'staff');
-    const staff = await loginAs('takanashi@hoiku.example.jp', 'staff');
+    const admin = await loginAs('nishida@hoiku.example.jp', 'staff');
+    const staff = await loginAs('suzuki@hoiku.example.jp', 'staff');
     type View = { read_at: string; ai_key_present: boolean; ai_key_rejected: boolean; settings: { setting_key: string; setting_value: string }[] };
     try {
       const forbidden = await send('/api/settings', {}, staff);

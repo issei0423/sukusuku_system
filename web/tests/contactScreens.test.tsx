@@ -16,16 +16,16 @@ import { api } from '../src/api/client';
 import { today } from '../src/api/util';
 
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
 const guardian: SessionUser = {
-  account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
+  account_id: 6, email: 'nishida.t@example.jp', role: '3', display_name: '西田 拓也',
   staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
-const admin: SessionUser = { ...teacher, account_id: 1, role: '1', staff_id: 'S001', class_id: null, class_name: null, display_name: '野原 一誠' };
+const admin: SessionUser = { ...teacher, account_id: 1, role: '1', staff_id: 'S001', class_id: null, class_name: null, display_name: '西田 拓也' };
 
 function open(path: string, user: SessionUser) {
   return render(
@@ -42,7 +42,7 @@ afterEach(cleanup);
 describe('保護者ホームの「きょう」', () => {
   it('園児ごとの区画に、家庭からの入口・きょうのようす（新しい3件）・連絡帳への入口を出す。判定の言葉は出さない', async () => {
     open('/guardian', guardian);
-    const card = await screen.findByRole('region', { name: '野原 太郎さんのきょう' }, { timeout: 3000 });
+    const card = await screen.findByRole('region', { name: '西田 太郎さんのきょう' }, { timeout: 3000 });
     expect(within(card).getByRole('link', { name: '家庭からを書く' })).toBeTruthy();
     expect(within(card).getByRole('link', { name: /連絡帳を開く/ })).toBeTruthy();
     expect(card.querySelectorAll('.contact-latest li').length).toBeLessThanOrEqual(3);
@@ -59,7 +59,7 @@ describe('保護者ホームの「きょう」', () => {
 describe('連絡帳画面（保護者）：家庭から', () => {
   it('朝ごはん・きげん・送るの3タップで送れ、確認の前は「急ぎはお電話で」、園が確認すると時刻が出る', async () => {
     open('/guardian/contact/C001', guardian);
-    await screen.findByText('野原 太郎の連絡帳', undefined, { timeout: 3000 });
+    await screen.findByText('西田 太郎の連絡帳', undefined, { timeout: 3000 });
     const form = document.querySelector<HTMLFormElement>('.contact-home-form')!;
     expect(form).toBeTruthy();
     // 何も選ばずに送ると、何が足りないかを、押した場所の近くと結果の表示に出す（入力は残る）
@@ -77,7 +77,7 @@ describe('連絡帳画面（保護者）：家庭から', () => {
     await api.confirmHome(teacher, page.home!.contact_home_id, page.home!.updated_at);
     // 知らせ（contact）を受けて読み直し、職員の名前は出さずに確認の時刻を出す
     await waitFor(() => expect(document.body.textContent).toMatch(/園が確認しました（\d{2}:\d{2}）/), { timeout: 6000 });
-    expect(document.body.textContent).not.toContain('高梨');
+    expect(document.body.textContent).not.toContain('鈴木');
   });
 
   it('前の日のページは家庭からを書けない', async () => {
@@ -90,7 +90,7 @@ describe('連絡帳画面（保護者）：家庭から', () => {
 
 describe('連絡帳（クラス）画面', () => {
   it('家庭からの内容の全部をセルに出し、「確認しました」で確認済みになる。体温に判定の色や言葉を付けない', async () => {
-    // 金城 陸（C005）の家庭から。デモデータ（7:45）は時計が早いと入らないため、無ければ父として送っておく
+    // 久保田 陸（C005）の家庭から。デモデータ（7:45）は時計が早いと入らないため、無ければ父として送っておく
     if (!(await api.contactPage(teacher, 'C005')).home) {
       const father: SessionUser = { ...guardian, account_id: 10, guardian_id: 'G005' };
       await api.saveHome(father, 'C005', {
@@ -99,14 +99,14 @@ describe('連絡帳（クラス）画面', () => {
       });
     }
     open('/staff/contact?sort=home', teacher);
-    const button = await screen.findByRole('button', { name: '金城 陸の家庭からを確認しました' }, { timeout: 3000 });
+    const button = await screen.findByRole('button', { name: '久保田 陸の家庭からを確認しました' }, { timeout: 3000 });
     const cell = button.closest('.contact-home-cell')!;
     expect(cell.textContent).toContain('変更あり 祖母 17:00');
     expect(cell.textContent).toContain('きょうは祖母が迎えに行きます。');
     expect(cell.textContent).toContain('36.7℃');
     fireEvent.click(button);
-    await waitFor(() => expect(screen.queryByRole('button', { name: '金城 陸の家庭からを確認しました' })).toBeNull(), { timeout: 3000 });
-    expect(document.body.textContent).toMatch(/園が確認しました \d{2}:\d{2} 高梨 倫太朗/);
+    await waitFor(() => expect(screen.queryByRole('button', { name: '久保田 陸の家庭からを確認しました' })).toBeNull(), { timeout: 3000 });
+    expect(document.body.textContent).toMatch(/園が確認しました \d{2}:\d{2} 鈴木 浩之/);
     expect(document.body.textContent).not.toMatch(/発熱|高い|低い|異常/);
   });
 
@@ -122,14 +122,14 @@ describe('午睡チェック画面：ねた・おきた', () => {
     if (active) await api.endSession(admin, active.nap_session_id);
     await api.startSession(teacher, 1, today());
     open('/staff/nap', teacher);
-    const sleep = await screen.findByRole('button', { name: '野原 太郎のねた' }, { timeout: 3000 });
+    const sleep = await screen.findByRole('button', { name: '西田 太郎のねた' }, { timeout: 3000 });
     const row = sleep.closest('.nap-record-row') as HTMLElement;
     expect(row.querySelectorAll('input[type="radio"]').length).toBe(10);
     fireEvent.click(sleep);
-    const wake = await within(row).findByRole('button', { name: '野原 太郎のおきた' }, { timeout: 3000 });
+    const wake = await within(row).findByRole('button', { name: '西田 太郎のおきた' }, { timeout: 3000 });
     expect(row.textContent).toMatch(/\d{2}:\d{2} ねた/);
     fireEvent.click(wake);
-    await within(row).findByRole('button', { name: '野原 太郎のもう一度ねた' }, { timeout: 3000 });
+    await within(row).findByRole('button', { name: '西田 太郎のもう一度ねた' }, { timeout: 3000 });
     expect(row.textContent).toMatch(/\d{2}:\d{2}〜\d{2}:\d{2}（\d+分）/);
     // 保護者の連絡帳には、記録した時点で「ねた」「おきた」が入る
     const page = await api.contactPage(guardian, 'C001');

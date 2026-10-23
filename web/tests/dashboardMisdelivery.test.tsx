@@ -24,9 +24,9 @@ const user = (account_id: number, role: '1' | '2' | '3', email: string, extra: P
   account_id, email, role, display_name: email, staff_id: null, guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true, ...extra,
 });
-const admin = user(1, '1', 'nohara@hoiku.example.jp', { staff_id: 'S001', display_name: '野原 一誠' });
-const teacher = user(3, '2', 'takanashi@hoiku.example.jp', { staff_id: 'S003', class_id: 1, class_name: 'さくら組', display_name: '高梨 倫太朗' });
-const miyagi = user(9, '3', 'miyagi.r@example.jp', { guardian_id: 'G004' });
+const admin = user(1, '1', 'nishida@hoiku.example.jp', { staff_id: 'S001', display_name: '西田 拓也' });
+const teacher = user(3, '2', 'suzuki@hoiku.example.jp', { staff_id: 'S003', class_id: 1, class_name: 'さくら組', display_name: '鈴木 浩之' });
+const murata = user(9, '3', 'murata.s@example.jp', { guardian_id: 'G004' });
 
 const LABEL = '対応の記録がない取り消し';
 const count = async (u: SessionUser) => (await api.staffSummary(u)).misdeliveryUnrecorded;
@@ -44,7 +44,7 @@ describe('管理者のダッシュボードの「対応の記録がない取り�
     await expectCount(before);
 
     // 担任（一般の職員）が個人チャットへ送ったメッセージを取り消すと、管理者の件数が増える
-    const byStaff = await api.send(teacher, 8, '（誤送信）野原 太郎くんの発熱の記録');
+    const byStaff = await api.send(teacher, 8, '（誤送信）西田 太郎くんの発熱の記録');
     await api.retract(teacher, byStaff.chat_message_id);
     await expectCount(before + 1);
 
@@ -52,8 +52,8 @@ describe('管理者のダッシュボードの「対応の記録がない取り�
     expect(await count(teacher)).toBe(0);
 
     // 保護者が自分で取り消したものは数えない
-    const byGuardian = await api.send(miyagi, 8, '明日はお休みします（打ちまちがい）');
-    await api.retract(miyagi, byGuardian.chat_message_id);
+    const byGuardian = await api.send(murata, 8, '明日はお休みします（打ちまちがい）');
+    await api.retract(murata, byGuardian.chat_message_id);
     await expectCount(before + 1);
 
     // 配布物の取り下げで取り消された掲載の知らせは数えない

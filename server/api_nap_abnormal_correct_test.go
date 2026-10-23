@@ -14,7 +14,7 @@ import (
  *      詳細設計書.md「訂正・取り消しのまとめ」(3-5)、図/画面詳細図.md「異常時記録画面」(5-2) の項目17、図/インタフェース一覧.md
  *
  * 画面側のモック（web/src/api/mock.ts の correctNapAbnormal）と同じ観点を、web/tests/napAbnormalCorrect.test.ts で確かめる。
- * デモ：異常時の記録 1（高梨 健、2日前の実施 3、ヒヤリハット起票済み）と記録 2（金城 陸、昨日の実施 2、未起票）。
+ * デモ：異常時の記録 1（鈴木 健、2日前の実施 3、ヒヤリハット起票済み）と記録 2（久保田 陸、昨日の実施 2、未起票）。
  * どちらもさくら組。今日の実施 1（さくら組）に記録は無いので、テストが足す
  */
 
@@ -52,7 +52,7 @@ func napAbnormalCorrectLogs(t *testing.T, a *app) []napCorrectLog {
 	return out
 }
 
-// addTodayAbnormal は、今日の実施 1（さくら組）に、野原 太郎（C001）の異常時の記録を足す。記録した職員は S004（さくら組のもう1人の担任）。
+// addTodayAbnormal は、今日の実施 1（さくら組）に、西田 太郎（C001）の異常時の記録を足す。記録した職員は S004（さくら組のもう1人の担任）。
 // noticedAt が空でなければ、保護者へ「した」（電話・母）として連絡した日時を入れる
 func addTodayAbnormal(t *testing.T, a *app, foundAt, recordedAt, noticedAt string) int64 {
 	t.Helper()
@@ -101,7 +101,7 @@ func TestCorrectNapAbnormalByTeacherOnTheDay(t *testing.T) {
 		t.Fatalf("corrected_at と can_correct が入っていません: %+v", got)
 	}
 	// 保存時刻・記録した職員は変えない
-	if got.RecordedAt != recordedAt || got.StaffID != "S004" || got.ChildID != "C001" || got.ChildName != "野原 太郎" {
+	if got.RecordedAt != recordedAt || got.StaffID != "S004" || got.ChildID != "C001" || got.ChildName != "西田 太郎" {
 		t.Fatalf("変えない項目が変わっています: %+v", got)
 	}
 	if !abnormalCorrectedAt(t, a, id).Valid {
@@ -263,7 +263,7 @@ func TestNapReportShowsAbnormalCorrections(t *testing.T) {
 		t.Fatal("修正が無いのに修正の履歴が出ています")
 	}
 
-	// 記録 2（金城 陸、未起票）の発見時刻と状況、記録 1（高梨 健、起票済み）のとった対応、今日の午睡チェックの記録 1 を直す
+	// 記録 2（久保田 陸、未起票）の発見時刻と状況、記録 1（鈴木 健、起票済み）のとった対応、今日の午睡チェックの記録 1 を直す
 	call(t, h, admin, "POST", abnormalCorrectPath(2),
 		`{"found_at":"`+yesterday+`T14:05:00","situation":"顔色が紅潮していた。体温37.4度。","reason":"時刻を見直した"}`)
 	call(t, h, admin, "POST", abnormalCorrectPath(1), `{"response":"仰向けに直した。","reason":"書き足した"}`)
@@ -274,11 +274,11 @@ func TestNapReportShowsAbnormalCorrections(t *testing.T) {
 		t.Fatalf("異常時の記録が2行ではありません: %v", f.abnormals)
 	}
 	// 起票済みの記録は、ヒヤリハット側の文のまま「修正あり」を付ける
-	if r := f.abnormals[0]; r[1] != "高梨 健" || r[2] != "午睡中にうつ伏せの体位を確認した。" || r[5] != "起票済み" || r[6] != "修正あり" {
+	if r := f.abnormals[0]; r[1] != "鈴木 健" || r[2] != "午睡中にうつ伏せの体位を確認した。" || r[5] != "起票済み" || r[6] != "修正あり" {
 		t.Fatalf("起票済みの直した記録の行 = %v", r)
 	}
 	// 未起票の記録は、直したあとの発見時刻と状況で出す
-	if r := f.abnormals[1]; r[0] != yesterday+"T14:05:00" || r[1] != "金城 陸" || r[2] != "顔色が紅潮していた。体温37.4度。" ||
+	if r := f.abnormals[1]; r[0] != yesterday+"T14:05:00" || r[1] != "久保田 陸" || r[2] != "顔色が紅潮していた。体温37.4度。" ||
 		r[5] != "未起票" || r[6] != "修正あり" {
 		t.Fatalf("未起票の直した記録の行 = %v", r)
 	}
@@ -287,17 +287,17 @@ func TestNapReportShowsAbnormalCorrections(t *testing.T) {
 	if !f.hasHistory || len(f.histories) != 3 {
 		t.Fatalf("修正の履歴が3行ではありません: %v", f.histories)
 	}
-	if h0 := f.histories[0]; h0[0] != "異常時の記録（高梨 健・"+twoDaysAgo+"T13:40:00）" || h0[2] != "野原 一誠" ||
+	if h0 := f.histories[0]; h0[0] != "異常時の記録（鈴木 健・"+twoDaysAgo+"T13:40:00）" || h0[2] != "西田 拓也" ||
 		h0[3] != "とった対応=仰向けに直し、5分後に再度確認した。保護者へは降園時に口頭で伝えた。" || h0[4] != "とった対応=仰向けに直した。" ||
 		h0[5] != "書き足した" {
 		t.Fatalf("修正の履歴の1行目 = %v", h0)
 	}
-	if h1 := f.histories[1]; h1[0] != "異常時の記録（金城 陸・"+yesterday+"T14:05:00）" ||
+	if h1 := f.histories[1]; h1[0] != "異常時の記録（久保田 陸・"+yesterday+"T14:05:00）" ||
 		h1[3] != "発見時刻="+yesterday+"T14:10:00、状況=顔色がやや紅潮していた。体温37.4度。" ||
 		h1[4] != "発見時刻="+yesterday+"T14:05:00、状況=顔色が紅潮していた。体温37.4度。" || h1[5] != "時刻を見直した" {
 		t.Fatalf("修正の履歴の2行目 = %v", h1)
 	}
-	if h2 := f.histories[2]; h2[0] != "午睡チェックの記録（野原 太郎・"+today+"T13:20:00）" || h2[2] != "高梨 倫太朗" || h2[3] != "体位=仰向け" {
+	if h2 := f.histories[2]; h2[0] != "午睡チェックの記録（西田 太郎・"+today+"T13:20:00）" || h2[2] != "鈴木 浩之" || h2[3] != "体位=仰向け" {
 		t.Fatalf("修正の履歴の3行目 = %v", h2)
 	}
 

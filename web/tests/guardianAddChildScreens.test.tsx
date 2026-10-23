@@ -16,7 +16,7 @@ import { ADD_CHILD_TEXT, MSG } from '../src/messages';
 import type { SessionUser } from '../src/api/types';
 
 const guardian: SessionUser = {
-  account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
+  account_id: 6, email: 'nishida.t@example.jp', role: '3', display_name: '西田 拓也',
   staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
@@ -52,7 +52,7 @@ function openHome() {
 async function openDialog() {
   fireEvent.click(await screen.findByRole('button', { name: 'メニューを開く' }));
   const menu = screen.getByRole('dialog', { name: 'メニュー' });
-  await within(menu).findAllByText(/野原 太郎/, {}, { timeout: 3000 });
+  await within(menu).findAllByText(/西田 太郎/, {}, { timeout: 3000 });
   fireEvent.click(within(menu).getByRole('button', { name: ADD_CHILD_TEXT.title }));
   return screen.findByRole('dialog', { name: ADD_CHILD_TEXT.title });
 }
@@ -66,21 +66,21 @@ function verify(dialog: HTMLElement, code: string) {
 describe('保護者のメニュー：お子さまの追加', () => {
   it('メニューに常に置き、コードを確かめると園児名と続柄（最初に登録したときの続柄）を出す。追加すると保護者ホームに区画が増える', async () => {
     openHome();
-    expect(await screen.findByRole('region', { name: '野原 太郎さんの情報' })).toBeTruthy();
-    expect(screen.queryByRole('region', { name: '上園 花子さんの情報' })).toBeNull();
+    expect(await screen.findByRole('region', { name: '西田 太郎さんの情報' })).toBeTruthy();
+    expect(screen.queryByRole('region', { name: '遠藤 花子さんの情報' })).toBeNull();
     const dialog = await openDialog();
 
     verify(dialog, 'qrst9012uvwx');
-    expect(await within(dialog).findByText(ADD_CHILD_TEXT.confirm('上園 花子'))).toBeTruthy();
+    expect(await within(dialog).findByText(ADD_CHILD_TEXT.confirm('遠藤 花子'))).toBeTruthy();
     const select = within(dialog).getByRole('combobox', { name: ADD_CHILD_TEXT.relationshipLabel }) as HTMLSelectElement;
     expect(select.value).toBe('父');
 
     fireEvent.change(select, { target: { value: '母' } });
     fireEvent.click(within(dialog).getByRole('button', { name: ADD_CHILD_TEXT.submit }));
-    expect(await screen.findByText(ADD_CHILD_TEXT.added('上園 花子'))).toBeTruthy();
+    expect(await screen.findByText(ADD_CHILD_TEXT.added('遠藤 花子'))).toBeTruthy();
     // ダイアログを閉じ、保護者ホームを読み直す（その園児の区画が増える）
     await waitFor(() => expect(screen.queryByRole('dialog', { name: ADD_CHILD_TEXT.title })).toBeNull());
-    expect(await screen.findByRole('region', { name: '上園 花子さんの情報' }, { timeout: 3000 })).toBeTruthy();
+    expect(await screen.findByRole('region', { name: '遠藤 花子さんの情報' }, { timeout: 3000 })).toBeTruthy();
     expect(link('G001', 'C002')).toMatchObject({ link_status: '1', relationship: '母' });
   });
 
@@ -108,7 +108,7 @@ describe('保護者のメニュー：お子さまの追加', () => {
     expect(other.maxLength).toBe(20);
     fireEvent.change(other, { target: { value: 'おじ' } });
     fireEvent.click(within(dialog).getByRole('button', { name: ADD_CHILD_TEXT.submit }));
-    expect(await screen.findByText(ADD_CHILD_TEXT.added('上園 花子'))).toBeTruthy();
+    expect(await screen.findByText(ADD_CHILD_TEXT.added('遠藤 花子'))).toBeTruthy();
     expect(link('G001', 'C002')?.relationship).toBe('おじ');
   });
 

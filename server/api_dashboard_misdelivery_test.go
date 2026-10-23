@@ -20,7 +20,7 @@ import (
 func TestStaffSummaryCountsRetractedWithoutRecordForAdminOnly(t *testing.T) {
 	a, h := newTestApp(t)
 	admin := loginAs(a, 1, "staff")
-	takanashi := loginAs(a, 3, "staff")
+	suzuki := loginAs(a, 3, "staff")
 	guardian := loginAs(a, 9, "guardian")
 
 	count := func(c *http.Cookie) int {
@@ -63,13 +63,13 @@ func TestStaffSummaryCountsRetractedWithoutRecordForAdminOnly(t *testing.T) {
 	expectCount("はじめ", before)
 
 	// 担任（一般の職員）が個人チャットへ送ったメッセージを取り消すと、管理者の件数が増える
-	byStaff := sentID(t, call(t, h, takanashi, "POST", "/api/chat/rooms/8/messages",
-		`{"body":"（誤送信）野原 太郎くんの発熱の記録"}`).Body)
-	call(t, h, takanashi, "POST", "/api/chat/messages/"+itoa(byStaff)+"/retract", "")
+	byStaff := sentID(t, call(t, h, suzuki, "POST", "/api/chat/rooms/8/messages",
+		`{"body":"（誤送信）西田 太郎くんの発熱の記録"}`).Body)
+	call(t, h, suzuki, "POST", "/api/chat/messages/"+itoa(byStaff)+"/retract", "")
 	expectCount("職員が取り消したあと", before+1)
 
 	// 一般の職員には数えない（記録するのは管理者。取り消した本人であっても 0）
-	if got := count(takanashi); got != 0 {
+	if got := count(suzuki); got != 0 {
 		t.Errorf("一般の職員のダッシュボードに、対応の記録がない取り消しが %d 件と出る", got)
 	}
 

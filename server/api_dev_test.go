@@ -267,7 +267,7 @@ func devRowOf(t *testing.T, h http.Handler, c *http.Cookie, childID string) devL
 func TestDevListCountsDraftUnfilled(t *testing.T) {
 	a, h := newTestApp(t)
 	teacher := loginAs(a, 3, "staff")
-	items := itemsAt(t, a, "C001", today()) // 野原 太郎。前回の確定した記録がある
+	items := itemsAt(t, a, "C001", today()) // 西田 太郎。前回の確定した記録がある
 
 	// 1 項目だけ「未確認」を選んで下書き保存すると、残りが未入力（未確認は入力済み）
 	call(t, h, teacher, "POST", "/api/development/checks",
@@ -363,7 +363,7 @@ func TestDraftCheckReturnsConfirmedAt(t *testing.T) {
 }
 
 // 一意制約のある日付の列も、ずらす途中で同じ値が2行できて止まらない。
-// 野原 太郎（C001）の身体測定は 91 日おきにあり、91 日ずらすと1行ずつ書き換える途中で測定日が重なる
+// 西田 太郎（C001）の身体測定は 91 日おきにあり、91 日ずらすと1行ずつ書き換える途中で測定日が重なる
 func TestSeedShiftAvoidsUniqueCollision(t *testing.T) {
 	a, _ := newTestApp(t)
 	before := measuredOnOf(t, a, "C001")

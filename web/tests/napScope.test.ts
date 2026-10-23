@@ -13,17 +13,17 @@ import { addDays, today } from '../src/api/util';
 import type { SessionUser } from '../src/api/types';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
 const otherTeacher: SessionUser = {
-  account_id: 5, email: 'kinjo@hoiku.example.jp', role: '2', display_name: '金城 宗一郎',
+  account_id: 5, email: 'kubota@hoiku.example.jp', role: '2', display_name: '久保田 和也',
   staff_id: 'S005', guardian_id: null, class_id: 2, class_name: 'ひまわり組',
   is_temp_password: false, terms_agreed: true,
 };
@@ -82,7 +82,7 @@ describe('異常時の記録は、その園児のクラスの、実施中の午�
 
 describe('ヒヤリハットの起票は、その園児を参照できる職員に限る', () => {
   it('ほかのクラスの記録からは起票できず、中身も返さない', async () => {
-    // 2 はさくら組・金城 陸（C005）の記録。未起票
+    // 2 はさくら組・久保田 陸（C005）の記録。未起票
     const err = await api.raiseIncidentDiary(otherTeacher, 2).catch((e: Error) => e);
     expect(err).toBeInstanceOf(Error);
     expect((err as Error).message).not.toContain('体温37.4度');

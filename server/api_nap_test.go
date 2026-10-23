@@ -55,10 +55,10 @@ func startOwnNap(t *testing.T, h http.Handler, teacher *http.Cookie) NapSession 
 
 func TestEndNapSessionRequiresOwnClass(t *testing.T) {
 	a, h := newTestApp(t)
-	takanashi := loginAs(a, 3, "staff") // さくら組
-	kinjo := loginAs(a, 5, "staff")     // ひまわり組
+	suzuki := loginAs(a, 3, "staff") // さくら組
+	kubota := loginAs(a, 5, "staff") // ひまわり組
 	admin := loginAs(a, 1, "staff")
-	s := startOwnNap(t, h, takanashi)
+	s := startOwnNap(t, h, suzuki)
 	path := "/api/nap/session/" + itoa(s.NapSessionID) + "/end"
 
 	endedOf := func() (sql.NullString, sql.NullString) {
@@ -69,14 +69,14 @@ func TestEndNapSessionRequiresOwnClass(t *testing.T) {
 	}
 
 	t.Run("ほかのクラスの職員は終了できず、実施中のまま残る", func(t *testing.T) {
-		expectStatus(t, request(t, h, kinjo, "POST", path, ""), http.StatusForbidden)
+		expectStatus(t, request(t, h, kubota, "POST", path, ""), http.StatusForbidden)
 		if staff, at := endedOf(); staff.Valid || at.Valid {
 			t.Fatalf("終了されています: %v %v", staff, at)
 		}
 	})
 
 	t.Run("無い実施は終了できず、操作ログも残らない", func(t *testing.T) {
-		expectStatus(t, request(t, h, kinjo, "POST", "/api/nap/session/99999/end", ""), http.StatusNotFound)
+		expectStatus(t, request(t, h, kubota, "POST", "/api/nap/session/99999/end", ""), http.StatusNotFound)
 		var n int
 		a.db.QueryRow(`SELECT COUNT(*) FROM t_operation_log WHERE target_table = 't_nap_session' AND target_id = 99999`).Scan(&n)
 		if n != 0 {
@@ -85,12 +85,12 @@ func TestEndNapSessionRequiresOwnClass(t *testing.T) {
 	})
 
 	t.Run("担任は終了でき、終了した実施をもう一度終了しても終了時刻・終了した職員を書き換えない", func(t *testing.T) {
-		call(t, h, takanashi, "POST", path, "")
+		call(t, h, suzuki, "POST", path, "")
 		staff, at := endedOf()
 		if staff.String != "S003" || !at.Valid {
 			t.Fatalf("終了の記録が正しくありません: %v %v", staff, at)
 		}
-		for _, c := range []*http.Cookie{takanashi, admin} {
+		for _, c := range []*http.Cookie{suzuki, admin} {
 			expectStatus(t, request(t, h, c, "POST", path, ""), http.StatusConflict)
 		}
 		if staff2, at2 := endedOf(); staff2 != staff || at2 != at {
@@ -102,10 +102,10 @@ func TestEndNapSessionRequiresOwnClass(t *testing.T) {
 // 異常時の記録は、その園児のクラスの、実施中の午睡チェックにつなぐ
 func TestNapAbnormalFollowsChildClass(t *testing.T) {
 	a, h := newTestApp(t)
-	takanashi := loginAs(a, 3, "staff") // さくら組
-	kinjo := loginAs(a, 5, "staff")     // ひまわり組
+	suzuki := loginAs(a, 3, "staff") // さくら組
+	kubota := loginAs(a, 5, "staff") // ひまわり組
 	admin := loginAs(a, 1, "staff")
-	s := startOwnNap(t, h, takanashi)
+	s := startOwnNap(t, h, suzuki)
 	path := "/api/nap/session/" + itoa(s.NapSessionID) + "/abnormals"
 	body := func(childID, foundAt string) string {
 		return `{"child_id":"` + childID + `","found_at":"` + foundAt + `","situation":"顔色がやや紅潮","response":"別室で休ませた"}`
@@ -119,8 +119,8 @@ func TestNapAbnormalFollowsChildClass(t *testing.T) {
 	valid := today() + "T00:00:00"
 
 	t.Run("ほかのクラスの職員は、そのクラスの実施へ記録できない", func(t *testing.T) {
-		expectStatus(t, request(t, h, kinjo, "POST", path, body("C013", valid)), http.StatusForbidden)
-		expectStatus(t, request(t, h, kinjo, "POST", path, body("C001", valid)), http.StatusForbidden)
+		expectStatus(t, request(t, h, kubota, "POST", path, body("C013", valid)), http.StatusForbidden)
+		expectStatus(t, request(t, h, kubota, "POST", path, body("C001", valid)), http.StatusForbidden)
 	})
 
 	t.Run("園児のクラスと違う実施へは、管理者でも記録できない", func(t *testing.T) {
@@ -128,13 +128,13 @@ func TestNapAbnormalFollowsChildClass(t *testing.T) {
 	})
 
 	t.Run("終了した実施・無い実施へは記録できない", func(t *testing.T) {
-		expectStatus(t, request(t, h, takanashi, "POST", "/api/nap/session/2/abnormals", body("C001", valid)), http.StatusConflict)
-		expectStatus(t, request(t, h, takanashi, "POST", "/api/nap/session/99999/abnormals", body("C001", valid)), http.StatusNotFound)
+		expectStatus(t, request(t, h, suzuki, "POST", "/api/nap/session/2/abnormals", body("C001", valid)), http.StatusConflict)
+		expectStatus(t, request(t, h, suzuki, "POST", "/api/nap/session/99999/abnormals", body("C001", valid)), http.StatusNotFound)
 	})
 
 	t.Run("発見時刻は、未来の日時と形の崩れた値を断る", func(t *testing.T) {
 		for _, v := range []string{"2999-01-01T10:00:00", addDays(today(), 1) + "T00:00:00", "abc", "2026-10-1T10:00:00", today()} {
-			expectStatus(t, request(t, h, takanashi, "POST", path, body("C001", v)), http.StatusBadRequest)
+			expectStatus(t, request(t, h, suzuki, "POST", path, body("C001", v)), http.StatusBadRequest)
 		}
 	})
 
@@ -143,8 +143,8 @@ func TestNapAbnormalFollowsChildClass(t *testing.T) {
 	}
 
 	t.Run("自クラスの実施中の実施へは記録できる。発見時刻を空にすると今の時刻を入れる", func(t *testing.T) {
-		call(t, h, takanashi, "POST", path, body("C001", valid))
-		call(t, h, takanashi, "POST", path, body("C002", ""))
+		call(t, h, suzuki, "POST", path, body("C001", valid))
+		call(t, h, suzuki, "POST", path, body("C002", ""))
 		call(t, h, admin, "POST", path, body("C003", valid))
 		if n := count(); n != before+3 {
 			t.Fatalf("記録 = %d 件, want %d", n-before, 3)
@@ -155,11 +155,11 @@ func TestNapAbnormalFollowsChildClass(t *testing.T) {
 // ほかのクラスの異常時の記録から、ヒヤリハットを起票させない。中身も返さない
 func TestRaiseIncidentRequiresChildScope(t *testing.T) {
 	a, h := newTestApp(t)
-	takanashi := loginAs(a, 3, "staff")
-	kinjo := loginAs(a, 5, "staff")
-	const path = "/api/nap/abnormals/2/incident" // 2 はさくら組・金城 陸（C005）の記録。未起票
+	suzuki := loginAs(a, 3, "staff")
+	kubota := loginAs(a, 5, "staff")
+	const path = "/api/nap/abnormals/2/incident" // 2 はさくら組・久保田 陸（C005）の記録。未起票
 
-	rec := request(t, h, kinjo, "POST", path, "")
+	rec := request(t, h, kubota, "POST", path, "")
 	body := expectStatus(t, rec, http.StatusForbidden)
 	if strings.Contains(body, "体温37.4度") {
 		t.Fatalf("記録の中身が返っています: %s", body)
@@ -171,7 +171,7 @@ func TestRaiseIncidentRequiresChildScope(t *testing.T) {
 	}
 
 	var d Diary
-	if err := json.Unmarshal(call(t, h, takanashi, "POST", path, "").Body.Bytes(), &d); err != nil {
+	if err := json.Unmarshal(call(t, h, suzuki, "POST", path, "").Body.Bytes(), &d); err != nil {
 		t.Fatal(err)
 	}
 	if d.CreatedStaffID != "S003" || d.RecordType != "4" {
@@ -182,7 +182,7 @@ func TestRaiseIncidentRequiresChildScope(t *testing.T) {
 // 検査を入れる前に入ってしまった崩れた発見時刻でも、起票でサーバの処理が落ちない
 func TestRaiseIncidentWithBrokenFoundAt(t *testing.T) {
 	a, h := newTestApp(t)
-	takanashi := loginAs(a, 3, "staff")
+	suzuki := loginAs(a, 3, "staff")
 	res, err := a.db.Exec(`INSERT INTO t_nap_abnormal (nap_session_id, child_id, found_at, situation, response, staff_id)
 		VALUES (2, 'C001', 'abc', '状況', '対応', 'S003')`)
 	if err != nil {
@@ -191,7 +191,7 @@ func TestRaiseIncidentWithBrokenFoundAt(t *testing.T) {
 	id, _ := res.LastInsertId()
 
 	var d Diary
-	if err := json.Unmarshal(call(t, h, takanashi, "POST", "/api/nap/abnormals/"+itoa(id)+"/incident", "").Body.Bytes(), &d); err != nil {
+	if err := json.Unmarshal(call(t, h, suzuki, "POST", "/api/nap/abnormals/"+itoa(id)+"/incident", "").Body.Bytes(), &d); err != nil {
 		t.Fatal(err)
 	}
 	// 記録日は、その実施の日にする
@@ -209,8 +209,8 @@ func TestRaiseIncidentWithBrokenFoundAt(t *testing.T) {
  */
 func TestNapRecordTemperatureOneDecimal(t *testing.T) {
 	a, h := newTestApp(t)
-	takanashi := loginAs(a, 3, "staff")
-	s := startOwnNap(t, h, takanashi)
+	suzuki := loginAs(a, 3, "staff")
+	s := startOwnNap(t, h, suzuki)
 	path := "/api/nap/session/" + itoa(s.NapSessionID) + "/records"
 	body := func(temperature string) string {
 		return `{"child_id":"C006","body_position":"1","breathing":"1","complexion":"1","temperature":` + temperature + `}`
@@ -224,7 +224,7 @@ func TestNapRecordTemperatureOneDecimal(t *testing.T) {
 
 	t.Run("小数第2位までの体温は断る", func(t *testing.T) {
 		for _, v := range []string{"36.55", "36.05", "37.123"} {
-			got := expectStatus(t, request(t, h, takanashi, "POST", path, body(v)), http.StatusBadRequest)
+			got := expectStatus(t, request(t, h, suzuki, "POST", path, body(v)), http.StatusBadRequest)
 			if !strings.Contains(got, "小数第1位") {
 				t.Fatalf("%s: 桁の誤りとして断っていません: %s", v, got)
 			}
@@ -236,7 +236,7 @@ func TestNapRecordTemperatureOneDecimal(t *testing.T) {
 
 	t.Run("小数第1位までの体温・範囲の外の体温・体温なしは記録できる（範囲の外は確かめるだけで妨げない）", func(t *testing.T) {
 		for _, v := range []string{"36.5", "37", "25.0", "null"} {
-			call(t, h, takanashi, "POST", path, body(v))
+			call(t, h, suzuki, "POST", path, body(v))
 		}
 		var got float64
 		a.db.QueryRow(`SELECT temperature FROM t_nap_record WHERE nap_session_id = ? AND child_id = 'C006'
@@ -250,9 +250,9 @@ func TestNapRecordTemperatureOneDecimal(t *testing.T) {
 // 午睡の記録は、その園児のクラスの実施に付ける。管理者でも、ほかのクラスの園児を付けさせない（異常時の記録と同じ。GitHub Issue #158）
 func TestNapRecordFollowsChildClass(t *testing.T) {
 	a, h := newTestApp(t)
-	takanashi := loginAs(a, 3, "staff")
+	suzuki := loginAs(a, 3, "staff")
 	admin := loginAs(a, 1, "staff")
-	s := startOwnNap(t, h, takanashi)
+	s := startOwnNap(t, h, suzuki)
 	path := "/api/nap/session/" + itoa(s.NapSessionID) + "/records"
 	body := `{"child_id":"C013","body_position":"1","breathing":"1","complexion":"1","temperature":null}` // C013 はひまわり組
 

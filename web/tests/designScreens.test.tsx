@@ -22,14 +22,14 @@ const user = (account_id: number, role: '1' | '2' | '3', email: string, display_
   account_id, email, role, display_name, staff_id: null, guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true, ...extra,
 });
-const admin = user(1, '1', 'nohara@hoiku.example.jp', '野原 一誠', { staff_id: 'S001' });
-const teacher = user(3, '2', 'takanashi@hoiku.example.jp', '高梨 倫太朗', { staff_id: 'S003', class_id: 1, class_name: 'さくら組' });
-// 一時パスワード中の職員（デモの 宮城 蓮。パスワードは temp0901）
-const tempStaff = user(4, '2', 'miyagi@hoiku.example.jp', '宮城 蓮', { staff_id: 'S004', class_id: 1, class_name: 'さくら組', is_temp_password: true });
-const kinjo = user(5, '2', 'kinjo@hoiku.example.jp', '金城 宗一郎', { staff_id: 'S005', class_id: 2, class_name: 'ひまわり組' });
-const guardian = user(6, '3', 'nohara.i@example.jp', '野原 一誠', { guardian_id: 'G001' });
-// 規約の再同意が要る保護者（デモの 上園 花子の保護者。同意した版が 0.9）
-const reagree = user(7, '3', 'uezono.k@example.jp', '上園 謙心', { guardian_id: 'G002', terms_agreed: false });
+const admin = user(1, '1', 'nishida@hoiku.example.jp', '西田 拓也', { staff_id: 'S001' });
+const teacher = user(3, '2', 'suzuki@hoiku.example.jp', '鈴木 浩之', { staff_id: 'S003', class_id: 1, class_name: 'さくら組' });
+// 一時パスワード中の職員（デモの 村田 真一。パスワードは temp0901）
+const tempStaff = user(4, '2', 'murata@hoiku.example.jp', '村田 真一', { staff_id: 'S004', class_id: 1, class_name: 'さくら組', is_temp_password: true });
+const kubota = user(5, '2', 'kubota@hoiku.example.jp', '久保田 和也', { staff_id: 'S005', class_id: 2, class_name: 'ひまわり組' });
+const guardian = user(6, '3', 'nishida.t@example.jp', '西田 拓也', { guardian_id: 'G001' });
+// 規約の再同意が要る保護者（デモの 遠藤 花子の保護者。同意した版が 0.9）
+const reagree = user(7, '3', 'endo.n@example.jp', '遠藤 直人', { guardian_id: 'G002', terms_agreed: false });
 
 /** いまの経路とログイン中の利用者を、画面の外から読めるように書き出す */
 function Probe() {
@@ -145,8 +145,8 @@ describe('強制のパスワード変更・規約への同意の経路（GitHub 
   it('一時パスワードから変更すると、任意の変更の画面ではなくダッシュボードへ進む', async () => {
     open('/password-change', tempStaff);
     fireEvent.change(screen.getByLabelText('現在のパスワード'), { target: { value: 'temp0901' } });
-    fireEvent.change(screen.getByLabelText('新しいパスワード'), { target: { value: 'miyagi-5678' } });
-    fireEvent.change(screen.getByLabelText('新しいパスワード（確認）'), { target: { value: 'miyagi-5678' } });
+    fireEvent.change(screen.getByLabelText('新しいパスワード'), { target: { value: 'murata-5678' } });
+    fireEvent.change(screen.getByLabelText('新しいパスワード（確認）'), { target: { value: 'murata-5678' } });
     fireEvent.click(screen.getByRole('button', { name: '変更する' }));
     await waitFor(() => expect(probe().dataset.path).toBe('/staff'), { timeout: 3000 });
     await settled();
@@ -187,7 +187,7 @@ describe('保護者のクラスのチャンネルに「園からのお知らせ�
 
 describe('職員ダッシュボードの未対応は、0 件の行も出す（GitHub Issue #178 の 6）', () => {
   it('件数が 0 の項目も、ラベル・件数・「開く」を並べる', async () => {
-    open('/staff', kinjo);
+    open('/staff', kubota);
     await settled();
     const table = screen.getByRole('heading', { name: '未対応' }).closest('section')!;
     // 異常時の記録の行は、下書きのままのヒヤリハットも数えるため名前を変えた（GitHub Issue #142 の 5。web/仮置き値.md）
@@ -196,7 +196,7 @@ describe('職員ダッシュボードの未対応は、0 件の行も出す（Gi
       expect(row, label).toBeTruthy();
       expect(within(row!).getByRole('link', { name: '開く' })).toBeTruthy();
     }
-    // 金城（ひまわり組）に差し戻された日誌は無い。0 件のまま行に出る
+    // 久保田（ひまわり組）に差し戻された日誌は無い。0 件のまま行に出る
     const returned = Array.from(table.querySelectorAll('tr')).find((tr) => tr.textContent?.includes('差し戻された日誌'))!;
     expect(returned.textContent).toContain('0 件');
   });

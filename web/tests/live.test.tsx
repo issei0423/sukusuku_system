@@ -329,7 +329,7 @@ describe('接続の扱い', () => {
 
   it('モック（npm run dev:mock・テスト）で動かすときはサーバにつながない', async () => {
     const guardian: SessionUser = {
-      account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
+      account_id: 6, email: 'nishida.t@example.jp', role: '3', display_name: '西田 拓也',
       staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
       is_temp_password: false, terms_agreed: true,
     };
@@ -448,7 +448,7 @@ describe('職員のヘッダの表示', () => {
 
   it('モックの職員の画面には出さない（サーバにつないでいないため）', async () => {
     const teacher: SessionUser = {
-      account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+      account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
       staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
       is_temp_password: false, terms_agreed: true,
     };

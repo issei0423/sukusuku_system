@@ -102,7 +102,7 @@ func TestNapSearchShowsSleepAndWakeRowsWithSleepTemperature(t *testing.T) {
 func TestNapSearchSleepRowsFollowFiltersAndScope(t *testing.T) {
 	a, h := newTestApp(t)
 	admin := loginAs(a, 1, "staff")
-	kinjo := loginAs(a, 5, "staff") // ひまわり組。さくら組の C001 は見えない
+	kubota := loginAs(a, 5, "staff") // ひまわり組。さくら組の C001 は見えない
 
 	has := func(p napSearchPage, sleepID int64) bool {
 		for _, r := range p.Rows {
@@ -121,7 +121,7 @@ func TestNapSearchSleepRowsFollowFiltersAndScope(t *testing.T) {
 	if has(searchNap(t, h, admin, "?child_name=存在しない名前"), 8) {
 		t.Fatal("園児名で絞っても、ほかの園児のねた・おきたが出ています")
 	}
-	if has(searchNap(t, h, kinjo, ""), 8) {
+	if has(searchNap(t, h, kubota, ""), 8) {
 		t.Fatal("一般（保育士）に、ほかのクラスの園児のねた・おきたが出ています")
 	}
 
@@ -140,14 +140,14 @@ func TestNapSearchShowsExclusionRows(t *testing.T) {
 	a, h := newTestApp(t)
 	admin := loginAs(a, 1, "staff")
 	teacher := loginAs(a, 3, "staff") // さくら組の担任
-	kinjo := loginAs(a, 5, "staff")   // ひまわり組
+	kubota := loginAs(a, 5, "staff")   // ひまわり組
 	_, yesterday, _ := demoNapDates(t, a)
 	var sleptAt string
 	if err := a.db.QueryRow(`SELECT slept_at FROM t_nap_sleep WHERE nap_sleep_id = 8`).Scan(&sleptAt); err != nil {
 		t.Fatal(err)
 	}
 	// 昨日の実施 2 に足す（デモの今日の対象外は、テストを夜中に回すと起動時に外れる）。
-	// 上園 花子は「ねた」と同じ時刻にして並びを確かめる。宮城 美咲は取り消したもの
+	// 遠藤 花子は「ねた」と同じ時刻にして並びを確かめる。村田 美咲は取り消したもの
 	res, err := a.db.Exec(`INSERT INTO t_nap_exclusion (nap_session_id, child_id, reason, staff_id, is_deleted, created_at) VALUES
 		(2, 'C002', '2', 'S003', 0, ?)`, sleptAt)
 	if err != nil {
@@ -176,7 +176,7 @@ func TestNapSearchShowsExclusionRows(t *testing.T) {
 	}
 	x := p.Rows[got[0]]
 	if x.NapExclusionID == nil || *x.NapExclusionID != exclusionID || x.ExclusionReason == nil || *x.ExclusionReason != "2" ||
-		x.CheckedAt != sleptAt || x.SessionDate != yesterday || x.StaffName != "高梨 倫太朗" || x.ClassName != "さくら組" {
+		x.CheckedAt != sleptAt || x.SessionDate != yesterday || x.StaffName != "鈴木 浩之" || x.ClassName != "さくら組" {
 		t.Fatalf("対象外の行の値が正しくありません: %+v", x)
 	}
 	if x.NapRecordID != nil || x.NapSleepID != nil || x.SavedAt != nil || x.BodyPosition != nil ||
@@ -186,7 +186,7 @@ func TestNapSearchShowsExclusionRows(t *testing.T) {
 	if len(find(p, "C004")) != 0 {
 		t.Fatal("取り消した対象外が出ています")
 	}
-	// 同じ時刻の「ねた」（野原 太郎）より下に出る
+	// 同じ時刻の「ねた」（西田 太郎）より下に出る
 	sleepIdx := -1
 	for i, r := range p.Rows {
 		if r.Kind == "sleep" && r.NapSleepID != nil && *r.NapSleepID == 8 {
@@ -201,10 +201,10 @@ func TestNapSearchShowsExclusionRows(t *testing.T) {
 	if len(find(searchNap(t, h, admin, "?class_id=2"), "C002")) != 0 {
 		t.Fatal("クラスで絞っても、ほかのクラスの対象外が出ています")
 	}
-	if len(find(searchNap(t, h, admin, "?child_name=野原"), "C002")) != 0 {
+	if len(find(searchNap(t, h, admin, "?child_name=西田"), "C002")) != 0 {
 		t.Fatal("園児名で絞っても、ほかの園児の対象外が出ています")
 	}
-	if len(find(searchNap(t, h, kinjo, ""), "C002")) != 0 {
+	if len(find(searchNap(t, h, kubota, ""), "C002")) != 0 {
 		t.Fatal("一般（保育士）に、ほかのクラスの園児の対象外が出ています")
 	}
 	if len(find(searchNap(t, h, teacher, ""), "C002")) != 1 {
@@ -309,7 +309,7 @@ func TestNapReportIsAdminOnly(t *testing.T) {
 		if rec.Code != http.StatusForbidden {
 			t.Fatalf("%sが帳票を出せています: %d %s", c.name, rec.Code, rec.Body.String())
 		}
-		if strings.Contains(rec.Body.String(), "野原 太郎") {
+		if strings.Contains(rec.Body.String(), "西田 太郎") {
 			t.Fatalf("%sへの拒否の応答に、帳票の中身が入っています", c.name)
 		}
 	}
@@ -352,33 +352,33 @@ func TestNapReportContents(t *testing.T) {
 		return out
 	}
 
-	// 確認の行：チェックした時刻と保存時刻の両方を出す（デモの記録 1。今日の野原 太郎 13:20:00、保存 13:20:30）
-	checks := find(func(r []string) bool { return r[2] == "野原 太郎" && strings.HasSuffix(r[1], "T13:20:00") })
+	// 確認の行：チェックした時刻と保存時刻の両方を出す（デモの記録 1。今日の西田 太郎 13:20:00、保存 13:20:30）
+	checks := find(func(r []string) bool { return r[2] == "西田 太郎" && strings.HasSuffix(r[1], "T13:20:00") })
 	if len(checks) != 1 {
 		t.Fatalf("確認の行が1行ではありません: %v", checks)
 	}
 	if c := checks[0]; c[0] != today || c[3] != "さくら組" || c[4] != "仰向け" || c[5] != "あり" || c[6] != "通常" ||
-		c[7] != "36.6" || c[8] != "高梨 倫太朗" || !strings.HasSuffix(c[9], "T13:20:30") {
+		c[7] != "36.6" || c[8] != "鈴木 浩之" || !strings.HasSuffix(c[9], "T13:20:30") {
 		t.Fatalf("確認の行の値が正しくありません: %v", c)
 	}
 
-	// ねたの行：体温の列に入眠時の体温（デモの昨日の野原 太郎 36.5）。おきたの行は体温を出さない
-	sleeps := find(func(r []string) bool { return r[2] == "野原 太郎" && r[4] == "入眠（ねた）" })
+	// ねたの行：体温の列に入眠時の体温（デモの昨日の西田 太郎 36.5）。おきたの行は体温を出さない
+	sleeps := find(func(r []string) bool { return r[2] == "西田 太郎" && r[4] == "入眠（ねた）" })
 	if len(sleeps) != 1 || sleeps[0][0] != yesterday || sleeps[0][7] != "36.5" || sleeps[0][9] != "" {
 		t.Fatalf("ねたの行が、入眠時の体温つきの1行になっていません: %v", sleeps)
 	}
-	wakes := find(func(r []string) bool { return r[2] == "野原 太郎" && r[4] == "起床（おきた）" })
+	wakes := find(func(r []string) bool { return r[2] == "西田 太郎" && r[4] == "起床（おきた）" })
 	if len(wakes) != 1 || wakes[0][7] != "" {
 		t.Fatalf("おきたの行が正しくありません: %v", wakes)
 	}
 
-	// きょうは対象外と理由。1行で出す（昨日の上園 花子は午睡なし）。取り消した対象外（昨日の宮城 美咲）は出さない
-	excluded := find(func(r []string) bool { return r[2] == "上園 花子" && r[0] == yesterday })
+	// きょうは対象外と理由。1行で出す（昨日の遠藤 花子は午睡なし）。取り消した対象外（昨日の村田 美咲）は出さない
+	excluded := find(func(r []string) bool { return r[2] == "遠藤 花子" && r[0] == yesterday })
 	if len(excluded) != 1 || excluded[0][1] != yesterday+"T13:00:00" || excluded[0][4] != "きょうは対象外（午睡なし）" ||
-		excluded[0][5] != "" || excluded[0][7] != "" || excluded[0][8] != "高梨 倫太朗" {
+		excluded[0][5] != "" || excluded[0][7] != "" || excluded[0][8] != "鈴木 浩之" {
 		t.Fatalf("対象外が理由つきの1行で出ていません: %v", excluded)
 	}
-	if cancelled := find(func(r []string) bool { return r[2] == "宮城 美咲" && r[0] == yesterday }); len(cancelled) != 0 {
+	if cancelled := find(func(r []string) bool { return r[2] == "村田 美咲" && r[0] == yesterday }); len(cancelled) != 0 {
 		t.Fatalf("取り消した対象外が出ています: %v", cancelled)
 	}
 
@@ -391,14 +391,14 @@ func TestNapReportContents(t *testing.T) {
 	// 実施の日 → クラス → 園児 → 時刻 の古い順（TestNapReportOrdersByDateClassChildTime）
 	expectNapReportOrder(t, a, f.rows)
 
-	// 異常時の記録：起票済み（記録 1。高梨 健、日誌 3）はヒヤリハット側の状況・とった対応に印を付けて1行。
+	// 異常時の記録：起票済み（記録 1。鈴木 健、日誌 3）はヒヤリハット側の状況・とった対応に印を付けて1行。
 	// 記録そのものの文は出さない（二重に数えない）
 	if !f.hasTitle || len(f.abnormals) != 2 {
 		t.Fatalf("異常時の記録が2行ではありません: %v", f.abnormals)
 	}
 	raised := [][]string{}
 	for _, r := range f.abnormals {
-		if r[1] == "高梨 健" {
+		if r[1] == "鈴木 健" {
 			raised = append(raised, r)
 		}
 	}
@@ -409,9 +409,9 @@ func TestNapReportContents(t *testing.T) {
 	if strings.Contains(f.raw, "うつ伏せの体位で寝ているのを発見") {
 		t.Fatal("起票済みの記録が、記録そのものの文でも出ています（二重に数えている）")
 	}
-	// 起票していない記録 2（金城 陸。昨日）は、記録そのものの文に「未起票」。実施の日の古い順で、2日前の高梨 健のあと
+	// 起票していない記録 2（久保田 陸。昨日）は、記録そのものの文に「未起票」。実施の日の古い順で、2日前の鈴木 健のあと
 	notRaised := f.abnormals[1]
-	if f.abnormals[0][1] != "高梨 健" || notRaised[1] != "金城 陸" || notRaised[2] != "顔色がやや紅潮していた。体温37.4度。" ||
+	if f.abnormals[0][1] != "鈴木 健" || notRaised[1] != "久保田 陸" || notRaised[2] != "顔色がやや紅潮していた。体温37.4度。" ||
 		notRaised[5] != "未起票" {
 		t.Fatalf("起票していない記録が正しくありません: %v", f.abnormals)
 	}
@@ -468,8 +468,8 @@ func TestNapReportOrdersByDateClassChildTime(t *testing.T) {
 	admin := loginAs(a, 1, "staff")
 	today, yesterday, _ := demoNapDates(t, a)
 	/*
-	 * 昨日の実施 2（さくら組）に、野原 太郎（のはら）の確認を ねた（13:02）・おきた（14:35）と同じ時刻とその間に足し、
-	 * 伊藤 葵（いとう）の確認を野原 太郎のどの確認よりも後の時刻に足す。今日の実施 4（ひまわり組）に、井上 空の確認を
+	 * 昨日の実施 2（さくら組）に、西田 太郎（にしだ）の確認を ねた（13:02）・おきた（14:35）と同じ時刻とその間に足し、
+	 * 伊藤 葵（いとう）の確認を西田 太郎のどの確認よりも後の時刻に足す。今日の実施 4（ひまわり組）に、井上 空の確認を
 	 * さくら組の確認（13:20〜）より前の時刻に足す
 	 */
 	add := func(session int, child, at string) {
@@ -499,24 +499,24 @@ func TestNapReportOrdersByDateClassChildTime(t *testing.T) {
 		return out
 	}
 	// 同じ日・同じクラスでは、時刻が後でも、よみが先の園児（いとう）を先に出す
-	ito, nohara := indexOf(yesterday, "伊藤 葵"), indexOf(yesterday, "野原 太郎")
-	if len(ito) != 1 || len(nohara) == 0 || ito[0] > nohara[0] {
-		t.Fatalf("園児のよみの順になっていません（伊藤 葵 %v、野原 太郎 %v）", ito, nohara)
+	ito, nishida := indexOf(yesterday, "伊藤 葵"), indexOf(yesterday, "西田 太郎")
+	if len(ito) != 1 || len(nishida) == 0 || ito[0] > nishida[0] {
+		t.Fatalf("園児のよみの順になっていません（伊藤 葵 %v、西田 太郎 %v）", ito, nishida)
 	}
 	// 1人の子の行は時刻の古い順。同じ時刻は、ねた・確認・おきた
 	got := []string{}
-	for _, i := range nohara {
+	for _, i := range nishida {
 		got = append(got, f.rows[i][1][11:]+" "+f.rows[i][4])
 	}
 	want := []string{"13:02:00 入眠（ねた）", "13:02:00 仰向け", "13:20:00 仰向け", "14:35:00 仰向け", "14:35:00 起床（おきた）"}
 	if strings.Join(got, "、") != strings.Join(want, "、") {
-		t.Fatalf("昨日の野原 太郎の行 = %v、want %v", got, want)
+		t.Fatalf("昨日の西田 太郎の行 = %v、want %v", got, want)
 	}
 	// 同じ日では、時刻が前でも、番号の後のクラス（ひまわり組）をさくら組のあとに出す
 	if last := f.rows[len(f.rows)-1]; last[0] != today || last[2] != "井上 空" || last[3] != "ひまわり組" {
 		t.Fatalf("今日のひまわり組の行が、さくら組のあとに出ていません: %v", last)
 	}
-	if len(indexOf(today, "野原 太郎")) == 0 {
+	if len(indexOf(today, "西田 太郎")) == 0 {
 		t.Fatal("今日のさくら組の行がありません（並びを確かめられない）")
 	}
 
@@ -539,8 +539,8 @@ func TestNapReportOrdersAbnormalsByDateClassChildTime(t *testing.T) {
 	admin := loginAs(a, 1, "staff")
 	today, yesterday, twoDaysAgo := demoNapDates(t, a)
 	/*
-	 * デモ：記録 1（2日前・さくら組・高梨 健 13:40）、記録 2（昨日・さくら組・金城 陸 14:10）。
-	 * 昨日に、金城 陸の 13:50 と、よみが後（のはら）で発見時刻が前の野原 太郎の 13:30 を足す。
+	 * デモ：記録 1（2日前・さくら組・鈴木 健 13:40）、記録 2（昨日・さくら組・久保田 陸 14:10）。
+	 * 昨日に、久保田 陸の 13:50 と、よみが後（にしだ）で発見時刻が前の西田 太郎の 13:30 を足す。
 	 * 今日に、さくら組の伊藤 葵 13:45 と、発見時刻が前のひまわり組の井上 空 13:15 を足す
 	 */
 	add := func(session int, child, foundAt string) {
@@ -562,9 +562,9 @@ func TestNapReportOrdersAbnormalsByDateClassChildTime(t *testing.T) {
 		got = append(got, r[0]+" "+r[1])
 	}
 	want := []string{
-		twoDaysAgo + "T13:40:00 高梨 健",
-		yesterday + "T13:50:00 金城 陸", yesterday + "T14:10:00 金城 陸",
-		yesterday + "T13:30:00 野原 太郎",
+		twoDaysAgo + "T13:40:00 鈴木 健",
+		yesterday + "T13:50:00 久保田 陸", yesterday + "T14:10:00 久保田 陸",
+		yesterday + "T13:30:00 西田 太郎",
 		today + "T13:45:00 伊藤 葵",
 		today + "T13:15:00 井上 空",
 	}
@@ -599,7 +599,7 @@ func TestNapReportFollowsPeriodAndClass(t *testing.T) {
 			t.Fatalf("期間の外の行が出ています: %v", r)
 		}
 	}
-	if len(f.abnormals) != 1 || f.abnormals[0][1] != "金城 陸" {
+	if len(f.abnormals) != 1 || f.abnormals[0][1] != "久保田 陸" {
 		t.Fatalf("期間の異常時の記録だけになっていません: %v", f.abnormals)
 	}
 
@@ -712,7 +712,7 @@ func TestNapReportUsesIncidentSideAndEscapesFormula(t *testing.T) {
 	raisedRow := func(f napReportCSVFile) []string {
 		t.Helper()
 		for _, r := range f.abnormals {
-			if r[1] == "高梨 健" {
+			if r[1] == "鈴木 健" {
 				return r
 			}
 		}

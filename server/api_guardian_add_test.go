@@ -13,14 +13,14 @@ import (
      基本設計書「お子さまの追加（園児の追加紐づけ）」(4-3)・「操作ログ（t_operation_log）」(5-9)・「チャット」(5-6)
 
 権限の担保はサーバ側。モックの同じ観点は web/tests/guardianAddChild.test.ts にある（addChildRefusals は同じ名前の表と同じ行）。
-デモデータ：野原さん（G001・アカウント 6）は C001 に紐づく。QRST-9012-UVWX は C002（上園 花子。さくら組・個人チャット 7。
-上園さん（G002）が連絡順 1 で紐づく）の未使用のコード、ABCD-1234-EFGH は C001 の未使用のコード、IJKL-5678-MNOP は使用済み、
+デモデータ：西田さん（G001・アカウント 6）は C001 に紐づく。QRST-9012-UVWX は C002（遠藤 花子。さくら組・個人チャット 7。
+遠藤さん（G002）が連絡順 1 で紐づく）の未使用のコード、ABCD-1234-EFGH は C001 の未使用のコード、IJKL-5678-MNOP は使用済み、
 YZAB-3456-CDEF は失効
 */
 
 const (
-	codeHanako  = "QRST-9012-UVWX" // C002（上園 花子）の未使用のコード
-	codeTaro    = "ABCD-1234-EFGH" // C001（野原 太郎）の未使用のコード
+	codeHanako  = "QRST-9012-UVWX" // C002（遠藤 花子）の未使用のコード
+	codeTaro    = "ABCD-1234-EFGH" // C001（西田 太郎）の未使用のコード
 	codeUsed    = "IJKL-5678-MNOP" // 使用済み
 	codeRevoked = "YZAB-3456-CDEF" // 失効
 )
@@ -118,7 +118,7 @@ func TestVerifyInvitationForGuardian(t *testing.T) {
 	}
 	// 大文字小文字を区別せず、ハイフンは省いてよい（新規登録と同じ形）
 	decode(t, call(t, h, guardian, "POST", "/api/invitation/verify", `{"code":"qrst9012uvwx"}`), &got)
-	if !got.OK || got.ChildName != "上園 花子" || got.Relationship != "父" {
+	if !got.OK || got.ChildName != "遠藤 花子" || got.Relationship != "父" {
 		t.Fatalf("保護者への応答: %+v", got)
 	}
 
@@ -135,7 +135,7 @@ func TestVerifyInvitationForGuardian(t *testing.T) {
 	// 終了した紐づけは追加し直せる（決めたこと D-48）
 	mustExec(t, a, `UPDATE t_guardian_child SET link_status = '2', grace_ends_on = NULL, ended_at = '2026-08-20T10:00:00' WHERE guardian_id = 'G001' AND child_id = 'C001'`)
 	decode(t, call(t, h, guardian, "POST", "/api/invitation/verify", `{"code":"`+codeTaro+`"}`), &got)
-	if got.ChildName != "野原 太郎" {
+	if got.ChildName != "西田 太郎" {
 		t.Fatalf("終了した紐づけの園児: %+v", got)
 	}
 	// 確かめるだけでは、コードを使わない
@@ -227,7 +227,7 @@ func TestAddChildSucceeds(t *testing.T) {
 		t.Fatalf("応答: %s", raw)
 	}
 	l := linkOf(t, a, "G001", "C002")
-	// 続柄は前後の空白を落とす。連絡順は、上園さん（1）の次。AI の下書きは断っていない
+	// 続柄は前後の空白を落とす。連絡順は、遠藤さん（1）の次。AI の下書きは断っていない
 	if !l.found || l.status != "1" || l.relationship != "母" || l.order != 2 || l.aiOptOut != 0 || l.linkedAt < before || l.endedAt != "" {
 		t.Fatalf("紐づけ: %+v", l)
 	}

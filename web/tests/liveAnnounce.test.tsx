@@ -24,18 +24,18 @@ import type { SessionUser } from '../src/api/types';
 import type { ContactHomeInput } from '../src/api/shapes';
 
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
-const admin: SessionUser = { ...teacher, account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', staff_id: 'S001', class_id: null, class_name: null, display_name: '野原 一誠' };
-/** 野原 太郎（C001）の父 */
+const admin: SessionUser = { ...teacher, account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', staff_id: 'S001', class_id: null, class_name: null, display_name: '西田 拓也' };
+/** 西田 太郎（C001）の父 */
 const guardian: SessionUser = {
-  account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
+  account_id: 6, email: 'nishida.t@example.jp', role: '3', display_name: '西田 拓也',
   staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
-/** 野原 太郎の保護者との個人チャット */
+/** 西田 太郎の保護者との個人チャット */
 const personalRoom = 6;
 
 function open(path: string, user: SessionUser) {
@@ -74,7 +74,7 @@ describe('① チャット画面：相手から届いたメッセージだけを
 
     await api.send(teacher, personalRoom, 'L1 お迎えの時間を教えてください。');
     await screen.findByText('L1 お迎えの時間を教えてください。', { selector: '.bubble' }, { timeout: 3000 });
-    await waitFor(() => expect(logText()).toContain('高梨 倫太朗（職員）から：L1 お迎えの時間を教えてください。'), { timeout: 3000 });
+    await waitFor(() => expect(logText()).toContain('鈴木 浩之（職員）から：L1 お迎えの時間を教えてください。'), { timeout: 3000 });
 
     // 自分が送ったものは、今の role="status"（「メッセージを送信しました」）で読むので、log には足さない
     fireEvent.change(screen.getByRole('textbox', { name: 'メッセージを入力' }), { target: { value: 'L2 17時に伺います。' } });
@@ -87,13 +87,13 @@ describe('① チャット画面：相手から届いたメッセージだけを
   it('職員：保護者から届いたものを足し、自分が送ったものは足さない', async () => {
     open(`/staff/chat?room=${personalRoom}`, teacher);
     // 職員のチャット一覧は、個人チャットを「〇〇の園とのやりとり」と出す（#198。StaffChatScreen の roomLabel、詳細設計書「チャット」(2-9)）
-    await waitFor(() => expect(document.querySelector('.channel.current')?.textContent).toContain('野原 太郎の園とのやりとり'), { timeout: 3000 });
+    await waitFor(() => expect(document.querySelector('.channel.current')?.textContent).toContain('西田 太郎の園とのやりとり'), { timeout: 3000 });
     await waitFor(() => expect(document.querySelectorAll('.msg').length).toBeGreaterThan(0), { timeout: 3000 });
     expect(logText()).toBe('');
 
     await api.send(guardian, personalRoom, 'L3 熱は下がりました。');
     await screen.findByText('L3 熱は下がりました。', { selector: '.bubble' }, { timeout: 3000 });
-    await waitFor(() => expect(logText()).toContain('野原 一誠（保護者）から：L3 熱は下がりました。'), { timeout: 3000 });
+    await waitFor(() => expect(logText()).toContain('西田 拓也（保護者）から：L3 熱は下がりました。'), { timeout: 3000 });
 
     fireEvent.change(screen.getByPlaceholderText('メッセージを入力'), { target: { value: 'L4 承知しました。' } });
     fireEvent.click(screen.getByRole('button', { name: '送信' }));
@@ -106,7 +106,7 @@ const home: ContactHomeInput = {
   temperature: 36.6, night_sleep_from: null, night_sleep_to: null, breakfast: '1', mood_label: 'ごきげん',
   pickup_type: '1', pickup_person: null, pickup_time: null, message: null, updated_at: null,
 };
-/** 野原 太郎の今日の家庭からを消す（このファイルの前のテストで送ったもの） */
+/** 西田 太郎の今日の家庭からを消す（このファイルの前のテストで送ったもの） */
 function clearHome() {
   for (let i = db.contactHomes.length - 1; i >= 0; i--) {
     if (db.contactHomes[i].child_id === 'C001' && db.contactHomes[i].contact_date === today()) db.contactHomes.splice(i, 1);
@@ -119,17 +119,17 @@ describe('② 連絡帳の画面：「家庭から」が増えたときだけ、
   it('連絡帳（クラス）画面：開いたとき・読み直しただけでは読まず、届いたら「家庭からが1件届きました（〇〇さん）」', async () => {
     clearHome();
     open('/staff/contact', teacher);
-    await screen.findByRole('rowheader', { name: '野原 太郎' }, { timeout: 3000 });
+    await screen.findByRole('rowheader', { name: '西田 太郎' }, { timeout: 3000 });
     expect(arrival()).toHaveLength(1);
     expect(arrival()[0].textContent).toBe('');
 
     // ほかの職員の記録で読み直しても、家庭からは増えていないので読まない
     await api.recordEvents(teacher, [{ child_id: 'C002', event_type: '2', toilet_label: 'おしっこ' }]);
-    await screen.findByRole('button', { name: /^上園 花子の排せつ .+ を直す・取り消す$/ }, { timeout: 3000 });
+    await screen.findByRole('button', { name: /^遠藤 花子の排せつ .+ を直す・取り消す$/ }, { timeout: 3000 });
     expect(arrival()[0].textContent).toBe('');
 
     await api.saveHome(guardian, 'C001', home);
-    await waitFor(() => expect(arrival()[0].textContent).toBe('家庭からが1件届きました（野原 太郎さん）'), { timeout: 3000 });
+    await waitFor(() => expect(arrival()[0].textContent).toBe('家庭からが1件届きました（西田 太郎さん）'), { timeout: 3000 });
     expect(arrival()).toHaveLength(1);
   });
 
@@ -140,25 +140,25 @@ describe('② 連絡帳の画面：「家庭から」が増えたときだけ、
     // 表が出たその場（MutationObserver の中。passive effect より前）で書き込む
     await new Promise<void>((resolve) => {
       const mo = new MutationObserver(() => {
-        if (!screen.queryByRole('rowheader', { name: '野原 太郎' })) return;
+        if (!screen.queryByRole('rowheader', { name: '西田 太郎' })) return;
         mo.disconnect();
         void api.recordEvents(teacher, [{ child_id: 'C002', event_type: '2', toilet_label: 'うんち' }]);
         resolve();
       });
       mo.observe(document.body, { childList: true, subtree: true });
     });
-    await screen.findByRole('button', { name: /^上園 花子の排せつ .*うんち .+ を直す・取り消す$/ }, { timeout: 3000 });
+    await screen.findByRole('button', { name: /^遠藤 花子の排せつ .*うんち .+ を直す・取り消す$/ }, { timeout: 3000 });
   });
 
   it('連絡帳（園児）画面：開いたときは読まず、その子の家庭からが届いたら読む', async () => {
     clearHome();
     open('/staff/contact/C001', teacher);
-    await screen.findByRole('heading', { name: '野原 太郎' }, { timeout: 3000 });
+    await screen.findByRole('heading', { name: '西田 太郎' }, { timeout: 3000 });
     expect(arrival()).toHaveLength(1);
     expect(arrival()[0].textContent).toBe('');
 
     await api.saveHome(guardian, 'C001', home);
-    await waitFor(() => expect(arrival()[0].textContent).toBe('家庭からが1件届きました（野原 太郎さん）'), { timeout: 3000 });
+    await waitFor(() => expect(arrival()[0].textContent).toBe('家庭からが1件届きました（西田 太郎さん）'), { timeout: 3000 });
   });
 });
 
@@ -172,7 +172,7 @@ describe('③ 午睡チェック画面：確認の時刻を過ぎた子を、タ
   it('園児の行の状態の文は読み上げの欄に入れず、時刻を過ぎたらタイマーの欄で1回読み、記録して減っても読み直さない', async () => {
     const session = await startNap();
     open('/staff/nap', teacher);
-    await screen.findByRole('region', { name: '野原 太郎の午睡チェック' }, { timeout: 3000 });
+    await screen.findByRole('region', { name: '西田 太郎の午睡チェック' }, { timeout: 3000 });
     // 行の状態（「未記録」「確認済み」「チェック時刻を過ぎています」）は読み上げへ伝えない
     // （時刻を過ぎると全員の行が同時に変わり、続けて何度も読むため）
     expect(rowSaid()).toEqual([]);
@@ -223,7 +223,7 @@ describe('読まないもの：ヘッダの通知の件数・保護者ホーム�
     const session = await startNap();
     await api.sleep(teacher, session.nap_session_id, 'C001');
     open('/guardian', guardian);
-    const card = await screen.findByRole('region', { name: '野原 太郎さんのきょう' }, { timeout: 3000 });
+    const card = await screen.findByRole('region', { name: '西田 太郎さんのきょう' }, { timeout: 3000 });
     await waitFor(() => expect(card.querySelector('.contact-nap')).not.toBeNull(), { timeout: 3000 });
     expect(card.querySelectorAll('[role="status"], [role="log"], [aria-live]')).toHaveLength(0);
     expect(document.querySelector('.notify-btn')?.closest('[role="status"], [role="log"], [aria-live]')).toBeNull();

@@ -28,32 +28,32 @@ const taroGuardian = user(6, '3', { guardian_id: 'G001' });
 
 /** server/namecheck_test.go の nameCheckChildren と同じ作り物の園児 */
 const children: NameChild[] = [
-  { id: 'A', name: '野原 太郎', kana: 'のはら たろう', nickname: 'たっくん' },
+  { id: 'A', name: '西田 太郎', kana: 'にしだ たろう', nickname: 'たっくん' },
   { id: 'B', name: '伊藤 葵', kana: 'いとう あおい', nickname: 'あおちゃん' },
   { id: 'C', name: '小林 結衣', kana: 'こばやし ゆい', nickname: 'ゆいちゃん' },
   { id: 'D', name: '井上 空', kana: 'いのうえ そら', nickname: '' },
   { id: 'E', name: '前田 詩', kana: 'まえだ うた', nickname: '' },
   { id: 'F', name: '林 悠真', kana: 'はやし ゆうま', nickname: '' },
   { id: 'G', name: '山田 ゆい', kana: 'やまだ ゆい', nickname: '' },
-  { id: 'H', name: '野原 あい', kana: 'のはら あい', nickname: '' },
+  { id: 'H', name: '西田 あい', kana: 'にしだ あい', nickname: '' },
 ];
 
 /** server/ai_test.go の anonymizeCases と同じ行（宛先が空ならクラスあて） */
 const anonymizeCases: [name: string, recipient: string, text: string, want: string, replaced: boolean][] = [
   ['宛先の呼び名を〇〇ちゃんに', 'A', 'たっくんが砂場で遊びました。', '〇〇ちゃんが砂場で遊びました。', false],
   ['宛先の名と後ろの敬称をまとめて〇〇ちゃんに', 'A', '太郎くんは最後まで走りました。', '〇〇ちゃんは最後まで走りました。', false],
-  ['宛先の氏名（空白あり）と敬称', 'A', '野原 太郎さんへ。', '〇〇ちゃんへ。', false],
+  ['宛先の氏名（空白あり）と敬称', 'A', '西田 太郎さんへ。', '〇〇ちゃんへ。', false],
   ['ほかの子の呼び名をおともだちに', 'A', 'あおちゃんとしゃぼん玉をしました。', 'おともだちとしゃぼん玉をしました。', true],
   ['ほかの子のよみ（カタカナ）と敬称', 'A', 'アオイちゃんと遊びました。', 'おともだちと遊びました。', true],
   ['1文字の名はふだんの言葉では替えない', 'A', '空が青い日でした。', '空が青い日でした。', false],
   ['1文字の名に敬称が続けば替える', 'A', '空くんと遊びました。', 'おともだちと遊びました。', true],
   ['宛先と同じ名の子を数えない', 'C', 'ゆいちゃんが笑っていました。', '〇〇ちゃんが笑っていました。', false],
-  ['同じ姓のきょうだいの氏名は、宛先の姓より長いのでおともだち', 'A', '野原あいに伝えました。', 'おともだちに伝えました。', true],
+  ['同じ姓のきょうだいの氏名は、宛先の姓より長いのでおともだち', 'A', '西田あいに伝えました。', 'おともだちに伝えました。', true],
   ['クラスあては全員をおともだちに', '', 'たっくんとあおちゃんが遊びました。', 'おともだちとおともだちが遊びました。', true],
   ['携帯電話の番号を伏せる', 'A', '090-1234-5678 にお電話ください。', '（伏せました） にお電話ください。', false],
   ['区切りの無い番号を伏せる', 'A', '09012345678まで', '（伏せました）まで', false],
   ['固定電話（10桁）を伏せる', 'A', '098（123）4567へ', '（伏せました）へ', false],
-  ['メールアドレスを伏せる', 'A', 'nohara.i@example.jp へ送ってください。', '（伏せました） へ送ってください。', false],
+  ['メールアドレスを伏せる', 'A', 'nishida.t@example.jp へ送ってください。', '（伏せました） へ送ってください。', false],
   ['0で始まらない数は伏せない', 'A', '12345678901', '12345678901', false],
   ['12桁の数は伏せない', 'A', '090123456789', '090123456789', false],
   ['時刻は伏せない', 'A', '11:40に給食、09:30に散歩。', '11:40に給食、09:30に散歩。', false],
@@ -68,18 +68,18 @@ const restoreCases: [name: string, recipient: string, text: string, want: string
   ['おともだちは戻さない', 'A', 'おともだちと〇〇ちゃんが遊びました。', 'おともだちとたっくんが遊びました。'],
 ];
 
-/** server/ai_test.go の anonymizeAdultCases と同じ行（宛先は野原 太郎） */
+/** server/ai_test.go の anonymizeAdultCases と同じ行（宛先は西田 太郎） */
 const anonymizeAdultCases: [name: string, text: string, want: string][] = [
-  ['保護者の姓名', '野原一誠さんから電話がありました。', '保護者の方から電話がありました。'],
-  ['保護者の名と敬称', '一誠さんに伝えました。', '保護者の方に伝えました。'],
-  ['職員の姓と先生', '高梨先生と散歩しました。', '先生と散歩しました。'],
-  ['職員の姓名（空白あり）', '金城 宗一郎が見ていました。', '先生が見ていました。'],
-  ['園児の姓と同じなら園児として', '野原さんが笑っていました。', '〇〇ちゃんが笑っていました。'],
-  ['保護者と職員の両方にいる人に先生が続けば職員として', '一誠先生が来ました。', '先生が来ました。'],
+  ['保護者の姓名', '西田拓也さんから電話がありました。', '保護者の方から電話がありました。'],
+  ['保護者の名と敬称', '拓也さんに伝えました。', '保護者の方に伝えました。'],
+  ['職員の姓と先生', '鈴木先生と散歩しました。', '先生と散歩しました。'],
+  ['職員の姓名（空白あり）', '久保田 和也が見ていました。', '先生が見ていました。'],
+  ['園児の姓と同じなら園児として', '西田さんが笑っていました。', '〇〇ちゃんが笑っていました。'],
+  ['保護者と職員の両方にいる人に先生が続けば職員として', '拓也先生が来ました。', '先生が来ました。'],
 ];
 const adults: NameAdult[] = [
-  { name: '野原 一誠', repl: ANON_GUARDIAN }, { name: '野原 一誠', repl: ANON_STAFF },
-  { name: '高梨 倫太朗', repl: ANON_STAFF }, { name: '金城 宗一郎', repl: ANON_STAFF },
+  { name: '西田 拓也', repl: ANON_GUARDIAN }, { name: '西田 拓也', repl: ANON_STAFF },
+  { name: '鈴木 浩之', repl: ANON_STAFF }, { name: '久保田 和也', repl: ANON_STAFF },
 ];
 
 describe('送る前の置き換え（server/namecheck.go の anonymize と同じ表）', () => {
@@ -185,7 +185,7 @@ function insertTodayRecords(): () => void {
   };
   ev(90001, { event_type: '2', toilet_label: 'うんち', recorded_at: `${d}T00:11:00` });
   ev(90002, { event_type: '3', temperature: 37.8, recorded_at: `${d}T00:12:00` });
-  ev(90003, { event_type: '4', body: '野原太郎くんは、あおちゃんと砂場で型抜きをくり返していました。', recorded_at: `${d}T00:13:00` });
+  ev(90003, { event_type: '4', body: '西田太郎くんは、あおちゃんと砂場で型抜きをくり返していました。', recorded_at: `${d}T00:13:00` });
   ev(90004, { event_type: '4', body: '取り消した文', recorded_at: `${d}T00:14:00`, is_deleted: true });
   db.napSleeps.push({ nap_sleep_id: 90005, nap_session_id: 1, child_id: 'C001', slept_at: `${d}T00:20:00`, woke_at: `${d}T00:50:00`, sleep_temperature: 36.9,
     slept_staff_id: 'S003', woke_staff_id: 'S003', corrected_at: null, is_deleted: false, created_at: `${d}T00:20:00`, updated_at: `${d}T00:50:00` });
@@ -202,13 +202,13 @@ describe('AI に氏名が送られない（9-1）', () => {
   it('渡す文に、氏名・よみ・呼び名・生年月日・体温・排せつ・家庭から・電話番号・メールアドレスが無い。「〇〇ちゃん」は呼び名に戻る', async () => {
     const undo = insertTodayRecords();
     try {
-      // メモには AI を使える子（宮城 美咲）の名前を書く
-      const memo = '美咲ちゃんとしゃぼん玉を追いかけた。電話は 090-1234-5678、メールは nohara.i@example.jp。野原一誠さんと金城先生に伝えた';
+      // メモには AI を使える子（村田 美咲）の名前を書く
+      const memo = '美咲ちゃんとしゃぼん玉を追いかけた。電話は 090-1234-5678、メールは nishida.t@example.jp。西田拓也さんと久保田先生に伝えた';
       const res = await api.aiDrafts(teacher, { purpose: 'facility_note', child_id: 'C001', date: today(), memo });
       const sent = mockAi.lastSent!;
       const birth = db.children.find((c) => c.child_id === 'C001')!.birth_date;
-      for (const ng of ['野原', '太郎', 'たっくん', 'のはら', 'たろう', '伊藤', 'あおちゃん', 'あおい', '小林', 'ゆいちゃん', '宮城', '美咲', '一誠', '金城',
-        birth, '37.8', '36.9', 'うんち', 'おしっこ', '090', '1234', '@', 'example', 'さくら組', '高梨', '取り消した文', '卵']) {
+      for (const ng of ['西田', '太郎', 'たっくん', 'にしだ', 'たろう', '伊藤', 'あおちゃん', 'あおい', '小林', 'ゆいちゃん', '村田', '美咲', '拓也', '久保田',
+        birth, '37.8', '36.9', 'うんち', 'おしっこ', '090', '1234', '@', 'example', 'さくら組', '鈴木', '取り消した文', '卵']) {
         expect(sent.user, ng).not.toContain(ng);
         expect(sent.system, ng).not.toContain(ng);
       }
@@ -260,7 +260,7 @@ describe('下書きの検査と失敗（8-2・8-7）', () => {
       ['ひとことの言い換えで200文字を超える', teacher, { ...base, purpose: 'rephrase', field: 'comment', text: 'あ'.repeat(201) }, aiTextTooLong(200)],
       ['ほかのクラスの担任', otherTeacher, base, MSG.aiUnavailableForTarget],
       ['断った子・未同意の子', teacher, { ...base, child_id: 'C002' }, MSG.aiUnavailableForTarget],
-      ['メモに AI を使えない子の名前', teacher, { ...base, memo: '上園さんとボール遊び' }, MSG.aiExcludedName, 'ai_excluded_name'],
+      ['メモに AI を使えない子の名前', teacher, { ...base, memo: '遠藤さんとボール遊び' }, MSG.aiExcludedName, 'ai_excluded_name'],
       ['言い換える文に AI を使えない子の名前', teacher, { ...base, purpose: 'rephrase', text: 'あおちゃんと遊びました。' }, MSG.aiExcludedName, 'ai_excluded_name'],
     ];
     for (const [name, who, input, msg, kind] of cases) {

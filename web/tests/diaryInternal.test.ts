@@ -16,11 +16,11 @@ const user = (account_id: number, role: SessionUser['role'], extra: Partial<Sess
   account_id, email: '', role, display_name: '', staff_id: null, guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true, ...extra,
 });
-const admin = user(1, '1', { staff_id: 'S001' }); // 野原 一誠（日誌 4・5 を承認した管理者）
-const admin2 = user(2, '1', { staff_id: 'S002' }); // 上園 謙心（承認していない管理者）
-const teacher = user(3, '2', { staff_id: 'S003', class_id: 1, class_name: 'さくら組' }); // 高梨（日誌 4・5 の作成者）
-const miyagi = user(4, '2', { staff_id: 'S004', class_id: 1, class_name: 'さくら組' }); // 同じクラスの職員
-const guardian = user(6, '3', { guardian_id: 'G001' }); // 野原 太郎（C001）の保護者
+const admin = user(1, '1', { staff_id: 'S001' }); // 西田 拓也（日誌 4・5 を承認した管理者）
+const admin2 = user(2, '1', { staff_id: 'S002' }); // 遠藤 直人（承認していない管理者）
+const teacher = user(3, '2', { staff_id: 'S003', class_id: 1, class_name: 'さくら組' }); // 鈴木（日誌 4・5 の作成者）
+const murata = user(4, '2', { staff_id: 'S004', class_id: 1, class_name: 'さくら組' }); // 同じクラスの職員
+const guardian = user(6, '3', { guardian_id: 'G001' }); // 西田 太郎（C001）の保護者
 
 const personal = (over: Partial<DiaryInput> = {}): DiaryInput => ({
   record_type: '1', child_id: 'C001', class_id: 1, diary_date: today(), body: '取り下げを試す日誌', ...over,
@@ -38,7 +38,7 @@ describe('申請の取り下げ（申請した本人だけ・申請中だけ・�
     const d = await api.saveDiary(teacher, personal(), '2');
     expect(d).toMatchObject({ status: '2', applied_staff_id: 'S003' });
     expect(d.applied_at).toBeTruthy();
-    for (const u of [admin, miyagi]) {
+    for (const u of [admin, murata]) {
       await expect(api.withdrawDiary(u, d.diary_id, d.updated_at)).rejects.toThrow('申請を取り下げられるのは、申請した本人だけです。');
     }
     await expect(api.withdrawDiary(guardian, d.diary_id, d.updated_at)).rejects.toThrow('この日誌を参照する権限がありません');
@@ -130,9 +130,9 @@ describe('承認・差し戻しの列（詳細設計書「日誌の状態」(3-6
       diary_id: draft.diary_id, body: '担任が書き足して申請', lock_token: await lockOf(teacher, draft.diary_id),
     }), '2');
     const approved = await api.approveDiary(admin, draft.diary_id);
-    expect(approved).toMatchObject({ status: '3', approved_staff_id: 'S001', applied_staff_id: 'S003', applied_staff_name: '高梨 倫太朗' });
+    expect(approved).toMatchObject({ status: '3', approved_staff_id: 'S001', applied_staff_id: 'S003', applied_staff_name: '鈴木 浩之' });
 
-    const mine = await api.saveDiary(admin2, personal({ body: '上園が書いて申請' }), '2');
+    const mine = await api.saveDiary(admin2, personal({ body: '遠藤が書いて申請' }), '2');
     await expect(api.approveDiary(admin2, mine.diary_id)).rejects.toThrow('自分が申請した日誌は承認できません。ほかの管理者に依頼してください。');
     await expect(api.approveDiary(teacher, mine.diary_id)).rejects.toThrow('承認は管理者のみが行えます');
   });

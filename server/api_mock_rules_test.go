@@ -21,9 +21,9 @@ import (
 // モックには、このうちいくつかの検査が無かった
 func TestStaffOnlyRoutesRejectGuardianAndOtherClass(t *testing.T) {
 	a, h := newTestApp(t)
-	guardian := loginAs(a, 6, "guardian") // 野原 太郎（C001・さくら組）の保護者
+	guardian := loginAs(a, 6, "guardian") // 西田 太郎（C001・さくら組）の保護者
 	teacher := loginAs(a, 3, "staff")     // さくら組
-	kinjo := loginAs(a, 5, "staff")       // ひまわり組
+	kubota := loginAs(a, 5, "staff")      // ひまわり組
 
 	for _, path := range []string{
 		"/api/children/C001/development/previous",
@@ -42,11 +42,11 @@ func TestStaffOnlyRoutesRejectGuardianAndOtherClass(t *testing.T) {
 
 	t.Run("前回の発達チェックと当日の下書きは、その園児を参照できる職員に限る", func(t *testing.T) {
 		for _, path := range []string{"/api/children/C001/development/previous", "/api/children/C001/development/draft"} {
-			expectStatus(t, request(t, h, kinjo, "GET", path, ""), http.StatusForbidden)
+			expectStatus(t, request(t, h, kubota, "GET", path, ""), http.StatusForbidden)
 			call(t, h, teacher, "GET", path, "")
 		}
 		if call(t, h, teacher, "GET", "/api/children/C001/development/previous", "").Body.String() == "null\n" {
-			t.Fatal("担任に、野原 太郎 の前回の記録が返っていません")
+			t.Fatal("担任に、西田 太郎 の前回の記録が返っていません")
 		}
 	})
 
@@ -55,8 +55,8 @@ func TestStaffOnlyRoutesRejectGuardianAndOtherClass(t *testing.T) {
 	})
 
 	t.Run("アレルギー一覧は、一般にも自クラスに限らず全園児を返す（基本設計書 6-1 ○※2）", func(t *testing.T) {
-		if !strings.Contains(call(t, h, kinjo, "GET", "/api/children/allergies", "").Body.String(), `"child_id":"C001"`) {
-			t.Fatal("ひまわり組の職員に、さくら組の 野原 太郎 のアレルギーが返っていません")
+		if !strings.Contains(call(t, h, kubota, "GET", "/api/children/allergies", "").Body.String(), `"child_id":"C001"`) {
+			t.Fatal("ひまわり組の職員に、さくら組の 西田 太郎 のアレルギーが返っていません")
 		}
 	})
 }
@@ -67,7 +67,7 @@ func TestDevelopmentCheckFirstSaveLogsCreate(t *testing.T) {
 	a, h := newTestApp(t)
 	teacher := loginAs(a, 3, "staff")
 
-	// 高梨 健（C003・さくら組）。デモデータに当日の記録は無い
+	// 鈴木 健（C003・さくら組）。デモデータに当日の記録は無い
 	var n int
 	a.db.QueryRow(`SELECT COUNT(*) FROM t_development_check WHERE child_id = 'C003' AND checked_on = ?`, today()).Scan(&n)
 	if n != 0 {
@@ -108,7 +108,7 @@ func TestListOrdersMatchMock(t *testing.T) {
 		for _, r := range rows {
 			ids = append(ids, r.Child.ChildID)
 		}
-		// 井上 空 → 野原 太郎 → 橋本 莉子 → 宮城 美咲
+		// 井上 空 → 西田 太郎 → 橋本 莉子 → 村田 美咲
 		if want := []string{"C013", "C001", "C020", "C004"}; !reflect.DeepEqual(ids, want) {
 			t.Fatalf("並び = %v, want %v", ids, want)
 		}
@@ -172,7 +172,7 @@ func TestListOrdersMatchMock(t *testing.T) {
 				ids = append(ids, r.InvitationCodeID)
 			}
 		}
-		// 上園 花子（3・4）→ 金城 陸（7）→ 高梨 健（5）→ 野原 太郎（1・2）→ 宮城 美咲（6）
+		// 遠藤 花子（3・4）→ 久保田 陸（7）→ 鈴木 健（5）→ 西田 太郎（1・2）→ 村田 美咲（6）
 		if want := []int64{3, 4, 7, 5, 1, 2, 6}; !reflect.DeepEqual(ids, want) {
 			t.Fatalf("並び = %v, want %v", ids, want)
 		}

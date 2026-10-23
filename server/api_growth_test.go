@@ -68,7 +68,7 @@ var growthAccessCases = []struct {
 }{
 	{"保護者は紐づけた自児", accGuardian, "C001", true},
 	{"保護者はほかの家庭の園児を読めない", accGuardian, "C004", false},
-	{"ほかの家庭の保護者は野原 太郎を読めない", accOtherGuard, "C001", false},
+	{"ほかの家庭の保護者は西田 太郎を読めない", accOtherGuard, "C001", false},
 	{"保護者は無い園児を読めない", accGuardian, "C999", false},
 	{"さくら組の担任は自クラスの園児", accTeacher, "C001", true},
 	{"ひまわり組の担任はさくら組の園児を読めない", accOtherTeacher, "C001", false},
@@ -117,7 +117,7 @@ func TestGrowthRecordContents(t *testing.T) {
 	guardian := loginAs(a, accGuardian, "guardian")
 
 	g, body := readGrowth(t, h, guardian, "/api/children/C001/growth")
-	if g.ChildName != "野原 太郎" || !g.SharePhysical || !strings.Contains(g.Disclaimer, "判定・診断を行うものではありません") {
+	if g.ChildName != "西田 太郎" || !g.SharePhysical || !strings.Contains(g.Disclaimer, "判定・診断を行うものではありません") {
 		t.Errorf("見出し・共有・免責: %+v", g)
 	}
 	// 測った値：C001 の3件を新しい順に。デモの今日の測定（09-01 に置いた行）は「きょう」

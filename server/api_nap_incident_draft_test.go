@@ -14,8 +14,8 @@ import (
 func TestIncidentDraftStaysVisibleUntilApplied(t *testing.T) {
 	a, h := newTestApp(t)
 	admin := loginAs(a, 1, "staff")
-	takanashi := loginAs(a, 3, "staff") // さくら組の担任
-	const abnormalID = 2                // さくら組・金城 陸（C005）の記録。未起票
+	suzuki := loginAs(a, 3, "staff") // さくら組の担任
+	const abnormalID = 2             // さくら組・久保田 陸（C005）の記録。未起票
 	today, _, twoDaysAgo := demoNapDates(t, a)
 	q := "?from=" + twoDaysAgo + "&to=" + today
 
@@ -42,11 +42,11 @@ func TestIncidentDraftStaysVisibleUntilApplied(t *testing.T) {
 	reportMark := func() string {
 		t.Helper()
 		for _, r := range napReportOf(t, h, admin, q).abnormals {
-			if r[1] == "金城 陸" {
+			if r[1] == "久保田 陸" {
 				return r[5]
 			}
 		}
-		t.Fatal("帳票に金城 陸の異常時の記録がありません")
+		t.Fatal("帳票に久保田 陸の異常時の記録がありません")
 		return ""
 	}
 
@@ -61,7 +61,7 @@ func TestIncidentDraftStaysVisibleUntilApplied(t *testing.T) {
 
 	// 「起票する」を押しただけ（下書き）：一覧は下書きと分かり、ダッシュボードの数は減らない
 	var d Diary
-	decode(t, call(t, h, takanashi, "POST", "/api/nap/abnormals/2/incident", ""), &d)
+	decode(t, call(t, h, suzuki, "POST", "/api/nap/abnormals/2/incident", ""), &d)
 	if x := abnormal(); x.DiaryID == nil || *x.DiaryID != d.DiaryID || !x.DiaryDraft {
 		t.Fatalf("起票したあとの一覧: diary_id=%v diary_draft=%v, want %d と true", x.DiaryID, x.DiaryDraft, d.DiaryID)
 	}

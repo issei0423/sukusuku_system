@@ -50,7 +50,7 @@ func TestSameNameBirthChildren(t *testing.T) {
 	}
 
 	t.Run("同じ氏名・生年月日の園児を返す。氏名の空白の違いは問わない", func(t *testing.T) {
-		for _, name := range []string{"野原 太郎", "野原　太郎", "野原太郎", " 野原 太郎 "} {
+		for _, name := range []string{"西田 太郎", "西田　太郎", "西田太郎", " 西田 太郎 "} {
 			if got := childIDs(sameNameBirthAPI(t, h, admin, name, birth)); strings.Join(got, ",") != "C001" {
 				t.Errorf("氏名 %q: %v, want [C001]", name, got)
 			}
@@ -58,10 +58,10 @@ func TestSameNameBirthChildren(t *testing.T) {
 	})
 
 	t.Run("氏名か生年月日が違えば返さない", func(t *testing.T) {
-		if got := sameNameBirthAPI(t, h, admin, "野原 次郎", birth); len(got) != 0 {
+		if got := sameNameBirthAPI(t, h, admin, "西田 次郎", birth); len(got) != 0 {
 			t.Errorf("氏名が違うのに返した: %v", childIDs(got))
 		}
-		if got := sameNameBirthAPI(t, h, admin, "野原 太郎", "2020-01-01"); len(got) != 0 {
+		if got := sameNameBirthAPI(t, h, admin, "西田 太郎", "2020-01-01"); len(got) != 0 {
 			t.Errorf("生年月日が違うのに返した: %v", childIDs(got))
 		}
 	})
@@ -92,7 +92,7 @@ func TestSameNameBirthChildren(t *testing.T) {
 
 	t.Run("管理者のみ。園児の登録は管理者の操作である", func(t *testing.T) {
 		expectStatus(t, request(t, h, teacher, "GET",
-			"/api/children/same-name-birth?child_name="+url.QueryEscape("野原 太郎")+"&birth_date="+birth, ""),
+			"/api/children/same-name-birth?child_name="+url.QueryEscape("西田 太郎")+"&birth_date="+birth, ""),
 			http.StatusForbidden)
 	})
 }
@@ -106,7 +106,7 @@ func TestChildCsvWarnsSameNameBirth(t *testing.T) {
 	}
 
 	t.Run("登録済みの園児と同じ氏名・生年月日の行は、誤りにせず確認を促す", func(t *testing.T) {
-		_, got := parseCsvAPI(t, h, admin, csvHead+"C501,野原　太郎,のはら たろう,"+birth+",1,さくら組,36.5")
+		_, got := parseCsvAPI(t, h, admin, csvHead+"C501,西田　太郎,にしだ たろう,"+birth+",1,さくら組,36.5")
 		if len(got.Rows) != 1 || got.Rows[0].Error != nil {
 			t.Fatalf("誤りになった: %+v", got.Rows)
 		}
@@ -134,14 +134,14 @@ func TestChildCsvWarnsSameNameBirth(t *testing.T) {
 	})
 
 	t.Run("範囲の外の平熱と重なっても、両方を示す", func(t *testing.T) {
-		_, got := parseCsvAPI(t, h, admin, csvHead+"C501,野原 太郎,のはら たろう,"+birth+",1,さくら組,45.0")
+		_, got := parseCsvAPI(t, h, admin, csvHead+"C501,西田 太郎,にしだ たろう,"+birth+",1,さくら組,45.0")
 		if w := got.Rows[0].Warning; w == nil || !strings.Contains(*w, "平熱") || !strings.Contains(*w, "C001") {
 			t.Errorf("確認の表示 = %v", strOrNil(w))
 		}
 	})
 
 	t.Run("確認を促すだけで、取り込みは止めない", func(t *testing.T) {
-		body, _ := json.Marshal(map[string]string{"text": csvHead + "C501,野原 太郎,のはら たろう," + birth + ",1,さくら組,36.5"})
+		body, _ := json.Marshal(map[string]string{"text": csvHead + "C501,西田 太郎,にしだ たろう," + birth + ",1,さくら組,36.5"})
 		expectStatus(t, request(t, h, admin, "POST", "/api/children/csv/import", string(body)), http.StatusOK)
 		if !a.childExists("C501") {
 			t.Fatal("取り込まれていない")

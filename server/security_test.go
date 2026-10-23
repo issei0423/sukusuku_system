@@ -35,7 +35,7 @@ func TestTempPasswordIsHardToGuess(t *testing.T) {
 		t.Fatalf("一時パスワードの形が違う: %q", out.Password)
 	}
 	// 発行した一時パスワードでログインできる
-	login(t, h, "takanashi@hoiku.example.jp", out.Password, "staff")
+	login(t, h, "suzuki@hoiku.example.jp", out.Password, "staff")
 
 	seen := map[string]bool{}
 	for i := 0; i < 200; i++ {
@@ -224,7 +224,7 @@ func TestUnknownLoginIDCountsDownLikeRealAccount(t *testing.T) {
 		}
 		return out
 	}
-	real := remainingOf("kinjo@hoiku.example.jp")
+	real := remainingOf("kubota@hoiku.example.jp")
 	unknown := remainingOf("nobody@hoiku.example.jp")
 	want := []any{4, 3, 2, 1, "locked", "locked"}
 	for i := range want {
@@ -250,12 +250,12 @@ func TestTooManyFailuresFromOneAddressAreRefused(t *testing.T) {
 	}
 	// 同じ送信元からは、正しいパスワードのログインも新規登録も止める
 	expectStatus(t, send(t, h, nil, "POST", "/api/login",
-		`{"email":"nohara@hoiku.example.jp","password":"pass1234","entrance":"staff"}`), http.StatusTooManyRequests)
+		`{"email":"nishida@hoiku.example.jp","password":"pass1234","entrance":"staff"}`), http.StatusTooManyRequests)
 	expectStatus(t, send(t, h, nil, "POST", "/api/signup", `{"code":"ABCD-1234-EFGH"}`), http.StatusTooManyRequests)
 
 	// ほかの送信元は止めない
 	req := httptest.NewRequest("POST", "/api/login",
-		strings.NewReader(`{"email":"nohara@hoiku.example.jp","password":"pass1234","entrance":"staff"}`))
+		strings.NewReader(`{"email":"nishida@hoiku.example.jp","password":"pass1234","entrance":"staff"}`))
 	req.RemoteAddr = "198.51.100.7:5555"
 	other := httptest.NewRecorder()
 	h.ServeHTTP(other, req)
@@ -266,7 +266,7 @@ func TestSuccessfulLoginsAreNotCounted(t *testing.T) {
 	a, h := newTestApp(t)
 	// 園内の端末が同じ送信元でも、成功したログインは数えない（朝にそろってログインしても止めない）
 	for i := 0; i < ipFailureLimit+5; i++ {
-		login(t, h, "nohara@hoiku.example.jp", "pass1234", "staff")
+		login(t, h, "nishida@hoiku.example.jp", "pass1234", "staff")
 		a.sessions.destroyAccount(1, "")
 	}
 }

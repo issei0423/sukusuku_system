@@ -18,12 +18,12 @@ import * as db from '../src/api/mockDb';
 import type { SessionUser } from '../src/api/types';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
@@ -47,14 +47,14 @@ afterEach(cleanup);
 
 describe('同じ氏名・生年月日の園児を探す', () => {
   it('同じ氏名・生年月日の園児を返す。氏名の空白の違いは問わない', async () => {
-    for (const name of ['野原 太郎', '野原　太郎', '野原太郎', ' 野原 太郎 ']) {
+    for (const name of ['西田 太郎', '西田　太郎', '西田太郎', ' 西田 太郎 ']) {
       expect(ids(await api.sameNameBirthChildren(admin, name, birthOf('C001'))), name).toEqual(['C001']);
     }
   });
 
   it('氏名か生年月日が違えば返さない', async () => {
-    expect(await api.sameNameBirthChildren(admin, '野原 次郎', birthOf('C001'))).toEqual([]);
-    expect(await api.sameNameBirthChildren(admin, '野原 太郎', '2020-01-01')).toEqual([]);
+    expect(await api.sameNameBirthChildren(admin, '西田 次郎', birthOf('C001'))).toEqual([]);
+    expect(await api.sameNameBirthChildren(admin, '西田 太郎', '2020-01-01')).toEqual([]);
   });
 
   it('取り消した園児（誤登録）は比べない', async () => {
@@ -77,13 +77,13 @@ describe('同じ氏名・生年月日の園児を探す', () => {
   });
 
   it('管理者のみ。園児の登録は管理者の操作である', async () => {
-    await expect(api.sameNameBirthChildren(teacher, '野原 太郎', birthOf('C001'))).rejects.toThrow('管理者のみ');
+    await expect(api.sameNameBirthChildren(teacher, '西田 太郎', birthOf('C001'))).rejects.toThrow('管理者のみ');
   });
 });
 
 describe('CSV 一括登録でも、同じ氏名・生年月日の行は確認を促す', () => {
   it('登録済みの園児と同じ氏名・生年月日の行は、誤りにせず確認を促す', async () => {
-    const { rows } = await api.parseChildCsv(`${head}C501,野原　太郎,のはら たろう,${birthOf('C001')},1,さくら組,36.5`);
+    const { rows } = await api.parseChildCsv(`${head}C501,西田　太郎,にしだ たろう,${birthOf('C001')},1,さくら組,36.5`);
     expect(rows[0].error).toBeNull();
     expect(rows[0].warning).toContain('同じ氏名・生年月日の園児がいます');
     expect(rows[0].warning).toContain('C001');
@@ -102,7 +102,7 @@ describe('CSV 一括登録でも、同じ氏名・生年月日の行は確認を
   });
 
   it('範囲の外の平熱と重なっても、両方を示す', async () => {
-    const { rows } = await api.parseChildCsv(`${head}C501,野原 太郎,のはら たろう,${birthOf('C001')},1,さくら組,45.0`);
+    const { rows } = await api.parseChildCsv(`${head}C501,西田 太郎,にしだ たろう,${birthOf('C001')},1,さくら組,45.0`);
     expect(rows[0].warning).toContain('平熱');
     expect(rows[0].warning).toContain('C001');
   });
@@ -122,7 +122,7 @@ describe('園児情報の登録の確認画面で知らせる', () => {
   }
 
   it('同じ氏名・生年月日の園児がいれば知らせる。登録は止めない', async () => {
-    await fillAndConfirm('野原　太郎', 'のはら たろう', birthOf('C001'));
+    await fillAndConfirm('西田　太郎', 'にしだ たろう', birthOf('C001'));
     const notice = await screen.findByText(/同じ氏名・生年月日の園児がいます/, undefined, { timeout: 3000 });
     expect(notice.textContent).toContain('C001');
     expect((screen.getByRole('button', { name: '登録する' }) as HTMLButtonElement).disabled).toBe(false);

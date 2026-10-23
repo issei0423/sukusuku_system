@@ -16,22 +16,22 @@ import type { NapSearchRow } from '../src/api/shapes';
 import type { SessionUser } from '../src/api/types';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
 const otherTeacher: SessionUser = {
-  account_id: 5, email: 'kinjo@hoiku.example.jp', role: '2', display_name: '金城 宗一郎',
+  account_id: 5, email: 'kubota@hoiku.example.jp', role: '2', display_name: '久保田 和也',
   staff_id: 'S005', guardian_id: null, class_id: 2, class_name: 'ひまわり組',
   is_temp_password: false, terms_agreed: true,
 };
 const guardian: SessionUser = {
-  account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
+  account_id: 6, email: 'nishida.t@example.jp', role: '3', display_name: '西田 拓也',
   staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
@@ -86,7 +86,7 @@ describe('午睡記録検索に、ねた・おきたの行と入眠時の体温�
 
 describe('午睡記録検索に、きょうは対象外とその理由の行を出す（画面詳細図「午睡記録検索画面」(5-3) の項目6）', () => {
   it('押した時刻と理由を出し、確認・ねたの値は持たない。同じ時刻のねたより下。取り消したものは出さず、絞り込みと参照範囲はほかの行と同じ', async () => {
-    // 昨日の実施 2 に足す（デモの今日の対象外は、時計によっては起動時に外れる）。上園 花子は「ねた」と同じ時刻にする。宮城 美咲は取り消したもの
+    // 昨日の実施 2 に足す（デモの今日の対象外は、時計によっては起動時に外れる）。遠藤 花子は「ねた」と同じ時刻にする。村田 美咲は取り消したもの
     const s = demoSleep();
     const date = sessionDateOf(2);
     const added = [
@@ -101,7 +101,7 @@ describe('午睡記録検索に、きょうは対象外とその理由の行を�
         kind: 'exclusion', nap_record_id: null, nap_sleep_id: null, nap_exclusion_id: 900101, exclusion_reason: '2',
         nap_session_id: 2, child_id: 'C002', checked_at: s.slept_at, saved_at: null,
         body_position: null, breathing: null, complexion: null, temperature: null, sleep_temperature: null,
-        staff_id: 'S003', session_date: date, child_name: '上園 花子', class_name: 'さくら組', staff_name: '高梨 倫太朗',
+        staff_id: 'S003', session_date: date, child_name: '遠藤 花子', class_name: 'さくら組', staff_name: '鈴木 浩之',
         // 修正あり・直せるか は確認の行だけが持つ
         corrected_at: null, can_correct: false,
       }]);
@@ -112,7 +112,7 @@ describe('午睡記録検索に、きょうは対象外とその理由の行を�
       expect(sleepIdx).toBeLessThan(exclusionIdx);
 
       expect(exclusionOf((await api.searchRecords(admin, { classId: 2 })).rows, 'C002')).toHaveLength(0);
-      expect(exclusionOf((await api.searchRecords(admin, { childName: '野原' })).rows, 'C002')).toHaveLength(0);
+      expect(exclusionOf((await api.searchRecords(admin, { childName: '西田' })).rows, 'C002')).toHaveLength(0);
       expect(exclusionOf((await api.searchRecords(otherTeacher, {})).rows, 'C002')).toHaveLength(0);
       expect(exclusionOf((await api.searchRecords(teacher, {})).rows, 'C002')).toHaveLength(1);
     } finally {
@@ -222,43 +222,43 @@ describe('帳票の中身', () => {
       const r = splitReport(text);
       const find = (pred: (x: string[]) => boolean) => r.rows.filter(pred);
 
-      // 確認の行：チェックした時刻と保存時刻の両方（デモの記録 1。今日の野原 太郎 13:20:00、保存 13:20:30）
-      const checks = find((x) => x[2] === '野原 太郎' && x[1].endsWith('T13:20:00'));
+      // 確認の行：チェックした時刻と保存時刻の両方（デモの記録 1。今日の西田 太郎 13:20:00、保存 13:20:30）
+      const checks = find((x) => x[2] === '西田 太郎' && x[1].endsWith('T13:20:00'));
       expect(checks).toEqual([
-        [today(), `${today()}T13:20:00`, '野原 太郎', 'さくら組', '仰向け', 'あり', '通常', '36.6', '高梨 倫太朗', `${today()}T13:20:30`, ''],
+        [today(), `${today()}T13:20:00`, '西田 太郎', 'さくら組', '仰向け', 'あり', '通常', '36.6', '鈴木 浩之', `${today()}T13:20:30`, ''],
       ]);
 
       // ねたの行：体温の列に入眠時の体温。おきたの行は体温を出さない
       const s = demoSleep();
-      expect(find((x) => x[2] === '野原 太郎' && x[4] === '入眠（ねた）')).toEqual([
-        [yesterday(), s.slept_at, '野原 太郎', 'さくら組', '入眠（ねた）', '', '', '36.5', '高梨 倫太朗', '', ''],
+      expect(find((x) => x[2] === '西田 太郎' && x[4] === '入眠（ねた）')).toEqual([
+        [yesterday(), s.slept_at, '西田 太郎', 'さくら組', '入眠（ねた）', '', '', '36.5', '鈴木 浩之', '', ''],
       ]);
-      expect(find((x) => x[2] === '野原 太郎' && x[4] === '起床（おきた）')).toEqual([
-        [yesterday(), s.woke_at!, '野原 太郎', 'さくら組', '起床（おきた）', '', '', '', '高梨 倫太朗', '', ''],
+      expect(find((x) => x[2] === '西田 太郎' && x[4] === '起床（おきた）')).toEqual([
+        [yesterday(), s.woke_at!, '西田 太郎', 'さくら組', '起床（おきた）', '', '', '', '鈴木 浩之', '', ''],
       ]);
 
       // きょうは対象外と理由
-      expect(find((x) => x[2] === '上園 花子' && x[0] === yesterday())).toEqual([
-        [yesterday(), `${yesterday()}T13:00:00`, '上園 花子', 'さくら組', 'きょうは対象外（午睡なし）', '', '', '', '高梨 倫太朗', '', ''],
+      expect(find((x) => x[2] === '遠藤 花子' && x[0] === yesterday())).toEqual([
+        [yesterday(), `${yesterday()}T13:00:00`, '遠藤 花子', 'さくら組', 'きょうは対象外（午睡なし）', '', '', '', '鈴木 浩之', '', ''],
       ]);
-      expect(find((x) => x[2] === '宮城 美咲' && x[0] === yesterday())).toHaveLength(0);
+      expect(find((x) => x[2] === '村田 美咲' && x[0] === yesterday())).toHaveLength(0);
 
       // 「修正あり」の列は置き、どの記録も修正していないあいだは空（修正したときは napCorrect.test.ts）。実施の日 → クラス → 園児 → 時刻 の古い順
       for (const x of r.rows) expect(x).toHaveLength(NAP_REPORT_HEADER.length);
       expect(r.rows.every((x) => x[10] === '')).toBe(true);
       expectReportOrder(r.rows);
 
-      // 異常時の記録：起票済み（記録 1。高梨 健、日誌 3）はヒヤリハット側の文に印を付けて1行。記録そのものの文は出さない
+      // 異常時の記録：起票済み（記録 1。鈴木 健、日誌 3）はヒヤリハット側の文に印を付けて1行。記録そのものの文は出さない
       expect(r.hasTitle).toBe(true);
       expect(r.abnormals).toHaveLength(2);
-      expect(r.abnormals.filter((x) => x[1] === '高梨 健')).toEqual([
-        [`${twoDaysAgo()}T13:40:00`, '高梨 健', '午睡中にうつ伏せの体位を確認した。', '仰向けに直し、呼吸と顔色を確認した。', '宮城 蓮', '起票済み', ''],
+      expect(r.abnormals.filter((x) => x[1] === '鈴木 健')).toEqual([
+        [`${twoDaysAgo()}T13:40:00`, '鈴木 健', '午睡中にうつ伏せの体位を確認した。', '仰向けに直し、呼吸と顔色を確認した。', '村田 真一', '起票済み', ''],
       ]);
       expect(text).not.toContain('うつ伏せの体位で寝ているのを発見');
-      // 起票していない記録 2（金城 陸。昨日）は記録そのものの文に「未起票」。実施の日の古い順で、2日前の高梨 健のあと
-      expect(r.abnormals[0][1]).toBe('高梨 健');
+      // 起票していない記録 2（久保田 陸。昨日）は記録そのものの文に「未起票」。実施の日の古い順で、2日前の鈴木 健のあと
+      expect(r.abnormals[0][1]).toBe('鈴木 健');
       expect(r.abnormals[1]).toEqual([
-        `${yesterday()}T14:10:00`, '金城 陸', '顔色がやや紅潮していた。体温37.4度。', '別室で休ませ、保護者へ連絡した。', '高梨 倫太朗', '未起票', '',
+        `${yesterday()}T14:10:00`, '久保田 陸', '顔色がやや紅潮していた。体温37.4度。', '別室で休ませ、保護者へ連絡した。', '鈴木 浩之', '未起票', '',
       ]);
     } finally {
       for (const e of added) db.napExclusions.splice(db.napExclusions.indexOf(e), 1);
@@ -269,8 +269,8 @@ describe('帳票の中身', () => {
     /*
      * server/api_nap_report_test.go の TestNapReportOrdersByDateClassChildTime と同じ。監査では、1人の子の確認が
      * 間隔どおりかを時刻の順に読む（2026-10-19、持ち主が任せて決めた）。
-     * 昨日の実施 2（さくら組）に、野原 太郎（のはら）の確認を ねた（13:02）・おきた（14:35）と同じ時刻とその間に足し、
-     * 伊藤 葵（いとう）の確認を野原 太郎のどの確認よりも後に足す。今日の実施 4（ひまわり組）に、井上 空の確認を
+     * 昨日の実施 2（さくら組）に、西田 太郎（にしだ）の確認を ねた（13:02）・おきた（14:35）と同じ時刻とその間に足し、
+     * 伊藤 葵（いとう）の確認を西田 太郎のどの確認よりも後に足す。今日の実施 4（ひまわり組）に、井上 空の確認を
      * さくら組の確認（13:20〜）より前の時刻に足す
      */
     const rec = (id: number, session: number, child: string, at: string): (typeof db.napRecords)[number] => ({
@@ -293,16 +293,16 @@ describe('帳票の中身', () => {
         r.rows.flatMap((x, i) => (x[0] === date && x[2] === child ? [i] : []));
       // 同じ日・同じクラスでは、時刻が後でも、よみが先の園児（いとう）を先に出す
       const ito = indexOf(yesterday(), '伊藤 葵');
-      const nohara = indexOf(yesterday(), '野原 太郎');
+      const nishida = indexOf(yesterday(), '西田 太郎');
       expect(ito).toHaveLength(1);
-      expect(ito[0]).toBeLessThan(nohara[0]);
+      expect(ito[0]).toBeLessThan(nishida[0]);
       // 1人の子の行は時刻の古い順。同じ時刻は、ねた・確認・おきた
-      expect(nohara.map((i) => `${r.rows[i][1].slice(11)} ${r.rows[i][4]}`)).toEqual([
+      expect(nishida.map((i) => `${r.rows[i][1].slice(11)} ${r.rows[i][4]}`)).toEqual([
         '13:02:00 入眠（ねた）', '13:02:00 仰向け', '13:20:00 仰向け', '14:35:00 仰向け', '14:35:00 起床（おきた）',
       ]);
       // 同じ日では、時刻が前でも、番号の後のクラス（ひまわり組）をさくら組のあとに出す
       expect(r.rows[r.rows.length - 1].slice(0, 4)).toEqual([today(), `${today()}T13:15:00`, '井上 空', 'ひまわり組']);
-      expect(indexOf(today(), '野原 太郎').length).toBeGreaterThan(0);
+      expect(indexOf(today(), '西田 太郎').length).toBeGreaterThan(0);
 
       // 画面の一覧（午睡記録検索）は時刻の新しい順のまま
       const page = await api.searchRecords(admin, { from: yesterday(), to: today() });
@@ -316,8 +316,8 @@ describe('帳票の中身', () => {
     /*
      * server/api_nap_report_test.go の TestNapReportOrdersAbnormalsByDateClassChildTime と同じ。監査では1つのファイルを
      * 時刻の順に読み、表ごとに向きが違うと読み違えるため（2026-10-19、持ち主が任せて決めた）。
-     * デモ：記録 1（2日前・さくら組・高梨 健 13:40）、記録 2（昨日・さくら組・金城 陸 14:10）。昨日に金城 陸の 13:50 と、
-     * よみが後（のはら）で発見時刻が前の野原 太郎の 13:30 を、今日にさくら組の伊藤 葵 13:45 と、発見時刻が前のひまわり組の
+     * デモ：記録 1（2日前・さくら組・鈴木 健 13:40）、記録 2（昨日・さくら組・久保田 陸 14:10）。昨日に久保田 陸の 13:50 と、
+     * よみが後（にしだ）で発見時刻が前の西田 太郎の 13:30 を、今日にさくら組の伊藤 葵 13:45 と、発見時刻が前のひまわり組の
      * 井上 空 13:15 を足す
      */
     const ab = (id: number, session: number, child: string, at: string): (typeof db.napAbnormals)[number] => ({
@@ -334,9 +334,9 @@ describe('帳票の中身', () => {
     try {
       const r = splitReport(await api.napReport(admin, { from: twoDaysAgo(), to: today(), format: 'csv' }));
       expect(r.abnormals.map((x) => `${x[0]} ${x[1]}`)).toEqual([
-        `${twoDaysAgo()}T13:40:00 高梨 健`,
-        `${yesterday()}T13:50:00 金城 陸`, `${yesterday()}T14:10:00 金城 陸`,
-        `${yesterday()}T13:30:00 野原 太郎`,
+        `${twoDaysAgo()}T13:40:00 鈴木 健`,
+        `${yesterday()}T13:50:00 久保田 陸`, `${yesterday()}T14:10:00 久保田 陸`,
+        `${yesterday()}T13:30:00 西田 太郎`,
         `${today()}T13:45:00 伊藤 葵`,
         `${today()}T13:15:00 井上 空`,
       ]);
@@ -353,7 +353,7 @@ describe('帳票の中身', () => {
     const r = splitReport(await api.napReport(admin, { from: yesterday(), to: yesterday(), format: 'csv' }));
     expect(r.rows.length).toBeGreaterThan(0);
     expect(r.rows.every((x) => x[0] === yesterday())).toBe(true);
-    expect(r.abnormals.map((x) => x[1])).toEqual(['金城 陸']);
+    expect(r.abnormals.map((x) => x[1])).toEqual(['久保田 陸']);
 
     const himawari = splitReport(await api.napReport(admin, { from: yesterday(), to: today(), classId: 2, format: 'csv' }));
     expect(himawari.rows.every((x) => x[3] === 'ひまわり組')).toBe(true);
@@ -392,15 +392,15 @@ describe('帳票の中身', () => {
     const abnormal = db.napAbnormals.find((a) => a.nap_abnormal_id === 2)!;
     const before = { body: diary.body, is_deleted: diary.is_deleted, situation: abnormal.situation, response: abnormal.response };
     const raisedRow = async () => splitReport(await api.napReport(admin, { from: twoDaysAgo(), to: today(), format: 'csv' }))
-      .abnormals.find((x) => x[1] === '高梨 健')!;
+      .abnormals.find((x) => x[1] === '鈴木 健')!;
     try {
       diary.body = '【発生日時】\r\n13時40分\r\n\r\n【発生場所】\r\nさくら組の午睡室\r\n\r\n【状況】\r\n直した状況。\r\n2行目。\r\n\r\n【とった対応】\r\n直した対応。\r\n\r\n【今後の対策】\r\n5分ごとに確かめる。';
-      expect((await raisedRow()).slice(2)).toEqual(['直した状況。\n2行目。', '直した対応。', '宮城 蓮', '起票済み', '']);
+      expect((await raisedRow()).slice(2)).toEqual(['直した状況。\n2行目。', '直した対応。', '村田 真一', '起票済み', '']);
 
       diary.is_deleted = true;
       expect((await raisedRow()).slice(2)).toEqual([
         'うつ伏せの体位で寝ているのを発見。呼吸あり、顔色は通常。', '仰向けに直し、5分後に再度確認した。保護者へは降園時に口頭で伝えた。',
-        '宮城 蓮', '起票済み', '',
+        '村田 真一', '起票済み', '',
       ]);
 
       // 式として開かれうるセル（= + - @ で始まる）は ' を付ける。" は二重にする（GitHub Issue #153 と同じ。サーバも同じ）

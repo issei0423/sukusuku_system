@@ -196,7 +196,7 @@ func guardianHomeOptOut(t *testing.T, h http.Handler, c *http.Cookie) map[string
 func TestAiOptOutSiblings(t *testing.T) {
 	a, h := newTestApp(t)
 	enableAI(t, a, &fakeWriter{})
-	// 野原さん（G001）に、きょうだいとして C006（さくら組。ほかに保護者はいない）を紐づける
+	// 西田さん（G001）に、きょうだいとして C006（さくら組。ほかに保護者はいない）を紐づける
 	mustExec(t, a, `INSERT INTO t_guardian_child (guardian_id, child_id, relationship, link_status, linked_at) VALUES ('G001','C006','父','1','2026-04-01T09:00:00')`)
 	teacher, err := a.loadSessionUser(accTeacher)
 	if err != nil {

@@ -45,12 +45,12 @@ func versionBody(updatedAt string) string { return `{"updated_at":"` + updatedAt
 // 申請の取り下げ：申請した本人だけ・申請中だけ・読んだ版のときだけ。下書きに戻り、申請者が空になる
 func TestWithdrawDiary(t *testing.T) {
 	a, h := newTestApp(t)
-	admin := loginAs(a, 1, "staff")   // 野原 一誠（S001・管理者）
-	teacher := loginAs(a, 3, "staff") // 高梨 倫太朗（S003・さくら組）
-	miyagi := loginAs(a, 4, "staff")  // 宮城（S004・さくら組）。同じクラスで日誌は読める
+	admin := loginAs(a, 1, "staff")   // 西田 拓也（S001・管理者）
+	teacher := loginAs(a, 3, "staff") // 鈴木 浩之（S003・さくら組）
+	murata := loginAs(a, 4, "staff")  // 村田（S004・さくら組）。同じクラスで日誌は読める
 	guardian := loginAs(a, 6, "guardian")
-	// 宮城は一時パスワードのデモアカウント。変えてからでないと日誌を開けない
-	call(t, h, miyagi, "POST", "/api/password", `{"current":"temp0901","next":"newpass1234"}`)
+	// 村田は一時パスワードのデモアカウント。変えてからでないと日誌を開けない
+	call(t, h, murata, "POST", "/api/password", `{"current":"temp0901","next":"newpass1234"}`)
 
 	d := diaryOf(t, call(t, h, teacher, "POST", "/api/diaries",
 		personalDiary(0, "C001", "1", today(), "取り下げを試す日誌", "2")).Body.Bytes())
@@ -60,7 +60,7 @@ func TestWithdrawDiary(t *testing.T) {
 	}
 
 	t.Run("申請した本人でなければ 403（管理者・同じクラスの職員・保護者）", func(t *testing.T) {
-		for _, c := range []*http.Cookie{admin, miyagi} {
+		for _, c := range []*http.Cookie{admin, murata} {
 			if e := errorOf(t, request(t, h, c, "POST", path, versionBody(d.UpdatedAt)), http.StatusForbidden); e.Message != "申請を取り下げられるのは、申請した本人だけです。" {
 				t.Fatalf("message = %q", e.Message)
 			}
@@ -137,7 +137,7 @@ func TestWithdrawDiary(t *testing.T) {
 	})
 
 	t.Run("差し戻しが先に済んでいても 409", func(t *testing.T) {
-		// 日誌 2 は高梨が申請したさくら組のクラス日誌
+		// 日誌 2 は鈴木が申請したさくら組のクラス日誌
 		var cls Diary
 		decode(t, call(t, h, teacher, "GET", "/api/diaries/2", ""), &cls)
 		call(t, h, admin, "POST", "/api/diaries/2/return", `{"reason":"活動を書き足してください"}`)
@@ -254,7 +254,7 @@ func TestApprovalUsesApplicantColumn(t *testing.T) {
 
 	t.Run("自分が申請したものは 403", func(t *testing.T) {
 		mine := diaryOf(t, call(t, h, admin2, "POST", "/api/diaries",
-			personalDiary(0, "C001", "1", today(), "上園が書いて申請", "2")).Body.Bytes())
+			personalDiary(0, "C001", "1", today(), "遠藤が書いて申請", "2")).Body.Bytes())
 		e := errorOf(t, request(t, h, admin2, "POST", "/api/diaries/"+itoa(mine.DiaryID)+"/approve", ""), http.StatusForbidden)
 		if e.Message != "自分が申請した日誌は承認できません。ほかの管理者に依頼してください。" {
 			t.Fatalf("message = %q", e.Message)

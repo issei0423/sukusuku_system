@@ -55,8 +55,8 @@ async function open(page: Page, sceneId: string) {
 }
 
 for (const { tag, scene, email, home } of [
-  { tag: 'staff', scene: 'staff-login', email: 'takanashi@hoiku.example.jp', home: '/staff' },
-  { tag: 'guardian', scene: 'guardian-login', email: 'nohara.i@example.jp', home: '/guardian' },
+  { tag: 'staff', scene: 'staff-login', email: 'suzuki@hoiku.example.jp', home: '/staff' },
+  { tag: 'guardian', scene: 'guardian-login', email: 'nishida.t@example.jp', home: '/guardian' },
 ]) {
   test(`[${tag}] keyboard-login — ${scene} からキーボードだけでログインする`, async ({ page }) => {
     await open(page, scene);

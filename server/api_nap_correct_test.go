@@ -14,8 +14,8 @@ import (
  *      詳細設計書.md「訂正・取り消しのまとめ」(3-5)、図/画面詳細図.md「午睡記録検索画面」(5-3) の項目10・12
  *
  * 画面側のモック（web/src/api/mock.ts の correctNapRecord）と同じ観点を、web/tests/napCorrect.test.ts で確かめる。
- * デモ：今日の実施 1（さくら組）に記録 1（野原 太郎 13:20、仰向け・あり・通常・36.6、記録者 高梨 倫太朗）と
- * 記録 2（上園 花子 13:20、右向き・36.8）。異常時の記録は2日前（記録 1）と昨日（記録 2）にだけある
+ * デモ：今日の実施 1（さくら組）に記録 1（西田 太郎 13:20、仰向け・あり・通常・36.6、記録者 鈴木 浩之）と
+ * 記録 2（遠藤 花子 13:20、右向き・36.8）。異常時の記録は2日前（記録 1）と昨日（記録 2）にだけある
  */
 
 type napRecordOut struct {
@@ -174,7 +174,7 @@ func TestCorrectNapRecordWhoCanCorrect(t *testing.T) {
 	guardian := loginAs(a, accGuardian, "guardian")
 	_, yesterday, _ := demoNapDates(t, a)
 
-	// 昨日の実施 2（さくら組）に、野原 太郎の確認の記録を足す
+	// 昨日の実施 2（さくら組）に、西田 太郎の確認の記録を足す
 	res, err := a.db.Exec(`INSERT INTO t_nap_record (nap_session_id, child_id, checked_at, saved_at, body_position,
 		breathing, complexion, temperature, staff_id) VALUES (2, 'C001', ?, ?, '1', '1', '1', NULL, 'S003')`,
 		yesterday+"T13:20:00", yesterday+"T13:20:10")
@@ -182,7 +182,7 @@ func TestCorrectNapRecordWhoCanCorrect(t *testing.T) {
 		t.Fatal(err)
 	}
 	yesterdayID, _ := res.LastInsertId()
-	// 今日の実施 1 で、上園 花子（記録 2）に異常時の記録を足す
+	// 今日の実施 1 で、遠藤 花子（記録 2）に異常時の記録を足す
 	if _, err := a.db.Exec(`INSERT INTO t_nap_abnormal (nap_session_id, child_id, found_at, recorded_at, situation,
 		response, staff_id, diary_id) VALUES (1, 'C002', ?, ?, '状況', '対応', 'S003', NULL)`, now(), now()); err != nil {
 		t.Fatal(err)
@@ -301,7 +301,7 @@ func TestNapReportShowsCorrections(t *testing.T) {
 
 	f := napReportOf(t, h, admin, "?from="+twoDaysAgo+"&to="+today)
 	isFixed := func(r []string) bool {
-		return r[0] == today && strings.HasSuffix(r[1], "T13:20:00") && r[5] != "" && (r[2] == "野原 太郎" || r[2] == "上園 花子")
+		return r[0] == today && strings.HasSuffix(r[1], "T13:20:00") && r[5] != "" && (r[2] == "西田 太郎" || r[2] == "遠藤 花子")
 	}
 	fixed := 0
 	for _, r := range f.rows {
@@ -315,7 +315,7 @@ func TestNapReportShowsCorrections(t *testing.T) {
 			t.Fatalf("直していない行に「修正あり」が付いています: %v", r)
 		}
 		// 一覧の値は直したあとの値
-		if isFixed(r) && r[2] == "野原 太郎" && (r[4] != "うつ伏せ" || r[7] != "") {
+		if isFixed(r) && r[2] == "西田 太郎" && (r[4] != "うつ伏せ" || r[7] != "") {
 			t.Fatalf("一覧が直したあとの値になっていません: %v", r)
 		}
 	}
@@ -323,20 +323,20 @@ func TestNapReportShowsCorrections(t *testing.T) {
 		t.Fatalf("修正した行が %d 行、want 2", fixed)
 	}
 
-	// 修正の履歴：並びは 園児（よみ：うえぞの → のはら）→ 修正日時。式の始まりのセルは逃がす（' を付けて出す）
+	// 修正の履歴：並びは 園児（よみ：えんどう → にしだ）→ 修正日時。式の始まりのセルは逃がす（' を付けて出す）
 	if !f.hasHistory || len(f.histories) != 3 {
 		t.Fatalf("修正の履歴が3行ではありません: %v", f.histories)
 	}
-	rec := "午睡チェックの記録（上園 花子・" + today + "T13:20:00）"
-	if h0 := f.histories[0]; h0[0] != rec || h0[2] != "野原 一誠" || h0[3] != "呼吸=あり" || h0[4] != "呼吸=確認できず" || h0[5] != "見直した" {
+	rec := "午睡チェックの記録（遠藤 花子・" + today + "T13:20:00）"
+	if h0 := f.histories[0]; h0[0] != rec || h0[2] != "西田 拓也" || h0[3] != "呼吸=あり" || h0[4] != "呼吸=確認できず" || h0[5] != "見直した" {
 		t.Fatalf("修正の履歴の1行目 = %v", h0)
 	}
-	rec = "午睡チェックの記録（野原 太郎・" + today + "T13:20:00）"
-	if h1 := f.histories[1]; h1[0] != rec || h1[2] != "高梨 倫太朗" || h1[3] != "体位=仰向け、体温=36.6" ||
+	rec = "午睡チェックの記録（西田 太郎・" + today + "T13:20:00）"
+	if h1 := f.histories[1]; h1[0] != rec || h1[2] != "鈴木 浩之" || h1[3] != "体位=仰向け、体温=36.6" ||
 		h1[4] != "体位=うつ伏せ、体温=36.9" || h1[5] != "押し間違い" {
 		t.Fatalf("修正の履歴の2行目 = %v", h1)
 	}
-	if h2 := f.histories[2]; h2[0] != rec || h2[2] != "野原 一誠" || h2[3] != "体温=36.9" || h2[4] != "体温=なし" ||
+	if h2 := f.histories[2]; h2[0] != rec || h2[2] != "西田 拓也" || h2[3] != "体温=36.9" || h2[4] != "体温=なし" ||
 		h2[5] != "'=未計測" || h2[1] < f.histories[1][1] {
 		t.Fatalf("修正の履歴の3行目 = %v", h2)
 	}

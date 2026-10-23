@@ -137,8 +137,8 @@ func TestSignUpValidatesGuardianFields(t *testing.T) {
 		{"続柄が選択肢にない", map[string]any{"relationship": "おじ"}, "続柄"},
 		{"続柄が空", map[string]any{"relationship": ""}, "続柄"},
 		{"続柄が無い", map[string]any{"relationship": nil}, "続柄"},
-		{"大文字・小文字だけが違う既存のメールアドレス", map[string]any{"email": "NOHARA.I@EXAMPLE.JP"}, "すでに登録されています"},
-		{"大文字・小文字だけが違う職員のログインID", map[string]any{"email": "Takanashi@Hoiku.Example.JP"}, "すでに登録されています"},
+		{"大文字・小文字だけが違う既存のメールアドレス", map[string]any{"email": "NISHIDA.T@EXAMPLE.JP"}, "すでに登録されています"},
+		{"大文字・小文字だけが違う職員のログインID", map[string]any{"email": "Suzuki@Hoiku.Example.JP"}, "すでに登録されています"},
 	}
 	for _, c := range rejected {
 		t.Run(c.name+"なら登録しない", func(t *testing.T) {

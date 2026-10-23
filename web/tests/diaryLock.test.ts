@@ -17,19 +17,19 @@ import type { SessionUser } from '../src/api/types';
 import { now, plusMinutes, today } from '../src/api/util';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
 
 const RELEASED = '編集ロックが解除されました。内容を再読み込みしてください';
 
-// 日誌 1 は高梨（さくら組）の下書き。野原 太郎（C001）の個人日誌
+// 日誌 1 は鈴木（さくら組）の下書き。西田 太郎（C001）の個人日誌
 const diary1 = (token: string | undefined, body: string): DiaryInput => ({
   diary_id: 1, record_type: '1', child_id: 'C001', class_id: 1, diary_date: today(), body, lock_token: token,
 });
@@ -72,7 +72,7 @@ describe('ロックの識別子（GitHub Issue #166 の 2）', () => {
   it('ロックの状態には誰が編集中かだけを返し、識別子は返さない', async () => {
     const t1 = await tokenOf(teacher, 1);
     const l = await api.lockOf(admin, 1);
-    expect(l).toMatchObject({ staff_name: '高梨 倫太朗', locked_staff_id: 'S003' });
+    expect(l).toMatchObject({ staff_name: '鈴木 浩之', locked_staff_id: 'S003' });
     expect(JSON.stringify(l)).not.toContain(t1);
     expect(l).not.toHaveProperty('lock_token');
 
@@ -86,7 +86,7 @@ describe('ロックの識別子（GitHub Issue #166 の 2）', () => {
 describe('確認画面にいる間の、ほかの職員の直し（GitHub Issue #166 の 1 の手順 B）', () => {
   it('ロックを持っている間はほかの職員が保存できず、外れたあとに直されたら古い識別子の申請は断る', async () => {
     const t1 = await tokenOf(teacher, 1);
-    await expect(api.acquireLock(admin, 1)).resolves.toEqual({ heldBy: '高梨 倫太朗' });
+    await expect(api.acquireLock(admin, 1)).resolves.toEqual({ heldBy: '鈴木 浩之' });
     await expect(api.saveDiary(admin, diary1(undefined, '園長が直して保存した版'), '1')).rejects.toThrow(RELEASED);
 
     await api.releaseLock(teacher, 1, false, t1);
@@ -94,7 +94,7 @@ describe('確認画面にいる間の、ほかの職員の直し（GitHub Issue 
     await api.saveDiary(admin, diary1(t2, '園長が直して保存した版'), '1');
     await api.releaseLock(admin, 1, false, t2);
 
-    await expect(api.saveDiary(teacher, diary1(t1, '高梨の版'), '2')).rejects.toThrow(RELEASED);
+    await expect(api.saveDiary(teacher, diary1(t1, '鈴木の版'), '2')).rejects.toThrow(RELEASED);
     expect(bodyOf1()).toBe('園長が直して保存した版');
     expect(db.diaries.find((d) => d.diary_id === 1)!.status).toBe('1');
   });
@@ -106,7 +106,7 @@ describe('編集を続けている間のロック（GitHub Issue #166 の 3）',
     stale();
     await api.touchLock(teacher, 1, t1);
     expect(lockOf1()!.last_active_at).toBe(now());
-    await expect(api.acquireLock(admin, 1)).resolves.toEqual({ heldBy: '高梨 倫太朗' });
+    await expect(api.acquireLock(admin, 1)).resolves.toEqual({ heldBy: '鈴木 浩之' });
 
     // 操作の知らせも、本人の識別子でなければ受け付けない
     await expect(api.touchLock(admin, 1, t1)).rejects.toThrow(RELEASED);

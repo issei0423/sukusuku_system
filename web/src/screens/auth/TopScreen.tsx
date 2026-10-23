@@ -173,17 +173,17 @@ function LoginErrorView({ error, entrance, onLogout }: {
  */
 function DemoAccounts({ entrance, onPick }: { entrance: 'staff' | 'guardian'; onPick: (email: string) => void }) {
   const staffList = [
-    { email: 'nohara@hoiku.example.jp', label: '野原 一誠（管理者・園長）' },
-    { email: 'takanashi@hoiku.example.jp', label: '高梨 倫太朗（一般・さくら組）' },
-    { email: 'kinjo@hoiku.example.jp', label: '金城 宗一郎（一般・ひまわり組）' },
-    { email: 'miyagi@hoiku.example.jp', label: '宮城 蓮（一時パスワード中）' },
+    { email: 'nishida@hoiku.example.jp', label: '西田 拓也（管理者・園長）' },
+    { email: 'suzuki@hoiku.example.jp', label: '鈴木 浩之（一般・さくら組）' },
+    { email: 'kubota@hoiku.example.jp', label: '久保田 和也（一般・ひまわり組）' },
+    { email: 'murata@hoiku.example.jp', label: '村田 真一（一時パスワード中）' },
   ];
   const guardianList = [
-    { email: 'nohara.i@example.jp', label: '野原 一誠（野原 太郎の保護者）' },
-    { email: 'uezono.k@example.jp', label: '上園 謙心（規約の再同意が必要）' },
-    { email: 'takanashi.r@example.jp', label: '高梨 倫太朗（停止中のアカウント）' },
-    { email: 'miyagi.r@example.jp', label: '宮城 蓮（宮城 美咲の保護者）' },
-    { email: 'kinjo.s@example.jp', label: '金城 宗一郎（金城 陸の保護者）' },
+    { email: 'nishida.t@example.jp', label: '西田 拓也（西田 太郎の保護者）' },
+    { email: 'endo.n@example.jp', label: '遠藤 直人（規約の再同意が必要）' },
+    { email: 'suzuki.h@example.jp', label: '鈴木 浩之（停止中のアカウント）' },
+    { email: 'murata.s@example.jp', label: '村田 真一（村田 美咲の保護者）' },
+    { email: 'kubota.k@example.jp', label: '久保田 和也（久保田 陸の保護者）' },
   ];
   const list = entrance === 'staff' ? staffList : guardianList;
 
@@ -195,7 +195,7 @@ function DemoAccounts({ entrance, onPick }: { entrance: 'staff' | 'guardian'; on
           <button key={a.email} className="btn-sm" onClick={() => onPick(a.email)}>{a.label}</button>
         ))}
         <div className="muted">
-          パスワードはいずれも pass1234。宮城 蓮のみ一時パスワード temp0901。
+          パスワードはいずれも pass1234。村田 真一のみ一時パスワード temp0901。
         </div>
       </div>
     </details>

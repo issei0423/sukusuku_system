@@ -79,12 +79,12 @@ describe('きょうのようすを記録する（詳細設計書 (4-4 (1))）', 
     const got = await api.recordEvents(teacher, [toilet('C001', 'うんち', at), temperature('C001', 29.5), temperature('C001', 43.5)]);
     expect(got.events).toHaveLength(3);
     expect(got.events[0].recorded_at).toBe(at);
-    expect(got.events[0].staff_name).toBe('高梨 倫太朗');
+    expect(got.events[0].staff_name).toBe('鈴木 浩之');
     const page = await api.contactPage(taroGuardian, 'C001');
     const ids = got.events.map((e) => e.contact_event_id);
     const mine = page.events.filter((e) => ids.includes(e.contact_event_id));
     expect(mine.map((e) => e.temperature ?? e.toilet_label)).toEqual(['うんち', 29.5, 43.5]);
-    expect(JSON.stringify(page)).not.toMatch(/staff_name|updated_at|高梨/);
+    expect(JSON.stringify(page)).not.toMatch(/staff_name|updated_at|鈴木/);
   });
 
   it('食事の回：その回の記録がある子は飛ばす（全員ぜんぶで上書きしない）。おやつの2回目は入る', async () => {

@@ -10,7 +10,7 @@ import { today } from '../src/api/util';
 import { MSG } from '../src/messages';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
@@ -29,7 +29,7 @@ describe('招待コード', () => {
     const r = await api.verifyInvitationCode('ABCD-1234-EFGH');
     expect(r).toEqual({ ok: true });
     // 誰の保護者かを名乗る前の段階のため、園児名を含めない（画面詳細図 2-3）
-    expect(JSON.stringify(r)).not.toContain('野原');
+    expect(JSON.stringify(r)).not.toContain('西田');
   });
 
   it('大文字小文字を問わず照合する', async () => {
@@ -39,16 +39,16 @@ describe('招待コード', () => {
   it('1枚のコードは1アカウントの登録にのみ使える', async () => {
     const code = await api.issueOneInvitationCode(admin, 'C005', 30);
     await api.signUpGuardian({
-      code, email: 'test.parent1@example.jp', password: 'kinjo-pass-5678',
-      guardian_name: '金城 一郎', relationship: '父', terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION,
+      code, email: 'test.parent1@example.jp', password: 'kubota-pass-5678',
+      guardian_name: '久保田 一郎', relationship: '父', terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION,
     });
     // 使用と同時に status を使用済みにする
     expect(db.invitationCodes.find((c) => c.code === code)?.status).toBe('2');
 
     // 使ったコードでの2つ目の登録は、使用済みの文で断る（新規登録の送信も確認と同じ4つの文言。決めたこと D-52）
     await expect(api.signUpGuardian({
-      code, email: 'test.parent2@example.jp', password: 'kinjo-pass-5678',
-      guardian_name: '金城 花子', relationship: '母', terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION,
+      code, email: 'test.parent2@example.jp', password: 'kubota-pass-5678',
+      guardian_name: '久保田 花子', relationship: '母', terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION,
     })).rejects.toThrow(MSG.invitationUsed);
   });
 
@@ -77,7 +77,7 @@ describe('招待コード', () => {
   it('登録したメールアドレスは重複させない（ロールをまたいで園内で一意）', async () => {
     const code = await api.issueOneInvitationCode(admin, 'C006', 30);
     await expect(api.signUpGuardian({
-      code, email: 'takanashi@hoiku.example.jp', password: 'kinjo-pass-5678',
+      code, email: 'suzuki@hoiku.example.jp', password: 'kubota-pass-5678',
       guardian_name: '重複 太郎', relationship: '父', terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION,
     })).rejects.toThrow('すでに登録されています');
   });
@@ -87,7 +87,7 @@ describe('保護者の紐づけ', () => {
   it('有効な紐づけがゼロになった時点でアカウントを停止する', async () => {
     const code = await api.issueOneInvitationCode(admin, 'C007', 30);
     const u = await api.signUpGuardian({
-      code, email: 'test.parent3@example.jp', password: 'kinjo-pass-5678',
+      code, email: 'test.parent3@example.jp', password: 'kubota-pass-5678',
       guardian_name: '中村 二郎', relationship: '父', terms_agreed: true, terms_version: db.CURRENT_TERMS_VERSION,
     });
     expect(u.guardian_id).toBeTruthy();
@@ -100,7 +100,7 @@ describe('保護者の紐づけ', () => {
 
 describe('身体測定', () => {
   const teacher: SessionUser = {
-    account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+    account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
     staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
     is_temp_password: false, terms_agreed: true,
   };

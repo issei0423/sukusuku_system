@@ -17,12 +17,12 @@ import type { SessionUser } from '../src/api/types';
 import { formatMDHM, fromNowMinutes } from '../src/api/util';
 
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
@@ -55,7 +55,7 @@ let foundAt = '';
 let saved: { abnormals: typeof db.napAbnormals; logs: typeof db.operationLogs };
 beforeEach(() => {
   saved = { abnormals: db.napAbnormals.map((a) => ({ ...a })), logs: [...db.operationLogs] };
-  // 今日の実施 1（さくら組）の、野原 太郎の異常時の記録を足す（デモの記録 1・2 は2日前と昨日）
+  // 今日の実施 1（さくら組）の、西田 太郎の異常時の記録を足す（デモの記録 1・2 は2日前と昨日）
   foundAt = `${fromNowMinutes(-40).slice(0, 16)}:00`;
   db.napAbnormals.push({
     nap_abnormal_id: TODAY_ID, nap_session_id: 1, child_id: 'C001', found_at: foundAt, recorded_at: fromNowMinutes(-30),
@@ -69,16 +69,16 @@ afterEach(() => {
   db.operationLogs.splice(0, db.operationLogs.length, ...saved.logs);
 });
 
-const editName = () => `野原 太郎の${formatMDHM(foundAt)}の異常時の記録を修正`;
+const editName = () => `西田 太郎の${formatMDHM(foundAt)}の異常時の記録を修正`;
 
 describe('異常時記録画面の「修正」', () => {
   it('担任には、その日の自クラスの記録にだけ「修正」を出す。前の日の記録には出さない', async () => {
     open(teacher);
     await listed();
     expect(screen.getByRole('button', { name: editName() })).toBeTruthy();
-    // 昨日（金城 陸）と2日前（高梨 健）の記録には出さない
-    expect(within(listRow('金城 陸')).queryByRole('button', { name: /修正/ })).toBeNull();
-    expect(within(listRow('高梨 健')).queryByRole('button', { name: /修正/ })).toBeNull();
+    // 昨日（久保田 陸）と2日前（鈴木 健）の記録には出さない
+    expect(within(listRow('久保田 陸')).queryByRole('button', { name: /修正/ })).toBeNull();
+    expect(within(listRow('鈴木 健')).queryByRole('button', { name: /修正/ })).toBeNull();
     // 直せる範囲を一般に知らせる
     expect(document.body.textContent).toContain('前の日までの記録は、管理者が修正します');
   });
@@ -86,8 +86,8 @@ describe('異常時記録画面の「修正」', () => {
   it('管理者には、前の日の記録にも「修正」を出す', async () => {
     open(admin);
     await listed();
-    expect(within(listRow('金城 陸')).getByRole('button', { name: /金城 陸の.*の異常時の記録を修正/ })).toBeTruthy();
-    expect(within(listRow('高梨 健')).getByRole('button', { name: /高梨 健の.*の異常時の記録を修正/ })).toBeTruthy();
+    expect(within(listRow('久保田 陸')).getByRole('button', { name: /久保田 陸の.*の異常時の記録を修正/ })).toBeTruthy();
+    expect(within(listRow('鈴木 健')).getByRole('button', { name: /鈴木 健の.*の異常時の記録を修正/ })).toBeTruthy();
     expect(document.body.textContent).not.toContain('管理者が修正します');
   });
 
@@ -95,7 +95,7 @@ describe('異常時記録画面の「修正」', () => {
     open(teacher);
     await listed();
     fireEvent.click(screen.getByRole('button', { name: editName() }));
-    const form = await screen.findByRole('form', { name: /野原 太郎の.*の異常時の記録の修正/ });
+    const form = await screen.findByRole('form', { name: /西田 太郎の.*の異常時の記録の修正/ });
     // 開いたら最初の項目（発見時刻）へ移る。いまの値が入っている
     const found = within(form).getByLabelText('発見時刻') as HTMLInputElement;
     expect(document.activeElement).toBe(found);
@@ -111,8 +111,8 @@ describe('異常時記録画面の「修正」', () => {
     fireEvent.change(within(form).getByLabelText('修正の理由'), { target: { value: '書き足した' } });
     fireEvent.click(within(form).getByRole('button', { name: '修正する' }));
     await waitFor(() => expect(screen.queryByRole('form', { name: /異常時の記録の修正/ })).toBeNull());
-    await waitFor(() => expect(listRow('野原 太郎').textContent).toContain('修正あり'));
-    expect(listRow('野原 太郎').textContent).toContain('寝返りでうつ伏せになっていた');
+    await waitFor(() => expect(listRow('西田 太郎').textContent).toContain('修正あり'));
+    expect(listRow('西田 太郎').textContent).toContain('寝返りでうつ伏せになっていた');
     // 発見時刻は触っていないので送らない（変えない）
     expect(abnormalOf(TODAY_ID)).toMatchObject({ situation: '寝返りでうつ伏せになっていた', found_at: foundAt });
     // 閉じたら、その行の「修正」へ戻る
@@ -129,6 +129,6 @@ describe('異常時記録画面の「修正」', () => {
     expect(screen.queryByRole('form', { name: /異常時の記録の修正/ })).toBeNull();
     expect(document.activeElement?.getAttribute('aria-label')).toBe(editName());
     expect(abnormalOf(TODAY_ID)).toMatchObject({ response: '仰向けに直した' });
-    expect(listRow('野原 太郎').textContent).not.toContain('修正あり');
+    expect(listRow('西田 太郎').textContent).not.toContain('修正あり');
   });
 });

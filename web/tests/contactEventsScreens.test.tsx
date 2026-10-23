@@ -17,16 +17,16 @@ import * as db from '../src/api/mockDb';
 import { addDays, today } from '../src/api/util';
 
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
 const guardian: SessionUser = {
-  account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
+  account_id: 6, email: 'nishida.t@example.jp', role: '3', display_name: '西田 拓也',
   staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
-const admin: SessionUser = { ...teacher, account_id: 1, role: '1', staff_id: 'S001', class_id: null, class_name: null, display_name: '野原 一誠' };
+const admin: SessionUser = { ...teacher, account_id: 1, role: '1', staff_id: 'S001', class_id: null, class_name: null, display_name: '西田 拓也' };
 
 function open(path: string, user: SessionUser) {
   return render(
@@ -45,16 +45,16 @@ const toast = () => document.querySelector('.toast');
 describe('連絡帳（クラス）画面：記録する', () => {
   it('排せつは行のボタン1タップで記録し、結果に「取り消す」を添える。保護者のページにその時点で入る', async () => {
     open('/staff/contact', teacher);
-    const button = await screen.findByRole('button', { name: '野原 太郎の排せつ うんち' }, { timeout: 3000 });
+    const button = await screen.findByRole('button', { name: '西田 太郎の排せつ うんち' }, { timeout: 3000 });
     const before = (await api.contactPage(guardian, 'C001')).events.filter((e) => e.toilet_label === 'うんち').length;
     fireEvent.click(button); // 1
     // 押したら応答を待ってから結果を出す（楽観的更新をしない）
-    await waitFor(() => expect(toast()?.textContent).toContain('野原 太郎さんの「うんち」を記録しました。保護者が見られる状態です。'), { timeout: 3000 });
+    await waitFor(() => expect(toast()?.textContent).toContain('西田 太郎さんの「うんち」を記録しました。保護者が見られる状態です。'), { timeout: 3000 });
     expect(within(toast() as HTMLElement).getByRole('button', { name: '取り消す' })).toBeTruthy();
     const after = (await api.contactPage(guardian, 'C001')).events.filter((e) => e.toilet_label === 'うんち').length;
     expect(after).toBe(before + 1);
     // 読み上げの名前に、見えている「n回／」も入れている（WCAG 2.5.3）
-    await waitFor(() => expect(screen.getByRole('button', { name: /野原 太郎の排せつ \d+回／うんち \d{2}:\d{2} を直す・取り消す/ })).toBeTruthy(), { timeout: 3000 });
+    await waitFor(() => expect(screen.getByRole('button', { name: /西田 太郎の排せつ \d+回／うんち \d{2}:\d{2} を直す・取り消す/ })).toBeTruthy(), { timeout: 3000 });
 
     // 結果の「取り消す」→ いま読んでいる家庭の数を確かめてから取り消す
     fireEvent.click(within(toast() as HTMLElement).getByRole('button', { name: '取り消す' }));
@@ -67,28 +67,28 @@ describe('連絡帳（クラス）画面：記録する', () => {
 
   it('体温は「＋体温」→ 値の2タップで記録する。値に判定の言葉や色を付けない', async () => {
     open('/staff/contact', teacher);
-    fireEvent.click(await screen.findByRole('button', { name: '上園 花子の体温を記録する' }, { timeout: 3000 })); // 1
-    const dialog = screen.getByRole('dialog', { name: '上園 花子の体温' });
+    fireEvent.click(await screen.findByRole('button', { name: '遠藤 花子の体温を記録する' }, { timeout: 3000 })); // 1
+    const dialog = screen.getByRole('dialog', { name: '遠藤 花子の体温' });
     // 一覧は 35.0〜39.9。平熱（36.8）の位置から開く
     expect(within(dialog).getAllByRole('button').filter((b) => /^\d{2}\.\d$/.test(b.textContent ?? ''))).toHaveLength(50);
     expect(within(dialog).getByRole('button', { name: '36.8' }).classList.contains('is-origin')).toBe(true);
     fireEvent.click(within(dialog).getByRole('button', { name: '38.5' })); // 2
-    await waitFor(() => expect(toast()?.textContent).toContain('上園 花子さんの「38.5℃」を記録しました。'), { timeout: 3000 });
-    const cell = (await screen.findByRole('button', { name: /上園 花子の体温 38\.5℃/ }, { timeout: 3000 })).closest('td')!;
+    await waitFor(() => expect(toast()?.textContent).toContain('遠藤 花子さんの「38.5℃」を記録しました。'), { timeout: 3000 });
+    const cell = (await screen.findByRole('button', { name: /遠藤 花子の体温 38\.5℃/ }, { timeout: 3000 })).closest('td')!;
     expect(cell.textContent).toContain('平熱 36.8');
     expect(cell.textContent).not.toMatch(/発熱|高い|低い|異常|注意/);
   });
 
   it('体温の「ほかの値」は範囲の外も確かめを促してから記録する（止めない）', async () => {
     open('/staff/contact', teacher);
-    fireEvent.click(await screen.findByRole('button', { name: '高梨 健の体温を記録する' }, { timeout: 3000 }));
-    const dialog = screen.getByRole('dialog', { name: '高梨 健の体温' });
+    fireEvent.click(await screen.findByRole('button', { name: '鈴木 健の体温を記録する' }, { timeout: 3000 }));
+    const dialog = screen.getByRole('dialog', { name: '鈴木 健の体温' });
     fireEvent.click(within(dialog).getByRole('button', { name: 'ほかの値' }));
     fireEvent.change(within(dialog).getByLabelText('ほかの値（℃）'), { target: { value: '29.5' } });
     fireEvent.click(within(dialog).getByRole('button', { name: '記録する' }));
     expect(within(dialog).getByRole('alert').textContent).toBe('入力値が通常の範囲外です。測定値に誤りがないか確認してください。');
     fireEvent.click(within(dialog).getByRole('button', { name: 'このまま記録する' }));
-    await waitFor(() => expect(toast()?.textContent).toContain('高梨 健さんの「29.5℃」を記録しました。'), { timeout: 3000 });
+    await waitFor(() => expect(toast()?.textContent).toContain('鈴木 健さんの「29.5℃」を記録しました。'), { timeout: 3000 });
   });
 
   it('全員ぜんぶ：記録の無い行に「ぜんぶ」を仮に入れ、お休みの子を外し、違う子を直してから「記録する」。仮の値は保存しない', async () => {
@@ -100,8 +100,8 @@ describe('連絡帳（クラス）画面：記録する', () => {
     // 仮の値は保存していない（保護者に届かない）
     expect((await api.contactPage(guardian, 'C001')).events.some((e) => e.meal_kind === '2')).toBe(false);
     // お休みの子：仮の「ぜんぶ」をもう一度押すと外れる。違う子：別の量を押す
-    fireEvent.click(screen.getByRole('button', { name: '高梨 健のおやつをぜんぶ（仮）' }));
-    fireEvent.click(screen.getByRole('button', { name: '上園 花子のおやつを半分' }));
+    fireEvent.click(screen.getByRole('button', { name: '鈴木 健のおやつをぜんぶ（仮）' }));
+    fireEvent.click(screen.getByRole('button', { name: '遠藤 花子のおやつを半分' }));
     expect(document.querySelector('.contact-meal-tentative')?.textContent).toContain('11人に「ぜんぶ」');
     // 区分を替えるときは、仮の値を捨ててよいかを確かめる
     fireEvent.click(screen.getByRole('button', { name: '給食' }));
@@ -113,8 +113,8 @@ describe('連絡帳（クラス）画面：記録する', () => {
     expect(snacks.some((e) => e.child_id === 'C003')).toBe(false);
     expect(snacks.find((e) => e.child_id === 'C002')?.meal_amount).toBe('2');
     // 記録のある行で別の量を押すと訂正（1タップ）。保護者に「訂正しました」が出る
-    fireEvent.click(await screen.findByRole('button', { name: '野原 太郎のおやつを少し' }, { timeout: 3000 }));
-    await waitFor(() => expect(toast()?.textContent).toContain('野原 太郎さんのおやつを「少し」に直しました。'), { timeout: 3000 });
+    fireEvent.click(await screen.findByRole('button', { name: '西田 太郎のおやつを少し' }, { timeout: 3000 }));
+    await waitFor(() => expect(toast()?.textContent).toContain('西田 太郎さんのおやつを「少し」に直しました。'), { timeout: 3000 });
     const fixed = (await api.contactPage(guardian, 'C001')).events.find((e) => e.meal_kind === '2')!;
     expect([fixed.meal_amount, fixed.corrected_at !== null]).toEqual(['3', true]);
     // おやつの記録があると「おやつ（2回目）」が出る
@@ -124,15 +124,15 @@ describe('連絡帳（クラス）画面：記録する', () => {
   it('記録した値を押すと「直す」「取り消す」。取り消すと、いま読んでいる家庭の数を確かめてから消す', async () => {
     await api.recordEvents(teacher, [{ child_id: 'C004', event_type: '2', toilet_label: 'おしっこ' }]);
     open('/staff/contact', teacher);
-    fireEvent.click(await screen.findByRole('button', { name: /宮城 美咲の排せつ \d+回／おしっこ \d{2}:\d{2} を直す・取り消す/ }, { timeout: 3000 }));
+    fireEvent.click(await screen.findByRole('button', { name: /村田 美咲の排せつ \d+回／おしっこ \d{2}:\d{2} を直す・取り消す/ }, { timeout: 3000 }));
     const dialog = screen.getByRole('dialog', { name: '記録を直す' });
     fireEvent.click(within(dialog).getByRole('button', { name: 'トイレでできた' }));
     fireEvent.click(within(dialog).getByRole('button', { name: '直す' }));
-    await waitFor(() => expect(toast()?.textContent).toContain('直しました（宮城 美咲）'), { timeout: 3000 });
+    await waitFor(() => expect(toast()?.textContent).toContain('直しました（村田 美咲）'), { timeout: 3000 });
     const misaki: SessionUser = { ...guardian, account_id: 9, guardian_id: 'G004' };
     expect((await api.contactPage(misaki, 'C004')).events.some((e) => e.toilet_label === 'トイレでできた' && e.corrected_at)).toBe(true);
 
-    fireEvent.click(await screen.findByRole('button', { name: /宮城 美咲の排せつ \d+回／トイレでできた \d{2}:\d{2} を直す・取り消す/ }, { timeout: 3000 }));
+    fireEvent.click(await screen.findByRole('button', { name: /村田 美咲の排せつ \d+回／トイレでできた \d{2}:\d{2} を直す・取り消す/ }, { timeout: 3000 }));
     fireEvent.click(within(screen.getByRole('dialog', { name: '記録を直す' })).getByRole('button', { name: 'この記録を取り消す' }));
     const confirm = screen.getByRole('dialog', { name: 'この記録を取り消しますか' });
     await within(confirm).findByText('いま保護者 0 家庭（0 名）が読んでいます。取り消しても、読まれた内容は取り消せません。', undefined, { timeout: 3000 });
@@ -145,31 +145,31 @@ describe('連絡帳（クラス）画面：記録する', () => {
     open(`/staff/contact?date=${addDays(today(), -1)}`, teacher);
     await screen.findByText('前の日のページです。記録を足すことはできません。', undefined, { timeout: 3000 });
     expect(screen.queryByRole('button', { name: '全員ぜんぶ' })).toBeNull();
-    expect(screen.queryByRole('button', { name: '野原 太郎の排せつ おしっこ' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '西田 太郎の排せつ おしっこ' })).toBeNull();
   });
 });
 
 describe('連絡帳（園児）画面', () => {
   it('1日のページに記録した職員を出し、排せつを時刻を付けて記録できる（2タップ＋時刻）。行から直す・取り消す', async () => {
     open('/staff/contact/C001', teacher);
-    await screen.findByRole('heading', { name: '野原 太郎' }, { timeout: 3000 });
+    await screen.findByRole('heading', { name: '西田 太郎' }, { timeout: 3000 });
     const time = screen.getByLabelText('時刻（排せつ・体温）');
     fireEvent.change(time, { target: { value: '00:05' } }); // ＋1（その日の0時からいままで）
     fireEvent.click(within(screen.getByRole('group', { name: '排せつ' })).getByRole('button', { name: 'おむつ交換' })); // 2
-    await waitFor(() => expect(toast()?.textContent).toContain('野原 太郎さんの「おむつ交換」（00:05）を記録しました。保護者が見られる状態です。'), { timeout: 3000 });
+    await waitFor(() => expect(toast()?.textContent).toContain('西田 太郎さんの「おむつ交換」（00:05）を記録しました。保護者が見られる状態です。'), { timeout: 3000 });
     const row = await waitFor(() => {
       const found = [...document.querySelectorAll('.contact-timeline-text')].find((el) => (el.textContent ?? '').startsWith('おむつ交換'));
       if (!found) throw new Error('おむつ交換の行が無い');
       return found;
     }, { timeout: 3000 });
-    expect(row.closest('li')?.textContent).toContain('高梨 倫太朗');
+    expect(row.closest('li')?.textContent).toContain('鈴木 浩之');
     fireEvent.click(within(row.closest('li')!).getByRole('button', { name: /を直す・取り消す/ }));
     expect(screen.getByRole('dialog', { name: '記録を直す' })).toBeTruthy();
   });
 
   it('ほかのクラスの担任は開けない。管理者は前の日も直せるが、前の日には記録を足せない', async () => {
-    const kinjo: SessionUser = { ...teacher, account_id: 5, staff_id: 'S005', class_id: 2, class_name: 'ひまわり組', display_name: '金城 宗一郎' };
-    open('/staff/contact/C001', kinjo);
+    const kubota: SessionUser = { ...teacher, account_id: 5, staff_id: 'S005', class_id: 2, class_name: 'ひまわり組', display_name: '久保田 和也' };
+    open('/staff/contact/C001', kubota);
     await screen.findByText('この園児の連絡帳は開けません。', undefined, { timeout: 3000 });
     cleanup();
     open(`/staff/contact/C001?date=${addDays(today(), -1)}`, admin);

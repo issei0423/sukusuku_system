@@ -48,12 +48,12 @@ func hasChild(list []Child, childID string) bool {
 
 func TestPhysicalClassStatusCountsByMonth(t *testing.T) {
 	a, h := newTestApp(t)
-	takanashi := loginAs(a, 3, "staff") // さくら組
-	call(t, h, takanashi, "POST", "/api/physical/records", physicalBody("C007", lastMonthDay(3), 80.1, 10.2, ""))
+	suzuki := loginAs(a, 3, "staff") // さくら組
+	call(t, h, suzuki, "POST", "/api/physical/records", physicalBody("C007", lastMonthDay(3), 80.1, 10.2, ""))
 
 	statusOf := func(measuredOn string) physicalStatus {
 		var got physicalStatus
-		if err := json.Unmarshal(call(t, h, takanashi, "GET",
+		if err := json.Unmarshal(call(t, h, suzuki, "GET",
 			"/api/physical/class-status?class_id=1&measured_on="+measuredOn, "").Body.Bytes(), &got); err != nil {
 			t.Fatal(err)
 		}
@@ -85,17 +85,17 @@ func TestPhysicalClassStatusCountsByMonth(t *testing.T) {
 	})
 
 	t.Run("崩れた測定日は断る", func(t *testing.T) {
-		expectStatus(t, request(t, h, takanashi, "GET", "/api/physical/class-status?class_id=1&measured_on=2026-1-5", ""),
+		expectStatus(t, request(t, h, suzuki, "GET", "/api/physical/class-status?class_id=1&measured_on=2026-1-5", ""),
 			http.StatusBadRequest)
 	})
 }
 
 func TestPhysicalOverwriteNeedsConfirmation(t *testing.T) {
 	a, h := newTestApp(t)
-	takanashi := loginAs(a, 3, "staff") // さくら組
+	suzuki := loginAs(a, 3, "staff") // さくら組
 	admin := loginAs(a, 1, "staff")
 	day := lastMonthDay(5)
-	call(t, h, takanashi, "POST", "/api/physical/records", physicalBody("C008", day, 82.5, 10.8, ""))
+	call(t, h, suzuki, "POST", "/api/physical/records", physicalBody("C008", day, 82.5, 10.8, ""))
 
 	stored := func() (float64, string, int) {
 		var (
@@ -139,8 +139,8 @@ func TestPhysicalOverwriteNeedsConfirmation(t *testing.T) {
 
 func TestPhysicalSameMonthNeedsConfirmation(t *testing.T) {
 	a, h := newTestApp(t)
-	takanashi := loginAs(a, 3, "staff") // さくら組
-	call(t, h, takanashi, "POST", "/api/physical/records", physicalBody("C010", lastMonthDay(5), 82.5, 10.8, ""))
+	suzuki := loginAs(a, 3, "staff") // さくら組
+	call(t, h, suzuki, "POST", "/api/physical/records", physicalBody("C010", lastMonthDay(5), 82.5, 10.8, ""))
 
 	count := func() int {
 		var n int
@@ -149,7 +149,7 @@ func TestPhysicalSameMonthNeedsConfirmation(t *testing.T) {
 	}
 
 	t.Run("同じ月の別の日へ確かめずに送ると、2件目を作らずに断る", func(t *testing.T) {
-		body := expectStatus(t, request(t, h, takanashi, "POST", "/api/physical/records",
+		body := expectStatus(t, request(t, h, suzuki, "POST", "/api/physical/records",
 			physicalBody("C010", lastMonthDay(4), 82.3, 10.7, "")), http.StatusConflict)
 		if !strings.Contains(body, "登録済みです") {
 			t.Fatalf("同じ月の記録がある旨の文言がありません: %s", body)
@@ -160,7 +160,7 @@ func TestPhysicalSameMonthNeedsConfirmation(t *testing.T) {
 	})
 
 	t.Run("上書きを承諾しても、同じ月の別の記録の承諾にはならない", func(t *testing.T) {
-		expectStatus(t, request(t, h, takanashi, "POST", "/api/physical/records",
+		expectStatus(t, request(t, h, suzuki, "POST", "/api/physical/records",
 			physicalBody("C010", lastMonthDay(4), 82.3, 10.7, `,"confirm_overwrite":true`)), http.StatusConflict)
 		if n := count(); n != 1 {
 			t.Fatalf("承諾なしに2件目ができています: %d 件", n)
@@ -168,7 +168,7 @@ func TestPhysicalSameMonthNeedsConfirmation(t *testing.T) {
 	})
 
 	t.Run("同じ月の別の記録として承諾すると、2件目を登録する", func(t *testing.T) {
-		call(t, h, takanashi, "POST", "/api/physical/records",
+		call(t, h, suzuki, "POST", "/api/physical/records",
 			physicalBody("C010", lastMonthDay(4), 82.3, 10.7, `,"confirm_same_month":true`))
 		if n := count(); n != 2 {
 			t.Fatalf("承諾した2件目が登録されていません: %d 件", n)
@@ -176,15 +176,15 @@ func TestPhysicalSameMonthNeedsConfirmation(t *testing.T) {
 	})
 
 	t.Run("ほかの月なら確かめずに登録できる", func(t *testing.T) {
-		call(t, h, takanashi, "POST", "/api/physical/records", physicalBody("C010", today(), 83.0, 11.0, ""))
+		call(t, h, suzuki, "POST", "/api/physical/records", physicalBody("C010", today(), 83.0, 11.0, ""))
 	})
 }
 
 func TestPhysicalRejectsMalformedMeasuredOn(t *testing.T) {
 	a, h := newTestApp(t)
-	takanashi := loginAs(a, 3, "staff")
+	suzuki := loginAs(a, 3, "staff")
 	for _, v := range []string{"2026-1-5", "2026/01/05", "2026-02-30"} {
-		body := expectStatus(t, request(t, h, takanashi, "POST", "/api/physical/records",
+		body := expectStatus(t, request(t, h, suzuki, "POST", "/api/physical/records",
 			physicalBody("C011", v, 80, 10, "")), http.StatusBadRequest)
 		if !strings.Contains(body, "測定日の形式が正しくありません") {
 			t.Fatalf("%s: 形式の誤りとして断っていません: %s", v, body)

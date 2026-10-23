@@ -19,17 +19,17 @@ import type { SessionUser } from '../src/api/types';
 import { addDays, now, today } from '../src/api/util';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const admin2: SessionUser = {
-  account_id: 2, email: 'uezono@hoiku.example.jp', role: '1', display_name: '上園 謙心',
+  account_id: 2, email: 'endo@hoiku.example.jp', role: '1', display_name: '遠藤 直人',
   staff_id: 'S002', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
@@ -57,7 +57,7 @@ const openLinks = () => screen.getAllByRole('link', { name: '開く' }).map((a) 
 
 describe('日誌承認画面（#174 の 1・4）', () => {
   it('書き直して申請した管理者には承認できない旨を出し、承認のボタンを押せなくする。前回の差し戻しの理由を出す', async () => {
-    // 日誌 7 は宮城（S004）が書いた申請中の個人日誌（C004・さくら組）。上園が差し戻し、園長が書き直して申請する
+    // 日誌 7 は村田（S004）が書いた申請中の個人日誌（C004・さくら組）。遠藤が差し戻し、園長が書き直して申請する
     await api.returnDiary(admin2, 7, '午睡の様子を書き足してください');
     // 既存の日誌の保存には、本人の編集ロックの識別子が要る（GitHub Issue #166）
     const lock = await api.acquireLock(admin, 7);
@@ -70,7 +70,7 @@ describe('日誌承認画面（#174 の 1・4）', () => {
     await settled();
     expect(document.body.textContent).toContain('自分が申請した日誌は承認できません');
     expect((screen.getByText('承認する') as HTMLButtonElement).disabled).toBe(true);
-    expect(document.body.textContent).toContain('申請者 野原 一誠');
+    expect(document.body.textContent).toContain('申請者 西田 拓也');
     // 差し戻す理由は承認されるまで残す。承認者が前回の指摘を見ながら確かめられるようにする（基本設計書 5-4）
     expect(document.body.textContent).toContain('午睡の様子を書き足してください');
     cleanup();
@@ -99,7 +99,7 @@ describe('ダッシュボードの「差し戻された日誌」から開く日�
     const dates = Array.from(document.querySelectorAll('input[type="date"]')) as HTMLInputElement[];
     expect(dates.map((d) => d.value)).toEqual(['', '']);
     expect(openLinks()).toContain(`/staff/diary/${old.diary_id}`);
-    expect(openLinks()).not.toContain('/staff/diary/3'); // 宮城のヒヤリハット（差し戻し）は自分が書いたものではない
+    expect(openLinks()).not.toContain('/staff/diary/3'); // 村田のヒヤリハット（差し戻し）は自分が書いたものではない
 
     fireEvent.click(screen.getByText('作成者で絞らない'));
     await waitFor(() => expect(openLinks()).toContain('/staff/diary/3'));

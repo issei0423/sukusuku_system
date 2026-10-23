@@ -13,36 +13,36 @@ import type { DiaryInput } from '../src/api/client';
 import type { SessionUser } from '../src/api/types';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
 const otherTeacher: SessionUser = {
-  account_id: 5, email: 'kinjo@hoiku.example.jp', role: '2', display_name: '金城 宗一郎',
+  account_id: 5, email: 'kubota@hoiku.example.jp', role: '2', display_name: '久保田 和也',
   staff_id: 'S005', guardian_id: null, class_id: 2, class_name: 'ひまわり組',
   is_temp_password: false, terms_agreed: true,
 };
-// 野原 太郎（C001・さくら組）の保護者
+// 西田 太郎（C001・さくら組）の保護者
 const guardian: SessionUser = {
-  account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
+  account_id: 6, email: 'nishida.t@example.jp', role: '3', display_name: '西田 拓也',
   staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
-// 上園 花子（C002）の保護者。規約に同意したあとの状態として持つ
+// 遠藤 花子（C002）の保護者。規約に同意したあとの状態として持つ
 const childGuardian: SessionUser = {
-  account_id: 7, email: 'uezono.k@example.jp', role: '3', display_name: '上園 謙心',
+  account_id: 7, email: 'endo.n@example.jp', role: '3', display_name: '遠藤 直人',
   staff_id: null, guardian_id: 'G002', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 
 describe('手続きを終えるまで、ほかの API を使わせない（基本設計書「画面遷移」(3-4)）', () => {
   it('一時パスワードのままでは、手続き以外の API を理由つきで拒否し、変更すると使える', async () => {
-    const temp = await api.login('miyagi@hoiku.example.jp', 'temp0901', 'staff');
+    const temp = await api.login('murata@hoiku.example.jp', 'temp0901', 'staff');
     expect(temp.is_temp_password).toBe(true);
 
     const denied = { kind: 'password_change_required' };
@@ -64,7 +64,7 @@ describe('手続きを終えるまで、ほかの API を使わせない（基�
   });
 
   it('規約に同意するまでは、手続き以外の API を理由つきで拒否し、同意すると使える', async () => {
-    const u = await api.login('uezono.k@example.jp', 'pass1234', 'guardian');
+    const u = await api.login('endo.n@example.jp', 'pass1234', 'guardian');
     expect(u.terms_agreed).toBe(false);
 
     const denied = { kind: 'terms_agreement_required' };
@@ -85,7 +85,7 @@ describe('手続きを終えるまで、ほかの API を使わせない（基�
 });
 
 describe('日誌の添付（詳細設計書「日誌」(4-13)。承認済みであっても参照範囲は広がらず、保護者には返さない）', () => {
-  // 日誌 4 は上園 花子（C002・さくら組）の個人日誌。承認済み、添付2件
+  // 日誌 4 は遠藤 花子（C002・さくら組）の個人日誌。承認済み、添付2件
   const diaryId = 4;
 
   it('日誌本体を見られない人には、添付も返さない', async () => {
@@ -167,7 +167,7 @@ describe('園児の所属クラス（基本設計書「権限チェックの実�
 });
 
 describe('既存の日誌の更新と編集ロック（GitHub Issue #153 の追記）', () => {
-  // 日誌 1 は高梨（さくら組）の下書き。野原 太郎（C001）の個人日誌
+  // 日誌 1 は鈴木（さくら組）の下書き。西田 太郎（C001）の個人日誌
   const rewrite = (patch: Partial<DiaryInput>): DiaryInput => ({
     diary_id: 1, record_type: '2', child_id: null, class_id: 2, diary_date: today(), body: '書き換え', ...patch,
   });
@@ -191,13 +191,13 @@ describe('既存の日誌の更新と編集ロック（GitHub Issue #153 の追�
   it('担当外の日誌のロックは取れず、誰が編集中かも見えない', async () => {
     await expect(api.acquireLock(otherTeacher, 1)).rejects.toThrow('この日誌を編集する権限がありません');
     await expect(api.acquireLock(otherTeacher, 4)).rejects.toThrow('この日誌を編集する権限がありません');
-    // 日誌 3（差し戻しのヒヤリハット）は宮城 蓮がロックを持っている
+    // 日誌 3（差し戻しのヒヤリハット）は村田 真一がロックを持っている
     await expect(api.lockOf(otherTeacher, 3)).rejects.toThrow('この日誌を参照する権限がありません');
     expect(db.diaryLocks.some((l) => l.locked_staff_id === 'S005')).toBe(false);
   });
 
   it('担任はロックを取れ、誰が編集中かも見える', async () => {
     await expect(api.acquireLock(teacher, 1)).resolves.toHaveProperty('token');
-    await expect(api.lockOf(teacher, 3)).resolves.toMatchObject({ staff_name: '宮城 蓮' });
+    await expect(api.lockOf(teacher, 3)).resolves.toMatchObject({ staff_name: '村田 真一' });
   });
 });

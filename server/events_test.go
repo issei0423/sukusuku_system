@@ -322,10 +322,10 @@ const (
 	accAdmin2       = 2 // 管理者
 	accTeacher      = 3 // さくら組の担任。さくら組の個人チャットに参加している
 	accOtherTeacher = 5 // ひまわり組の担任
-	accGuardian     = 6 // 野原 太郎（C001・さくら組）の保護者。個人チャットは 6
-	accOtherGuard   = 9 // 宮城 美咲（C004・さくら組）の保護者。個人チャットは 8
-	roomPersonal    = 6 // 野原 太郎の保護者との個人チャット
-	roomOtherPerson = 8 // 宮城 美咲の保護者との個人チャット
+	accGuardian     = 6 // 西田 太郎（C001・さくら組）の保護者。個人チャットは 6
+	accOtherGuard   = 9 // 村田 美咲（C004・さくら組）の保護者。個人チャットは 8
+	roomPersonal    = 6 // 西田 太郎の保護者との個人チャット
+	roomOtherPerson = 8 // 村田 美咲の保護者との個人チャット
 	roomSakura      = 3 // さくら組のクラスグループ
 	roomSchool      = 1 // 園全体
 	classSakura     = 1 // さくら組
@@ -344,21 +344,21 @@ func TestNotifyChatAudience(t *testing.T) {
 		"管理者":       listen(a, accAdmin),
 		"さくら組の担任":   listen(a, accTeacher),
 		"ひまわり組の担任":  listen(a, accOtherTeacher),
-		"野原 太郎の保護者": listen(a, accGuardian),
-		"宮城 美咲の保護者": listen(a, accOtherGuard),
+		"西田 太郎の保護者": listen(a, accGuardian),
+		"村田 美咲の保護者": listen(a, accOtherGuard),
 	}
 	personal := chatEv(roomPersonal)
 
 	call(t, h, guardian, "POST", "/api/chat/rooms/6/messages", `{"body":"明日はお休みします。"}`)
-	expect(t, "保護者の送信", clients, to(who("管理者", "さくら組の担任", "野原 太郎の保護者"), personal))
+	expect(t, "保護者の送信", clients, to(who("管理者", "さくら組の担任", "西田 太郎の保護者"), personal))
 
 	call(t, h, teacher, "POST", "/api/chat/rooms/8/messages", `{"body":"お熱は下がりましたか。"}`)
-	expect(t, "ほかの家庭の個人チャット（野原 太郎の保護者には届かない）", clients,
-		to(who("管理者", "さくら組の担任", "宮城 美咲の保護者"), chatEv(roomOtherPerson)))
+	expect(t, "ほかの家庭の個人チャット（西田 太郎の保護者には届かない）", clients,
+		to(who("管理者", "さくら組の担任", "村田 美咲の保護者"), chatEv(roomOtherPerson)))
 
 	call(t, h, admin, "POST", "/api/chat/rooms/3/messages", `{"body":"明日は遠足です。"}`)
 	expect(t, "さくら組のクラスグループ（ひまわり組の担任には届かない）", clients,
-		to(who("管理者", "さくら組の担任", "野原 太郎の保護者", "宮城 美咲の保護者"), chatEv(roomSakura)))
+		to(who("管理者", "さくら組の担任", "西田 太郎の保護者", "村田 美咲の保護者"), chatEv(roomSakura)))
 
 	call(t, h, teacher, "POST", "/api/chat/rooms/6/thread-status", `{"status":"2"}`)
 	expect(t, "対応済みにする（保護者の画面には出ない）", clients, to(who("管理者", "さくら組の担任"), personal))
@@ -368,17 +368,17 @@ func TestNotifyChatAudience(t *testing.T) {
 		clients, to(who("さくら組の担任"), personal))
 
 	call(t, h, teacher, "POST", "/api/chat/rooms/6/messages", `{"body":"承知しました。お大事に。"}`)
-	expect(t, "職員の返信", clients, to(who("管理者", "さくら組の担任", "野原 太郎の保護者"), personal))
+	expect(t, "職員の返信", clients, to(who("管理者", "さくら組の担任", "西田 太郎の保護者"), personal))
 
 	call(t, h, guardian, "POST", "/api/chat/rooms/6/read", "")
 	expect(t, "保護者が既読にする（人数は職員にだけ出る。本人のほかのタブにも送る）", clients,
-		to(who("管理者", "さくら組の担任", "野原 太郎の保護者"), personal))
+		to(who("管理者", "さくら組の担任", "西田 太郎の保護者"), personal))
 
 	call(t, h, guardian, "POST", "/api/chat/rooms/6/read", "")
 	expect(t, "新しく既読にしたものが無ければ送らない", clients, nil)
 
 	call(t, h, teacher, "POST", "/api/chat/messages/6/reactions", `{"reaction_type":"1"}`)
-	expect(t, "リアクション", clients, to(who("管理者", "さくら組の担任", "野原 太郎の保護者"), personal))
+	expect(t, "リアクション", clients, to(who("管理者", "さくら組の担任", "西田 太郎の保護者"), personal))
 
 	t.Run("後から加わった保護者には、加わる前のメッセージの変化を送らない", func(t *testing.T) {
 		// 最初の保護者の参加時刻を残し、その後から加わった保護者の閲覧範囲を確かめる。
@@ -420,25 +420,25 @@ func TestNotifyDiaryAudience(t *testing.T) {
 		"ほかの管理者":     listen(a, accAdmin2),
 		"さくら組の担任":    listen(a, accTeacher),
 		"ひまわり組の担任":   listen(a, accOtherTeacher),
-		"野原 太郎の保護者":  listen(a, accGuardian),
-		"宮城 美咲の保護者":  listen(a, accOtherGuard),
+		"西田 太郎の保護者":  listen(a, accGuardian),
+		"村田 美咲の保護者":  listen(a, accOtherGuard),
 	}
 	diary := func(id int64) liveEvent { return liveEvent{Type: evDiary, DiaryID: id} }
 
 	sakuraStaff := who("管理者（承認する人）", "ほかの管理者", "さくら組の担任")
 
-	// 日誌 7 は宮城 美咲（さくら組）の個人日誌（申請中）。承認は園内の確認で、保護者へは何も届かない。
+	// 日誌 7 は村田 美咲（さくら組）の個人日誌（申請中）。承認は園内の確認で、保護者へは何も届かない。
 	// 以前の版の共有の指定が送られても読まず、個人チャットへも流さない（詳細設計書「日誌」(4-13 (2))・「PR #196 からの変更」(6-1)）
 	rec := call(t, h, admin, "POST", "/api/diaries/7/approve", `{"share_to_guardian":true}`)
 	var approved Diary
 	decode(t, rec, &approved)
-	expect(t, "承認（日誌の知らせは職員だけ。宮城 美咲の保護者にも何も届かない）", clients, to(sakuraStaff, diary(7)))
+	expect(t, "承認（日誌の知らせは職員だけ。村田 美咲の保護者にも何も届かない）", clients, to(sakuraStaff, diary(7)))
 
 	call(t, h, admin, "POST", "/api/diaries/7/revoke-approval",
 		`{"reason":"確かめ直します","updated_at":"`+approved.UpdatedAt+`"}`)
 	expect(t, "承認の取り消し（職員だけ）", clients, to(sakuraStaff, diary(7)))
 
-	// 日誌 2 はさくら組のクラス日誌（高梨が申請中）。申請した本人が取り下げる
+	// 日誌 2 はさくら組のクラス日誌（鈴木が申請中）。申請した本人が取り下げる
 	teacher := loginAs(a, accTeacher, "staff")
 	var applied Diary
 	decode(t, call(t, h, teacher, "GET", "/api/diaries/2", ""), &applied)
@@ -467,10 +467,10 @@ func TestNotifyHandoutAudience(t *testing.T) {
 		"管理者":       listen(a, accAdmin),
 		"さくら組の担任":   listen(a, accTeacher),
 		"ひまわり組の担任":  listen(a, accOtherTeacher),
-		"野原 太郎の保護者": listen(a, accGuardian),
-		"宮城 美咲の保護者": listen(a, accOtherGuard),
+		"西田 太郎の保護者": listen(a, accGuardian),
+		"村田 美咲の保護者": listen(a, accOtherGuard),
 	}
-	sakuraPeople := who("管理者", "さくら組の担任", "野原 太郎の保護者", "宮城 美咲の保護者")
+	sakuraPeople := who("管理者", "さくら組の担任", "西田 太郎の保護者", "村田 美咲の保護者")
 
 	rec := call(t, h, admin, "POST", "/api/handouts", `{"handout_type":"4","title":"さくら組だより","target_month":"2026-10",
 		"class_id":1,"file_name":"sakura.pdf","file_type":"application/pdf","file_size":1000}`)
@@ -489,7 +489,7 @@ func TestNotifyHandoutAudience(t *testing.T) {
 		"file_name":"en.pdf","file_type":"application/pdf","file_size":1000}`)
 	decode(t, rec, &posted)
 	expect(t, "園全体向けの掲載", clients,
-		to(who("管理者", "さくら組の担任", "ひまわり組の担任", "野原 太郎の保護者", "宮城 美咲の保護者"),
+		to(who("管理者", "さくら組の担任", "ひまわり組の担任", "西田 太郎の保護者", "村田 美咲の保護者"),
 			liveEvent{Type: evHandout, HandoutID: posted.HandoutID}, chatEv(roomSchool)))
 }
 
@@ -505,8 +505,8 @@ func TestNotifyNapAudience(t *testing.T) {
 		"管理者":       listen(a, accAdmin),
 		"さくら組の担任":   listen(a, accTeacher),
 		"ひまわり組の担任":  listen(a, accOtherTeacher),
-		"野原 太郎の保護者": listen(a, accGuardian),
-		"宮城 美咲の保護者": listen(a, accOtherGuard),
+		"西田 太郎の保護者": listen(a, accGuardian),
+		"村田 美咲の保護者": listen(a, accOtherGuard),
 	}
 	sakuraClass := liveEvent{Type: evNap, ClassID: classSakura}
 
@@ -518,13 +518,13 @@ func TestNotifyNapAudience(t *testing.T) {
 	path := "/api/nap/session/" + itoa(s.NapSessionID)
 	call(t, h, teacher, "POST", path+"/records",
 		`{"child_id":"C001","body_position":"1","breathing":"1","complexion":"1"}`)
-	expect(t, "野原 太郎の5分ごとの確認（監査の層。保護者には届かない）", clients,
+	expect(t, "西田 太郎の5分ごとの確認（監査の層。保護者には届かない）", clients,
 		to(who("管理者", "さくら組の担任"),
 			liveEvent{Type: evNap, ClassID: classSakura, ChildID: childTaro}))
 
 	call(t, h, teacher, "POST", path+"/records",
 		`{"child_id":"C004","body_position":"1","breathing":"1","complexion":"1"}`)
-	expect(t, "宮城 美咲の5分ごとの確認", clients,
+	expect(t, "村田 美咲の5分ごとの確認", clients,
 		to(who("管理者", "さくら組の担任"),
 			liveEvent{Type: evNap, ClassID: classSakura, ChildID: childMisaki}))
 
@@ -564,8 +564,8 @@ func TestNotifyGrowthAudience(t *testing.T) {
 		"管理者":       listen(a, accAdmin),
 		"さくら組の担任":   listen(a, accTeacher),
 		"ひまわり組の担任":  listen(a, accOtherTeacher),
-		"野原 太郎の保護者": listen(a, accGuardian),
-		"宮城 美咲の保護者": listen(a, accOtherGuard),
+		"西田 太郎の保護者": listen(a, accGuardian),
+		"村田 美咲の保護者": listen(a, accOtherGuard),
 	}
 	devHimawari := liveEvent{Type: evDevelopment, ChildID: childHimawari}
 
@@ -582,11 +582,11 @@ func TestNotifyGrowthAudience(t *testing.T) {
 	devTaro := liveEvent{Type: evDevelopment, ChildID: childTaro}
 	call(t, h, teacher, "POST", "/api/development/checks",
 		`{"child_id":"C001","checked_on":"`+daysFromToday(-1)+`","results":[],"note":"","status":"1"}`)
-	expect(t, "野原 太郎の発達チェックの下書き", clients, to(who("管理者", "さくら組の担任"), devTaro))
+	expect(t, "西田 太郎の発達チェックの下書き", clients, to(who("管理者", "さくら組の担任"), devTaro))
 	call(t, h, teacher, "POST", "/api/development/checks",
 		`{"child_id":"C001","checked_on":"`+daysFromToday(-1)+`","results":[],"note":"","status":"2"}`)
-	expect(t, "野原 太郎の発達チェックの確定（その家庭の保護者にも届く）", clients,
-		to(who("管理者", "さくら組の担任", "野原 太郎の保護者"), devTaro))
+	expect(t, "西田 太郎の発達チェックの確定（その家庭の保護者にも届く）", clients,
+		to(who("管理者", "さくら組の担任", "西田 太郎の保護者"), devTaro))
 
 	call(t, h, admin, "POST", "/api/development/schedules",
 		`{"child_id":"C001","scheduled_on":"`+daysFromToday(30)+`","manual":true}`)
@@ -598,7 +598,7 @@ func TestNotifyGrowthAudience(t *testing.T) {
 	call(t, h, teacher, "POST", "/api/physical/records",
 		`{"child_id":"C001","measured_on":"`+daysFromToday(-1)+`","height_cm":79.0,"weight_kg":10.0,"confirm_same_month":true}`)
 	expect(t, "身体測定の登録（共有するので保護者にも届く）", clients,
-		to(who("管理者", "さくら組の担任", "野原 太郎の保護者"), physTaro))
+		to(who("管理者", "さくら組の担任", "西田 太郎の保護者"), physTaro))
 	a.db.Exec(`UPDATE m_setting SET setting_value = '0' WHERE setting_key = 'growth.share_physical'`)
 	call(t, h, teacher, "POST", "/api/physical/records",
 		`{"child_id":"C001","measured_on":"`+daysFromToday(-1)+`","height_cm":79.1,"weight_kg":10.0,"confirm_overwrite":true}`)
@@ -606,7 +606,7 @@ func TestNotifyGrowthAudience(t *testing.T) {
 		to(who("管理者", "さくら組の担任"), physTaro))
 	a.db.Exec(`UPDATE m_setting SET setting_value = '1' WHERE setting_key = 'growth.share_physical'`)
 
-	// 測定値 2 は野原 太郎の測定値
+	// 測定値 2 は西田 太郎の測定値
 	var measured string
 	if err := a.db.QueryRow(`SELECT measured_on FROM t_physical_record WHERE physical_record_id = 2`).Scan(&measured); err != nil {
 		t.Fatal(err)
@@ -614,10 +614,10 @@ func TestNotifyGrowthAudience(t *testing.T) {
 	call(t, h, teacher, "POST", "/api/physical/records",
 		`{"child_id":"C001","measured_on":"`+measured+`","height_cm":77.5,"weight_kg":9.6,"confirm_overwrite":true}`)
 	expect(t, "測定値の上書き（その家庭の保護者にだけ届く）", clients,
-		to(who("管理者", "さくら組の担任", "野原 太郎の保護者"), physTaro))
+		to(who("管理者", "さくら組の担任", "西田 太郎の保護者"), physTaro))
 
 	call(t, h, admin, "DELETE", "/api/physical/records/1", "")
-	expect(t, "測定値の削除", clients, to(who("管理者", "さくら組の担任", "野原 太郎の保護者"), physTaro))
+	expect(t, "測定値の削除", clients, to(who("管理者", "さくら組の担任", "西田 太郎の保護者"), physTaro))
 }
 
 // 停止したアカウント・手続きの途中のアカウントがつないだままでも、知らせは送らない（受け取り口が閉じるまでの間）
@@ -626,7 +626,7 @@ func TestNotifySkipsUnusableAccounts(t *testing.T) {
 	teacher := loginAs(a, accTeacher, "staff")
 	clients := map[string]*liveClient{
 		"さくら組の担任":   listen(a, accTeacher),
-		"宮城 美咲の保護者": listen(a, accOtherGuard),
+		"村田 美咲の保護者": listen(a, accOtherGuard),
 	}
 	if _, err := a.db.Exec(`UPDATE m_account SET status = '2' WHERE account_id = ?`, accOtherGuard); err != nil {
 		t.Fatal(err)

@@ -7,7 +7,7 @@ import { api } from '../src/api/client';
 import type { SessionUser } from '../src/api/types';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
@@ -17,7 +17,7 @@ describe('推測されてはならない値', () => {
     const temp = await api.reissueTempPassword(admin, 3);
     expect(temp).toMatch(/^[a-hjkmnp-z2-9]{4}-[a-hjkmnp-z2-9]{4}-[a-hjkmnp-z2-9]{4}$/);
     // 発行した一時パスワードでログインできる
-    const u = await api.login('takanashi@hoiku.example.jp', temp, 'staff');
+    const u = await api.login('suzuki@hoiku.example.jp', temp, 'staff');
     expect(u.is_temp_password).toBe(true);
   });
 
@@ -53,7 +53,7 @@ describe('存在しないログインID', () => {
 
   it('残りの回数が減り、同じ回数でロックになる（実在のアカウントと見分けられない）', async () => {
     const want = [4, 3, 2, 1, 'locked', 'locked'];
-    expect(await outcomes('kinjo@hoiku.example.jp')).toEqual(want);
+    expect(await outcomes('kubota@hoiku.example.jp')).toEqual(want);
     expect(await outcomes('nobody@hoiku.example.jp')).toEqual(want);
   });
 });

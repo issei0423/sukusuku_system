@@ -39,8 +39,8 @@ func TestFacilityFlow(t *testing.T) {
 	clients := map[string]*liveClient{
 		"さくら組の担任":   listen(a, accTeacher),
 		"ひまわり組の担任":  listen(a, accOtherTeacher),
-		"野原 太郎の保護者": listen(a, accGuardian),
-		"宮城 美咲の保護者": listen(a, accOtherGuard),
+		"西田 太郎の保護者": listen(a, accGuardian),
+		"村田 美咲の保護者": listen(a, accOtherGuard),
 	}
 	taro := liveEvent{Type: evContact, ChildID: childTaro}
 
@@ -70,17 +70,17 @@ func TestFacilityFlow(t *testing.T) {
 			t.Fatalf("他児の名前の注意: %s", raw)
 		}
 		// 応答に、当たった園児の名前のほかの名前（宛先の呼び名・ほかの園児の一覧）を入れない
-		if strings.Contains(raw, "野原") || strings.Contains(raw, "小林") {
+		if strings.Contains(raw, "西田") || strings.Contains(raw, "小林") {
 			t.Errorf("応答に当たっていない名前が入っている: %s", raw)
 		}
 		expect(t, "保存していないので知らせも無い", clients, map[string][]liveEvent{})
 		decode(t, call(t, h, teacher, "PUT", path, `{"body":"`+body+`","acknowledged_names":["伊藤 葵"]}`), &sent)
-		if sent.Body != body || sent.StaffName != "高梨 倫太朗" {
+		if sent.Body != body || sent.StaffName != "鈴木 浩之" {
 			t.Fatalf("送った園から: %+v", sent)
 		}
-		expect(t, "園から", clients, to(who("さくら組の担任", "野原 太郎の保護者"), taro))
+		expect(t, "園から", clients, to(who("さくら組の担任", "西田 太郎の保護者"), taro))
 		pb := call(t, h, guardian, "GET", "/api/contact/children/C001", "").Body.String()
-		if !strings.Contains(pb, body) || strings.Contains(pb, "高梨") || strings.Contains(pb, "staff_name") || strings.Contains(pb, "recipient") {
+		if !strings.Contains(pb, body) || strings.Contains(pb, "鈴木") || strings.Contains(pb, "staff_name") || strings.Contains(pb, "recipient") {
 			t.Errorf("保護者のページ: %s", pb)
 		}
 		b := expectStatus(t, request(t, h, teacher, "PUT", path, `{"body":"もう一度送ります。"}`), http.StatusConflict)
@@ -216,7 +216,7 @@ func TestRecipientAndNameCheckRoute(t *testing.T) {
 		Recipient *contactRecipient `json:"recipient"`
 	}
 	decode(t, call(t, h, teacher, "GET", "/api/contact/children/C001", ""), &page)
-	if page.Recipient == nil || page.Recipient.ChildName != "野原 太郎" || len(page.Recipient.Relationships) != 1 || page.Recipient.Relationships[0] != "父" {
+	if page.Recipient == nil || page.Recipient.ChildName != "西田 太郎" || len(page.Recipient.Relationships) != 1 || page.Recipient.Relationships[0] != "父" {
 		t.Errorf("宛先: %+v", page.Recipient)
 	}
 	decode(t, call(t, h, teacher, "GET", "/api/contact/children/C003", ""), &page)

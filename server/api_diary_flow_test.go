@@ -54,11 +54,11 @@ func statusOfDiary(t *testing.T, a *app, id int64) string {
 // 申請者の列（applied_staff_id）で判定し、403 を返す（詳細設計書「日誌の状態」(3-6)・「日誌」(4-13 (2))）
 func TestApplicantCannotApproveRewrittenDiary(t *testing.T) {
 	a, h := newTestApp(t)
-	admin := loginAs(a, 1, "staff")   // 野原 一誠（S001・管理者）
-	admin2 := loginAs(a, 2, "staff")  // 上園 謙心（S002・管理者）
-	teacher := loginAs(a, 3, "staff") // 高梨 倫太朗（S003・さくら組）
+	admin := loginAs(a, 1, "staff")   // 西田 拓也（S001・管理者）
+	admin2 := loginAs(a, 2, "staff")  // 遠藤 直人（S002・管理者）
+	teacher := loginAs(a, 3, "staff") // 鈴木 浩之（S003・さくら組）
 
-	// 日誌 1 は高梨が書いた野原 太郎（C001）の下書き。園長が本文を書き直して申請する
+	// 日誌 1 は鈴木が書いた西田 太郎（C001）の下書き。園長が本文を書き直して申請する
 	call(t, h, admin, "POST", "/api/diaries", withLock(
 		personalDiary(1, "C001", "1", today(), "園長が書き直した本文です。", "2"), acquireToken(t, h, admin, "1")))
 
@@ -88,7 +88,7 @@ func TestApplicantCannotApproveRewrittenDiary(t *testing.T) {
 	t.Run("差し戻され、作成者が直して申請し直したものは、最後に申請した人で判定する", func(t *testing.T) {
 		call(t, h, admin2, "POST", "/api/diaries/1/return", `{"reason":"作成者が直してください"}`)
 		call(t, h, teacher, "POST", "/api/diaries", withLock(
-			personalDiary(1, "C001", "1", today(), "高梨が直した本文です。", "2"), acquireToken(t, h, teacher, "1")))
+			personalDiary(1, "C001", "1", today(), "鈴木が直した本文です。", "2"), acquireToken(t, h, teacher, "1")))
 		d := diaryOf(t, call(t, h, admin, "GET", "/api/diaries/1", "").Body.Bytes())
 		if d.AppliedStaffID == nil || *d.AppliedStaffID != "S003" {
 			t.Fatalf("applied_staff_id = %v, want S003", d.AppliedStaffID)
@@ -97,10 +97,10 @@ func TestApplicantCannotApproveRewrittenDiary(t *testing.T) {
 	})
 
 	t.Run("ほかの管理者が書き直して申請したものは、別の管理者が承認できる", func(t *testing.T) {
-		// 日誌 7 は宮城（S004）が書いた申請中の個人日誌。差し戻して、上園が書き直して申請する
+		// 日誌 7 は村田（S004）が書いた申請中の個人日誌。差し戻して、遠藤が書き直して申請する
 		call(t, h, admin, "POST", "/api/diaries/7/return", `{"reason":"書き直します"}`)
 		call(t, h, admin2, "POST", "/api/diaries", withLock(
-			personalDiary(7, "C004", "1", today(), "上園が書き直した本文です。", "2"), acquireToken(t, h, admin2, "7")))
+			personalDiary(7, "C004", "1", today(), "遠藤が書き直した本文です。", "2"), acquireToken(t, h, admin2, "7")))
 		expectStatus(t, request(t, h, admin2, "POST", "/api/diaries/7/approve", ""),
 			http.StatusForbidden)
 		call(t, h, admin, "POST", "/api/diaries/7/approve", "")
@@ -251,7 +251,7 @@ type diaryPage struct {
 func TestReturnedDiariesMatchDashboard(t *testing.T) {
 	a, h := newTestApp(t)
 	admin := loginAs(a, 1, "staff")
-	teacher := loginAs(a, 3, "staff") // 高梨（S003・さくら組）
+	teacher := loginAs(a, 3, "staff") // 鈴木（S003・さくら組）
 	old := nowTime().AddDate(0, 0, -40).Format("2006-01-02")
 
 	// 40 日前の記録（一覧の期間の既定＝直近 31 日の外）を申請し、差し戻される
@@ -293,7 +293,7 @@ func TestReturnedDiariesMatchDashboard(t *testing.T) {
 		return out
 	}
 
-	t.Run("自分が書いたものに絞ると、ダッシュボードと同じ日誌が出る（宮城のヒヤリハットは出ない）", func(t *testing.T) {
+	t.Run("自分が書いたものに絞ると、ダッシュボードと同じ日誌が出る（村田のヒヤリハットは出ない）", func(t *testing.T) {
 		got := ids("/api/diaries?status=4&mine=1")
 		if len(got) != summary.Returned || !got[d.DiaryID] || !got[legacyID] || got[3] {
 			t.Fatalf("got %v, want {%d, %d}", got, d.DiaryID, legacyID)
@@ -312,7 +312,7 @@ func TestReturnedDiariesMatchDashboard(t *testing.T) {
 
 	t.Run("自分が書いたもので絞らなければ、見える範囲の差し戻しがすべて出る", func(t *testing.T) {
 		if got := ids("/api/diaries?status=4"); !got[3] {
-			t.Fatalf("宮城のヒヤリハット（日誌 3）が出ていません: %v", got)
+			t.Fatalf("村田のヒヤリハット（日誌 3）が出ていません: %v", got)
 		}
 	})
 }

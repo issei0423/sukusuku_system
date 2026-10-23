@@ -14,29 +14,29 @@ import { today } from '../src/api/util';
 import type { SessionUser } from '../src/api/types';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
 const otherTeacher: SessionUser = {
-  account_id: 5, email: 'kinjo@hoiku.example.jp', role: '2', display_name: '金城 宗一郎',
+  account_id: 5, email: 'kubota@hoiku.example.jp', role: '2', display_name: '久保田 和也',
   staff_id: 'S005', guardian_id: null, class_id: 2, class_name: 'ひまわり組',
   is_temp_password: false, terms_agreed: true,
 };
-// 野原 太郎（C001・さくら組）の保護者
+// 西田 太郎（C001・さくら組）の保護者
 const guardian: SessionUser = {
-  account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
+  account_id: 6, email: 'nishida.t@example.jp', role: '3', display_name: '西田 拓也',
   staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
-// 金城 陸（C005）の保護者。C005 には既往歴がある
-const kinjoGuardian: SessionUser = {
-  account_id: 10, email: 'kinjo.s@example.jp', role: '3', display_name: '金城 宗一郎',
+// 久保田 陸（C005）の保護者。C005 には既往歴がある
+const kubotaGuardian: SessionUser = {
+  account_id: 10, email: 'kubota.k@example.jp', role: '3', display_name: '久保田 和也',
   staff_id: null, guardian_id: 'G005', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
@@ -99,9 +99,9 @@ describe('日誌は保護者に見せない', () => {
 
 describe('園児情報・既往歴・アレルギーは保護者に見せない。身体測定は連携済だけ（基本設計書 6-1）', () => {
   it('自児でも、園児情報・既往歴・アレルギーは返さない。職員には返す', async () => {
-    await expect(api.getChild(kinjoGuardian, 'C005')).rejects.toThrow();
-    await expect(api.medicalHistoriesOf(kinjoGuardian, 'C005')).rejects.toThrow();
-    await expect(api.allergiesOf(kinjoGuardian, 'C005')).rejects.toThrow();
+    await expect(api.getChild(kubotaGuardian, 'C005')).rejects.toThrow();
+    await expect(api.medicalHistoriesOf(kubotaGuardian, 'C005')).rejects.toThrow();
+    await expect(api.allergiesOf(kubotaGuardian, 'C005')).rejects.toThrow();
 
     await expect(api.getChild(teacher, 'C005')).resolves.toBeTruthy();
     expect(await api.medicalHistoriesOf(teacher, 'C005')).toHaveLength(1);
@@ -141,13 +141,13 @@ describe('保護者に返す園児は自児だけで、園児情報入力画面�
   });
 
   it('園児の一覧は自児だけで、入力画面の項目を返さない。クラスや名前で絞っても広がらない', async () => {
-    for (const filter of [{}, { classId: 1 }, { classId: 2 }, { name: '宮城' }]) {
+    for (const filter of [{}, { classId: 1 }, { classId: 2 }, { name: '村田' }]) {
       const rows = await api.listChildren(guardian, filter);
       noIntake(`listChildren ${JSON.stringify(filter)}`, rows);
       expect(rows.every((c) => c.child_id === 'C001')).toBe(true);
     }
     const [mine] = await api.listChildren(guardian);
-    expect(mine.child_name).toBe('野原 太郎');
+    expect(mine.child_name).toBe('西田 太郎');
     expect(mine.birth_date).toBeTruthy();
     // 画面が同期的に引く自児（http.ts では /api/reference の children）にも載せない
     noIntake('visibleChildren', visibleChildren(guardian));
@@ -166,8 +166,8 @@ describe('保護者に返す園児は自児だけで、園児情報入力画面�
   });
 
   it('紐づけが終わった保護者には、元の自児も返さない', () => {
-    // G003（高梨 倫太朗）は C003 との紐づけが終わっている。アカウントも停止中なので、API ではなく範囲の判定を見る
-    const ended: SessionUser = { ...guardian, account_id: 8, guardian_id: 'G003', display_name: '高梨 倫太朗' };
+    // G003（鈴木 浩之）は C003 との紐づけが終わっている。アカウントも停止中なので、API ではなく範囲の判定を見る
+    const ended: SessionUser = { ...guardian, account_id: 8, guardian_id: 'G003', display_name: '鈴木 浩之' };
     expect(visibleChildren(ended)).toEqual([]);
     expect(childrenOfGuardian('G003')).toEqual([]);
   });

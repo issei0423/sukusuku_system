@@ -21,16 +21,16 @@ import (
 // （詳細設計書「日誌」(4-13)「保護者が呼んだら 403『この日誌を参照する権限がありません』」・(10)）
 func TestGuardianCannotUseDiaryRoutes(t *testing.T) {
 	a, h := newTestApp(t)
-	guardian := loginAs(a, 6, "guardian") // 野原 太郎（C001）の保護者。日誌 1 は C001 の下書き、日誌 5 は C001 の承認済み
+	guardian := loginAs(a, 6, "guardian") // 西田 太郎（C001）の保護者。日誌 1 は C001 の下書き、日誌 5 は C001 の承認済み
 	teacher := loginAs(a, 3, "staff")     // さくら組
-	kinjo := loginAs(a, 5, "staff")       // ひまわり組
+	kubota := loginAs(a, 5, "staff")      // ひまわり組
 
 	for _, path := range []string{"/api/children/C001/diaries", "/api/children/C001/timeline"} {
 		body := expectStatus(t, request(t, h, guardian, "GET", path, ""), http.StatusForbidden)
 		if strings.Contains(body, "積み木") {
 			t.Fatalf("%s: 下書きの本文が返っています: %s", path, body)
 		}
-		expectStatus(t, request(t, h, kinjo, "GET", path, ""), http.StatusForbidden)
+		expectStatus(t, request(t, h, kubota, "GET", path, ""), http.StatusForbidden)
 
 		var got []Diary
 		if err := json.Unmarshal(call(t, h, teacher, "GET", path, "").Body.Bytes(), &got); err != nil {
@@ -58,7 +58,7 @@ func TestGuardianCannotUseDiaryRoutes(t *testing.T) {
 	// 取り下げも保護者には通さない
 	expectStatus(t, request(t, h, guardian, "POST", "/api/diaries/2/withdraw", `{"updated_at":""}`), http.StatusForbidden)
 	// 職員にはこれまでどおり（参照範囲の外は同じ文言で 403）
-	expectStatus(t, request(t, h, kinjo, "GET", "/api/diaries/1", ""), http.StatusForbidden)
+	expectStatus(t, request(t, h, kubota, "GET", "/api/diaries/1", ""), http.StatusForbidden)
 	call(t, h, teacher, "GET", "/api/diaries/5", "")
 }
 
@@ -107,11 +107,11 @@ func TestApprovalSendsNothingToGuardian(t *testing.T) {
 // （基本設計書 6-1「園児情報の参照｜保護者 ×」「既往歴の参照｜保護者 ×」「成長グラフの閲覧｜保護者 ※3」）
 func TestGuardianCannotReadChildRecords(t *testing.T) {
 	a, h := newTestApp(t)
-	kinjoS := loginAs(a, 10, "guardian") // 金城 陸（C005）の保護者。C005 には既往歴がある
+	kubotaS := loginAs(a, 10, "guardian") // 久保田 陸（C005）の保護者。C005 には既往歴がある
 	teacher := loginAs(a, 3, "staff")
 
 	for _, path := range []string{"/api/children/C005", "/api/children/C005/medical-histories", "/api/children/C005/allergies"} {
-		body := expectStatus(t, request(t, h, kinjoS, "GET", path, ""), http.StatusForbidden)
+		body := expectStatus(t, request(t, h, kubotaS, "GET", path, ""), http.StatusForbidden)
 		if strings.Contains(body, "熱性けいれん") || strings.Contains(body, "normal_temperature") {
 			t.Fatalf("%s: 園内の情報が返っています: %s", path, body)
 		}
@@ -119,7 +119,7 @@ func TestGuardianCannotReadChildRecords(t *testing.T) {
 	}
 
 	t.Run("身体測定の経路は、保護者には 403（成長の記録で読む）。職員には全件", func(t *testing.T) {
-		guardian := loginAs(a, 6, "guardian") // 野原 太郎（C001）の保護者
+		guardian := loginAs(a, 6, "guardian") // 西田 太郎（C001）の保護者
 		body := expectStatus(t, request(t, h, guardian, "GET", "/api/children/C001/physical", ""), http.StatusForbidden)
 		if !strings.Contains(body, msgGrowthForbidden) {
 			t.Fatalf("保護者の応答: %s", body)
@@ -143,8 +143,8 @@ func TestGuardianCannotReadChildRecords(t *testing.T) {
  */
 func TestGuardianChildIntakeItemsAreNotReturned(t *testing.T) {
 	a, h := newTestApp(t)
-	nohara := loginAs(a, 6, "guardian") // 野原 太郎（C001・さくら組）の保護者。C001 には卵のアレルギーがある
-	teacher := loginAs(a, 3, "staff")   // さくら組
+	nishida := loginAs(a, 6, "guardian") // 西田 太郎（C001・さくら組）の保護者。C001 には卵のアレルギーがある
+	teacher := loginAs(a, 3, "staff")    // さくら組
 	admin := loginAs(a, 1, "staff")
 
 	intakeKeys := []string{"normal_temperature", "photo_consent_level"}
@@ -168,16 +168,16 @@ func TestGuardianChildIntakeItemsAreNotReturned(t *testing.T) {
 		for _, child := range []string{"C001", "C013", "C999"} {
 			for _, sub := range []string{"", "/allergies", "/medical-histories"} {
 				path := "/api/children/" + child + sub
-				noIntake(t, path, expectStatus(t, request(t, h, nohara, "GET", path, ""), http.StatusForbidden))
+				noIntake(t, path, expectStatus(t, request(t, h, nishida, "GET", path, ""), http.StatusForbidden))
 			}
 		}
 		noIntake(t, "/api/children/allergies",
-			expectStatus(t, request(t, h, nohara, "GET", "/api/children/allergies", ""), http.StatusForbidden))
+			expectStatus(t, request(t, h, nishida, "GET", "/api/children/allergies", ""), http.StatusForbidden))
 	})
 
 	t.Run("園児の一覧は自児だけで、入力画面の項目を返さない。クラスを指定しても広がらない", func(t *testing.T) {
 		for _, path := range []string{"/api/children", "/api/children?class_id=1", "/api/children?class_id=2", "/api/children?name=%E5%AE%AE%E5%9F%8E"} {
-			body := call(t, h, nohara, "GET", path, "").Body.String()
+			body := call(t, h, nishida, "GET", path, "").Body.String()
 			noIntake(t, path, body)
 			var got []map[string]any
 			if err := json.Unmarshal([]byte(body), &got); err != nil {
@@ -190,27 +190,27 @@ func TestGuardianChildIntakeItemsAreNotReturned(t *testing.T) {
 			}
 		}
 		var mine []map[string]any
-		if err := json.Unmarshal(call(t, h, nohara, "GET", "/api/children", "").Body.Bytes(), &mine); err != nil {
+		if err := json.Unmarshal(call(t, h, nishida, "GET", "/api/children", "").Body.Bytes(), &mine); err != nil {
 			t.Fatal(err)
 		}
-		if len(mine) != 1 || mine[0]["child_name"] != "野原 太郎" || mine[0]["birth_date"] == nil {
+		if len(mine) != 1 || mine[0]["child_name"] != "西田 太郎" || mine[0]["birth_date"] == nil {
 			t.Fatalf("自児の氏名・生年月日が返っていません: %v", mine)
 		}
 	})
 
 	t.Run("参照データと保護者ホームの園児にも、入力画面の項目を載せない", func(t *testing.T) {
-		ref := call(t, h, nohara, "GET", "/api/reference", "").Body.String()
+		ref := call(t, h, nishida, "GET", "/api/reference", "").Body.String()
 		noIntake(t, "/api/reference", ref)
-		if !strings.Contains(ref, "野原 太郎") || strings.Contains(ref, "金城 陸") {
+		if !strings.Contains(ref, "西田 太郎") || strings.Contains(ref, "久保田 陸") {
 			t.Fatalf("/api/reference の園児が自児だけになっていません: %s", ref)
 		}
-		home := call(t, h, nohara, "GET", "/api/dashboard/guardian", "").Body.String()
+		home := call(t, h, nishida, "GET", "/api/dashboard/guardian", "").Body.String()
 		noIntake(t, "/api/dashboard/guardian", home)
 	})
 
 	t.Run("所属クラスは自児だけ", func(t *testing.T) {
-		call(t, h, nohara, "GET", "/api/children/C001/class", "")
-		expectStatus(t, request(t, h, nohara, "GET", "/api/children/C013/class", ""), http.StatusForbidden)
+		call(t, h, nishida, "GET", "/api/children/C001/class", "")
+		expectStatus(t, request(t, h, nishida, "GET", "/api/children/C013/class", ""), http.StatusForbidden)
 	})
 
 	t.Run("紐づけが終わった保護者には、元の自児も返さない", func(t *testing.T) {
@@ -223,10 +223,10 @@ func TestGuardianChildIntakeItemsAreNotReturned(t *testing.T) {
 				t.Errorf("紐づけを戻せませんでした: %v", err)
 			}
 		})
-		if body := strings.TrimSpace(call(t, h, nohara, "GET", "/api/children", "").Body.String()); body != "[]" {
+		if body := strings.TrimSpace(call(t, h, nishida, "GET", "/api/children", "").Body.String()); body != "[]" {
 			t.Fatalf("紐づけの終わった園児が返っています: %s", body)
 		}
-		expectStatus(t, request(t, h, nohara, "GET", "/api/children/C001/class", ""), http.StatusForbidden)
+		expectStatus(t, request(t, h, nishida, "GET", "/api/children/C001/class", ""), http.StatusForbidden)
 	})
 
 	t.Run("職員には、これまでどおり入力画面の項目を返す", func(t *testing.T) {
@@ -254,8 +254,8 @@ func TestGuardianChildIntakeItemsAreNotReturned(t *testing.T) {
  */
 func TestGuardianReferenceIsNarrowed(t *testing.T) {
 	a, h := newTestApp(t)
-	nohara := loginAs(a, 6, "guardian") // 野原 太郎（C001・さくら組）の保護者
-	teacher := loginAs(a, 3, "staff")   // さくら組
+	nishida := loginAs(a, 6, "guardian") // 西田 太郎（C001・さくら組）の保護者
+	teacher := loginAs(a, 3, "staff")    // さくら組
 	admin := loginAs(a, 1, "staff")
 
 	readRef := func(t *testing.T, c *http.Cookie) referenceData {
@@ -286,7 +286,7 @@ func TestGuardianReferenceIsNarrowed(t *testing.T) {
 	}
 
 	t.Run("設定は保護者の画面で使うキーだけで、午睡の間隔などは返さない", func(t *testing.T) {
-		ref := readRef(t, nohara)
+		ref := readRef(t, nishida)
 		for k := range ref.Settings {
 			if !guardianSettingKeys[k] {
 				t.Fatalf("保護者に設定 %s が返っています", k)
@@ -305,11 +305,11 @@ func TestGuardianReferenceIsNarrowed(t *testing.T) {
 	})
 
 	t.Run("クラスは自児のクラスだけ。/api/classes も同じ", func(t *testing.T) {
-		if got := classIDs(readRef(t, nohara).Classes); !sameIDs(got, 1) {
+		if got := classIDs(readRef(t, nishida).Classes); !sameIDs(got, 1) {
 			t.Fatalf("保護者の参照データのクラス = %v, want [1]", got)
 		}
 		var classes []ClassRoom
-		if err := json.Unmarshal(call(t, h, nohara, "GET", "/api/classes", "").Body.Bytes(), &classes); err != nil {
+		if err := json.Unmarshal(call(t, h, nishida, "GET", "/api/classes", "").Body.Bytes(), &classes); err != nil {
 			t.Fatal(err)
 		}
 		if got := classIDs(classes); !sameIDs(got, 1) {
@@ -322,13 +322,13 @@ func TestGuardianReferenceIsNarrowed(t *testing.T) {
 			VALUES ('G001', 'C013', '父', '1', ?)`, now()); err != nil {
 			t.Fatal(err)
 		}
-		if got := classIDs(readRef(t, nohara).Classes); !sameIDs(got, 1, 2) {
+		if got := classIDs(readRef(t, nishida).Classes); !sameIDs(got, 1, 2) {
 			t.Fatalf("きょうだいのいる保護者のクラス = %v, want [1 2]", got)
 		}
 		if _, err := a.db.Exec(`UPDATE t_guardian_child SET link_status = '2', ended_at = ? WHERE guardian_id = 'G001' AND child_id = 'C013'`, now()); err != nil {
 			t.Fatal(err)
 		}
-		if got := classIDs(readRef(t, nohara).Classes); !sameIDs(got, 1) {
+		if got := classIDs(readRef(t, nishida).Classes); !sameIDs(got, 1) {
 			t.Fatalf("紐づけを終えたあとのクラス = %v, want [1]", got)
 		}
 	})

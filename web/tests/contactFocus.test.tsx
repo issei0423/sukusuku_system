@@ -17,11 +17,11 @@ import { focusAfter, focusedNow } from '../src/focusAfter';
 import TemperaturePicker from '../src/components/TemperaturePicker';
 
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
-const admin: SessionUser = { ...teacher, account_id: 1, role: '1', staff_id: 'S001', class_id: null, class_name: null, display_name: '野原 一誠' };
+const admin: SessionUser = { ...teacher, account_id: 1, role: '1', staff_id: 'S001', class_id: null, class_name: null, display_name: '西田 拓也' };
 
 function open(path: string, user: SessionUser) {
   return render(
@@ -141,25 +141,25 @@ describe('体温の一覧の窓（GitHub Issue #213）', () => {
    */
   it('連絡帳（クラス）画面：値を選んで記録したあと、開いた元の「＋体温」へフォーカスを戻す', async () => {
     open('/staff/contact', teacher);
-    const add = await screen.findByRole('button', { name: '上園 花子の体温を記録する' }, { timeout: 3000 });
+    const add = await screen.findByRole('button', { name: '遠藤 花子の体温を記録する' }, { timeout: 3000 });
     press(add);
-    const dialog = screen.getByRole('dialog', { name: '上園 花子の体温' });
+    const dialog = screen.getByRole('dialog', { name: '遠藤 花子の体温' });
     const value = within(dialog).getByRole('button', { name: '36.8', exact: true });
     expect(document.activeElement).toBe(value);
     fireEvent.click(value);
-    await waitFor(() => expect(document.querySelector('.toast')?.textContent).toContain('上園 花子さんの「36.8℃」を記録しました。'), { timeout: 3000 });
-    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: '上園 花子の体温を記録する' })), { timeout: 3000 });
+    await waitFor(() => expect(document.querySelector('.toast')?.textContent).toContain('遠藤 花子さんの「36.8℃」を記録しました。'), { timeout: 3000 });
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: '遠藤 花子の体温を記録する' })), { timeout: 3000 });
   });
 
   it('連絡帳（園児）画面：値を選んで記録したあと、開いた元の「体温を記録する」へフォーカスを戻す', async () => {
     open('/staff/contact/C001', teacher);
     const add = await screen.findByRole('button', { name: '体温を記録する' }, { timeout: 3000 });
     press(add);
-    const dialog = screen.getByRole('dialog', { name: '野原 太郎の体温' });
+    const dialog = screen.getByRole('dialog', { name: '西田 太郎の体温' });
     const value = document.activeElement as HTMLElement;
     expect(dialog.contains(value)).toBe(true);
     fireEvent.click(value);
-    await waitFor(() => expect(document.querySelector('.toast')?.textContent).toMatch(/野原 太郎さんの「\d{2}\.\d℃」（\d{2}:\d{2}）を記録しました。/), { timeout: 3000 });
+    await waitFor(() => expect(document.querySelector('.toast')?.textContent).toMatch(/西田 太郎さんの「\d{2}\.\d℃」（\d{2}:\d{2}）を記録しました。/), { timeout: 3000 });
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: '体温を記録する' })), { timeout: 3000 });
   });
 });
@@ -213,16 +213,16 @@ describe('午睡チェック画面の「対象外」の窓と、行の「戻す�
   it('理由を選んで送れなかったときは、窓を開いたまま、押した理由のボタンへフォーカスを戻す', async () => {
     const session = await startNap();
     open('/staff/nap', teacher);
-    const opener = await screen.findByRole('button', { name: '野原 太郎をきょうは対象外にする' }, { timeout: 3000 });
+    const opener = await screen.findByRole('button', { name: '西田 太郎をきょうは対象外にする' }, { timeout: 3000 });
     press(opener);
-    const dialog = screen.getByRole('dialog', { name: '野原 太郎をきょうは対象外にする' });
+    const dialog = screen.getByRole('dialog', { name: '西田 太郎をきょうは対象外にする' });
     // 窓を開いている間に、ほかの職員が「ねた」を記録した（ねたあとは対象外にできない）
     await api.sleep(teacher, session.nap_session_id, 'C001');
     const noNap = within(dialog).getByRole('button', { name: '午睡なし' }) as HTMLButtonElement;
     press(noNap);
     dropFocus(noNap);
     await waitFor(() => expect(document.querySelector('.nap-sleep-error')?.textContent).toBeTruthy(), { timeout: 3000 });
-    expect(screen.getByRole('dialog', { name: '野原 太郎をきょうは対象外にする' })).toBe(dialog);
+    expect(screen.getByRole('dialog', { name: '西田 太郎をきょうは対象外にする' })).toBe(dialog);
     await waitFor(() => expect(document.activeElement).toBe(noNap), { timeout: 3000 });
   });
 
@@ -234,11 +234,11 @@ describe('午睡チェック画面の「対象外」の窓と、行の「戻す�
     const session = await startNap();
     await api.exclude(teacher, session.nap_session_id, 'C001', '1');
     open('/staff/nap', teacher);
-    const restore = await screen.findByRole('button', { name: '野原 太郎の対象外を戻す' }, { timeout: 3000 }) as HTMLButtonElement;
+    const restore = await screen.findByRole('button', { name: '西田 太郎の対象外を戻す' }, { timeout: 3000 }) as HTMLButtonElement;
     const row = restore.closest('.nap-record-row') as HTMLElement;
     press(restore);
     dropFocus(restore);
-    const opener = await within(row).findByRole('button', { name: '野原 太郎をきょうは対象外にする' }, { timeout: 3000 });
+    const opener = await within(row).findByRole('button', { name: '西田 太郎をきょうは対象外にする' }, { timeout: 3000 });
     await waitFor(() => expect(document.activeElement).toBe(opener), { timeout: 3000 });
   });
 
@@ -246,7 +246,7 @@ describe('午睡チェック画面の「対象外」の窓と、行の「戻す�
     const session = await startNap();
     await api.exclude(teacher, session.nap_session_id, 'C001', '1');
     open('/staff/nap', teacher);
-    const restore = await screen.findByRole('button', { name: '野原 太郎の対象外を戻す' }, { timeout: 3000 }) as HTMLButtonElement;
+    const restore = await screen.findByRole('button', { name: '西田 太郎の対象外を戻す' }, { timeout: 3000 }) as HTMLButtonElement;
     vi.spyOn(api, 'cancelExclusion').mockRejectedValueOnce(new Error('この実施は終わっています。'));
     press(restore);
     dropFocus(restore);

@@ -15,7 +15,7 @@ import { fromNowMinutes } from '../src/api/util';
 import { MSG } from '../src/messages';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
@@ -30,7 +30,7 @@ const parse = (v: string | null) => JSON.parse(v ?? 'null') as Record<string, un
 
 describe('園児の取消（GitHub Issue #166 の 4）', () => {
   it('記録のある園児は取り消せない', async () => {
-    // 野原 太郎（C001）は日誌・身体測定・午睡・個人チャットの記録がある
+    // 西田 太郎（C001）は日誌・身体測定・午睡・個人チャットの記録がある
     await expect(api.removeChild(admin, 'C001'))
       .rejects.toThrow('記録が登録されている園児は取り消せません。在籍状態を変更してください。');
     expect(db.children.find((c) => c.child_id === 'C001')!.is_deleted).toBe(false);
@@ -62,7 +62,7 @@ describe('園児の取消（GitHub Issue #166 の 4）', () => {
 
 describe('操作ログの変更前後（GitHub Issue #166 の 5）', () => {
   it('園児の編集は、変更のあった項目だけを {"項目名": 値} で残す', async () => {
-    // 上園 花子（C002・さくら組・平熱 36.8・写真の利用同意 2）のクラス・平熱・写真の利用同意・アレルギーを変える
+    // 遠藤 花子（C002・さくら組・平熱 36.8・写真の利用同意 2）のクラス・平熱・写真の利用同意・アレルギーを変える
     const c = db.children.find((x) => x.child_id === 'C002')!;
     await api.saveChild(admin, {
       child_id: 'C002', child_name: c.child_name, child_name_kana: c.child_name_kana, birth_date: c.birth_date,
@@ -107,7 +107,7 @@ describe('ロックの解除と招待コードの失効（GitHub Issue #166 の 
   it('相手が無い・状態が変わらない操作は断り、操作ログに残さない', async () => {
     const before = db.operationLogs.length;
     await expect(api.unlock(admin, 9999)).rejects.toThrow('アカウントが見つかりません');
-    // 金城（account 5）はロックされていない
+    // 久保田（account 5）はロックされていない
     await expect(api.unlock(admin, 5)).rejects.toThrow('ロックされていません');
     // 招待コード 4 はデモデータで失効済み、2 は使用済み、9999 は無い
     await expect(api.revokeInvitationCode(admin, 4)).rejects.toThrow('すでに失効');
@@ -131,7 +131,7 @@ describe('職員アカウントの発行の入力（GitHub Issue #167 の 1）',
 
   it.each([
     ['ログインIDがメールアドレスの形でない', input('S020', '形式 確認', 'abc2'), '形式'],
-    ['大文字・小文字だけが違うログインID', input('S021', '重複 確認', 'NOHARA@hoiku.example.jp'), 'すでに使われています'],
+    ['大文字・小文字だけが違うログインID', input('S021', '重複 確認', 'NISHIDA@hoiku.example.jp'), 'すでに使われています'],
     ['すべて空', input('', '', ''), '入力してください'],
     ['氏名が 51 文字', input('S022', 'あ'.repeat(51), 'long-name@hoiku.example.jp'), '50文字以内'],
     ['職員IDが 21 文字', input('S'.repeat(21), '長い 職員ID', 'long-id@hoiku.example.jp'), '20文字以内'],

@@ -19,26 +19,26 @@ import { today } from '../src/api/util';
 import type { SessionUser } from '../src/api/types';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
 
-const ABNORMAL_ID = 2; // さくら組・金城 陸（C005）の記録。未起票（server/seed.sql と同じ）
+const ABNORMAL_ID = 2; // さくら組・久保田 陸（C005）の記録。未起票（server/seed.sql と同じ）
 const twoDaysAgo = () => db.napSessions.find((s) => s.nap_session_id === 3)!.session_date;
 
 const abnormal = async () => (await api.abnormals(admin)).find((a) => a.nap_abnormal_id === ABNORMAL_ID)!;
 const withoutDiary = async (u: SessionUser = admin) => (await api.staffSummary(u)).abnormalWithoutDiary;
-/** 帳票（CSV）の、金城 陸の異常時の記録の行 */
+/** 帳票（CSV）の、久保田 陸の異常時の記録の行 */
 const reportLine = async () => {
   const text = await api.napReport(admin, { from: twoDaysAgo(), to: today(), format: 'csv' });
-  const line = text.split(/\r?\n/).find((l) => l.includes('金城 陸') && l.includes('顔色がやや紅潮していた'));
-  expect(line, '帳票に金城 陸の異常時の記録がありません').toBeTruthy();
+  const line = text.split(/\r?\n/).find((l) => l.includes('久保田 陸') && l.includes('顔色がやや紅潮していた'));
+  expect(line, '帳票に久保田 陸の異常時の記録がありません').toBeTruthy();
   return line!;
 };
 const setDiaryStatus = (diaryId: number, status: '1' | '2') => {
@@ -99,12 +99,12 @@ async function settled() {
     expect(document.body.textContent).not.toContain('読み込んでいます');
   }, { timeout: 3000 });
 }
-/** 表の中の、金城 陸の異常時の記録の行 */
-async function kinjoRow() {
+/** 表の中の、久保田 陸の異常時の記録の行 */
+async function kubotaRow() {
   let row: HTMLTableRowElement | undefined;
   await waitFor(() => {
     row = Array.from(document.querySelectorAll<HTMLTableRowElement>('table.list tbody tr'))
-      .find((tr) => tr.textContent?.includes('金城 陸') && tr.textContent.includes('顔色がやや紅潮していた'));
+      .find((tr) => tr.textContent?.includes('久保田 陸') && tr.textContent.includes('顔色がやや紅潮していた'));
     expect(row).toBeTruthy();
   }, { timeout: 3000 });
   return row!;
@@ -115,14 +115,14 @@ describe('ヒヤリハットの下書きのままの異常時の記録（画面�
   it('異常時記録画面：下書きのあいだは「起票済み（下書き・開く）」、申請すると「起票済み（開く）」', async () => {
     open('/staff/nap/abnormal', teacher);
     await settled();
-    expect(within(await kinjoRow()).getByRole('link', { name: '起票済み（下書き・開く）' })).toBeTruthy();
+    expect(within(await kubotaRow()).getByRole('link', { name: '起票済み（下書き・開く）' })).toBeTruthy();
     cleanup();
 
     setDiaryStatus(draftDiaryId(), '2');
     try {
       open('/staff/nap/abnormal', teacher);
       await settled();
-      expect(within(await kinjoRow()).getByRole('link', { name: '起票済み（開く）' })).toBeTruthy();
+      expect(within(await kubotaRow()).getByRole('link', { name: '起票済み（開く）' })).toBeTruthy();
     } finally {
       setDiaryStatus(draftDiaryId(), '1');
     }
@@ -131,14 +131,14 @@ describe('ヒヤリハットの下書きのままの異常時の記録（画面�
   it('午睡記録検索画面の「同じ期間の異常時の記録」：下書きのあいだは「起票済み（下書き）」、申請すると「起票済み」', async () => {
     open('/staff/nap/search', teacher);
     await settled();
-    expect(within(await kinjoRow()).getByText('起票済み（下書き）')).toBeTruthy();
+    expect(within(await kubotaRow()).getByText('起票済み（下書き）')).toBeTruthy();
     cleanup();
 
     setDiaryStatus(draftDiaryId(), '2');
     try {
       open('/staff/nap/search', teacher);
       await settled();
-      expect(within(await kinjoRow()).getByText('起票済み')).toBeTruthy();
+      expect(within(await kubotaRow()).getByText('起票済み')).toBeTruthy();
     } finally {
       setDiaryStatus(draftDiaryId(), '1');
     }
@@ -155,7 +155,7 @@ describe('ヒヤリハットの下書きのままの異常時の記録（画面�
       }, { timeout: 3000 });
       return text;
     };
-    // 担任（さくら組）は金城 陸の記録を数える。下書きのままなので、記録 2 も数に入っている
+    // 担任（さくら組）は久保田 陸の記録を数える。下書きのままなので、記録 2 も数に入っている
     const draftCount = await withoutDiary(teacher);
     expect(draftCount).toBeGreaterThan(0);
     open('/staff', teacher);

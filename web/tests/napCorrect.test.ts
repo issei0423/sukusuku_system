@@ -4,7 +4,7 @@
  *      詳細設計書.md「訂正・取り消しのまとめ」(3-5)、図/画面詳細図.md「午睡記録検索画面」(5-3) の項目10・12
  *
  * Go サーバ側（server/api_nap_correct_test.go）と同じ観点を、モック（api/mock.ts）に対して確かめる。
- * デモ：今日の実施 1（さくら組）に記録 1（野原 太郎 13:20、仰向け・あり・通常・36.6）と記録 2（上園 花子 13:20、右向き・36.8）
+ * デモ：今日の実施 1（さくら組）に記録 1（西田 太郎 13:20、仰向け・あり・通常・36.6）と記録 2（遠藤 花子 13:20、右向き・36.8）
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { api } from '../src/api/client';
@@ -15,22 +15,22 @@ import type { SessionUser } from '../src/api/types';
 import { now } from '../src/api/util';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
 const otherTeacher: SessionUser = {
-  account_id: 5, email: 'kinjo@hoiku.example.jp', role: '2', display_name: '金城 宗一郎',
+  account_id: 5, email: 'kubota@hoiku.example.jp', role: '2', display_name: '久保田 和也',
   staff_id: 'S005', guardian_id: null, class_id: 2, class_name: 'ひまわり組',
   is_temp_password: false, terms_agreed: true,
 };
 const guardian: SessionUser = {
-  account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
+  account_id: 6, email: 'nishida.t@example.jp', role: '3', display_name: '西田 拓也',
   staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
@@ -64,7 +64,7 @@ afterEach(() => {
   db.operationLogs.splice(0, db.operationLogs.length, ...saved.logs);
 });
 
-/** 昨日の実施 2（さくら組）に、野原 太郎の確認の記録を足す */
+/** 昨日の実施 2（さくら組）に、西田 太郎の確認の記録を足す */
 function addYesterdayRecord(): number {
   const id = 900501;
   db.napRecords.push({
@@ -74,7 +74,7 @@ function addYesterdayRecord(): number {
   return id;
 }
 
-/** 今日の実施 1 で、上園 花子（記録 2）に異常時の記録を足す */
+/** 今日の実施 1 で、遠藤 花子（記録 2）に異常時の記録を足す */
 function addTodayAbnormalForC002(): void {
   db.napAbnormals.push({
     nap_abnormal_id: 900601, nap_session_id: 1, child_id: 'C002', found_at: now(), recorded_at: now(),
@@ -218,17 +218,17 @@ describe('帳票の修正あり・修正の履歴', () => {
     await api.correctNapRecord(admin, 2, { breathing: '2', reason: '見直した' });
 
     const f = await report();
-    const isFixed = (r: string[]) => r[0] === today() && r[1].endsWith('T13:20:00') && r[5] !== '' && ['野原 太郎', '上園 花子'].includes(r[2]);
-    expect(f.rows.filter(isFixed).map((r) => [r[2], r[10]]).sort()).toEqual([['上園 花子', '修正あり'], ['野原 太郎', '修正あり']]);
+    const isFixed = (r: string[]) => r[0] === today() && r[1].endsWith('T13:20:00') && r[5] !== '' && ['西田 太郎', '遠藤 花子'].includes(r[2]);
+    expect(f.rows.filter(isFixed).map((r) => [r[2], r[10]]).sort()).toEqual([['西田 太郎', '修正あり'], ['遠藤 花子', '修正あり']]);
     expect(f.rows.filter((r) => !isFixed(r)).every((r) => r[10] === '')).toBe(true);
     // 一覧の値は直したあとの値
-    expect(f.rows.find((r) => isFixed(r) && r[2] === '野原 太郎')!.slice(4, 8)).toEqual(['うつ伏せ', 'あり', '通常', '']);
+    expect(f.rows.find((r) => isFixed(r) && r[2] === '西田 太郎')!.slice(4, 8)).toEqual(['うつ伏せ', 'あり', '通常', '']);
 
-    // 修正の履歴：並びは 園児（よみ：うえぞの → のはら）→ 修正日時。式の始まりのセルは逃がす（' を付けて出す）
+    // 修正の履歴：並びは 園児（よみ：えんどう → にしだ）→ 修正日時。式の始まりのセルは逃がす（' を付けて出す）
     expect(f.histories.map((h) => [h[0], h[2], h[3], h[4], h[5]])).toEqual([
-      [`午睡チェックの記録（上園 花子・${today()}T13:20:00）`, '野原 一誠', '呼吸=あり', '呼吸=確認できず', '見直した'],
-      [`午睡チェックの記録（野原 太郎・${today()}T13:20:00）`, '高梨 倫太朗', '体位=仰向け、体温=36.6', '体位=うつ伏せ、体温=36.9', '押し間違い'],
-      [`午睡チェックの記録（野原 太郎・${today()}T13:20:00）`, '野原 一誠', '体温=36.9', '体温=なし', '\'=未計測'],
+      [`午睡チェックの記録（遠藤 花子・${today()}T13:20:00）`, '西田 拓也', '呼吸=あり', '呼吸=確認できず', '見直した'],
+      [`午睡チェックの記録（西田 太郎・${today()}T13:20:00）`, '鈴木 浩之', '体位=仰向け、体温=36.6', '体位=うつ伏せ、体温=36.9', '押し間違い'],
+      [`午睡チェックの記録（西田 太郎・${today()}T13:20:00）`, '西田 拓也', '体温=36.9', '体温=なし', '\'=未計測'],
     ]);
     expect(f.histories.every((h) => h.length === NAP_HISTORY_HEADER.length && h[1] !== '')).toBe(true);
 

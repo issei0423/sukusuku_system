@@ -22,11 +22,11 @@ const user = (account_id: number, role: SessionUser['role'], extra: Partial<Sess
 
 // デモデータの人物（mockDb.ts。server/seed.sql と同じ）
 const admin = user(1, '1', { staff_id: 'S001' });
-const teacher = user(3, '2', { staff_id: 'S003', class_id: 1, class_name: 'さくら組' }); // さくら組の担任 高梨
+const teacher = user(3, '2', { staff_id: 'S003', class_id: 1, class_name: 'さくら組' }); // さくら組の担任 鈴木
 const otherTeacher = user(5, '2', { staff_id: 'S005', class_id: 2, class_name: 'ひまわり組' });
-const taroGuardian = user(6, '3', { guardian_id: 'G001' }); // 野原 太郎（C001）の父
-const misakiGuardian = user(9, '3', { guardian_id: 'G004' }); // 宮城 美咲（C004）の父
-const endedGuardian = user(8, '3', { guardian_id: 'G003' }); // 高梨 健（C003）との紐づけを終えた
+const taroGuardian = user(6, '3', { guardian_id: 'G001' }); // 西田 太郎（C001）の父
+const misakiGuardian = user(9, '3', { guardian_id: 'G004' }); // 村田 美咲（C004）の父
+const endedGuardian = user(8, '3', { guardian_id: 'G003' }); // 鈴木 健（C003）との紐づけを終えた
 
 /** server/api_contact_test.go の contactAccessCases と同じ行 */
 const contactAccessCases: [name: string, who: SessionUser, child: string, read: boolean, write: boolean][] = [
@@ -38,7 +38,7 @@ const contactAccessCases: [name: string, who: SessionUser, child: string, read: 
   ['ひまわり組の担任はさくら組の園児を読めない', otherTeacher, 'C001', false, false],
   ['保護者は有効な紐づけの自児', taroGuardian, 'C001', true, true],
   ['保護者はほかの家庭の園児を読めない', taroGuardian, 'C004', false, false],
-  ['ほかの家庭の保護者は野原 太郎を読めない', misakiGuardian, 'C001', false, false],
+  ['ほかの家庭の保護者は西田 太郎を読めない', misakiGuardian, 'C001', false, false],
   ['紐づけを終えた保護者は読めない', endedGuardian, 'C003', false, false],
 ];
 
@@ -76,7 +76,7 @@ describe('判定の関数（詳細設計書「判定の関数」(4-1 (2))）', (
 });
 
 describe('デモデータ（詳細設計書「デモデータ」(5-5)）', () => {
-  it('野原 太郎の今日は家庭から・ねた・園からを空け、ほかを入れる。起動した時刻より後の記録は入れない', async () => {
+  it('西田 太郎の今日は家庭から・ねた・園からを空け、ほかを入れる。起動した時刻より後の記録は入れない', async () => {
     const page = await api.contactPage(taroGuardian, 'C001');
     expect(page.home).toBeNull();
     expect(page.sleeps).toEqual([]);
@@ -166,7 +166,7 @@ describe('家庭から→確認しました（詳細設計書「家庭から」(
     await expect(api.confirmHome(teacher, home.contact_home_id, '2000-01-01T00:00:00')).rejects.toThrow(MSG.confirmConflict);
     const confirmed = await api.confirmHome(teacher, home.contact_home_id, home.updated_at);
     expect(confirmed.confirmed_at).toBeTruthy();
-    expect(confirmed.confirmed_staff_name).toBe('高梨 倫太朗');
+    expect(confirmed.confirmed_staff_name).toBe('鈴木 浩之');
     expect(confirmed.guardian_relationship).toBe('父');
     // 二重の確認は書き換えない
     const again = await api.confirmHome(teacher, home.contact_home_id, home.updated_at);
@@ -174,7 +174,7 @@ describe('家庭から→確認しました（詳細設計書「家庭から」(
     // 保護者には「園が確認しました（時刻）」。職員の名前は出さない
     const page = await api.contactPage(taroGuardian, 'C001');
     expect(page.home?.confirmed_at).toBe(confirmed.confirmed_at);
-    expect(JSON.stringify(page)).not.toContain('高梨');
+    expect(JSON.stringify(page)).not.toContain('鈴木');
 
     // 父母が同時に直したとき（読んだ版が古い）は拒む。送り直すと確認が外れて「更新」
     await expect(send({ breakfast: '2', updated_at: '2000-01-01T00:00:00' })).rejects.toThrow(MSG.homeConflict);

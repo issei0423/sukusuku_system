@@ -79,9 +79,9 @@ func summaryOf(t *testing.T, h http.Handler, c *http.Cookie) unhandledSummary {
 
 func TestStaffSummaryUnhandledPersonalChats(t *testing.T) {
 	a, h := newTestApp(t)
-	teacher := loginAs(a, 3, "staff")      // さくら組の担任。野原 太郎の保護者との個人チャットに参加している
+	teacher := loginAs(a, 3, "staff")      // さくら組の担任。西田 太郎の保護者との個人チャットに参加している
 	otherTeacher := loginAs(a, 5, "staff") // ひまわり組の担任。さくら組の個人チャットには参加していない
-	guardian := loginAs(a, 6, "guardian")  // 野原 太郎の保護者
+	guardian := loginAs(a, 6, "guardian")  // 西田 太郎の保護者
 	const personalRoom = 6
 
 	t.Run("参加している個人チャットのうち、未対応のものを数え、先頭のチャンネルを返す", func(t *testing.T) {
@@ -90,7 +90,7 @@ func TestStaffSummaryUnhandledPersonalChats(t *testing.T) {
 			t.Fatalf("unhandledChat = %d, want 1", got.UnhandledChat)
 		}
 		if got.UnhandledChatRoom == nil || got.UnhandledChatRoom.ChatRoomID != personalRoom ||
-			got.UnhandledChatRoom.RoomName != "野原 太郎の保護者" {
+			got.UnhandledChatRoom.RoomName != "西田 太郎の保護者" {
 			t.Fatalf("unhandledChatRoom = %+v", got.UnhandledChatRoom)
 		}
 	})

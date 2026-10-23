@@ -110,7 +110,7 @@ describe('写真の同意の3通り（基本設計書「写真の同意で止め
   it('1人：同意 1 は断り、名前が入る。2 なら送れて、写っている子の行に送った時点の同意が写る', async () => {
     await withConsent({ C001: '1' }, async () => {
       await expect(api.sendPhoto(teacher, { file: jpeg(), subject_child_ids: ['C001'] }))
-        .rejects.toThrow('野原 太郎さんは写真の同意が『園内記録として保持』のため送れません。写真を外すか、写っている子を見直してください。');
+        .rejects.toThrow('西田 太郎さんは写真の同意が『園内記録として保持』のため送れません。写真を外すか、写っている子を見直してください。');
     });
     await withConsent({ C001: '2' }, async () => {
       const { photo, events } = await api.sendPhoto(teacher, { file: jpeg(), subject_child_ids: ['C001'] });
@@ -123,7 +123,7 @@ describe('写真の同意の3通り（基本設計書「写真の同意で止め
   it('2人以上：1人でも 3 でなければ断り、満たさない子の名前が入る。全員 3 なら全員に届く', async () => {
     await withConsent({ C001: '3', C006: '1', C002: '2' }, async () => {
       const e = await rejection(api.sendPhoto(teacher, { file: jpeg(), subject_child_ids: ['C001', 'C006', 'C002'] }));
-      expect(e.message).toBe('伊藤 葵さん・上園 花子さんは、ほかの保護者にも見える場への写真の同意がないため送れません。写真を外すか、写っている子を見直してください。');
+      expect(e.message).toBe('伊藤 葵さん・遠藤 花子さんは、ほかの保護者にも見える場への写真の同意がないため送れません。写真を外すか、写っている子を見直してください。');
     });
     await withConsent({ C001: '3', C006: '3' }, async () => {
       const before = db.contactPhotos.length;
@@ -154,11 +154,11 @@ describe('添える文の他児の名前は、届く家庭ごとに照合する�
       await api.sendPhoto(teacher, { file: jpeg(), subject_child_ids: ['C001'], body });
       const before = db.contactPhotos.length;
       const e = await rejection(api.sendPhoto(teacher, { file: jpeg(), subject_child_ids: ['C001', 'C006'], body }));
-      expect([e.kind, e.names]).toEqual(['other_child_names', ['野原 太郎']]);
+      expect([e.kind, e.names]).toEqual(['other_child_names', ['西田 太郎']]);
       expect(e.message).toContain('（2 家庭）');
       expect(e.matches?.map((m) => [m.start, m.end])).toEqual([[0, 4]]);
       expect(db.contactPhotos.length).toBe(before);
-      const { events } = await api.sendPhoto(teacher, { file: jpeg(), subject_child_ids: ['C001', 'C006'], body, acknowledged_names: ['野原 太郎'] });
+      const { events } = await api.sendPhoto(teacher, { file: jpeg(), subject_child_ids: ['C001', 'C006'], body, acknowledged_names: ['西田 太郎'] });
       expect(events.map((x) => x.body)).toEqual([body, body]);
     });
   });

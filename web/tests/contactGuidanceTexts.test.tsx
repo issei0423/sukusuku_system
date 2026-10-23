@@ -14,12 +14,12 @@ import { SessionProvider } from '../src/session';
 import type { SessionUser } from '../src/api/types';
 
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
 const guardian: SessionUser = {
-  account_id: 6, email: 'nohara.i@example.jp', role: '3', display_name: '野原 一誠',
+  account_id: 6, email: 'nishida.t@example.jp', role: '3', display_name: '西田 拓也',
   staff_id: null, guardian_id: 'G001', class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
@@ -42,15 +42,15 @@ const WRITTEN_REQUEST = 'お薬・食事の除去のご依頼は、書面で担�
 describe('職員の体温の入力欄の近くの固定の文（直-12・25）', () => {
   it('連絡帳（クラス）画面：「＋体温」で開く体温の一覧に出す', async () => {
     open('/staff/contact', teacher);
-    fireEvent.click(await screen.findByRole('button', { name: '上園 花子の体温を記録する' }, { timeout: 3000 }));
-    const dialog = screen.getByRole('dialog', { name: '上園 花子の体温' });
+    fireEvent.click(await screen.findByRole('button', { name: '遠藤 花子の体温を記録する' }, { timeout: 3000 }));
+    const dialog = screen.getByRole('dialog', { name: '遠藤 花子の体温' });
     expect(within(dialog).getByText(CALL_FIRST)).toBeTruthy();
   });
 
   it('連絡帳（園児）画面：「体温を記録する」で開く体温の一覧に出す', async () => {
     open('/staff/contact/C001', teacher);
     fireEvent.click(await screen.findByRole('button', { name: '体温を記録する' }, { timeout: 3000 }));
-    const dialog = screen.getByRole('dialog', { name: '野原 太郎の体温' });
+    const dialog = screen.getByRole('dialog', { name: '西田 太郎の体温' });
     expect(within(dialog).getByText(CALL_FIRST)).toBeTruthy();
   });
 });
@@ -58,7 +58,7 @@ describe('職員の体温の入力欄の近くの固定の文（直-12・25）',
 describe('保護者の連絡事項の近くの文（直-27）', () => {
   it('家庭からの連絡事項の欄の近くに常に出し、欄の説明にする。保護者の体温の一覧には職員向けの文を出さない', async () => {
     open('/guardian/contact/C001', guardian);
-    await screen.findByText('野原 太郎の連絡帳', undefined, { timeout: 3000 });
+    await screen.findByText('西田 太郎の連絡帳', undefined, { timeout: 3000 });
     const form = document.querySelector<HTMLFormElement>('.contact-home-form')!;
     // 何も書いていなくても出ている（入力の有無で出し分けない）
     const textarea = within(form).getByRole('textbox', { name: /連絡事項/ }) as HTMLTextAreaElement;

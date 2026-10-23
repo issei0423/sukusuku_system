@@ -33,7 +33,7 @@ export default function ChildConfirmScreen() {
       ? api.sameNameBirthChildren(user!, state.form.child_name, state.form.birth_date) : []),
     [state?.mode, state?.form.child_name, state?.form.birth_date],
   );
-  // 「C001 野原 太郎」。在籍でない園児は「C001 野原 太郎・退園」のように状態を添える
+  // 「C001 西田 太郎」。在籍でない園児は「C001 西田 太郎・退園」のように状態を添える
   const sameChildren = (same.data ?? []).map((c) => `${c.child_id} ${c.child_name}`
     + (c.enrollment_status !== '1' ? `・${ENROLLMENT_STATUS[c.enrollment_status]}` : ''));
 

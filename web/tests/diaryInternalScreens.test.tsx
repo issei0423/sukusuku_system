@@ -17,17 +17,17 @@ import type { SessionUser } from '../src/api/types';
 import { today } from '../src/api/util';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const admin2: SessionUser = {
-  account_id: 2, email: 'uezono@hoiku.example.jp', role: '1', display_name: '上園 謙心',
+  account_id: 2, email: 'endo@hoiku.example.jp', role: '1', display_name: '遠藤 直人',
   staff_id: 'S002', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
@@ -55,7 +55,7 @@ const button = (name: string) => screen.queryByRole('button', { name }) as HTMLB
 
 describe('日誌一覧画面：申請の取り下げ（2-13 (2)）', () => {
   it('自分が申請した申請中の行にだけ「申請を取り下げる」を出し、確かめてから下書きに戻す', async () => {
-    // 日誌 2 は高梨が申請したさくら組のクラス日誌、日誌 7 は宮城が申請した個人日誌（どちらも申請中）
+    // 日誌 2 は鈴木が申請したさくら組のクラス日誌、日誌 7 は村田が申請した個人日誌（どちらも申請中）
     open('/staff/diary', teacher);
     await settled();
     await waitFor(() => expect(screen.getAllByRole('link', { name: '開く' }).length).toBeGreaterThan(0));
@@ -81,7 +81,7 @@ describe('日誌作成・編集画面：申請の取り下げ（2-13 (2)）', ()
     open(`/staff/diary/${d.diary_id}`, teacher);
     await settled();
     expect(document.body.textContent).toContain('申請中のため編集できません。');
-    expect(document.body.textContent).toContain('申請：高梨 倫太朗');
+    expect(document.body.textContent).toContain('申請：鈴木 浩之');
     fireEvent.click(button('申請を取り下げる')!);
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(within(dialog).getByRole('button', { name: '取り下げる' }));
@@ -94,7 +94,7 @@ describe('日誌作成・編集画面：申請の取り下げ（2-13 (2)）', ()
   });
 
   it('申請した本人でなければ「申請を取り下げる」を出さない', async () => {
-    // 日誌 7 は宮城が申請中
+    // 日誌 7 は村田が申請中
     open('/staff/diary/7', teacher);
     await settled();
     expect(document.body.textContent).toContain('申請中のため編集できません。');
@@ -104,11 +104,11 @@ describe('日誌作成・編集画面：申請の取り下げ（2-13 (2)）', ()
 
 describe('日誌作成・編集画面：承認の取り消し（2-13 (3)）', () => {
   it('管理者は承認済みの日誌の下端で、理由を書いてから取り消して差し戻す', async () => {
-    // 日誌 5 は野原 一誠が承認した、野原 太郎の個人日誌
+    // 日誌 5 は西田 拓也が承認した、西田 太郎の個人日誌
     open('/staff/diary/5', admin2);
     await settled();
     expect(document.body.textContent).toContain('承認済みのため編集できません。');
-    expect(document.body.textContent).toContain('承認：野原 一誠');
+    expect(document.body.textContent).toContain('承認：西田 拓也');
     fireEvent.click(button('承認を取り消して差し戻す')!);
     const dialog = await screen.findByRole('dialog');
     expect(dialog.textContent).toContain('承認を取り消して差し戻します。作成者の一覧に差し戻しとして出ます。保護者へは何も届いていません。');
@@ -151,7 +151,7 @@ describe('承認待ち一覧画面と日誌承認画面（2-13 (1)）', () => {
     }, '2');
     open(`/staff/admin/approval/${d.diary_id}`, admin);
     await settled();
-    expect(document.body.textContent).toContain('申請者 高梨 倫太朗');
+    expect(document.body.textContent).toContain('申請者 鈴木 浩之');
     expect(document.body.textContent).not.toContain('保護者への共有');
     // 画面を開いたあとに、申請した本人が取り下げた
     await api.withdrawDiary(teacher, d.diary_id, d.updated_at);

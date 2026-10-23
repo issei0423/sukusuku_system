@@ -20,12 +20,12 @@ import * as db from '../src/api/mockDb';
 import type { SessionUser } from '../src/api/types';
 
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
@@ -79,7 +79,7 @@ async function saveDraft() {
   await screen.findByText('下書きを保存しました', {}, { timeout: 3000 });
 }
 
-/** 保存した日誌の編集画面が開き直り、高梨が編集ロックを取り直すまで待つ */
+/** 保存した日誌の編集画面が開き直り、鈴木が編集ロックを取り直すまで待つ */
 async function reopened(diaryId: number) {
   await waitFor(() => {
     expect(db.diaryLocks.some((l) => l.diary_id === diaryId && l.locked_staff_id === teacher.staff_id)).toBe(true);
@@ -91,7 +91,7 @@ async function reopened(diaryId: number) {
   }, { timeout: 3000 });
 }
 
-/** 担任の野原 太郎（C001）の個人日誌を書き始める */
+/** 担任の西田 太郎（C001）の個人日誌を書き始める */
 async function startPersonal() {
   open('/staff/diary/new', teacher);
   await editorReady();
@@ -242,7 +242,7 @@ describe('編集できない日誌の部品（#175 の 4）', () => {
     try {
       open('/staff/diary/1', teacher);
       await settled();
-      await screen.findByText(/野原 一誠さんが編集中です。/);
+      await screen.findByText(/西田 拓也さんが編集中です。/);
       const before = bodyArea().value;
       expect(radio('クラス日誌').disabled).toBe(true);
       expect((screen.getByLabelText('対象の園児') as HTMLSelectElement).disabled).toBe(true);

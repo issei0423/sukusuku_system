@@ -17,12 +17,12 @@ import type { SessionUser } from '../src/api/types';
 import { addDays, today } from '../src/api/util';
 
 const teacher: SessionUser = {
-  account_id: 3, email: 'takanashi@hoiku.example.jp', role: '2', display_name: '高梨 倫太朗',
+  account_id: 3, email: 'suzuki@hoiku.example.jp', role: '2', display_name: '鈴木 浩之',
   staff_id: 'S003', guardian_id: null, class_id: 1, class_name: 'さくら組',
   is_temp_password: false, terms_agreed: true,
 };
 const admin: SessionUser = {
-  account_id: 1, email: 'nohara@hoiku.example.jp', role: '1', display_name: '野原 一誠',
+  account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
   staff_id: 'S001', guardian_id: null, class_id: null, class_name: null,
   is_temp_password: false, terms_agreed: true,
 };
@@ -55,15 +55,15 @@ function listRow(childName: string, label: string): HTMLElement {
 }
 
 describe('午睡記録検索画面に、ねた・おきたの行と入眠時の体温を出す', () => {
-  it('ねたの行に入眠時の体温を、おきたの行におきた時刻を出す（デモの昨日の野原 太郎）', async () => {
+  it('ねたの行に入眠時の体温を、おきたの行におきた時刻を出す（デモの昨日の西田 太郎）', async () => {
     open('/staff/nap/search', teacher);
     await settled();
     await waitFor(() => expect(document.querySelector('table.list tbody tr')).toBeTruthy(), { timeout: 3000 });
 
-    const slept = listRow('野原 太郎', '入眠（ねた）');
+    const slept = listRow('西田 太郎', '入眠（ねた）');
     expect(slept.textContent).toContain('36.5');
     expect(slept.textContent).toContain('13:02');
-    const woke = listRow('野原 太郎', '起床（おきた）');
+    const woke = listRow('西田 太郎', '起床（おきた）');
     expect(woke.textContent).toContain('14:35');
     expect(woke.textContent).not.toContain('36.5');
   });
@@ -84,9 +84,9 @@ describe('午睡記録検索画面に、ねた・おきたの行と入眠時の�
       expect(toInput.value).toBe(today());
 
       // 体位・呼吸・顔色の3列をまとめて「きょうは対象外（理由）」。体温と保存時刻は「―」
-      const row = listRow('上園 花子', 'きょうは対象外（午睡なし）');
+      const row = listRow('遠藤 花子', 'きょうは対象外（午睡なし）');
       expect(row.textContent).toContain('13:00');
-      expect(row.textContent).toContain('高梨 倫太朗');
+      expect(row.textContent).toContain('鈴木 浩之');
       const cells = Array.from(row.querySelectorAll('td'));
       expect(cells.find((td) => td.textContent === 'きょうは対象外（午睡なし）')?.getAttribute('colspan')).toBe('3');
       // 保存時刻は「―」。最後の列（修正）は確認の行だけが使い、対象外の行は空
@@ -130,9 +130,9 @@ describe('午睡記録検索画面に、ねた・おきたの行と入眠時の�
     expect(raw).toBe(await reportSpy.mock.results[0].value); // 帳票の本文をそのまま保存する
     const lines = raw.split('\n');
     expect(lines[0]).toContain('"修正あり"');
-    expect(lines.some((l) => l.includes('"野原 太郎"') && l.includes('"入眠（ねた）"') && l.includes('"36.5"'))).toBe(true);
-    // デモの異常時の記録 1（高梨 健）はヒヤリハット（日誌 3）を起票済み。日誌に書いた状況・対応を出し、記録そのものの文は出さない
-    const raised = lines.filter((l) => l.includes('"高梨 健"') && l.includes('"起票済み"'));
+    expect(lines.some((l) => l.includes('"西田 太郎"') && l.includes('"入眠（ねた）"') && l.includes('"36.5"'))).toBe(true);
+    // デモの異常時の記録 1（鈴木 健）はヒヤリハット（日誌 3）を起票済み。日誌に書いた状況・対応を出し、記録そのものの文は出さない
+    const raised = lines.filter((l) => l.includes('"鈴木 健"') && l.includes('"起票済み"'));
     expect(raised).toHaveLength(1);
     expect(raised[0]).toContain('"午睡中にうつ伏せの体位を確認した。"');
     expect(raw).not.toContain('うつ伏せの体位で寝ているのを発見');
@@ -150,6 +150,6 @@ describe('午睡記録検索画面に、ねた・おきたの行と入眠時の�
     expect(document.body.textContent).not.toContain('CSV 出力は');
     expect(document.body.textContent).not.toContain('時刻の古い順に並べます');
     // 閲覧はできる（画面詳細図「午睡記録検索画面」(5-3)「一般は閲覧と修正ができるが、帳票・CSV の出力はできない」）
-    expect(listRow('野原 太郎', '入眠（ねた）').textContent).toContain('36.5');
+    expect(listRow('西田 太郎', '入眠（ねた）').textContent).toContain('36.5');
   });
 });
