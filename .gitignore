@@ -3,6 +3,10 @@
 # 1人ずつの指示（agent-harness/ を読み込むときに使う。agent-harness/README.md）
 CLAUDE.local.md
 
+# api-agent（agent-harness/api-agent。依存と、実行の記録）
+agent-harness/api-agent/node_modules/
+agent-harness/api-agent/runs/
+
 # Node（web/ の React アプリ）
 node_modules/
 dist/
