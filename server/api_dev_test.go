@@ -75,6 +75,8 @@ func TestAgeInMonthsWithBrokenDate(t *testing.T) {
 func TestSetScheduleDateValidation(t *testing.T) {
 	a, h := newTestApp(t)
 	admin := loginAs(a, 1, "staff")
+	// デモデータの加藤 大和（C009）には、推奨で当てた予定が 1 件ある（seed.sql。GitHub Issue #164 の 3）。断った要求で変わらないことを見る
+	before, beforeCount := scheduleOf(t, a, "C009")
 	for _, body := range []string{
 		`{"child_id":"C009","scheduled_on":"2026-10-1","manual":true}`,
 		`{"child_id":"C009","scheduled_on":"abc","manual":false}`,
@@ -82,10 +84,8 @@ func TestSetScheduleDateValidation(t *testing.T) {
 	} {
 		expectStatus(t, request(t, h, admin, "POST", "/api/development/schedules", body), http.StatusBadRequest)
 	}
-	var n int
-	a.db.QueryRow(`SELECT COUNT(*) FROM t_development_schedule WHERE child_id = 'C009'`).Scan(&n)
-	if n != 0 {
-		t.Fatalf("断ったはずの予定が %d 件できています", n)
+	if after, n := scheduleOf(t, a, "C009"); after != before || n != beforeCount {
+		t.Fatalf("断ったはずの要求で予定が変わりました: %s（%d 件）→ %s（%d 件）", before, beforeCount, after, n)
 	}
 	call(t, h, admin, "POST", "/api/development/schedules", `{"child_id":"C009","scheduled_on":"`+today()+`","manual":true}`)
 }

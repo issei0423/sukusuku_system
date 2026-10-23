@@ -223,6 +223,14 @@ run('Go サーバとの結合', () => {
       .rejects.toThrow(/午睡の記録が見つかりません/);
   });
 
+  it('異常時の記録の修正は、理由が無いと受け付けず、無い記録は「見つかりません」を返す（行も操作ログも変えない）', async () => {
+    // 経路と送る形（POST /api/nap/abnormals/{id}/correct、server/api_nap_abnormal_correct.go）を、断られる要求だけで確かめる。
+    // 直す要求はデモデータの記録と操作ログを書き換えて戻せないため、ここでは送らない（規則は server/api_nap_abnormal_correct_test.go）
+    await expect(http.api.correctNapAbnormal(dummy, 2, { situation: '確かめ', reason: '' })).rejects.toThrow(/修正の理由を入力してください/);
+    await expect(http.api.correctNapAbnormal(dummy, 999999, { situation: '確かめ', reason: '確かめ' }))
+      .rejects.toThrow(/異常時の記録が見つかりません/);
+  });
+
   it('成長曲線の基準値は、厚生労働省の公表値を返す（ブラウザ内のモックと同じ値）', async () => {
     const mock = await import('../src/api/mockDb');
     for (const sex of ['1', '2'] as const) {

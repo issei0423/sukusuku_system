@@ -4,6 +4,7 @@
  */
 import { Children, cloneElement, isValidElement, useEffect, useId, useRef } from 'react';
 import type { ReactElement, ReactNode } from 'react';
+import { around, focusAfter, focusableIn } from '../focusAfter';
 
 export function Field({ label, required, children, style }: {
   label: string; required?: boolean; children: ReactNode; style?: React.CSSProperties;
@@ -78,22 +79,31 @@ export function Card({ title, children, sub, actions }: {
 }
 
 /** ダイアログで足りるものは画面として起こさない（基本設計書「画面の洗い出しの考え方」(3-1) 基準3） */
-export function Modal({ title, children, onClose, footer }: {
+export function Modal({ title, children, onClose, footer, returnTo, returnWithin }: {
   title: string; children: ReactNode; onClose: () => void; footer?: ReactNode;
+  /** 閉じたときに開いた元が消えていたら、フォーカスを移す先。渡さなければ本文（main）（GitHub Issue #213） */
+  returnTo?: () => HTMLElement | null | undefined;
+  /**
+   * 開いた元を囲む範囲（CSS のセレクタ。狭い順。例：['td', 'tr', 'section']）。
+   * 閉じたあとの読み直しで開いた元が消えたら（記録を取り消して行が消えたなど）、まだ残っている範囲のうちいちばん狭いものの、
+   * 押せる最初の部品へ移す。無ければ returnTo、それも無ければ本文（main）へ（GitHub Issue #213）
+   */
+  returnWithin?: string[];
 }) {
   const id = useId();
   const dialog = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
   useEffect(() => { close.current = onClose; }, [onClose]);
+  const back = useRef(returnTo);
+  useEffect(() => { back.current = returnTo; }, [returnTo]);
+  const within = useRef(returnWithin);
+  useEffect(() => { within.current = returnWithin; }, [returnWithin]);
   useEffect(() => {
     const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    // 開いた元を囲む範囲（returnWithin）は、開いた時点で覚える。読み直しが閉じるより先に届き、閉じる時点で開いた元が消えていることがある
+    const near = around(before, within.current ?? []);
     const root = dialog.current;
-    const focusable = () => Array.from(root?.querySelectorAll<HTMLElement>(
-      'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
-    ) ?? []).filter((element) => element.getAttribute('aria-hidden') !== 'true' &&
-      !(element instanceof HTMLInputElement && element.type === 'hidden'))
-      // 複数のセレクタをまとめた検索は、環境によって画面上の順で返らない。Tab の折り返し先を誤らないよう並べ直す
-      .sort((x, y) => (x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+    const focusable = () => focusableIn(root);
     /*
      * 開いたときのフォーカス：data-initial-focus を付けた部品（押せるときだけ）→ 最初の入力欄 → 最初の押せるもの → 窓そのもの。
      * data-initial-focus は、押すとすぐ取り返しにくい記録をする窓で、いちばん弱い操作（「やめる」など）へ入れるときに付ける
@@ -113,7 +123,36 @@ export function Modal({ title, children, onClose, footer }: {
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     };
     document.addEventListener('keydown', onKey);
-    return () => { document.removeEventListener('keydown', onKey); before?.focus(); };
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      /*
+       * 閉じたら開いた元へ戻す。開いた元が押せない・消えていると、focus() が効かずに body へ落ちていた
+       * （WCAG 2.4.3 フォーカス順序、GitHub Issue #213。共通の決まりは src/focusAfter.ts）。
+       *   - 押せない（送っている間など）：押せるようになるのを待って戻す。待つ間に消えたら、下の移し先へ
+       *   - 消えている：開いた元を囲む範囲（returnWithin）のうち、残っているいちばん狭いものの押せる最初の部品へ。
+       *     無ければ呼んだ側が渡す戻り先（returnTo）へ。渡されない・戻せないときは本文（main）へ
+       * 押せる開いた元へはこれまでどおりすぐ戻す。開いたときにフォーカスが無かった（body）ときは動かさない。
+       * 押せない・消えているときに、呼んだ側がすでにほかへフォーカスを移していたら、そちらを残す
+       * （focusAfter は body に落ちているときだけ動かす。結果の表示の「取り消す」の確認の窓など）
+       *
+       * 呼んだ側が returnWithin・returnTo を渡したときは、押せる開いた元へ戻したあとも、読み直しで開いた元が消えるのを待ち、
+       * 消えたら移し先へ移す（記録を取り消したあとの「直す」、誤送信への対応を記録したあとの行など）。
+       * 待つのは利用者の次の操作まで。渡さない窓は待たない（開いた元の画面が自分で移す窓とぶつからないように。午睡チェックの「対象外」）
+       */
+      if (!before || before === document.body) return;
+      const fallback = () => {
+        const inArea = near();
+        if (inArea) return inArea;
+        const to = back.current?.();
+        return to?.isConnected && !to.matches(':disabled') ? to : document.querySelector<HTMLElement>('main');
+      };
+      if (before.isConnected && !before.matches(':disabled')) {
+        before.focus();
+        if (within.current?.length || back.current) focusAfter(before, () => (before.isConnected ? null : fallback()));
+        return;
+      }
+      focusAfter(before, () => (before.isConnected ? before : fallback()));
+    };
   }, []);
   return (
     <div className="modal-backdrop" onClick={onClose}>

@@ -252,10 +252,11 @@ export default function PhysicalRecordScreen() {
                 <div className="page-head">
                   <h2>成長グラフ</h2>
                   <div className="row">
-                    <button className={measureType === '1' ? 'btn-primary btn-sm' : 'btn-sm'}
-                      onClick={() => setMeasureType('1')}>身長</button>
-                    <button className={measureType === '2' ? 'btn-primary btn-sm' : 'btn-sm'}
-                      onClick={() => setMeasureType('2')}>体重</button>
+                    {/* 【仮置き】選んでいる側は、塗りの色に加えて「✓」と太字で示す（保護者の成長の記録画面と同じ。WCAG 1.4.1、GitHub Issue #211。web/仮置き値.md） */}
+                    <button className={measureType === '1' ? 'measure-toggle btn-primary btn-sm' : 'measure-toggle btn-sm'} aria-pressed={measureType === '1'}
+                      onClick={() => setMeasureType('1')}>{measureType === '1' && <span aria-hidden="true">✓</span>}身長</button>
+                    <button className={measureType === '2' ? 'measure-toggle btn-primary btn-sm' : 'measure-toggle btn-sm'} aria-pressed={measureType === '2'}
+                      onClick={() => setMeasureType('2')}>{measureType === '2' && <span aria-hidden="true">✓</span>}体重</button>
                   </div>
                   <div className="spacer" />
                   {/* PDF出力は管理者のみ */}

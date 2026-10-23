@@ -15,6 +15,7 @@ import { Alert, Empty } from '../../components/ui';
 import { clearNotice, notify } from '../../components/feedback';
 import { DIARY_RECORD_TYPE } from '../../api/codes';
 import { formatYMD } from '../../api/util';
+import { focusAfter, focusedNow } from '../../focusAfter';
 import type { DiaryRecordType } from '../../api/types';
 import { IncidentSummary } from './IncidentFields';
 import { incidentInputOf } from './incidentForm';
@@ -88,7 +89,13 @@ export default function DiaryConfirmScreen() {
     return <Empty text="確認する内容がありません。日誌の作成画面から進んでください。" />;
   }
 
+  /*
+   * 申請している間は「申請する」が押せなくなり、押したボタンからフォーカスが外れて body に落ちる。
+   * 申請できなかったときは画面が残るので、押した「申請する」へ戻す（src/focusAfter.ts、WCAG 2.4.3、GitHub Issue #213）。
+   * 申請できたら一覧へ移り、画面の移り変わりが本文（main）へ移す（App.tsx）
+   */
   const submit = async () => {
+    const pressed = focusedNow();
     setBusy(true);
     setError(null);
     try {
@@ -111,6 +118,7 @@ export default function DiaryConfirmScreen() {
       setError((e as Error).message);
     } finally {
       setBusy(false);
+      focusAfter(pressed);
     }
   };
 

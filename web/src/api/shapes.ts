@@ -171,6 +171,11 @@ export interface NapAbnormalRow {
   response: string;
   staff_id: string;
   diary_id: number | null;
+  /**
+   * 起票したヒヤリハットが下書きのまま（申請していない）か。起票していなければ false（GitHub Issue #142 の 5）。
+   * 判定はサーバ（server/api_nap.go の napAbnormalDiaryJoin）とモック（mock.ts の incidentDiaryDraft）
+   */
+  diary_draft: boolean;
   /** 保護者への連絡（画面詳細図「異常時記録画面」(5-2) 項目13）。空は未記入 */
   guardian_notice: GuardianNotice | null;
   guardian_noticed_at: string | null;
@@ -178,6 +183,13 @@ export interface NapAbnormalRow {
   guardian_notice_person: string | null;
   child_name: string;
   staff_name: string;
+  /**
+   * 最後に修正した時刻（行の「修正あり」）と、この利用者が直せるか（直せる行にだけ「修正」を出す）。
+   * 画面詳細図「異常時記録画面」(5-2) の項目17。判定はサーバ（server/api_nap_abnormal_correct.go の napAbnormalCorrectDenied）と
+   * モック（mock.ts の napCorrectDenied）。担保は POST /api/nap/abnormals/{id}/correct
+   */
+  corrected_at: string | null;
+  can_correct: boolean;
 }
 
 /**
@@ -344,6 +356,11 @@ export interface StaffSummary {
   devOverdue: number;
   pending: number;
   abnormalWithoutDiary: number;
+  /**
+   * 誤送信への対応を記録していない取り消しの数。誤送信対応記録画面の「対応の記録がない取り消し」の一覧と同じ範囲。
+   * 記録するのは管理者のため、管理者にだけ数え、一般の職員には 0 を返す（GitHub Issue #141 の 3）
+   */
+  misdeliveryUnrecorded: number;
   activeNap: NapSession | null;
   /** 今日の家庭からの「未確認」「更新」の園児の数（詳細設計書「ダッシュボード」(4-8 (2))） */
   homeUnconfirmed: number;

@@ -21,6 +21,7 @@ import { formatHM, formatTemperature, today, now, napTimerBase, plusMinutes, jst
 import type { BodyPosition, Breathing, Complexion, NapRecord } from '../../api/types';
 import type { NapChildState } from '../../api/shapes';
 import SleepControls from './SleepControls';
+import { focusAfter, focusableIn, focusedNow } from '../../focusAfter';
 
 /** 園児の行に「保存しました」を出しておく時間（仮置き値.md「午睡チェックの動き」） */
 const SAVED_NOTICE_MS = 5000;
@@ -50,13 +51,30 @@ export default function NapCheckScreen() {
   // 未記録の園児が残っているときに、終了の前に確かめる（画面詳細図「午睡チェック画面」(5-1)）
   const [ending, setEnding] = useState(false);
 
+  /*
+   * 開始すると、読み直しで「午睡チェックを開始する」が消えて実施中の画面に替わり、フォーカスが body に落ちていた
+   * （WCAG 2.4.3、GitHub Issue #213）。代わりに出る見出しの並び（記録済みの数・「異常を記録する」・「午睡チェックを終了」）の、
+   * 押せる最初の部品へ移す（同じ並びの押せるもの。src/focusAfter.ts）。開始できなかったときはボタンもフォーカスも残る
+   */
+  const sessionHead = useRef<HTMLDivElement>(null);
   const start = async () => {
+    const pressed = focusedNow();
     setError(null);
-    try { await api.startSession(user!, classId, today()); setTick((n) => n + 1); }
-    catch (e) { setError((e as Error).message); }
+    try {
+      await api.startSession(user!, classId, today());
+      setTick((n) => n + 1);
+      focusAfter(pressed, () => focusableIn(sessionHead.current)[0] ?? null);
+    } catch (e) { setError((e as Error).message); }
   };
+  /*
+   * 終了すると、読み直しで「午睡チェックを終了」が消え、フォーカスが body に落ちていた（WCAG 2.4.3、GitHub Issue #213）。
+   * 代わりに出る「午睡チェックを開始する」へ移す（src/focusAfter.ts）。確認の窓から終了したときは、窓の部品が同じ先へ移す（returnTo）。
+   * 終了できずに実施が残ったときは、ボタンもフォーカスも残る
+   */
+  const startButton = useRef<HTMLButtonElement>(null);
   const end = async () => {
     if (!session.data) return;
+    const pressed = focusedNow();
     setEnding(false);
     setError(null);
     try { endedByUser.current = true; await api.endSession(user!, session.data.nap_session_id); setTick((n) => n + 1); }
@@ -66,6 +84,7 @@ export default function NapCheckScreen() {
       setError((e as Error).message);
       setTick((n) => n + 1);
     }
+    focusAfter(pressed, () => startButton.current);
   };
 
   const s = session.data;
@@ -162,7 +181,7 @@ export default function NapCheckScreen() {
             ? <Alert>午睡の時間帯を過ぎたため、午睡チェックを自動で終了しました。続けるときは、もう一度開始してください。</Alert>
             : <Empty text="午睡チェックはまだ開始していません。" />}
           <div className="row-end">
-            <button className="btn-primary" onClick={start}>午睡チェックを開始する</button>
+            <button ref={startButton} className="btn-primary" onClick={start}>午睡チェックを開始する</button>
           </div>
           <div className="muted" style={{ marginTop: 12 }}>
             開始すると、この画面は開いたままの運用になります。実施中は自動ログアウトの対象外です。
@@ -173,15 +192,16 @@ export default function NapCheckScreen() {
 
       {s && (
         <>
-          <div className="page-head">
+          <div ref={sessionHead} className="page-head">
             <span>記録済み {recorded} / {rows.length} 名</span>
             <div className="spacer" />
             <Link className="btn" to="/staff/nap/abnormal">異常を記録する</Link>
             <button onClick={() => (recorded < rows.length || stillSleeping.length > 0 ? setEnding(true) : end())}>午睡チェックを終了</button>
           </div>
           {ending && (
+            /* 終了すると、読み直しで「午睡チェックを終了」が消える。代わりに出る「午睡チェックを開始する」へ移す（GitHub Issue #213） */
             <ConfirmDialog title={recorded < rows.length ? '記録していない園児がいます' : '「おきた」が記録されていない園児がいます'}
-              confirmLabel="このまま終了する" danger onConfirm={end} onCancel={() => setEnding(false)}>
+              confirmLabel="このまま終了する" danger onConfirm={end} onCancel={() => setEnding(false)} returnTo={() => startButton.current}>
               {recorded < rows.length && <p>{rows.length - recorded} 名の記録がありません。このまま午睡チェックを終了しますか。</p>}
               {stillSleeping.length > 0 && <p>「おきた」が記録されていない園児がいます（{stillSleeping.join('、')}）。このまま終了しますか。</p>}
               <p className="muted">終了したあとは、この実施へ記録を足せません。</p>

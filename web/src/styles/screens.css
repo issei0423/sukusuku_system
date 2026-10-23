@@ -217,8 +217,8 @@
   .msg .bubble { max-width: 92%; }
 }
 
-/* リアクション。押せる大きさ（44px）を保つ */
-.reactions { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin-top: var(--sp-1); }
+/* リアクション。押せる大きさ（44px）と、隣との間 8px（タッチの条件 (2-0 (4))、GitHub Issue #215）を保つ */
+.reactions { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-1); }
 .msg.mine .reactions { justify-content: flex-end; }
 .reaction {
   min-height: 44px; min-width: 44px; padding: 0 var(--sp-2);
@@ -258,7 +258,8 @@
   box-shadow: var(--elevation-2);
   text-align: left;
 }
-.msg-menu-row { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+/* 一覧の中のボタンどうしの間も 8px（タッチの条件 (2-0 (4))、GitHub Issue #215） */
+.msg-menu-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 .msg-menu-row .btn-sm { min-height: 44px; flex: 1; white-space: nowrap; }
 
 /*
@@ -516,7 +517,8 @@ button.guardian-record-link {
 /* AI の下書き（components/AiDraftPanel.tsx。詳細設計書「画面」(8-9)）。押せる大きさは 44px 以上 */
 .ai-draft { display: grid; gap: var(--sp-2); }
 .ai-draft-buttons { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
-.ai-draft-memo { display: grid; gap: var(--sp-1); padding: var(--sp-2); border: 1px solid var(--c-border-weak); border-radius: 8px; background: var(--c-surface-sub); }
+/* メモの欄と「下書きを作る」の間も 8px（タッチの条件 (2-0 (4))、GitHub Issue #215） */
+.ai-draft-memo { display: grid; gap: var(--sp-2); padding: var(--sp-2); border: 1px solid var(--c-border-weak); border-radius: 8px; background: var(--c-surface-sub); }
 .ai-draft-memo textarea { display: block; width: 100%; min-height: 72px; }
 .ai-draft-memo p { margin: 0; }
 .ai-draft-status { margin: 0; font-weight: 700; }
@@ -556,8 +558,14 @@ button.guardian-record-link {
 /* 保護者：成長の記録画面（幅 360px で1列。詳細設計書「成長の記録画面（保護者）」(2-11 (3))）。
    判定に見える色（赤・緑など）を測った値と項目に付けない */
 .growth-section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); flex-wrap: wrap; }
-.growth-switch { display: flex; gap: var(--sp-1); }
+.growth-switch { display: flex; gap: var(--sp-2); } /* 「身長」「体重」の間 8px（タッチの条件 (2-0 (4))、GitHub Issue #215） */
 .growth-switch button { min-height: 44px; min-width: 64px; }
+/*
+ * 【仮置き】身長・体重の切り替え（保護者の成長の記録画面・職員の身体記録画面。web/仮置き値.md）。選んでいる側は、塗りの色に加えて
+ * 「✓」（画面側で添える）と太字で示し、選んでいない側は細字にする（色だけに頼らない。WCAG 1.4.1、GitHub Issue #211）
+ */
+.measure-toggle { font-weight: 400; }
+.measure-toggle[aria-pressed="true"] { font-weight: 700; }
 .growth-source { margin: 0; }
 .growth-measurements { width: 100%; }
 .growth-today {
