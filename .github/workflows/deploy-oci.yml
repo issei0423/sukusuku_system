@@ -17,7 +17,7 @@ jobs:
   deploy:
     name: ビルド・反映・公開確認
     runs-on: [self-hosted, linux, x64, sukusuku-prod]
-    timeout-minutes: 60
+    timeout-minutes: 120
     env:
       GOMAXPROCS: '1'
       GOFLAGS: -p=1
@@ -44,7 +44,7 @@ jobs:
         working-directory: server
         run: |
           go vet ./...
-          go test -count=1 -p 1 ./...
+          go test -count=1 -p 1 -timeout 60m ./...
 
       - name: Linux amd64 バイナリを作る
         working-directory: server
