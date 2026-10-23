@@ -121,7 +121,7 @@ export function finalLine(text: string, label: '結果' | '判定'): string | un
 // ───────────────────────── query() ─────────────────────────
 
 export interface AgentTask {
-  kind: 'issue' | 'conflict' | 'ci';
+  kind: 'issue' | 'conflict' | 'ci' | 'task';
   /** 記録の見出し（issue#12・pr#34-conflict など） */
   label: string;
   prompt: string;
@@ -133,6 +133,8 @@ export interface AgentTask {
   effort: Effort;
   /** エージェントが push してよいか */
   allowPush: boolean;
+  /** 書いてよいフォルダを足す（task の --allow-dir）。守りのフォルダと重ならないことは呼ぶ側が確かめる */
+  extraDirs?: string[];
 }
 
 export interface AgentContext {
@@ -150,25 +152,31 @@ export interface AgentOutcome {
   errors: string[];
 }
 
-export function safetyContextFor(task: Pick<AgentTask, 'cwd' | 'allowPush'>, ctx: Pick<AgentContext, 'log' | 'mainRoot' | 'repoRoot'>): SafetyContext {
+/** 触らない場所。task の --cwd・--allow-dir がこれと重なれば断る */
+export function protectedDirsFor(roots: { mainRoot: string; repoRoot: string }): string[] {
   const appData = process.env.APPDATA;
+  return [
+    roots.mainRoot,
+    roots.repoRoot,
+    AGENT_DIR,
+    path.join(HOME_DIR, '.claude'),
+    path.join(HOME_DIR, '.claude.json'),
+    path.join(HOME_DIR, '.sukusuku-api-agent'),
+    AGENT_CONFIG_DIR,
+    path.join(HOME_DIR, '.config', 'gh'),
+    path.join(HOME_DIR, '.ssh'),
+    ...(appData ? [path.join(appData, 'GitHub CLI')] : []),
+  ];
+}
+
+export function safetyContextFor(task: Pick<AgentTask, 'cwd' | 'allowPush' | 'extraDirs'>, ctx: Pick<AgentContext, 'log' | 'mainRoot' | 'repoRoot'>): SafetyContext {
   return {
     platform: process.platform === 'win32' ? 'win32' : 'posix',
     workdir: task.cwd,
-    allowedDirs: [ctx.log.dir, SCRIPTS_DIR, TMP_DIR],
+    allowedDirs: [ctx.log.dir, SCRIPTS_DIR, TMP_DIR, ...(task.extraDirs ?? [])],
+    writeDirs: task.extraDirs ?? [],
     logDir: ctx.log.dir,
-    protectedDirs: [
-      ctx.mainRoot,
-      ctx.repoRoot,
-      AGENT_DIR,
-      path.join(HOME_DIR, '.claude'),
-      path.join(HOME_DIR, '.claude.json'),
-      path.join(HOME_DIR, '.sukusuku-api-agent'),
-      AGENT_CONFIG_DIR,
-      path.join(HOME_DIR, '.config', 'gh'),
-      path.join(HOME_DIR, '.ssh'),
-      ...(appData ? [path.join(appData, 'GitHub CLI')] : []),
-    ],
+    protectedDirs: protectedDirsFor(ctx),
     homeDir: HOME_DIR,
     tmpDir: TMP_DIR,
     protectedBranches: PROTECTED_BRANCHES,

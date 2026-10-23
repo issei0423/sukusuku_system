@@ -62,7 +62,9 @@ export function redact(text: string, env: NodeJS.ProcessEnv = process.env): stri
 
 // ───────────────────────── 実行の記録 ─────────────────────────
 
-export type ItemKind = 'issue' | 'pr';
+export type ItemKind = 'issue' | 'pr' | 'task';
+
+const kindName = (k: ItemKind) => (k === 'issue' ? 'Issue' : k === 'pr' ? 'PR' : 'task');
 
 export interface ItemRecord {
   kind: ItemKind;
@@ -141,15 +143,15 @@ export class RunLog {
     else {
       lines.push('| 種類 | 番号 | 題 | 結果 | 費用 | URL |', '| :-- | :-- | :-- | :-- | :-- | :-- |');
       for (const it of this.items) {
-        lines.push(`| ${it.kind === 'issue' ? 'Issue' : 'PR'} | #${it.number} | ${cell(it.title)} | ${cell(it.outcome)} | ${usd(it.costUsd)} | ${it.url ?? ''} |`);
+        lines.push(`| ${kindName(it.kind)} | ${it.kind === 'task' ? '-' : `#${it.number}`} | ${cell(it.title)} | ${cell(it.outcome)} | ${usd(it.costUsd)} | ${it.url ?? ''} |`);
       }
       lines.push('');
       for (const it of this.items.filter((i) => i.notes.length > 0)) {
-        lines.push(`### ${it.kind === 'issue' ? 'Issue' : 'PR'} #${it.number}`, ...it.notes.map((n) => `- ${n}`), '');
+        lines.push(`### ${kindName(it.kind)} ${it.kind === 'task' ? it.title : `#${it.number}`}`, ...it.notes.map((n) => `- ${n}`), '');
       }
     }
     lines.push(`## 飛ばしたもの（${this.skipped.length} 件）`, '');
-    lines.push(...(this.skipped.length ? this.skipped.map((s) => `- ${s.kind === 'issue' ? 'Issue' : 'PR'} #${s.number}：${s.reason}`) : ['なし']), '');
+    lines.push(...(this.skipped.length ? this.skipped.map((s) => `- ${kindName(s.kind)} #${s.number}：${s.reason}`) : ['なし']), '');
     if (this.notes.length) lines.push('## メモ', '', ...this.notes.map((n) => `- ${n}`), '');
     if (this.denials.length) lines.push(`## 守りで断った道具の呼び出し（${this.denials.length} 回）`, '', ...this.denials.map((d) => `- ${d}`), '');
     lines.push(`メッセージの流れ：\`${path.basename(this.jsonlPath)}\`・細かいログ：\`${path.basename(this.dir)}/\``, '');

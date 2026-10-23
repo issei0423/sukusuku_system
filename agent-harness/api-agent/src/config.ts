@@ -30,6 +30,9 @@ export const MIN_CALL_USD = 0.05;
 export const MAX_TURNS = { issue: 200, conflict: 80, ci: 120 } as const;
 /** 1回の query() の時間の上限（分）【仮置き】 */
 export const QUERY_TIMEOUT_MIN = { issue: 120, conflict: 45, ci: 90 } as const;
+/** task コマンドの既定：往復の上限・時間の上限（分）【仮置き】 */
+export const TASK_MAX_TURNS = 200;
+export const TASK_TIMEOUT_MIN = 60;
 /** 手元の CI 1回の時間の上限（分）。鍵の待ちを含む【仮置き】 */
 export const LOCAL_CI_TIMEOUT_MIN = 120;
 /** マージの直前に本線が進んでいたときに、取り込みからやり直す回数（持ち主の頼みの「2回まで」） */
