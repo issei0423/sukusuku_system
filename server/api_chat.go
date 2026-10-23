@@ -644,10 +644,17 @@ func (a *app) handleRetractMessage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "このメッセージはすでに取り消されています")
 		return
 	}
-	if _, err := a.db.Exec(`UPDATE t_chat_message
+	// 確かめてから書き込むまでに、同じメッセージの取消が割り込むことがある（2つのタブで同時に押すなど）。
+	// 取り消し済みでないことを書き込みの条件にし、負けた側は上と同じ 409 を返す
+	res, err := a.db.Exec(`UPDATE t_chat_message
 		SET is_deleted = 1, body = '', deleted_at = ?, deleted_account_id = ?
-		WHERE chat_message_id = ?`, now(), u.AccountID, id); err != nil {
+		WHERE chat_message_id = ? AND is_deleted = 0`, now(), u.AccountID, id)
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "取消に失敗しました")
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		writeErr(w, http.StatusConflict, "このメッセージはすでに取り消されています")
 		return
 	}
 	a.log(u.AccountID, fnChat, opDelete, "t_chat_message", i64(id), nil, s(body), s("取消"))
@@ -712,9 +719,16 @@ func (a *app) handleEditMessage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "取り消したメッセージは編集できません")
 		return
 	}
-	if _, err := a.db.Exec(`UPDATE t_chat_message SET body = ?, edited_at = ? WHERE chat_message_id = ?`,
-		req.Body, now(), id); err != nil {
+	// 確かめてから書き込むまでに、取消が割り込むことがある。そのまま書くと、取り消したメッセージに本文が戻る。
+	// 取り消し済みでないことを書き込みの条件にし、負けた側は上と同じ 409 を返す
+	res, err := a.db.Exec(`UPDATE t_chat_message SET body = ?, edited_at = ? WHERE chat_message_id = ? AND is_deleted = 0`,
+		req.Body, now(), id)
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "編集に失敗しました")
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		writeErr(w, http.StatusConflict, "取り消したメッセージは編集できません")
 		return
 	}
 	a.log(u.AccountID, fnChat, opUpdate, "t_chat_message", i64(id), nil, s(before), s(req.Body))
