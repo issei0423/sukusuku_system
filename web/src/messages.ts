@@ -249,3 +249,11 @@ export const MEAL_AMOUNT_STAFF_TEXT: Record<'1' | '2' | '3' | '4', string> = { '
 /** 食事の量・朝ごはん（保護者には「食べていない」と出す。詳細設計書「食事の列」(2-2 (4))） */
 export const MEAL_AMOUNT_TEXT: Record<'1' | '2' | '3' | '4', string> = { '1': 'ぜんぶ', '2': '半分', '3': '少し', '4': '食べていない' };
 export const MEAL_KIND_TEXT: Record<'1' | '2', string> = { '1': '給食', '2': 'おやつ' };
+
+/**
+ * 別のタブで別のアカウントにログインし直されたため、このタブも切り替えたときの案内（App.tsx、api/sessionAccount.ts）。
+ * 職員ダッシュボードと保護者ホームの先頭に出す。【仮置き】設計はこの場面を決めていない（web/仮置き値.md）
+ */
+export const ACCOUNT_CHANGED_TEXT =
+  '別のタブで、別のアカウントにログインし直されました。このタブも、いまログインしているアカウントの画面に切り替えました。'
+  + '前の画面で送ろうとしていた内容は送っていません。';

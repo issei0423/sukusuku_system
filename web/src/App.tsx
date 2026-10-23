@@ -9,7 +9,7 @@
 import { startTransition, useEffect, useRef, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useSession } from './session';
-import { api, backend, connectLive, onProcedureRequired, onSessionEnded } from './api/client';
+import { api, backend, connectLive, onAccountChanged, onProcedureRequired, onSessionEnded } from './api/client';
 import StaffLayout from './layouts/StaffLayout';
 import GuardianLayout from './layouts/GuardianLayout';
 
@@ -165,6 +165,9 @@ function RequireGuardian() {
   return <GuardianLayout />;
 }
 
+/** タブ間でいまの利用者を知らせる通り道の名前（App の BroadcastChannel） */
+const SESSION_CHANNEL = 'sukusuku-session';
+
 export default function App() {
   const { user, setUser } = useSession();
   // モックはメモリ上にしか状態を持たないため、復元するものが無い
@@ -203,6 +206,60 @@ export default function App() {
       });
     });
   }, [accountId, role, setUser, navigate]);
+
+  /*
+   * 別のタブで別のアカウントにログインし直されたとき（api/sessionAccount.ts）。
+   * ログインの Cookie はタブで共有されるので、開いたままのタブの利用者は、もうサーバの利用者ではない。
+   * いまの Cookie の利用者を読み直し、その人の画面へ切り替える。理由はホームの画面に出す（state.accountChanged）。
+   * ログアウトしたままなら、ログインしていた系統の入口へ戻す（セッションが切れたときと同じ）。
+   * きっかけは2つ：サーバが要求を止めたとき（409 account_changed）と、ほかのタブがログイン・ログアウトを
+   * 知らせてきたとき（下の BroadcastChannel）。モックはタブごとにメモリで動き、Cookie を共有しないので行わない
+   */
+  const current = useRef({ accountId, role });
+  current.current = { accountId, role };
+  const syncing = useRef(false);
+  const syncWithServer = useRef(() => {});
+  syncWithServer.current = () => {
+    if (syncing.current) return;
+    syncing.current = true;
+    api.bootstrap().then((u) => {
+      startTransition(() => {
+        const was = current.current;
+        if (!u) {
+          if (was.accountId !== undefined) {
+            setUser(null);
+            navigate(was.role === '3' ? '/' : '/staff-top', { replace: true, state: { sessionEnded: true } });
+          }
+          return;
+        }
+        if (u.account_id === was.accountId) return;
+        setUser(u);
+        navigate(u.role === '3' ? '/guardian' : '/staff', { replace: true, state: { accountChanged: true } });
+      });
+    }).finally(() => { syncing.current = false; });
+  };
+  useEffect(() => {
+    if (backend === 'mock') return undefined;
+    return onAccountChanged(() => syncWithServer.current());
+  }, []);
+  /*
+   * ほかのタブへ、このタブのいまの利用者を知らせる。ログイン・ログアウトしたタブが知らせ、
+   * 受け取ったタブは自分の利用者と違えば読み直す。サーバに止められる前に切り替えられる
+   */
+  const channel = useRef<BroadcastChannel | null>(null);
+  useEffect(() => {
+    if (backend === 'mock' || typeof BroadcastChannel === 'undefined') return undefined;
+    const ch = new BroadcastChannel(SESSION_CHANNEL);
+    ch.onmessage = (e: MessageEvent<{ accountId: number | null }>) => {
+      if ((e.data?.accountId ?? null) !== (current.current.accountId ?? null)) syncWithServer.current();
+    };
+    channel.current = ch;
+    return () => { ch.close(); channel.current = null; };
+  }, []);
+  useEffect(() => {
+    if (!ready) return;
+    channel.current?.postMessage({ accountId: accountId ?? null });
+  }, [ready, accountId]);
 
   /*
    * 相手の操作を、開いている画面へすぐに届ける接続（live.ts。server/events.go）。

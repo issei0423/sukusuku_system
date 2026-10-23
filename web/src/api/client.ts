@@ -37,6 +37,7 @@ export { onProcedureRequired } from './procedure';
 
 /** ログイン中のセッションがサーバに切られたことの知らせ（停止・紐づけの解除など。GitHub Issue #159） */
 export { onSessionEnded } from './procedure';
+export { onAccountChanged } from './sessionAccount';
 
 /**
  * 裏の読み直しとして要求を送る。職員の自動ログアウトの「操作」に数えさせない（GitHub Issue #210）。

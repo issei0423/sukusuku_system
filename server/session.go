@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"log"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -406,6 +407,45 @@ const (
 	kindTermsAgreementRequired = "terms_agreement_required"
 )
 
+/*
+画面が思っている利用者と、Cookie のセッションの利用者が違うときの拒否。
+
+ログインの Cookie は同じブラウザのタブすべてで共有される。あるタブを開いたまま、別のタブでログアウトして
+別のアカウントでログインし直すと、開いたままのタブは画面の上では前の利用者なのに、要求は新しいアカウントの
+Cookie で届く。そのまま通すと、保護者の画面から送ったメッセージが職員の送信として残り、自分の送信なのに
+編集・取消ができなくなる。職員の画面は保護者の Cookie で読みに行き「職員のみが行えます」で止まる。
+
+画面は要求のたびに、思っている利用者の account_id をヘッダ（accountHeader）で送る。知らせの接続
+（GET /api/events。EventSource はヘッダを付けられない）はクエリ（accountQuery）で送る。
+セッションの利用者と違えば、何もせずに 409 と kindAccountChanged を返す。画面（web/src/api/http.ts）は
+これを受けてセッションを読み直し、いまのアカウントの画面へ切り替える。
+ヘッダもクエリも無い要求（ページを開き直したときの GET /api/me、テスト、結合テスト）は今までどおり通す。
+【仮置き】設計はこの場面を決めていない（web/仮置き値.md）
+*/
+const (
+	accountHeader      = "X-Sukusuku-Account"
+	accountQuery       = "_account"
+	kindAccountChanged = "account_changed"
+	msgAccountChanged  = "別のタブで、別のアカウントにログインし直されています。この操作は行いませんでした。"
+)
+
+// expectedAccount は、画面が思っている利用者の account_id を返す。送られていなければ ok = false。
+// 数でない値は、どのアカウントとも一致しない値（0）として扱う
+func expectedAccount(r *http.Request) (int64, bool) {
+	v := r.Header.Get(accountHeader)
+	if v == "" {
+		v = r.URL.Query().Get(accountQuery)
+	}
+	if v == "" {
+		return 0, false
+	}
+	id, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return 0, true
+	}
+	return id, true
+}
+
 // requireLogin はログイン中の利用者を取り出す。未ログインなら 401 を返す。
 // 一時パスワード中・規約の再同意が必要な間も通す。手続きそのものの API だけが使う。
 //
@@ -420,6 +460,11 @@ func (a *app) requireLogin(w http.ResponseWriter, r *http.Request) (*SessionUser
 	id, ok := a.sessionAccount(r)
 	if !ok {
 		writeJSON(w, http.StatusUnauthorized, apiError{Message: "ログインしていません"})
+		return nil, false
+	}
+	// 画面が思っている利用者と違えば、何もしない（上の accountHeader の説明）。操作の時刻も延ばさない
+	if want, given := expectedAccount(r); given && want != id {
+		writeJSON(w, http.StatusConflict, apiError{Kind: kindAccountChanged, Message: msgAccountChanged})
 		return nil, false
 	}
 	u, err := a.loadSessionUser(id)

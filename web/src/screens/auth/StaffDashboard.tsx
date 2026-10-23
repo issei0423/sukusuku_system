@@ -12,6 +12,7 @@ import { useSession } from '../../session';
 import { api } from '../../api/client';
 import { Loading, ErrorBox, Alert } from '../../components/ui';
 import { formatYMD, today } from '../../api/util';
+import { ACCOUNT_CHANGED_TEXT } from '../../messages';
 
 export default function StaffDashboard() {
   const { user } = useSession();
@@ -20,7 +21,10 @@ export default function StaffDashboard() {
   const { data, error, loading } = useAsync(() => api.staffSummary(user!), [user?.account_id],
     { refreshMs: AUTO_REFRESH_MS, live: onLive('chat', 'diary', 'nap', 'development', 'contact') });
   // 管理者に限る画面を開こうとして戻されたとき（App.tsx の RequireAdmin）
-  const denied = (useLocation().state as { denied?: string } | null)?.denied === 'admin';
+  const state = useLocation().state as { denied?: string; accountChanged?: boolean } | null;
+  const denied = state?.denied === 'admin';
+  // 別のタブで別のアカウントにログインし直されたため、このタブも切り替えたとき（App.tsx）
+  const accountChanged = state?.accountChanged === true;
 
   if (loading) return <Loading />;
   if (error) return <ErrorBox text={error} />;
@@ -72,6 +76,11 @@ export default function StaffDashboard() {
         <span className="muted">今日 {formatYMD(today())}</span>
       </div>
 
+      {accountChanged && (
+        <div style={{ marginBottom: 16 }}>
+          <Alert soft>{ACCOUNT_CHANGED_TEXT}</Alert>
+        </div>
+      )}
       {denied && (
         <div style={{ marginBottom: 16 }}>
           <Alert soft>開こうとした画面は、管理者のみが利用できます。必要な場合は管理者へ依頼してください。</Alert>
