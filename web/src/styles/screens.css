@@ -90,6 +90,18 @@
 .main:has(.nap-timer) { scroll-padding-top: calc(var(--nap-timer-h, 0px) + 6px); }
 .nap-timer .big { font-size: 2rem; font-weight: 700; line-height: 1.3; letter-spacing: 0; font-variant-numeric: tabular-nums; }
 .nap-timer.over { background: var(--c-alert-soft); border-bottom: 2px solid var(--c-alert); color: var(--c-alert); }
+/*
+ * ブラウザの文字の大きさの設定を上げると、タイマーの帯の背が伸び、iPad 横向きでは画面の3割ほどを覆う。
+ * そのときは、見出しと残り時間を横に並べ、開始・経過・チェック間隔も見出しと値を1行にして、帯を低くする。
+ * メディアクエリの em はブラウザの設定の文字の大きさで決まる。「768px 以上で 48em 未満」「1024px 以上で 64em 未満」は
+ * 文字を大きくしたときだけ当てはまるので、既定（16px）では効かない
+ */
+@media (min-width: 768px) and (max-width: 47.9375em), (min-width: 1024px) and (max-width: 63.9375em) {
+  .nap-timer { padding-top: var(--sp-2); padding-bottom: var(--sp-2); gap: var(--sp-1) var(--sp-4); }
+  .nap-timer > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 var(--sp-2); }
+  /* 1行目に見出しと残り時間、2行目に開始・経過・チェック間隔をそろえる */
+  .nap-timer > div:first-child { flex-basis: 100%; column-gap: var(--sp-3); }
+}
 
 .nap-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); }
 .nap-card {
