@@ -129,3 +129,21 @@ describe('グループ編成画面に並べるグループ（GitHub Issue #172 �
     expect(await ids(kinjo)).not.toContain(5);
   });
 });
+
+/*
+ * 取消と編集を同時に押したとき、負けた側が返す応答（基本設計書「誤送信への対応」(4-6)・「メッセージの編集」(4-6)）
+ * モックは要求を1つずつ最後まで処理するので、同時に押しても順に押したときと同じになる。
+ * Go サーバは確かめと書き込みのあいだに割り込まれうるので、書き込みに条件を入れて同じ応答にしている
+ * （server/api_chat_retract_edit_race_test.go）
+ */
+describe('取り消したメッセージは、もう一度取り消せず、編集もできない', () => {
+  it('2回目の取消と、取消のあとの編集は失敗し、本文は空のまま', async () => {
+    const m = await api.send(miyagi, 8, '取り消す本文');
+    await api.retract(miyagi, m.chat_message_id);
+    await expect(api.retract(miyagi, m.chat_message_id)).rejects.toThrow('このメッセージはすでに取り消されています');
+    await expect(api.edit(miyagi, m.chat_message_id, '書き換えた本文')).rejects.toThrow('取り消したメッセージは編集できません');
+    const stored = db.chatMessages.find((x) => x.chat_message_id === m.chat_message_id)!;
+    expect(stored.is_deleted).toBeTruthy();
+    expect(stored.body).toBe('');
+  });
+});
