@@ -389,7 +389,11 @@ CREATE TABLE t_nap_abnormal (
   guardian_notice        TEXT CHECK (guardian_notice IN ('1','2')),                 -- 1:した 2:しない
   guardian_noticed_at    TEXT,
   guardian_notice_method TEXT CHECK (guardian_notice_method IN ('1','2','3','9')),  -- 1:電話 2:お迎えのときに対面 3:連絡帳・個人チャット 9:その他
-  guardian_notice_person TEXT
+  guardian_notice_person TEXT,
+  -- 最後に修正した時刻。空なら修正なし。帳票と異常時記録画面の「修正あり」の印に使う。修正者・修正前の値・修正後の値・理由は
+  -- 操作ログが持つ（基本設計書「足した列」(5-7)・「記録の修正と改ざん防止」(4-8)）。既存の DB には
+  -- api_nap_abnormal_correct.go の ensureNapAbnormalCorrectedAt が足す
+  corrected_at           TEXT
 );
 
 -- ============ 5-7 発達チェック・身体測定 ============

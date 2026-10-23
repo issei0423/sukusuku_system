@@ -177,7 +177,8 @@ export default function NapSearchScreen() {
                   <td>{a.situation}</td>
                   <td>{a.response}</td>
                   <td className="nowrap">{a.staff_name}</td>
-                  <td className="nowrap">{a.diary_id ? '起票済み' : '未起票'}</td>
+                  {/* 【仮置き】ヒヤリハットが下書きのまま（申請していない）なら「起票済み（下書き）」（web/仮置き値.md。GitHub Issue #142 の 5） */}
+                  <td className="nowrap">{!a.diary_id ? '未起票' : a.diary_draft ? '起票済み（下書き）' : '起票済み'}</td>
                 </tr>
               ))}
             </tbody>

@@ -102,6 +102,15 @@ func (a *app) handleSaveChild(w http.ResponseWriter, r *http.Request) {
 	if existing > 0 {
 		before = a.childFieldsOf(in.ChildID)
 	}
+	/*
+	 * 新しく登録する園児には、最初の予定日を当てる。基準日は登録した日、その月齢の推奨頻度の日数を足し、
+	 * あいだに健診の節目があれば節目の日にする（基本設計書「推奨スケジュールの作り方」(4-9)、dev_schedule.go）。
+	 * 推奨頻度がマスタに無い月齢では当てない。編集では予定を動かさない
+	 */
+	firstSchedule, hasFirstSchedule := "", false
+	if existing == 0 {
+		firstSchedule, hasFirstSchedule = a.loadScheduleRule().next(in.BirthDate, today())
+	}
 
 	tx, err := a.db.Begin()
 	if err != nil {
@@ -134,6 +143,13 @@ func (a *app) handleSaveChild(w http.ResponseWriter, r *http.Request) {
 	if _, err := tx.Exec(`INSERT INTO t_class_child (class_id, child_id) VALUES (?, ?)`, in.ClassID, in.ChildID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "クラスの割り当てに失敗しました")
 		return
+	}
+	if hasFirstSchedule {
+		if _, err := tx.Exec(`INSERT INTO t_development_schedule (child_id, scheduled_on, is_manual_override, created_staff_id)
+			VALUES (?, ?, 0, ?)`, in.ChildID, firstSchedule, u.staff()); err != nil {
+			writeErr(w, http.StatusInternalServerError, "登録に失敗しました")
+			return
+		}
 	}
 	var roomID int64
 	if existing == 0 {

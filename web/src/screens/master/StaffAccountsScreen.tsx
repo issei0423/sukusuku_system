@@ -18,6 +18,7 @@ import { ConfirmDialog, notify } from '../../components/feedback';
 import { ROLE, ACCOUNT_STATUS } from '../../api/codes';
 import { validateStaffAccountInput } from '../../api/util';
 import type { Role } from '../../api/types';
+import { around, focusAfter, focusedNow } from '../../focusAfter';
 
 type Row = Awaited<ReturnType<typeof api.staffAccounts>>[number];
 type Pending = { kind: 'stop' | 'resume' | 'reissue'; row: Row };
@@ -133,12 +134,20 @@ export default function StaffAccountsScreen() {
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); setPending(null); }
   };
 
+  /*
+   * 押した「ロック解除」は、解除して読み直すと消え、フォーカスが body に落ちていた（WCAG 2.4.3、GitHub Issue #213）。
+   * 消えたら、同じ行の押せる最初のもの（「変更」）→ 一覧 → 本文（main）へ移す（窓の部品の returnWithin と同じ順。src/focusAfter.ts）。
+   * 解除できなかったときはボタンが残り、フォーカスも残るので動かさない
+   */
   const unlock = async (r: Row) => {
+    const pressed = focusedNow();
+    const near = around(pressed, ['tr', 'section']);
     setError(null);
     try {
       await api.unlock(user!, r.account.account_id);
       notify(`${r.staff.staff_name} さんのロックを解除しました`);
       reload();
+      focusAfter(pressed, () => (pressed?.isConnected ? null : near() ?? document.querySelector<HTMLElement>('main')));
     } catch (e) { setError((e as Error).message); }
   };
 

@@ -26,6 +26,7 @@ import type { ChatMessage } from '../../api/types';
 import { useUnsavedInput } from '../../unsavedInput';
 import IncomingLog from './IncomingLog';
 import { useIncomingMessages } from './useIncomingMessages';
+import { focusAfter, focusedNow } from '../../focusAfter';
 
 export default function GuardianChatScreen() {
   const { user } = useSession();
@@ -107,6 +108,7 @@ export default function GuardianChatScreen() {
   // 開いたチャンネルは、いちばん下（最新）から見せる（GitHub Issue #172）。いちばん下を読んでいるときに届いた
   // メッセージは、見える位置まで送る。上へ戻って読んでいるときは動かさない
   const listRef = useRef<HTMLDivElement | null>(null);
+  const input = useRef<HTMLInputElement | null>(null);
   // PC の幅では列の内側でなくページ全体を送るので、送れる親が無ければ文書を送る
   useFollowLatest(listRef, shownRoom, lastMessageId, { fallbackToDocument: true });
 
@@ -142,8 +144,14 @@ export default function GuardianChatScreen() {
 
   const current = rooms.data?.find((r) => r.room.chat_room_id === roomId);
 
+  /*
+   * 送れると欄が空になって「送信」が押せなくなり、押したボタンからフォーカスが外れて body に落ちる。
+   * 空になった入力欄へ移す（連絡帳の「送る」と同じ。src/focusAfter.ts、WCAG 2.4.3、GitHub Issue #213）。
+   * 送れなかったときは文が残り、「送信」も押せるままなので動かさない
+   */
   const send = async () => {
     if (!roomId || !text.trim()) return;
+    const pressed = focusedNow();
     // 送った先のチャンネルの書きかけだけを消す。送っている間に書き足されたら消さない
     const target = roomId;
     const body = text;
@@ -153,6 +161,7 @@ export default function GuardianChatScreen() {
       setDrafts((d) => (d[target] === body ? { ...d, [target]: '' } : d));
       messages.refresh();
       setStatus('メッセージを送信しました');
+      focusAfter(pressed, () => input.current);
     } catch (e) { setError((e as Error).message); }
   };
 
@@ -164,13 +173,29 @@ export default function GuardianChatScreen() {
     setMenuId(null);
   };
 
+  /*
+   * 保存する・やめると編集の欄とボタンが消え、押したボタンからフォーカスが外れて body に落ちる。吹き出しへ戻す
+   * （一覧を閉じたときと同じ先。src/focusAfter.ts、WCAG 2.4.3、GitHub Issue #213）。
+   * 吹き出しは編集の欄が消えてからフォーカスを受け取れる（tabIndex が付く）ので、それまで待つ
+   */
+  const bubbleWhenReady = (messageId: number) => () => {
+    const bubble = document.querySelector<HTMLElement>(`[data-message-bubble="${messageId}"]`);
+    return bubble && bubble.tabIndex >= 0 ? bubble : null;
+  };
+  const cancelEdit = (messageId: number) => {
+    const pressed = focusedNow();
+    setEditingId(null);
+    focusAfter(pressed, bubbleWhenReady(messageId));
+  };
   const saveEdit = async (messageId: number) => {
+    const pressed = focusedNow();
     setError(null);
     try {
       await api.edit(user!, messageId, draft);
       setEditingId(null);
       messages.refresh();
       setStatus('メッセージを更新しました');
+      focusAfter(pressed, bubbleWhenReady(messageId));
     } catch (e) { setError((e as Error).message); }
   };
 
@@ -296,7 +321,7 @@ export default function GuardianChatScreen() {
                     <textarea aria-label="メッセージの編集" value={draft} onChange={(e) => setDraft(e.target.value)}
                       maxLength={1000} rows={4} style={{ width: '100%', boxSizing: 'border-box' }} />
                     <div className="row-end" style={{ marginTop: 4 }}>
-                      <button className="btn-sm" onClick={() => setEditingId(null)}>やめる</button>
+                      <button className="btn-sm" onClick={() => cancelEdit(m.chat_message_id)}>やめる</button>
                       <button className="btn-sm btn-primary" onClick={() => saveEdit(m.chat_message_id)}
                         disabled={!draft.trim()}>保存</button>
                     </div>
@@ -362,7 +387,7 @@ export default function GuardianChatScreen() {
         {error && <ErrorBox text={error} />}
         {current.canPost ? (
           <div className="row">
-            <input type="text" aria-label="メッセージを入力" value={text} maxLength={1000} onChange={(e) => setText(e.target.value)}
+            <input ref={input} type="text" aria-label="メッセージを入力" value={text} maxLength={1000} onChange={(e) => setText(e.target.value)}
               placeholder="メッセージを入力" style={{ flex: 1 }} />
             <button className="btn-primary" onClick={send} disabled={!text.trim()}>送信</button>
           </div>

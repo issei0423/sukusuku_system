@@ -252,13 +252,13 @@ describe('帳票の中身', () => {
       expect(r.hasTitle).toBe(true);
       expect(r.abnormals).toHaveLength(2);
       expect(r.abnormals.filter((x) => x[1] === '高梨 健')).toEqual([
-        [`${twoDaysAgo()}T13:40:00`, '高梨 健', '午睡中にうつ伏せの体位を確認した。', '仰向けに直し、呼吸と顔色を確認した。', '宮城 蓮', '起票済み'],
+        [`${twoDaysAgo()}T13:40:00`, '高梨 健', '午睡中にうつ伏せの体位を確認した。', '仰向けに直し、呼吸と顔色を確認した。', '宮城 蓮', '起票済み', ''],
       ]);
       expect(text).not.toContain('うつ伏せの体位で寝ているのを発見');
       // 起票していない記録 2（金城 陸。昨日）は記録そのものの文に「未起票」。実施の日の古い順で、2日前の高梨 健のあと
       expect(r.abnormals[0][1]).toBe('高梨 健');
       expect(r.abnormals[1]).toEqual([
-        `${yesterday()}T14:10:00`, '金城 陸', '顔色がやや紅潮していた。体温37.4度。', '別室で休ませ、保護者へ連絡した。', '高梨 倫太朗', '未起票',
+        `${yesterday()}T14:10:00`, '金城 陸', '顔色がやや紅潮していた。体温37.4度。', '別室で休ませ、保護者へ連絡した。', '高梨 倫太朗', '未起票', '',
       ]);
     } finally {
       for (const e of added) db.napExclusions.splice(db.napExclusions.indexOf(e), 1);
@@ -395,12 +395,12 @@ describe('帳票の中身', () => {
       .abnormals.find((x) => x[1] === '高梨 健')!;
     try {
       diary.body = '【発生日時】\r\n13時40分\r\n\r\n【発生場所】\r\nさくら組の午睡室\r\n\r\n【状況】\r\n直した状況。\r\n2行目。\r\n\r\n【とった対応】\r\n直した対応。\r\n\r\n【今後の対策】\r\n5分ごとに確かめる。';
-      expect((await raisedRow()).slice(2)).toEqual(['直した状況。\n2行目。', '直した対応。', '宮城 蓮', '起票済み']);
+      expect((await raisedRow()).slice(2)).toEqual(['直した状況。\n2行目。', '直した対応。', '宮城 蓮', '起票済み', '']);
 
       diary.is_deleted = true;
       expect((await raisedRow()).slice(2)).toEqual([
         'うつ伏せの体位で寝ているのを発見。呼吸あり、顔色は通常。', '仰向けに直し、5分後に再度確認した。保護者へは降園時に口頭で伝えた。',
-        '宮城 蓮', '起票済み',
+        '宮城 蓮', '起票済み', '',
       ]);
 
       // 式として開かれうるセル（= + - @ で始まる）は ' を付ける。" は二重にする（GitHub Issue #153 と同じ。サーバも同じ）

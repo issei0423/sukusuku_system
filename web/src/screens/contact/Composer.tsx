@@ -98,7 +98,7 @@ export default function Composer({ label, max, scope, recipient, className, init
       </div>
       {ai && (
         <AiDraftPanel key={sentCount} childId={ai.childId} date={ai.date} field={ai.field} max={max} allowDraft={ai.allowDraft}
-          text={text} disabled={busy}
+          text={text} disabled={busy} focusAfterUse={() => input.current}
           onUse={(value, mode) => setText((t) => [...(mode === 'append' ? `${t}${value}` : value)].slice(0, max).join(''))} />
       )}
       {recipient && <RecipientBadge recipient={recipient} className={className} />}

@@ -708,6 +708,26 @@ export const developmentSchedules: DevelopmentSchedule[] = [
   { development_schedule_id: 6, child_id: 'C006', scheduled_on: '2026-08-28', is_manual_override: false, created_staff_id: 'S001' },
   { development_schedule_id: 7, child_id: 'C007', scheduled_on: '2026-09-20', is_manual_override: false, created_staff_id: 'S001' },
   { development_schedule_id: 8, child_id: 'C008', scheduled_on: '2026-09-15', is_manual_override: false, created_staff_id: 'S001' },
+  /*
+   * 予定の無かった園児（C009〜C022）には、基準日（2026-09-01）に管理者が推奨を一括で当てたものとして予定日を置く
+   * （基本設計書「推奨スケジュールの作り方」(4-9)。記録の無い園児は当てた日から数え、あいだに健診の節目（1歳6か月）がある
+   * C009・C010・C011 は節目の日。GitHub Issue #164 の 3）。
+   * 【仮置き】デモの基準日を当てた日とした（web/仮置き値.md「デモデータの、予定の無かった園児」。server/seed.sql と同じ）
+   */
+  { development_schedule_id: 9, child_id: 'C009', scheduled_on: '2026-12-22', is_manual_override: false, created_staff_id: 'S001' },
+  { development_schedule_id: 10, child_id: 'C010', scheduled_on: '2026-09-30', is_manual_override: false, created_staff_id: 'S001' },
+  { development_schedule_id: 11, child_id: 'C011', scheduled_on: '2026-11-05', is_manual_override: false, created_staff_id: 'S001' },
+  { development_schedule_id: 12, child_id: 'C012', scheduled_on: '2026-11-30', is_manual_override: false, created_staff_id: 'S001' },
+  { development_schedule_id: 13, child_id: 'C013', scheduled_on: '2026-12-30', is_manual_override: false, created_staff_id: 'S001' },
+  { development_schedule_id: 14, child_id: 'C014', scheduled_on: '2026-12-30', is_manual_override: false, created_staff_id: 'S001' },
+  { development_schedule_id: 15, child_id: 'C015', scheduled_on: '2026-12-30', is_manual_override: false, created_staff_id: 'S001' },
+  { development_schedule_id: 16, child_id: 'C016', scheduled_on: '2026-12-30', is_manual_override: false, created_staff_id: 'S001' },
+  { development_schedule_id: 17, child_id: 'C017', scheduled_on: '2026-12-30', is_manual_override: false, created_staff_id: 'S001' },
+  { development_schedule_id: 18, child_id: 'C018', scheduled_on: '2026-12-30', is_manual_override: false, created_staff_id: 'S001' },
+  { development_schedule_id: 19, child_id: 'C019', scheduled_on: '2026-11-30', is_manual_override: false, created_staff_id: 'S001' },
+  { development_schedule_id: 20, child_id: 'C020', scheduled_on: '2026-11-30', is_manual_override: false, created_staff_id: 'S001' },
+  { development_schedule_id: 21, child_id: 'C021', scheduled_on: '2026-11-30', is_manual_override: false, created_staff_id: 'S001' },
+  { development_schedule_id: 22, child_id: 'C022', scheduled_on: '2026-11-30', is_manual_override: false, created_staff_id: 'S001' },
 ];
 
 /**
@@ -878,6 +898,7 @@ export const settings: Setting[] = [
   setting('scope.guardian_grace_days', '30', '保護者の猶予期間（日）'),
   setting('nap.temperature_required', '入眠時', '午睡で体温を求める時点'),
   setting('growth.share_physical', '1', '身体測定を成長の記録に出すか'),
+  setting('dev.milestone_months', '18,36,60', '乳幼児健診の節目（1歳6か月・3歳・5歳）。推奨スケジュールの重点時期'),
   setting('retention.contact_years', '5', '連絡帳の保持年数（要決定。決まるまでは記録の保持年数と同じ）'),
 ];
 
@@ -999,6 +1020,24 @@ function shiftRows(rows: Record<string, unknown>[], days: number): void {
     for (const c of children) c.birth_date = shiftValue(c.birth_date, offset);
   }
   trimFutureDemoContacts();
+  capFutureDemoDiaryTimes(today(), now());
+}
+
+/**
+ * 起動した日の日誌の時刻のうち、起動した時刻より後のものを起動した時刻に丸める（GitHub Issue #139）。
+ * デモデータの日誌は今日の夕方に書いて申請したものとして作ってあり、朝に起動すると承認待ちに未来の時刻が並ぶため。
+ * 【仮置き】設計に無い決めごと（web/仮置き値.md）。連絡帳のように外すと承認待ちの一覧を見せられないので、外さずに丸める。
+ * 差し戻しの時刻は updated_at に入る。作成・更新の時刻も丸め、作成 ≦ 申請 ≦ 承認・差し戻しの順を保つ。
+ * 外すときは、この関数と上の呼び出しを消す。Go は server/seed_shift.go の capFutureDemoDiaryTimes
+ */
+export function capFutureDemoDiaryTimes(day: string, at: string): void {
+  const cap = <T extends string | null>(v: T): T => (v !== null && v.slice(0, 10) === day && v > at ? (at as T) : v);
+  for (const d of diaries) {
+    d.created_at = cap(d.created_at);
+    d.applied_at = cap(d.applied_at);
+    d.approved_at = cap(d.approved_at);
+    d.updated_at = cap(d.updated_at);
+  }
 }
 
 /**

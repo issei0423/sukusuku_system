@@ -190,7 +190,8 @@ describe('職員ダッシュボードの未対応は、0 件の行も出す（Gi
     open('/staff', kinjo);
     await settled();
     const table = screen.getByRole('heading', { name: '未対応' }).closest('section')!;
-    for (const label of ['差し戻された日誌', '未読のチャット', '発達チェックの未実施（担当クラス）', 'ヒヤリハット未起票の異常時の記録']) {
+    // 異常時の記録の行は、下書きのままのヒヤリハットも数えるため名前を変えた（GitHub Issue #142 の 5。web/仮置き値.md）
+    for (const label of ['差し戻された日誌', '未読のチャット', '発達チェックの未実施（担当クラス）', 'ヒヤリハット未起票・下書きのままの異常時の記録']) {
       const row = Array.from(table.querySelectorAll('tr')).find((tr) => tr.textContent?.includes(label));
       expect(row, label).toBeTruthy();
       expect(within(row!).getByRole('link', { name: '開く' })).toBeTruthy();
@@ -203,11 +204,15 @@ describe('職員ダッシュボードの未対応は、0 件の行も出す（Gi
 
 describe('スケジュール設定の「上書きする」は、日付を変えるまで押せない（GitHub Issue #178 の 7）', () => {
   it('予定の無い園児でも、初めは押せない。日付を変えると押せる', async () => {
-    const scheduled = new Set(db.developmentSchedules.map((s) => s.child_id));
+    // デモデータの在籍園児には、すべて予定がある（GitHub Issue #164 の 3）。第3.0版より前に登録した園児のように、
+    // さくら組の最後の園児の予定を外して、予定の無い園児を作る
     const target = db.classChildren
-      .filter((cc) => cc.class_id === 1 && !scheduled.has(cc.child_id))
-      .map((cc) => db.children.find((c) => c.child_id === cc.child_id)!)[0];
+      .filter((cc) => cc.class_id === 1)
+      .map((cc) => db.children.find((c) => c.child_id === cc.child_id)!).at(-1)!;
     expect(target).toBeTruthy();
+    for (let i = db.developmentSchedules.length - 1; i >= 0; i--) {
+      if (db.developmentSchedules[i].child_id === target.child_id) db.developmentSchedules.splice(i, 1);
+    }
 
     open('/staff/growth/schedule', admin);
     await settled();
@@ -218,6 +223,35 @@ describe('スケジュール設定の「上書きする」は、日付を変え�
 
     fireEvent.change(input, { target: { value: '2099-01-15' } });
     expect(button.disabled).toBe(false);
+  });
+});
+
+describe('スケジュール設定画面の「予定の無い園児に推奨を当てる」（GitHub Issue #164 の 3）', () => {
+  it('確かめてから当て、予定の無かった園児の行に予定日が出る', async () => {
+    // さくら組の 山本 陽翔（C011。確定した記録が無い）の予定を外して、予定の無い園児を作る（第3.0版より前に登録した園児）
+    const target = db.children.find((c) => c.child_id === 'C011')!;
+    for (let i = db.developmentSchedules.length - 1; i >= 0; i--) {
+      if (db.developmentSchedules[i].child_id === target.child_id) db.developmentSchedules.splice(i, 1);
+    }
+
+    open('/staff/growth/schedule', admin);
+    await settled();
+    const row = await waitFor(() => screen.getByLabelText(`${target.child_name}の次回の予定日`).closest('tr')!,
+      { timeout: 3000 });
+    // 設定中の予定日は「―」
+    expect(row.querySelectorAll('td')[4].textContent).toBe('―');
+
+    fireEvent.click(screen.getByRole('button', { name: '予定の無い園児に推奨を当てる' }));
+    const dialog = await screen.findByRole('dialog', { name: '予定の無い園児に推奨を当てる' });
+    // 確かめるだけでは当てない
+    expect(db.developmentSchedules.some((s) => s.child_id === target.child_id)).toBe(false);
+    fireEvent.click(within(dialog).getByRole('button', { name: '当てる' }));
+
+    await waitFor(() => expect(db.developmentSchedules.some((s) => s.child_id === target.child_id)).toBe(true));
+    await waitFor(() => {
+      const again = screen.getByLabelText(`${target.child_name}の次回の予定日`).closest('tr')!;
+      expect(again.querySelectorAll('td')[4].textContent).not.toBe('―');
+    }, { timeout: 3000 });
   });
 });
 
