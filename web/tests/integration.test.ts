@@ -11,6 +11,7 @@
  */
 import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { MSG } from '../src/messages';
+import { sessionAccount, setSessionAccount } from '../src/api/sessionAccount';
 
 // 相手は本物の時計で動くサーバなので、tests/setup-clock.ts で止めた時計を本物に戻す
 vi.useRealTimers();
@@ -28,6 +29,23 @@ const run = BASE ? describe : describe.skip;
 let cookie = '';
 /** 2つの端末（職員と保護者）を同時に動かすときに使う、手を加えていない fetch */
 const realFetch = globalThis.fetch;
+/*
+ * Cookie を差し替える所では、画面が思っている利用者（api/sessionAccount.ts）も一緒に動かす。
+ * 画面は思っている利用者を X-Sukusuku-Account で送り、サーバは Cookie の利用者と違えば止める（server/session.go）。
+ * Cookie だけを戻すと、最後に読んだ利用者が残って食い違う。
+ */
+function saveJar() {
+  return { cookie, account: sessionAccount() };
+}
+function restoreJar(saved: { cookie: string; account: number | null }) {
+  cookie = saved.cookie;
+  setSessionAccount(saved.account);
+}
+/** ログインしていない端末にする */
+function clearJar() {
+  cookie = '';
+  setSessionAccount(null);
+}
 function useCookieJar() {
   const real = globalThis.fetch;
   globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -57,7 +75,7 @@ run('Go サーバとの結合', () => {
    * （基本設計書「ログイン」(4-3)。GitHub Issue #159）ため、持っている Cookie を捨ててから入る
    */
   const switchTo = (email: string, password: string, entrance: 'staff' | 'guardian') => {
-    cookie = '';
+    clearJar();
     return http.api.login(email, password, entrance);
   };
 
@@ -310,7 +328,7 @@ run('Go サーバとの結合', () => {
 
     await switchTo('nishida@hoiku.example.jp', 'pass1234', 'staff');
     const code = await http.api.issueOneInvitationCode(dummy, 'C001', 30);
-    const adminCookie = cookie;
+    const adminJar = saveJar();
     try {
       await expect(http.api.verifyInvitationCode(code.replace(/-/g, '').toLowerCase())).resolves.toBeTruthy();
       // 規約への同意（いまの版）を添える。同意の無い登録は受け付けない（GitHub Issue #170）
@@ -319,7 +337,7 @@ run('Go サーバとの結合', () => {
       // ログイン中は新規登録を受け付けない（GitHub Issue #159）
       await expect(http.api.signUpGuardian({ ...base, email: 'taro@example.jp' })).rejects.toThrow(/already_logged_in/);
       // 登録は、ログインしていない端末から行う
-      cookie = '';
+      clearJar();
       await expect(http.api.signUpGuardian({ ...base, email: '' })).rejects.toThrow(/メールアドレスを入力/);
       await expect(http.api.signUpGuardian({ ...base, email: 'taro.example.jp' })).rejects.toThrow(/形式/);
       // 規約に同意していない登録・大文字違いの既存のメールアドレスは受け付けない（GitHub Issue #170）
@@ -327,7 +345,7 @@ run('Go サーバとの結合', () => {
         .rejects.toThrow(/利用規約/);
       await expect(http.api.signUpGuardian({ ...base, email: 'NISHIDA.T@EXAMPLE.JP' })).rejects.toThrow(/すでに登録/);
     } finally {
-      cookie = adminCookie;
+      restoreJar(adminJar);
       const row = (await http.api.invitationCodes(dummy)).find((c) => c.code === code)!;
       await http.api.revokeInvitationCode(dummy, row.invitation_code_id);
     }
@@ -488,12 +506,12 @@ run('Go サーバとの結合', () => {
   it('停止したアカウントのセッションは、その場で切れて画面へ知らせる（GitHub Issue #159）', async () => {
     const procedure = await import('../src/api/procedure');
     const kubota = await switchTo('kubota@hoiku.example.jp', 'pass1234', 'staff');
-    const kubotaCookie = cookie;
+    const kubotaJar = saveJar();
     await switchTo('nishida@hoiku.example.jp', 'pass1234', 'staff');
-    const adminCookie = cookie;
+    const adminJar = saveJar();
     await http.api.setAccountStatus(dummy, kubota.account_id, '2');
     try {
-      cookie = kubotaCookie;
+      restoreJar(kubotaJar);
       let ended = 0;
       const stop = procedure.onSessionEnded(() => { ended += 1; });
       try {
@@ -504,7 +522,7 @@ run('Go サーバとの結合', () => {
         stop();
       }
     } finally {
-      cookie = adminCookie;
+      restoreJar(adminJar);
       await http.api.setAccountStatus(dummy, kubota.account_id, '1');
       await http.api.logout();
     }
