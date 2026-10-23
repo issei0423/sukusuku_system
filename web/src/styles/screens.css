@@ -119,6 +119,12 @@
 .nap-choice-options { display: flex; gap: var(--sp-2); }
 .nap-choice { flex: 1; min-width: 0; min-height: 52px; margin: 0; padding: 0; position: relative; }
 /*
+ * 午睡の行の選択肢は、名前の途中で折り返さない（「うつ伏／せ」「確認でき／ず」にしない）。
+ * ブラウザの文字の大きさの設定を上げて1行に入らないときは、選択肢ごと次の行へ回す。既定（16px）では1行に入る
+ */
+.nap-inline-fields .nap-choice-options { flex-wrap: wrap; }
+.nap-inline-fields .nap-choice { min-width: max-content; }
+/*
  * ラジオは見えなくして、隣の枠（span）を選択肢として見せる。ラジオの箱は、見えている枠と同じ位置・大きさで重ねる。
  * キーボードでフォーカスを移したとき、ブラウザはラジオの箱が見えるところまでしか送らない。箱が 1px で枠の縦の真ん中にあると
  * （label は align-items: center）、Shift+Tab で上へ戻ったときに、枠の上の端とフォーカスの印が、上に止めたタイマーの下に残る
@@ -159,12 +165,16 @@
 .nap-temp-manual label { font-size: var(--fs-small); font-weight: 700; }
 .nap-temp-manual input { width: 125px; }
 
-@media (max-width: 1300px) {
+/*
+ * 欄の並べ方を切り替える幅は em で決める。メディアクエリの em はブラウザの設定の文字の大きさで決まるので、
+ * 文字を大きくすると早めに2段・1段へ移り、選択肢が狭い欄に押し込まれない。既定（16px）では 1300px・900px で、前と同じ
+ */
+@media (max-width: 81.25em) {
   .nap-inline-fields { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); }
   .nap-choice-field:last-child { grid-column: 1 / -1; }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 56.25em) {
   .nap-inline-fields { grid-template-columns: minmax(0, 1fr); }
   .nap-choice-field:last-child { grid-column: auto; }
   .nap-record-row { padding: var(--sp-3); }
