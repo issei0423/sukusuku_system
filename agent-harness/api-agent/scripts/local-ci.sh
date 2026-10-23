@@ -41,7 +41,8 @@ tmp="$out/integ"; rm -rf "$tmp"; mkdir -p "$tmp/no-web"
 port="$(free_port)"
 echo "integration-port: $port" > "$out/integ-port.txt"
 if (cd "$wt/server" && go build -o "$tmp/sukusuku-server.exe" .) > "$out/integ-build.log" 2>&1; then
-  "$tmp/sukusuku-server.exe" -addr "127.0.0.1:$port" -db "$tmp/ci.db" -web "$tmp/no-web" > "$out/integ-server.log" 2>&1 &
+  # -files を渡さないと、連絡帳の写真（結合テストが上げる）が、呼んだときのフォルダの files/ に残る
+  "$tmp/sukusuku-server.exe" -addr "127.0.0.1:$port" -db "$tmp/ci.db" -web "$tmp/no-web" -files "$tmp/files" > "$out/integ-server.log" 2>&1 &
   spid=$!
   up=0; for i in $(seq 1 30); do curl -s -o /dev/null "http://127.0.0.1:$port/api/me" && { up=1; break; }; sleep 1; done
   if [ $up = 1 ]; then
