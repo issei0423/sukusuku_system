@@ -591,7 +591,15 @@ func (a *app) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := a.db.Exec(`INSERT INTO t_chat_message
+	// メッセージと未対応への戻しは、どちらも入れるか、どちらも入れない。メッセージだけが入ると、
+	// 保護者から届いたのに「対応済み」のまま残り、職員の未対応の一覧に出ない
+	tx, err := a.db.Begin()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "送信に失敗しました")
+		return
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`INSERT INTO t_chat_message
 		(chat_room_id, sender_account_id, body, source_type, sent_at, is_deleted)
 		VALUES (?, ?, ?, '1', ?, 0)`, roomID, u.AccountID, req.Body, now())
 	if err != nil {
@@ -601,8 +609,16 @@ func (a *app) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	id, _ := res.LastInsertId()
 	// 保護者から新しく受信した個人チャットは、自動で未対応へ戻す（要件定義書「チャットツール」(4-3)）
 	if u.isGuardian() && roomType == "4" {
-		a.db.Exec(`UPDATE m_chat_room SET thread_status = '1' WHERE chat_room_id = ?`, roomID)
+		if _, err := tx.Exec(`UPDATE m_chat_room SET thread_status = '1' WHERE chat_room_id = ?`, roomID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "送信に失敗しました")
+			return
+		}
 	}
+	if err := tx.Commit(); err != nil {
+		writeErr(w, http.StatusInternalServerError, "送信に失敗しました")
+		return
+	}
+	// 操作ログは、ほかの書き込み（お子さまの追加・グループの作成など）と同じく確定のあとに書く
 	a.log(u.AccountID, fnChat, opCreate, "t_chat_message", i64(id), nil, nil, s("送信"))
 	// いまの参加者の画面へ知らせる（events.go）
 	a.notifyRoomPost(roomID)
