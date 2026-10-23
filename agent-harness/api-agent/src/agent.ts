@@ -121,7 +121,7 @@ export function finalLine(text: string, label: '結果' | '判定'): string | un
 // ───────────────────────── query() ─────────────────────────
 
 export interface AgentTask {
-  kind: 'issue' | 'conflict' | 'ci' | 'task';
+  kind: 'issue' | 'conflict' | 'ci' | 'task' | 'review';
   /** 記録の見出し（issue#12・pr#34-conflict など） */
   label: string;
   prompt: string;

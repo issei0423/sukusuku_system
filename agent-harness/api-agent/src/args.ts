@@ -4,7 +4,7 @@
 import path from 'node:path';
 import { DEFAULT_EFFORT, DEFAULT_MAX_USD, DEFAULT_PER_ITEM_USD, EFFORTS, TASK_MAX_TURNS, TASK_TIMEOUT_MIN, type Effort } from './config.ts';
 
-export type Command = 'issues' | 'merge' | 'all' | 'task' | 'help';
+export type Command = 'issues' | 'merge' | 'all' | 'task' | 'review' | 'help';
 
 /** task コマンドだけの引数（パスは絶対パスにしてある） */
 export interface TaskArgs {
@@ -25,6 +25,10 @@ export interface Args {
   perItemUsd: number;
   dryRun: boolean;
   trustGhChecks: boolean;
+  /** review：下書きの PR も見る */
+  includeDrafts: boolean;
+  /** review：同じ先頭の commit をレビュー済みでも見直す */
+  force: boolean;
   effort: Effort;
   /** command が task のときだけ */
   task?: TaskArgs;
@@ -35,6 +39,8 @@ export class ArgError extends Error {}
 export const USAGE = `使い方（agent-harness/api-agent の中で）:
   npm run agent -- issues [--issue N] [--max-usd X] [--per-item-usd Y] [--effort E] [--dry-run]
   npm run agent -- merge  [--pr N] [--max-usd X] [--per-item-usd Y] [--effort E] [--trust-gh-checks] [--dry-run]
+  npm run agent -- review [--pr N] [--include-drafts] [--force] [--max-usd X] [--per-item-usd Y] [--effort E] [--dry-run]
+                        （開いている PR を読んでレビューし、コメントする。all には入らない）
   npm run agent -- all    （issues のあと merge。両方のオプションが使える）
   npm run agent -- task --prompt-file F --cwd DIR [--allow-dir DIR]... [--label 名前] [--out FILE] [--max-turns N] [--timeout-min M]
                         [--max-usd X] [--per-item-usd Y] [--effort E] [--dry-run]   （任意の頼みの文を1つ走らせる）
@@ -52,9 +58,11 @@ export const USAGE = `使い方（agent-harness/api-agent の中で）:
   --out FILE         （task）エージェントの最後の文をこのファイルにも書く（--cwd か --allow-dir の中だけ）
   --max-turns N      （task）往復の上限（既定 ${TASK_MAX_TURNS}）
   --timeout-min M    （task）時間の上限・分（既定 ${TASK_TIMEOUT_MIN}）
+  --include-drafts   （review）下書きの PR も見る（--pr N のときも見る）
+  --force            （review）同じ先頭の commit をレビュー済みでも見直す
   --dry-run          API を呼ばず、GitHub は読むだけ。選んだもの・並び・モデルに渡す頼みの文を出す`;
 
-const COMMANDS: Command[] = ['issues', 'merge', 'all', 'task', 'help'];
+const COMMANDS: Command[] = ['issues', 'merge', 'all', 'task', 'review', 'help'];
 
 export function parseArgs(argv: string[]): Args {
   const args: Args = {
@@ -63,6 +71,8 @@ export function parseArgs(argv: string[]): Args {
     perItemUsd: DEFAULT_PER_ITEM_USD,
     dryRun: false,
     trustGhChecks: false,
+    includeDrafts: false,
+    force: false,
     effort: DEFAULT_EFFORT,
   };
   const rest = [...argv];
@@ -141,6 +151,16 @@ export function parseArgs(argv: string[]): Args {
         noValue(flag, inline);
         args.trustGhChecks = true;
         break;
+      case '--include-drafts':
+        onlyReview(flag, args.command);
+        noValue(flag, inline);
+        args.includeDrafts = true;
+        break;
+      case '--force':
+        onlyReview(flag, args.command);
+        noValue(flag, inline);
+        args.force = true;
+        break;
       case '-h':
       case '--help':
         args.command = 'help';
@@ -158,9 +178,9 @@ export function parseArgs(argv: string[]): Args {
     }
     args.task = { promptFile: t.promptFile, cwd: t.cwd, allowDirs: t.allowDirs, label: t.label, out: t.out, maxTurns: t.maxTurns, timeoutMin: t.timeoutMin };
   }
-  if (args.issue !== undefined && args.command === 'merge') throw new ArgError('--issue は issues か all で使う');
-  if (args.pr !== undefined && args.command === 'issues') throw new ArgError('--pr は merge か all で使う');
-  if (args.trustGhChecks && args.command === 'issues') throw new ArgError('--trust-gh-checks は merge か all で使う');
+  if (args.issue !== undefined && (args.command === 'merge' || args.command === 'review')) throw new ArgError('--issue は issues か all で使う');
+  if (args.pr !== undefined && args.command === 'issues') throw new ArgError('--pr は merge・review・all で使う');
+  if (args.trustGhChecks && (args.command === 'issues' || args.command === 'review')) throw new ArgError('--trust-gh-checks は merge か all で使う');
   return args;
 }
 
@@ -177,6 +197,10 @@ function positiveNumber(flag: string, v: string): number {
 
 function onlyTask(flag: string, command: Command): void {
   if (command !== 'task') throw new ArgError(`${flag} は task で使う`);
+}
+
+function onlyReview(flag: string, command: Command): void {
+  if (command !== 'review') throw new ArgError(`${flag} は review で使う`);
 }
 
 function noValue(flag: string, inline: string | undefined): void {

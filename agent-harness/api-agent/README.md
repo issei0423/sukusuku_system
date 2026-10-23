@@ -100,6 +100,42 @@ npm run agent -- task --prompt-file D:\qa\chat.md --cwd C:\Users\me\sukusuku-wor
 - 結果は記録（`runs/<日時>-task.md`）に 1 件として残る：費用・往復の数・成否（`subtype`）・止まったわけ・断った道具の呼び出し
 - 費用の目安（**推測**。まだ本物のキーで回していない）：画面を開いて確かめる区画 1 つで $1〜5。上限の $3（1件）を越えそうな区画は `--per-item-usd` を上げるか、頼みの文を区画ごとに割る
 
+### review（PR のレビュー）
+
+**GitHub Actions が止まっている間の、PR を開いたときの自動のレビュー（`.github/workflows/claude-review.yml`）の代わり。** 開いている PR を読んで、API の Sonnet 5.5 にレビューさせ、コードが PR にコメントする。`all` には入らない（別に呼ぶ）。
+
+```powershell
+npm run agent -- review --dry-run                 # まずこれ。選んだ PR と、飛ばしたわけを出す（API も gh の書き込みもしない）
+npm run agent -- review --pr 275 --max-usd 3      # 1件だけ試す
+npm run agent -- review                           # 開いている PR を古い順に
+npm run agent -- review --pr 275 --force          # 同じ先頭の commit でも見直す
+```
+
+| オプション | 意味 |
+| :-- | :-- |
+| `--pr N` | その PR だけ（下書きでも見る） |
+| `--include-drafts` | 下書きの PR も見る |
+| `--force` | 同じ先頭の commit をレビュー済みでも見直す |
+| `--max-usd X` / `--per-item-usd Y` / `--effort E` / `--dry-run` | ほかのコマンドと同じ（既定 $10・$3・medium） |
+
+1. **コードが PR を選ぶ**：開いている PR を古い順に並べる。飛ばす：フォーク、下書き（`--include-drafts`・`--pr N` なら見る）、ラベル `agent-skip`、**同じ先頭の commit をレビュー済みのもの**（`--force` で見直す）
+   - レビュー済みの見分け方：PR のコメントに印 `<!-- api-agent-review head=<40桁の sha> -->` があるか。PR に push があって先頭が変われば、また見る
+2. PR ごとに worktree を作る：`<worktree の根>/agent-review-<n>`、PR の先頭の commit を切り離した HEAD で（根は merge と同じ。既にあれば、きれいなときだけ先頭に合わせて使い回す）
+3. エージェントに `prompts/review.md` を渡す：`claude-review.yml` の4つの観点（バグ・動かなくなるところ／セキュリティ／読みやすさ／保育の現場で困る動き）と書き方（読んで確かめた指摘だけ・確かめられないものは「未確認」・問題がなければ短く）に、リポジトリの決まり（Go とモックの両方・【仮置き】と `web/仮置き値.md`）を足した。`.github/` を変える PR には、ワークフローの安全（きっかけ・権限・秘密・self-hosted runner）の観点を足す。差分は `git diff origin/<base>...HEAD`、本文は `gh pr view <n>` で読ませる
+4. **コードが** `gh pr comment <n> --body-file …` で、エージェントの最後の文を送る。送る前に秘密を伏せ、末尾に費用と先頭の sha の行と、上の印を付ける。レビューが済まなかったとき（上限・時間・往復・認証）は送らない
+5. 結果は記録（`runs/<日時>-review.md`）に1件ずつ残る
+
+- **エージェントは読むだけ**：`allowPush` は false。頼みの文で PR・Issue への書き込み（`gh pr comment`・`gh pr review`）も禁じている。ただし守りのフック（`src/safety.ts`）は `gh pr comment` を断らない（issues の流れが `gh` で書くため。守りは変えていない）ので、ここは頼みの文だけが止めている。コメントの印はコードだけが付ける
+- 費用の目安（**推測**。まだ本物のキーで回していない）：1件 $0.3〜2。差分が大きい PR や、`.github/` を変える PR は上の方。既定の上限は1件 $3・1回 $10。PR が多いときは `--max-usd` で止まり、残りは次の実行で拾う（印の無いものだけ見るので、同じ PR を二重に払わない）
+- 定時に回す例（毎朝 8:00 と夜 20:00。Actions が止まっている間だけ）：
+
+```powershell
+schtasks /Create /SC DAILY /ST 08:00 /TN "sukusuku-api-agent-review-am" /TR "cmd /c cd /d C:\Users\calif\sukusuku_system\agent-harness\api-agent && npm run agent -- review --max-usd 5 >> runs\scheduler-review.log 2>&1"
+schtasks /Create /SC DAILY /ST 20:00 /TN "sukusuku-api-agent-review-pm" /TR "cmd /c cd /d C:\Users\calif\sukusuku_system\agent-harness\api-agent && npm run agent -- review --max-usd 5 >> runs\scheduler-review.log 2>&1"
+```
+
+  止めるときは `schtasks /Change /TN "sukusuku-api-agent-review-am" /DISABLE`（pm も同じ）。Actions が直ったら、`claude-review.yml` と二重にならないように止める。
+
 ## 費用の見込み
 
 - `claude-sonnet-5-5` は **入力 $2・出力 $10／100万トークン**（キャッシュの読み出しは $0.20／100万トークン）

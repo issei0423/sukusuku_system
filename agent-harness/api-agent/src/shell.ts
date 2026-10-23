@@ -73,6 +73,10 @@ export interface IssueDetail {
 export const viewIssue = (n: number, cwd: string) =>
   ghJson<IssueDetail>(['issue', 'view', String(n), '--json', 'number,title,body,url,state,comments'], cwd);
 
+/** review 用：開いている PR とコメント（印を探すため） */
+export const listOpenPrsWithComments = (cwd: string) =>
+  ghJson<(PrInfo & { comments: { body: string }[] })[]>(['pr', 'list', '--state', 'open', '--limit', '300', '--json', `${PR_FIELDS},comments`], cwd);
+
 /** 土台のブランチの PR の状態 */
 export async function baseStateOf(branch: string, cwd: string): Promise<BaseState> {
   const list = await ghJson<{ number: number; state: string }[]>(
@@ -152,6 +156,16 @@ export async function addPrWorktree(repoRoot: string, dir: string, headRef: stri
 /** 前の実行の worktree を使い直す（きれいなときだけ。HEAD を PR の先へ動かす） */
 export async function resetPrWorktree(dir: string, headRef: string): Promise<void> {
   await git(['checkout', '--detach', `origin/${headRef}`], dir);
+}
+
+/** review 用：PR の先頭の commit（sha）を、切り離した HEAD で開く */
+export async function addDetachedWorktree(repoRoot: string, dir: string, sha: string): Promise<void> {
+  await git(['worktree', 'add', '--detach', dir, sha], repoRoot);
+}
+
+/** review 用：前の実行の worktree を使い直す（きれいなときだけ） */
+export async function checkoutDetached(dir: string, sha: string): Promise<void> {
+  await git(['checkout', '--detach', sha], dir);
 }
 
 export type MergeOutcome = 'uptodate' | 'merged' | 'conflict';

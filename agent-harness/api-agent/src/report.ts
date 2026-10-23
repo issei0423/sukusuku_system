@@ -62,9 +62,9 @@ export function redact(text: string, env: NodeJS.ProcessEnv = process.env): stri
 
 // ───────────────────────── 実行の記録 ─────────────────────────
 
-export type ItemKind = 'issue' | 'pr' | 'task';
+export type ItemKind = 'issue' | 'pr' | 'task' | 'review';
 
-const kindName = (k: ItemKind) => (k === 'issue' ? 'Issue' : k === 'pr' ? 'PR' : 'task');
+const kindName = (k: ItemKind) => (k === 'issue' ? 'Issue' : k === 'pr' ? 'PR' : k === 'review' ? 'レビュー' : 'task');
 
 export interface ItemRecord {
   kind: ItemKind;
