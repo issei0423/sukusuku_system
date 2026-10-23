@@ -76,6 +76,30 @@ npm run agent -- all                      # issues のあと merge
 6. `gh pr merge <n> --merge --match-head-commit <sha>` で押し、手元の CI の結果をコメントする。squash・rebase・`--admin`・`--delete-branch` は使わない。ブランチは消さない
 7. 土台が入って扱えるようになった積み重ねの PR は、同じ実行の中でもう一周して拾う（3周まで）
 
+### task（任意の頼みの文を走らせる）
+
+Issue や PR と関係なく、頼みの文のファイルを 1 つ、API の Sonnet 5.5 に走らせる。全体テストの区画（チャット・日誌・管理など）を、Claude Code の枠を使わずに回すためのコマンド。
+
+```powershell
+npm run agent -- task --prompt-file D:\qa\chat.md --cwd C:\Users\me\sukusuku-worktrees\qa-chat `
+  --allow-dir D:\qa\out --out D:\qa\out\chat-result.md --label 全体テスト-チャット --max-usd 5 --dry-run   # まず --dry-run
+```
+
+| オプション | 意味 |
+| :-- | :-- |
+| `--prompt-file F`（必須） | 頼みの文のファイル（UTF-8） |
+| `--cwd DIR`（必須） | エージェントの作業フォルダ。守りの `workdir` になり、Edit・Write はここだけ。メインの作業ツリー・api-agent・`~/.claude` などの守りのフォルダの中（と、それを含む親）なら断って止まる |
+| `--allow-dir DIR` | 書いてよいフォルダを足す（何回でも）。守りのフォルダと重なるなら断る |
+| `--label 名前` | 記録の見出し。既定はファイル名 |
+| `--out FILE` | エージェントの最後の文を、このファイルにも書く（ファイルを書けないときも結果が残る）。置き場は `--cwd` か `--allow-dir` の中だけ |
+| `--max-turns N` / `--timeout-min M` | 往復の上限（既定 200）・時間の上限（既定 60 分）【仮置き】 |
+| `--max-usd X` / `--per-item-usd Y` / `--effort E` | ほかのコマンドと同じ（既定 $10・$3・medium） |
+| `--dry-run` | API を呼ばず、設定（cwd・allow-dir・out・上限）と頼みの文の頭 40 行を出す。記録は書かない |
+
+- **push はしない**（`allowPush` は常に false）。マージ・force・削除・秘密の守りはそのまま効く
+- 結果は記録（`runs/<日時>-task.md`）に 1 件として残る：費用・往復の数・成否（`subtype`）・止まったわけ・断った道具の呼び出し
+- 費用の目安（**推測**。まだ本物のキーで回していない）：画面を開いて確かめる区画 1 つで $1〜5。上限の $3（1件）を越えそうな区画は `--per-item-usd` を上げるか、頼みの文を区画ごとに割る
+
 ## 費用の見込み
 
 - `claude-sonnet-5-5` は **入力 $2・出力 $10／100万トークン**（キャッシュの読み出しは $0.20／100万トークン）

@@ -19,6 +19,8 @@ export interface SafetyContext {
   workdir: string;
   /** Bash で読み書きしてよい、worktree のほかの場所（ログの置き場・scripts・OS の一時フォルダ） */
   allowedDirs: string[];
+  /** Edit・Write で書いてよい、workdir のほかの場所（task の --allow-dir）。allowedDirs にも入れる */
+  writeDirs?: string[];
   /** ログの置き場。worktree のほかで、消してよいのはこの中だけ */
   logDir: string;
   /** 触らない場所（持ち主のメインの作業ツリー・~/.claude・gh の設定など）。allowedDirs の中は除く */
@@ -83,8 +85,9 @@ export function checkWritePath(file: string, ctx: SafetyContext): Decision {
   if (!file) return deny('書き込み先のパスが無い');
   const r = resolvePath(file, ctx.workdir, ctx);
   if (!r) return deny(`書き込み先が決まらない（${file}）`);
-  if (!isInside(r, ctx.workdir, ctx)) return deny(`worktree（${ctx.workdir}）の外へは書かない：${file}`);
-  if (isInside(r, joinPath(ctx, ctx.workdir, '.git'), ctx)) return deny('.git の中は書き換えない');
+  const extra = (ctx.writeDirs ?? []).find((d) => isInside(r, d, ctx));
+  if (!isInside(r, ctx.workdir, ctx) && !extra) return deny(`worktree（${ctx.workdir}）の外へは書かない：${file}`);
+  if (isInside(r, joinPath(ctx, extra ?? ctx.workdir, '.git'), ctx)) return deny('.git の中は書き換えない');
   return OK;
 }
 

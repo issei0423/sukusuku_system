@@ -1,9 +1,21 @@
 /**
  * 引数の読み取り。`npm run agent -- <コマンド> [オプション]`
  */
-import { DEFAULT_EFFORT, DEFAULT_MAX_USD, DEFAULT_PER_ITEM_USD, EFFORTS, type Effort } from './config.ts';
+import path from 'node:path';
+import { DEFAULT_EFFORT, DEFAULT_MAX_USD, DEFAULT_PER_ITEM_USD, EFFORTS, TASK_MAX_TURNS, TASK_TIMEOUT_MIN, type Effort } from './config.ts';
 
-export type Command = 'issues' | 'merge' | 'all' | 'help';
+export type Command = 'issues' | 'merge' | 'all' | 'task' | 'help';
+
+/** task コマンドだけの引数（パスは絶対パスにしてある） */
+export interface TaskArgs {
+  promptFile: string;
+  cwd: string;
+  allowDirs: string[];
+  label?: string;
+  out?: string;
+  maxTurns: number;
+  timeoutMin: number;
+}
 
 export interface Args {
   command: Command;
@@ -14,6 +26,8 @@ export interface Args {
   dryRun: boolean;
   trustGhChecks: boolean;
   effort: Effort;
+  /** command が task のときだけ */
+  task?: TaskArgs;
 }
 
 export class ArgError extends Error {}
@@ -22,6 +36,8 @@ export const USAGE = `使い方（agent-harness/api-agent の中で）:
   npm run agent -- issues [--issue N] [--max-usd X] [--per-item-usd Y] [--effort E] [--dry-run]
   npm run agent -- merge  [--pr N] [--max-usd X] [--per-item-usd Y] [--effort E] [--trust-gh-checks] [--dry-run]
   npm run agent -- all    （issues のあと merge。両方のオプションが使える）
+  npm run agent -- task --prompt-file F --cwd DIR [--allow-dir DIR]... [--label 名前] [--out FILE] [--max-turns N] [--timeout-min M]
+                        [--max-usd X] [--per-item-usd Y] [--effort E] [--dry-run]   （任意の頼みの文を1つ走らせる）
 
   --issue N          この Issue だけを扱う
   --pr N             この PR だけを扱う
@@ -29,9 +45,16 @@ export const USAGE = `使い方（agent-harness/api-agent の中で）:
   --per-item-usd Y   1件の上限（米ドル、既定 ${DEFAULT_PER_ITEM_USD}【仮置き】）
   --effort E         ${EFFORTS.join('|')}（既定 ${DEFAULT_EFFORT}）
   --trust-gh-checks  PR の GitHub の CI が全部 success で、取り込みも直しも要らないときは、手元の CI を省く
+  --prompt-file F    （task）頼みの文のファイル（UTF-8）
+  --cwd DIR          （task）エージェントの作業フォルダ。メインの作業ツリー・api-agent・~/.claude などの中は断る
+  --allow-dir DIR    （task）書いてよいフォルダを足す（何回でも）。守りのフォルダと重なるなら断る
+  --label 名前       （task）記録の見出し（既定はファイル名）
+  --out FILE         （task）エージェントの最後の文をこのファイルにも書く（--cwd か --allow-dir の中だけ）
+  --max-turns N      （task）往復の上限（既定 ${TASK_MAX_TURNS}）
+  --timeout-min M    （task）時間の上限・分（既定 ${TASK_TIMEOUT_MIN}）
   --dry-run          API を呼ばず、GitHub は読むだけ。選んだもの・並び・モデルに渡す頼みの文を出す`;
 
-const COMMANDS: Command[] = ['issues', 'merge', 'all', 'help'];
+const COMMANDS: Command[] = ['issues', 'merge', 'all', 'task', 'help'];
 
 export function parseArgs(argv: string[]): Args {
   const args: Args = {
@@ -43,6 +66,11 @@ export function parseArgs(argv: string[]): Args {
     effort: DEFAULT_EFFORT,
   };
   const rest = [...argv];
+  const t: Partial<TaskArgs> & { allowDirs: string[]; maxTurns: number; timeoutMin: number } = {
+    allowDirs: [],
+    maxTurns: TASK_MAX_TURNS,
+    timeoutMin: TASK_TIMEOUT_MIN,
+  };
   const first = rest.shift();
   if (first === undefined || first === '-h' || first === '--help') return args;
   if (!COMMANDS.includes(first as Command)) throw new ArgError(`知らないコマンド：${first}`);
@@ -77,6 +105,34 @@ export function parseArgs(argv: string[]): Args {
         args.effort = v as Effort;
         break;
       }
+      case '--prompt-file':
+        onlyTask(flag, args.command);
+        t.promptFile = path.resolve(value());
+        break;
+      case '--cwd':
+        onlyTask(flag, args.command);
+        t.cwd = path.resolve(value());
+        break;
+      case '--allow-dir':
+        onlyTask(flag, args.command);
+        t.allowDirs.push(path.resolve(value()));
+        break;
+      case '--label':
+        onlyTask(flag, args.command);
+        t.label = value();
+        break;
+      case '--out':
+        onlyTask(flag, args.command);
+        t.out = path.resolve(value());
+        break;
+      case '--max-turns':
+        onlyTask(flag, args.command);
+        t.maxTurns = positiveInt(flag, value());
+        break;
+      case '--timeout-min':
+        onlyTask(flag, args.command);
+        t.timeoutMin = positiveNumber(flag, value());
+        break;
       case '--dry-run':
         noValue(flag, inline);
         args.dryRun = true;
@@ -94,6 +150,14 @@ export function parseArgs(argv: string[]): Args {
     }
   }
 
+  if (args.command === 'task') {
+    if (!t.promptFile) throw new ArgError('task には --prompt-file が要る');
+    if (!t.cwd) throw new ArgError('task には --cwd が要る');
+    if (args.issue !== undefined || args.pr !== undefined || args.trustGhChecks) {
+      throw new ArgError('task では --issue・--pr・--trust-gh-checks は使わない');
+    }
+    args.task = { promptFile: t.promptFile, cwd: t.cwd, allowDirs: t.allowDirs, label: t.label, out: t.out, maxTurns: t.maxTurns, timeoutMin: t.timeoutMin };
+  }
   if (args.issue !== undefined && args.command === 'merge') throw new ArgError('--issue は issues か all で使う');
   if (args.pr !== undefined && args.command === 'issues') throw new ArgError('--pr は merge か all で使う');
   if (args.trustGhChecks && args.command === 'issues') throw new ArgError('--trust-gh-checks は merge か all で使う');
@@ -109,6 +173,10 @@ function positiveNumber(flag: string, v: string): number {
   const n = Number(v);
   if (!/^\d+(\.\d+)?$/.test(v) || !Number.isFinite(n) || n <= 0) throw new ArgError(`${flag} は 0 より大きい数（${v}）`);
   return n;
+}
+
+function onlyTask(flag: string, command: Command): void {
+  if (command !== 'task') throw new ArgError(`${flag} は task で使う`);
 }
 
 function noValue(flag: string, inline: string | undefined): void {
