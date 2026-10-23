@@ -20,9 +20,11 @@ jobs:
     timeout-minutes: 120
     env:
       GOMAXPROCS: '1'
-      GOFLAGS: -p=1
+      GOFLAGS: -p=1 -trimpath
       CGO_ENABLED: '0'
-      NODE_OPTIONS: --max-old-space-size=768
+      GOGC: '20'
+      GOMEMLIMIT: 512MiB
+      NODE_OPTIONS: --max-old-space-size=512
     steps:
       - name: 本線の commit を取り出す
         uses: actions/checkout@v7

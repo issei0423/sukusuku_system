@@ -66,6 +66,7 @@ PY
   chmod 0600 "$backup"
 fi
 
+chmod 0755 "$staging"
 mv -- "$staging" "$release"
 ln -s "releases/$commit" "$base/current.next"
 mv -Tf -- "$base/current.next" "$base/current"
