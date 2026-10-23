@@ -1,0 +1,2 @@
+# bash は CRLF の行を読めないので、シェルのスクリプトは Windows でも LF で取り出す（core.autocrlf=true の PC のため）
+*.sh text eol=lf
