@@ -1,0 +1,100 @@
+name: OCI へ自動デプロイ
+
+# GitHub 提供 runner の分数を使わず、既存 VM の専用 runner で更新する。
+# PR とほかのブランチは公開しない。
+on:
+  push:
+    branches: [mockup-go-react]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sukusuku-oci-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: ビルド・反映・公開確認
+    runs-on: [self-hosted, linux, x64, sukusuku-prod]
+    timeout-minutes: 120
+    env:
+      GOMAXPROCS: '1'
+      GOFLAGS: -p=1 -trimpath
+      CGO_ENABLED: '0'
+      GOGC: '20'
+      GOMEMLIMIT: 512MiB
+      NODE_OPTIONS: --max-old-space-size=512
+    steps:
+      - name: 本線の commit を取り出す
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Go 1.27.3 を入れる
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.3'
+          cache: false
+
+      - name: Node.js 24 を入れる
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Go の静的検査とテスト
+        working-directory: server
+        run: |
+          go vet ./...
+          go test -count=1 -p 1 -timeout 60m ./...
+
+      - name: Linux amd64 バイナリを作る
+        working-directory: server
+        run: |
+          mkdir -p ../release/web
+          go build -trimpath -o ../release/sukusuku .
+          go version -m ../release/sukusuku | head -n 2
+
+      - name: React をビルド
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+          cp -a dist/. ../release/web/
+
+      - name: 古い実行を反映しない
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          latest="$(curl -fsS --retry 3 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/mockup-go-react" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha"])')"
+          if [ "$latest" != "$GITHUB_SHA" ]; then
+            echo '新しい commit が本線にあるため、この実行は反映しません。'
+            echo 'deploy=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'deploy=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 成果物を既存 VM に反映
+        if: steps.latest.outputs.deploy == 'true'
+        run: |
+          printf '%s\n' "$GITHUB_SHA" > release/commit
+          sudo /usr/local/sbin/sukusuku-deploy "$GITHUB_WORKSPACE/release" "$GITHUB_SHA"
+
+      - name: 外部 HTTPS を確認
+        if: steps.latest.outputs.deploy == 'true'
+        run: |
+          set -euo pipefail
+          curl --fail --show-error --silent --retry 5 --retry-delay 2 \
+            --output /dev/null https://217.142.235.206/
+          curl --fail --show-error --silent --retry 5 --retry-delay 2 \
+            --output /dev/null https://217.142.235.206/api/terms
+          code="$(curl --show-error --silent --output /dev/null --write-out '%{http_code}' \
+            https://217.142.235.206/api/me)"
+          test "$code" = 401
+          echo '外部 HTTPS、公開 API、未認証の保護を確認しました。'

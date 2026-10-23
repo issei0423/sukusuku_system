@@ -1,0 +1,24 @@
+[Unit]
+Description=Sukusuku Go web application
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+StateDirectory=sukusuku
+StateDirectoryMode=0700
+WorkingDirectory=/opt/sukusuku
+EnvironmentFile=-/etc/sukusuku/sukusuku.env
+ExecStart=/opt/sukusuku/sukusuku -addr 127.0.0.1:8080 -db /var/lib/sukusuku/sukusuku.db -files /var/lib/sukusuku/files -web /opt/sukusuku/web -secure
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target
