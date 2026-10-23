@@ -90,6 +90,18 @@
 .main:has(.nap-timer) { scroll-padding-top: calc(var(--nap-timer-h, 0px) + 6px); }
 .nap-timer .big { font-size: 2rem; font-weight: 700; line-height: 1.3; letter-spacing: 0; font-variant-numeric: tabular-nums; }
 .nap-timer.over { background: var(--c-alert-soft); border-bottom: 2px solid var(--c-alert); color: var(--c-alert); }
+/*
+ * ブラウザの文字の大きさの設定を上げると、タイマーの帯の背が伸び、iPad 横向きでは画面の3割ほどを覆う。
+ * そのときは、見出しと残り時間を横に並べ、開始・経過・チェック間隔も見出しと値を1行にして、帯を低くする。
+ * メディアクエリの em はブラウザの設定の文字の大きさで決まる。「768px 以上で 48em 未満」「1024px 以上で 64em 未満」は
+ * 文字を大きくしたときだけ当てはまるので、既定（16px）では効かない
+ */
+@media (min-width: 768px) and (max-width: 47.9375em), (min-width: 1024px) and (max-width: 63.9375em) {
+  .nap-timer { padding-top: var(--sp-2); padding-bottom: var(--sp-2); gap: var(--sp-1) var(--sp-4); }
+  .nap-timer > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 var(--sp-2); }
+  /* 1行目に見出しと残り時間、2行目に開始・経過・チェック間隔をそろえる */
+  .nap-timer > div:first-child { flex-basis: 100%; column-gap: var(--sp-3); }
+}
 
 .nap-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); }
 .nap-card {
@@ -118,6 +130,12 @@
 /* 選択肢どうしの間は 8px。詳細設計書「全画面に共通する部品と決まり」(2-0) の「タッチの条件」(4)（GitHub Issue #215） */
 .nap-choice-options { display: flex; gap: var(--sp-2); }
 .nap-choice { flex: 1; min-width: 0; min-height: 52px; margin: 0; padding: 0; position: relative; }
+/*
+ * 午睡の行の選択肢は、名前の途中で折り返さない（「うつ伏／せ」「確認でき／ず」にしない）。
+ * ブラウザの文字の大きさの設定を上げて1行に入らないときは、選択肢ごと次の行へ回す。既定（16px）では1行に入る
+ */
+.nap-inline-fields .nap-choice-options { flex-wrap: wrap; }
+.nap-inline-fields .nap-choice { min-width: max-content; }
 /*
  * ラジオは見えなくして、隣の枠（span）を選択肢として見せる。ラジオの箱は、見えている枠と同じ位置・大きさで重ねる。
  * キーボードでフォーカスを移したとき、ブラウザはラジオの箱が見えるところまでしか送らない。箱が 1px で枠の縦の真ん中にあると
@@ -159,12 +177,16 @@
 .nap-temp-manual label { font-size: var(--fs-small); font-weight: 700; }
 .nap-temp-manual input { width: 125px; }
 
-@media (max-width: 1300px) {
+/*
+ * 欄の並べ方を切り替える幅は em で決める。メディアクエリの em はブラウザの設定の文字の大きさで決まるので、
+ * 文字を大きくすると早めに2段・1段へ移り、選択肢が狭い欄に押し込まれない。既定（16px）では 1300px・900px で、前と同じ
+ */
+@media (max-width: 81.25em) {
   .nap-inline-fields { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); }
   .nap-choice-field:last-child { grid-column: 1 / -1; }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 56.25em) {
   .nap-inline-fields { grid-template-columns: minmax(0, 1fr); }
   .nap-choice-field:last-child { grid-column: auto; }
   .nap-record-row { padding: var(--sp-3); }
