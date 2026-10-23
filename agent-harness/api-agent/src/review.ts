@@ -160,6 +160,7 @@ async function reviewOne(pr: ReviewPr, rec: ItemRecord, args: Args, budget: Budg
       timeoutMin: REVIEW_TIMEOUT_MIN,
       effort: args.effort,
       allowPush: false,
+      allowGhWrite: false,
     },
     ctx,
   );

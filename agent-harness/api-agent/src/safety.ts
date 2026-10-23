@@ -31,6 +31,8 @@ export interface SafetyContext {
   protectedBranches: string[];
   /** この仕事で、エージェントが push してよいか（Issue の直しは可、マージの流れはコードが push する） */
   allowPush: boolean;
+  /** この仕事で、エージェントが GitHub へ書いてよいか（gh pr create・gh issue close --comment など）。false なら gh の書き込みを断る */
+  allowGhWrite: boolean;
   /** worktree でいま開いているブランチ（push・reset の判定に使う。分からなければ undefined） */
   currentBranch?: string;
 }
@@ -201,7 +203,7 @@ function checkSegment(words: string[], cwd: string, ctx: SafetyContext): Decisio
         d = checkGit(rest, cwd, ctx);
         break;
       case 'gh':
-        d = checkGh(rest);
+        d = checkGh(rest, ctx);
         break;
       case 'rm':
       case 'rmdir':
@@ -359,7 +361,34 @@ function checkHardReset(args: string[], ctx: SafetyContext): Decision {
 
 // ───────────────────────── gh ─────────────────────────
 
-function checkGh(rest: string[]): Decision {
+/** gh の書き込みになるサブコマンド（読むだけの view・list・diff・checks・status などは入れない） */
+const GH_WRITE: Record<string, string[]> = {
+  pr: ['comment', 'review', 'create', 'edit', 'close', 'reopen', 'ready', 'merge'],
+  issue: ['comment', 'create', 'edit', 'close', 'reopen', 'delete', 'transfer', 'pin', 'unpin', 'lock', 'unlock'],
+  label: ['create', 'edit', 'delete', 'clone'],
+  release: ['create', 'edit', 'delete', 'delete-asset', 'upload'],
+};
+
+function checkGhWrite(rest: string[]): Decision {
+  // -R owner/repo は、サブコマンドの前後どこにあっても読み飛ばす
+  const words: string[] = [];
+  for (let k = 0; k < rest.length; k++) {
+    if (rest[k] === '-R' || rest[k] === '--repo') k++;
+    else if (!rest[k]!.startsWith('-')) words.push(rest[k]!);
+  }
+  const [g, s] = words;
+  const writes = g ? GH_WRITE[g] : undefined;
+  if (writes && s && writes.includes(s)) {
+    return deny(`この仕事では GitHub へ書かない（gh ${g} ${s}）。書くのはコードだけ。読むだけの gh pr view・gh pr diff・gh issue view などは使える`);
+  }
+  return OK;
+}
+
+function checkGh(rest: string[], ctx: SafetyContext): Decision {
+  if (!ctx.allowGhWrite) {
+    const w = checkGhWrite(rest);
+    if (!w.ok) return w;
+  }
   const g = rest[0];
   const s = rest[1];
   const args = rest.slice(2);

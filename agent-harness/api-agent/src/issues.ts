@@ -101,6 +101,7 @@ async function handleIssue(n: number, rec: ItemRecord, root: string, args: Args,
       timeoutMin: QUERY_TIMEOUT_MIN.issue,
       effort: args.effort,
       allowPush: true,
+      allowGhWrite: true,
     },
     ctx,
   );

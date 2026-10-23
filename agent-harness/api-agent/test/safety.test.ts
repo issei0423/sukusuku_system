@@ -15,6 +15,7 @@ const ctx: SafetyContext = {
   tmpDir: 'C:\\Users\\u\\AppData\\Local\\Temp',
   protectedBranches: PROTECTED_BRANCHES,
   allowPush: true,
+  allowGhWrite: true,
   currentBranch: 'agent/issue-12',
 };
 
@@ -194,6 +195,67 @@ describe('Bash：許す', () => {
       assert.equal(d.ok, true, `許すはずが断った：${cmd} → ${d.ok ? '' : d.reason}`);
     });
   }
+});
+
+describe('GitHub への書き込み（allowGhWrite）', () => {
+  const off = { ...ctx, allowGhWrite: false };
+  const WRITES = [
+    'gh pr comment 12 --body-file x.md',
+    'gh pr review 12 --approve',
+    'gh pr create --base mockup-go-react --head agent/issue-12 --title t',
+    'gh pr edit 12 --title t',
+    'gh pr close 12',
+    'gh pr reopen 12',
+    'gh pr ready 12',
+    'gh pr merge 12',
+    'gh issue comment 12 --body x',
+    'gh issue create --title t',
+    'gh issue edit 12 --add-label x',
+    'gh issue close 12 --comment x',
+    'gh issue reopen 12',
+    'gh issue delete 12',
+    'gh issue transfer 12 o/r',
+    'gh issue pin 12',
+    'gh issue unpin 12',
+    'gh issue lock 12',
+    'gh issue unlock 12',
+    'gh label create x',
+    'gh label edit x',
+    'gh release create v1',
+    'gh release upload v1 f',
+    'gh api -X POST repos/o/r/issues/12/comments -f body=x',
+    'gh -R o/r pr comment 12 --body x',
+    'gh pr -R o/r comment 12 --body x',
+    'env GH_PAGER= gh pr comment 12 --body x',
+    'bash -c "gh pr review 12 --comment -b x"',
+    'cd web && gh pr comment 12 --body x',
+    'echo ok && gh issue close 12',
+    'C:/Program Files/GitHub CLI/gh.exe pr comment 12 --body x',
+  ];
+  for (const c of WRITES) {
+    it(`false なら断る：${c}`, () => {
+      assert.equal(bash(c, off).ok, false);
+    });
+  }
+  it('断る文は日本語でわけを書く', () => {
+    const d = bash('gh pr comment 12 --body x', off);
+    assert.ok(!d.ok && d.reason.includes('GitHub へ書かない'));
+  });
+  const READS = ['gh pr view 12', 'gh pr diff 12', 'gh issue view 12', 'gh pr list --state open', 'gh issue list', 'gh label list', 'gh release view v1', 'gh api repos/o/r/pulls/12', 'gh pr checks 12'];
+  for (const c of READS) {
+    it(`false でも通る：${c}`, () => {
+      assert.equal(bash(c, off).ok, true);
+    });
+  }
+  const FLOW = ['gh pr create --base mockup-go-react --head agent/issue-12 --title t --body-file x.md', 'gh issue close 12 --comment "直っている"', 'gh pr view 12', 'gh pr diff 12', 'gh pr create --draft --title t'];
+  for (const c of FLOW) {
+    it(`true なら通る：${c}`, () => {
+      assert.equal(bash(c).ok, true);
+    });
+  }
+  it('true でも gh pr merge は断る', () => {
+    assert.equal(bash('gh pr merge 12').ok, false);
+  });
 });
 
 describe('push の条件', () => {
