@@ -22,6 +22,7 @@ describe('parseArgs', () => {
       includeDrafts: false,
       force: false,
       noModel: false,
+      recheckMain: false,
       effort: DEFAULT_EFFORT,
     });
     assert.equal(DEFAULT_EFFORT, 'medium');
@@ -73,6 +74,9 @@ describe('parseArgs', () => {
     assert.equal(a.dryRun, true);
     assert.equal(a.maxUsd, 2);
     assert.equal(a.effort, 'low');
+    assert.equal(a.recheckMain, false);
+    assert.equal(parseArgs(['queue', '--recheck-main']).recheckMain, true);
+    assert.equal(parseArgs(['queue', '--recheck-main', '--dry-run']).dryRun, true);
   });
 
   it('all は両方のオプションが使える', () => {
@@ -110,6 +114,9 @@ describe('parseArgs', () => {
     ['queue に --issue', ['queue', '--issue', '3']],
     ['queue に --trust-gh-checks', ['queue', '--trust-gh-checks']],
     ['queue に --force', ['queue', '--force']],
+    ['merge に --recheck-main', ['merge', '--recheck-main']],
+    ['all に --recheck-main', ['all', '--recheck-main']],
+    ['--recheck-main に値', ['queue', '--recheck-main=yes']],
   ];
   for (const [name, argv] of bad) {
     it(`止める：${name}（${argv.join(' ')}）`, () => {

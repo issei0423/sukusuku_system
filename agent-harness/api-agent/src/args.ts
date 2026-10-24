@@ -31,6 +31,8 @@ export interface Args {
   force: boolean;
   /** queue：API キーがあってもモデルを呼ばない（ぶつかり・CI の落ちは止める） */
   noModel: boolean;
+  /** queue：本線の先頭の status があっても、始めに本線で手元の CI を回し直して付け直す（時々落ちるテストで赤になったときの抜け道） */
+  recheckMain: boolean;
   effort: Effort;
   /** command が task のときだけ */
   task?: TaskArgs;
@@ -43,7 +45,7 @@ export const USAGE = `使い方（agent-harness/api-agent の中で）:
                         （ラベル「claude」の Issue だけを拾う。--issue N で指せばラベルが無くても扱う）
   npm run agent -- merge  [--pr N] [--max-usd X] [--per-item-usd Y] [--effort E] [--trust-gh-checks] [--dry-run]
                         （持ち主の gh のアカウントでだけ動く。--dry-run はだれでも）
-  npm run agent -- queue  [--no-model] [--max-usd X] [--per-item-usd Y] [--effort E] [--dry-run]
+  npm run agent -- queue  [--no-model] [--recheck-main] [--max-usd X] [--per-item-usd Y] [--effort E] [--dry-run]
                         （マージ係の代わり。持ち主がラベル「マージ」を付けた PR を、付けた順に入れる。持ち主の gh のアカウントでだけ動く）
   npm run agent -- review [--pr N] [--include-drafts] [--force] [--max-usd X] [--per-item-usd Y] [--effort E] [--dry-run]
                         （開いている PR を読んでレビューし、コメントする。all には入らない）
@@ -65,6 +67,7 @@ export const USAGE = `使い方（agent-harness/api-agent の中で）:
   --max-turns N      （task）往復の上限（既定 ${TASK_MAX_TURNS}）
   --timeout-min M    （task）時間の上限・分（既定 ${TASK_TIMEOUT_MIN}）
   --no-model         （queue）API キーがあってもモデルを呼ばない。キーが無いときも呼ばない（ぶつかり・CI の落ちは「マージ止め」にする）
+  --recheck-main     （queue）本線の先頭の status があっても、始めに本線で手元の CI を回し直して付け直す（時々落ちるテストで赤になったとき）
   --include-drafts   （review）下書きの PR も見る（--pr N のときも見る）
   --force            （review）同じ先頭の commit をレビュー済みでも見直す
   --dry-run          API を呼ばず、GitHub は読むだけ。選んだもの・並び・モデルに渡す頼みの文を出す`;
@@ -81,6 +84,7 @@ export function parseArgs(argv: string[]): Args {
     includeDrafts: false,
     force: false,
     noModel: false,
+    recheckMain: false,
     effort: DEFAULT_EFFORT,
   };
   const rest = [...argv];
@@ -173,6 +177,11 @@ export function parseArgs(argv: string[]): Args {
         if (args.command !== 'queue') throw new ArgError(`${flag} は queue で使う`);
         noValue(flag, inline);
         args.noModel = true;
+        break;
+      case '--recheck-main':
+        if (args.command !== 'queue') throw new ArgError(`${flag} は queue で使う`);
+        noValue(flag, inline);
+        args.recheckMain = true;
         break;
       case '-h':
       case '--help':

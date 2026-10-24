@@ -59,7 +59,8 @@ export interface PrFlowOptions {
 
 /** 1本ごとの流れの結果（queue が「マージ止め」にするかを決める）。どれも rec.outcome に日本語の結果を書いてある */
 export type PrFlowResult =
-  | { kind: 'merged'; head: string }
+  /** ci：押した木（head）で回して通った手元の CI（--trust-gh-checks で省いたときは無い） */
+  | { kind: 'merged'; head: string; ci?: CiResult }
   /** ぶつかりを解けなかった（tried：モデルに解かせたか） */
   | { kind: 'conflict'; files: string[]; tried: boolean; said?: string }
   /** 手元の CI が赤のまま（tested：回した commit、base：合わせた本線） */
@@ -183,6 +184,7 @@ export async function handlePr(item: PrPlanItem, rec: ItemRecord, args: Args, bu
   rec.notes.push(`worktree：${wt}（PR のブランチ ${pr.headRefName} の先を、切り離した HEAD で開いた）`);
 
   let ciNote = '';
+  let lastCi: CiResult | undefined;
   for (let attempt = 0; attempt <= MAINLINE_RETRIES; attempt++) {
     const mainBefore = await revParse(`origin/${BASE_BRANCH}`, repoRoot);
 
@@ -220,9 +222,11 @@ export async function handlePr(item: PrPlanItem, rec: ItemRecord, args: Args, bu
     const sameHead = (await headSha(wt)) === pr.headRefOid;
     if (args.trustGhChecks && ahead === 0 && sameHead && checksAllSuccess(pr.statusCheckRollup)) {
       ciNote = 'GitHub の CI がすべて success で、取り込みも直しも要らなかったので、手元の CI は省いた（--trust-gh-checks）';
+      lastCi = undefined;
     } else {
       const ci = await ciWithFix(pr, wt, attempt, rec, callAgent, ctx, opts.useModel, status, mainBefore ?? '');
       if (!ci.ok) return ci.result;
+      lastCi = ci.result;
       ciNote = `手元の CI（scripts/local-ci.sh・本線と合わせた形・head ${ci.result.head?.slice(0, 7) ?? '?'}）：${ciSummary(ci.result)}`;
     }
     rec.notes.push(ciNote);
@@ -296,7 +300,8 @@ export async function handlePr(item: PrPlanItem, rec: ItemRecord, args: Args, bu
     } catch (e) {
       rec.notes.push(`コメントを書けなかった：${redact(e instanceof Error ? e.message : String(e))}`);
     }
-    return { kind: 'merged', head };
+    // 押した木で通した CI だけを返す（回した commit と押した head が同じとき）
+    return { kind: 'merged', head, ci: lastCi && lastCi.head === head ? lastCi : undefined };
   }
   // ここへは来ない（ループの最後の回は、マージするか return する）
   return { kind: 'other' };

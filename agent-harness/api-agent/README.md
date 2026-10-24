@@ -51,6 +51,7 @@ cd agent-harness\api-agent
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\agent.ps1 queue --dry-run    # まずこれ。GitHub を読むだけ。拾う PR・並び・止める理由の見込みを出す
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\agent.ps1 queue              # マージ係を1回まわす（持ち主のアカウントだけ）
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\agent.ps1 queue --no-model   # キーがあってもモデルを呼ばない
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\agent.ps1 queue --recheck-main   # 本線の先頭が時々落ちるテストで赤になったとき、回し直す
 npm run agent -- merge --dry-run          # API は呼ばず GitHub を読むだけ。選んだ PR・並び・頼みの文を出す
 npm run agent -- issues --dry-run
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\agent.ps1 issues --issue 123 --max-usd 3   # 最初は1件だけで試す
@@ -66,6 +67,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\agent.ps1 all       
 | `--effort E` | `low`・`medium`・`high`・`xhigh`・`max`。既定 **medium**（Sonnet 5.5 のエージェントのコーディングは medium から始めるのが推し） |
 | `--trust-gh-checks` | （merge・all）PR の GitHub の CI が全部 success で、取り込みも直しも要らないときは、手元の CI を省く（既定は省かない） |
 | `--no-model` | （queue）API キーがあってもモデルを呼ばない。ぶつかり・CI の落ちは「マージ止め」にする |
+| `--recheck-main` | （queue）本線の先頭の status があっても、始めに本線で手元の CI を回し直して付け直す（時々落ちるテストで赤になったときの抜け道） |
 | `--dry-run` | API を呼ばず、GitHub は読むだけ。worktree も作らない。持ち主でないアカウントでも動く |
 
 API キーが無いと、`--dry-run` でない issues・merge・all・review・task はエラーの文を出して止まる（終了コード 3）。Claude Code の契約のログインでは動かさない。queue はキーが無ければモデルを呼ばずに動く。
@@ -83,7 +85,10 @@ merge・queue（と merge を含む all）は、始めに `gh api user --jq .log
 **GitHub の runner の Actions が課金で動かないあいだの、マージ係（`.github/workflows/merge.yml` ＋ `.github/scripts/merge-queue.sh`）の代わり。** 持ち主の操作は今までと同じで、入れたい PR にラベル「マージ」を付けるだけ。それを持ち主の PC で、定時か手で `agent.ps1 queue` を回して拾う。止める理由・コメントの文面・ラベルの扱いは merge-queue.sh に合わせた（`src/queue.ts`）。
 
 1. **持ち主の確かめ**：いまの gh のアカウントが持ち主でなければ止まる（上の「持ち主だけが動かせるもの」）
-2. **本線の先頭を見る**：本線の先頭の commit に、status「手元の CI（持ち主の PC）」が failure（か error）で付いていれば、**列を止める**（PR を1本も見ない。本線を直してから回す。merge-queue.sh の pick と同じ）
+2. **本線の先頭を見る**（PR を見る前）：本線の先頭の commit の status「手元の CI（持ち主の PC）」を読む
+   - **無い・pending のまま**（または `--recheck-main`）なら、PR を見る前に、worktree `agent-main` で本線の先頭を開いて手元の CI を回し、status を付ける。赤なら Issue「本線の先頭で手元の CI が落ちた（<短い sha>）」を立てる（同じ題の開いた Issue があれば立てない。ラベルは付けない。`claude` を付けると自動実装の合図になるため）。回せなかった（worktree に変更が残っているなど）ときは、本線を確かめられないので列を止める
+   - **failure（か error）**なら、**列を止める**（PR を1本も見ない。本線を直してから回す。merge-queue.sh の pick と同じ）。本線のせいで PR を「マージ止め」にしないため
+   - **success** なら PR へ進む
 3. **拾う**：開いている PR のうち、ラベル「マージ」の付いたもの。イベント（`repos/<owner>/<repo>/issues/<n>/events`）から、「マージ」の最後の labeled の actor と時刻を読む
    - actor が持ち主のものだけを、その時刻の順（同じなら番号の小さい順）に並べる
    - 持ち主でない人が最後に付けた「マージ」は、**外してコメントする**（merge-queue.sh の reject と同じ文面）
@@ -98,7 +103,8 @@ merge・queue（と merge を含む all）は、始めに `gh api user --jq .log
    - **API キーが無い・`--no-model`** のとき：モデルを呼ばない。ぶつかったら取り込みをやめて止める。手元の CI が赤なら止める
    - 押す直前に PR を読み直し、手元の CI のあいだに「マージ」が外された・持ち主でない人が付け直した・下書きになった・変更を求めるレビューが付いた、なら入れない（merge-queue.sh の finish と同じ。ラベルは変えず、次の queue で扱う）
    - 上限・push の失敗・`gh pr merge` の失敗・本線が進み続けた・前の実行の worktree に変更が残っている、のときは、PR のせいとは限らないので**ラベルはそのまま**にし、記録に書いて次へ進む（次の queue で試し直す）
-7. **終わりに本線の先頭を見る**：本線の先頭に status「手元の CI（持ち主の PC）」が無ければ（pending のままも含む）、worktree `agent-main` で本線の先頭を開いて手元の CI を回し、status を付ける。赤なら Issue「本線の先頭で手元の CI が落ちた（<短い sha>）」を立てる（同じ題の開いた Issue があれば立てない。ラベルは付けない。`claude` を付けると自動実装の合図になるため）
+7. **押したあとの本線の先頭**：PR を押したら、新しい本線の先頭の木（tree）を、手元の CI で通した commit の木と比べる。同じなら、本線の先頭にも success を写す（重い CI を回し直さない。description は「通った・11 のジョブ（PR #n で回した abc1234 と同じ木）」）。違えば（ほかの commit が先に入ったなど）写さない
+8. **終わりに本線の先頭を見る**：本線の先頭に status が無ければ（pending のままも含む。7 で写せなかったとき・ほかの人が入れたとき）、2 と同じく本線の先頭で手元の CI を回して付け、赤なら Issue を立てる
 
 `--dry-run` では、GitHub を読むだけで、拾う PR・並び・外すラベル・止める理由とコメントの文面・入れる候補・終わりに本線で CI を回すかの見込みを出す（ラベル・コメント・status・Issue・worktree は作らない）。
 
@@ -109,7 +115,7 @@ merge・queue（と merge を含む all）は、始めに `gh api user --jq .log
 - context は「**手元の CI（持ち主の PC）**」。回し始めに `pending`、終わりに `success` か `failure`。target_url は付けない
 - description は 140 字以内。落ちたときは落ちたジョブの名前（例「結合 FAIL・a11y FAIL（本線 abc1234 と合わせた def5678）」）、通ったときは「通った・11 のジョブ（…）」
 - 付ける commit は、手元の CI を回した commit（push する・押す木そのもの）。ただし本線を取り込んだ commit は push する前は GitHub に無く、status を付けられないので、そのあいだは PR の先頭（head）に付け、description に「未 push」と書く。通って push したら、push した commit にも success を付ける
-- 本線の先頭の分は、queue の終わりに付ける（上の 7）
+- 本線の先頭の分は、queue の始め（status が無いとき・`--recheck-main`）と終わりに付け、押したあとは木が同じなら写す（上の 2・7・8）
 - 付けられなかったとき（ネットや権限）は、記録に書いてマージの流れは続ける
 
 ### issues
@@ -266,9 +272,9 @@ schtasks /Create /SC DAILY /ST 02:00 /TN "sukusuku-api-agent" /TR "powershell -N
 - 前の実行の worktree（`agent-issue-<n>`・変更の残った `agent-pr-<n>`）は消さない。残っていると、その件は飛ばす
 - 積み重ねの PR の土台が同じ実行の中で入らなければ、次の実行で拾う
 - 1つの PC で1つずつ回す前提（同じ件を2つの実行が同時に扱うことは考えていない）
-- queue の終わりに本線の先頭で手元の CI を回す worktree（`<worktree の根>/agent-main`）は、使い回す。変更が残っていると回さない（消すのは持ち主）
-- 本線の先頭の手元の CI が赤（status が failure）のあいだ、queue は列を止める。時々落ちるテストで赤になったときも、本線に次の commit が入るまで止まったまま（いまは回し直すコマンドが無い）
-- 本線の先頭がまだ確かめられていない（status が無い）ときに本線が壊れていると、PR の手元の CI が本線のせいで赤になり、その PR を「マージ止め」にしてしまう。そのときは本線を直してから、止めた PR の「マージ止め」を外して「マージ」を付け直す
+- queue が本線の先頭で手元の CI を回す worktree（`<worktree の根>/agent-main`）は、使い回す。変更が残っていると回さない（消すのは持ち主）。始めに回せないときは、列を止める
+- 本線の先頭の手元の CI が赤（status が failure）のあいだ、queue は列を止める。時々落ちるテストで赤になったと見立てたら、`queue --recheck-main` で回し直す
+- 本線に新しい commit が入るたび（ほかの人が入れたときも）、次の queue の始めに本線の先頭で手元の CI を1回回す。手元の CI は重いので、その回は PR に進むまで時間がかかる
 
 ## 仮置きの値
 

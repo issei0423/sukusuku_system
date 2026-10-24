@@ -166,6 +166,13 @@ export async function mainHeadSha(repo: string, cwd: string): Promise<string> {
   return sha;
 }
 
+/** commit の木（tree）の sha（GitHub から読む。マージした直後の本線の先頭は、まだ手元に無いことがあるため） */
+export async function commitTreeSha(repo: string, sha: string, cwd: string): Promise<string> {
+  const tree = (await gh(['api', `repos/${repo}/commits/${sha}`, '--jq', '.commit.tree.sha'], cwd)).trim();
+  if (!/^[0-9a-f]{40}$/.test(tree)) throw new Error(`${sha.slice(0, 7)} の木の sha が読めなかった：${tree}`);
+  return tree;
+}
+
 /** commit に付いた、context の status のいちばん新しい state（無ければ undefined） */
 export async function commitStatusOf(repo: string, sha: string, context: string, cwd: string): Promise<string | undefined> {
   const r = await ghJson<{ statuses?: { context: string; state: string }[] }>(['api', `repos/${repo}/commits/${sha}/status?per_page=100`], cwd);

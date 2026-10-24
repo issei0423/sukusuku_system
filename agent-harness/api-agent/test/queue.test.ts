@@ -6,6 +6,10 @@ import {
   hasFinalStatus,
   isRedStatus,
   lastLabeled,
+  mainCiDirName,
+  mainCopyPlan,
+  mainRedIssueBody,
+  needMainCiAtStart,
   ownerCheck,
   planQueue,
   precheck,
@@ -239,6 +243,51 @@ describe('本線の先頭の status', () => {
       [undefined, 'pending', 'success', 'failure', 'error'].map(isRedStatus),
       [false, false, false, true, true],
     );
+  });
+});
+
+describe('queue の始めに本線の先頭で手元の CI を回すか', () => {
+  it('status が無い・pending なら回す。success・failure・error なら回さない', () => {
+    assert.deepEqual(
+      [undefined, 'pending', 'success', 'failure', 'error'].map((s) => needMainCiAtStart(s, false)),
+      [true, true, false, false, false],
+    );
+  });
+  it('--recheck-main なら、status があっても回し直す（時々落ちるテストで赤になったときの抜け道）', () => {
+    assert.deepEqual(
+      [undefined, 'pending', 'success', 'failure', 'error'].map((s) => needMainCiAtStart(s, true)),
+      [true, true, true, true, true],
+    );
+  });
+  it('ログの置き場は、始めと終わりで分ける。Issue の本文はその置き場と --recheck-main を書く', () => {
+    const sha = '0123456789abcdef0123456789abcdef01234567';
+    assert.equal(mainCiDirName(sha, 'start'), 'ci-main-0123456-start');
+    assert.equal(mainCiDirName(sha, 'end'), 'ci-main-0123456-end');
+    const body = mainRedIssueBody(sha, '11 のうち 10 が ok', '結合 FAIL', '20261024-120000-queue/ci-main-0123456-start');
+    assert.ok(body.includes('runs/20261024-120000-queue/ci-main-0123456-start/'));
+    assert.ok(body.includes('結合 FAIL'));
+    assert.ok(body.includes('--recheck-main'));
+  });
+});
+
+describe('mainCopyPlan（マージのあと、本線の先頭に success を写すか）', () => {
+  const tree = (c: string) => c.repeat(40);
+  const green = { ok: true, steps: [{ name: 'go-vet', status: 'ok' }, { name: 'a11y', status: 'ok' }] };
+  const base = { prNumber: 12, tipSha: 'a'.repeat(40), tipTree: tree('1'), testedSha: 'b'.repeat(40), testedTree: tree('1'), ci: green };
+  it('本線の先頭の木が、手元の CI で通した木と同じなら写す（重い CI を回し直さない）', () => {
+    const p = mainCopyPlan(base);
+    assert.equal(p.copy, true);
+    assert.ok(p.copy && p.description === '通った・2 のジョブ（PR #12 で回した bbbbbbb と同じ木）', p.copy ? p.description : '');
+  });
+  it('木が違う（ほかの commit が先に入った）なら写さない（終わりに本線で回す）', () => {
+    const p = mainCopyPlan({ ...base, tipTree: tree('2') });
+    assert.equal(p.copy, false);
+    assert.ok(!p.copy && p.reason.includes('木と違う'));
+  });
+  it('通した CI が無い（--trust-gh-checks で省いた）・赤・木が読めないなら写さない', () => {
+    assert.equal(mainCopyPlan({ ...base, ci: undefined }).copy, false);
+    assert.equal(mainCopyPlan({ ...base, ci: { ...green, ok: false } }).copy, false);
+    assert.equal(mainCopyPlan({ ...base, tipTree: '' }).copy, false);
   });
 });
 

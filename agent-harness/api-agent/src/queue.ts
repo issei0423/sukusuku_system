@@ -9,7 +9,8 @@
  *   ぶつかりを解けない・手元の CI が赤
  * - 待つ（ラベルはそのまま）：base が本線でない PR。土台がマージ済みなら、merge と同じく向け直して扱う
  * - 1本ごとの中身は merge の流れ（src/merge.ts の handlePr）をそのまま使う
- * - 終わりに、本線の先頭に「手元の CI（持ち主の PC）」の status が無ければ、本線の先頭で手元の CI を回して付ける。赤なら Issue を立てる
+ * - 本線の先頭：PR を見る前に、status「手元の CI（持ち主の PC）」が無い・pending（か --recheck-main）なら本線の先頭で手元の CI を回して付ける。
+ *   赤なら列を止めて Issue を立てる。押したあと、本線の先頭の木が手元の CI で通した木と同じなら success を写す。終わりにまだ無ければ回す
  *
  * 判定（planQueue・precheck・文面）は GitHub を読まない純粋な関数にしてある（test/queue.test.ts）。
  */
@@ -38,6 +39,7 @@ import {
   ciSummary,
   commentPr,
   commitStatusOf,
+  commitTreeSha,
   createIssue,
   editPrLabels,
   fetchOrigin,
@@ -258,19 +260,48 @@ export function recheckBeforeMerge(
 export const hasFinalStatus = (state: string | undefined) => state === 'success' || state === 'failure' || state === 'error';
 export const isRedStatus = (state: string | undefined) => state === 'failure' || state === 'error';
 
-export function mainRedIssueBody(sha: string, summary: string, failed: string, runName: string): string {
+/** 本線の先頭で回した手元の CI のログの置き場（runs/<実行>/ の下） */
+export const mainCiDirName = (sha: string, when: 'start' | 'end') => `ci-main-${short(sha)}-${when}`;
+
+/** 本線の先頭で手元の CI が赤のときに立てる Issue の本文。logDir は runs/ の下の置き場（<実行>/<mainCiDirName>） */
+export function mainRedIssueBody(sha: string, summary: string, failed: string, logDir: string): string {
   return [
     `本線（${BASE_BRANCH}）の先頭 \`${sha}\` で、持ち主の PC の手元の CI（\`agent-harness/api-agent/scripts/local-ci.sh\`）が落ちました。`,
     '',
     `- 落ちたもの：${failed || '（名前が無い）'}`,
     `- 結果：${summary}`,
-    `- ログ：持ち主の PC の \`runs/${runName}/ci-main-${short(sha)}/\`（持ち主にしか見えない）`,
+    `- ログ：持ち主の PC の \`runs/${logDir}/\`（持ち主にしか見えない）`,
     '',
     'マージ係（持ち主の PC の api-agent の queue）は、本線の先頭の手元の CI が赤のあいだ、列を止めます（merge-queue.sh と同じ）。',
     '本線を直す PR を出してください。直す PR は持ち主が手で merge commit で押し、そのあと次の queue が続きを拾います。',
+    '時々落ちるテストで赤になったと見立てたときは、持ち主が `agent.ps1 queue --recheck-main` で本線の先頭を回し直せます。',
     '',
     '（api-agent の queue が立てた Issue）',
   ].join('\n');
+}
+
+/**
+ * queue の始めに、PR を見る前に本線の先頭で手元の CI を回すか。
+ * status が無い・pending（前の実行が途中で止まった）なら回す。--recheck-main なら、status があっても回し直す
+ */
+export const needMainCiAtStart = (state: string | undefined, recheckMain: boolean): boolean => recheckMain || !hasFinalStatus(state);
+
+/**
+ * マージのあと、本線の先頭に success を写すか。本線の先頭の木（tree）が、手元の CI で通した commit の木と同じときだけ写す。
+ * 違えば（ほかの人の commit が先に入った・GitHub が作った merge commit の木が違う）写さず、終わりに本線で回す
+ */
+export function mainCopyPlan(p: {
+  prNumber: number;
+  tipSha: string;
+  tipTree: string;
+  testedSha: string;
+  testedTree: string;
+  ci: { ok: boolean; steps: { name: string; status: string }[] } | undefined;
+}): { copy: true; description: string } | { copy: false; reason: string } {
+  if (!p.ci || !p.ci.ok) return { copy: false, reason: '手元の CI で通した結果が無い' };
+  if (!p.tipTree || !p.testedTree) return { copy: false, reason: '木が読めなかった' };
+  if (p.tipTree !== p.testedTree) return { copy: false, reason: `本線の先頭の木が、手元の CI で通した ${short(p.testedSha)} の木と違う` };
+  return { copy: true, description: statusDescription('success', p.ci, `PR #${p.prNumber} で回した ${short(p.testedSha)} と同じ木`) };
 }
 
 // ───────────────────────── 実行 ─────────────────────────
@@ -288,16 +319,40 @@ export async function runQueue(args: Args, budget: Budget, ctx: AgentContext, op
   console.log(`\n■ マージ係（queue）：${repo.nameWithOwner}・持ち主 ${repo.owner}・${opts.useModel ? 'ぶつかり・CI の落ちはモデルに見立てさせる' : 'モデルを呼ばない（ぶつかり・CI の落ちは止める）'}`);
   log.note(opts.useModel ? 'モデル：ぶつかり・CI の落ちで呼ぶ' : 'モデル：呼ばない（API キーが無いか --no-model。ぶつかり・CI の落ちは「マージ止め」にする）');
 
-  // 本線の先頭の手元の CI が赤なら、列を止める（merge-queue.sh の pick と同じ）
+  // 本線の先頭：status が無い・pending（か --recheck-main）なら、PR を見る前に本線の先頭で手元の CI を回す。
+  // 赤なら列を止める（merge-queue.sh の pick と同じ。本線のせいで PR を「マージ止め」にしないため）
   const startMain = await mainHeadSha(repo.nameWithOwner, repoRoot);
-  const startState = await commitStatusOf(repo.nameWithOwner, startMain, STATUS_CONTEXT, repoRoot);
+  let startState = await commitStatusOf(repo.nameWithOwner, startMain, STATUS_CONTEXT, repoRoot);
+  /** --dry-run で、始めに本線の先頭で回す見込みにした sha（終わりの見込みで二重に出さない） */
+  let plannedAtStart: string | undefined;
   console.log(`  本線 ${BASE_BRANCH} の先頭 ${short(startMain)}：「${STATUS_CONTEXT}」の status は ${startState ?? '無い'}`);
+  if (needMainCiAtStart(startState, args.recheckMain)) {
+    const why = args.recheckMain ? '--recheck-main なので' : startState === 'pending' ? 'status が途中（pending）のままなので' : 'status が無いので';
+    if (dry) {
+      const text = `${why}、PR を見る前に、本線の先頭 ${short(startMain)} で手元の CI を回して status を付ける見込み（赤なら列を止め、Issue「${mainRedIssueTitle(startMain)}」を立てる。同じ題の開いた Issue があれば立てない。緑なら PR へ進む）`;
+      console.log(`  ${text}`);
+      log.note(text);
+      startState = undefined; // 回した結果は分からないので、緑とも赤とも見ずに PR の見込みを出す
+      plannedAtStart = startMain;
+    } else {
+      console.log(`  ${why}、PR を見る前に本線の先頭で手元の CI を回す`);
+      const r = await runMainCi(repo, startMain, 'start', ctx);
+      if (!r) {
+        log.stopReason = `列を止めた：本線の先頭 ${short(startMain)} で手元の CI を回せなかった（記録の「本線」を見る）。本線を確かめられないので、PR は見なかった`;
+        console.log(`  ${log.stopReason}`);
+        return;
+      }
+      startState = r.ok ? 'success' : 'failure';
+    }
+  }
   if (isRedStatus(startState)) {
-    log.stopReason = `列を止めた：本線の先頭 ${short(startMain)} の手元の CI が赤。本線を直してから（直す PR は手で merge commit で押す）、もう一度 queue を回す`;
+    log.stopReason = `列を止めた：本線の先頭 ${short(startMain)} の手元の CI が赤。本線を直してから（直す PR は手で merge commit で押す）、もう一度 queue を回す。時々落ちるテストと見立てたときは --recheck-main`;
     console.log(`  ${log.stopReason}`);
     return;
   }
-  const mainGreen = (base: string) => base === startMain && startState === 'success';
+  // 緑と分かっている本線の先頭（止める文面の「本線の先頭だけなら緑」に使う）。マージして success を写したら進める
+  let greenMain: string | undefined = startState === 'success' ? startMain : undefined;
+  const mainGreen = (base: string) => base === greenMain;
 
   const handled = new Set<number>();
   passes: for (let pass = 1; pass <= MAX_PASSES; pass++) {
@@ -403,7 +458,11 @@ export async function runQueue(args: Args, budget: Budget, ctx: AgentContext, op
         rec.outcome = rec.outcome || '止めた（コードの失敗）';
         rec.notes.push(redact(e instanceof Error ? e.message : String(e)));
       }
-      if (res.kind === 'merged') merged++;
+      if (res.kind === 'merged') {
+        merged++;
+        const c = await copyStatusToMain(repo, pr.number, res, rec, ctx);
+        greenMain = c?.copied ? c.sha : undefined;
+      }
       const stop = stopForResult(pr.number, res, mainGreen);
       if (stop) await stopPr(pr, stop.reason, stop.fix, false, ctx, rec);
       else if (res.kind === 'other') rec.notes.push(`ラベル「${MERGE_LABEL}」はそのまま（次の queue で試し直す）`);
@@ -414,7 +473,7 @@ export async function runQueue(args: Args, budget: Budget, ctx: AgentContext, op
     if (merged === 0 || waiting === 0) break;
   }
   finishQueue(log, handled);
-  await checkMainTip(repo, dry, ctx);
+  await checkMainTip(repo, dry, ctx, plannedAtStart);
 }
 
 /** 2周め以降に扱った PR は「飛ばしたもの」から外す */
@@ -464,24 +523,36 @@ async function stopPr(pr: PrInfo, reason: string, fix: string, dry: boolean, ctx
 }
 
 /** 終わりに、本線の先頭に手元の CI の status が無ければ、本線の先頭で手元の CI を回して付ける。赤なら Issue を立てる */
-async function checkMainTip(repo: RepoInfo, dry: boolean, ctx: AgentContext): Promise<void> {
-  const { log, repoRoot, mainRoot } = ctx;
+async function checkMainTip(repo: RepoInfo, dry: boolean, ctx: AgentContext, plannedAtStart?: string): Promise<void> {
+  const { log, repoRoot } = ctx;
   const sha = await mainHeadSha(repo.nameWithOwner, repoRoot);
   const state = await commitStatusOf(repo.nameWithOwner, sha, STATUS_CONTEXT, repoRoot);
   if (hasFinalStatus(state)) {
     console.log(`\n■ 本線の先頭 ${short(sha)}：「${STATUS_CONTEXT}」の status は ${state}。回さない`);
     return;
   }
-  const title = mainRedIssueTitle(sha);
   const why = state === 'pending' ? '途中（pending）のまま' : '無い';
+  if (dry && sha === plannedAtStart) {
+    console.log(`\n■ 本線の先頭 ${short(sha)}：始めに回す見込みの分で status が付くので、終わりには回さない見込み`);
+    return;
+  }
   if (dry) {
-    const text = `本線の先頭 ${short(sha)} に「${STATUS_CONTEXT}」の status が${why}ので、終わりに手元の CI を回して付ける見込み（赤なら Issue「${title}」を立てる。同じ題の開いた Issue があれば立てない）`;
+    const text = `本線の先頭 ${short(sha)} に「${STATUS_CONTEXT}」の status が${why}ので、終わりに手元の CI を回して付ける見込み（赤なら Issue「${mainRedIssueTitle(sha)}」を立てる。同じ題の開いた Issue があれば立てない）`;
     console.log(`\n■ ${text}`);
     log.note(text);
     return;
   }
   console.log(`\n■ 本線の先頭 ${short(sha)} に status が${why}ので、手元の CI を回す`);
-  const rec: ItemRecord = { kind: 'main', number: 0, title: `本線の先頭 ${short(sha)} の手元の CI`, outcome: '', costUsd: 0, notes: [] };
+  await runMainCi(repo, sha, 'end', ctx);
+}
+
+/**
+ * 本線の先頭 sha で手元の CI を回し、status（pending → success か failure）を付ける。赤なら Issue を立てる（同じ題の開いた Issue があれば立てない）。
+ * worktree は `<worktree の根>/agent-main` を使い回す。回せなかった（worktree に変更が残っている・コードの失敗）ときは undefined
+ */
+async function runMainCi(repo: RepoInfo, sha: string, when: 'start' | 'end', ctx: AgentContext): Promise<{ ok: boolean } | undefined> {
+  const { log, repoRoot, mainRoot } = ctx;
+  const rec: ItemRecord = { kind: 'main', number: 0, title: `本線の先頭 ${short(sha)} の手元の CI（${when === 'start' ? '始め' : '終わり'}）`, outcome: '', costUsd: 0, notes: [] };
   log.items.push(rec);
   try {
     await fetchOrigin(repoRoot);
@@ -490,7 +561,7 @@ async function checkMainTip(repo: RepoInfo, dry: boolean, ctx: AgentContext): Pr
       if (!(await isCleanWorktree(wt))) {
         rec.outcome = '回さなかった（本線用の worktree に変更が残っている）';
         rec.notes.push(`${wt} を持ち主が見る`);
-        return;
+        return undefined;
       }
       await checkoutDetached(wt, sha);
     } else {
@@ -503,25 +574,62 @@ async function checkMainTip(repo: RepoInfo, dry: boolean, ctx: AgentContext): Pr
       if (err) rec.notes.push(`commit status（${st}）を付けられなかった：${err}`);
     };
     await post('pending', statusDescription('pending', undefined, where));
-    const ci = await runLocalCi(wt, path.join(log.dir, `ci-main-${short(sha)}`), LOCAL_CI_TIMEOUT_MIN * 60_000);
+    const ciDir = mainCiDirName(sha, when);
+    const ci = await runLocalCi(wt, path.join(log.dir, ciDir), LOCAL_CI_TIMEOUT_MIN * 60_000);
     await post(ci.ok ? 'success' : 'failure', statusDescription(ci.ok ? 'success' : 'failure', ci, where));
     rec.notes.push(`手元の CI：${ciSummary(ci)}`);
     if (ci.ok) {
       rec.outcome = '通った（status を付けた）';
-      return;
+      return { ok: true };
     }
     rec.outcome = '落ちた（status を付けた）';
-    const open = await listOpenIssues(repoRoot);
-    const same = open.find((i) => i.title === title);
-    if (same) {
-      rec.notes.push(`同じ題の開いた Issue #${same.number} があるので、立てなかった`);
-      return;
+    try {
+      const title = mainRedIssueTitle(sha);
+      const same = (await listOpenIssues(repoRoot)).find((i) => i.title === title);
+      if (same) {
+        rec.notes.push(`同じ題の開いた Issue #${same.number} があるので、立てなかった`);
+      } else {
+        const url = await createIssue(title, mainRedIssueBody(sha, ciSummary(ci), failedJobs(ci), `${log.name}/${ciDir}`), path.join(log.dir, `issue-main-${short(sha)}.md`), repoRoot);
+        rec.url = url;
+        rec.notes.push(`Issue を立てた：${url}`);
+      }
+    } catch (e) {
+      rec.notes.push(`Issue を立てられなかった：${redact(e instanceof Error ? e.message : String(e))}`);
     }
-    const url = await createIssue(title, mainRedIssueBody(sha, ciSummary(ci), failedJobs(ci), log.name), path.join(log.dir, `issue-main-${short(sha)}.md`), repoRoot);
-    rec.url = url;
-    rec.notes.push(`Issue を立てた：${url}`);
+    return { ok: false };
   } catch (e) {
     rec.outcome = rec.outcome || '止めた（コードの失敗）';
     rec.notes.push(redact(e instanceof Error ? e.message : String(e)));
+    return undefined;
+  }
+}
+
+/** マージのあと：本線の先頭の木が、手元の CI で通した木と同じなら、本線の先頭にも success を写す（重い CI を回し直さない） */
+async function copyStatusToMain(repo: RepoInfo, prNumber: number, res: Extract<PrFlowResult, { kind: 'merged' }>, rec: ItemRecord, ctx: AgentContext): Promise<{ sha: string; copied: boolean } | undefined> {
+  const { repoRoot } = ctx;
+  try {
+    const tip = await mainHeadSha(repo.nameWithOwner, repoRoot);
+    const plan = mainCopyPlan({
+      prNumber,
+      tipSha: tip,
+      tipTree: await commitTreeSha(repo.nameWithOwner, tip, repoRoot),
+      testedSha: res.head,
+      testedTree: await commitTreeSha(repo.nameWithOwner, res.head, repoRoot),
+      ci: res.ci,
+    });
+    if (!plan.copy) {
+      rec.notes.push(`本線の先頭 ${short(tip)} には status を写さなかった（${plan.reason}）。終わりに本線で手元の CI を回す`);
+      return { sha: tip, copied: false };
+    }
+    const err = await postCommitStatus(repo.nameWithOwner, tip, 'success', STATUS_CONTEXT, plan.description, repoRoot);
+    if (err) {
+      rec.notes.push(`本線の先頭 ${short(tip)} に status を写せなかった：${err}`);
+      return { sha: tip, copied: false };
+    }
+    rec.notes.push(`本線の先頭 ${short(tip)} の木が、手元の CI で通した ${short(res.head)} の木と同じなので、success を写した`);
+    return { sha: tip, copied: true };
+  } catch (e) {
+    rec.notes.push(`本線の先頭に status を写すかを確かめられなかった：${redact(e instanceof Error ? e.message : String(e))}`);
+    return undefined;
   }
 }
