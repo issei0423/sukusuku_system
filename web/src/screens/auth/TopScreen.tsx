@@ -94,8 +94,6 @@ export default function TopScreen({ entrance }: { entrance: 'staff' | 'guardian'
           {entrance === 'staff' ? '保護者の方はこちら' : '職員の方はこちら'}
         </Link>
       </div>
-
-      <DemoAccounts entrance={entrance} onPick={(m) => { setEmail(m); setPassword('pass1234'); }} />
     </PublicLayout>
   );
 }
@@ -165,39 +163,4 @@ function LoginErrorView({ error, entrance, onLogout }: {
     return <Alert>失敗が続いたため、しばらく受け付けを止めています。時間をおいてからお試しください。</Alert>;
   }
   return <Alert>ログインIDまたはパスワードが違います（残り {error.remaining} 回）</Alert>;
-}
-
-/**
- * 演習用の入口。実装では持たない。
- * デモの場で「どのアカウントで何が見えるか」を切り替えるために置いている
- */
-function DemoAccounts({ entrance, onPick }: { entrance: 'staff' | 'guardian'; onPick: (email: string) => void }) {
-  const staffList = [
-    { email: 'nishida@hoiku.example.jp', label: '西田 拓也（管理者・園長）' },
-    { email: 'suzuki@hoiku.example.jp', label: '鈴木 浩之（一般・さくら組）' },
-    { email: 'kubota@hoiku.example.jp', label: '久保田 和也（一般・ひまわり組）' },
-    { email: 'murata@hoiku.example.jp', label: '村田 真一（一時パスワード中）' },
-  ];
-  const guardianList = [
-    { email: 'nishida.t@example.jp', label: '西田 拓也（西田 太郎の保護者）' },
-    { email: 'endo.n@example.jp', label: '遠藤 直人（規約の再同意が必要）' },
-    { email: 'suzuki.h@example.jp', label: '鈴木 浩之（停止中のアカウント）' },
-    { email: 'murata.s@example.jp', label: '村田 真一（村田 美咲の保護者）' },
-    { email: 'kubota.k@example.jp', label: '久保田 和也（久保田 陸の保護者）' },
-  ];
-  const list = entrance === 'staff' ? staffList : guardianList;
-
-  return (
-    <details style={{ marginTop: 20 }}>
-      <summary className="muted" style={{ cursor: 'pointer' }}>演習用：デモアカウント</summary>
-      <div className="stack" style={{ marginTop: 8 }}>
-        {list.map((a) => (
-          <button key={a.email} className="btn-sm" onClick={() => onPick(a.email)}>{a.label}</button>
-        ))}
-        <div className="muted">
-          パスワードはいずれも pass1234。村田 真一のみ一時パスワード temp0901。
-        </div>
-      </div>
-    </details>
-  );
 }
