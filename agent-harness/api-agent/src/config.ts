@@ -41,6 +41,22 @@ export const LOCAL_CI_TIMEOUT_MIN = 120;
 /** マージの直前に本線が進んでいたときに、取り込みからやり直す回数（持ち主の頼みの「2回まで」） */
 export const MAINLINE_RETRIES = 2;
 
+/**
+ * issues が拾う Issue のラベル。.github/workflows/claude-implement.yml と同じ合図（ラベル claude）。
+ * `--issue N` で番号を指したときは、このラベルが無くても扱う
+ */
+export const ISSUE_PICK_LABEL = 'claude';
+
+/** マージ係の合図（.github/scripts/merge-queue.sh の LABEL・STOP_LABEL と同じ名前） */
+export const MERGE_LABEL = 'マージ';
+export const MERGE_STOP_LABEL = 'マージ止め';
+/** 手元の CI の結果を付ける commit status の context（チームの人が PR の画面で見る） */
+export const STATUS_CONTEXT = '手元の CI（持ち主の PC）';
+/** commit status の description の上限（GitHub の上限 140 字） */
+export const STATUS_DESCRIPTION_MAX = 140;
+/** 本線の先頭で手元の CI が赤のときに立てる Issue の題 */
+export const mainRedIssueTitle = (sha: string) => `本線の先頭で手元の CI が落ちた（${sha.slice(0, 7)}）`;
+
 /** 飛ばすラベル */
 export const SKIP_LABELS_ISSUE = ['agent-skip', 'tracking'];
 export const SKIP_LABELS_PR = ['agent-skip', 'do-not-merge'];
@@ -68,6 +84,8 @@ export const issueBranch = (n: number) => `agent/issue-${n}`;
 export const issueWorktreeName = (n: number) => `agent-issue-${n}`;
 export const prWorktreeName = (n: number) => `agent-pr-${n}`;
 export const reviewWorktreeName = (n: number) => `agent-review-${n}`;
+/** queue の終わりに、本線の先頭で手元の CI を回す worktree */
+export const MAIN_WORKTREE_NAME = 'agent-main';
 
 export const HOME_DIR = os.homedir();
 export const TMP_DIR = os.tmpdir();

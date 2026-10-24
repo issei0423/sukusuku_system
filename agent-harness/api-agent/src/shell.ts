@@ -118,6 +118,87 @@ export async function commentPr(n: number, body: string, bodyFile: string, cwd: 
   await gh(['pr', 'comment', String(n), '--body-file', bodyFile], cwd);
 }
 
+// ─────────── queue（マージ係）・commit status で使う ───────────
+
+export interface RepoInfo {
+  /** リポジトリの持ち主のログイン名 */
+  owner: string;
+  /** owner/name */
+  nameWithOwner: string;
+}
+
+export async function repoInfo(cwd: string): Promise<RepoInfo> {
+  const r = await ghJson<{ owner?: { login?: string }; nameWithOwner?: string }>(['repo', 'view', '--json', 'owner,nameWithOwner'], cwd);
+  const owner = r.owner?.login?.trim();
+  const nameWithOwner = r.nameWithOwner?.trim();
+  if (!owner || !nameWithOwner || !/^[\w.-]+\/[\w.-]+$/.test(nameWithOwner)) throw new Error(`リポジトリの持ち主が読めなかった（${JSON.stringify(r)}）`);
+  return { owner, nameWithOwner };
+}
+
+/** ラベルの付いた、開いている PR */
+export const listLabeledPrs = (label: string, cwd: string) =>
+  ghJson<PrInfo[]>(['pr', 'list', '--state', 'open', '--label', label, '--limit', '200', '--json', PR_FIELDS], cwd);
+
+/** --paginate --slurp の出力（ページの配列）を1つの配列にする */
+const flatPages = <T>(text: string): T[] => (JSON.parse(text) as T[][]).flat();
+
+/** Issue・PR のイベント（labeled の actor と時刻を読む） */
+export async function issueEvents(repo: string, n: number, cwd: string): Promise<{ event: string; created_at: string; label?: { name?: string } | null; actor?: { login?: string } | null }[]> {
+  return flatPages(await gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/events?per_page=100`], cwd));
+}
+
+/** PR が変えたファイル（名前を変えたものは元の名前も） */
+export async function prFiles(repo: string, n: number, cwd: string): Promise<string[]> {
+  const files = flatPages<{ filename: string; previous_filename?: string }>(await gh(['api', '--paginate', '--slurp', `repos/${repo}/pulls/${n}/files?per_page=100`], cwd));
+  return [...new Set(files.flatMap((f) => [f.filename, ...(f.previous_filename ? [f.previous_filename] : [])]))];
+}
+
+/** 最新のレビューで「変更を求める」にしている人 */
+export async function changesRequestedBy(n: number, cwd: string): Promise<string[]> {
+  const r = await ghJson<{ latestReviews?: { state: string; author?: { login?: string } | null }[] }>(['pr', 'view', String(n), '--json', 'latestReviews'], cwd);
+  return (r.latestReviews ?? []).filter((v) => v.state === 'CHANGES_REQUESTED').map((v) => v.author?.login ?? '（不明）');
+}
+
+/** 本線の先頭の sha（GitHub から読む。--dry-run でも fetch せずに済む） */
+export async function mainHeadSha(repo: string, cwd: string): Promise<string> {
+  const sha = (await gh(['api', `repos/${repo}/git/ref/heads/${BASE_BRANCH}`, '--jq', '.object.sha'], cwd)).trim();
+  if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error(`本線の先頭の sha が読めなかった：${sha}`);
+  return sha;
+}
+
+/** commit に付いた、context の status のいちばん新しい state（無ければ undefined） */
+export async function commitStatusOf(repo: string, sha: string, context: string, cwd: string): Promise<string | undefined> {
+  const r = await ghJson<{ statuses?: { context: string; state: string }[] }>(['api', `repos/${repo}/commits/${sha}/status?per_page=100`], cwd);
+  return r.statuses?.find((s) => s.context === context)?.state;
+}
+
+/** commit status を付ける（コードだけがする）。target_url は付けない。失敗したらわけを返す */
+export async function postCommitStatus(repo: string, sha: string, state: 'pending' | 'success' | 'failure', context: string, description: string, cwd: string): Promise<string | undefined> {
+  if (!/^[0-9a-f]{40}$/.test(sha)) return `sha が40桁でない：${sha}`;
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return `リポジトリの名前がおかしい：${repo}`;
+  const r = await run(
+    'gh',
+    ['api', '-X', 'POST', `repos/${repo}/statuses/${sha}`, '-f', `state=${state}`, '-f', `context=${context}`, '-f', `description=${description}`, '--silent'],
+    { cwd, env: { ...process.env, ...GH_ENV } },
+  );
+  return r.code === 0 ? undefined : (r.stderr || r.stdout).trim().slice(0, 300) || `終了コード ${r.code}`;
+}
+
+/** PR のラベルを付け外しする（コードだけがする。エージェントは src/safety.ts で「マージ」の付け外しを断られる） */
+export async function editPrLabels(n: number, change: { add?: string[]; remove?: string[] }, cwd: string): Promise<void> {
+  const args = ['pr', 'edit', String(n)];
+  for (const l of change.remove ?? []) args.push('--remove-label', l);
+  for (const l of change.add ?? []) args.push('--add-label', l);
+  await gh(args, cwd);
+}
+
+/** Issue を立てる（ラベルは付けない。claude を付けると自動実装の合図になる）。URL を返す */
+export async function createIssue(title: string, body: string, bodyFile: string, cwd: string): Promise<string> {
+  fs.mkdirSync(path.dirname(bodyFile), { recursive: true });
+  fs.writeFileSync(bodyFile, body, 'utf8');
+  return (await gh(['issue', 'create', '--title', title, '--body-file', bodyFile], cwd)).trim();
+}
+
 // ───────────────────────── git ─────────────────────────
 
 const git = (args: string[], cwd: string) => ok('git', args, { cwd });

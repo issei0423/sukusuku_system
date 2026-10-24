@@ -1,7 +1,7 @@
 /**
  * Issue・PR の選び方と並べ方（GitHub は読まない。gh の JSON を受け取るだけ。テストは test/select.test.ts）。
  */
-import { BASE_BRANCH, NO_MERGE_TITLE_MARK, SKIP_LABELS_ISSUE, SKIP_LABELS_PR } from './config.ts';
+import { BASE_BRANCH, ISSUE_PICK_LABEL, NO_MERGE_TITLE_MARK, SKIP_LABELS_ISSUE, SKIP_LABELS_PR } from './config.ts';
 
 export interface GhLabel {
   name: string;
@@ -69,9 +69,14 @@ function labelHit(labels: GhLabel[], skip: string[]): string | undefined {
 export interface IssueSelection {
   picked: IssueInfo[];
   skipped: Skipped[];
+  /** ラベル claude（ISSUE_PICK_LABEL）が無いので見なかった Issue の番号（古い順）。数が多いので skipped とは分ける */
+  unlabeled: number[];
 }
 
-/** 開いている Issue から、エージェントに渡すものを古い順に選ぶ */
+/**
+ * 開いている Issue から、エージェントに渡すものを古い順に選ぶ。
+ * 拾うのはラベル claude の付いたものだけ（claude-implement.yml と同じ合図）。`--issue N`（only）で指したときはラベルが無くても扱う
+ */
 export function selectIssues(issues: IssueInfo[], openPrs: PrInfo[], opts: { only?: number } = {}): IssueSelection {
   const covered = new Map<number, number[]>();
   for (const pr of openPrs) {
@@ -79,9 +84,14 @@ export function selectIssues(issues: IssueInfo[], openPrs: PrInfo[], opts: { onl
   }
   const picked: IssueInfo[] = [];
   const skipped: Skipped[] = [];
+  const unlabeled: number[] = [];
   const pool = opts.only === undefined ? issues : issues.filter((i) => i.number === opts.only);
   if (opts.only !== undefined && pool.length === 0) skipped.push({ number: opts.only, reason: '開いている Issue に無い' });
   for (const issue of [...pool].sort(byOldest)) {
+    if (opts.only === undefined && !issue.labels.some((l) => l.name === ISSUE_PICK_LABEL)) {
+      unlabeled.push(issue.number);
+      continue;
+    }
     const label = labelHit(issue.labels, SKIP_LABELS_ISSUE);
     if (label) {
       skipped.push({ number: issue.number, reason: `ラベル ${label}` });
@@ -94,7 +104,7 @@ export function selectIssues(issues: IssueInfo[], openPrs: PrInfo[], opts: { onl
     }
     picked.push(issue);
   }
-  return { picked, skipped };
+  return { picked, skipped, unlabeled };
 }
 
 /** base の PR の状態（土台のブランチ名 → 状態）。none は、そのブランチの PR が無い */

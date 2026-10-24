@@ -1,12 +1,13 @@
 /**
  * (b) 開いている PR を古い順に、本線を取り込み、手元の CI で確かめてマージする。流れはコードが決める。
  * モデルを呼ぶのは、ぶつかりを解くときと、CI の落ちを見立てて直すときだけ。
+ * 1本ごとの流れ（handlePr）は queue（src/queue.ts、マージ係の代わり）も使う。
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { finalLine, fillTemplate, readPrompt, runAgent, type AgentContext, type AgentOutcome } from './agent.ts';
 import type { Args } from './args.ts';
-import { BASE_BRANCH, LOCAL_CI_TIMEOUT_MIN, MAINLINE_RETRIES, MAX_TURNS, MODEL, QUERY_TIMEOUT_MIN, SCRIPTS_DIR, prWorktreeName, worktreeRoot } from './config.ts';
+import { BASE_BRANCH, LOCAL_CI_TIMEOUT_MIN, MAINLINE_RETRIES, MAX_TURNS, MODEL, QUERY_TIMEOUT_MIN, SCRIPTS_DIR, STATUS_CONTEXT, prWorktreeName, worktreeRoot } from './config.ts';
 import { redact, usd, type Budget, type ItemRecord } from './report.ts';
 import { checksAllSuccess, planPrs, type BaseState, type PrInfo, type PrPlanItem } from './select.ts';
 import {
@@ -23,21 +24,55 @@ import {
   mergeFinished,
   mergeMainline,
   mergePr,
+  postCommitStatus,
   pushHead,
+  repoInfo,
   resetPrWorktree,
   retargetToBase,
   revParse,
+  run,
   runLocalCi,
   slash,
   type CiResult,
   type RunResult,
 } from './shell.ts';
+import { failedJobs, PrCiStatus } from './status.ts';
 
-const MAX_PASSES = 3;
+export const MAX_PASSES = 3;
+
+/** 1本ごとの流れの選び方（merge と queue で違うところ） */
+export interface PrFlowOptions {
+  /** モデルを呼ぶか。false なら、ぶつかり・CI の落ちでモデルを呼ばずに止める（queue でキーが無い・--no-model のとき） */
+  useModel: boolean;
+  /** 手元の CI の結果を commit status で付ける先（owner/name）。無ければ付けない */
+  statusRepo?: string;
+  /** 押す木が `.github/` を変えていたら入れない（queue。モデルがぶつかりや CI の直しでワークフローを変えたときの守り） */
+  blockWorkflow?: boolean;
+  /** マージしたあとのコメントの1行め */
+  mergedBy?: string;
+  /**
+   * 押す直前に見直す（queue。手元の CI のあいだにラベルが外された・下書きになったなど）。入れないなら、わけを返す。
+   * 入れないときは kind 'other'（ラベルはそのまま）。merge-queue.sh の finish と同じ
+   */
+  beforeMerge?: () => Promise<string | undefined>;
+}
+
+/** 1本ごとの流れの結果（queue が「マージ止め」にするかを決める）。どれも rec.outcome に日本語の結果を書いてある */
+export type PrFlowResult =
+  | { kind: 'merged'; head: string }
+  /** ぶつかりを解けなかった（tried：モデルに解かせたか） */
+  | { kind: 'conflict'; files: string[]; tried: boolean; said?: string }
+  /** 手元の CI が赤のまま（tested：回した commit、base：合わせた本線） */
+  | { kind: 'ci'; failed: string; summary: string; tested: string; base: string; tried: boolean; said?: string }
+  /** 押す木が .github/ を変えている（blockWorkflow のときだけ） */
+  | { kind: 'workflow'; files: string[] }
+  /** それ以外（上限・push・gh pr merge・本線が進み続けた・前の worktree など）。PR のせいとは限らないので、queue はラベルを変えない */
+  | { kind: 'other' };
 
 export async function runMerge(args: Args, budget: Budget, ctx: AgentContext): Promise<void> {
   const { log, repoRoot } = ctx;
   const handled = new Set<number>();
+  const statusRepo = args.dryRun ? undefined : (await repoInfo(repoRoot)).nameWithOwner;
   for (let pass = 1; pass <= MAX_PASSES; pass++) {
     if (!args.dryRun) await fetchOrigin(repoRoot);
     const prs = await listOpenPrs(repoRoot);
@@ -78,7 +113,7 @@ export async function runMerge(args: Args, budget: Budget, ctx: AgentContext): P
       log.items.push(rec);
       console.log(`\n▶ PR #${item.pr.number} ${item.pr.title}`);
       try {
-        await handlePr(item, rec, args, budget, ctx);
+        await handlePr(item, rec, args, budget, ctx, { useModel: true, statusRepo });
       } catch (e) {
         rec.outcome = rec.outcome || '止めた（コードの失敗）';
         rec.notes.push(redact(e instanceof Error ? e.message : String(e)));
@@ -99,12 +134,20 @@ function finish(log: AgentContext['log'], handled: Set<number>): void {
   log.skipped.splice(0, log.skipped.length, ...keep);
 }
 
-async function handlePr(item: PrPlanItem, rec: ItemRecord, args: Args, budget: Budget, ctx: AgentContext): Promise<void> {
+/**
+ * PR 1本：worktree・本線の取り込み・手元の CI・push・`gh pr merge --merge --match-head-commit`。
+ * squash・rebase・--admin・--delete-branch は使わない。
+ */
+export async function handlePr(item: PrPlanItem, rec: ItemRecord, args: Args, budget: Budget, ctx: AgentContext, opts: PrFlowOptions): Promise<PrFlowResult> {
   const { log, repoRoot, mainRoot } = ctx;
   const pr = item.pr;
   const n = pr.number;
   const wt = path.join(worktreeRoot(mainRoot), prWorktreeName(n));
   let itemSpent = 0;
+  const statusRepo = opts.statusRepo;
+  const status = statusRepo
+    ? new PrCiStatus((sha, state, desc) => postCommitStatus(statusRepo, sha, state, STATUS_CONTEXT, desc, repoRoot), rec.notes)
+    : undefined;
 
   const callAgent = async (kind: 'conflict' | 'ci', label: string, prompt: string): Promise<AgentOutcome | undefined> => {
     const cap = budget.capForCall(itemSpent);
@@ -130,7 +173,7 @@ async function handlePr(item: PrPlanItem, rec: ItemRecord, args: Args, budget: B
     if (!(await isCleanWorktree(wt))) {
       rec.outcome = '飛ばした（前の実行の worktree に変更が残っている）';
       rec.notes.push(`${wt} を持ち主が見る`);
-      return;
+      return { kind: 'other' };
     }
     await resetPrWorktree(wt, pr.headRefName);
   } else {
@@ -147,11 +190,17 @@ async function handlePr(item: PrPlanItem, rec: ItemRecord, args: Args, budget: B
     const m = await mergeMainline(wt);
     if (m.outcome === 'conflict') {
       console.log(`  ぶつかった：${m.conflicts.join('、')}`);
+      if (!opts.useModel) {
+        await abortMerge(wt);
+        rec.outcome = '止めた（ぶつかった。モデルを呼ばずに回しているので、解かない）';
+        rec.notes.push(`ぶつかったファイル：${m.conflicts.join('、')}`);
+        return { kind: 'conflict', files: m.conflicts, tried: false };
+      }
       const res = await callAgent('conflict', `pr#${n}-conflict-${attempt}`, conflictPrompt(pr, wt, m.conflicts));
       if (!res) {
         await abortMerge(wt);
         rec.outcome = '止めた（ぶつかったが、上限の残りが無い）';
-        return;
+        return { kind: 'other' };
       }
       if (!(await mergeFinished(wt)) || !(await isCleanWorktree(wt))) {
         await abortMerge(wt);
@@ -159,7 +208,7 @@ async function handlePr(item: PrPlanItem, rec: ItemRecord, args: Args, budget: B
         rec.notes.push(`ぶつかったファイル：${m.conflicts.join('、')}`);
         const said = finalLine(res.resultText, '結果');
         if (said) rec.notes.push(`エージェント：結果: ${said}`);
-        return;
+        return { kind: 'conflict', files: m.conflicts, tried: true, said };
       }
       rec.notes.push(`本線を取り込んで、ぶつかり（${m.conflicts.join('、')}）をエージェントが解いた`);
     } else if (m.outcome === 'merged') {
@@ -172,8 +221,8 @@ async function handlePr(item: PrPlanItem, rec: ItemRecord, args: Args, budget: B
     if (args.trustGhChecks && ahead === 0 && sameHead && checksAllSuccess(pr.statusCheckRollup)) {
       ciNote = 'GitHub の CI がすべて success で、取り込みも直しも要らなかったので、手元の CI は省いた（--trust-gh-checks）';
     } else {
-      const ci = await ciWithFix(pr, wt, attempt, rec, callAgent, ctx);
-      if (!ci.ok) return;
+      const ci = await ciWithFix(pr, wt, attempt, rec, callAgent, ctx, opts.useModel, status, mainBefore ?? '');
+      if (!ci.ok) return ci.result;
       ciNote = `手元の CI（scripts/local-ci.sh・本線と合わせた形・head ${ci.result.head?.slice(0, 7) ?? '?'}）：${ciSummary(ci.result)}`;
     }
     rec.notes.push(ciNote);
@@ -181,7 +230,22 @@ async function handlePr(item: PrPlanItem, rec: ItemRecord, args: Args, budget: B
     // 4. commit が増えたら push（force しない）
     if (!(await isCleanWorktree(wt))) {
       rec.outcome = '止めた（worktree に commit していない変更が残った）';
-      return;
+      return { kind: 'other' };
+    }
+    if (opts.blockWorkflow) {
+      // 押す木（本線を取り込んだ形）が .github/ を変えていないか。モデルがぶつかりや CI の直しでワークフローを変えたときも入れない
+      const d = await run('git', ['diff', '--name-only', '--no-renames', `origin/${BASE_BRANCH}...HEAD`], { cwd: wt });
+      if (d.code !== 0) {
+        rec.outcome = '止めた（押す木が .github/ を変えているかを、git diff で確かめられなかった）';
+        rec.notes.push(redact((d.stderr || d.stdout).trim().slice(0, 300)));
+        return { kind: 'other' };
+      }
+      const wf = d.stdout.split(/\r?\n/).filter((f) => f.startsWith('.github/'));
+      if (wf.length) {
+        rec.outcome = '止めた（押す木が .github/ を変えている）';
+        rec.notes.push(`.github/ の変更：${wf.join('、')}`);
+        return { kind: 'workflow', files: wf };
+      }
     }
     const toPush = await commitsAhead(wt, `origin/${pr.headRefName}`);
     if (toPush > 0) {
@@ -189,9 +253,10 @@ async function handlePr(item: PrPlanItem, rec: ItemRecord, args: Args, budget: B
       if (p.code !== 0) {
         rec.outcome = '止めた（push できなかった。PR のブランチが先へ進んだかもしれない）';
         rec.notes.push(redact(p.stderr.trim().slice(0, 400)));
-        return;
+        return { kind: 'other' };
       }
       rec.notes.push(`${toPush} 個の commit を ${pr.headRefName} へ push した`);
+      await status?.afterPush(await headSha(wt));
     }
 
     // 5. マージの直前に、本線が進んでいないかを見る
@@ -203,34 +268,58 @@ async function handlePr(item: PrPlanItem, rec: ItemRecord, args: Args, budget: B
         continue;
       }
       rec.outcome = `止めた（本線が進み続けた。${MAINLINE_RETRIES} 回やり直した）`;
-      return;
+      return { kind: 'other' };
     }
 
     // 6. マージ（merge commit・head の一致を確かめて）
     const head = await headSha(wt);
     if ((await revParse(`origin/${pr.headRefName}`, repoRoot)) !== head) {
       rec.outcome = '止めた（PR のブランチの先が、確かめたものと違う）';
-      return;
+      return { kind: 'other' };
+    }
+    if (opts.beforeMerge) {
+      const why = await opts.beforeMerge();
+      if (why) {
+        rec.outcome = `入れなかった（${why}）`;
+        return { kind: 'other' };
+      }
     }
     const r = await mergeWithRetry(n, head, repoRoot);
     if (r.code !== 0) {
       rec.outcome = '止めた（gh pr merge が通らなかった）';
       rec.notes.push(redact((r.stderr || r.stdout).trim().slice(0, 500)));
-      return;
+      return { kind: 'other' };
     }
     rec.outcome = 'マージした';
     try {
-      await commentPr(n, mergeComment(head, rec, ciNote, itemSpent), path.join(log.dir, `comment-pr-${n}.md`), repoRoot);
+      await commentPr(n, mergeComment(head, rec, ciNote, itemSpent, opts.mergedBy), path.join(log.dir, `comment-pr-${n}.md`), repoRoot);
     } catch (e) {
       rec.notes.push(`コメントを書けなかった：${redact(e instanceof Error ? e.message : String(e))}`);
     }
-    return;
+    return { kind: 'merged', head };
   }
+  // ここへは来ない（ループの最後の回は、マージするか return する）
+  return { kind: 'other' };
 }
 
 type CallAgent = (kind: 'conflict' | 'ci', label: string, prompt: string) => Promise<AgentOutcome | undefined>;
 
-/** CI を回し、落ちたらエージェントに見立てさせ、1回だけ回し直す */
+/** 手元の CI を1回回す。status があれば、回し始めに pending、終わりに success か failure を付ける */
+async function runCiWithStatus(wt: string, logDir: string, pr: PrInfo, status: PrCiStatus | undefined, base: string): Promise<CiResult> {
+  const timeout = LOCAL_CI_TIMEOUT_MIN * 60_000;
+  const tested = await headSha(wt);
+  const onGitHub = (await commitsAhead(wt, `origin/${pr.headRefName}`)) === 0;
+  const prHead = (await revParse(`origin/${pr.headRefName}`, wt)) ?? pr.headRefOid;
+  const where = `本線 ${base.slice(0, 7)} と合わせた ${tested.slice(0, 7)}`;
+  await status?.start(tested, onGitHub, prHead, where);
+  const ci = await runLocalCi(wt, logDir, timeout);
+  await status?.end(tested, onGitHub, ci, where);
+  return ci;
+}
+
+type CiOutcome = { ok: true; result: CiResult } | { ok: false; result: PrFlowResult };
+
+/** CI を回し、落ちたらエージェントに見立てさせ、1回だけ回し直す（useModel が false なら見立てずに止める） */
 async function ciWithFix(
   pr: PrInfo,
   wt: string,
@@ -238,34 +327,44 @@ async function ciWithFix(
   rec: ItemRecord,
   callAgent: CallAgent,
   ctx: AgentContext,
-): Promise<{ ok: true; result: CiResult } | { ok: false }> {
-  const timeout = LOCAL_CI_TIMEOUT_MIN * 60_000;
+  useModel: boolean,
+  status: PrCiStatus | undefined,
+  base: string,
+): Promise<CiOutcome> {
   console.log('  手元の CI を回す（鍵の順番待ちを含む）');
-  const first = await runLocalCi(wt, path.join(ctx.log.dir, `ci-pr-${pr.number}-${attempt}a`), timeout);
+  const first = await runCiWithStatus(wt, path.join(ctx.log.dir, `ci-pr-${pr.number}-${attempt}a`), pr, status, base);
   if (first.ok) return { ok: true, result: first };
   rec.notes.push(`手元の CI が落ちた：${ciSummary(first)}`);
   console.log(`  CI が落ちた：${ciSummary(first)}`);
+  const red = async (r: CiResult, tried: boolean, said?: string): Promise<CiOutcome> => ({
+    ok: false,
+    result: { kind: 'ci', failed: failedJobs(r), summary: ciSummary(r), tested: r.head ?? (await headSha(wt)), base, tried, said },
+  });
 
+  if (!useModel) {
+    rec.outcome = '止めた（手元の CI が落ちた。モデルを呼ばずに回しているので、見立てない）';
+    return red(first, false);
+  }
   const res = await callAgent('ci', `pr#${pr.number}-ci-${attempt}`, ciPrompt(pr, wt, first));
   if (!res) {
     rec.outcome = '止めた（CI が落ちたが、上限の残りが無い）';
-    return { ok: false };
+    return { ok: false, result: { kind: 'other' } };
   }
   const verdict = finalLine(res.resultText, '判定') ?? '';
   rec.notes.push(`エージェントの見立て：判定: ${verdict || '（最後の行が無い）'}`);
   if (!verdict.startsWith('回し直す') && !verdict.startsWith('直した')) {
     rec.outcome = `止めた（CI の落ちを直せなかった${verdict ? `：${verdict}` : ''}）`;
-    return { ok: false };
+    return red(first, true, verdict || undefined);
   }
   if (!(await isCleanWorktree(wt))) {
     rec.outcome = '止めた（直したが commit していない変更が残った）';
-    return { ok: false };
+    return red(first, true, verdict);
   }
   console.log(`  ${verdict.startsWith('直した') ? '直したので' : '時々落ちるテストと見立てたので'}、もう一度回す`);
-  const second = await runLocalCi(wt, path.join(ctx.log.dir, `ci-pr-${pr.number}-${attempt}b`), timeout);
+  const second = await runCiWithStatus(wt, path.join(ctx.log.dir, `ci-pr-${pr.number}-${attempt}b`), pr, status, base);
   if (second.ok) return { ok: true, result: second };
   rec.outcome = `止めた（回し直しても CI が落ちた：${ciSummary(second)}）`;
-  return { ok: false };
+  return red(second, true, verdict);
 }
 
 /** 押した直後は GitHub が head を受け取っていないことがあるので、少し待って何回か試す */
@@ -279,9 +378,9 @@ async function mergeWithRetry(n: number, head: string, cwd: string): Promise<Run
   return last;
 }
 
-function mergeComment(head: string, rec: ItemRecord, ciNote: string, spent: number): string {
+function mergeComment(head: string, rec: ItemRecord, ciNote: string, spent: number, mergedBy?: string): string {
   return [
-    `api-agent（${MODEL}）がマージした（merge commit・head \`${head}\`）。`,
+    mergedBy ? `${mergedBy}（merge commit・head \`${head}\`）。` : `api-agent（${MODEL}）がマージした（merge commit・head \`${head}\`）。`,
     '',
     ...rec.notes.filter((t) => !t.startsWith('worktree：')).map((t) => `- ${t}`),
     `- 費用（SDK の見積もり）：${usd(spent)}`,
