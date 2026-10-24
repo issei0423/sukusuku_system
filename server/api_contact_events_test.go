@@ -282,7 +282,10 @@ func TestContactEventCorrectCancel(t *testing.T) {
 	if fixed.CorrectedAt == nil || *fixed.MealAmount != "3" {
 		t.Fatalf("訂正: %+v", fixed)
 	}
-	at := today() + "T00:05:00"
+	// 直す先は、その記録の日の 0 時ちょうど。時刻を直せるのは「その日の0時からいままで」なので、
+	// 決まった時刻（たとえば 00:05）だと、夜中の 0 時すぎに回したときに未来になって断られる（2026-10-25 に公開先の反映で落ちた）。
+	// 記録の日から作るのは、記録したあとに日付が変わっても、その記録の日の中に収めるため
+	at := toilet.RecordedAt[:10] + "T00:00:00"
 	call(t, h, teacher, "POST", path(toilet, "correct"), `{"recorded_at":"`+at+`","updated_at":"`+toilet.UpdatedAt+`"}`)
 	list := guardianEvents(t, h, guardian, "C001")
 	if e := findEvent(list, meal.ID); e == nil || e.CorrectedAt == nil || *e.MealAmount != "3" {
