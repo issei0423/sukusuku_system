@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { checksAllSuccess, closingIssues, duplicateClosers, planPrs, selectIssues, type IssueInfo, type PrInfo } from '../src/select.ts';
 
-const issue = (number: number, createdAt: string, labels: string[] = []): IssueInfo => ({
+/** issues が拾うのはラベル claude の Issue だけなので、既定で claude を付ける（claude: false で付けない） */
+const issue = (number: number, createdAt: string, labels: string[] = [], claude = true): IssueInfo => ({
   number,
   title: `Issue ${number}`,
   createdAt,
-  labels: labels.map((name) => ({ name })),
+  labels: [...(claude ? ['claude'] : []), ...labels].map((name) => ({ name })),
 });
 
 const pr = (number: number, createdAt: string, over: Partial<PrInfo> = {}): PrInfo => ({
@@ -72,7 +73,37 @@ describe('selectIssues', () => {
   });
 
   it('0 件', () => {
-    assert.deepEqual(selectIssues([], []), { picked: [], skipped: [] });
+    assert.deepEqual(selectIssues([], []), { picked: [], skipped: [], unlabeled: [] });
+  });
+
+  it('ラベル claude の無い Issue は拾わない（claude-implement.yml と同じ合図）。数えて unlabeled に古い順で返す', () => {
+    const list = [issue(1, '2026-10-01T00:00:00Z'), issue(2, '2026-10-02T00:00:00Z', ['bug'], false), issue(3, '2026-09-01T00:00:00Z', [], false), issue(4, '2026-10-03T00:00:00Z', ['Claude'], false)];
+    const s = selectIssues(list, []);
+    assert.deepEqual(
+      s.picked.map((i) => i.number),
+      [1],
+    );
+    assert.deepEqual(s.unlabeled, [3, 2, 4], '名前は大文字小文字も含めて claude と同じものだけ');
+    assert.deepEqual(s.skipped, []);
+  });
+
+  it('--issue N で指したときは、ラベル claude が無くても扱う（飛ばすラベルは見る）', () => {
+    const list = [issue(7, '2026-10-01T00:00:00Z', [], false), issue(8, '2026-10-01T00:00:00Z', ['agent-skip'], false)];
+    assert.deepEqual(
+      selectIssues(list, [], { only: 7 }).picked.map((i) => i.number),
+      [7],
+    );
+    assert.deepEqual(selectIssues(list, [], { only: 7 }).unlabeled, []);
+    assert.deepEqual(selectIssues(list, [], { only: 8 }).skipped, [{ number: 8, reason: 'ラベル agent-skip' }]);
+  });
+
+  it('ラベル claude があっても、飛ばすラベルと、開いている PR が閉じる予定のものは飛ばす', () => {
+    const s = selectIssues([issue(5, '2026-10-01T00:00:00Z', ['tracking']), issue(6, '2026-10-02T00:00:00Z')], [pr(9, '2026-10-03T00:00:00Z', { body: 'Fixes #6' })]);
+    assert.deepEqual(s.picked, []);
+    assert.deepEqual(
+      s.skipped.map((x) => x.number),
+      [5, 6],
+    );
   });
 });
 

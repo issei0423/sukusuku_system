@@ -4,7 +4,7 @@
 import path from 'node:path';
 import { DEFAULT_EFFORT, DEFAULT_MAX_USD, DEFAULT_PER_ITEM_USD, EFFORTS, TASK_MAX_TURNS, TASK_TIMEOUT_MIN, type Effort } from './config.ts';
 
-export type Command = 'issues' | 'merge' | 'all' | 'task' | 'review' | 'help';
+export type Command = 'issues' | 'merge' | 'queue' | 'all' | 'task' | 'review' | 'help';
 
 /** task コマンドだけの引数（パスは絶対パスにしてある） */
 export interface TaskArgs {
@@ -29,6 +29,10 @@ export interface Args {
   includeDrafts: boolean;
   /** review：同じ先頭の commit をレビュー済みでも見直す */
   force: boolean;
+  /** queue：API キーがあってもモデルを呼ばない（ぶつかり・CI の落ちは止める） */
+  noModel: boolean;
+  /** queue：本線の先頭の status があっても、始めに本線で手元の CI を回し直して付け直す（時々落ちるテストで赤になったときの抜け道） */
+  recheckMain: boolean;
   effort: Effort;
   /** command が task のときだけ */
   task?: TaskArgs;
@@ -38,14 +42,18 @@ export class ArgError extends Error {}
 
 export const USAGE = `使い方（agent-harness/api-agent の中で）:
   npm run agent -- issues [--issue N] [--max-usd X] [--per-item-usd Y] [--effort E] [--dry-run]
+                        （ラベル「claude」の Issue だけを拾う。--issue N で指せばラベルが無くても扱う）
   npm run agent -- merge  [--pr N] [--max-usd X] [--per-item-usd Y] [--effort E] [--trust-gh-checks] [--dry-run]
+                        （持ち主の gh のアカウントでだけ動く。--dry-run はだれでも）
+  npm run agent -- queue  [--no-model] [--recheck-main] [--max-usd X] [--per-item-usd Y] [--effort E] [--dry-run]
+                        （マージ係の代わり。持ち主がラベル「マージ」を付けた PR を、付けた順に入れる。持ち主の gh のアカウントでだけ動く）
   npm run agent -- review [--pr N] [--include-drafts] [--force] [--max-usd X] [--per-item-usd Y] [--effort E] [--dry-run]
                         （開いている PR を読んでレビューし、コメントする。all には入らない）
-  npm run agent -- all    （issues のあと merge。両方のオプションが使える）
+  npm run agent -- all    （issues のあと merge。両方のオプションが使える。merge を含むので、持ち主の gh のアカウントでだけ動く）
   npm run agent -- task --prompt-file F --cwd DIR [--allow-dir DIR]... [--label 名前] [--out FILE] [--max-turns N] [--timeout-min M]
                         [--max-usd X] [--per-item-usd Y] [--effort E] [--dry-run]   （任意の頼みの文を1つ走らせる）
 
-  --issue N          この Issue だけを扱う
+  --issue N          この Issue だけを扱う（ラベル「claude」が無くても）
   --pr N             この PR だけを扱う
   --max-usd X        1回の実行の上限（米ドル、既定 ${DEFAULT_MAX_USD}【仮置き】）
   --per-item-usd Y   1件の上限（米ドル、既定 ${DEFAULT_PER_ITEM_USD}【仮置き】）
@@ -58,11 +66,13 @@ export const USAGE = `使い方（agent-harness/api-agent の中で）:
   --out FILE         （task）エージェントの最後の文をこのファイルにも書く（--cwd か --allow-dir の中だけ）
   --max-turns N      （task）往復の上限（既定 ${TASK_MAX_TURNS}）
   --timeout-min M    （task）時間の上限・分（既定 ${TASK_TIMEOUT_MIN}）
+  --no-model         （queue）API キーがあってもモデルを呼ばない。キーが無いときも呼ばない（ぶつかり・CI の落ちは「マージ止め」にする）
+  --recheck-main     （queue）本線の先頭の status があっても、始めに本線で手元の CI を回し直して付け直す（時々落ちるテストで赤になったとき）
   --include-drafts   （review）下書きの PR も見る（--pr N のときも見る）
   --force            （review）同じ先頭の commit をレビュー済みでも見直す
   --dry-run          API を呼ばず、GitHub は読むだけ。選んだもの・並び・モデルに渡す頼みの文を出す`;
 
-const COMMANDS: Command[] = ['issues', 'merge', 'all', 'task', 'review', 'help'];
+const COMMANDS: Command[] = ['issues', 'merge', 'queue', 'all', 'task', 'review', 'help'];
 
 export function parseArgs(argv: string[]): Args {
   const args: Args = {
@@ -73,6 +83,8 @@ export function parseArgs(argv: string[]): Args {
     trustGhChecks: false,
     includeDrafts: false,
     force: false,
+    noModel: false,
+    recheckMain: false,
     effort: DEFAULT_EFFORT,
   };
   const rest = [...argv];
@@ -161,6 +173,16 @@ export function parseArgs(argv: string[]): Args {
         noValue(flag, inline);
         args.force = true;
         break;
+      case '--no-model':
+        if (args.command !== 'queue') throw new ArgError(`${flag} は queue で使う`);
+        noValue(flag, inline);
+        args.noModel = true;
+        break;
+      case '--recheck-main':
+        if (args.command !== 'queue') throw new ArgError(`${flag} は queue で使う`);
+        noValue(flag, inline);
+        args.recheckMain = true;
+        break;
       case '-h':
       case '--help':
         args.command = 'help';
@@ -178,9 +200,9 @@ export function parseArgs(argv: string[]): Args {
     }
     args.task = { promptFile: t.promptFile, cwd: t.cwd, allowDirs: t.allowDirs, label: t.label, out: t.out, maxTurns: t.maxTurns, timeoutMin: t.timeoutMin };
   }
-  if (args.issue !== undefined && (args.command === 'merge' || args.command === 'review')) throw new ArgError('--issue は issues か all で使う');
-  if (args.pr !== undefined && args.command === 'issues') throw new ArgError('--pr は merge・review・all で使う');
-  if (args.trustGhChecks && (args.command === 'issues' || args.command === 'review')) throw new ArgError('--trust-gh-checks は merge か all で使う');
+  if (args.issue !== undefined && (args.command === 'merge' || args.command === 'review' || args.command === 'queue')) throw new ArgError('--issue は issues か all で使う');
+  if (args.pr !== undefined && (args.command === 'issues' || args.command === 'queue')) throw new ArgError('--pr は merge・review・all で使う（queue はラベル「マージ」の付いた PR を見る）');
+  if (args.trustGhChecks && (args.command === 'issues' || args.command === 'review' || args.command === 'queue')) throw new ArgError('--trust-gh-checks は merge か all で使う');
   return args;
 }
 

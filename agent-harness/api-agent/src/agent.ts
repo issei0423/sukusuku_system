@@ -36,16 +36,21 @@ export class AuthError extends Error {}
 export const AGENT_CONFIG_DIR = process.env.SUKUSUKU_AGENT_CONFIG_DIR?.trim() || path.join(HOME_DIR, '.sukusuku-api-agent', 'claude-config');
 
 export const NO_KEY_MESSAGE = [
-  '環境変数 ANTHROPIC_API_KEY がありません。API を呼ぶコマンドは、API キーでだけ動かします（Claude Code の契約のログインでは動かしません）。',
-  '持ち主がすること：Claude Console（https://platform.claude.com/）で API キーを作り、PowerShell で',
-  '  setx ANTHROPIC_API_KEY "<作ったキー>"',
-  'としてから、ターミナルを開き直してください。キーの中身はどこにも書き写さないでください。',
-  'API を呼ばずに選び方だけ見るときは --dry-run を付けます。',
+  'API キー（このプロセスの ANTHROPIC_API_KEY）がありません。API を呼ぶコマンドは、API キーでだけ動かします（Claude Code の契約のログインでは動かしません）。',
+  '持ち主がすること（Windows の PowerShell。agent-harness\\api-agent の中で）：',
+  '  1. Claude Console（https://platform.claude.com/）で API キーを作る',
+  '  2. powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\set-key.ps1   … キーを貼る（画面には出ない）。この Windows のユーザーだけが戻せる形（DPAPI）で ~/.sukusuku-api-agent/anthropic-key.dpapi に置く',
+  '  3. powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\agent.ps1 <コマンド> [オプション]   … キーをこのプロセスの中だけに戻して npm run agent を回す',
+  'setx でユーザー環境変数に置かないでください（ターミナルの Claude Code が契約のログインよりそのキーを先に使い、「Invalid API key」で止まる）。キーの中身はどこにも書き写さないでください。',
+  'API を呼ばずに選び方だけ見るときは --dry-run を付けます。queue はキーが無くても、モデルを呼ばずに動きます。',
 ].join('\n');
+
+/** API キーがあるか（値は見せない） */
+export const hasApiKey = (env: NodeJS.ProcessEnv = process.env): boolean => !!env.ANTHROPIC_API_KEY?.trim();
 
 /** API キーが無ければ止める（キーの値は表示しない） */
 export function requireApiKey(env: NodeJS.ProcessEnv = process.env): void {
-  if (!env.ANTHROPIC_API_KEY?.trim()) throw new AuthError(NO_KEY_MESSAGE);
+  if (!hasApiKey(env)) throw new AuthError(NO_KEY_MESSAGE);
 }
 
 /** API キーより先に効く認証・リポジトリの外の設定を外した env を作る */
