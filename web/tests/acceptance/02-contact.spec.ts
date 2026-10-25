@@ -844,7 +844,7 @@ test.describe('文を送る（段2）', () => {
     const g = await guardianContact(browser, testInfo);
     await expect(gToday(g).getByRole('listitem').filter({ hasText: '砂場でスコップを使って遊びました。' })).toBeVisible();
     const confirm = await cancelTimelineItem(page, '砂場でスコップを使って遊びました。');
-    const m = /いま保護者 (\d+) 家庭（(\d+) 名）が読んでいます。取り消しても、読まれた内容は取り消せません。/.exec(await confirm.innerText());
+    const m = /いま保護者\s*(\d+)\s*家庭（(\d+)\s*名）が読んでいます。\s*取り消しても、読まれた内容は取り消せません。/.exec(await confirm.innerText());
     expect(m, '読んでいる家庭の数の文').not.toBeNull();
     expect(Number(m![1])).toBeGreaterThanOrEqual(1);
     await confirm.getByRole('button', { name: '取り消す' }).click();
