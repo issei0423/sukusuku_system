@@ -62,9 +62,11 @@ export function redact(text: string, env: NodeJS.ProcessEnv = process.env): stri
 
 // ───────────────────────── 実行の記録 ─────────────────────────
 
-export type ItemKind = 'issue' | 'pr' | 'task' | 'review';
+/** main は queue の終わりの、本線の先頭の手元の CI（番号は無い） */
+export type ItemKind = 'issue' | 'pr' | 'task' | 'review' | 'main';
 
-const kindName = (k: ItemKind) => (k === 'issue' ? 'Issue' : k === 'pr' ? 'PR' : k === 'review' ? 'レビュー' : 'task');
+const kindName = (k: ItemKind) => (k === 'issue' ? 'Issue' : k === 'pr' ? 'PR' : k === 'review' ? 'レビュー' : k === 'main' ? '本線' : 'task');
+const numbered = (k: ItemKind) => k !== 'task' && k !== 'main';
 
 export interface ItemRecord {
   kind: ItemKind;
@@ -143,11 +145,11 @@ export class RunLog {
     else {
       lines.push('| 種類 | 番号 | 題 | 結果 | 費用 | URL |', '| :-- | :-- | :-- | :-- | :-- | :-- |');
       for (const it of this.items) {
-        lines.push(`| ${kindName(it.kind)} | ${it.kind === 'task' ? '-' : `#${it.number}`} | ${cell(it.title)} | ${cell(it.outcome)} | ${usd(it.costUsd)} | ${it.url ?? ''} |`);
+        lines.push(`| ${kindName(it.kind)} | ${numbered(it.kind) ? `#${it.number}` : '-'} | ${cell(it.title)} | ${cell(it.outcome)} | ${usd(it.costUsd)} | ${it.url ?? ''} |`);
       }
       lines.push('');
       for (const it of this.items.filter((i) => i.notes.length > 0)) {
-        lines.push(`### ${kindName(it.kind)} ${it.kind === 'task' ? it.title : `#${it.number}`}`, ...it.notes.map((n) => `- ${n}`), '');
+        lines.push(`### ${kindName(it.kind)} ${numbered(it.kind) ? `#${it.number}` : it.title}`, ...it.notes.map((n) => `- ${n}`), '');
       }
     }
     lines.push(`## 飛ばしたもの（${this.skipped.length} 件）`, '');

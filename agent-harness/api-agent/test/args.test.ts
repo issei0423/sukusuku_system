@@ -21,6 +21,8 @@ describe('parseArgs', () => {
       trustGhChecks: false,
       includeDrafts: false,
       force: false,
+      noModel: false,
+      recheckMain: false,
       effort: DEFAULT_EFFORT,
     });
     assert.equal(DEFAULT_EFFORT, 'medium');
@@ -62,6 +64,21 @@ describe('parseArgs', () => {
     assert.equal(a.trustGhChecks, true);
   });
 
+  it('queue の既定と --no-model', () => {
+    const q = parseArgs(['queue']);
+    assert.equal(q.command, 'queue');
+    assert.equal(q.noModel, false);
+    assert.equal(q.dryRun, false);
+    const a = parseArgs(['queue', '--no-model', '--dry-run', '--max-usd', '2', '--effort', 'low']);
+    assert.equal(a.noModel, true);
+    assert.equal(a.dryRun, true);
+    assert.equal(a.maxUsd, 2);
+    assert.equal(a.effort, 'low');
+    assert.equal(a.recheckMain, false);
+    assert.equal(parseArgs(['queue', '--recheck-main']).recheckMain, true);
+    assert.equal(parseArgs(['queue', '--recheck-main', '--dry-run']).dryRun, true);
+  });
+
   it('all は両方のオプションが使える', () => {
     const a = parseArgs(['all', '--issue', '1', '--pr', '2', '--trust-gh-checks']);
     assert.equal(a.command, 'all');
@@ -89,6 +106,17 @@ describe('parseArgs', () => {
     ['issues に --pr', ['issues', '--pr', '3']],
     ['issues に --trust-gh-checks', ['issues', '--trust-gh-checks']],
     ['--dry-run に値', ['issues', '--dry-run=yes']],
+    ['merge に --no-model', ['merge', '--no-model']],
+    ['issues に --no-model', ['issues', '--no-model']],
+    ['all に --no-model', ['all', '--no-model']],
+    ['--no-model に値', ['queue', '--no-model=1']],
+    ['queue に --pr', ['queue', '--pr', '3']],
+    ['queue に --issue', ['queue', '--issue', '3']],
+    ['queue に --trust-gh-checks', ['queue', '--trust-gh-checks']],
+    ['queue に --force', ['queue', '--force']],
+    ['merge に --recheck-main', ['merge', '--recheck-main']],
+    ['all に --recheck-main', ['all', '--recheck-main']],
+    ['--recheck-main に値', ['queue', '--recheck-main=yes']],
   ];
   for (const [name, argv] of bad) {
     it(`止める：${name}（${argv.join(' ')}）`, () => {

@@ -1,12 +1,12 @@
 /**
- * (a) 開いている Issue を古い順に、1件ずつ worktree を作ってエージェントに直させ、PR にする。
+ * (a) 開いている Issue のうちラベル claude の付いたものを古い順に、1件ずつ worktree を作ってエージェントに直させ、PR にする。
  * 選ぶ・worktree を作る・結果を集めるのはコード。直す・閉じる・PR を出すのはエージェント。
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { finalLine, fillTemplate, readPrompt, runAgent, type AgentContext } from './agent.ts';
 import type { Args } from './args.ts';
-import { BASE_BRANCH, MAX_TURNS, QUERY_TIMEOUT_MIN, SCRIPTS_DIR, issueBranch, issueWorktreeName, worktreeRoot } from './config.ts';
+import { BASE_BRANCH, ISSUE_PICK_LABEL, MAX_TURNS, QUERY_TIMEOUT_MIN, SCRIPTS_DIR, issueBranch, issueWorktreeName, worktreeRoot } from './config.ts';
 import { redact, usd, type Budget, type ItemRecord } from './report.ts';
 import { selectIssues } from './select.ts';
 import {
@@ -28,8 +28,11 @@ export async function runIssues(args: Args, budget: Budget, ctx: AgentContext): 
   const [issues, prs] = await Promise.all([listOpenIssues(repoRoot), listOpenPrs(repoRoot)]);
   const sel = selectIssues(issues, prs, { only: args.issue });
   for (const s of sel.skipped) log.skipped.push({ kind: 'issue', ...s });
+  const unlabeledNote = `ラベル「${ISSUE_PICK_LABEL}」の無い ${sel.unlabeled.length} 件は見なかった（拾うのはラベル「${ISSUE_PICK_LABEL}」の Issue だけ。--issue N で指せばラベルが無くても扱う）`;
+  if (sel.unlabeled.length) log.note(unlabeledNote);
 
   console.log(`\n■ Issue：開いている ${issues.length} 件・選んだ ${sel.picked.length} 件・飛ばした ${sel.skipped.length} 件`);
+  if (sel.unlabeled.length) console.log(`  - ${unlabeledNote}`);
   for (const s of sel.skipped) console.log(`  - 飛ばす #${s.number}：${s.reason}`);
   sel.picked.forEach((i, k) => console.log(`  ${k + 1}. #${i.number} ${i.title}`));
 
