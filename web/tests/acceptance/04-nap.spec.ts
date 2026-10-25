@@ -122,6 +122,24 @@ function abnormalsOf(child: string) {
 /** データベースの時刻（YYYY-MM-DDTHH:MM:SS）の「時:分」 */
 const dbHM = (v: string | null | undefined) => (v ?? '').slice(11, 16);
 
+/** 一覧の行の「修正」で開く編集の領域（同じ画面の中に開く。図/画面詳細図 5-2 項目17・5-3 項目12）。理由の欄と「やめる」を持ついちばん内側の領域 */
+function editArea(page: Page): Locator {
+  const main = page.getByRole('main');
+  return main
+    .getByRole('dialog')
+    .or(main.locator('tr, form, section, div, td').filter({ has: page.getByText(/理由/) }).filter({ has: page.getByRole('button', { name: /やめる/ }) }).last());
+}
+
+/** 編集の領域で体位を選ぶ（プルダウンでもラジオボタンでも） */
+async function setPosition(area: Locator, label: string) {
+  const combo = area.getByRole('combobox', { name: /体位/ });
+  if (await combo.count()) await combo.first().selectOption({ label });
+  else await area.getByRole('group', { name: '体位' }).getByText(label, { exact: true }).click();
+}
+
+/** 編集の領域の保存のボタン（「やめる」でないもの） */
+const saveButton = (area: Locator) => area.getByRole('button').filter({ hasNotText: /やめる|閉じる/ }).last();
+
 /** 一時パスワードの職員がパスワードを変え、規約の同意まで済ませる（【村田】【フリー】） */
 async function finishFirstLogin(page: Page, tempPassword: string, newPassword: string) {
   await expect(page.getByRole('heading', { name: 'パスワードの変更' })).toBeVisible();
@@ -146,9 +164,19 @@ async function loginMurata(page: Page) {
   await finishFirstLogin(page, passwordOf('staffTempPassword'), 'Accept-04-Murata-2026');
 }
 
+/** 「ねた」のボタンが出ているか（終わった実施の画面に切り替わったあとは出ない） */
+async function pressSleepVisible(page: Page, child: string): Promise<boolean> {
+  return page.getByRole('button', { name: `${child}のねた`, exact: true }).isVisible();
+}
+
 /** 職員ダッシュボードの「午睡中の園児」の人数 */
 async function sleepingOnDashboard(page: Page): Promise<number> {
-  const text = await page.getByRole('main').getByRole('row').filter({ hasText: '午睡中の園児' }).first().innerText();
+  // ダッシュボードの項目が出るまで待つ。「午睡中の園児」の行が無いときは 0 人として読む（0 人の行を出すかは設計書が決めていない）
+  await expect(page.getByRole('main').getByRole('row').first()).toBeVisible();
+  const row = page.getByRole('main').getByRole('row').filter({ hasText: '午睡中の園児' });
+  if ((await row.count()) === 0) return 0;
+  const text = await row.first().innerText();
+  if (/ありません/.test(text)) return 0; // 0 人のときの画面の書き方（「午睡中の園児 ありません」）
   return Number(/(\d+)\s*名/.exec(text)?.[1] ?? 'NaN');
 }
 
@@ -250,11 +278,16 @@ test.describe('午睡チェック画面：開始と出し分け', () => {
     await dialog.getByRole('combobox', { name: /ロール/ }).selectOption({ label: '一般（保育士）' });
     await dialog.getByRole('combobox', { name: /担当クラス/ }).selectOption({ label: '割り当てない' });
     await dialog.getByRole('button', { name: '発行する' }).click();
-    const issued = page.getByText(/一時パスワード/).last();
-    await expect(issued).toBeVisible();
-    const shown = (await page.getByRole('dialog').or(page.getByRole('main')).first().innerText()).replace(/\s+/g, ' ');
-    const temp = /一時パスワード[^A-Za-z0-9]*([A-Za-z0-9!-~]{8,})/.exec(shown)?.[1];
-    test.skip(!temp, `前提を作れなかった：発行した一時パスワードを画面から読めなかった（${shown.slice(0, 120)}）`);
+    await expect(dialog.getByRole('button', { name: '発行する' })).toHaveCount(0, { timeout: 15_000 }).catch(() => undefined);
+    const dialogs = page.getByRole('dialog').or(page.getByRole('alertdialog'));
+    const shown = ((await dialogs.count()) ? await dialogs.last().innerText() : await page.getByRole('main').innerText()).replace(/\s+/g, ' ');
+    const candidates = [
+      ...[...shown.matchAll(/受入テスト フリー\s*さん[：:]\s*([!-~]{8,})/g)].map((m) => m[1]),
+      ...[...shown.matchAll(/一時パスワード[^A-Za-z0-9]{0,12}([A-Za-z0-9!-~]{8,})/g)].map((m) => m[1]),
+    ].filter((t) => !t.includes('@'));
+    const codeText = (await page.locator('code, kbd, samp, output').allInnerTexts()).map((t) => t.trim()).filter((t) => /^[!-~]{8,}$/.test(t));
+    const temp = candidates[0] ?? codeText[0];
+    test.skip(!temp, `前提を作れなかった：発行した一時パスワードを画面から読めなかった（${shown.slice(0, 300)}）`);
 
     const f = await newWindow(browser);
     await f.page.goto('/staff-top');
@@ -532,6 +565,8 @@ test.describe('午睡チェック画面：ねた・おきた・対象外', () =>
     await login(page, 'staffSakura');
     await freshSession(page);
     const a = await loginIn(browser, 'admin');
+    const dashText = async () => (await a.page.getByRole('main').getByRole('row').filter({ hasText: '午睡中の園児' }).allInnerTexts()).join(' / ').replace(/\s+/g, ' ');
+    await expect.poll(() => sleepingOnDashboard(a.page).catch(() => Number.NaN), { message: `職員ダッシュボードの「午睡中の園児」を読む（行：${await dashText().catch(() => '読めない')}）` }).not.toBeNaN();
     const before = await sleepingOnDashboard(a.page);
     const pressed = new Date();
     const res = await pressSleep(page, '西田 太郎');
@@ -545,7 +580,12 @@ test.describe('午睡チェック画面：ねた・おきた・対象外', () =>
     await expect.soft(page.getByText('保護者が見られる状態です'), '完了の表示（U-02）').toBeVisible();
     await expect.soft(page.getByRole('button', { name: '取り消す', exact: true }), '完了の表示の「取り消す」').toBeVisible();
     expect.soft(await headerText(page), 'クラス全体の状況の「ねた」').toMatch(/ねた\s*1\s*名/);
-    await expect.poll(() => sleepingOnDashboard(a.page), { message: '職員ダッシュボードの「午睡中の園児」が1つ増える' }).toBe(before + 1);
+    const live = await expect.poll(() => sleepingOnDashboard(a.page), { timeout: 10_000 }).toBe(before + 1).then(() => true, () => false);
+    if (!live) {
+      await a.page.reload();
+      const afterReload = await sleepingOnDashboard(a.page);
+      expect.soft(live, `職員ダッシュボードの「午睡中の園児」が読み込み直さずに1つ増える（前 ${before}・読み込み直すと ${afterReload}）`).toBe(true);
+    }
     const sl = sleepsOf('西田 太郎').at(-1);
     expect(sl).toBeTruthy();
     expect.soft(sl?.nap_session_id).toBe(openSession('さくら組')?.nap_session_id);
@@ -752,16 +792,20 @@ test.describe('午睡チェック画面：ねた・おきた・対象外', () =>
     const dlg = page.getByRole('dialog', { name: /遠藤 花子/ });
     await expect(dlg).toBeVisible();
     await pressSleep(a.page, '遠藤 花子');
-    await dlg.getByRole('button', { name: '欠席', exact: true }).click();
-    await expect.soft(page.getByText('「ねた」を記録した園児は対象外にできません。').first()).toBeVisible();
+    const ra = await clickAndWaitNap(page, dlg.getByRole('button', { name: '欠席', exact: true }));
+    const bodyA = await ra.text().catch(() => '');
+    const shownA = await page.getByText(/[「『]ねた[」』]を記録した園児は対象外にできません/).filter({ visible: true }).allInnerTexts();
+    await expect.soft(page.getByText('「ねた」を記録した園児は対象外にできません。').first(), `(a) 画面に文言が出る（応答 ${ra.status()} ${bodyA.slice(0, 160)}。画面に出た近い文：${JSON.stringify(shownA)}）`).toBeVisible();
     expect.soft(sqlAll("SELECT 1 FROM t_nap_exclusion WHERE child_id = ? AND is_deleted = 0", childId('遠藤 花子')).length, '花子は対象外にならない').toBe(0);
     await page.keyboard.press('Escape');
     // (b) 対象外になった子に、古い画面から「ねた」
     await page.reload();
     await expect(endButton(page)).toBeVisible();
     await exclude(a.page, '久保田 陸', '欠席');
-    await page.getByRole('button', { name: '久保田 陸のねた', exact: true }).click();
-    await expect.soft(page.getByText('この園児は対象外になっています。戻してから押してください。').first()).toBeVisible();
+    const rb = await pressSleep(page, '久保田 陸');
+    const bodyB = await rb.text().catch(() => '');
+    const shownB = await page.getByText(/対象外になっています/).filter({ visible: true }).allInnerTexts();
+    await expect.soft(page.getByText('この園児は対象外になっています。戻してから押してください。').first(), `(b) 画面に文言が出る（応答 ${rb.status()} ${bodyB.slice(0, 160)}。画面に出た近い文：${JSON.stringify(shownB)}）`).toBeVisible();
     expect.soft(sleepsOf('久保田 陸').filter((r) => !r.is_deleted).length, '陸のねたは記録されない').toBe(0);
     await page.unroute('**/api/events**');
     await page.reload();
@@ -846,11 +890,16 @@ test.describe('午睡チェック画面：終了・担当交代・ログアウ�
     await choose(row, '呼吸', 'あり');
     await choose(row, '顔色', '通常');
     const r1 = await clickAndWaitNap(page, recordButton(row));
+    const b1 = await r1.text().catch(() => '');
     expect.soft(r1.ok(), '確認は保存されない').toBe(false);
-    await expect.soft(page.getByText(msg).first()).toBeVisible();
-    const r2 = await pressSleep(page, '久保田 陸');
-    expect.soft(r2.ok(), '「ねた」は記録されない').toBe(false);
-    await expect.soft(page.getByText(msg).first()).toBeVisible();
+    const alerts1 = await page.getByRole('alert').filter({ visible: true }).allInnerTexts();
+    await expect.soft(page.getByText(msg).first(), `確認：文言が出る（応答 ${r1.status()} ${b1.slice(0, 160)}。画面の警告：${JSON.stringify(alerts1)}）`).toBeVisible();
+    if (await pressSleepVisible(page, '久保田 陸')) {
+      const r2 = await pressSleep(page, '久保田 陸');
+      const b2 = await r2.text().catch(() => '');
+      expect.soft(r2.ok(), '「ねた」は記録されない').toBe(false);
+      await expect.soft(page.getByText(msg).first(), `ねた：文言が出る（応答 ${r2.status()} ${b2.slice(0, 160)}）`).toBeVisible();
+    }
     const sid = sessionsOf('さくら組', jstToday()).at(-1)?.nap_session_id ?? 0;
     expect.soft(recordsOf('西田 太郎', sid).length).toBe(0);
     expect.soft(sleepsOf('久保田 陸').filter((r) => r.nap_session_id === sid).length).toBe(0);
@@ -970,9 +1019,11 @@ test.describe('午睡チェック画面：つながり・時刻', () => {
     const timerBefore = await headerText(page);
     await page.context().setOffline(true);
     await page.getByRole('button', { name: '久保田 陸のねた', exact: true }).click();
-    await expect.soft(page.getByText('サーバにつながりません。記録は保存されていません').first(), '上端の警告').toBeVisible({ timeout: 20_000 });
-    const again = page.getByRole('button', { name: /もう一度送る/ });
-    await expect.soft(again.first()).toBeVisible();
+    await expect.soft(page.getByText(/サーバにつながりません。?記録は保存されていません/).first(), '警告の文').toBeVisible({ timeout: 20_000 });
+    const tops = await page.getByText(/サーバにつながりません/).evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.height > 0).map((r) => ({ y: r.y, h: r.height })));
+    expect.soft(tops.some((r) => r.y < 160 && r.h >= 24), `画面の上端に大きく出す（出ている位置と高さ：${JSON.stringify(tops)}）`).toBe(true);
+    const again = page.getByRole('button', { name: /もう一度送る/ }).or(page.getByText('もう一度送る', { exact: true }));
+    await expect.soft(again.first(), '「もう一度送る」').toBeVisible();
     await expect.soft(napRow(page, '久保田 陸'), '行の状態は変わらない').not.toContainText(/\d{1,2}:\d{2}\s*ねた/);
     await page.waitForTimeout(30_000);
     expect.soft(await headerText(page), 'タイマーの残り時間は減り続ける').not.toBe(timerBefore);
@@ -1084,6 +1135,7 @@ test.describe('異常時記録画面', () => {
     await recordAbnormal(page, '村田 美咲', '受入テスト 04-031 状況', '受入テスト 04-031 対応');
     const b = await loginIn(browser, 'admin2');
     await b.page.goto('/staff/nap/abnormal');
+    await expect(abnormalRow(b.page, '受入テスト 04-031 状況')).toHaveCount(1);
     const confirmBtn = abnormalRow(b.page, '受入テスト 04-031 状況').getByRole('button', { name: /確認した/ });
     test.skip((await confirmBtn.count()) === 0, notImplemented('異常時記録画面に、管理者の「確認した」が無い'));
     const a = await loginIn(browser, 'admin');
@@ -1187,9 +1239,12 @@ test.describe('異常時記録画面', () => {
     const sameRange = page.getByRole('main').getByRole('row').filter({ hasText: '受入テスト 04-034 状況' });
     await expect.soft(sameRange.first(), '検索画面の「同じ期間の異常時の記録」に行が出る').toBeVisible();
     if (await sameRange.count()) {
-      await sameRange.first().getByRole('link').or(sameRange.first().getByRole('button')).first().click().catch(() => sameRange.first().click());
-      await expect.soft(page.getByRole('heading', { name: /異常時の記録/ }).first(), '異常時記録画面へ移る').toBeVisible();
-      await page.goBack();
+      // 行の中の移る口（リンクかボタン）を押す。無ければ行そのものを押す
+      const go = sameRange.first().getByRole('link').or(sameRange.first().getByRole('button'));
+      if (await go.count()) await go.first().click();
+      else await sameRange.first().click();
+      await expect.soft(page.getByRole('heading', { name: '異常時の記録', exact: true }), '異常時記録画面へ移る').toBeVisible({ timeout: 5_000 });
+      if (!page.url().includes('/nap/search')) await page.goBack();
     }
     await page.getByRole('main').getByRole('link', { name: /午睡チェックへ/ }).click();
     await expect.soft(endButton(page)).toBeVisible();
@@ -1204,18 +1259,19 @@ test.describe('異常時記録画面', () => {
     await page.goto('/staff/nap/abnormal');
     await recordAbnormal(page, '村田 美咲', '受入テスト 04-035 状況', '受入テスト 04-035 対応');
     const row = abnormalRow(page, '受入テスト 04-035 状況');
+    await expect(row).toHaveCount(1);
     const fixBtn = row.getByRole('button', { name: /修正/ });
     test.skip((await fixBtn.count()) === 0, notImplemented('異常時記録画面の一覧に「修正」が無い'));
     const ab0 = abnormalsOf('村田 美咲').at(-1)!;
     await fixBtn.click();
-    const area = page.getByRole('dialog').first();
+    const area = editArea(page);
     await expect(area).toBeVisible();
     const foundInput = area.getByLabel(/発見時刻/);
     const earlier = jstIso(new Date(Date.parse(`${ab0.found_at}+09:00`) - 60_000)).slice(0, 16);
     await foundInput.fill(earlier);
     await area.getByLabel(/状況/).fill('受入テスト 04-035 直した状況');
     await area.getByLabel(/理由/).fill('受入テスト 04-035 書き間違い');
-    const res = await clickAndWaitNap(page, area.getByRole('button', { name: /保存|直す|修正する/ }).first());
+    const res = await clickAndWaitNap(page, saveButton(area));
     expect(res.ok(), '一般（担任）がその日のうちに直せる').toBe(true);
     const row2 = abnormalRow(page, '受入テスト 04-035 直した状況');
     await expect.soft(row2).toContainText('修正あり');
@@ -1239,10 +1295,10 @@ test.describe('異常時記録画面', () => {
     await expect.soft(aBtn, '管理者には出る').toBeVisible();
     if (await aBtn.count()) {
       await aBtn.click();
-      const aa = a.page.getByRole('dialog').first();
+      const aa = editArea(a.page);
       await aa.getByLabel(/状況/).fill('受入テスト 04-035 管理者が直した');
       await aa.getByLabel(/理由/).fill('受入テスト 04-035 管理者');
-      const r2 = await clickAndWaitNap(a.page, aa.getByRole('button', { name: /保存|直す|修正する/ }).first());
+      const r2 = await clickAndWaitNap(a.page, saveButton(aa));
       expect.soft(r2.ok(), '管理者は直せる').toBe(true);
     }
     await evidence(page, '04-035');
@@ -1389,7 +1445,8 @@ test.describe('異常時記録画面', () => {
       await main.getByRole('radiogroup', { name: '保護者への連絡' }).getByText('した', { exact: true }).click();
       const when = main.getByLabel(/日時/);
       test.skip((await when.count()) === 0, notImplemented('「した」のときの日時・手段・相手の欄が無い'));
-      await when.first().fill(jstIso(new Date(Date.now() - 2 * 60_000)).slice(0, 16));
+      // 連絡した日時は発見時刻と同じにする（未来でない、発見より前でない値。相手の欄だけを確かめるため）
+      await when.first().fill(await main.getByRole('textbox', { name: /発見時刻/ }).inputValue());
       await main.getByLabel(/手段/).first().selectOption({ label: '電話' });
       const person = main.getByLabel(/相手/).first();
       await person.fill(c.person);
@@ -1421,15 +1478,16 @@ test.describe('異常時記録画面', () => {
     await freshSession(page);
     await page.goto('/staff/nap/abnormal');
     await recordAbnormal(page, '村田 美咲', '04-I018 状況', '04-I018 対応');
+    await expect(abnormalRow(page, '04-I018 状況')).toHaveCount(1);
     const fixBtn = abnormalRow(page, '04-I018 状況').getByRole('button', { name: /修正/ });
     test.skip((await fixBtn.count()) === 0, notImplemented('異常時記録画面の一覧に「修正」が無い'));
     await page.waitForTimeout(125_000);
     const ab0 = abnormalsOf('村田 美咲').at(-1)!;
     await fixBtn.click();
-    const area = page.getByRole('dialog').first();
+    const area = editArea(page);
     await area.getByLabel(/発見時刻/).fill(jstIso(new Date(Date.parse(`${ab0.recorded_at}+09:00`) + 60_000)).slice(0, 16));
     await area.getByLabel(/理由/).fill('04-I018 理由');
-    await area.getByRole('button', { name: /保存|直す|修正する/ }).first().click();
+    await saveButton(area).click();
     await page.waitForTimeout(1200);
     const ab1 = abnormalsOf('村田 美咲').at(-1)!;
     expect.soft(ab1.found_at, '保存されない').toBe(ab0.found_at);
@@ -1506,16 +1564,27 @@ test.describe('午睡チェック画面：入力チェック', () => {
       await choose(row, '体位', '仰向け');
       await choose(row, '呼吸', 'あり');
       await choose(row, '顔色', '通常');
-      await enterTemperature(page, row, child, c.value);
-      const prompt = page.getByText(/範囲外|確認してください|誤りがないか/).filter({ visible: true });
-      if (c.inRange) {
-        await expect.soft(prompt, '範囲の中の値なので確認を促さない').toHaveCount(0);
-      } else {
-        await expect.soft(prompt.first(), '確認を促す表示が出る').toBeVisible();
-        const ok = page.getByRole('dialog').getByRole('button', { name: /このまま|記録する|はい|OK/ });
-        if (await ok.count()) await ok.first().click();
-      }
+      // 一覧（35〜40℃）に無い値なので「範囲外の値を入力」から入れる。確認を促す表示は、入れたときと「設定」のあとの両方で見る
+      await row.getByRole('button', { name: new RegExp(`${child}の体温`) }).click();
+      const picker = page.getByRole('dialog', { name: `${child}の体温` });
+      await picker.getByRole('button', { name: '範囲外の値を入力' }).click();
+      await picker.getByRole('spinbutton').fill(c.value);
+      const promptRe = /範囲外です|範囲の外です|の外です|確認してください|誤りがないか|誤りがなければ/;
+      const shownWhileTyping = await page.getByText(promptRe).filter({ visible: true }).count();
+      await picker.getByRole('button', { name: '設定' }).click();
+      await page.waitForTimeout(500);
+      const shownAfterSet = await page.getByText(promptRe).filter({ visible: true }).count();
+      // 「記録する」を押す。確認を促す表示が出たら、それに従ってもう一度押す（妨げないこと）
       await clickAndWaitNap(page, recordButton(row)).catch(() => null);
+      await page.waitForTimeout(500);
+      const shownOnRecord = await page.getByText(promptRe).filter({ visible: true }).count();
+      const prompted = shownWhileTyping + shownAfterSet + shownOnRecord;
+      if (c.inRange) {
+        expect.soft(prompted, '範囲の中の値なので確認を促さない').toBe(0);
+      } else {
+        expect.soft(prompted, '確認を促す表示が出る').toBeGreaterThan(0);
+        if (recordsOf(child).length === 0 && (await recordButton(row).isEnabled())) await clickAndWaitNap(page, recordButton(row)).catch(() => null);
+      }
       expect.soft(recordsOf(child).at(-1)?.temperature, '保存される（妨げない）').toBe(Number(c.value));
       await expectNoJudgment(row, `${c.value} の行`);
       await evidence(page, c.no);
@@ -1637,7 +1706,7 @@ test.describe('午睡記録検索画面', () => {
     for (const h of ['日付', 'チェック時刻', '園児', 'クラス', '体位', '呼吸', '顔色', '体温', '記録者', '保存時刻']) expect.soft(headers, `列「${h}」`).toContain(h);
     expect.soft(headers.join(' '), '修正ありの印の列').toMatch(/修正/);
     const taro = table.getByRole('row').filter({ hasText: '西田 太郎' });
-    await expect.soft(taro.filter({ hasText: '37.0' }).first(), '太郎の確認（37.0）').toBeVisible();
+    await expect.soft(taro.filter({ has: a.page.getByRole('cell', { name: /^37(\.0)?℃?$/ }) }).first(), '太郎の確認（37.0）').toBeVisible();
     await expect.soft(taro.filter({ hasText: /ねた|入眠/ }).first(), '太郎の入眠（ねた）').toBeVisible();
     await expect.soft(taro.filter({ hasText: /おきた|起床/ }).first(), '太郎の起床（おきた）').toBeVisible();
     await expect.soft(table.getByRole('row').filter({ hasText: '村田 美咲' }).filter({ hasText: '欠席' }).first(), '美咲の対象外と理由').toBeVisible();
@@ -1700,11 +1769,11 @@ test.describe('午睡記録検索画面', () => {
     const fixBtn = line.getByRole('button', { name: /修正/ });
     test.skip((await fixBtn.count()) === 0, notImplemented('午睡記録検索画面の行に「修正」が無い'));
     await fixBtn.click();
-    const area = page.getByRole('dialog').first();
+    const area = editArea(page);
     await expect(area).toBeVisible();
-    await area.getByRole('group', { name: '体位' }).getByText('左向き', { exact: true }).click().catch(async () => area.getByLabel(/体位/).selectOption({ label: '左向き' }));
+    await setPosition(area, '左向き');
     await area.getByLabel(/理由/).fill('受入テスト 04-042 選び間違い');
-    const res = await clickAndWaitNap(page, area.getByRole('button', { name: /保存|直す|修正する/ }).first());
+    const res = await clickAndWaitNap(page, saveButton(area));
     expect(res.ok(), '保存できる').toBe(true);
     const fixed = page.getByRole('main').getByRole('row').filter({ hasText: '西田 太郎' }).filter({ hasText: dbHM(rec0.checked_at) }).first();
     await expect.soft(fixed).toContainText('左向き');
@@ -1725,6 +1794,12 @@ test.describe('午睡記録検索画面', () => {
   /* 【次の版】典拠：要件定義書「記録時刻の扱いと改ざん防止」(4-5)、基本設計書「記録の修正と改ざん防止」(4-8)・「権限と利用可能機能」(6-1)、図/画面詳細図「午睡記録検索画面」(5-3) 項目12 */
   test('04-043 一般が直せない行', async ({ page, browser }) => {
     await login(page, 'staffSakura');
+    // 前提：前の日の記録（陸の確認を1件記録した実施を終え、【SQL】(W2) で実施の日を前の日にする）
+    await freshSession(page);
+    await recordCheck(page, '久保田 陸');
+    const prevSession = openSession('さくら組')!.nap_session_id;
+    await endIfRunning(page);
+    sqlRun("UPDATE t_nap_session SET session_date = date(session_date, '-1 day') WHERE nap_session_id = ?", prevSession);
     await freshSession(page);
     await recordCheck(page, '西田 太郎');
     await recordCheck(page, '村田 美咲');
@@ -1755,10 +1830,10 @@ test.describe('午睡記録検索画面', () => {
     expect.soft(await a.page.getByRole('main').getByRole('row').filter({ hasText: new RegExp(`0?${ydisp}`) }).getByRole('button', { name: /修正/ }).count(), '管理者には前の日の行にも「修正」').toBeGreaterThan(0);
     if (await am.count()) {
       await am.click();
-      const area = a.page.getByRole('dialog').first();
-      await area.getByRole('group', { name: '体位' }).getByText('右向き', { exact: true }).click().catch(() => undefined);
+      const area = editArea(a.page);
+      await setPosition(area, '右向き');
       await area.getByLabel(/理由/).fill('受入テスト 04-043 管理者');
-      const r = await clickAndWaitNap(a.page, area.getByRole('button', { name: /保存|直す|修正する/ }).first());
+      const r = await clickAndWaitNap(a.page, saveButton(area));
       expect.soft(r.ok(), '管理者は直して保存できる').toBe(true);
     }
     await evidence(page, '04-043');
@@ -1785,10 +1860,10 @@ test.describe('午睡記録検索画面', () => {
     const fixBtn = page.getByRole('main').getByRole('row').filter({ hasText: dbHM(rec0.checked_at) }).filter({ hasText: '仰向け' }).first().getByRole('button', { name: /修正/ });
     if (await fixBtn.count()) {
       await fixBtn.click();
-      const area = page.getByRole('dialog').first();
-      await area.getByRole('group', { name: '体位' }).getByText('左向き', { exact: true }).click().catch(() => undefined);
+      const area = editArea(page);
+      await setPosition(area, '左向き');
       await area.getByLabel(/理由/).fill('受入テスト 04-044 修正');
-      await clickAndWaitNap(page, area.getByRole('button', { name: /保存|直す|修正する/ }).first()).catch(() => null);
+      await clickAndWaitNap(page, saveButton(area)).catch(() => null);
     }
     const a = await loginIn(browser, 'admin');
     await openSearch(a.page);
@@ -1841,12 +1916,12 @@ test.describe('午睡記録検索画面', () => {
       const fixBtn = page.getByRole('main').getByRole('row').filter({ hasText: dbHM(rec0.checked_at) }).filter({ hasText: '仰向け' }).first().getByRole('button', { name: /修正/ });
       test.skip((await fixBtn.count()) === 0, notImplemented('午睡記録検索画面の行に「修正」が無い'));
       await fixBtn.click();
-      const area = page.getByRole('dialog').first();
-      await area.getByRole('group', { name: '体位' }).getByText('左向き', { exact: true }).click().catch(() => undefined);
+      const area = editArea(page);
+      await setPosition(area, '左向き');
       const reason = area.getByLabel(/理由/);
       await reason.fill(c.reason);
       const typed = (await reason.inputValue()).length;
-      const save = area.getByRole('button', { name: /保存|直す|修正する/ }).first();
+      const save = saveButton(area);
       if (await save.isEnabled()) {
         await save.click();
         await page.waitForTimeout(1200);
@@ -1864,14 +1939,16 @@ test.describe('午睡記録検索画面', () => {
     await login(page, 'staffSakura');
     await openSearch(page);
     const main = page.getByRole('main');
-    const before = await main.getByRole('table').first().innerText();
+    const records = main.getByRole('table').filter({ has: page.getByRole('columnheader', { name: 'チェック時刻' }) });
+    await expect(records.getByRole('row').nth(1)).toBeVisible();
+    const before = await records.innerText();
     const today = jstToday();
     await main.getByRole('textbox', { name: /期間（開始）/ }).fill(today);
     await main.getByRole('textbox', { name: /期間（終了）/ }).fill(shiftDate(today, -1));
     await main.getByRole('button', { name: '絞り込む' }).click();
     await page.waitForTimeout(1200);
     await expect.soft(page.getByRole('alert').or(main.getByText(/開始|終了|期間/).filter({ hasText: /前|後|以前|より/ })).first(), '誤りを示す').toBeVisible();
-    expect.soft(await main.getByRole('table').first().innerText(), '一覧は前の条件のまま').toBe(before);
+    expect.soft(await records.innerText(), '一覧は前の条件のまま').toBe(before);
     await evidence(page, '04-I022');
   });
 });
