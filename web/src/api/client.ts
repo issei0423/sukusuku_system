@@ -7,6 +7,8 @@
  *
  * どちらを使うかは環境変数 VITE_API で決める。既定は http。
  * テスト（web/tests/）は vitest.config.ts で mock に固定している。
+ * VITE_API が mock でないビルドでは、vite.config.ts が下の './mock' を noMock.ts へ向ける。
+ * デモのパスワードやログインIDを、公開する成果物（dist/）へ入れないため。
  *
  * 画面は必ず本ファイル経由で読み込む。実装の切り替えを画面側に持ち込まないため。
  */

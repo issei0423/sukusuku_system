@@ -22,6 +22,10 @@
 - `src/api/http.ts` … Go サーバへ問い合わせる（既定）
 - `src/api/mock.ts` … ブラウザ内のデモデータを読み書きする
 
+`VITE_API` が `mock` でないビルド（`npm run build`）には、モックとデモデータを入れない。
+`vite.config.ts` が `mock.ts` の読み込みを `src/api/noMock.ts` へ向け、書き出した `dist/` に
+`mockDb.ts` のアカウントのパスワードやログインIDが残っていたらビルドを落とす。
+
 2つの実装が返す形は `src/api/shapes.ts` が定義する。片方だけが違う形を返すと画面が壊れるため、
 形の定義は1か所に置いている。
 
