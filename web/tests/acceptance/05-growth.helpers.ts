@@ -650,7 +650,8 @@ export async function answerPhysicalChecks(page: Page, opts: { acceptRange?: boo
   for (let i = 0; i < 4; i++) {
     const again = main(page).getByRole('button', { name: 'このまま登録する' });
     const dlg = page.getByRole('dialog');
-    const done = toast(page, /登録しました/);
+    // 上書きを承諾したときの結果の文は「…を上書きしました」（T13 の試しの回で、「登録しました」だけを待って結果の文を見逃した）
+    const done = toast(page, /登録しました|上書きしました/);
     await expect(again.or(dlg).or(done)).toBeVisible({ timeout: 8_000 }).catch(() => {});
     if (await dlg.isVisible()) {
       const title = ((await dlg.getByRole('heading').first().textContent().catch(() => '')) ?? '').trim();
@@ -679,7 +680,7 @@ export async function answerPhysicalChecks(page: Page, opts: { acceptRange?: boo
     }
     break;
   }
-  await expect(toast(page, /登録しました/)).toBeVisible({ timeout: 8_000 }).catch(() => {});
+  await expect(toast(page, /登録しました|上書きしました/)).toBeVisible({ timeout: 8_000 }).catch(() => {});
   return seen;
 }
 

@@ -8,9 +8,21 @@
  *
  * 期待する結果はここに書かない（spec に書く）。共有のファイル（harness.ts など）は変えない。
  */
+import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import type { APIRequestContext, Browser, BrowserContext, Page } from '@playwright/test';
 import { ACCOUNTS, expect, passwordOf, serverInfo, type AccountKey } from './harness';
+
+/**
+ * ケースで作るアカウントのパスワード。文字はシートにも spec にも書かない（テスト仕様書の決まり「パスワードの文字はシートにも spec にも書かない」）。
+ * 印（ケースNo など）から毎回同じ値を作るので、同じ回の中で、登録したあとにログインし直せる。
+ * 英小文字と数字だけ（基本設計書「パスワードの要件」(6-3)：8文字以上、文字種の組み合わせは求めない）。長さの境界を試すときは length を渡す
+ */
+export function casePassword(tag: string, length = 16): string {
+  let out = '';
+  for (let i = 0; out.length < length; i++) out += createHash('sha256').update(`acceptance:${tag}:${i}`).digest('hex');
+  return out.slice(0, length);
+}
 
 /** Playwright の playwright フィクスチャのうち、ここで使うところ */
 export interface RequestFactory {
@@ -286,7 +298,7 @@ export async function makeGuardian(page: Page, api: APIRequestContext, caseNo: s
   await createChild(api, { id: childId, name: childName, className: options.className, birth: options.birth });
   const code = await issueCode(api, childId);
   const email = `g${digits.toLowerCase()}@example.jp`;
-  const password = `ukeire-${digits.toLowerCase()}-pw`;
+  const password = casePassword(`guardian:${caseNo}${options.childSuffix ?? ''}`);
   await signupScreen(page, { code, name: `受入 保護者 ${caseNo}`, email, password });
   return { childId, childName, email, password, code };
 }
@@ -304,7 +316,7 @@ export async function makeStaffIssued(api: APIRequestContext, caseNo: string, op
   const digits = caseNo.replace(/[^0-9I]/g, '') + (options.suffix ?? '');
   const spec: StaffSpec = { id: `S${digits}`, name: `受入 職員 ${caseNo}${options.suffix ?? ''}`, email: `s${digits.toLowerCase()}@hoiku.example.jp`, className: options.className };
   const tempPassword = await issueStaff(api, spec);
-  return { staffId: spec.id, name: spec.name, email: spec.email, tempPassword, password: `ukeire-${digits.toLowerCase()}-pw` };
+  return { staffId: spec.id, name: spec.name, email: spec.email, tempPassword, password: casePassword(`staff:${caseNo}${options.suffix ?? ''}`) };
 }
 
 /** 職員の初回ログイン：一時パスワードでログイン → パスワードを変える → 規約に同意 → 職員ダッシュボード */

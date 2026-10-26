@@ -929,9 +929,12 @@ test.describe('午睡チェック画面：終了・担当交代・ログアウ�
     const sl = sleepsOf('西田 太郎').at(-1)!;
     await expect.poll(async () => {
       await page.reload();
+      // 読み込み直した直後は、まだボタンが描かれていない（T13 の試しの回で、解除されて「開始する」が出ていたのに、描かれる前に見て偽になっていた）
+      await expect(startButton(page).or(endButton(page)).first()).toBeVisible({ timeout: 15_000 });
       return startButton(page).isVisible();
     }, { timeout: 5 * 60_000, intervals: [20_000], message: '時間帯の終わりを過ぎると実施が解除される' }).toBe(true);
-    await expect.soft(napMain(page), '自動で終了した旨').toContainText(/自動/);
+    // 「自動」だけだと、いつも出ている注記「実施中は自動ログアウトの対象外です」に当たってしまう（T13 の見直し）。文言は設計書が決めていないので、自動で終わった（解除した）ことを示す文かだけを見る
+    await expect.soft(napMain(page), '自動で終了した旨').toContainText(/自動[^。]{0,10}(終了|解除|終わ)/);
     await expect.soft(napMain(page), '太郎の行は「H:MM ねた（おきたが未記録）」').toContainText(/ねた（おきたが未記録）/);
     const r = await page.getByRole('button', { name: '村田 美咲のねた', exact: true }).count();
     expect.soft(r, '終わった実施へは記録できない（ボタンが出ない）').toBe(0);

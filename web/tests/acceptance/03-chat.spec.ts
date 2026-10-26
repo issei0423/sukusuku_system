@@ -365,10 +365,16 @@ test.describe('送受信と参照範囲', () => {
     const m1 = '受入テスト 03-010 先の保護者の相談';
     const m2 = '受入テスト 03-010 先の保護者への返事';
     const m3 = '受入テスト 03-010 登録のあと';
+    // 投稿と保護者の参加が同じ秒に重なると、境（参加した時点・保護者がまだいなかった間）が回によって分かれうる（推測）。
+    // ケースが見たいのは境の秒ではないので、それぞれの間を1秒あける（期待は変えない。T13）
+    const gap = () => new Promise((r) => setTimeout(r, 1_100));
     await H.post(staff, room, m0);
+    await gap();
     const a = await H.signUp(playwright, await H.issueCode(admin, H.KAKUU.id), '010a');
+    await gap();
     await H.post(await H.apiLoginAs(playwright, a.email, a.password, 'guardian'), room, m1);
     await H.post(staff, room, m2);
+    await gap();
     const b = await H.signUp(playwright, await H.issueCode(admin, H.KAKUU.id), '010b');
 
     const gB = await H.openAsNew(browser, testInfo, b);
@@ -1287,11 +1293,15 @@ test.describe('グループ編成', () => {
     await login(page, 'staffSakura');
     const name = '受入テスト 03-036';
     await H.createGroup(page, name, ['久保田 和也', '鈴木 浩之']);
+    // 加わった時刻・外した時刻と投稿の時刻が同じ秒に重なると、所属していた間かどうかの境が回によって分かれうる（推測。T8 の回で結果が分かれた）。
+    // ケースが見たいのは境の秒ではなく「所属していた間の投稿」なので、操作の間を1秒あける（期待は変えない）
+    await page.waitForTimeout(1_100);
     await H.staffChat(page);
     await H.openChannel(page, name);
     const m1 = '受入テスト 03-036 外す前';
     await H.sendUi(page, m1);
     await expect(H.msgText(page, m1)).toBeVisible();
+    await page.waitForTimeout(1_100);
 
     await H.staffGroups(page);
     await page.getByRole('main').getByRole('row').filter({ hasText: name }).getByRole('button', { name: 'メンバーを編成' }).click();
@@ -1299,6 +1309,7 @@ test.describe('グループ編成', () => {
     await area.getByRole('checkbox', { name: /^久保田 和也/ }).uncheck();
     await area.getByRole('button', { name: /^(保存する|保存)$/ }).click();
     await expect(area).toBeHidden();
+    await page.waitForTimeout(1_100);
     await H.staffChat(page);
     await H.openChannel(page, name);
     const m2 = '受入テスト 03-036 外したあと';

@@ -17,6 +17,7 @@ import type { Page } from '@playwright/test';
 import { ACCOUNTS, PHONE, evidence, expect, gotoTop, jstToday, login, passwordOf, test } from './harness';
 import {
   adminApi,
+  casePassword,
   checkAllConsents,
   createChild,
   fillSignup,
@@ -420,8 +421,8 @@ test.describe('サーバA（通常）：一時パスワードとパスワード�
     await loginWith(page, 'guardian', g.email, temp);
     await expect(page.getByRole('heading', { name: 'パスワードの変更' }), '② パスワード変更画面（強制）').toBeVisible();
     await page.getByLabel(/現在のパスワード/).fill(temp);
-    await page.getByRole('textbox', { name: /^新しいパスワード\s*必須$/ }).fill('ukeire-01019-px');
-    await page.getByLabel(/新しいパスワード（確認）/).fill('ukeire-01019-px');
+    await page.getByRole('textbox', { name: /^新しいパスワード\s*必須$/ }).fill(casePassword('01-019-new'));
+    await page.getByLabel(/新しいパスワード（確認）/).fill(casePassword('01-019-new'));
     await page.getByRole('button', { name: '変更する' }).click();
     await expect.soft(todayRegion(page, g.childName), '③ 利用規約同意画面を通らずに保護者ホーム').toBeVisible();
     await evidence(page, '01-019');
@@ -435,14 +436,14 @@ test.describe('サーバA（通常）：一時パスワードとパスワード�
     await expect.soft(page.getByText('8文字以上。文字の種類の組み合わせは問わない'), '① 条件を入力の前に示す').toBeVisible();
     await expect.soft(page.getByRole('main').getByText(/一時パスワード/), '② 強制のときの案内を出さない').toHaveCount(0);
     await page.getByLabel(/現在のパスワード/).fill(s.password);
-    await page.getByRole('textbox', { name: /^新しいパスワード\s*必須$/ }).fill('ukeire-01020-px');
-    await page.getByLabel(/新しいパスワード（確認）/).fill('ukeire-01020-px');
+    await page.getByRole('textbox', { name: /^新しいパスワード\s*必須$/ }).fill(casePassword('01-020-new'));
+    await page.getByLabel(/新しいパスワード（確認）/).fill(casePassword('01-020-new'));
     await page.getByRole('button', { name: '変更する' }).click();
     await expect.soft(page.getByRole('heading', { name: 'パスワードの変更' }), '③ 同じ画面に留まる').toBeVisible();
     await expect.soft(page.getByText(/変更しました|変えました/).first(), '③ 変更した旨').toBeVisible();
     await evidence(page, '01-020');
     await logoutStaff(page);
-    await loginWith(page, 'staff', s.email, 'ukeire-01020-px');
+    await loginWith(page, 'staff', s.email, casePassword('01-020-new'));
     await expect.soft(page.getByRole('heading', { name: 'ダッシュボード', level: 1 }), '④ 新しいパスワードでログインできる').toBeVisible();
     // 保護者（メニューから）
     const w = await newWindow(browser, { viewport: PHONE });
@@ -451,12 +452,12 @@ test.describe('サーバA（通常）：一時パスワードとパスワード�
     await w.page.getByRole('dialog', { name: 'メニュー' }).getByRole('link', { name: 'パスワードの変更' }).click();
     await expect.soft(w.page.getByText('8文字以上。文字の種類の組み合わせは問わない'), '① 保護者').toBeVisible();
     await w.page.getByLabel(/現在のパスワード/).fill(g.password);
-    await w.page.getByRole('textbox', { name: /^新しいパスワード\s*必須$/ }).fill('ukeire-g01020-px');
-    await w.page.getByLabel(/新しいパスワード（確認）/).fill('ukeire-g01020-px');
+    await w.page.getByRole('textbox', { name: /^新しいパスワード\s*必須$/ }).fill(casePassword('01-020-guardian-new'));
+    await w.page.getByLabel(/新しいパスワード（確認）/).fill(casePassword('01-020-guardian-new'));
     await w.page.getByRole('button', { name: '変更する' }).click();
     await expect.soft(w.page.getByRole('heading', { name: 'パスワードの変更' }), '③ 保護者').toBeVisible();
     await logoutGuardian(w.page);
-    await loginWith(w.page, 'guardian', g.email, 'ukeire-g01020-px');
+    await loginWith(w.page, 'guardian', g.email, casePassword('01-020-guardian-new'));
     await expect.soft(todayRegion(w.page, g.childName), '④ 保護者').toBeVisible();
     await w.context.close();
   });
@@ -470,8 +471,8 @@ test.describe('サーバA（通常）：一時パスワードとパスワード�
     await expect(b.page.getByRole('heading', { name: 'ダッシュボード', level: 1 }), '① B も同時にログインできる').toBeVisible();
     await page.goto('/staff/password');
     await page.getByLabel(/現在のパスワード/).fill(s.password);
-    await page.getByRole('textbox', { name: /^新しいパスワード\s*必須$/ }).fill('ukeire-01021-px');
-    await page.getByLabel(/新しいパスワード（確認）/).fill('ukeire-01021-px');
+    await page.getByRole('textbox', { name: /^新しいパスワード\s*必須$/ }).fill(casePassword('01-021-new'));
+    await page.getByLabel(/新しいパスワード（確認）/).fill(casePassword('01-021-new'));
     await page.getByRole('button', { name: '変更する' }).click();
     await page.waitForTimeout(1000);
     await b.page.goto('/staff');
@@ -568,19 +569,30 @@ test.describe('サーバA（通常）：新規登録', () => {
     const terms = page.getByRole('checkbox', { name: /利用規約に同意/ });
     const privacy = page.getByRole('checkbox', { name: /プライバシーポリシーに同意/ });
     const email = page.getByLabel(/メールアドレス/);
+    // 「操作できない」は、無い・見えない・押せない（入れられない）のどれでもよい（T13 の見直し：toBeDisabled だけだと、部品を出さない作りを NG と取り違える）
+    const sexp = expect.configure({ soft: true });
+    const notOperable = (target: typeof terms, message: string) =>
+      sexp.poll(async () => (await target.count()) === 0 || !(await target.first().isVisible()) || !(await target.first().isEnabled()), { message, timeout: 5_000 }).toBe(true);
     // ①
-    await expect.soft(page.getByRole('textbox', { name: /招待コード/ })).toBeEnabled();
-    await expect.soft(terms, '① 規約の同意は操作できない').toBeDisabled();
-    await expect.soft(email, '① アカウント情報は操作できない').toBeDisabled();
+    await expect.soft(page.getByRole('textbox', { name: /招待コード/ }), '① 招待コードを入れられる').toBeEnabled();
+    // 「コードを確認する」は、コードを入れるまで押せない作りでもよい（操作できないものとして挙がっていないことを見る）
+    await expect.soft(page.getByRole('button', { name: 'コードを確認する' }), '① 「コードを確認する」がある').toBeVisible();
+    await expect.soft(page.getByRole('button', { name: '戻る' }).or(page.getByRole('link', { name: '戻る' })).first(), '① 戻る（2-3 項目1）').toBeVisible();
+    await notOperable(terms, '① 規約の同意は操作できない');
+    await notOperable(email, '① アカウント情報は操作できない');
     // ②
     await page.getByRole('textbox', { name: /招待コード/ }).fill(code);
     await page.getByRole('button', { name: 'コードを確認する' }).click();
     await expect(terms).toBeEnabled();
     await expect.soft(privacy, '② プライバシーポリシーの同意（2-3 項目13）').toBeVisible();
+    // ② 規約の本文が2つ（利用規約とプライバシーポリシー。2-3 項目4・12）。同意のチェックの文字を除いて、両方の名前が本文の側に出ているかを見る（T13 の見直しで足した）
+    const bodyText = (await page.getByRole('main').innerText()).replace(/利用規約に同意します|プライバシーポリシーに同意します/g, '');
+    expect.soft(bodyText, '② 利用規約の本文（2-3 項目4）').toMatch(/利用規約/);
+    expect.soft(bodyText, '② プライバシーポリシーの本文（2-3 項目12）').toMatch(/プライバシーポリシー/);
     await expect.soft(page.getByRole('main'), '② 園児名を出さない').not.toContainText('受入 01-025');
     // ③
     await terms.check();
-    await expect.soft(email, '③ 片方だけではアカウント情報を操作できない').toBeDisabled();
+    await notOperable(email, '③ 片方だけではアカウント情報を操作できない');
     // ④
     if (await privacy.count()) await privacy.check();
     await expect.soft(email, '④ 両方で操作できる').toBeEnabled();
@@ -594,7 +606,7 @@ test.describe('サーバA（通常）：新規登録', () => {
     const api = await adminApi(playwright);
     await createChild(api, { id: 'C01026', name: '受入 01-026' });
     const code = await issueCode(api, 'C01026');
-    await signupScreen(page, { code, name: '受入 保護者 01-026', email: 'g01026@example.jp', password: 'ukeire-01026-pw', phone: '090-0000-1026' });
+    await signupScreen(page, { code, name: '受入 保護者 01-026', email: 'g01026@example.jp', password: casePassword('01-026'), phone: '090-0000-1026' });
     await expect.soft(todayRegion(page, '受入 01-026'), '① 保護者ホーム').toBeVisible();
     await expect.soft(page.getByText(/ホーム画面に追加/).first(), '② 初めての案内').toBeVisible();
     await evidence(page, '01-026');
@@ -606,7 +618,7 @@ test.describe('サーバA（通常）：新規登録', () => {
     await a.context.close();
     // ④
     await logoutGuardian(page);
-    await loginWith(page, 'guardian', 'g01026@example.jp', 'ukeire-01026-pw');
+    await loginWith(page, 'guardian', 'g01026@example.jp', casePassword('01-026'));
     await expect.soft(todayRegion(page, '受入 01-026'), '④ ログインできる').toBeVisible();
   });
 
@@ -615,9 +627,9 @@ test.describe('サーバA（通常）：新規登録', () => {
     const api = await adminApi(playwright);
     await createChild(api, { id: 'C01027', name: '受入 01-027' });
     const code = await issueCode(api, 'C01027');
-    await fillSignup(page, { code, name: '受入 保護者 01-027a', email: 'g01027a@example.jp', password: 'ukeire-01027-pw' });
+    await fillSignup(page, { code, name: '受入 保護者 01-027a', email: 'g01027a@example.jp', password: casePassword('01-027') });
     const b = await newWindow(browser, { viewport: PHONE });
-    await signupScreen(b.page, { code, name: '受入 保護者 01-027b', email: 'g01027b@example.jp', password: 'ukeire-01027-pw' });
+    await signupScreen(b.page, { code, name: '受入 保護者 01-027b', email: 'g01027b@example.jp', password: casePassword('01-027') });
     await b.context.close();
     await page.getByRole('button', { name: '登録する' }).click();
     await expect.soft(page.getByText(MSG.codeUsed), '① 登録できない').toBeVisible();
@@ -632,8 +644,8 @@ test.describe('サーバA（通常）：新規登録', () => {
     await createChild(api, { id: 'C01028', name: '受入 01-028' });
     const code = await issueCode(api, 'C01028');
     const b = await newWindow(browser, { viewport: PHONE });
-    await fillSignup(page, { code, name: '受入 保護者 01-028a', email: 'g01028a@example.jp', password: 'ukeire-01028-pw' });
-    await fillSignup(b.page, { code, name: '受入 保護者 01-028b', email: 'g01028b@example.jp', password: 'ukeire-01028-pw' });
+    await fillSignup(page, { code, name: '受入 保護者 01-028a', email: 'g01028a@example.jp', password: casePassword('01-028') });
+    await fillSignup(b.page, { code, name: '受入 保護者 01-028b', email: 'g01028b@example.jp', password: casePassword('01-028') });
     await Promise.all([page.getByRole('button', { name: '登録する' }).click(), b.page.getByRole('button', { name: '登録する' }).click()]);
     await page.waitForTimeout(2500);
     const done = [page, b.page].filter((p) => new URL(p.url()).pathname.startsWith('/guardian'));
@@ -652,7 +664,7 @@ test.describe('サーバA（通常）：新規登録', () => {
     await createChild(api, { id: 'C01029', name: '受入 01-029' });
     const code = await issueCode(api, 'C01029');
     const tagged = '<b>受入01-029</b><script>alert(1)</script>';
-    await signupScreen(page, { code, name: tagged, email: 'g01029@example.jp', password: 'ukeire-01029-pw' });
+    await signupScreen(page, { code, name: tagged, email: 'g01029@example.jp', password: casePassword('01-029') });
     const a = await newWindow(browser);
     const dialogs: string[] = [];
     a.page.on('dialog', async (d) => {
@@ -692,7 +704,7 @@ test.describe('サーバA（通常）：新規登録', () => {
     const api = await adminApi(playwright);
     await createChild(api, { id: 'C01031', name: '受入 01-031' });
     const code = await issueCode(api, 'C01031');
-    await fillSignup(page, { code, name: '受入 保護者 01-031', email: 'g01031@example.jp', password: 'ukeire-01031-pw' });
+    await fillSignup(page, { code, name: '受入 保護者 01-031', email: 'g01031@example.jp', password: casePassword('01-031') });
     await page.getByRole('button', { name: '登録する' }).dblclick();
     await page.waitForTimeout(2500);
     expect.soft((await guardianAccountsByEmail(api, 'g01031@example.jp')).length, '① 1件だけ').toBe(1);
@@ -906,7 +918,7 @@ test.describe('サーバA（通常）：ログイン中・ログアウト・記�
     await makeStaff(page, api, '01-041');
     await page.getByRole('navigation').getByRole('link', { name: 'パスワードの変更' }).click();
     const field = page.getByRole('textbox', { name: /^新しいパスワード\s*必須$/ });
-    await field.fill('ukeire-01041-px');
+    await field.fill(casePassword('01-041-new'));
     // 確認はブラウザの confirm か、画面の中のダイアログのどちらか
     let nativeConfirm = false;
     let answer: 'dismiss' | 'accept' = 'dismiss';
@@ -921,7 +933,7 @@ test.describe('サーバA（通常）：ログイン中・ログアウト・記�
     expect(shown, '① 破棄される旨の確認が出る').toBe(true);
     await evidence(page, '01-041');
     if (!nativeConfirm) await inPage.first().getByRole('button', { name: /やめる|キャンセル|戻る/ }).click();
-    await expect.soft(field, '② 入れた値が残る').toHaveValue('ukeire-01041-px');
+    await expect.soft(field, '② 入れた値が残る').toHaveValue(casePassword('01-041-new'));
     answer = 'accept';
     await page.getByRole('banner').getByRole('button', { name: 'ログアウト', exact: true }).click();
     if (!nativeConfirm) await page.getByRole('alertdialog').or(page.getByRole('dialog')).first().getByRole('button', { name: /ログアウト/ }).click();
@@ -996,6 +1008,133 @@ test.describe('サーバA（通常）：ログイン中・ログアウト・記�
 });
 
 // ======================================================================
+// サーバA（通常）：保護者のメニューのダイアログ（通知の設定・AI の下書きの利用）。T13 で足した
+//   テスト仕様書 第2.0版「テスト対象」(1.5) で、シート01 で確かめるとしているダイアログ（sheet-01.md に無かった）
+// ======================================================================
+test.describe('サーバA（通常）：保護者のメニューのダイアログ', () => {
+  test.use({ viewport: PHONE });
+
+  /** 保護者のメニューを開く */
+  async function openMenu(page: Page) {
+    await page.getByRole('banner').getByRole('button', { name: /メニュー/ }).click();
+    const menu = page.getByRole('dialog', { name: 'メニュー' });
+    await expect(menu.getByRole('button', { name: 'ログアウト', exact: true })).toBeVisible();
+    return menu;
+  }
+  function menuItem(menu: ReturnType<Page['getByRole']>, name: string) {
+    return menu.getByRole('button', { name, exact: true }).or(menu.getByRole('link', { name, exact: true }));
+  }
+  /** 管理者が設定画面の AI の区画で「AI の下書きを使う」を選んで保存する（図/画面詳細図「設定画面」(7-10)。02-018 と同じ操作） */
+  async function setAi(browser: import('@playwright/test').Browser, label: '使う' | '使わない') {
+    const a = await newWindow(browser);
+    await login(a.page, 'admin');
+    await a.page.goto('/staff/admin/settings');
+    const group = a.page.getByRole('group', { name: 'AI の下書きを使う' });
+    await expect(group.getByRole('radio', { checked: true }), 'いまの値を読み込むまで待つ').toHaveCount(1);
+    await group.getByText(label, { exact: true }).click();
+    const save = a.page.getByRole('button', { name: '保存する' });
+    // いまの値と同じなら「保存する」は押せない（変えるものが無い）。そのときは保存しない
+    if (await save.isEnabled()) {
+      await save.click();
+      const confirm = a.page.getByRole('dialog', { name: '設定を保存しますか' });
+      await expect(confirm).toBeVisible();
+      await confirm.getByRole('button', { name: '保存する' }).click();
+      await expect(confirm).toBeHidden();
+    }
+    await a.context.close();
+  }
+
+  // 典拠：図/画面詳細図「保護者（スマートフォン）」(1-2) 項目17・「通知の設定（保護者のメニュー）」(1-3 (9))、
+  //   詳細設計書「保護者のメニュー」(2-15) の (1)・(5)（【要決定】Web Push を作るか。作らないあいだはメニューに置かない）
+  test('01-051 通知の設定のダイアログ', async ({ page }) => {
+    await login(page, 'guardian');
+    const menu = await openMenu(page);
+    const item = menuItem(menu, '通知の設定');
+    if ((await item.count()) === 0) {
+      await evidence(page, '01-051');
+      test.skip(true, '【要決定】Web Push を作るか（要決定事項「決めてもらうこと」(1-3)）。作らないあいだはメニューに置かない設計（詳細設計書「保護者のメニュー」(2-15) の (5)）で、メニューに「通知の設定」が無い');
+    }
+    await item.first().click();
+    const dlg = page.getByRole('dialog', { name: /通知の設定/ });
+    await expect(dlg).toBeVisible();
+    // Web Push は購読しない（テスト仕様書の決まり「外へ出さない」）。「この端末で通知を受け取る」は押さずに、出ていることだけを見る
+    await expect.soft(dlg.getByRole('button', { name: /この端末で通知を受け取る|受け取らない/ }).first(), '項目1 この端末で通知を受け取る').toBeVisible();
+    await expect.soft(dlg.getByRole('checkbox', { name: /きょうのようす/ }).first(), '項目2 きょうのようすの1件ずつは初期値オフ').not.toBeChecked();
+    for (const name of ['園からのひとこと', 'チャット', '成長の記録', '配布物']) {
+      await expect.soft(dlg.getByRole('checkbox', { name: new RegExp(name) }).first(), `項目2 ${name} は初期値オン`).toBeChecked();
+    }
+    await expect.soft(dlg, '項目4 知らせの文面').toContainText('すくすく：新しいお知らせがあります');
+    await expect.soft(dlg, '項目4 緊急の連絡は電話で行う').toContainText(/電話/);
+    await evidence(page, '01-051');
+  });
+
+  // 典拠：図/画面詳細図「保護者（スマートフォン）」(1-2) 項目18・「AI の下書きの利用（保護者のメニュー）」(1-3 (10)) の注記（園が AI を有効にしていないときは置かない）、
+  //   詳細設計書「保護者のメニュー」(2-15) の (1)
+  test('01-052 AI の下書きの利用（園が AI を使わないとき）', async ({ page, browser }) => {
+    await setAi(browser, '使わない');
+    await login(page, 'guardian');
+    const menu = await openMenu(page);
+    await expect(menuItem(menu, 'AI の下書きの利用'), 'メニューに「AI の下書きの利用」を置かない').toHaveCount(0);
+    await evidence(page, '01-052');
+  });
+
+  // 典拠：要件定義書「文章の下書き（AI）」(4-1-8) の守り・「品質要求一覧」(7-1 No.10)、基本設計書「園の有効化と保護者の拒否」(4-11)・「使えないとき（AI 無しで動くこと）」(4-11)、
+  //   図/画面詳細図「AI の下書きの利用（保護者のメニュー）」(1-3 (10)) 項目1・2、詳細設計書「保護者のメニュー」(2-15) の (4)・「本書で足す文言」(4-1 (6))・
+  //   「AI の下書きの利用」(4-15 (3))。サーバに ANTHROPIC_API_KEY を渡していないので、AI は動かない（ハーネス）。動かないことと、届けるのを止めないことを見る
+  test('01-053 AI の下書きの利用（園が AI を使うとき）', async ({ page, browser }) => {
+    const child = ACCOUNTS.guardian.children[0].name; // 西田 太郎
+    const body = '受入 01-053 AI を使わない家庭へのひとこと';
+    await setAi(browser, '使う');
+    await login(page, 'guardian');
+    const menu = await openMenu(page);
+    const item = menuItem(menu, 'AI の下書きの利用');
+    await expect(item, '① メニューに「AI の下書きの利用」').toBeVisible();
+    await item.first().click();
+    const dlg = page.getByRole('dialog', { name: /AI の下書きの利用/ });
+    await expect(dlg).toBeVisible();
+    await expect.soft(dlg, '② 説明：送らないもの').toContainText('お子さまの名前・体温・写真・「家庭から」に書いた内容は送りません。');
+    await expect.soft(dlg, '② 説明：断っても届き方は変わらない').toContainText('使わないを選んでも、連絡帳の届き方は変わりません。');
+    const box = dlg.getByRole('checkbox', { name: `${child}の文に AI の下書きを使わない` });
+    await expect(box, '③ 園児ごとのチェックボックス').toBeVisible();
+    await expect.soft(box, '③ 初期値はオフ').not.toBeChecked();
+    // 押すと保存してから表示を変える作りのため、check() ではなく click() で押して、付くまで待つ
+    await box.click();
+    await expect.soft(page.getByText(`${child}さんの文に AI の下書きを使いません。`).first(), '④ 切り替えの結果').toBeVisible();
+    await expect.soft(box, '④ チェックが付く').toBeChecked();
+    await evidence(page, '01-053');
+
+    // ⑤ 職員の画面：AI は動かず（ボタンが出ず、AI の経路へ何も送らない）、ひとことは届く
+    const s = await newWindow(browser);
+    const aiPosts: string[] = [];
+    s.page.on('request', (r) => {
+      if (r.method() === 'POST' && new URL(r.url()).pathname.startsWith('/api/ai/')) aiPosts.push(r.url());
+    });
+    await login(s.page, 'staffSakura');
+    await s.page.getByRole('navigation', { name: '職員メニュー' }).getByRole('link', { name: '連絡帳', exact: true }).click();
+    await s.page.getByRole('row', { name: new RegExp(`^${child}`) }).getByRole('link', { name: child, exact: true }).click();
+    await expect(s.page.getByRole('heading', { name: child, level: 1 })).toBeVisible();
+    await expect.soft(s.page.getByRole('main').getByRole('button', { name: /AI|下書き|言い換え|続きの候補/ }), '⑤ AI のボタンが出ない').toHaveCount(0);
+    const side = s.page.getByRole('complementary', { name: '記録する' });
+    await side.getByRole('textbox', { name: '活動のひとこと' }).fill(body);
+    await side.getByRole('button', { name: 'ひとことを送る' }).click();
+    await expect.soft(s.page.getByRole('status').filter({ hasText: '送りました。保護者が見られる状態です。' }).first(), '⑤ 送れる').toBeVisible();
+    expect.soft(aiPosts, '⑤ AI の経路へ何も送らない').toEqual([]);
+    await s.context.close();
+    await page.keyboard.press('Escape');
+    await page.goto('/guardian');
+    await page.getByRole('link', { name: '連絡帳を開く' }).first().click();
+    await expect.soft(page.getByRole('region', { name: /^(きょう|この日)のようす$/ }).getByRole('listitem').filter({ hasText: body }), '⑤ 保護者に届く').toBeVisible();
+
+    // ⑥ 外す
+    await page.goto('/guardian');
+    await menuItem(await openMenu(page), 'AI の下書きの利用').first().click();
+    await expect.soft(box, '⑥ 次に開いたときは、使わないにしたまま').toBeChecked();
+    await box.click();
+    await expect.soft(page.getByText('使わない設定を外しました。').first(), '⑥ 外した結果').toBeVisible();
+  });
+});
+
+// ======================================================================
 // サーバA（通常）：入力チェック
 // ======================================================================
 test.describe('サーバA（通常）：入力チェック（新規登録・パスワード・お子さまの追加）', () => {
@@ -1007,7 +1146,7 @@ test.describe('サーバA（通常）：入力チェック（新規登録・パ�
     const digits = caseNo.replace(/[^0-9I]/g, '');
     await createChild(api, { id: `C${digits}`, name: `受入 ${caseNo}` });
     const code = await issueCode(api, `C${digits}`);
-    const pw = fields.password ?? `ukeire-${digits.toLowerCase()}-pw`;
+    const pw = fields.password ?? casePassword(caseNo);
     await fillSignup(page, { code, name: fields.name ?? `受入 保護者 ${caseNo}`, email: fields.email ?? `g${digits.toLowerCase()}@example.jp`, password: pw, relationship: fields.relationship });
     if (fields.confirm !== undefined) await page.getByLabel(/パスワード（確認）/).fill(fields.confirm);
     const button = page.getByRole('button', { name: '登録する' });
@@ -1102,7 +1241,7 @@ test.describe('サーバA（通常）：入力チェック（新規登録・パ�
       const id = `C01I008x${i}`;
       await createChild(api, { id, name: `受入 01-I008x${i}` });
       const code = await issueCode(api, id);
-      await fillSignup(page, { code, name: '受入 保護者 01-I008x', email, password: 'ukeire-I008-px' });
+      await fillSignup(page, { code, name: '受入 保護者 01-I008x', email, password: casePassword('01-I008x') });
       await page.getByRole('button', { name: '登録する' }).click();
       await expect.soft(page.getByText(MSG.emailTaken), email).toBeVisible();
       const a = await newWindow(browser);
@@ -1137,7 +1276,7 @@ test.describe('サーバA（通常）：入力チェック（新規登録・パ�
     expect(done, '254文字で登録できる').toBe(true);
     await evidence(page, '01-I009');
     await logoutGuardian(page);
-    await loginWith(page, 'guardian', email, 'ukeire-01i009-pw');
+    await loginWith(page, 'guardian', email, casePassword('01-I009'));
     await expect.soft(todayRegion(page, '受入 01-I009'), 'そのメールアドレスでログインできる').toBeVisible();
   });
 
@@ -1148,7 +1287,7 @@ test.describe('サーバA（通常）：入力チェック（新規登録・パ�
     expect(email.length).toBe(255);
     await createChild(api, { id: 'C01I010', name: '受入 01-I010' });
     const code = await issueCode(api, 'C01I010');
-    await fillSignup(page, { code, name: '受入 保護者 01-I010', email, password: 'ukeire-01i010-pw' });
+    await fillSignup(page, { code, name: '受入 保護者 01-I010', email, password: casePassword('01-I010') });
     const typed = await page.getByLabel(/メールアドレス/).inputValue();
     // 入力欄が255文字目を受け付けないときも、255文字で登録されなければよい（sheet-01.md 01-I010 の備考）
     if (typed.length === 255) {
@@ -1163,7 +1302,7 @@ test.describe('サーバA（通常）：入力チェック（新規登録・パ�
   // 典拠：要件定義書「セキュリティ要求」(8 No.11)・基本設計書「入力項目の制約値」(4-12)・同「パスワードの要件」(6-3)
   test('01-I011 パスワード', async ({ page, playwright }) => {
     const api = await adminApi(playwright);
-    const done = await trySignup(page, api, '01-I011', { password: 'ukeire7' });
+    const done = await trySignup(page, api, '01-I011', { password: casePassword('01-I011', 7) });
     expect.soft(done, '7文字では登録しない').toBe(false);
     expect.soft((await guardianAccountsByEmail(api, 'g01i011@example.jp')).length).toBe(0);
     await evidence(page, '01-I011');
@@ -1172,15 +1311,15 @@ test.describe('サーバA（通常）：入力チェック（新規登録・パ�
   // 典拠：基本設計書「入力項目の制約値」(4-12)・同「パスワードの要件」(6-3)
   test('01-I012 パスワード', async ({ page, playwright }) => {
     const api = await adminApi(playwright);
-    const done = await trySignup(page, api, '01-I012', { password: 'ukeire08' });
+    const done = await trySignup(page, api, '01-I012', { password: casePassword('01-I012', 8) });
     expect(done, '8文字で登録できる').toBe(true);
     await logoutGuardian(page);
-    await loginWith(page, 'guardian', 'g01i012@example.jp', 'ukeire08');
+    await loginWith(page, 'guardian', 'g01i012@example.jp', casePassword('01-I012', 8));
     await expect.soft(todayRegion(page, '受入 01-I012')).toBeVisible();
     await evidence(page, '01-I012');
   });
 
-  const pw128 = `ukeire-${'0123456789'.repeat(13)}`.slice(0, 128);
+  const pw128 = casePassword('01-I013', 128);
 
   // 典拠：基本設計書「入力項目の制約値」(4-12)
   test('01-I013 パスワード', async ({ page, playwright }) => {
@@ -1215,7 +1354,7 @@ test.describe('サーバA（通常）：入力チェック（新規登録・パ�
   // 典拠：図/画面詳細図「新規登録画面（保護者）」(2-3) 項目8
   test('01-I016 パスワード（確認）', async ({ page, playwright }) => {
     const api = await adminApi(playwright);
-    const done = await trySignup(page, api, '01-I016', { password: 'ukeire-I016-pw', confirm: 'ukeire-I016-px' });
+    const done = await trySignup(page, api, '01-I016', { password: casePassword('01-I016'), confirm: `${casePassword('01-I016')}x` });
     expect.soft(done, '一致しなければ登録しない').toBe(false);
     expect.soft((await guardianAccountsByEmail(api, 'g01i016@example.jp')).length).toBe(0);
     await evidence(page, '01-I016');
@@ -1237,7 +1376,7 @@ test.describe('サーバA（通常）：入力チェック（新規登録・パ�
     const api = await adminApi(playwright);
     await createChild(api, { id: 'C01I018', name: '受入 01-I018' });
     const code = await issueCode(api, 'C01I018');
-    await fillSignup(page, { code, name: `${name50}あ`, email: 'g01i018@example.jp', password: 'ukeire-01i018-pw' });
+    await fillSignup(page, { code, name: `${name50}あ`, email: 'g01i018@example.jp', password: casePassword('01-I018') });
     const typed = [...(await page.getByLabel(/保護者の氏名/).inputValue())].length;
     if (typed <= 50) {
       // 入力欄が51文字目を受け付けない（基本設計書「入力項目の制約値」(4-12)：保存しようとして初めて弾かれる作りにしない）
@@ -1265,7 +1404,7 @@ test.describe('サーバA（通常）：入力チェック（新規登録・パ�
     const api = await adminApi(playwright);
     await createChild(api, { id: 'C01I020', name: '受入 01-I020' });
     const code = await issueCode(api, 'C01I020');
-    await fillSignup(page, { code, name: '受入 保護者 01-I020', email: 'g01i020@example.jp', password: 'ukeire-I020-pw' });
+    await fillSignup(page, { code, name: '受入 保護者 01-I020', email: 'g01i020@example.jp', password: casePassword('01-I020') });
     const phone = page.getByLabel(/連絡先1/);
     await expect(phone, '連絡先1の欄（2-3 項目14）').toBeVisible();
     await phone.fill('');
@@ -1332,13 +1471,13 @@ test.describe('サーバA（通常）：入力チェック（パスワード変�
     const s = await makeStaff(page, api, '01-I023');
     await page.goto('/staff/password');
     await page.getByLabel(/現在のパスワード/).fill('wrong-current-pw');
-    await page.getByRole('textbox', { name: /^新しいパスワード\s*必須$/ }).fill('ukeire-I023-px');
-    await page.getByLabel(/新しいパスワード（確認）/).fill('ukeire-I023-px');
+    await page.getByRole('textbox', { name: /^新しいパスワード\s*必須$/ }).fill(casePassword('01-I023-new'));
+    await page.getByLabel(/新しいパスワード（確認）/).fill(casePassword('01-I023-new'));
     await page.getByRole('button', { name: '変更する' }).click();
     await page.waitForTimeout(1000);
     await evidence(page, '01-I023');
     await logoutStaff(page);
-    const text = await loginError(page, 'staff', s.email, 'ukeire-I023-px');
+    const text = await loginError(page, 'staff', s.email, casePassword('01-I023-new'));
     expect.soft(text, '新しいパスワードではログインできない').toContain('違います');
     await loginWith(page, 'staff', s.email, s.password);
     await expect.soft(page.getByRole('heading', { name: 'ダッシュボード', level: 1 }), '元のパスワードでログインできる').toBeVisible();

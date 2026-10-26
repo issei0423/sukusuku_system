@@ -460,6 +460,47 @@ test.describe('きょうのようす（段1）', () => {
 });
 
 // =====================================================================
+// 訂正の表示：記録した職員と直した職員が別の人（02-049 の変種。T13 で足した）
+// =====================================================================
+test.describe('訂正の表示（記録した職員と直した職員が別）', () => {
+  /*
+   * 典拠：基本設計書「取り消し・訂正」(4-2)（その日はその園児のクラスの担任、管理者はいつでも。誰が直したかは操作ログに残る）、
+   *   図/画面詳細図「連絡帳（クラス）画面」(8-1) 項目11・「連絡帳（園児）画面」(8-2) 項目6（記録した職員・訂正の有無）・「連絡帳画面（保護者）」(8-3) 項目14 と出さないもの、
+   *   詳細設計書「誰が直したかの表示（職員の応答だけ）」(4-7 (4))（決めたこと D-28：職員の画面に直した職員と時刻を添え、保護者の画面には出さない）
+   */
+  test('02-061 別の職員が直した訂正の表示', async ({ page, browser }, testInfo) => {
+    const ADMIN = ACCOUNTS.admin.name; // 西田 拓也
+    await login(page, 'staffSakura');
+    await openClass(page);
+    const g = await guardianContact(browser, testInfo);
+    await page.getByRole('group', { name: '食事の区分' }).getByRole('button', { name: 'おやつ', exact: true }).click();
+    await page.getByRole('button', { name: `${TARO}のおやつをぜんぶ` }).click();
+    await expect(gToday(g).getByRole('listitem').filter({ hasText: /おやつ\s*ぜんぶ/ })).toBeVisible();
+    // 管理者が、さくら組の連絡帳（クラス）画面で選び直して訂正する（管理者はいつでも直せる）
+    const admin = await openWindow(browser, testInfo, 'admin');
+    await admin.getByRole('navigation', { name: '職員メニュー' }).getByRole('link', { name: '連絡帳', exact: true }).click();
+    await admin.getByRole('combobox', { name: 'クラス' }).selectOption({ label: 'さくら組' });
+    await expect(taroRow(admin)).toBeVisible();
+    await admin.getByRole('group', { name: '食事の区分' }).getByRole('button', { name: 'おやつ', exact: true }).click();
+    await admin.getByRole('button', { name: `${TARO}のおやつを少し` }).click();
+    await expect(admin.getByRole('dialog')).toHaveCount(0);
+    // 保護者：読み込み直さずに訂正が出て、職員の名前は出ない
+    const gItem = gToday(g).getByRole('listitem').filter({ hasText: /おやつ\s*少し/ });
+    await expect(gItem).toContainText(new RegExp(`訂正しました（${T}）`));
+    await expect.soft(gItem, '保護者の画面に直した職員の名前を出さない').not.toContainText(ADMIN);
+    await expect.soft(gItem, '保護者の画面に記録した職員の名前を出さない').not.toContainText(STAFF);
+    // 記録した職員（鈴木 浩之）の連絡帳（園児）画面：記録した職員はそのまま、「訂正しました（時刻 直した職員）」
+    await openChild(page);
+    const sItem = sToday(page).getByRole('listitem').filter({ hasText: /おやつ\s*少し/ });
+    await expect(sItem).toBeVisible();
+    await sItem.scrollIntoViewIfNeeded();
+    await expect.soft(sItem, '記録した職員は鈴木 浩之のまま').toContainText(STAFF);
+    await expect(sItem, '括弧の中に直した職員（西田 拓也）').toContainText(new RegExp(`訂正しました（${T}\\s*${ADMIN}）`));
+    await evidence(page, '02-061');
+  });
+});
+
+// =====================================================================
 // 午睡の「ねた・おきた」（段1）と、届けない監査の層（段3）
 // =====================================================================
 test.describe('午睡（段1・段3）', () => {
@@ -844,7 +885,10 @@ test.describe('文を送る（段2）', () => {
     const g = await guardianContact(browser, testInfo);
     await expect(gToday(g).getByRole('listitem').filter({ hasText: '砂場でスコップを使って遊びました。' })).toBeVisible();
     const confirm = await cancelTimelineItem(page, '砂場でスコップを使って遊びました。');
-    const m = /いま保護者\s*(\d+)\s*家庭（(\d+)\s*名）が読んでいます。\s*取り消しても、読まれた内容は取り消せません。/.exec(await confirm.innerText());
+    // 読んでいる家庭の数は、確認の窓が開いたあとに読み込まれて出る（T13 の試しの回で、開いた直後の文字には無かった）。出るまで待ってから読む
+    const readers = /いま保護者\s*(\d+)\s*家庭（(\d+)\s*名）が読んでいます。\s*取り消しても、読まれた内容は取り消せません。/;
+    await expect(confirm, '読んでいる家庭の数の文').toContainText(readers);
+    const m = readers.exec(await confirm.innerText());
     expect(m, '読んでいる家庭の数の文').not.toBeNull();
     expect(Number(m![1])).toBeGreaterThanOrEqual(1);
     await confirm.getByRole('button', { name: '取り消す' }).click();
