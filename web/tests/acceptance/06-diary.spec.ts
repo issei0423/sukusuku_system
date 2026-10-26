@@ -111,8 +111,12 @@ async function expectNotPressable(page: Page, name: string | RegExp, message: st
   for (let i = 0; i < n; i++) await expect.soft(btn.nth(i), message).toBeDisabled();
 }
 
-/** 読み取り専用で開いていること（記録種別・対象・記録日・雛形・定型文・本文・写真を動かせない） */
-async function expectReadOnly(page: Page) {
+/**
+ * 読み取り専用で開いていること（記録種別・対象・記録日・雛形・定型文・本文・写真を動かせない）。
+ * buttons：'absent' は「下書き保存」「確認へ進む」が無いこと（フリーの職員。図/画面詳細図「職員（タブレット／PC）」(1-1) の注記
+ * 「記録の作成・編集のボタンは出さない」。照合 T14 の判定で T11 の直しを戻した。T15b）、既定は押せない（無いか、押せない）こと
+ */
+async function expectReadOnly(page: Page, buttons: 'absent' | 'notPressable' = 'notPressable') {
   const main = mainOf(page);
   for (const r of await main.getByRole('radio').all()) await expect.soft(r, '記録種別を動かせない').toBeDisabled();
   for (const name of [/^対象の園児/, /^対象のクラス/, /雛形/, /定型文/]) {
@@ -123,6 +127,11 @@ async function expectReadOnly(page: Page) {
   if (await bodyBox(page).count()) await expect.soft(bodyBox(page), '本文を動かせない').toBeDisabled();
   const add = main.getByRole('button', { name: /追加/ });
   if (await add.count()) await expect.soft(add.first(), '写真を足せない').toBeDisabled();
+  if (buttons === 'absent') {
+    await expect.soft(main.getByRole('button', { name: '下書き保存' }), '「下書き保存」が無い').toHaveCount(0);
+    await expect.soft(main.getByRole('button', { name: '確認へ進む' }), '「確認へ進む」が無い').toHaveCount(0);
+    return;
+  }
   await expectNotPressable(page, '下書き保存', '「下書き保存」を押せない');
   await expectNotPressable(page, '確認へ進む', '「確認へ進む」を押せない');
 }
@@ -1874,7 +1883,7 @@ test.describe('参照範囲', () => {
     for (const id of [cls, per, draft]) await expect.soft(listLink(f, id), `日誌 ${id} が出る`).toBeVisible();
     await evidence(f, '06-045');
     await openDiary(f, draft);
-    await expectReadOnly(f);
+    await expectReadOnly(f, 'absent');
     await expect.soft(mainOf(f).getByRole('button', { name: '申請を取り下げる' }), '「申請を取り下げる」が無い').toHaveCount(0);
     expect.soft(lockOf(draft), 'SQL：ロックの行ができない').toHaveLength(0);
   });
@@ -2062,7 +2071,12 @@ async function expectOverLimit(page: Page, box: import('@playwright/test').Locat
 }
 
 /** 誤りの文が出て、保存されない（確認画面へ進まない）こと */
-async function expectRefused(page: Page, message: string | RegExp, notSaved: () => boolean, label: string) {
+/**
+ * 断られることを確かめる（下書き保存で文が出て保存されない。「確認へ進む」を押せれば、その先も見る）。
+ * confirmScreen：'mustNotReach' は確認画面へ進まないこと（既定）。'either' は確認画面へ進むかを問わず、進んだら「申請する」で同じ文が出て
+ * 保存されない（申請中にならない）ことを見る（確認事項は「文が出て保存されない」で、確認画面へ進むかは書いていない。照合 T14 の V58。T15b）
+ */
+async function expectRefused(page: Page, message: string | RegExp, notSaved: () => boolean, label: string, confirmScreen: 'mustNotReach' | 'either' = 'mustNotReach') {
   await saveDraft(page);
   await settle(page, 1200);
   const shown = await page.getByText(message).first().isVisible().catch(() => false);
@@ -2081,12 +2095,14 @@ async function expectRefused(page: Page, message: string | RegExp, notSaved: () 
     await confirm.click();
     await settle(page, 800);
     const reached = (await applyButton(page).count()) > 0;
-    expect.soft(reached, `${label}：確認画面へ進まない`).toBe(false);
+    if (confirmScreen === 'mustNotReach') expect.soft(reached, `${label}：確認画面へ進まない`).toBe(false);
+    else if (!reached) await expect.soft(page.getByText(message).first(), `${label}：「確認へ進む」で誤りの文が出る`).toBeVisible();
     if (reached) {
       await applyButton(page).click();
       await settle(page, 1200);
       const alerts = await page.getByRole('alert').allInnerTexts().catch(() => []);
       note(`${label}：確認画面へ進んだ。「申請する」のあとの表示：${alerts.join('／') || 'なし'}`);
+      if (confirmScreen === 'either') await expect.soft(page.getByText(message).first(), `${label}：「申請する」で誤りの文が出る`).toBeVisible();
       expect.soft(notSaved(), `${label}：申請しても保存されない`).toBe(true);
     }
   }
@@ -2197,7 +2213,7 @@ test.describe('入力チェック（日誌作成・編集画面）', () => {
       return;
     }
     await classSelectOf(page).selectOption({ label: 'ひまわり組' });
-    await expectRefused(page, '対象のクラスは、対象の園児が在籍するクラスを選んでください', () => diariesLike('受入テスト 06-I008').length === 0, '在籍と違うクラス');
+    await expectRefused(page, '対象のクラスは、対象の園児が在籍するクラスを選んでください', () => diariesLike('受入テスト 06-I008').length === 0, '在籍と違うクラス', 'either');
     await evidence(page, '06-I008');
   });
 });
@@ -2300,7 +2316,7 @@ test.describe('入力チェック（ヒヤリハット）', () => {
     await start(page);
     const step = 5 * 60_000;
     await fillIncident(page, { ...base('06-I014'), occurred: jstLocal(new Date(Math.floor(Date.now() / step) * step + step)) });
-    await expectRefused(page, '発生日時に未来の日時は指定できません。', notSavedIncident('06-I014'), '発生日時が未来');
+    await expectRefused(page, '発生日時に未来の日時は指定できません。', notSavedIncident('06-I014'), '発生日時が未来', 'either');
     await evidence(page, '06-I014');
   });
 
@@ -2382,7 +2398,7 @@ test.describe('入力チェック（ヒヤリハット）', () => {
   test('06-I022 状況 見出しだけの行', async ({ page }) => {
     await start(page);
     await fillIncident(page, { ...base('06-I022'), situation: '受入テスト 06-I022 状況\n【状況】' });
-    await expectRefused(page, '「【状況】」「【とった対応】」「【今後の対策】」だけの行は書けません。', notSavedIncident('06-I022'), '見出しだけの行');
+    await expectRefused(page, '「【状況】」「【とった対応】」「【今後の対策】」だけの行は書けません。', notSavedIncident('06-I022'), '見出しだけの行', 'either');
     await evidence(page, '06-I022');
   });
 });

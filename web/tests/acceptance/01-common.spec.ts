@@ -41,6 +41,20 @@ import {
 const LONG = process.env.ACCEPTANCE_LONG === '1';
 const LONG_REASON = '試しの回では回さない（時間の経過を待つため、重いコマンドの鍵を長く持つ）。全体の回で ACCEPTANCE_LONG=1 にして回す';
 
+/*
+ * 実装対象の外（画面詳細図「モックアップでは実装しないもの」(12-1)）。照合（T14）が分けたもの（T15b で直した）。
+ * テスト仕様書の決まり「次の版の機能」：まず回し、画面に機能が無ければ未実施。一部だけが対象の外のケースは、対象の内の確かめだけを残し、
+ * 対象の外の部分は備考（テストの注記）に残す
+ */
+const OUT_121_PRIVACY = '実装対象の外（画面詳細図「モックアップでは実装しないもの」(12-1) の 2-5 項目4・6：プライバシーポリシーの本文と、その同意）';
+const OUT_121_REMEMBER = '実装対象の外（画面詳細図「モックアップでは実装しないもの」(12-1) の 2-1 項目4：「ログイン状態を保持する」のチェックボックスはあるが、値を送っていない）';
+
+/** 確かめなかった部分（実装対象の外）を、テストの注記と回の記録に残す */
+function outOfScope(text: string) {
+  test.info().annotations.push({ type: 'note', description: text });
+  console.log(`[備考 ${test.info().title.slice(0, 7).trim()}] ${text}`);
+}
+
 /** 基本設計書「メッセージ一覧」(4-12) の文言 */
 const MSG = {
   credential: 'IDまたはパスワードが違います。',
@@ -523,6 +537,12 @@ test.describe('サーバA（通常）：規約の再同意', () => {
     const terms = page.getByRole('checkbox', { name: /利用規約に同意/ });
     const privacy = page.getByRole('checkbox', { name: /プライバシーポリシーに同意/ });
     const next = page.getByRole('button', { name: '同意して進む' });
+    await expect(next, '利用規約同意画面が開く').toBeVisible();
+    // このケースは2つの同意がそろうまで進めないことを見る。プライバシーポリシーの同意が画面に無ければ、確かめられない（T15b。照合 T14 の V08）
+    if ((await privacy.count()) === 0) {
+      await page.getByRole('button', { name: '同意せずログアウトする' }).click();
+      test.skip(true, `まず回した：利用規約同意画面に「プライバシーポリシーに同意」のチェックが無い（利用規約の1つだけ）。${OUT_121_PRIVACY}`);
+    }
     await expect(privacy, 'プライバシーポリシーの同意のチェック（2-5 項目6）').toBeVisible();
     // ① 利用規約だけ
     await terms.check();
@@ -541,7 +561,10 @@ test.describe('サーバA（通常）：規約の再同意', () => {
     const main = page.getByRole('main');
     await expect(page.getByRole('button', { name: '同意して進む' }), '① 利用規約同意画面（強制）').toBeVisible();
     await expect.soft(page.getByRole('checkbox', { name: /利用規約に同意/ })).toBeVisible();
-    await expect.soft(page.getByRole('checkbox', { name: /プライバシーポリシーに同意/ }), '① 同意のチェックが2つ').toBeVisible();
+    // ① のうち、プライバシーポリシーの本文と同意（チェックの2つ目）は実装対象の外（T15b。照合 T14 の V08）。画面にあれば確かめる
+    const privacy = page.getByRole('checkbox', { name: /プライバシーポリシーに同意/ });
+    if (await privacy.count()) await expect.soft(privacy, '① 同意のチェックが2つ').toBeVisible();
+    else outOfScope(`① のプライバシーポリシーの本文と同意（チェックの2つ目）は確かめていない：${OUT_121_PRIVACY}`);
     await expect.soft(main, '② 同意を求める画面に版と施行日を出さない').not.toContainText(/施行日[:：]|1\.1\s*版|版[:：]\s*1\.1/);
     await evidence(page, '01-022');
     await checkAllConsents(page);
@@ -973,7 +996,9 @@ test.describe('サーバA（通常）：ログイン中・ログアウト・記�
     const g2 = await reopen(browser, gw.context, PHONE);
     await gw.context.close();
     await g2.page.goto('/guardian');
-    await expect.soft(todayRegion(g2.page, g.childName), '① 保護者は再認証なしで保護者ホーム').toBeVisible();
+    // ① の記憶は実装対象の外（T15b。照合 T14 の V02）。まず回して、記憶されていれば満たし、されていなければ NG にせず備考に残す
+    const remembered = await todayRegion(g2.page, g.childName).waitFor({ timeout: 10_000 }).then(() => true, () => false);
+    if (!remembered) outOfScope(`①（保護者は再認証なしで保護者ホーム）は確かめていない：開き直すとログインを求められた。${OUT_121_REMEMBER}`);
     await g2.context.close();
     // ② 職員（既定のまま）
     const s = await makeStaff(page, api, '01-043');

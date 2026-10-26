@@ -40,6 +40,22 @@ const STAFF = ACCOUNTS.staffSakura.name; // 鈴木 浩之
 /** 午睡に常に添える文（基本設計書「メッセージ一覧」(4-12) の連絡帳） */
 const NAP_NOTE = 'おひるねの間は、決められた間隔で呼吸や体の向きを確かめています。いつもと違うことがあれば、園からお電話します。';
 const T = String.raw`\d{1,2}:\d{2}`;
+
+/**
+ * from から to までの JST の分（H:MM）を並べた正規表現の断片。自分が記録した時刻の行に絞るために使う
+ * （昼に回すと、デモのきょうの記録（09:40 おしっこ など）と同じ種類の行が並ぶため。照合 T14 の V16。T15b）
+ */
+function minutesBetween(from: Date, to: Date): string {
+  const fmt = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const out = new Set<string>();
+  for (let t = Math.floor(from.getTime() / 60_000) * 60_000; t <= to.getTime(); t += 60_000) {
+    const parts = fmt.formatToParts(new Date(t));
+    const h = Number(parts.find((p) => p.type === 'hour')?.value);
+    const m = parts.find((p) => p.type === 'minute')?.value ?? '';
+    out.add(`0?${h}:${m}`);
+  }
+  return `(?:${[...out].join('|')})`;
+}
 /** 判定の言葉（設計原則1。要件定義書「判断を行わないことの担保」(7-1 No.5)） */
 const JUDGE = /平熱より|発熱|熱がある|微熱|高熱|よく眠れ|ぐっすり|順調|元気に/;
 const XSS = `<script>alert('xss')</script><b>太字</b><img src=x onerror=alert(1)>`;
@@ -412,12 +428,15 @@ test.describe('きょうのようす（段1）', () => {
     await login(page, 'staffSakura');
     await openClass(page);
     const g = await guardianContact(browser, testInfo);
+    const pressedAt = new Date();
     await page.getByRole('button', { name: `${TARO}の排せつ おしっこ` }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
     const cell = taroRow(page).getByRole('cell', { name: new RegExp(`${TARO}の排せつ`) });
     await expect(cell).toContainText(/\d+\s*回/);
     await expect(cell).toContainText(new RegExp(`おしっこ\\s*${T}`));
-    await expect(gToday(g).getByRole('listitem').filter({ hasText: new RegExp(`${T}\\s*おしっこ`) })).toBeVisible();
+    // 保護者の画面では、自分が押した時刻の行に絞る（デモのきょうの記録と見分ける。T15b）
+    const mine = minutesBetween(pressedAt, new Date());
+    await expect(gToday(g).getByRole('listitem').filter({ hasText: new RegExp(`${mine}\\s*おしっこ`) })).toBeVisible();
     await evidence(g, '02-009');
   });
 

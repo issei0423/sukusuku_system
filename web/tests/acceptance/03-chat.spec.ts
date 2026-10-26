@@ -9,6 +9,7 @@
  *   - 2つの窓（職員と保護者、職員どうし）は helpers の openAs で開く。相手の窓は再読み込みせずに待つ（LIVE_TIMEOUT）
  *   - 1つのケースの中で独立した確かめは expect.soft で並べ、どこが設計と違うかをまとめて残す
  */
+import { createHash } from 'node:crypto';
 import type { Locator, Page } from '@playwright/test';
 import { ACCOUNTS, PHONE, evidence, expect, jstToday, login, test } from './harness';
 import * as H from './03-chat.helpers';
@@ -35,6 +36,25 @@ const READ_ONLY_NOTICE = 'こちらは園からのお知らせです。返信は
 /** 取り消し・削除の確認（同「取り消し・削除の確認」）。数は 1 家庭（1 名） */
 const READING_ONE = /いま保護者\s*1\s*家庭（\s*1\s*名）が読んでいます。\s*取り消しても、読まれた内容は取り消せません。/;
 const NOT_ALLOWED_POST = 'このチャンネルへは投稿できません';
+
+/**
+ * from から to までの JST の分（HH:MM）を並べた正規表現の断片。自分が記録した時刻の行に絞るために使う
+ * （昼に回すと、デモのきょうの記録（09:40 おしっこ）と同じ種類の行が並ぶため。照合 T14 の V16。T15b）
+ */
+function minutesBetween(from: Date, to: Date): string {
+  const fmt = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const out = new Set<string>();
+  for (let t = Math.floor(from.getTime() / 60_000) * 60_000; t <= to.getTime(); t += 60_000) {
+    const parts = fmt.formatToParts(new Date(t));
+    const h = Number(parts.find((p) => p.type === 'hour')?.value);
+    const m = parts.find((p) => p.type === 'minute')?.value ?? '';
+    out.add(`0?${h}:${m}`);
+  }
+  return `(?:${[...out].join('|')})`;
+}
+
+/** 実装対象の外（画面詳細図「モックアップでは実装しないもの」(12-1)）。照合 T14 が分けたもの（T15b） */
+const OUT_121_GROUP_END = '実装対象の外（画面詳細図「モックアップでは実装しないもの」(12-1) の 4-3 項目4・5：グループの終了、グループ名の変更）';
 
 function messageOf(r: H.ApiResult): string {
   return (r.json as { message?: string } | null)?.message ?? '';
@@ -399,6 +419,90 @@ test.describe('送受信と参照範囲', () => {
     await expect.soft(H.msgText(gA, m3), '先の保護者の窓に再読み込みなしで出る').toBeVisible(LIVE);
     await expect.soft(H.msgText(gB, m3), '後の保護者の窓に再読み込みなしで出る').toBeVisible(LIVE);
     await evidence(gB, '03-010');
+  });
+
+  /*
+   * 03-010 の変種（T15b で足した。照合 T14 の V70・I-4）。先の保護者の登録・先の保護者とのやりとり・後の保護者の登録が同じ秒に入ったとき。
+   * 典拠：基本設計書「メッセージの送受信」(4-7)「登録と同じ秒に送られた個人チャットのメッセージは、後から登録した保護者に見せない」、
+   *       同「チャット」(5-6)（参加の時点以降か、保護者の最も早い参加より前）、ナレッジ/決定事項.md 2026-10-17
+   *       「保護者がまだいない個人チャットに園が書いた分は、後から登録した保護者も読める」、要件定義書「過去ログの参照範囲」(4-4 (c))
+   * 前提の作り方：同じ秒に入れるため、秒の変わり目を待ってから API で続けて行い、入ったことを SQL で確かめる（読むだけ）。
+   * 入らなければ園児を替えて、3回までやり直す。パスワードは印から作る（文字で書かない）
+   */
+  test('03-050 後から加わった保護者には、先の保護者と園のやりとりを見せない（同じ秒に登録したとき）', async ({ browser, playwright }, testInfo) => {
+    test.setTimeout(3 * 60_000);
+    const admin = await H.apiAs(playwright, 'admin');
+    const staff = await H.apiAs(playwright, 'staffSakura');
+    const m0 = '受入テスト 03-050 入園の前のご案内';
+    const m1 = '受入テスト 03-050 先の保護者の相談';
+    const m2 = '受入テスト 03-050 先の保護者への返事';
+    const kids = [H.KAKUU, { id: 'C03K02', name: '架空 二葉', kana: 'かくう ふたば' }, { id: 'C03K03', name: '架空 三咲', kana: 'かくう みさき' }] as const;
+    const secondOf = (v: unknown) => /\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/.exec(String(v ?? ''))?.[0] ?? '';
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const anon = await H.newApi(playwright);
+    const termsJson = JSON.stringify(await (await anon.get('/api/terms')).json());
+    const termsVersion = /"terms_version"\s*:\s*"([^"]+)"/.exec(termsJson)?.[1] ?? '';
+    expect(termsVersion, '前提：規約の版を読める').not.toBe('');
+    /** 新規登録（新規登録画面と同じ経路 POST /api/signup）。登録で始まったセッションの文脈も返す */
+    const signUp = async (code: string, key: string) => {
+      const ctx = await H.newApi(playwright);
+      const g: H.NewGuardian = { email: `t03-${key}@example.jp`, password: createHash('sha256').update(`acceptance:03-050:${key}`).digest('hex').slice(0, 16), name: `受入 保護者 ${key}` };
+      const res = await ctx.post('/api/signup', {
+        data: { code, email: g.email, password: g.password, guardian_name: g.name, relationship: '母', terms_agreed: true, terms_version: termsVersion, phone_number1: '090-0000-0303' },
+      });
+      expect(res.ok(), `前提：保護者 ${key} の新規登録（${res.status()}）`).toBe(true);
+      return { g, ctx };
+    };
+
+    let made: { kid: (typeof kids)[number]; a: H.NewGuardian; b: H.NewGuardian } | null = null;
+    for (const [i, kid] of kids.entries()) {
+      await H.createChild(admin, { ...kid, className: 'さくら組' });
+      const room = await H.roomId({ type: '4', childId: kid.id });
+      await H.post(staff, room, m0);
+      const [codeA, codeB] = [await H.issueCode(admin, kid.id), await H.issueCode(admin, kid.id)];
+      await sleep(1_100); // m0 は、保護者がまだいなかった間（最も早い参加より前の秒）に置く
+      await sleep(1_000 - (Date.now() % 1_000) + 5); // 秒の変わり目
+      const a = await signUp(codeA, `050a${i}`);
+      await H.post(a.ctx, room, m1);
+      await H.post(staff, room, m2);
+      const b = await signUp(codeB, `050b${i}`);
+      const joins = H.sqlAll(
+        `SELECT COALESCE(m.first_joined_at, m.joined_at) AS j FROM t_chat_member m JOIN m_account a ON a.account_id = m.account_id WHERE m.chat_room_id = ? AND a.role = '3'`,
+        room,
+      ).map((r) => secondOf(r.j));
+      const sents = H.sqlAll('SELECT sent_at FROM t_chat_message WHERE chat_room_id = ? AND body IN (?, ?)', room, m1, m2).map((r) => secondOf(r.sent_at));
+      const m0At = secondOf(H.sqlAll('SELECT sent_at FROM t_chat_message WHERE chat_room_id = ? AND body = ?', room, m0)[0]?.sent_at);
+      const seconds = [...joins, ...sents];
+      const same = seconds.length === 4 && new Set(seconds).size === 1 && m0At !== '' && m0At < seconds[0];
+      testInfo.annotations.push({ type: 'note', description: `${i + 1}回目（${kid.name}）：参加と送信の時刻 ${seconds.join('・')}、案内 ${m0At}。${same ? '同じ秒に入った' : '同じ秒に入らなかった'}` });
+      if (same) {
+        made = { kid, a: a.g, b: b.g };
+        break;
+      }
+    }
+    if (!made) test.skip(true, '前提を作れない：先の保護者の登録・2件の送信・後の保護者の登録が、3回とも同じ秒に入らなかった');
+    const { kid, a, b } = made!;
+
+    // 後から加わった保護者（b）
+    const gB = await H.openAsNew(browser, testInfo, b);
+    await H.guardianChat(gB);
+    const btnB = gB.getByRole('main').getByRole('button', { name: /(の園とのやりとり|担任の先生とのやりとり)/ }).first();
+    await expect.soft(btnB, '後から加わった保護者の未読は、保護者がまだいなかった間の1件だけ').toHaveAccessibleName(/\D1\s*$/, SOFT);
+    await H.openGuardianPersonal(gB, kid.name);
+    await expect(H.msgText(gB, m0), '保護者がまだいなかった間の園のメッセージは読める').toBeVisible();
+    await expect.soft(H.msgText(gB, m1), '先の保護者の書いたもの（登録と同じ秒）は出ない').toHaveCount(0);
+    await expect.soft(H.msgText(gB, m2), '先の保護者への園の返事（登録と同じ秒）も出ない').toHaveCount(0);
+    await evidence(gB, '03-050');
+
+    // 先の保護者（a）と職員にはすべて出る
+    const gA = await H.openAsNew(browser, testInfo, a);
+    await H.guardianChat(gA);
+    await H.openGuardianPersonal(gA, kid.name);
+    for (const m of [m0, m1, m2]) await expect.soft(H.msgText(gA, m), `先の保護者にはすべて出る（${m}）`).toBeVisible(SOFT);
+    const s = await H.openAs(browser, testInfo, 'staffSakura');
+    await H.staffChat(s);
+    await H.openChannel(s, `${kid.name}の園とのやりとり`);
+    for (const m of [m0, m1, m2]) await expect.soft(H.msgText(s, m), `職員にはすべて出る（${m}）`).toBeVisible(SOFT);
   });
 });
 
@@ -1135,8 +1239,10 @@ test.describe('取消・削除・誤送信への対応', () => {
   test('03-032 誤送信への対応の記録（連絡帳の取り消し）', async ({ page, browser, playwright }, testInfo) => {
     const staff = await H.apiAs(playwright, 'staffSakura');
     const taroId = H.childIdOf(TARO);
+    const recordedFrom = new Date();
     const ev = await staff.post('/api/contact/events', { data: { items: [{ child_id: taroId, event_type: '2', toilet_label: 'おしっこ' }] } });
     expect(ev.ok(), `前提：排せつを記録する（${ev.status()} ${await ev.text()}）`).toBe(true);
+    const mine = minutesBetween(recordedFrom, new Date());
     const readsBefore = H.sqlCount('SELECT COUNT(*) AS n FROM t_contact_read');
     const g = await H.openAs(browser, testInfo, 'guardian');
     await g.goto(`/guardian/contact/${taroId}`);
@@ -1146,7 +1252,8 @@ test.describe('取消・削除・誤送信への対応', () => {
     await login(page, 'staffSakura');
     await page.goto(`/staff/contact/${taroId}`);
     const today = page.getByRole('region', { name: /^(きょう|この日)のようす（朝から）$/ });
-    await today.getByRole('listitem').filter({ hasText: 'おしっこ' }).getByRole('button', { name: /を直す・取り消す$/ }).click();
+    // 自分が記録した時刻の行の「直す・取り消す」を押す（デモのきょうの記録 09:40 おしっこ と見分ける。T15b）
+    await today.getByRole('button', { name: new RegExp(`^${mine}\\s*おしっこ\\s*を直す・取り消す$`) }).click();
     await page.getByRole('dialog').last().getByRole('button', { name: /取り消す/ }).click();
     const confirm = page.getByRole('dialog').filter({ hasText: '読んでいます' }).last();
     await expect(confirm, '取り消しの確認').toBeVisible();
@@ -1345,6 +1452,11 @@ test.describe('グループ編成', () => {
 
     await H.staffGroups(page);
     const row = page.getByRole('main').getByRole('row').filter({ hasText: name });
+    await expect(row, '作ったグループの行').toBeVisible();
+    // まず回す：グループ編成画面に「終了」が無ければ、実装対象の外として未実施にする（照合 T14 の V28。T15b）
+    if ((await row.getByRole('button', { name: '終了' }).count()) === 0) {
+      test.skip(true, `まず回した：グループ編成画面の行に「終了」が無い。${OUT_121_GROUP_END}`);
+    }
     await row.getByRole('button', { name: '終了' }).click();
     await confirmIfAsked(page, /^(終了する|終了|はい)$/);
     await expect.soft(row.getByRole('button', { name: 'メンバーを編成' }), '終了したグループに「メンバーを編成」は出ない').toHaveCount(0);

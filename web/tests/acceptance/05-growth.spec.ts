@@ -24,6 +24,19 @@ import {
 import type { Browser, Page } from '@playwright/test';
 
 const REASON_U05 = 'デモデータに3歳以上の区分が無く、区分と項目を直す画面も無い（U-05）';
+
+/*
+ * 実装対象の外（画面詳細図「モックアップでは実装しないもの」(12-1)）。照合 T14 が分けたもの（T15b で直した）。
+ * テスト仕様書の決まり「次の版の機能」：まず回し、画面に機能が無ければ未実施。一部だけが対象の外のケースは、対象の内の確かめだけを残す
+ */
+const OUT_121_MASTER = '実装対象の外（画面詳細図「モックアップでは実装しないもの」(12-1) の 6-3 項目2・3：園の推奨（マスタ）の表示と編集）';
+const OUT_121_REASON = '実装対象の外（画面詳細図「モックアップでは実装しないもの」(12-1) の 6-3 項目9：上書きの理由（推奨から変えたときは必須）の入力欄が無い）';
+
+/** 確かめなかった部分（実装対象の外）を、テストの注記と回の記録に残す */
+function outOfScope(text: string) {
+  test.info().annotations.push({ type: 'note', description: text });
+  console.log(`[備考 ${test.info().title.slice(0, 7).trim()}] ${text}`);
+}
 /** 待って確かめる soft の expect（expect.poll を soft で使う） */
 const sexp = expect.configure({ soft: true });
 
@@ -176,9 +189,14 @@ test.describe('シート05 発達チェック・身体測定・成長の記録',
     await main(page).getByRole('link', { name: 'スケジュール設定' }).click();
     await expect(page.getByRole('heading', { name: 'スケジュール設定', level: 1 })).toBeVisible();
     const t = await mainText(page);
-    expect.soft(t, '園の推奨：0〜11か月 90日').toMatch(/0\s*[〜~～-]\s*11\s*か月[^0-9]*90\s*日/);
-    expect.soft(t, '園の推奨：12〜35か月 120日').toMatch(/12\s*[〜~～-]\s*35\s*か月[^0-9]*120\s*日/);
-    expect.soft(t, '園の推奨：36か月〜 180日').toMatch(/36\s*か月\s*[〜~～-]?[^0-9]*180\s*日/);
+    // 園の推奨（マスタ）の表示は実装対象の外（照合 T14 の V43。T15b）。画面に「園の推奨」があれば確かめ、無ければ備考に残す
+    if (/園の推奨/.test(t)) {
+      expect.soft(t, '園の推奨：0〜11か月 90日').toMatch(/0\s*[〜~～-]\s*11\s*か月[^0-9]*90\s*日/);
+      expect.soft(t, '園の推奨：12〜35か月 120日').toMatch(/12\s*[〜~～-]\s*35\s*か月[^0-9]*120\s*日/);
+      expect.soft(t, '園の推奨：36か月〜 180日').toMatch(/36\s*か月\s*[〜~～-]?[^0-9]*180\s*日/);
+    } else {
+      outOfScope(`スケジュール設定画面の園の推奨（0〜11か月 90日・12〜35か月 120日・36か月〜 180日）は確かめていない：${OUT_121_MASTER}`);
+    }
   });
 
   test('05-004 健診の節目を優先', async ({ page, playwright }) => {
@@ -214,7 +232,9 @@ test.describe('シート05 発達チェック・身体測定・成長の記録',
     await expect.soft(row).toContainText(/120\s*日/);
     await expect.soft(row.getByRole('textbox')).toHaveValue(addDays(R, 120));
     await expect.soft(row.getByRole('button', { name: '上書きする' }), '日付を変えるまで押せない').toBeDisabled();
-    await expect.soft(main(page).getByRole('button', { name: 'マスタを編集' }).or(main(page).getByRole('link', { name: 'マスタを編集' })), '「マスタを編集」').toBeVisible();
+    // 「マスタを編集」は実装対象の外（照合 T14 の V43。T15b）。あれば満たし、無ければ備考に残す
+    const editMaster = main(page).getByRole('button', { name: 'マスタを編集' }).or(main(page).getByRole('link', { name: 'マスタを編集' }));
+    if ((await editMaster.count()) === 0) outOfScope(`「マスタを編集」は確かめていない：${OUT_121_MASTER}`);
     await expect.soft(main(page).getByRole('button', { name: /^(保存する|やめる)$/ })).toHaveCount(0);
     await evidence(page, '05-005');
   });
@@ -1733,6 +1753,9 @@ test.describe('シート05 入力チェック', () => {
     const { b, row } = await schedPrep(page, playwright);
     const before = latestSchedule(b.id)?.scheduled_on;
     await row.getByRole('textbox', { name: /次回の予定日/ }).fill(addDays(jstToday(), 10));
+    // まず回す：上書きの理由の欄が無ければ、実装対象の外として未実施にする（照合 T14 の V44。T15b）
+    const reasonBox = row.getByRole('textbox', { name: /理由/ }).or(main(page).getByRole('textbox', { name: /理由/ }));
+    if ((await reasonBox.count()) === 0) test.skip(true, `まず回した：スケジュール設定画面に上書きの理由の欄が無い。${OUT_121_REASON}`);
     await row.getByRole('button', { name: '上書きする' }).click();
     await page.waitForTimeout(1000);
     expect.soft(latestSchedule(b.id)?.scheduled_on, '理由が空なら上書きされない').toBe(before);
@@ -1744,6 +1767,8 @@ test.describe('シート05 入力チェック', () => {
     const before = latestSchedule(b.id)?.scheduled_on;
     await row.getByRole('textbox', { name: /次回の予定日/ }).fill(addDays(jstToday(), 10));
     const reason = row.getByRole('textbox', { name: /理由/ }).or(main(page).getByRole('textbox', { name: /理由/ }));
+    // まず回す：上書きの理由の欄が無ければ、実装対象の外として未実施にする（照合 T14 の V44。T15b）
+    if ((await reason.count()) === 0) test.skip(true, `まず回した：スケジュール設定画面に上書きの理由の欄が無い。${OUT_121_REASON}`);
     await expect.soft(reason.first(), '理由の欄').toBeVisible();
     if (await reason.count()) await reason.first().fill(text('05-I025', 501));
     await row.getByRole('button', { name: '上書きする' }).click();

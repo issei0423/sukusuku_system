@@ -32,6 +32,19 @@ import {
 
 const EVIL = 'http://evil.example';
 
+/*
+ * 実装対象の外（照合 T14 が分けたもの。T15b で直した）。テスト仕様書の決まり「次の版の機能」：まず回し、機能が無い部分は確かめずに備考に残し、
+ * 対象の内の確かめだけで OK か NG を付ける
+ */
+const OUT_121_PRIVACY = '実装対象の外（画面詳細図「モックアップでは実装しないもの」(12-1) の 2-5 項目4・6：プライバシーポリシーの本文と、その同意。規約は利用規約の1文書だけ）';
+const OUT_CLASS_NOTES = '実装対象の外（詳細設計書「本版で詳しくする範囲」(1-2) でクラスのようすは要点（次の版）。経路 POST /api/contact/class-notes が無い（404）。404 は権限の穴ではない）';
+
+/** 確かめなかった部分（実装対象の外）を、テストの注記と回の記録に残す */
+function outOfScope(text: string) {
+  test.info().annotations.push({ type: 'note', description: text });
+  console.log(`[備考 ${test.info().title.slice(0, 7).trim()}] ${text}`);
+}
+
 interface Person {
   email: string;
   password: string;
@@ -302,8 +315,14 @@ test.describe('不正アクセス', () => {
     const body0 = (await terms.json().catch(() => null)) as unknown;
     const docs = (Array.isArray(body0) ? body0 : [body0]).flatMap((d) => (d && typeof d === 'object' && 'documents' in d ? (d as { documents: unknown[] }).documents : [d])) as { document_type?: string; terms_version?: string }[];
     const types = docs.map((d) => d?.document_type).sort();
-    expect.soft(types, '① 利用規約とプライバシーポリシーの2つ').toEqual(['1', '2']);
-    expect.soft(new Set(docs.map((d) => d?.terms_version)).size, '① 同じ版').toBe(1);
+    // ① のうち、プライバシーポリシー（2つ目の文書）は実装対象の外（照合 T14 の V08。T15b）。返していれば2つと同じ版を確かめ、無ければ備考に残す
+    if (types.includes('2')) {
+      expect.soft(types, '① 利用規約とプライバシーポリシーの2つ').toEqual(['1', '2']);
+      expect.soft(new Set(docs.map((d) => d?.terms_version)).size, '① 同じ版').toBe(1);
+    } else {
+      expect.soft(types, '① 利用規約を返す').toContain('1');
+      outOfScope(`① のプライバシーポリシー（同じ版の2つ目の文書）は確かめていない：${OUT_121_PRIVACY}`);
+    }
     const verify = await anon.post('/api/invitation/verify', { data: { code: p.codeV } });
     expect.soft(verify.status(), '② 有効').toBe(200);
     const body = await verify.text();
@@ -425,13 +444,16 @@ test.describe('不正アクセス', () => {
     await expectStatuses(suzuki, [
       ['POST', '/api/contact/events', { items: [{ child_id: p.Y, event_type: '2', toilet_label: 'おしっこ' }] }],
       ['PUT', `/api/contact/children/${p.Y}/facility`, { body: '受入 08-010' }],
-      ['POST', '/api/contact/class-notes', { class_id: p.himawari, body: '受入 08-010' }],
       ['POST', `/api/contact/events/${p.E_Y.id}/correct`, { toilet_label: 'うんち', updated_at: p.E_Y.updated_at }],
       ['POST', `/api/contact/events/${p.E_Y.id}/cancel`, {}],
       ['POST', `/api/contact/home/${p.H_Y.id}/confirm`, { updated_at: p.H_Y.updated_at }],
       ['POST', '/api/physical/records', { child_id: p.Y, measured_on: jstToday(), height: 80.1, weight: 10.25 }],
       ['POST', '/api/diaries', { record_type: '1', child_id: p.Y, class_id: p.himawari, diary_date: jstToday(), body: '受入 08-010', status: '1' }],
     ], 403, '① 403');
+    // クラスのようすの経路は実装対象の外（照合 T14 の V68。T15b）。まず回し、経路があれば 403 を見て、無ければ（404）備考に残す
+    const classNote = await suzuki.post('/api/contact/class-notes', { data: { class_id: p.himawari, body: '受入 08-010' } });
+    if (classNote.status() === 404) outOfScope(`① の POST /api/contact/class-notes は確かめていない：${OUT_CLASS_NOTES}`);
+    else expect.soft(classNote.status(), `① 403：POST /api/contact/class-notes → ${classNote.status()}`).toBe(403);
     expect.soft(await contactPageText(playwright, p.Y), '② Y の連絡帳が変わらない（記録・訂正・取り消し・確認しました）').toBe(before);
     expect.soft(sqlAll('SELECT COUNT(*) AS n FROM t_physical_record WHERE child_id = ?', p.Y)[0].n, '③ 身体測定が増えない').toBe(0);
     expect.soft(sqlAll(`SELECT COUNT(*) AS n FROM t_diary WHERE child_id = ? AND body LIKE '%08-010%'`, p.Y)[0].n, '③ 日誌が増えない').toBe(0);

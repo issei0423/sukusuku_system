@@ -71,6 +71,21 @@ test.beforeEach(() => {
   setSetting('nap.time_range', '00:00-23:59');
 });
 
+/*
+ * 実装対象の外（照合 T14 が分けたもの。T15b で直した）。テスト仕様書の決まり「次の版の機能」：まず回し、画面に無い部分は確かめずに備考に残す。
+ * 一部だけが対象の外のケースは、対象の内の確かめだけで OK か NG を付ける
+ */
+const OUT_NEXT_CHECK = '実装対象の外（画面詳細図「モックアップでは実装しないもの」(12-1) の 5-1 項目3（次に確認が要る園児の時刻で知らせる形）、詳細設計書「午睡チェック画面」(2-4) の (3)「ほかは今の動き…のまま」・(5) で次の版）';
+const OUT_ELAPSED = '実装対象の外（画面詳細図「モックアップでは実装しないもの」(12-1) の「共通」：経過時間は端末の時計から日本時間を求めている（午睡チェックの経過・残り時間を含む））';
+const OUT_SAVED_AT = '実装対象の外（画面詳細図「モックアップでは実装しないもの」(12-1) の 5-2 項目4：保存時刻の表示）';
+const OUT_NOTICE_LATER = '実装対象の外（詳細設計書「午睡チェック画面」(2-4) の (5)：異常時の記録の「保護者への連絡」は次の版。記録したあとから足す口が無い）';
+
+/** 確かめなかった部分（実装対象の外）を、テストの注記と回の記録に残す */
+function outOfScope(text: string) {
+  test.info().annotations.push({ type: 'note', description: text });
+  console.log(`[備考 ${test.info().title.slice(0, 7).trim()}] ${text}`);
+}
+
 /* 判定の言葉（sheet-04.md「期待する結果の読み方」。設計書の例は「平熱」「発熱」で、一覧は無い。U-21） */
 const JUDGMENT_WORDS = ['発熱', '熱がある', '高い', '低い', '異常', 'よく眠れ', '短い', '長い', '十分'];
 
@@ -333,11 +348,23 @@ test.describe('午睡チェック画面：タイマー', () => {
       const t0 = await freshSession(c.p, c.cls);
       const expected = anyHm([addMinutesHM(t0, c.minutes - 1), addMinutesHM(t0, c.minutes), addMinutesHM(t0, c.minutes + 1)]);
       const head = await headerText(c.p);
-      expect.soft(head, `${c.label}：「次の確認」に開始時刻＋${c.minutes}分`).toMatch(new RegExp(`次の確認.*${expected.source}`));
-      const names = await rowNames(c.p);
-      expect.soft(head, `${c.label}：「次の確認」に対象の園児の名前`).toContain(names[0]);
-      expect.soft(head, `${c.label}：残り時間（あと）`).toMatch(/あと/);
-      await expect.soft(napRow(c.p, names[0]), `${c.label}：行の「次の確認」も同じ時刻`).toContainText(new RegExp(`次の確認.*${expected.source}`));
+      // 対象の内（今の動き：開始した時刻＋その年齢児の間隔）：残り時間が間隔とほぼ同じ（T15b。前は「あと」の字だけを見ていた）
+      const remain = /(?:あと|残り|まで)\s*(\d{1,2}):(\d{2})/.exec(head);
+      expect.soft(remain, `${c.label}：残り時間が出る`).not.toBeNull();
+      if (remain) {
+        const sec = Number(remain[1]) * 60 + Number(remain[2]);
+        expect.soft(sec, `${c.label}：残り時間は間隔（${c.minutes}分）とほぼ同じ`).toBeGreaterThan((c.minutes - 1) * 60);
+        expect.soft(sec, `${c.label}：残り時間は間隔（${c.minutes}分）を超えない`).toBeLessThanOrEqual(c.minutes * 60);
+      }
+      // 「次の確認」の時刻と園児の名前、行の「次の確認」は実装対象の外（照合 T14 の V33・K-5）。画面にあれば確かめる
+      if (/次の確認/.test(head)) {
+        expect.soft(head, `${c.label}：「次の確認」に開始時刻＋${c.minutes}分`).toMatch(new RegExp(`次の確認.*${expected.source}`));
+        const names = await rowNames(c.p);
+        expect.soft(head, `${c.label}：「次の確認」に対象の園児の名前`).toContain(names[0]);
+        await expect.soft(napRow(c.p, names[0]), `${c.label}：行の「次の確認」も同じ時刻`).toContainText(new RegExp(`次の確認.*${expected.source}`));
+      } else {
+        outOfScope(`${c.label}：「次の確認」の時刻・園児の名前・行の「次の確認」は確かめていない：${OUT_NEXT_CHECK}`);
+      }
     }
     await evidence(s.page, '04-004');
     await s.context.close();
@@ -1047,8 +1074,13 @@ test.describe('午睡チェック画面：つながり・時刻', () => {
     await pressSleep(w.page, child);
     const head = await headerText(w.page);
     expect.soft(head, '開始時刻はサーバの時刻（JST）').toMatch(new RegExp(`開始\\s*${anyHm(hmNear(t0)).source}`));
-    expect.soft(head, '経過時間は0分台').toMatch(/経過\s*0:0\d/);
-    expect.soft(head, '次の確認は開始時刻＋5分').toMatch(new RegExp(`次の確認.*${anyHm([addMinutesHM(t0, 4), addMinutesHM(t0, 5), addMinutesHM(t0, 6)]).source}`));
+    // 経過時間（端末の時計から求める）と「次の確認」は実装対象の外（照合 T14 の V33。T15b）。確かめずに備考に残す
+    outOfScope(`経過時間（0分台）は確かめていない：${OUT_ELAPSED}`);
+    if (/次の確認/.test(head)) {
+      expect.soft(head, '次の確認は開始時刻＋5分').toMatch(new RegExp(`次の確認.*${anyHm([addMinutesHM(t0, 4), addMinutesHM(t0, 5), addMinutesHM(t0, 6)]).source}`));
+    } else {
+      outOfScope(`次の確認（開始時刻＋5分）は確かめていない：${OUT_NEXT_CHECK}`);
+    }
     await expect.soft(napRow(w.page, child)).toContainText(new RegExp(`${anyHm(hmNear(t0)).source}\\s*ねた`));
     expect.soft(hmNear(t0)).toContain(dbHM(openSession('もも組')?.started_at));
     expect.soft(hmNear(t0)).toContain(dbHM(sleepsOf(child).at(-1)?.slept_at));
@@ -1083,7 +1115,8 @@ test.describe('異常時記録画面', () => {
     await expect.soft(row).toContainText('鈴木 浩之');
     await expect.soft(row.getByRole('button', { name: '起票する' })).toBeVisible();
     const ab = abnormalsOf('村田 美咲').at(-1)!;
-    await expect.soft(main, '保存時刻が発見時刻と別に出る').toContainText('保存時刻');
+    // 保存時刻の表示は実装対象の外（照合 T14 の V40。T15b）。画面にあれば満たし、無ければ備考に残す（SQL の recorded_at は下で見る）
+    if (!(await main.innerText()).includes('保存時刻')) outOfScope(`保存時刻が発見時刻と別に出ることは確かめていない：${OUT_SAVED_AT}`);
     await main.getByRole('link', { name: /午睡チェックへ/ }).click();
     await expect.soft(endButton(page), '午睡チェック画面は実施中のまま').toBeVisible();
     const mr = napRow(page, '村田 美咲');
@@ -1163,7 +1196,8 @@ test.describe('異常時記録画面', () => {
     await recordAbnormal(page, '村田 美咲', '受入テスト 04-032 状況1', '受入テスト 04-032 対応1');
     const row = abnormalRow(page, '受入テスト 04-032 状況1');
     const add = row.getByRole('button', { name: /保護者への連絡|連絡/ });
-    expect.soft(await add.count(), '記録のあとから保護者への連絡を足す口がある（あとから足してよい）').toBeGreaterThan(0);
+    // 記録のあとから保護者への連絡を足すことは実装対象の外（照合 T14 の V40。T15b）。口があれば確かめ、無ければ備考に残す
+    if ((await add.count()) === 0) outOfScope(`1件目（あとから「した」・日時・電話・母（勤務先）を足す）は確かめていない：${OUT_NOTICE_LATER}`);
     if (await add.count()) {
       await add.first().click();
       const area = page.getByRole('dialog').first();
@@ -1726,7 +1760,8 @@ test.describe('午睡記録検索画面', () => {
   /* 典拠：基本設計書「一覧表示とページング」(3-7)・「設定マスタ」(5-9) の paging.nap_search_per_page、図/画面詳細図「午睡記録検索画面」(5-3) 項目8。前提の1ページの件数は設定マスタを書き換えて作る（設定画面に欄が無い） */
   test('04-041 ページング', async ({ page }) => {
     test.skip(!LONG, LONG_REASON);
-    test.setTimeout(6 * 60_000);
+    // 本番の回は6分で時間切れになり、11件目から確かめられなかった（照合 T14 の V41）。待ち（61秒×2）と記録に足りるよう延ばす（T15b）
+    test.setTimeout(10 * 60_000);
     setSetting('paging.nap_search_per_page', '10');
     await login(page, 'admin');
     await freshSession(page, 'もも組');
@@ -1743,8 +1778,20 @@ test.describe('午睡記録検索画面', () => {
     const bodyRows = () => main.getByRole('table').first().getByRole('row').evaluateAll((els) => els.length - 1);
     expect.soft(await bodyRows(), '10件のとき1ページに10件').toBe(10);
     await expect.soft(main, '総件数 10').toContainText(/10\s*件/);
-    await expect.soft(main.getByRole('button', { name: /次/ }).or(main.getByRole('link', { name: /次/ })), '次のページへ移れない').toHaveCount(0);
+    // 「次のページへ移れない」は、「次へ」が無いか、押せない（disabled）こと（ケースの誤りを直した。照合 T14 の V41。T15b）
+    const nextCtl = main.getByRole('button', { name: /次/ }).or(main.getByRole('link', { name: /次/ }));
+    await expect.configure({ soft: true }).poll(async () => {
+      for (const el of await nextCtl.all()) {
+        const off = (await el.isDisabled()) || (await el.getAttribute('aria-disabled')) === 'true';
+        if (!off) return false;
+      }
+      return true;
+    }, { message: '次のページへ移れない（「次へ」が無いか、押せない）', timeout: 10_000 }).toBe(true);
     await page.goto('/staff/nap');
+    // 開き直すとクラスの選択が初めのクラスに戻るので、もも組を選び直す（本番の回はここで、もも組の行を探して時間切れになった。T15b）
+    await expect(startButton(page).or(endButton(page))).toBeVisible();
+    await chooseClass(page, 'もも組');
+    await expect(endButton(page), 'もも組は実施中のまま').toBeVisible();
     await recordCheck(page, names[2]);
     await openSearch(page);
     await searchBy(page, { from: today, to: today, className: 'もも組' });
@@ -1752,7 +1799,8 @@ test.describe('午睡記録検索画面', () => {
     await expect.soft(main, '総件数 11').toContainText(/11\s*件/);
     const next = main.getByRole('button', { name: /次/ }).or(main.getByRole('link', { name: /次/ }));
     await expect.soft(next.first()).toBeVisible();
-    if (await next.count()) {
+    await expect.soft(next.first(), '11件のとき「次へ」を押せる').toBeEnabled();
+    if ((await next.count()) && (await next.first().isEnabled())) {
       await next.first().click();
       await page.waitForTimeout(800);
       expect.soft(await bodyRows(), '2ページ目は1件').toBe(1);
