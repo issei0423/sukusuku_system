@@ -413,7 +413,7 @@ export function w2PreviousCheck(child: ChildSpec): { checkedOn: string; months: 
   if (!cat) throw new Error(`[acceptance:harness] W2：月齢 ${months} の区分がありません`);
   const items = activeItems(cat.development_category_id);
   const admin = staffIdOf('西田 拓也');
-  const sample = sqlOne<{ finalized_at: string | null }>("SELECT finalized_at FROM t_development_check WHERE status = '2' AND finalized_at IS NOT NULL LIMIT 1");
+  const sample = sqlOne<{ finalized_at: string | null; share_status?: string | null }>("SELECT * FROM t_development_check WHERE status = '2' AND finalized_at IS NOT NULL LIMIT 1");
   const finalizedAt = sample?.finalized_at && sample.finalized_at.includes('T') ? `${checkedOn}T10:00:00` : `${checkedOn} 10:00:00`;
   const schedCols = columns('t_development_schedule');
   const checkCols = columns('t_development_check');
@@ -424,6 +424,8 @@ export function w2PreviousCheck(child: ChildSpec): { checkedOn: string; months: 
   });
   const check = insert('t_development_check', checkCols, {
     child_id: child.id, development_schedule_id: sched, checked_on: checkedOn, status: '2', staff_id: admin, note: '05-019 前回の所見', guardian_message: null, finalized_at: finalizedAt, created_at: now, updated_at: now,
+    // 設計書は第3.0版で share_status を外したが、データベースに NOT NULL で残っている。デモデータの確定した行と同じ値を入れる
+    share_status: sample?.share_status ?? '1',
   });
   for (const it of items) {
     insert('t_development_result', resultCols, { development_check_id: check, development_item_id: it.development_item_id, result: '1', note: null, created_at: now, updated_at: now });
@@ -670,6 +672,8 @@ export async function answerPhysicalChecks(page: Page, opts: { acceptRange?: boo
     if (await again.isVisible()) {
       seen.range = true;
       if (opts.acceptRange === false) return seen;
+      // 押せない「このまま登録する」は押しにいかない（4回目の回で、上書きの確かめを「やめる」で閉じたあとに押せないまま残った）
+      if (!(await again.isEnabled())) return seen;
       await again.click();
       continue;
     }

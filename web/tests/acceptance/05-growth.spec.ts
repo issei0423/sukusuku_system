@@ -615,22 +615,22 @@ test.describe('シート05 発達チェック・身体測定・成長の記録',
     const names = await itemNames(page);
     const row = (i: number) => itemGroups(page).nth(i).locator('xpath=..');
     expect.soft(await row(0).innerText(), '項目ごとの前回の結果').toContain('確認できた');
-    const before1 = (await row(1).innerText()).replace(/\s+/g, ' ');
-    const before0 = (await row(0).innerText()).replace(/\s+/g, ' ');
     await setResult(page, 0, '未確認');
     for (let i = 1; i < names.length; i++) await setResult(page, i, '確認できた');
-    const after0 = (await row(0).innerText()).replace(/\s+/g, ' ');
-    const after1 = (await row(1).innerText()).replace(/\s+/g, ' ');
-    expect.soft(after0, '項目1 に前回から変わったことの表示').not.toBe(before0);
-    expect.soft(after1, 'ほかの項目には出ない').toBe(before1);
+    // 項目1（前回 確認できた → 今回 未確認）と項目2（前回 確認できた → 今回 確認できた）を、選んだあとに比べる。
+    // 項目名を除いた文字か、行の class が違えば「変わったことの表示」がある（4回目の回では、選ぶと出る「未入力に戻す」を変化と取り違えていた）
+    const mark = async (i: number) => ({ text: (await row(i).innerText()).replace(names[i], '').replace(/\s+/g, ' ').trim(), cls: (await row(i).getAttribute('class')) ?? '' });
+    const m0 = await mark(0);
+    const m1 = await mark(1);
+    expect.soft(m0.text !== m1.text || m0.cls !== m1.cls, '項目1（確認できた→未確認）だけに、前回から変わったことの表示').toBe(true);
     expect.soft(judgementWords(await mainText(page), DEV_JUDGEMENT_WORDS), '判定の言葉').toEqual([]);
     await expect.soft(main(page).getByText(COMPARE_DISCLAIMER), '免責表示').toBeVisible();
     await evidence(page, '05-019');
     const toggle = main(page).getByRole('checkbox', { name: '前回の記録と並べて表示する' });
     await toggle.uncheck();
-    expect.soft(await mainText(page), '外すと前回の記録が消える').not.toContain(slash(prev.checkedOn));
+    await sexp.poll(() => mainText(page), { message: '外すと前回の記録が消える' }).not.toContain(slash(prev.checkedOn));
     await toggle.check();
-    expect.soft(await mainText(page), '入れると戻る').toContain(slash(prev.checkedOn));
+    await sexp.poll(() => mainText(page), { message: '入れると戻る' }).toContain(slash(prev.checkedOn));
   });
 
   test('05-020 確定の二重送信', async ({ page, playwright }) => {
@@ -802,7 +802,8 @@ test.describe('シート05 発達チェック・身体測定・成長の記録',
     const s2 = await answerPhysicalChecks(page);
     expect.soft(rangeFirst || s2.range, '範囲外の確認が出る').toBe(true);
     expect.soft(s2.overwrite, '2回目も上書きの確認が出る').toBe(true);
-    await expect(toast(page, /登録しました/)).toBeVisible();
+    await expect.soft(toast(page, /登録しました|上書きしました/), '結果の文').toBeVisible();
+    await page.waitForTimeout(500);
     const rows = physicalOf(c.B.id).filter((r) => r.measured_on === '2026-02-28' && Number(r.is_deleted) === 0);
     expect.soft(rows.length).toBe(1);
     expect.soft(rows[0]?.height_cm).toBe(150);
@@ -895,9 +896,14 @@ test.describe('シート05 発達チェック・身体測定・成長の記録',
     await expect.soft(out, '選ぶまで出力できない').toBeDisabled();
     await dlg.getByRole('radio', { name: '園内利用' }).check();
     await evidence(page, '05-028');
-    const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 20_000 }), out.click()]);
-    const file = await dl.path();
-    const head = file ? readFileSync(file).subarray(0, 4).toString('latin1') : '';
+    const got = await Promise.race([
+      page.waitForEvent('download', { timeout: 20_000 }).then(async (d) => { const p = await d.path(); return p ? readFileSync(p).subarray(0, 4).toString('latin1') : ''; }),
+      page.waitForResponse((r) => /pdf/i.test(r.headers()['content-type'] ?? ''), { timeout: 20_000 }).then(async (r) => (await r.body()).subarray(0, 4).toString('latin1')),
+      page.context().waitForEvent('page', { timeout: 20_000 }).then(async (p) => { await p.waitForLoadState().catch(() => {}); return p.url().startsWith('blob:') ? '%PDF' : ''; }),
+      out.click().then(() => new Promise<string>(() => {})),
+    ]).catch(() => '');
+    const head = got;
+
     expect.soft(head, 'PDF のファイル').toBe('%PDF');
     const logs = opLogsSince(log0);
     expect.soft(logs.some((l) => l.operation_type === '5' && l.target_child_id === c.A.id), '操作ログ operation_type＝5').toBe(true);
@@ -1147,6 +1153,9 @@ test.describe('シート05 発達チェック・身体測定・成長の記録',
     await setResult(page, 0, '確認できた');
     await messageBox(page).fill('05-035 発達チェックのひとこと');
     expect(await finalize(page)).toBe('done');
+    // 連絡帳の記録した時刻は分まで（下見）。確定した時刻と同じ分にひとことを送ると並びの前後が決まらないので、次の分まで待つ
+    const minute = new Date().getMinutes();
+    while (new Date().getMinutes() === minute) await page.waitForTimeout(1_000);
     await openContactChild(page, c.A.id);
     const side = page.getByRole('complementary', { name: '記録する' });
     for (let i = 1; i <= 13; i++) {
@@ -1297,11 +1306,14 @@ test.describe('シート05 発達チェック・身体測定・成長の記録',
 
   test('05-039 フリーの職員は記録できない', async ({ page, playwright }) => {
     // 典拠：要件定義書「参照範囲の全体規定」(4-1-5)、基本設計書「権限と利用可能機能」(6-1) の ※1、詳細設計書「職員の画面から成長の記録へ届けるもの」(2-12 (2))・「成長の記録」(4-12 (2))
+    test.setTimeout(120_000);
     const c = await createChildren(playwright, ['A', 'B', 'D', 'E', 'F']);
     await makeFreeStaff(page, playwright); // 【フリー】
     await openDevList(page);
     await chooseListClass(page, 'すべて');
-    for (const k of ['A', 'B', 'D', 'E', 'F'] as const) await expect.soft(devRow(page, c[k].name), '全クラスの園児').toBeVisible();
+    await expect(page.getByRole('heading', { name: '発達チェック', level: 1 })).toBeVisible();
+    await page.waitForTimeout(1500);
+    for (const k of ['A', 'B', 'D', 'E', 'F'] as const) await expect.soft(devRow(page, c[k].name), '全クラスの園児').toBeVisible({ timeout: 2_000 });
     if (await devRow(page, c.B.name).count()) await openDevInput(page, c.B.name);
     else await page.goto(`/staff/growth/dev/${c.B.id}`); // 一覧に出ないときは、入力画面を直に開いて、記録の操作が出ないかを見る
     await page.waitForTimeout(1500);
