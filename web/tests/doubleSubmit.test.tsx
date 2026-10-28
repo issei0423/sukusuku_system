@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /*
- * 二重送信の防止：チャットの送信・目的別グループの作成・招待コードの1枚発行（GitHub Issue #303）
+ * 二重送信の防止：チャットの送信・目的別グループの作成・招待コードの1枚発行・誤送信の記録（GitHub Issue #303）
  * 典拠：授業の雛形「テスト仕様書 兼 成績書」1.5（二重送信の防止）、
  *      詳細設計書「押したときの処理の型」(2-0 (2))「押したボタンを aria-busy にして二度押しを止め」
  *
@@ -41,7 +41,7 @@ function open(path: string, user: SessionUser) {
 }
 
 /** 呼ばれても release() するまで応答を返さない。返すときは本来の処理（モック）に任せる */
-function hold<K extends 'send' | 'createGroup' | 'issueOneInvitationCode'>(name: K) {
+function hold<K extends 'send' | 'createGroup' | 'issueOneInvitationCode' | 'addMisdeliveryRecord'>(name: K) {
   let release!: () => void;
   const gate = new Promise<void>((r) => { release = r; });
   const original = api[name].bind(api) as (...args: unknown[]) => Promise<unknown>;
@@ -126,6 +126,29 @@ describe('二重送信の防止（Issue #303）', () => {
     expect(button.getAttribute('aria-busy')).toBe('true');
     release();
     await screen.findByText(/の招待コードを1枚発行しました/, undefined, { timeout: 3000 });
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('誤送信の記録：記録している間は「記録する」を押せず、続けて押しても1件だけ残す', async () => {
+    const sent = await api.send(teacher, 3, '（誤送信）二重送信の確認');
+    await api.retract(teacher, sent.chat_message_id);
+    const { spy, release } = hold('addMisdeliveryRecord');
+    open('/staff/admin/misdelivery', admin);
+    const row = await waitFor(() => {
+      const r = Array.from(document.querySelectorAll('tr')).find((tr) => tr.textContent?.includes('さくら組') && tr.querySelector('button'));
+      expect(r).toBeTruthy();
+      return r!;
+    }, { timeout: 3000 });
+    fireEvent.click(within(row).getByRole('button', { name: '対応を記録する' }));
+    fireEvent.click(screen.getByLabelText('既読は付いていなかった'));
+    fireEvent.change(screen.getByLabelText('とった対応'), { target: { value: '二重送信 誤送信の記録' } });
+    const button = screen.getByRole('button', { name: '記録する' }) as HTMLButtonElement;
+    pressTwice(button);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(button.disabled).toBe(true);
+    expect(button.getAttribute('aria-busy')).toBe('true');
+    release();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '誤送信への対応を記録する' })).toBeNull(), { timeout: 3000 });
     expect(spy).toHaveBeenCalledTimes(1);
   });
 });

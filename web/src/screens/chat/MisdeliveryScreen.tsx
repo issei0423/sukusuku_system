@@ -6,7 +6,7 @@
  * 取消済みで、まだ対応を記録していないメッセージを上に出す。
  * 「取り消した」だけで終わらせず、既読の有無と対応を残させるため。
  */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api } from '../../api/client';
@@ -24,6 +24,12 @@ export default function MisdeliveryScreen() {
   const [response, setResponse] = useState('');
   const [occurredAt, setOccurredAt] = useState('');
   const [error, setError] = useState<string | null>(null);
+  /*
+   * 記録している間は「記録する」を押せなくし、続けて押しても2件にしない（GitHub Issue #303。詳細設計書「押したときの処理の型」(2-0 (2))）。
+   * 押せなくなるのは描き直しのあとなので、その前に届いた2回目は saving で止める
+   */
+  const [busy, setBusy] = useState(false);
+  const saving = useRef(false);
 
   const open = (p: { chat_message_id: number; room_name: string; sent_at: string }) => {
     setTarget(p);
@@ -34,7 +40,9 @@ export default function MisdeliveryScreen() {
   };
 
   const save = async () => {
-    if (!target || wasRead === null || !occurredAt) return;
+    if (!target || wasRead === null || !occurredAt || saving.current) return;
+    saving.current = true;
+    setBusy(true);
     setError(null);
     try {
       await api.addMisdeliveryRecord(user!, {
@@ -47,7 +55,7 @@ export default function MisdeliveryScreen() {
       });
       setTarget(null);
       setTick((n) => n + 1);
-    } catch (e) { setError((e as Error).message); }
+    } catch (e) { setError((e as Error).message); } finally { saving.current = false; setBusy(false); }
   };
 
   return (
@@ -118,7 +126,7 @@ export default function MisdeliveryScreen() {
         <Modal title="誤送信への対応を記録する" onClose={() => setTarget(null)} returnWithin={['tr', 'section']}
           footer={<>
             <button onClick={() => setTarget(null)}>やめる</button>
-            <button className="btn-primary" onClick={save} disabled={!occurredAt || wasRead === null || !response.trim()}>記録する</button>
+            <button className="btn-primary" onClick={save} disabled={busy || !occurredAt || wasRead === null || !response.trim()} aria-busy={busy}>記録する</button>
           </>}>
           <div className="stack">
             {error && <Alert>{error}</Alert>}
