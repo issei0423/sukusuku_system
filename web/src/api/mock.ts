@@ -1230,7 +1230,9 @@ const diaryApi2 = {
       d.body = body;
       // ヒヤリハットの列は、欄で受け取った値で書き換える。ほかの記録種別に変えたときは空にする
       Object.assign(d, incidentColumns);
-      d.status = status;
+      // 下書き保存では状態を変えない。差し戻された日誌は差し戻しのまま残す（詳細設計書「日誌の状態」(3-6)。
+      // GitHub Issue #305 の 1。サーバ側は server/api_diary_write.go の updateDiary）
+      if (!(status === '1' && d.status === '4')) d.status = status;
       // 申請するときは、申請した職員と日時を入れ直す。下書き保存では変えない（詳細設計書「日誌の状態」(3-6)）
       if (status === '2') {
         d.applied_staff_id = user.staff_id;
@@ -1322,7 +1324,8 @@ const diaryApi2 = {
     d.status = '4';
     d.returned_reason = reason;
     d.updated_at = nextDiaryVersion(d.updated_at);
-    log(user.account_id, '1', '3', 't_diary', d.diary_id, d.child_id, '申請中', `差し戻し：${reason}`);
+    // 差し戻しは更新（操作区分 2）として残す（詳細設計書「日誌の状態」(3-6)。GitHub Issue #305 の 2）
+    log(user.account_id, '1', '2', 't_diary', d.diary_id, d.child_id, '申請中', `差し戻し：${reason}`);
     publishDiary(d);
     return ok(withDiaryNames(d));
   },

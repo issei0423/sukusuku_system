@@ -241,6 +241,52 @@ func TestResubmitKeepsReturnedReason(t *testing.T) {
 	}
 }
 
+// 差し戻しの日誌を下書き保存しても、差し戻しのまま残る。申請すれば申請中へ進む。
+// 差し戻しの操作ログは操作区分 2（更新）で残す（詳細設計書「日誌の状態」(3-6)、基本設計書「日誌の作成から承認まで」(4-6)、
+// 図/画面詳細図「日誌作成・編集画面」(3-2) 項目12。GitHub Issue #305。モックは web/tests/diaryFlow.test.ts）
+func TestReturnedDiaryStaysReturnedOnDraftSave(t *testing.T) {
+	a, h := newTestApp(t)
+	admin := loginAs(a, 1, "staff")
+	teacher := loginAs(a, 3, "staff")
+
+	d := diaryOf(t, call(t, h, teacher, "POST", "/api/diaries",
+		personalDiary(0, "C004", "1", today(), "伊藤 葵の記録", "2")).Body.Bytes())
+	call(t, h, admin, "POST", "/api/diaries/"+itoa(d.DiaryID)+"/return", `{"reason":"書き足してください"}`)
+
+	var opType, after string
+	if err := a.db.QueryRow(`SELECT operation_type, after_value FROM t_operation_log
+		WHERE function_type = '1' AND target_table = 't_diary' AND target_id = ? ORDER BY operation_log_id DESC LIMIT 1`,
+		d.DiaryID).Scan(&opType, &after); err != nil {
+		t.Fatal(err)
+	}
+	if opType != "2" || after != "差し戻し：書き足してください" {
+		t.Fatalf("差し戻しの操作ログ: operation_type = %q, after_value = %q, want \"2\" と「差し戻し：書き足してください」", opType, after)
+	}
+
+	token := acquireToken(t, h, teacher, itoa(d.DiaryID))
+	saved := diaryOf(t, call(t, h, teacher, "POST", "/api/diaries", withLock(
+		personalDiary(d.DiaryID, "C004", "1", today(), "書き足しました（下書き）", "1"), token)).Body.Bytes())
+	if got := statusOfDiary(t, a, d.DiaryID); got != "4" || saved.Status != "4" {
+		t.Fatalf("下書き保存のあと: status = %q（応答 %q）, want \"4\"", got, saved.Status)
+	}
+
+	var summary struct {
+		Returned int `json:"returned"`
+	}
+	if err := json.Unmarshal(call(t, h, teacher, "GET", "/api/dashboard/staff", "").Body.Bytes(), &summary); err != nil {
+		t.Fatal(err)
+	}
+	if summary.Returned != 1 {
+		t.Fatalf("ダッシュボードの差し戻し: %d, want 1", summary.Returned)
+	}
+
+	call(t, h, teacher, "POST", "/api/diaries", withLock(
+		personalDiary(d.DiaryID, "C004", "1", today(), "書き足しました", "2"), token))
+	if got := statusOfDiary(t, a, d.DiaryID); got != "2" {
+		t.Fatalf("申請のあと: status = %q, want \"2\"", got)
+	}
+}
+
 type diaryPage struct {
 	Rows  []Diary `json:"rows"`
 	Total int     `json:"total"`
