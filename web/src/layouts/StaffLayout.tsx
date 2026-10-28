@@ -2,6 +2,7 @@
  * 職員（タブレット／PC）の共通レイアウト
  * 典拠：図/画面詳細図.md「職員（タブレット／PC）」(1-1)、基本設計書.md「画面基本構成」(3-5)
  */
+import { useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useSession } from '../session';
 import { useAsync, AUTO_REFRESH_MS } from '../hooks';
@@ -10,9 +11,10 @@ import { api } from '../api/client';
 import { BellIcon, Alert } from '../components/ui';
 import LiveIndicator from '../components/LiveIndicator';
 import ConnectionBanner from '../components/ConnectionBanner';
-import { ToastHost } from '../components/feedback';
+import { ConfirmDialog, ToastHost } from '../components/feedback';
 import SessionTimeoutWarning from '../components/SessionTimeoutWarning';
 import ScreenErrorBoundary from '../components/ScreenErrorBoundary';
+import { UnsavedInputContext, useUnsavedInputTracker } from '../unsavedInput';
 
 const NAV = [
   { to: '/staff', label: 'ダッシュボード', end: true, adminOnly: false },
@@ -51,6 +53,12 @@ export default function StaffLayout() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   /*
+   * 保存していない入力があるときに出す、ログアウトの確認（図/画面詳細図「全画面に共通する規定」(0-2) のログアウト、
+   * 基本設計書「ログアウト」(4-3)）。保護者の共通レイアウトと同じ作り（GitHub Issue #170・#304）
+   */
+  const [confirmLogout, setConfirmLogout] = useState(false);
+  const unsaved = useUnsavedInputTracker();
+  /*
    * どの画面を開いていても、保護者からのチャットなどがすぐに通知の件数に表れるよう、知らせ（live.ts）を受けて
    * 読み直す。件数はダッシュボードと同じもの（チャット・日誌・午睡・発達チェック）を足している。
    * 知らせが切れている間は数秒ごとに読み直す
@@ -69,10 +77,18 @@ export default function StaffLayout() {
       + s.homeUnconfirmed + s.homeRevised
     : 0;
 
-  const onLogout = async () => {
+  const doLogout = async () => {
     await logout();
     // ログアウトの遷移先はログインしていた系統のトップ（基本設計書「画面遷移」(3-4)）
     navigate('/staff-top');
+  };
+  // 保存していない入力（書きかけの日誌・メッセージなど）があれば、破棄される旨を表示して確認する（基本設計書「ログアウト」(4-3)）
+  const onLogout = () => {
+    if (unsaved.hasUnsavedInput()) {
+      setConfirmLogout(true);
+      return;
+    }
+    void doLogout();
   };
 
   return (
@@ -148,10 +164,12 @@ export default function StaffLayout() {
               </Alert>
             </div>
           )}
-          {/* 画面の例外で真っ白にしない。画面を移ったら受け皿を作り直す */}
-          <ScreenErrorBoundary key={pathname}>
-            <Outlet />
-          </ScreenErrorBoundary>
+          <UnsavedInputContext.Provider value={unsaved.report}>
+            {/* 画面の例外で真っ白にしない。画面を移ったら受け皿を作り直す */}
+            <ScreenErrorBoundary key={pathname}>
+              <Outlet />
+            </ScreenErrorBoundary>
+          </UnsavedInputContext.Provider>
         </main>
         <ToastHost />
         {/*
@@ -160,6 +178,14 @@ export default function StaffLayout() {
         */}
         <SessionTimeoutWarning />
       </div>
+
+      {confirmLogout && (
+        <ConfirmDialog title="保存していない入力があります" confirmLabel="破棄してログアウトする" danger
+          onConfirm={() => { setConfirmLogout(false); void doLogout(); }} onCancel={() => setConfirmLogout(false)}>
+          <p>入力した内容を送信・保存していません。このままログアウトすると、入力した内容は破棄されます。</p>
+          <p className="muted">残すときは、「やめる」を押してから送信・保存してください。</p>
+        </ConfirmDialog>
+      )}
     </div>
   );
 }

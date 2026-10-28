@@ -27,6 +27,7 @@ import { IncidentFields } from './IncidentFields';
 import { EMPTY_INCIDENT, incidentFormOf, incidentInputOf, incidentReady } from './incidentForm';
 import type { IncidentForm } from './incidentForm';
 import { focusAfter, focusedNow } from '../../focusAfter';
+import { useUnsavedInput } from '../../unsavedInput';
 
 // 本文の上限（基本設計書「入力項目の制約値」(4-9)）
 const BODY_MAX = 2000;
@@ -302,6 +303,8 @@ export default function DiaryEditScreen() {
   const contentReady = isIncident ? incidentReady(incident) : !!body.trim();
   const d = existing.data;
   const readOnly = !!d && (d.status === '2' || d.status === '3');
+  // 保存していない内容は、ログアウトの前にも確かめる（基本設計書「ログアウト」(4-3)。GitHub Issue #304）
+  useUnsavedInput(dirty && !readOnly);
   // 申請を取り下げられるのは、申請中の日誌を申請した本人だけ。承認を取り消せるのは管理者だけ（サーバも拒む）
   const canWithdraw = !!d && d.status === '2' && !!d.applied_staff_id && d.applied_staff_id === user!.staff_id;
   const canRevoke = !!d && d.status === '3' && user!.role === '1';

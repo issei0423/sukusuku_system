@@ -23,6 +23,7 @@ import type { ChatMessage } from '../../api/types';
 import IncomingLog from './IncomingLog';
 import { useIncomingMessages } from './useIncomingMessages';
 import { focusAfter, focusedNow } from '../../focusAfter';
+import { useUnsavedInput } from '../../unsavedInput';
 
 // 詳細設計書「チャット」(2-9)。DB 上の部屋名は既存の「園児名の保護者」のままにする（同「園児の登録と個人チャット」(4-9)）。
 const roomLabel = (room: { room_type: string; room_name: string }) =>
@@ -51,6 +52,11 @@ export default function StaffChatScreen() {
    */
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const text = roomId !== null ? drafts[roomId] ?? '' : '';
+  /*
+   * 書きかけのメッセージは、ログアウトの前に確かめる（基本設計書「ログアウト」(4-3)。GitHub Issue #304）。
+   * 書きかけはチャンネルごとに持つので、いま開いていないチャンネルの書きかけも数える（保護者のチャットと同じ）
+   */
+  useUnsavedInput(Object.values(drafts).some((d) => d.trim() !== ''));
   const setText = (value: string) => {
     if (roomId !== null) setDrafts((d) => ({ ...d, [roomId]: value }));
   };
@@ -468,6 +474,8 @@ function MessageRow({ message, mine, canEdit, canDelete, showRole, readOnly, onR
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.body);
   const [editError, setEditError] = useState('');
+  // 保存していない編集も、ログアウトの前に確かめる（GitHub Issue #304）
+  useUnsavedInput(editing && draft !== message.body);
 
   /*
    * 保存する・やめると編集の欄とボタンが消え、押したボタンからフォーカスが外れて body に落ちる。吹き出しへ戻す
