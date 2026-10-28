@@ -4,7 +4,7 @@
  *
  * 退出は left_at を入れて所属期間を残す。過去ログの参照範囲の判定に用いるため（基本設計書 5-5）。
  */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
@@ -28,26 +28,37 @@ export default function GroupEditScreen() {
   const [picked, setPicked] = useState<number[]>([]);
   const [editing, setEditing] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /*
+   * 作る・保存するの間は押せなくし、続けて押しても2つ作らない（GitHub Issue #303。詳細設計書「押したときの処理の型」(2-0 (2))）。
+   * 押せなくなるのは描き直しのあとなので、その前に届いた2回目は saving で止める
+   */
+  const [busy, setBusy] = useState(false);
+  const saving = useRef(false);
 
   const members = useAsync(async () => (editing ? api.members(editing, user!) : []), [editing]);
 
   const create = async () => {
+    if (saving.current) return;
+    saving.current = true;
+    setBusy(true);
     setError(null);
     try {
       await api.createGroup(user!, name, picked);
       setCreating(false); setName(''); setPicked([]);
       setTick((n) => n + 1);
-    } catch (e) { setError((e as Error).message); }
+    } catch (e) { setError((e as Error).message); } finally { saving.current = false; setBusy(false); }
   };
 
   const saveMembers = async () => {
-    if (!editing) return;
+    if (!editing || saving.current) return;
+    saving.current = true;
+    setBusy(true);
     setError(null);
     try {
       await api.updateGroupMembers(user!, editing, picked);
       setEditing(null); setPicked([]);
       setTick((n) => n + 1);
-    } catch (e) { setError((e as Error).message); }
+    } catch (e) { setError((e as Error).message); } finally { saving.current = false; setBusy(false); }
   };
 
   // メンバーを読めなかったとき（別の画面で外されたなど）は、編成を開かずに知らせる（GitHub Issue #172）
@@ -109,7 +120,7 @@ export default function GroupEditScreen() {
         <Modal title="グループを作る" onClose={() => setCreating(false)}
           footer={<>
             <button onClick={() => setCreating(false)}>やめる</button>
-            <button className="btn-primary" onClick={create} disabled={!name.trim()}>作る</button>
+            <button className="btn-primary" onClick={create} disabled={busy || !name.trim()} aria-busy={busy}>作る</button>
           </>}>
           <div className="stack">
             <Field label="グループ名" required>
@@ -126,7 +137,7 @@ export default function GroupEditScreen() {
         <Modal title="メンバーの編成" onClose={() => setEditing(null)}
           footer={<>
             <button onClick={() => setEditing(null)}>やめる</button>
-            <button className="btn-primary" onClick={saveMembers}>保存する</button>
+            <button className="btn-primary" onClick={saveMembers} disabled={busy} aria-busy={busy}>保存する</button>
           </>}>
           <div className="muted" style={{ marginBottom: 8 }}>
             現在：{members.data?.map((m) => m.name).join('、') || 'なし'}

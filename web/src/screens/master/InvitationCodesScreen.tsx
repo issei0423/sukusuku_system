@@ -6,7 +6,7 @@
  * 同じ園児に複数枚が並ぶため、園児 ID でまとめて見られるようにする。
  * 配布用の出力は、コードと園児名の対応を取り違えないことを優先した様式にする。
  */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api, selectableClasses, findChild, className } from '../../api/client';
@@ -41,6 +41,12 @@ export default function InvitationCodesScreen() {
   );
 
   const [error, setError] = useState<string | null>(null);
+  /*
+   * 発行している間は「発行する」を押せなくし、続けて押しても2枚にしない（GitHub Issue #303。詳細設計書「押したときの処理の型」(2-0 (2))）。
+   * 押せなくなるのは描き直しのあとなので、その前に届いた2回目は issuing で止める。1枚・一括で共有する
+   */
+  const [busy, setBusy] = useState(false);
+  const issuing = useRef(false);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkClass, setBulkClass] = useState<number>(classesForUser[0]?.class_id ?? 1);
   const [perChild, setPerChild] = useState(2);
@@ -61,7 +67,9 @@ export default function InvitationCodesScreen() {
   const oneChildren = useAsync(() => api.listChildren(user!, { classId: oneClass }), [oneClass]);
 
   const issueOne = async () => {
-    if (!oneChild) return;
+    if (!oneChild || issuing.current) return;
+    issuing.current = true;
+    setBusy(true);
     setError(null);
     try {
       const code = await api.issueOneInvitationCode(user!, oneChild, oneDays);
@@ -70,7 +78,7 @@ export default function InvitationCodesScreen() {
       setOneChild('');
       setIssuedCode({ code, childName });
       setTick((t) => t + 1);
-    } catch (e) { setError((e as Error).message); }
+    } catch (e) { setError((e as Error).message); } finally { issuing.current = false; setBusy(false); }
   };
 
   const childCount = useAsync(
@@ -86,6 +94,9 @@ export default function InvitationCodesScreen() {
 
   const [bulkError, setBulkError] = useState<string | null>(null);
   const bulkIssue = async () => {
+    if (issuing.current) return;
+    issuing.current = true;
+    setBusy(true);
     setBulkError(null);
     try {
       const r = await api.issueInvitationCodes(user!, bulkClass, perChild, validDays, includeExisting);
@@ -94,7 +105,7 @@ export default function InvitationCodesScreen() {
       notify(r.skipped > 0
         ? `${r.issued} 枚を発行しました（使えるコードをすでに持つ ${r.skipped} 名は飛ばしました）`
         : `${r.issued} 枚を発行しました`);
-    } catch (e) { setBulkError((e as Error).message); }
+    } catch (e) { setBulkError((e as Error).message); } finally { issuing.current = false; setBusy(false); }
   };
 
   const revoke = async () => {
@@ -220,7 +231,7 @@ export default function InvitationCodesScreen() {
           footer={<>
             <button onClick={() => setOneOpen(false)}>やめる</button>
             <button className="btn-primary" onClick={issueOne}
-              disabled={!oneChild || !validDaysInput(oneDays)}>発行する</button>
+              disabled={busy || !oneChild || !validDaysInput(oneDays)} aria-busy={busy}>発行する</button>
           </>}>
           <div className="stack">
             <Field label="クラス" required>
@@ -254,7 +265,7 @@ export default function InvitationCodesScreen() {
           footer={<>
             <button onClick={() => setBulkOpen(false)}>やめる</button>
             <button className="btn-primary" onClick={bulkIssue}
-              disabled={bulkTargets === 0 || !validDaysInput(validDays) || !validPerChildInput(perChild)}>発行する</button>
+              disabled={busy || bulkTargets === 0 || !validDaysInput(validDays) || !validPerChildInput(perChild)} aria-busy={busy}>発行する</button>
           </>}>
           {bulkError && <Alert>{bulkError}</Alert>}
           <div className="stack">

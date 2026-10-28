@@ -58,6 +58,8 @@ export default function StaffChatScreen() {
   // 取消（自分のメッセージ）・削除（管理者が他者のメッセージを）を確かめている対象
   const [retracting, setRetracting] = useState<ChatMessage | null>(null);
   const [retractBusy, setRetractBusy] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const sending = useRef(false);
   // ダッシュボードの「未対応の個人チャット」から来たときは、そのチャンネルを開いた状態で始める
   const [searchParams] = useSearchParams();
 
@@ -121,10 +123,14 @@ export default function StaffChatScreen() {
   /*
    * 送れると欄が空になって「送信」が押せなくなり、押したボタンからフォーカスが外れて body に落ちる。
    * 空になった入力欄へ移す（連絡帳の「送る」と同じ。src/focusAfter.ts、WCAG 2.4.3、GitHub Issue #213）。
-   * 送れなかったときは文が残り、「送信」も押せるままなので動かさない
+   * 送れなかったときは文が残り、「送信」も押せるままなので動かさない。
+   * 送っている間は「送信」を押せなくし、続けて押しても2件にしない（GitHub Issue #303。
+   * 詳細設計書「押したときの処理の型」(2-0 (2))）。押せなくなるのは描き直しのあとなので、その前に届いた2回目は sending で止める
    */
   const send = async () => {
-    if (!roomId || !text.trim()) return;
+    if (!roomId || !text.trim() || sending.current) return;
+    sending.current = true;
+    setBusy(true);
     const pressed = focusedNow();
     // 送った先のチャンネルの書きかけだけを消す。送っている間に書き足されたら消さない
     const target = roomId;
@@ -135,7 +141,7 @@ export default function StaffChatScreen() {
       setDrafts((d) => (d[target] === body ? { ...d, [target]: '' } : d));
       messages.refresh();
       focusAfter(pressed, () => input.current);
-    } catch (e) { setError((e as Error).message); }
+    } catch (e) { setError((e as Error).message); } finally { sending.current = false; setBusy(false); }
   };
 
   /*
@@ -302,7 +308,7 @@ export default function StaffChatScreen() {
                   placeholder="メッセージを入力" style={{ minHeight: 70 }} />
                 <div className="row-end">
                   <button onClick={() => alert('添付はモックでは未実装です')}>添付</button>
-                  <button className="btn-primary" onClick={send} disabled={!text.trim()}>送信</button>
+                  <button className="btn-primary" onClick={send} disabled={busy || !text.trim()} aria-busy={busy}>送信</button>
                 </div>
               </>
             ) : (
