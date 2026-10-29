@@ -51,6 +51,8 @@ export default function GuardianChatScreen() {
   };
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState('');
+  const [busy, setBusy] = useState(false);
+  const sending = useRef(false);
   // 取消を確かめているメッセージ。元に戻せないため、1回押すだけで取り消さない（GitHub Issue #141 の 2）
   const [retracting, setRetracting] = useState<ChatMessage | null>(null);
   /*
@@ -149,8 +151,11 @@ export default function GuardianChatScreen() {
    * 空になった入力欄へ移す（連絡帳の「送る」と同じ。src/focusAfter.ts、WCAG 2.4.3、GitHub Issue #213）。
    * 送れなかったときは文が残り、「送信」も押せるままなので動かさない
    */
+  // 送っている間は「送信」を押せなくし、続けて押しても2件にしない（職員のチャットと同じ。GitHub Issue #303）
   const send = async () => {
-    if (!roomId || !text.trim()) return;
+    if (!roomId || !text.trim() || sending.current) return;
+    sending.current = true;
+    setBusy(true);
     const pressed = focusedNow();
     // 送った先のチャンネルの書きかけだけを消す。送っている間に書き足されたら消さない
     const target = roomId;
@@ -162,7 +167,7 @@ export default function GuardianChatScreen() {
       messages.refresh();
       setStatus('メッセージを送信しました');
       focusAfter(pressed, () => input.current);
-    } catch (e) { setError((e as Error).message); }
+    } catch (e) { setError((e as Error).message); } finally { sending.current = false; setBusy(false); }
   };
 
   // 操作の一覧を閉じたら、開いた吹き出しへ戻す。キーボードで画面の先頭からやり直さずに済むように（GitHub Issue #172）
@@ -391,7 +396,7 @@ export default function GuardianChatScreen() {
           <div className="row">
             <input ref={input} type="text" aria-label="メッセージを入力" value={text} maxLength={1000} onChange={(e) => setText(e.target.value)}
               placeholder="メッセージを入力" style={{ flex: 1 }} />
-            <button className="btn-primary" onClick={send} disabled={!text.trim()}>送信</button>
+            <button className="btn-primary" onClick={send} disabled={busy || !text.trim()} aria-busy={busy}>送信</button>
           </div>
         ) : (
           <div className="muted">{noPostNotice(current.room.room_type)}</div>
