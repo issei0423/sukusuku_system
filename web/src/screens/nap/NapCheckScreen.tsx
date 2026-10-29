@@ -40,8 +40,19 @@ export default function NapCheckScreen() {
    * 同じクラスのほかの職員（別のタブレット）の開始・記録・終了は、知らせ（live.ts）を受けて開いたままで読み直す。
    * 読み直しでは読み込み中の表示を出さず、園児の行の入力中の値は残す（保存のあとの読み直しと同じ）
    */
-  const session = useAsync(async () => (hasClass ? api.activeSession(classId, today(), user!) : null), [classId, tick],
-    { live: onNapClass(classId) });
+  /*
+   * 読み込み中の表示（と、その間の「午睡チェックを開始する」の非表示）は、このクラスを初めて読むときだけにする。
+   * 開始・終了のあとの読み直し（tick）でも出すと、終了のあとに「午睡チェックを開始する」が一度出てから消えて出し直され、
+   * 移したフォーカスが body に落ちる（WCAG 2.4.3、GitHub Issue #265）。読み終えたクラスは覚えておく
+   */
+  const loadedClass = useRef<number | null>(null);
+  const session = useAsync(async () => {
+    if (!hasClass) return null;
+    const active = await api.activeSession(classId, today(), user!);
+    loadedClass.current = classId;
+    return active;
+  }, [classId, tick], { live: onNapClass(classId) });
+  const sessionLoading = session.loading && loadedClass.current !== classId;
   const state = useAsync(
     async () => (hasClass ? api.classState(user!, classId, session.data?.nap_session_id ?? null) : []),
     [classId, session.data?.nap_session_id, tick],
@@ -187,9 +198,9 @@ export default function NapCheckScreen() {
 
       {error && <div style={{ marginBottom: 16 }}><Alert>{error}</Alert></div>}
 
-      {session.loading && <Loading />}
+      {sessionLoading && <Loading />}
 
-      {!session.loading && !s && (
+      {!sessionLoading && !s && (
         <section className="card">
           {autoClosed
             ? <Alert>午睡の時間帯を過ぎたため、午睡チェックを自動で終了しました。続けるときは、もう一度開始してください。</Alert>
