@@ -87,15 +87,14 @@ trap - ERR
 if ! healthy; then
   echo '作り直した DB でサーバが応答しないため、前の DB に戻します。' >&2
   "$systemctl_cmd" stop sukusuku || true
-  mkdir -p "$dest/failed-new"
+  # ここで mv が失敗しても、最後の start まで必ず進む（止まったまま朝にしない）
+  mkdir -p "$dest/failed-new" || true
   for name in sukusuku.db sukusuku.db-wal sukusuku.db-shm sukusuku.db-journal files; do
     if [[ -e $state/$name ]]; then
-      mv -- "$state/$name" "$dest/failed-new/$name"
+      mv -- "$state/$name" "$dest/failed-new/$name" || echo "よけられませんでした：$state/$name" >&2
     fi
   done
-  for name in "${moved[@]}"; do
-    mv -- "$dest/$name" "$state/$name"
-  done
+  put_back
   "$systemctl_cmd" start sukusuku || true
   exit 1
 fi
