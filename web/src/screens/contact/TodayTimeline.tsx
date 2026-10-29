@@ -5,6 +5,8 @@
  *
  * 午睡は「13:05 おひるね中」「14:40 おきた（1時間35分）」と、常に添える文を出す。
  * 体温・午睡の長さに判定の言葉や色を付けない。訂正したものには「訂正しました（15:20）」。
+ * 職員の画面では、直した職員を添えて「訂正しました（15:20 宮城）」（詳細設計書「誰が直したかの表示」(4-7 (4))、決めたこと D-28。
+ * 記録した職員とは別に出す。保護者の画面には出さない）。
  * 前に開いたあとに記録・訂正されたものには「新」を添える（lastReadAt と比べる）。
  * 職員の画面で使うとき（viewer="staff"）は、記録した職員の名前と、保護者に出さない設定の印を添え、
  * 直せる人には行ごとに「直す・取り消す」を出す（onFix）。
@@ -23,7 +25,7 @@ const EVENT_ITEM: Record<string, string> = { '1': 'meal', '2': 'toilet', '3': 't
 export type TimelineFix = { kind: 'event'; event: ContactEvent } | { kind: 'sleep'; sleep: NapSleep };
 
 interface Item {
-  key: string; at: string; text: string; heading?: string; corrected: string | null; staff?: string; nap?: boolean;
+  key: string; at: string; text: string; heading?: string; corrected: string | null; staff?: string; correctedBy?: string; nap?: boolean;
   hidden?: boolean; fix?: TimelineFix; event?: ContactEvent;
   /** 写真の出来事なら写真の ID（時刻と絵を出す。押すと画面いっぱいに出す。詳細設計書 (2-6 (5))） */
   photoId?: number;
@@ -49,7 +51,7 @@ export default function TodayTimeline({ page, viewer, lastReadAt, onFix, keepInG
     ...page.events.map((e): Item => ({ key: `e${e.contact_event_id}`, at: e.recorded_at,
       // 写真は「写真」と添えた文（あれば）
       text: e.event_type === '5' && e.body ? `${eventText(e)}　${e.body}` : eventText(e), corrected: e.corrected_at,
-      staff: viewer === 'staff' ? e.staff_name : undefined, hidden: hidden(EVENT_ITEM[e.event_type]), fix: { kind: 'event', event: e },
+      staff: viewer === 'staff' ? e.staff_name : undefined, correctedBy: viewer === 'staff' ? e.last_change?.staff_name : undefined, hidden: hidden(EVENT_ITEM[e.event_type]), fix: { kind: 'event', event: e },
       photoId: e.event_type === '5' && e.contact_photo_id !== null ? e.contact_photo_id : undefined, event: e })),
     ...page.class_notes.map((c): Item => ({ key: `c${c.contact_class_id}`, at: c.recorded_at, text: c.body, heading: 'クラスのようす',
       corrected: c.corrected_at, hidden: hidden('class') })),
@@ -71,7 +73,7 @@ export default function TodayTimeline({ page, viewer, lastReadAt, onFix, keepInG
             <span className="contact-timeline-text">
               {it.heading && <strong className="contact-timeline-heading">{it.heading}</strong>}
               {it.text}
-              {it.corrected && <span className="muted">　訂正しました（{formatHM(it.corrected)}）</span>}
+              {it.corrected && <span className="muted">　訂正しました（{formatHM(it.corrected)}{it.correctedBy ? ` ${it.correctedBy}` : ''}）</span>}
               {it.staff && <span className="muted">　{it.staff}</span>}
               {it.hidden && <span className="tag tag-plain contact-hidden">保護者には出していません</span>}
               {it.photoId !== undefined && (

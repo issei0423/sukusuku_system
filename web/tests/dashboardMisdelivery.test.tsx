@@ -117,9 +117,9 @@ describe('管理者のダッシュボードの「対応の記録がない取り�
   it('一般の職員には行を出さない', async () => {
     open('/staff', teacher);
     await settled();
-    // ほかの「未対応」の行が出るまで待ってから、行が無いことを確かめる
+    // ほかの「園内のこと」の行が出るまで待ってから、行が無いことを確かめる
     await waitFor(() => {
-      expect(document.body.textContent).toContain('未読のチャット');
+      expect(document.body.textContent).toContain('未対応の個人チャット');
     }, { timeout: 3000 });
     expect(findRow()).toBeUndefined();
   });

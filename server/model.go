@@ -123,6 +123,25 @@ func nowTime() time.Time { return time.Now().In(jst) }
 func now() string   { return nowTime().Format("2006-01-02T15:04:05") }
 func today() string { return nowTime().Format("2006-01-02") }
 
+/*
+nextVersion は、行を書き換えるときの新しい updated_at（版）を返す。
+
+読んだ版（updated_at）で「確認しました」・訂正・取り下げを確かめるため、書くたびに必ず前の値より進める。
+同じ秒のうちに2回書き換えても別の版になる（詳細設計書「足す表」(5-2) の決めたこと D-40）。
+今の時刻が前の値より後なら今の時刻、そうでなければ前の値の1秒後にする
+*/
+func nextVersion(previous string) string {
+	current := now()
+	if current > previous {
+		return current
+	}
+	t, err := time.ParseInLocation("2006-01-02T15:04:05", previous, jst)
+	if err != nil {
+		return current
+	}
+	return t.Add(time.Second).Format("2006-01-02T15:04:05")
+}
+
 func plusMinutes(iso string, minutes int) string {
 	t, err := time.ParseInLocation("2006-01-02T15:04:05", iso, jst)
 	if err != nil {

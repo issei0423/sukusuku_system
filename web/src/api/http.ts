@@ -19,7 +19,7 @@ import type {
   DevListRow, DevScheduleRow, CsvRow, FiscalClassRow, StaffAccountRow,
   GuardianAccountRow, InvitationCodeRow, OperationLogRow, StaffSummary, GuardianHomeRow,
   DevDraftView,
-  ContactPage, ContactClassView, ContactHome, ContactHomeInput, NapSleep, NapExclusion, GrowthRecord,
+  ContactPage, ContactMonth, ContactClassView, ContactHome, ContactHomeInput, NapSleep, NapExclusion, GrowthRecord,
 } from './shapes';
 import type { SendPhotoInput, SendPhotoResult } from './shapes';
 import type {
@@ -818,6 +818,8 @@ const contactApi = {
   ...contactPhotoApi,
   contactPage: (_u: SessionUser, childId: string, date?: string) =>
     get<ContactPage>(`/api/contact/children/${encodeURIComponent(childId)}${date ? qs({ date }) : ''}`),
+  contactMonth: (_u: SessionUser, childId: string, month?: string) =>
+    get<ContactMonth>(`/api/contact/children/${encodeURIComponent(childId)}/month${month ? qs({ month }) : ''}`),
   markContactRead: (_u: SessionUser, childId: string, date: string) =>
     post<{ ok: true }>(`/api/contact/children/${encodeURIComponent(childId)}/read`, { date }),
   contactClasses: (_u: SessionUser) => get<{ class_id: number; class_name: string }[]>('/api/contact/classes'),

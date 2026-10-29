@@ -355,6 +355,8 @@ export interface StaffSummary {
   unhandledChatRoom: { chat_room_id: number; room_name: string } | null;
   devOverdue: number;
   pending: number;
+  /** 承認待ちのうち、自分が申請したもの（管理者のみ。自分の申請は承認できないため「ほかの管理者へ」と添える） */
+  pendingOwn: number;
   abnormalWithoutDiary: number;
   /**
    * 誤送信への対応を記録していない取り消しの数。誤送信対応記録画面の「対応の記録がない取り消し」の一覧と同じ範囲。
@@ -451,6 +453,14 @@ export interface ContactEvent {
   is_deleted: boolean;
   /** 職員の応答だけ。直すときに読んだ版として送り返す（詳細設計書「訂正・取り消し」(4-7 (1))） */
   updated_at?: string;
+  /** 職員の応答だけ。直した職員と時刻（詳細設計書「誰が直したかの表示」(4-7 (4))）。直していなければ無い */
+  last_change?: LastChange | null;
+}
+
+/** 行を最後に直した職員と時刻（保護者には返さない） */
+export interface LastChange {
+  staff_name: string;
+  at: string;
 }
 
 /** クラスのようす（t_contact_class） */
@@ -480,6 +490,8 @@ export interface ContactFacility {
   is_deleted: boolean;
   /** 職員の応答だけ。訂正のときに読んだ版として送り返す */
   updated_at?: string;
+  /** 職員の応答だけ。直した職員と時刻。直していなければ無い */
+  last_change?: LastChange | null;
 }
 
 /** ねた・おきた（t_nap_sleep） */
@@ -514,6 +526,28 @@ export interface NapExclusion {
 }
 
 /** 連絡帳の1ページ（GET /api/contact/children/{childID}） */
+/**
+ * 連絡帳の月の一覧の1日（GET /api/contact/children/{childID}/month。詳細設計書「連絡帳を読む経路」(4-3 (2))）。
+ * 【仮置き】has_home・record_count は、画面詳細図「連絡帳画面（保護者）」(8-3) 項目4 の「家庭から」の有無と件数のために足した
+ */
+export interface ContactMonthDay {
+  date: string;
+  has_home: boolean;
+  has_records: boolean;
+  record_count: number;
+  has_facility: boolean;
+  /** 保護者の応答だけ */
+  unread?: boolean;
+}
+
+export interface ContactMonth {
+  month: string;
+  /** 移れる最初の月と最後の月（YYYY-MM） */
+  from_month: string;
+  to_month: string;
+  days: ContactMonthDay[];
+}
+
 export interface ContactPage {
   child_id: string;
   child_name: string;

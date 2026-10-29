@@ -23,12 +23,15 @@ const PICKUP_PERSON_MAX = 50;
 /** お迎えの人の選択肢（詳細設計書 (2-6 (3))。その他は文字で） */
 const PICKUP_PEOPLE = ['母', '父', '祖母', '祖父'];
 
-/** 10分刻みの時刻（from〜to 時） */
-function times(fromHour: number, toHour: number): string[] {
+/**
+ * 10分刻みの時刻（from〜to 時）。to 時は、通しのとき（toHourWhole）は 50 分まで、そうでなければちょうどの時刻まで。
+ * 「夜に寝た時刻」は 18:00〜02:00（図/画面詳細図「連絡帳画面（保護者）」(8-3) 項目6）。23 時は 23:50 まで出す（GitHub Issue #268 の 3）
+ */
+function times(fromHour: number, toHour: number, toHourWhole = false): string[] {
   const out: string[] = [];
   for (let h = fromHour; h <= toHour; h++) {
     for (let m = 0; m < 60; m += 10) {
-      if (h === toHour && m > 0) break;
+      if (h === toHour && m > 0 && !toHourWhole) break;
       out.push(`${String(h % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
     }
   }
@@ -132,7 +135,7 @@ export default function HomeForm({ home, busy, error, onSubmit, onCancel }: {
             <span>夜に寝た時刻</span>
             <select value={sleepFrom} onChange={(e) => touch(setSleepFrom)(e.target.value)}>
               <option value="">入れない</option>
-              {times(18, 23).map((t) => <option key={t} value={t}>{t}</option>)}
+              {times(18, 23, true).map((t) => <option key={t} value={t}>{t}</option>)}
               {times(0, 2).map((t) => <option key={`n${t}`} value={t}>{t}</option>)}
             </select>
           </label>

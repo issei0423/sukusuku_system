@@ -1,9 +1,10 @@
 /*
  * 職員ダッシュボード
- * 典拠：図/画面詳細図.md「職員ダッシュボード」(2-4)
+ * 典拠：図/画面詳細図.md「職員ダッシュボード」(2-6)、詳細設計書「職員ダッシュボード（「届ける」の項目）」(2-1)
  *
- * 未対応の件数を最上部に置く。出勤直後に「何が残っているか」を1画面で把握させるため。
- * 承認待ちの区画は管理者にのみ表示する。
+ * 「届けること」を上に、園内のこと（日誌・発達チェック・異常時の記録）をその下に置く。
+ * 出勤直後に「何が残っているか」を1画面で把握させるため。各項目に、数えている範囲（担当クラス・全クラス）を添える。
+ * 差し戻された日誌は一般にのみ、承認待ちの日誌は管理者にのみ表示する（同 項目2・8）。
  */
 import { Link, useLocation } from 'react-router-dom';
 import { useAsync, AUTO_REFRESH_MS } from '../../hooks';
@@ -13,6 +14,9 @@ import { api } from '../../api/client';
 import { Loading, ErrorBox, Alert } from '../../components/ui';
 import { formatYMD, today } from '../../api/util';
 import { ACCOUNT_CHANGED_TEXT } from '../../messages';
+
+/** 項目に、数えている範囲を添える（「担当クラス」「全クラス」） */
+const scopeNote = (scope: string) => <span className="muted">（{scope}）</span>;
 
 export default function StaffDashboard() {
   const { user } = useSession();
@@ -36,6 +40,8 @@ export default function StaffDashboard() {
    * 2件以上あるときは、どこが開くかが分かるよう、先頭のチャンネル名に残りの件数を添える
    */
   const firstUnhandled = data.unhandledChatRoom;
+  // 数えている範囲。一般は自クラス、管理者は全クラス（同「数える範囲」。GitHub Issue #268 の 7）
+  const scope = user.role === '1' ? '全クラス' : '担当クラス';
   const unhandledNote = firstUnhandled
     ? `${firstUnhandled.room_name}${data.unhandledChat > 1 ? ` ほか${data.unhandledChat - 1}件` : ''}`
     : undefined;
@@ -45,15 +51,22 @@ export default function StaffDashboard() {
    * 0 件の行を消すと、0 件なのか、その項目を見られないのかが分からない（GitHub Issue #178 の 6）。
    * 【仮置き】設計の表に無い「未対応の個人チャット」も、ほかの行にそろえて 0 件で出す（web/仮置き値.md）
    */
-  const rows: { label: string; note?: string; count: number; unit: string; to: string }[] = [
-    // 数えるのは自分が書いて差し戻されたもの。開いた一覧も自分が書いたものに絞り、期間を問わない（GitHub Issue #174）
-    { label: '差し戻された日誌', count: data.returned, unit: '件', to: '/staff/diary?status=4&mine=1' },
-    { label: '未読のチャット', count: data.unreadChat, unit: '件', to: '/staff/chat' },
+  const rows: { label: string; note?: string; count: number; unit: string; to: string; noScope?: boolean }[] = [
+    // 一般にのみ表示する。数えるのは自分が書いて差し戻されたもの。開いた一覧も自分が書いたものに絞り、期間を問わない（GitHub Issue #174）
+    // 旧「未読のチャット」の行は置かない（職員ダッシュボードの項目表 (2-6) に無い。同 項目3 の「旧『未読のチャット』」は未対応の個人チャットに替わった。GitHub Issue #268）
+    ...(user.role !== '1'
+      ? [{ label: '差し戻された日誌', count: data.returned, unit: '件', to: '/staff/diary?status=4&mine=1' }]
+      : []),
+    // 管理者にのみ表示する。自分が申請したものは、自分では承認できないため「ほかの管理者へ」と添える（同 項目8）
+    ...(user.role === '1'
+      ? [{ label: '承認待ちの日誌',
+          note: data.pendingOwn > 0 ? `（うち自分の申請 ${data.pendingOwn}件：ほかの管理者へ）` : undefined,
+          count: data.pending, unit: '件', to: '/staff/admin/approval' }]
+      : []),
     { label: '未対応の個人チャット', note: unhandledNote, count: data.unhandledChat, unit: '件',
       to: firstUnhandled ? `/staff/chat?room=${firstUnhandled.chat_room_id}` : '/staff/chat' },
     // 数える範囲は、参照できる園児の全体。管理者は全クラス、一般は担当クラス（GitHub Issue #125）
-    { label: `発達チェックの未実施（${user.role === '1' ? '全クラス' : '担当クラス'}）`,
-      count: data.devOverdue, unit: '名', to: '/staff/growth' },
+    { label: '発達チェックの未実施', count: data.devOverdue, unit: '名', to: '/staff/growth' },
     // 【仮置き】起票したヒヤリハットが下書きのまま（申請していない）ものも数え、名前もそれに合わせる
     // （設計の名前は画面詳細図「職員ダッシュボード」(2-6) 項目9 の「ヒヤリハット未起票の異常時の記録」。web/仮置き値.md。GitHub Issue #142 の 5）
     { label: 'ヒヤリハット未起票・下書きのままの異常時の記録', count: data.abnormalWithoutDiary, unit: '件', to: '/staff/nap/abnormal' },
@@ -64,7 +77,7 @@ export default function StaffDashboard() {
      * 【仮置き】行の名前と並び（未対応の末尾）は設計に無い。職員ダッシュボードの項目表 (2-6) に無い行である（web/仮置き値.md）
      */
     ...(user.role === '1'
-      ? [{ label: '対応の記録がない取り消し', count: data.misdeliveryUnrecorded, unit: '件', to: '/staff/admin/misdelivery' }]
+      ? [{ label: '対応の記録がない取り消し', count: data.misdeliveryUnrecorded, unit: '件', to: '/staff/admin/misdelivery', noScope: true }]
       : []),
   ];
 
@@ -94,11 +107,11 @@ export default function StaffDashboard() {
           園からのひとことを送っていない園児は、今日の午睡で「きょうは対象外（欠席）」にした子を数えない
         */}
         <section className="card col-12 dashboard-deliver" aria-labelledby="dashboard-deliver-title">
-          <h2 id="dashboard-deliver-title">届ける</h2>
+          <h2 id="dashboard-deliver-title">届けること</h2>
           <table className="list">
             <tbody>
               <tr>
-                <td>家庭からの連絡</td>
+                <td>家庭からの連絡{scopeNote(scope)}</td>
                 <td className="nowrap">
                   {data.homeUnconfirmed + data.homeRevised === 0 ? 'ありません' : (
                     <>
@@ -111,12 +124,12 @@ export default function StaffDashboard() {
                 <td className="nowrap"><Link className="btn btn-sm" to="/staff/contact?sort=home">開く</Link></td>
               </tr>
               <tr>
-                <td>園からのひとことを送っていない園児</td>
+                <td>園からのひとことを送っていない園児{scopeNote(scope)}</td>
                 <td className="nowrap">{data.facilityUnsent === 0 ? 'ありません' : `${data.facilityUnsent} 名`}</td>
                 <td className="nowrap"><Link className="btn btn-sm" to="/staff/contact?sort=facility">開く</Link></td>
               </tr>
               <tr>
-                <td>午睡中の園児</td>
+                <td>午睡中の園児{scopeNote(scope)}</td>
                 <td className="nowrap">{data.napSleeping === 0 ? 'ありません' : `${data.napSleeping} 名`}</td>
                 <td className="nowrap"><Link className="btn btn-sm" to="/staff/nap">開く</Link></td>
               </tr>
@@ -124,15 +137,15 @@ export default function StaffDashboard() {
           </table>
         </section>
 
-        {/* 未対応 */}
+        {/* 園内のこと（日誌・発達チェック・異常時の記録） */}
         <section className="card col-7">
-          <h2>未対応</h2>
+          <h2>園内のこと</h2>
           <table className="list">
             <tbody>
               {rows.map((r) => (
                 <tr key={r.label}>
                   <td>
-                    {r.label}
+                    {r.label}{!r.noScope && scopeNote(scope)}
                     {r.note && <div className="muted">{r.note}</div>}
                   </td>
                   <td className="num nowrap">{r.count} {r.unit}</td>
@@ -143,10 +156,11 @@ export default function StaffDashboard() {
           </table>
         </section>
 
-        {/* よく使う。実施中の午睡チェックがあれば先頭に出す（画面詳細図 2-4） */}
+        {/* よく使う。先頭は連絡帳。実施中の午睡チェックがあれば、その次に出す（画面詳細図「職員ダッシュボード」(2-6) 項目5・15） */}
         <section className="card col-5">
           <h2>よく使う</h2>
           <div className="stack">
+            <Link className="btn btn-block" to="/staff/contact">連絡帳</Link>
             {data.activeNap && (
               <Link className="btn btn-primary btn-block" to="/staff/nap">
                 午睡チェックが実施中です（開く）
@@ -158,18 +172,6 @@ export default function StaffDashboard() {
             <Link className="btn btn-block" to="/staff/growth">発達チェックを入力</Link>
           </div>
         </section>
-
-        {/* 承認待ちは管理者にのみ表示する */}
-        {user.role === '1' && (
-          <section className="card col-12">
-            <div className="row">
-              <h2>承認待ち</h2>
-              <div className="spacer" />
-              <span>{data.pending} 件</span>
-              <Link className="btn btn-sm" to="/staff/admin/approval">一覧へ</Link>
-            </div>
-          </section>
-        )}
       </div>
     </div>
   );

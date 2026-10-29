@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"net/http"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -59,6 +60,8 @@ type contactEventOut struct {
 	IsDeleted      bool     `json:"is_deleted"`
 	// 職員の応答だけ。訂正のときに読んだ版として送り返す（詳細設計書「訂正・取り消し」(4-7 (1))）
 	UpdatedAt string `json:"updated_at,omitempty"`
+	// 職員の応答だけ。直した職員と時刻（詳細設計書「誰が直したかの表示」(4-7 (4))。決めたこと D-28）。直していなければ付けない
+	LastChange *lastChangeOut `json:"last_change,omitempty"`
 }
 
 type contactClassOut struct {
@@ -84,6 +87,8 @@ type contactFacilityOut struct {
 	IsDeleted   bool    `json:"is_deleted"`
 	// 職員の応答だけ。訂正のときに読んだ版として送り返す（詳細設計書「訂正・取り消し」(4-7 (1))）
 	UpdatedAt string `json:"updated_at,omitempty"`
+	// 職員の応答だけ。直した職員と時刻（同上）。直していなければ付けない
+	LastChange *lastChangeOut `json:"last_change,omitempty"`
 }
 
 type napSleepOut struct {
@@ -175,6 +180,31 @@ func (a *app) homeView(h *contactHomeRow, staff bool) *contactHomeOut {
 	return &out
 }
 
+// lastChangeOut は、行を最後に直した職員と時刻（詳細設計書「誰が直したかの表示」(4-7 (4))）
+type lastChangeOut struct {
+	StaffName string `json:"staff_name"`
+	At        string `json:"at"`
+}
+
+/*
+lastChange は、その行の操作ログ（t_operation_log）の、変更（operation_type = 2）でいちばん新しい行から、
+直した職員の名前と時刻を引く。表に列を足さず、同じ事実を二重に持たない（決めたこと D-28）。
+「成長の記録に残す」の付け外しは、保護者の画面に「訂正しました」を出さない操作なので数えない。
+直していなければ nil
+*/
+func (a *app) lastChange(table string, id int64) *lastChangeOut {
+	var accountID int64
+	var at string
+	err := a.db.QueryRow(`SELECT account_id, operated_at FROM t_operation_log
+		WHERE target_table = ? AND target_id = ? AND operation_type = ? AND account_id IS NOT NULL
+		  AND COALESCE(after_value, '') NOT LIKE '{"成長の記録に残す"%'
+		ORDER BY operated_at DESC, operation_log_id DESC LIMIT 1`, table, id, opUpdate).Scan(&accountID, &at)
+	if err != nil {
+		return nil
+	}
+	return &lastChangeOut{StaffName: a.accountName(accountID), At: at}
+}
+
 func (a *app) loadContactEvents(childID, date string, staff bool) ([]contactEventOut, error) {
 	rows, err := a.db.Query(`SELECT contact_event_id, child_id, contact_date, event_type, recorded_at, meal_kind, meal_amount,
 		toilet_label, temperature, body, contact_photo_id, keep_in_growth, staff_id, corrected_at, is_deleted, updated_at
@@ -204,6 +234,7 @@ func (a *app) loadContactEvents(childID, date string, staff bool) ([]contactEven
 	for i := range out {
 		if staff {
 			out[i].StaffName = a.staffName(staffIDs[i])
+			out[i].LastChange = a.lastChange("t_contact_event", out[i].ID)
 		} else {
 			out[i].UpdatedAt = ""
 		}
@@ -274,6 +305,7 @@ func (a *app) loadFacility(childID, date string, staff bool) (*contactFacilityOu
 	}
 	if staff {
 		f.StaffName = a.staffName(staffID)
+		f.LastChange = a.lastChange("t_contact_facility", f.ID)
 	} else {
 		f.UpdatedAt = ""
 	}
@@ -612,6 +644,10 @@ func todayItemText(e contactEventOut) string {
 	case "4":
 		return excerpt(deref(e.Body), 40)
 	case "5":
+		// 添えた文があれば写真の行にも出す（図/画面詳細図「保護者ホーム」(2-7)「13:40 [写真] 砂場でお山を作りました」）
+		if body := strings.TrimSpace(deref(e.Body)); body != "" {
+			return excerpt(body, 40)
+		}
 		return "写真"
 	}
 	return ""

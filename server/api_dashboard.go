@@ -21,11 +21,14 @@ func (a *app) handleStaffSummary(w http.ResponseWriter, r *http.Request) {
 
 	// 自分が書いて差し戻された日誌。開いた先の日誌一覧（状態＝差し戻し・自分が書いたもの）と同じ範囲を数えるため、
 	// 参照範囲の外へ出たもの（担当を外れたクラスの日誌）は数えない（GitHub Issue #174）
+	// 差し戻された日誌は一般にのみ表示する。管理者には数えない（図/画面詳細図「職員ダッシュボード」(2-6) 項目2。GitHub Issue #268）
 	var returned int
-	cond, condArgs := a.visibleDiaryCondition(u)
-	a.db.QueryRow(`SELECT COUNT(*) FROM t_diary
-		WHERE is_deleted = 0 AND status = '4' AND created_staff_id = ? AND `+cond,
-		append([]any{u.staff()}, condArgs...)...).Scan(&returned)
+	if !u.isAdmin() {
+		cond, condArgs := a.visibleDiaryCondition(u)
+		a.db.QueryRow(`SELECT COUNT(*) FROM t_diary
+			WHERE is_deleted = 0 AND status = '4' AND created_staff_id = ? AND `+cond,
+			append([]any{u.staff()}, condArgs...)...).Scan(&returned)
+	}
 
 	// 未読のチャット。外れたチャンネルの、外れたあとの投稿は数えない（読めないため。api_chat.go の afterLeftClause）
 	var unreadChat int
@@ -43,9 +46,12 @@ func (a *app) handleStaffSummary(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 承認待ちは管理者にのみ数える
-	pending := 0
+	// そのうち自分が申請したもの。自分の申請は承認できないため「ほかの管理者へ」と添える（同 項目8。GitHub Issue #268）
+	pending, pendingOwn := 0, 0
 	if u.isAdmin() {
 		a.db.QueryRow(`SELECT COUNT(*) FROM t_diary WHERE is_deleted = 0 AND status = '2'`).Scan(&pending)
+		a.db.QueryRow(`SELECT COUNT(*) FROM t_diary WHERE is_deleted = 0 AND status = '2' AND applied_staff_id = ?`,
+			u.staff()).Scan(&pendingOwn)
 	}
 
 	// 誤送信への対応を記録していない取り消し。記録するのは管理者のため、管理者にのみ数える
@@ -168,6 +174,7 @@ func (a *app) handleStaffSummary(w http.ResponseWriter, r *http.Request) {
 		"unhandledChatRoom":    unhandledChatRoom,
 		"devOverdue":           overdueCount,
 		"pending":              pending,
+		"pendingOwn":           pendingOwn,
 		"abnormalWithoutDiary": abnormalWithoutDiary,
 		// 管理者のみ。一般の職員には 0 を返す
 		"misdeliveryUnrecorded": misdeliveryUnrecorded,

@@ -6,7 +6,7 @@
  * 園で記録されたものは、記録した時点で知らせ（contact）を受けて読み直す。
  * 開いたときに、そのページを開いた時刻を残す（POST .../read）。知らせを受けた読み直しでは残さない（決めたこと D-23）。
  *
- * 月の一覧・園にたずねる・写真の表示は、それを作る段で足す（詳細設計書 (2-6 (6)(7))）。
+ * 月の一覧は「月の一覧」で同じ画面の中に出す（MonthList.tsx。詳細設計書 (2-6 (6))）。園にたずねる・写真の表示は、それを作る段で足す（同 (7)）。
  */
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
@@ -23,6 +23,7 @@ import { focusAfter, focusedNow } from '../../focusAfter';
 import { TEXT } from '../../messages';
 import HomeForm from './HomeForm';
 import TodayTimeline from './TodayTimeline';
+import MonthList from './MonthList';
 import { dayLabel, homeLines } from './contactText';
 
 export default function GuardianContactScreen() {
@@ -31,6 +32,7 @@ export default function GuardianContactScreen() {
   const { user } = useSession();
   const date = params.get('date') ?? today();
   const [editing, setEditing] = useState(params.get('write') === '1');
+  const [showMonth, setShowMonth] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // 知らせのクラス（クラスのようす）は、読んだページから分かる
@@ -108,8 +110,14 @@ export default function GuardianContactScreen() {
           <button type="button" onClick={() => moveTo(addDays(date, -1))}>‹ 前の日</button>
           <strong>{dayLabel(date)}</strong>
           <button type="button" onClick={() => moveTo(addDays(date, 1))} disabled={isToday}>次の日 ›</button>
+          <button type="button" aria-expanded={showMonth} onClick={() => setShowMonth((v) => !v)}>月の一覧</button>
         </nav>
       </div>
+
+      {showMonth && (
+        <MonthList childId={childId} initialMonth={date.slice(0, 7)} onClose={() => setShowMonth(false)}
+          onPick={(d) => { setShowMonth(false); moveTo(d); }} />
+      )}
 
       <section className="card contact-section" aria-labelledby="contact-home-title">
         <h2 id="contact-home-title">家庭から</h2>

@@ -446,17 +446,7 @@ nextDiaryVersion は、日誌を書き換えるときの新しい updated_at を
 同じ秒のうちに2回書き換えても別の版になる（詳細設計書「足す表」(5-2) の決めたこと D-40）。
 今の時刻が前の値より後なら今の時刻、そうでなければ前の値の1秒後にする
 */
-func nextDiaryVersion(previous string) string {
-	current := now()
-	if current > previous {
-		return current
-	}
-	t, err := time.ParseInLocation("2006-01-02T15:04:05", previous, jst)
-	if err != nil {
-		return current
-	}
-	return t.Add(time.Second).Format("2006-01-02T15:04:05")
-}
+func nextDiaryVersion(previous string) string { return nextVersion(previous) }
 
 /*
 handleApproveDiary は承認する。承認は園内の確認であり、保護者へは何も届かない
