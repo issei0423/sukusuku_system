@@ -94,6 +94,14 @@ runner を登録し直す（`config.sh`）ときは、`.env` に行を足すこ�
 - VM で `systemctl status sukusuku caddy` と `journalctl -u sukusuku -n 100` を見る。実行中の commit は `/opt/sukusuku/current/commit` にある。
 - 新しいアプリがローカルで応答しなければスクリプトは前の実行ファイルと画面へ戻す。更新前の SQLite バックアップは root だけが読める `/var/backups/sukusuku/` に残す。スキーマ変更時の DB 復元は自動化していないので、復旧時に確認する。
 
+## アクセスログ
+
+`Caddyfile.ip` の `log` で、Caddy が1件ずつのアクセスを `/var/log/caddy/sukusuku-access.log`（JSON、1行1件）に残す。2026-10-24 より前は `log` が無く、アクセスは残っていない。アプリの操作ログ（`t_operation_log`）は書き換え・CSV の出力・ログインの失敗だけで、ログインの成功と送信元の IP は残らない。
+
+- 置き方（持ち主が Bastion のセッションで行う）：`sudo cp Caddyfile.ip /etc/caddy/Caddyfile`、`sudo caddy validate --config /etc/caddy/Caddyfile`、`sudo systemctl reload caddy`。`/var/log/caddy` が無ければ `sudo install -d -o caddy -g caddy -m 0750 /var/log/caddy`
+- 見方：`sudo tail -n 50 /var/log/caddy/sukusuku-access.log | jq -c '{ts, ip: .request.remote_ip, m: .request.method, uri: .request.uri, st: .status}'`。ログインの試しだけなら `jq -c 'select(.request.uri == "/api/login") | {ts, ip: .request.remote_ip, st: .status}'`
+- Cookie・Set-Cookie・Authorization は Caddy が伏せて書く。送信元の IP と URL は残るので、ログを外へ出さない。残す期間は 30 日【仮置き】
+
 デモデータには既知の共通パスワード `pass1234` がある。現在の公開先はデモ専用とし、実データを入れない。Anthropic API キーは VM に置かず、AI は無効のままにする。
 
 ## 設置状況（2026-10-23）

@@ -9,5 +9,16 @@ https://217.142.235.206 {
             profile shortlived
         }
     }
+    # アクセスログ。log を書かないと Caddy は1件ずつのアクセスを残さない（2026-10-24 まで残していなかった）。
+    # Cookie・Set-Cookie・Authorization は Caddy が REDACTED に伏せて書く（Caddy の log ディレクティブの文書）。
+    # 【仮置き】残す期間は 30 日・1 ファイル 10MiB・10 ファイルまで。送信元の IP と URL が残るので、外へ出さない
+    log {
+        output file /var/log/caddy/sukusuku-access.log {
+            roll_size 10MiB
+            roll_keep 10
+            roll_keep_for 720h
+        }
+        format json
+    }
     reverse_proxy 127.0.0.1:8080
 }
