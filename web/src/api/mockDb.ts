@@ -383,6 +383,14 @@ export const chatRooms: ChatRoomRow[] = [
     room_name: `${c.child_name}の保護者`, is_archived: false, thread_status: '2' as const, child_id: c.child_id,
   })),
 ];
+// クラスグループは「クラス × 年度」で自動構成する（要件定義書「グループの種別」(4-4 (a))、基本設計書「チャット」(5-6)）。
+// 今年度のクラスは3つなので、もも組の部屋も置く（GitHub Issue #307）。既存の部屋番号を動かさないよう、個人チャットのあとに足す。
+// server/seed.sql と同じ
+chatRooms.push(...classes.filter((cl) => cl.fiscal_year === 2026 && !chatRooms.some((r) => r.room_type === '2' && r.class_id === cl.class_id))
+  .map((cl, i) => ({
+    chat_room_id: Math.max(...chatRooms.map((r) => r.chat_room_id)) + 1 + i, room_type: '2' as const, class_id: cl.class_id,
+    room_name: cl.class_name, is_archived: false, thread_status: null,
+  })));
 
 /** 参加者（t_chat_member）。left_at で過去の所属期間を保持する（基本設計書 5-5） */
 export const chatMembers: ChatMember[] = [
@@ -403,6 +411,10 @@ export const chatMembers: ChatMember[] = [
       (a.role === '2' && staff.some((s) => s.account_id === a.account_id && teacherIds.has(s.staff_id)))))
       .map((a) => ({ chat_room_id: r.chat_room_id, account_id: a.account_id, joined_at: '2026-09-01T09:00:00', left_at: null }));
   }),
+  // もも組のクラスグループ（GitHub Issue #307）。担任の割り当てと保護者の紐づけがまだ無いので、参加者は管理者だけ
+  ...chatRooms.filter((r) => r.room_type === '2' && r.chat_room_id >= 10).flatMap((r) =>
+    accounts.filter((a) => a.status === '1' && a.role === '1')
+      .map((a) => ({ chat_room_id: r.chat_room_id, account_id: a.account_id, joined_at: '2026-09-01T09:00:00', left_at: null }))),
 ];
 
 export const chatMessages: ChatMessage[] = [

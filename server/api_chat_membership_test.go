@@ -116,6 +116,61 @@ func contains(list []string, s string) bool {
 // デモデータのチャンネル：1 園全体、2 職員、3 さくら組、4 ひまわり組、5 運動会実行委員（目的別）、
 // 6〜9 さくら組の個人チャット。アカウント：1・2 管理者、3・4 さくら組の担任、5 ひまわり組の担任、6〜10 保護者
 
+// クラスグループは「クラス × 年度」で自動構成する（要件定義書「グループの種別」(4-4 (a))、基本設計書「チャット」(5-6)）。
+// 管理者のチャンネル一覧に、今年度の3クラスのグループが出る（GitHub Issue #307）。
+// web/tests/chatMembership.test.ts が同じ観点をモックで確かめる。
+func TestClassGroupsExistForEveryClassOfThisYear(t *testing.T) {
+	a, h := newTestApp(t)
+	admin := loginAs(a, 1, "staff")
+
+	t.Run("今年度のクラスごとに、クラスグループが1つずつある", func(t *testing.T) {
+		rows, err := a.db.Query(`SELECT cl.class_name, COUNT(r.chat_room_id)
+			FROM m_class cl LEFT JOIN m_chat_room r ON r.room_type = '2' AND r.class_id = cl.class_id
+			WHERE cl.fiscal_year = ? GROUP BY cl.class_id`, fiscalYear)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rows.Close()
+		n := 0
+		for rows.Next() {
+			var name string
+			var count int
+			rows.Scan(&name, &count)
+			n++
+			if count != 1 {
+				t.Errorf("%s のクラスグループが %d 個ある（1個のはず）", name, count)
+			}
+		}
+		if n != 3 {
+			t.Fatalf("今年度のクラスが %d 個（デモデータは3個）", n)
+		}
+	})
+
+	t.Run("管理者のチャンネル一覧に、さくら組・ひまわり組・もも組が出る", func(t *testing.T) {
+		names := []string{}
+		for _, v := range roomViews(t, h, admin) {
+			if v.Room.RoomType == "2" {
+				names = append(names, v.Room.RoomName)
+			}
+		}
+		sort.Strings(names)
+		want := []string{"さくら組", "ひまわり組", "もも組"}
+		sort.Strings(want)
+		if strings.Join(names, ",") != strings.Join(want, ",") {
+			t.Fatalf("管理者のクラスグループ = %v, want %v", names, want)
+		}
+	})
+
+	t.Run("担任でない一般は、もも組のグループに入らない", func(t *testing.T) {
+		kubota := loginAs(a, 5, "staff") // ひまわり組の担任
+		for _, v := range roomViews(t, h, kubota) {
+			if v.Room.RoomName == "もも組" {
+				t.Fatalf("ひまわり組の担任が、もも組のクラスグループに入っている")
+			}
+		}
+	})
+}
+
 func TestGroupMembersOnlyPurposeGroups(t *testing.T) {
 	a, h := newTestApp(t)
 	kubota := loginAs(a, 5, "staff") // ひまわり組の担任
