@@ -78,11 +78,12 @@ function schedule(ctx: AudioContext) {
 
 /**
  * 実施中の午睡チェック画面で、通知音を使える状態に保つ。
- * `ready` が false の間は、画面を触るまで鳴らせない（タイマーの欄で知らせる）。`play` で 1 回分の通知音を鳴らす
+ * `ready` が false の間は、画面を触るまで鳴らせない（タイマーの欄で知らせる）。null は確かめている途中。`play` で 1 回分の通知音を鳴らす
  */
 export function useNapSound(active: boolean) {
   const supported = !!contextCtor();
-  const [ready, setReady] = useState(false);
+  // null は「まだ確かめていない」。確かめる前に「出る状態になっていません」を一瞬出さない（PR #322 の review）
+  const [ready, setReady] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (!active || !supported) return;

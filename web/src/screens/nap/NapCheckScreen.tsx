@@ -127,6 +127,8 @@ export default function NapCheckScreen() {
   const [nowMs, setNowMs] = useState(Date.now());
   useEffect(() => {
     if (activeId === null) return;
+    // 画面を開いた時刻のままで判定しないよう、実施が決まったときにすぐ合わせる（PR #322 の review）
+    setNowMs(Date.now());
     const t = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(t);
   }, [activeId]);
@@ -328,7 +330,7 @@ function NapTimer({ startedAt, intervalMinutes, rows, nowMs, ready }: {
         <div className="sr-only" role="status">{said && <span key={said.seq}>{said.text}</span>}</div>
         <div className="big">{over ? `+${mmss(remain)}` : mmss(remain)}</div>
         {/* 音を出せる状態でないとき。触れば出せるようになる。音と色だけに頼らず、文でも伝える。【仮置き】文言（web/仮置き値.md） */}
-        {!sound.ready && (
+        {(!sound.supported || sound.ready === false) && (
           <div className="nap-sound-notice">
             {sound.supported
               ? '通知音が出る状態になっていません。画面を一度さわってください。'
