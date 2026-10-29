@@ -18,7 +18,7 @@ import type {
   MisdeliveryRow, RetractedRow, NapChildState, NapAbnormalRow, NapSearchRow,
   DevListRow, DevScheduleRow, CsvRow, FiscalClassRow, StaffAccountRow,
   GuardianAccountRow, InvitationCodeRow, OperationLogRow, StaffSummary, GuardianHomeRow,
-  DevDraftView,
+  DevDraftView, GuardianDiary,
   ContactPage, ContactMonth, ContactClassView, ContactHome, ContactHomeInput, NapSleep, NapExclusion, GrowthRecord,
 } from './shapes';
 import type { SendPhotoInput, SendPhotoResult } from './shapes';
@@ -26,7 +26,7 @@ import type {
   ContactEvent, ContactEventInput, RecordEventsResult, ContactEventCorrection, NapSleepCorrection, CancelResult, Readers,
   ContactFacility, FacilityCorrection, Phrase, NameMatch, AiTarget, AiDraftInput, AiDraftResult, SettingsView,
 } from './shapes';
-import type { InvitationPreview, AddChildResult } from './shapes';
+import type { InvitationPreview, AddChildResult, AllergyListRow } from './shapes';
 import type { AbnormalGuardianNoticeInput } from './shapes';
 import {
   ProcedureRequiredError, isProcedureKind, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
@@ -409,8 +409,10 @@ const apiAuth = {
   },
 
   /* ---- 園児マスター ---- */
-  listChildren: (_u: SessionUser, f: { classId?: number | ''; name?: string } = {}) =>
-    get<Child[]>('/api/children' + qs({ class_id: f.classId ?? '', name: f.name ?? '' })),
+  listChildren: (_u: SessionUser, f: { classId?: number | ''; name?: string; includeWithdrawn?: boolean } = {}) =>
+    get<Child[]>('/api/children' + qs({ class_id: f.classId ?? '', name: f.name ?? '', include_withdrawn: f.includeWithdrawn ? '1' : '' })),
+
+  removableChildren: (_u: SessionUser) => get<string[]>('/api/children/removable'),
 
   getChild: (_u: SessionUser, childId: string) => get<Child>(`/api/children/${childId}`),
 
@@ -430,7 +432,7 @@ const apiAuth = {
       `/api/children/${childId}/medical-histories`),
   classOf: (_u: SessionUser, childId: string) => get<number | null>(`/api/children/${childId}/class`),
   allAllergies: (_u: SessionUser) =>
-    get<{ child: Child; className: string; allergies: Allergy[] }[]>('/api/children/allergies'),
+    get<AllergyListRow[]>('/api/children/allergies'),
 
   async saveChild(_u: SessionUser, input: ChildInput, mode: 'create' | 'edit'): Promise<Child> {
     const c = await post<Child>('/api/children', { ...input, mode });
@@ -506,11 +508,12 @@ const apiChatNap = {
     post<void>(`/api/chat/messages/${messageId}/reactions`, { reaction_type: reactionType }),
   setThreadStatus: (_u: SessionUser, roomId: number, status: '1' | '2') =>
     post<void>(`/api/chat/rooms/${roomId}/thread-status`, { status }),
-  send: (_u: SessionUser, roomId: number, body: string) =>
-    post<{ chat_message_id: number }>(`/api/chat/rooms/${roomId}/messages`, { body }),
+  // 承諾した名前は、他児の名前の注意（409 other_child_names）のあとの送り直しで付ける（詳細設計書「チャット画面」(2-9 (5))）
+  send: (_u: SessionUser, roomId: number, body: string, acknowledgedNames?: string[]) =>
+    post<{ chat_message_id: number }>(`/api/chat/rooms/${roomId}/messages`, { body, acknowledged_names: acknowledgedNames ?? [] }),
   retract: (_u: SessionUser, messageId: number) => post<void>(`/api/chat/messages/${messageId}/retract`),
-  edit: (_u: SessionUser, messageId: number, body: string) =>
-    post<void>(`/api/chat/messages/${messageId}/edit`, { body }),
+  edit: (_u: SessionUser, messageId: number, body: string, acknowledgedNames?: string[]) =>
+    post<void>(`/api/chat/messages/${messageId}/edit`, { body, acknowledged_names: acknowledgedNames ?? [] }),
   // 一般の職員には、いま参加しているグループだけが返る（GitHub Issue #172）。第1引数はモックが判定に使う
   groups: (_u: SessionUser) => get<ChatRoom[]>('/api/chat/groups'),
   // 目的別グループへ入れられる相手（有効な職員）。一般の職員も取得できる
@@ -624,9 +627,10 @@ const apiGrowth = {
   saveCheck: (
     _u: SessionUser, childId: string, checkedOn: string,
     results: { development_item_id: number; result: string | null }[],
-    note: string, status: '1' | '2', guardianMessage: string | null = null,
+    note: string, status: '1' | '2', guardianMessage: string | null = null, acknowledgedNames?: string[],
   ) => post<DevelopmentCheck>('/api/development/checks', {
     child_id: childId, checked_on: checkedOn, results, note, status, guardian_message: guardianMessage,
+    acknowledged_names: acknowledgedNames ?? [],
   }),
 
   schedules: (_u: SessionUser, classId: number) =>
@@ -777,6 +781,8 @@ const apiAdmin = {
   /* ---- ダッシュボード ---- */
   staffSummary: (_u: SessionUser) => get<StaffSummary>('/api/dashboard/staff'),
   guardianHome: (_u: SessionUser) => get<GuardianHomeRow[]>('/api/dashboard/guardian'),
+  // 保護者に共有された日誌（server/api_diary_share.go）
+  guardianDiaries: (_u: SessionUser) => get<GuardianDiary[]>('/api/guardian/diaries'),
 };
 
 /* ---- 園からの配布物 ---- */

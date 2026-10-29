@@ -44,7 +44,7 @@ describe('管理者のダッシュボードの「対応の記録がない取り�
     await expectCount(before);
 
     // 担任（一般の職員）が個人チャットへ送ったメッセージを取り消すと、管理者の件数が増える
-    const byStaff = await api.send(teacher, 8, '（誤送信）西田 太郎くんの発熱の記録');
+    const byStaff = await api.send(teacher, 8, '（誤送信）西田 太郎くんの発熱の記録', ['西田 太郎']);
     await api.retract(teacher, byStaff.chat_message_id);
     await expectCount(before + 1);
 

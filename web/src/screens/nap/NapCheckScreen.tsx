@@ -40,8 +40,19 @@ export default function NapCheckScreen() {
    * 同じクラスのほかの職員（別のタブレット）の開始・記録・終了は、知らせ（live.ts）を受けて開いたままで読み直す。
    * 読み直しでは読み込み中の表示を出さず、園児の行の入力中の値は残す（保存のあとの読み直しと同じ）
    */
-  const session = useAsync(async () => (hasClass ? api.activeSession(classId, today(), user!) : null), [classId, tick],
-    { live: onNapClass(classId) });
+  /*
+   * 読み込み中の表示（と、その間の「午睡チェックを開始する」の非表示）は、このクラスを初めて読むときだけにする。
+   * 開始・終了のあとの読み直し（tick）でも出すと、終了のあとに「午睡チェックを開始する」が一度出てから消えて出し直され、
+   * 移したフォーカスが body に落ちる（WCAG 2.4.3、GitHub Issue #265）。読み終えたクラスは覚えておく
+   */
+  const loadedClass = useRef<number | null>(null);
+  const session = useAsync(async () => {
+    if (!hasClass) return null;
+    const active = await api.activeSession(classId, today(), user!);
+    loadedClass.current = classId;
+    return active;
+  }, [classId, tick], { live: onNapClass(classId) });
+  const sessionLoading = session.loading && loadedClass.current !== classId;
   const state = useAsync(
     async () => (hasClass ? api.classState(user!, classId, session.data?.nap_session_id ?? null) : []),
     [classId, session.data?.nap_session_id, tick],
@@ -88,6 +99,8 @@ export default function NapCheckScreen() {
     focusAfter(pressed, () => startButton.current);
   };
 
+  // 担当クラスの無い一般（フリー）は閲覧のみ。記録の操作は出さない（基本設計書「権限と利用可能機能」(6-1) ※1）
+  const readOnly = user!.role === '2' && !user!.class_id;
   const s = session.data;
   const allRows = state.data ?? [];
   // 「きょうは対象外」の子は、タイマーと未記録の数から外す（詳細設計書「タイマー」(2-4 (3))）
@@ -152,7 +165,8 @@ export default function NapCheckScreen() {
     if (!seen || (a.recorded_at ?? a.found_at) > seen.recorded) abnormalAt.set(a.child_id, { found: a.found_at, recorded: a.recorded_at ?? a.found_at });
   }
 
-  // 選べるクラスが無い（担当クラスの無い一般の職員）。ほかのクラスの実施を表示しない（GitHub Issue #127）
+  // 選べるクラスが無い（クラスを持たない管理者など）。ほかのクラスの実施を表示しない。
+  // 担当クラスの無い一般（フリー）は全クラスを選べ、閲覧のみ（GitHub Issue #127・#279）
   if (classesForUser.length === 0) {
     return (
       <div>
@@ -187,13 +201,16 @@ export default function NapCheckScreen() {
 
       {error && <div style={{ marginBottom: 16 }}><Alert>{error}</Alert></div>}
 
-      {session.loading && <Loading />}
+      {sessionLoading && <Loading />}
 
-      {!session.loading && !s && (
+      {!sessionLoading && !s && (
         <section className="card">
           {autoClosed
             ? <Alert>午睡の時間帯を過ぎたため、午睡チェックを自動で終了しました。続けるときは、もう一度開始してください。</Alert>
             : <Empty text="午睡チェックはまだ開始していません。" />}
+          {readOnly ? (
+            <div className="muted" style={{ marginTop: 12 }}>全クラスを閲覧のみで見られます。午睡チェックの開始・記録はできません。</div>
+          ) : (<>
           <div className="row-end">
             <button ref={startButton} className="btn-primary" onClick={start}>午睡チェックを開始する</button>
           </div>
@@ -201,6 +218,7 @@ export default function NapCheckScreen() {
             開始すると、この画面は開いたままの運用になります。実施中は自動ログアウトの対象外です。
             {/* 実施中は自動ログアウトの対象外（基本設計書「画面遷移」(3-4)） */}
           </div>
+          </>)}
         </section>
       )}
 
@@ -209,8 +227,8 @@ export default function NapCheckScreen() {
           <div ref={sessionHead} className="page-head">
             <span>記録済み {recorded} / {rows.length} 名</span>
             <div className="spacer" />
-            <Link className="btn" to="/staff/nap/abnormal">異常を記録する</Link>
-            <button onClick={() => (recorded < rows.length || stillSleeping.length > 0 ? setEnding(true) : end())}>午睡チェックを終了</button>
+            {!readOnly && <Link className="btn" to="/staff/nap/abnormal">異常を記録する</Link>}
+            {!readOnly && <button onClick={() => (recorded < rows.length || stillSleeping.length > 0 ? setEnding(true) : end())}>午睡チェックを終了</button>}
           </div>
           {ending && (
             /* 終了すると、読み直しで「午睡チェックを終了」が消える。代わりに出る「午睡チェックを開始する」へ移す（GitHub Issue #213） */
@@ -229,7 +247,7 @@ export default function NapCheckScreen() {
             {allRows.map((r) => (
               <NapRecordRow key={r.child.child_id} row={r} sessionId={s.nap_session_id}
                 due={isDue(r.latest?.checked_at ?? null)} abnormal={abnormalAt.get(r.child.child_id) ?? null}
-                onSaved={() => setTick((n) => n + 1)} />
+                onSaved={() => setTick((n) => n + 1)} readOnly={readOnly} />
             ))}
           </div>
         </>
@@ -355,8 +373,10 @@ function NapTimer({ startedAt, intervalMinutes, rows, nowMs, ready }: {
 }
 
 /** 園児の行から直接記録する。選択肢に前回値を入れず、毎回の目視確認を促す。 */
-function NapRecordRow({ row, sessionId, due, abnormal, onSaved }: {
+function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
   row: NapChildState; sessionId: number; due: boolean; abnormal: { found: string; recorded: string } | null; onSaved: () => void;
+  /** 閲覧のみ（担当クラスの無い一般＝フリー）。記録の操作を出さない */
+  readOnly?: boolean;
 }) {
   const { user } = useSession();
   const TEMP_MIN = 30.0;
@@ -465,6 +485,7 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved }: {
         <span className="last">平熱 {formatTemperature(row.child.normal_temperature)}℃</span>
         {abnormal && <span className="tag tag-returned">異常時の記録あり {formatHM(abnormal.found)}</span>}
       </div>
+      {!readOnly && (<>
       {/* ねた・おきた（保護者に届く）。5分ごとの確認と同じ行に置く */}
       <SleepControls row={row} sessionId={sessionId} onSaved={onSaved} />
 
@@ -518,6 +539,7 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved }: {
 
       {temperatureOpen && <TemperaturePicker name={name} onClose={() => setTemperatureOpen(false)}
         onSelect={(value) => { setTemperature(value); setTemperatureOpen(false); }} />}
+      </>)}
     </section>
   );
 }

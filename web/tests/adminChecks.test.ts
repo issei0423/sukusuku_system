@@ -32,7 +32,7 @@ describe('園児の取消（GitHub Issue #166 の 4）', () => {
   it('記録のある園児は取り消せない', async () => {
     // 西田 太郎（C001）は日誌・身体測定・午睡・個人チャットの記録がある
     await expect(api.removeChild(admin, 'C001'))
-      .rejects.toThrow('記録が登録されている園児は取り消せません。在籍状態を変更してください。');
+      .rejects.toThrow('記録または保護者が紐づいている園児は取り消せません。在籍状態を変更してください。');
     expect(db.children.find((c) => c.child_id === 'C001')!.is_deleted).toBe(false);
   });
 

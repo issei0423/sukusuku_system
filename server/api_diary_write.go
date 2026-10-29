@@ -37,6 +37,11 @@ type diaryInput struct {
 	 * ほかの記録種別では読まない
 	 */
 	Incident *diaryIncidentInput `json:"incident"`
+	/*
+	 * 保護者へ共有する（api_diary_share.go）。個人日誌だけが持ち、ほかの記録種別では送られても共有しない。
+	 * 送られなかった（null）ときは、新しく作るなら共有しない、書き換えるなら今の値のままにする
+	 */
+	ShareToGuardian *bool `json:"share_to_guardian"`
 }
 
 // diaryAttachmentInput は、日誌に付ける写真 1 枚。実体は持たず、ファイルの名前と形式だけを受け取る
@@ -210,15 +215,16 @@ func (a *app) handleSaveDiary(w http.ResponseWriter, r *http.Request) {
 		appliedStaff, appliedAt = u.staff(), at
 	}
 	inc := incidentColumnsOf(in.RecordType, in.Incident)
+	share := shareColumnOf(in.RecordType, in.ShareToGuardian, false)
 	res, err := tx.Exec(`INSERT INTO t_diary
 		(record_type, child_id, class_id, diary_date, body, status, created_staff_id,
 		 applied_staff_id, applied_at, occurred_at, place,
 		 guardian_notice, guardian_noticed_at, guardian_notice_method, guardian_notice_person,
-		 is_deleted, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+		 share_to_guardian, is_deleted, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
 		in.RecordType, in.ChildID, in.ClassID, in.DiaryDate, in.Body, in.Status, u.staff(),
 		appliedStaff, appliedAt, inc.occurredAt, inc.place,
-		inc.notice, inc.noticedAt, inc.noticeMethod, inc.noticePerson, at, at)
+		inc.notice, inc.noticedAt, inc.noticeMethod, inc.noticePerson, share, at, at)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "日誌の保存に失敗しました")
 		return
@@ -247,9 +253,12 @@ func (a *app) handleSaveDiary(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *app) updateDiary(w http.ResponseWriter, u *SessionUser, in diaryInput) {
-	var status, version string
-	if err := a.db.QueryRow(`SELECT status, updated_at FROM t_diary WHERE diary_id = ? AND is_deleted = 0`,
-		*in.DiaryID).Scan(&status, &version); err != nil {
+	var (
+		status, version string
+		shared          bool
+	)
+	if err := a.db.QueryRow(`SELECT status, updated_at, share_to_guardian FROM t_diary WHERE diary_id = ? AND is_deleted = 0`,
+		*in.DiaryID).Scan(&status, &version, &shared); err != nil {
 		writeErr(w, http.StatusNotFound, "日誌が見つかりません")
 		return
 	}
@@ -299,18 +308,19 @@ func (a *app) updateDiary(w http.ResponseWriter, u *SessionUser, in diaryInput) 
 	}
 	// ヒヤリハットの列は、欄で受け取った値で書き換える。ほかの記録種別に変えたときは空にする
 	inc := incidentColumnsOf(in.RecordType, in.Incident)
+	share := shareColumnOf(in.RecordType, in.ShareToGuardian, shared)
 	if _, err := tx.Exec(`UPDATE t_diary
 		SET record_type = ?, child_id = ?, class_id = ?, diary_date = ?, body = ?, status = ?,
 		    applied_staff_id = CASE WHEN ? = '2' THEN ? ELSE applied_staff_id END,
 		    applied_at = CASE WHEN ? = '2' THEN ? ELSE applied_at END,
 		    occurred_at = ?, place = ?,
 		    guardian_notice = ?, guardian_noticed_at = ?, guardian_notice_method = ?, guardian_notice_person = ?,
-		    updated_at = ?
+		    share_to_guardian = ?, updated_at = ?
 		WHERE diary_id = ?`,
 		in.RecordType, in.ChildID, in.ClassID, in.DiaryDate, in.Body, next,
 		in.Status, u.staff(), in.Status, at, inc.occurredAt, inc.place,
 		inc.notice, inc.noticedAt, inc.noticeMethod, inc.noticePerson,
-		nextDiaryVersion(version), *in.DiaryID); err != nil {
+		share, nextDiaryVersion(version), *in.DiaryID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "日誌の保存に失敗しました")
 		return
 	}
@@ -448,10 +458,12 @@ nextDiaryVersion は、日誌を書き換えるときの新しい updated_at を
 func nextDiaryVersion(previous string) string { return nextVersion(previous) }
 
 /*
-handleApproveDiary は承認する。承認は園内の確認であり、保護者へは何も届かない
-（基本設計書「日誌システム（園内の記録）」(4-6)、詳細設計書「日誌」(4-13 (2))）。
+handleApproveDiary は承認する（基本設計書「日誌システム（園内の記録）」(4-6)、詳細設計書「日誌」(4-13 (2))）。
 
-要求の本文は読まない。以前の版が受け取っていた保護者への共有の指定（share_to_guardian）は、送られても使わない。
+保育士が申請するときに「保護者へ共有する」を選んだ個人日誌は、承認すると、その園児の保護者が読めるようになる。
+保育士の申請と管理者の承認の2つがそろって共有になる（2026-10-29 に持ち主が決めた。api_diary_share.go）。
+共有するかは申請した保育士が決め、管理者は承認か差し戻しで答える。要求の本文は読まない
+（承認の要求に share_to_guardian が送られても使わない）。
 */
 func (a *app) handleApproveDiary(w http.ResponseWriter, r *http.Request) {
 	u, ok := a.requireAdminFor(w, r, msgDiaryApproveAdminOnly)
@@ -468,9 +480,10 @@ func (a *app) handleApproveDiary(w http.ResponseWriter, r *http.Request) {
 		childID   sql.NullString
 		applicant sql.NullString
 		version   string
+		shared    bool
 	)
-	if err := a.db.QueryRow(`SELECT status, child_id, applied_staff_id, updated_at FROM t_diary
-		WHERE diary_id = ? AND is_deleted = 0`, id).Scan(&status, &childID, &applicant, &version); err != nil {
+	if err := a.db.QueryRow(`SELECT status, child_id, applied_staff_id, updated_at, share_to_guardian FROM t_diary
+		WHERE diary_id = ? AND is_deleted = 0`, id).Scan(&status, &childID, &applicant, &version, &shared); err != nil {
 		writeErr(w, http.StatusNotFound, "日誌が見つかりません")
 		return
 	}
@@ -501,7 +514,11 @@ func (a *app) handleApproveDiary(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, notAppliedMessage(a.diaryStatusOf(id), msgDiaryApproveNotApplied))
 		return
 	}
-	a.log(u.AccountID, fnDiary, opApprove, "t_diary", i64(id), nullStr(childID), s("申請中"), s("承認済み"))
+	after := "承認済み"
+	if shared {
+		after = diaryLogApproveShared
+	}
+	a.log(u.AccountID, fnDiary, opApprove, "t_diary", i64(id), nullStr(childID), s("申請中"), s(after))
 	// 承認待ちが減る（events.go。日誌の知らせは職員だけ）
 	a.notifyDiary(id)
 	a.writeDiaryByID(w, id)

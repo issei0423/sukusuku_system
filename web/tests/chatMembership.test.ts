@@ -190,7 +190,7 @@ describe('職員アカウントの発行・付け替え・停止がチャット�
     await api.updateStaffAccount(admin, 'S005', { staff_name: '久保田 和也', role: '2', class_id: 1 });
     // 目的別グループ（5）は手で編成するものなので、付け替えでは動かさない
     expect(currentRooms(5)).toEqual([1, 2, 3, 5, 6, 7, 8, 9]);
-    await expect(api.send(kubota, 8, '新しい担任の久保田です。')).resolves.toBeTruthy();
+    await expect(api.send(kubota, 8, '新しい担任の久保田です。', ['久保田 陸'])).resolves.toBeTruthy();
     await expect(api.send(kubota, 4, '前のクラスへ')).rejects.toThrow('外れている');
     const old = (await api.rooms(kubota)).find((r) => r.room.chat_room_id === 4);
     expect(old?.left).toBe(true);

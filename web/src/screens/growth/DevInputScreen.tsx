@@ -16,6 +16,8 @@ import { Loading, ErrorBox, Empty, Field, Alert, Disclaimer, Modal } from '../..
 import { DEVELOPMENT_RESULT } from '../../api/codes';
 import { ageInMonths, formatAge, formatHM, formatYMD, today } from '../../api/util';
 import type { DevelopmentResult } from '../../api/types';
+import type { NameMatch } from '../../api/shapes';
+import NameCheckDialog from '../../components/NameCheckDialog';
 import { notify } from '../../components/feedback';
 import { MSG, TEXT } from '../../messages';
 
@@ -46,6 +48,8 @@ export default function DevInputScreen() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  // 他児の名前の注意（サーバが保護者へのひとことを照合して当たったとき。詳細設計書「発達チェック入力画面」(2-12)。GitHub Issue #270 の 1）
+  const [nameCheck, setNameCheck] = useState<{ names: string[]; matches: NameMatch[]; text: string } | null>(null);
   const noteHintId = useId();
 
   // 下書きがあれば読み直す
@@ -60,7 +64,7 @@ export default function DevInputScreen() {
     setGuardianMessage(d.check.guardian_message ?? '');
   }, [draft.data?.check.development_check_id, checkedOn]);
 
-  const save = async (status: '1' | '2') => {
+  const save = async (status: '1' | '2', acknowledged: string[] = []) => {
     setBusy(true); setError(null);
     try {
       await api.saveCheck(
@@ -69,8 +73,9 @@ export default function DevInputScreen() {
           development_item_id: it.development_item_id,
           result: results[it.development_item_id] ?? null,
         })),
-        note, status, guardianMessage.trim() || null,
+        note, status, guardianMessage.trim() || null, acknowledged,
       );
+      setNameCheck(null);
       /*
        * 結果の表示（詳細設計書「職員の画面から成長の記録へ届けるもの」(2-12 (2)) の文言）。
        * 【仮置き】届くものがあるかは、ひとことか「確認できた」が1つでもあるかで見る。項目の共有範囲と、保護者がまだ登録していない
@@ -79,7 +84,15 @@ export default function DevInputScreen() {
       const delivered = !!guardianMessage.trim() || Object.values(results).includes('1');
       notify(status === '1' ? TEXT.devDraftSaved : delivered ? TEXT.devConfirmedShared : TEXT.devConfirmed);
       navigate('/staff/growth');
-    } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+    } catch (e) {
+      const err = e as Error & { kind?: string; names?: string[]; matches?: NameMatch[] };
+      if (err.kind === 'other_child_names' && err.names) {
+        setNameCheck({ names: err.names, matches: err.matches ?? [], text: guardianMessage.trim() });
+      } else {
+        setNameCheck(null);
+        setError(err.message);
+      }
+    } finally { setBusy(false); }
   };
 
   if (child.loading) return <Loading />;
@@ -247,6 +260,11 @@ export default function DevInputScreen() {
         <button className="btn-primary" disabled={busy}
           onClick={() => (unfilled > 0 ? setConfirming(true) : save('2'))}>確定する</button>
       </div>
+
+      {nameCheck && (
+        <NameCheckDialog names={nameCheck.names} matches={nameCheck.matches} text={nameCheck.text} busy={busy}
+          onFix={() => setNameCheck(null)} onSend={() => save('2', nameCheck.names)} />
+      )}
 
       {confirming && (
         <Modal title="未入力の項目があります" onClose={() => setConfirming(false)}

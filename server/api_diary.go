@@ -29,7 +29,9 @@ type Diary struct {
 	AppliedAt      *string `json:"applied_at"`
 	NapAbnormalID  *int64  `json:"nap_abnormal_id"`
 	ReturnedReason *string `json:"returned_reason"`
-	IsDeleted      bool    `json:"is_deleted"`
+	// 保護者へ共有する。個人日誌だけ。承認されると、その園児の保護者が読める（api_diary_share.go）
+	ShareToGuardian bool    `json:"share_to_guardian"`
+	IsDeleted       bool    `json:"is_deleted"`
 	CreatedAt      string  `json:"created_at"`
 	UpdatedAt      string  `json:"updated_at"`
 	// 画面が使う導出値
@@ -45,7 +47,7 @@ type Diary struct {
 
 const diaryColumns = `diary_id, record_type, child_id, class_id, diary_date, body, status,
 	created_staff_id, approved_staff_id, approved_at, applied_staff_id, applied_at,
-	nap_abnormal_id, returned_reason, is_deleted, created_at, updated_at,
+	nap_abnormal_id, returned_reason, share_to_guardian, is_deleted, created_at, updated_at,
 	occurred_at, place, guardian_notice, guardian_noticed_at, guardian_notice_method, guardian_notice_person`
 
 func (a *app) scanDiary(rows interface{ Scan(...any) error }) (Diary, error) {
@@ -64,7 +66,7 @@ func (a *app) scanDiary(rows interface{ Scan(...any) error }) (Diary, error) {
 	)
 	err := rows.Scan(&d.DiaryID, &d.RecordType, &childID, &classID, &d.DiaryDate, &d.Body, &d.Status,
 		&d.CreatedStaffID, &appStaff, &appAt, &appliedStaff, &appliedAt,
-		&napID, &reason, &d.IsDeleted, &d.CreatedAt, &d.UpdatedAt,
+		&napID, &reason, &d.ShareToGuardian, &d.IsDeleted, &d.CreatedAt, &d.UpdatedAt,
 		&occurredAt, &place, &notice, &noticedAt, &noticeMethod, &noticePerson)
 	if err != nil {
 		return d, err
@@ -108,8 +110,9 @@ func (a *app) enrich(d *Diary) {
 // visibleDiaryCondition は参照範囲の条件を組み立てる。
 //
 // 個人日誌・ヒヤリハットは対象園児で、クラス日誌・週案は対象クラスで判定する。
-// 承認済みであっても参照範囲は広がらない。日誌は園内の記録で、保護者へ返す道を持たない
-// （基本設計書「日誌システム（園内の記録）」(4-6)、詳細設計書「日誌」(4-13 (10))）
+// 承認済みであっても参照範囲は広がらない。保護者はこの経路では読めない
+// （基本設計書「日誌システム（園内の記録）」(4-6)、詳細設計書「日誌」(4-13 (10))）。
+// 共有された個人日誌を保護者が読むのは、別の経路（api_diary_share.go）で、保護者に見せる項目だけを返す
 func (a *app) visibleDiaryCondition(u *SessionUser) (string, []any) {
 	switch u.Role {
 	case "1":

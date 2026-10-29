@@ -2,9 +2,11 @@
  * 日誌承認画面（管理者）
  * 典拠：図/画面詳細図.md「日誌承認画面（管理者）」(3-3)、詳細設計書.md「日誌の画面（作り直し）」(2-13 (1))
  *
- * 承認は園内の確認であり、保護者へは何も届かない（基本設計書「日誌システム（園内の記録）」(4-6)）。
- * そのため「承認する」は確認のダイアログを出さず、押した時点で承認する。取り消しは日誌作成・編集画面の
- * 「承認を取り消して差し戻す」で行う（詳細設計書 (2-13 (3))）。
+ * 承認は園内の確認である（基本設計書「日誌システム（園内の記録）」(4-6)）。ただし、保育士が申請するときに
+ * 「保護者へ共有する」を選んだ個人日誌は、承認するとその園児の保護者が読める（2026-10-29 に持ち主が決めた。
+ * server/api_diary_share.go）。そのときは画面とボタンの名前で共有されることを示す。
+ * 1日に多くの日誌を承認するため、「承認する」は確認のダイアログを出さず、押した時点で承認する。取り消しは日誌作成・編集画面の
+ * 「承認を取り消して差し戻す」で行い、取り消すと保護者からも見えなくなる（詳細設計書 (2-13 (3))）。
  * 差し戻しは理由の入力を必須とする。何を直せばよいかが作成者に伝わらないため。
  */
 import { useState } from 'react';
@@ -46,12 +48,14 @@ export default function DiaryApproveScreen() {
   const own = !!applicant && applicant === user!.staff_id;
   // 開いたあとに取り下げ・承認・差し戻しが済んでいたら、承認も差し戻しもできない（サーバも 409 で断る）
   const pending = d.status === '2';
+  // 保育士が保護者への共有を選んだ個人日誌（server/api_diary_share.go）
+  const shares = d.record_type === '1' && !!d.share_to_guardian;
 
   const approve = async () => {
     setBusy(true); setError(null);
     try {
       await api.approveDiary(user!, diaryId);
-      notify(`${target}の${DIARY_RECORD_TYPE[d.record_type]}を承認しました`);
+      notify(`${target}の${DIARY_RECORD_TYPE[d.record_type]}を承認しました${shares ? '。保護者へ共有しました' : ''}`);
       navigate('/staff/admin/approval');
     } catch (e) { setError((e as Error).message); diary.reload(); } finally { setBusy(false); }
   };
@@ -85,6 +89,11 @@ export default function DiaryApproveScreen() {
           <Alert soft>
             いまの状態は「{DIARY_STATUS[d.status]}」のため、承認・差し戻しはできません。承認待ち一覧へ戻ってください。
           </Alert>
+        </div>
+      )}
+      {pending && shares && (
+        <div style={{ marginBottom: 16 }}>
+          <Alert soft>保育士が保護者への共有を選んでいます。承認すると、{target}の保護者がこの日誌を読めるようになります。</Alert>
         </div>
       )}
       {pending && own && (
@@ -137,7 +146,9 @@ export default function DiaryApproveScreen() {
 
       <div className="row-end">
         <button className="btn-danger" onClick={sendBack} disabled={busy || !pending || !reason.trim()}>差し戻す</button>
-        <button className="btn-primary" onClick={approve} disabled={busy || !pending || own}>承認する</button>
+        <button className="btn-primary" onClick={approve} disabled={busy || !pending || own}>
+          {shares ? '承認して保護者へ共有する' : '承認する'}
+        </button>
       </div>
 
     </div>

@@ -223,6 +223,11 @@ export interface Diary {
   nap_abnormal_id: number | null;
   /** 差し戻す理由。差し戻しは理由の入力を必須とする（画面詳細図 3-3） */
   returned_reason: string | null;
+  /**
+   * 保護者へ共有する。個人日誌だけ。保育士が申請するときに選び、管理者が承認すると、その園児の保護者が読める
+   * （2026-10-29 に持ち主が決めた。server/api_diary_share.go）。無ければ共有しない
+   */
+  share_to_guardian?: boolean;
   is_deleted: boolean;
   created_at: string;
   updated_at: string;

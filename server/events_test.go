@@ -409,6 +409,16 @@ func TestNotifyChatAudience(t *testing.T) {
 		call(t, h, teacher, "POST", "/api/chat/rooms/6/messages", `{"body":"承知しました。"}`)
 		expect(t, "外れたあとの送信", clients, to(who("さくら組の担任"), personal))
 	})
+
+	t.Run("管理者は、参加していないグループの投稿も受け取る（読み取りだけで並べるため。GitHub Issue #312）", func(t *testing.T) {
+		if _, err := a.db.Exec(`DELETE FROM t_chat_member WHERE chat_room_id = 4 AND account_id = ?`, accAdmin); err != nil {
+			t.Fatal(err)
+		}
+		other := loginAs(a, accOtherTeacher, "staff")
+		drainAll(clients)
+		call(t, h, other, "POST", "/api/chat/rooms/4/messages", `{"body":"明日の持ち物をお知らせします。"}`)
+		expect(t, "参加していないクラスグループへの送信", clients, to(who("管理者", "ひまわり組の担任"), chatEv(4)))
+	})
 }
 
 func TestNotifyDiaryAudience(t *testing.T) {

@@ -73,7 +73,7 @@ func TestRemoveChildRequiresNoRecords(t *testing.T) {
 	t.Run("記録のある園児は取り消せない", func(t *testing.T) {
 		// 西田 太郎（C001）は日誌・身体測定・午睡・個人チャットの記録がある
 		body := expectStatus(t, request(t, h, admin, "DELETE", "/api/children/C001", ""), http.StatusBadRequest)
-		if !strings.Contains(body, "記録が登録されている園児は取り消せません。在籍状態を変更してください。") {
+		if !strings.Contains(body, "記録または保護者が紐づいている園児は取り消せません。在籍状態を変更してください。") {
 			t.Fatalf("文言が違います: %s", body)
 		}
 		var deleted bool
@@ -110,9 +110,18 @@ func TestRemoveChildRequiresNoRecords(t *testing.T) {
 			http.StatusBadRequest)
 		expectStatus(t, request(t, h, admin, "POST", "/api/admin/invitations", `{"child_id":"C999","valid_days":30}`),
 			http.StatusNotFound)
-		expectStatus(t, send(t, h, nil, "POST", "/api/signup",
+		body := expectStatus(t, send(t, h, nil, "POST", "/api/signup",
 			`{"code":"`+issued.Code+`","email":"gotoroku@example.jp","password":"gotoroku-5678","guardian_name":"誤登録 花子","relationship":"母","terms_agreed":true,"terms_version":"1.1"}`),
 			http.StatusBadRequest)
+		// 取消でコードは失効（3）になるが、園児の状態は言わず、無いコードと同じ文言にする（#166 の 4・#279）
+		if !strings.Contains(body, msgInvitationNotFound) {
+			t.Fatalf("取り消した園児のコードの文言が違います: %s", body)
+		}
+		var status string
+		a.db.QueryRow(`SELECT status FROM t_invitation_code WHERE code = ?`, issued.Code).Scan(&status)
+		if status != "3" {
+			t.Fatalf("取り消した園児の未使用のコードの状態 = %q, want 3（失効）", status)
+		}
 		var n int
 		a.db.QueryRow(`SELECT COUNT(*) FROM m_account WHERE email = 'gotoroku@example.jp'`).Scan(&n)
 		if n != 0 {

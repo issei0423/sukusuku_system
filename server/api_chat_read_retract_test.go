@@ -199,7 +199,7 @@ func TestRetractedWithoutRecordExcludesGuardianMessages(t *testing.T) {
 		`{"body":"明日はお休みします（打ちまちがい）"}`).Body)
 	call(t, h, guardian, "POST", "/api/chat/messages/"+itoa(byGuardian)+"/retract", "")
 	byStaff := sentID(t, call(t, h, suzuki, "POST", "/api/chat/rooms/8/messages",
-		`{"body":"（誤送信）西田 太郎くんの発熱の記録"}`).Body)
+		`{"body":"（誤送信）西田 太郎くんの発熱の記録","acknowledged_names":["西田 太郎"]}`).Body)
 	call(t, h, suzuki, "POST", "/api/chat/messages/"+itoa(byStaff)+"/retract", "")
 
 	var pending []struct {

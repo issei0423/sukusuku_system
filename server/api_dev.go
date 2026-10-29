@@ -144,7 +144,7 @@ func (a *app) handlePreviousCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	childID := r.PathValue("childID")
-	if !a.canSeeChild(u, childID) {
+	if !a.canReadChild(u, childID) {
 		writeForbidden(w, "この園児を参照する権限がありません")
 		return
 	}

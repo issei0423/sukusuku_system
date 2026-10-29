@@ -31,7 +31,7 @@ type saveCheckRequest struct {
 	// 保護者へのひとこと（所見とは別の欄。確定した時点で成長の記録に届く。詳細設計書「発達チェックの保存」(4-12 (2))）。
 	// 空なら null で保存する
 	GuardianMessage *string `json:"guardian_message"`
-	// 他児の名前の照合で承諾した名前（4-5 (2)）。照合は PR #201 の namecheck.go と合わせるときに足す（いまは受け取るだけ）
+	// 他児の名前の照合で承諾した名前（詳細設計書「他児の名前の照合」(4-5 (2))）。確定するときに、当たった名前をすべて含めば通る
 	AcknowledgedNames []string `json:"acknowledged_names"`
 }
 
@@ -85,6 +85,16 @@ func (a *app) handleSaveDevelopmentCheck(w http.ResponseWriter, r *http.Request)
 			guardianMessage = m
 			newMessage = m
 		}
+	}
+	/*
+	 * 確定するときに保護者へのひとことがあれば、段2の守りの他児の名前の注意を通す（宛先はその園児）。
+	 * 当たれば保存せずに 409 other_child_names を返し、画面は注意のダイアログで「直す」か「このまま送る」を選ばせる。
+	 * 下書きは保護者に届かないので照合しない（詳細設計書「発達チェックの保存」(4-12 (2))・「発達チェック入力画面」(2-12)、
+	 * 基本設計書「送る時点の守り」(4-2)。GitHub Issue #270 の 1）。モックは web/src/api/mock.ts の saveCheck が同じ規則を持つ
+	 */
+	if req.Status == "2" && newMessage != "" &&
+		a.writeOtherNames(w, newMessage, "guardian_message", []string{req.ChildID}, false, req.AcknowledgedNames) {
+		return
 	}
 
 	tx, err := a.db.Begin()

@@ -106,7 +106,7 @@ describe('保護者が自分で取り消したメッセージは、誤送信対�
   it('保護者の取消は並ばず、職員の取消は並ぶ', async () => {
     const byGuardian = await api.send(murata, 8, '明日はお休みします（打ちまちがい）');
     await api.retract(murata, byGuardian.chat_message_id);
-    const byStaff = await api.send(teacher, 8, '（誤送信）西田 太郎くんの発熱の記録');
+    const byStaff = await api.send(teacher, 8, '（誤送信）西田 太郎くんの発熱の記録', ['西田 太郎']);
     await api.retract(teacher, byStaff.chat_message_id);
 
     const pending = (await api.retractedWithoutRecord(admin)).map((r) => r.chat_message_id);

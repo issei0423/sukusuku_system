@@ -11,6 +11,7 @@ import type {
   DevelopmentCheck, DevelopmentResultRecord, MealAmount, ContactEventType, Setting,
 } from './types';
 import type { GuardianNotice, GuardianNoticeMethod } from './types';
+import type { Allergy } from './types';
 import type { BodyPosition, Breathing, Complexion } from './types';
 
 /** ログインの失敗理由。画面が分岐に使う（図/画面詳細図.md「職員用トップ／保護者用トップ」(2-1)） */
@@ -86,6 +87,22 @@ export interface DiaryInput {
    * 状況・とった対応・今後の対策を見出しでつないだ本文をサーバ（モック）が作る（決めたこと D-33）
    */
   incident?: DiaryIncidentInput;
+  /**
+   * 保護者へ共有する（個人日誌だけ。server/api_diary_share.go）。送らなければ、新しく作るなら共有しない、
+   * 書き換えるなら今の値のままにする
+   */
+  share_to_guardian?: boolean;
+}
+
+/** 保護者に共有された日誌。保護者に見せる項目だけを持つ（server/api_diary_share.go の GuardianDiary） */
+export interface GuardianDiary {
+  diary_id: number;
+  child_id: string;
+  child_name: string;
+  diary_date: string;
+  body: string;
+  /** 共有された日時（承認した日時） */
+  shared_at: string;
 }
 
 /** 保存のときに送るヒヤリハットの欄。任意の欄は空の文字列で「無し」とする（サーバ側は diaryIncidentInput） */
@@ -866,3 +883,13 @@ export interface GrowthEntry {
 
 /** 参照のみに使う型の再輸出。画面が types.ts を直接読まなくて済むようにする */
 export type { DevelopmentItem, Role };
+
+/**
+ * アレルギー一覧画面の1園児分の行。返すのは氏名・クラス・アレルギーだけで、生年月日・平熱・写真の利用同意などは返さない
+ * （図/画面詳細図「アレルギー一覧画面」(7-4) 項目3。GitHub Issue #279。server/api_child.go の handleAllAllergies）
+ */
+export interface AllergyListRow {
+  child: { child_id: string; child_name: string };
+  className: string;
+  allergies: Allergy[];
+}
