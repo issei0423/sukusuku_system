@@ -112,7 +112,9 @@ describe('午睡チェック画面：確認の時刻の通知音と、過ぎた�
     await api.record(teacher, session.nap_session_id, { child_id: 'C001', body_position: '1', breathing: '1', complexion: '1', temperature: null });
     await waitFor(() => expect(row.className).not.toContain('is-due'), { timeout: 3000 });
     expect(audio.started).toBe(before + ONE_ALARM);
-  });
+    // 鳴らさないことを確かめる待ち（1.5秒・2.5秒）と waitFor（各3秒まで）を足すと、既定の5秒に届く。
+    // 手元の CI の全体の負荷で5秒を越えて落ちたため（2026-10-29、76af1001）、この1件だけ長くする
+  }, 15_000);
 
   it('画面を開いたとき、すでに時刻を過ぎている子がいても、開いたことでは鳴らさない（読み上げと同じ起点）', async () => {
     audio.allow = true;
