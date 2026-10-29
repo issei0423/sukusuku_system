@@ -116,6 +116,35 @@ func (a *app) canSeeChild(u *SessionUser, childID string) bool {
 	}
 }
 
+// isFreeStaff は、担当クラスの無い一般（保育士）。「フリー」の印を付け、全クラスを閲覧のみで見られる
+// （基本設計書「権限と利用可能機能」(6-1) ※1、同「職員アカウントの発行・変更」(4-3)。GitHub Issue #279）。
+// 印は列で持たず、今年度のクラスの割り当てが無いことで判定する（同「園児（m_child）ほか」(5-3)）
+func (u *SessionUser) isFreeStaff() bool { return u.Role == roleGeneralStaff && u.ClassID == nil }
+
+// canReadChild は職員・保護者が、その園児を「読める」かを判定する。canSeeChild に、フリーの職員の閲覧を足したもの。
+// 書き込みの判定には使わない。書く側は canSeeChild（フリーは false）か contactAccess の Write で止める。
+// フリーが読めるのは、在籍中で取り消していない園児（visibleChildren と同じ範囲）。既往歴は含めない
+// （基本設計書 (6-1) ※1。案は要決定事項「クラスに属さない職員の参照範囲」(1-1)）
+func (a *app) canReadChild(u *SessionUser, childID string) bool {
+	if u.isFreeStaff() {
+		var n int
+		err := a.db.QueryRow(`SELECT COUNT(*) FROM m_child WHERE child_id = ? AND is_deleted = 0 AND enrollment_status = '1'`,
+			childID).Scan(&n)
+		return err == nil && n > 0
+	}
+	return a.canSeeChild(u, childID)
+}
+
+// canReadClass は、その職員がそのクラスを「読める」か。canUseClass に、フリーの全クラス閲覧を足したもの（書き込みには使わない）
+func (a *app) canReadClass(u *SessionUser, classID int64) bool {
+	if u.isFreeStaff() {
+		var n int
+		err := a.db.QueryRow(`SELECT COUNT(*) FROM m_class WHERE class_id = ? AND fiscal_year = ?`, classID, fiscalYear).Scan(&n)
+		return err == nil && n > 0
+	}
+	return a.canUseClass(u, classID)
+}
+
 // visibleChildren はその利用者が参照できる在籍中の園児を、かな順で返す。
 // 保護者には自児だけを、園児情報入力画面の項目を落とした形（forGuardian）で返す
 func (a *app) visibleChildren(u *SessionUser) ([]Child, error) {
@@ -130,7 +159,9 @@ func (a *app) visibleChildren(u *SessionUser) ([]Child, error) {
 		rows, err = a.db.Query(base + ` ORDER BY child_name_kana`)
 	case "2":
 		if u.ClassID == nil {
-			return []Child{}, nil
+			// フリーは全クラスを閲覧のみ。書き込みは canSeeChild・contactAccess の Write で止める
+			rows, err = a.db.Query(base + ` ORDER BY child_name_kana`)
+			break
 		}
 		rows, err = a.db.Query(base+`
 			AND child_id IN (SELECT child_id FROM t_class_child WHERE class_id = ?)
@@ -181,11 +212,11 @@ func (a *app) selectableClasses(u *SessionUser) ([]ClassRoom, error) {
 	args := []any{fiscalYear}
 	switch {
 	case u.isGeneralStaff():
-		if u.ClassID == nil {
-			return []ClassRoom{}, nil
+		// フリーは全クラスを閲覧のみで見られるため、全クラスを返す（書き込みは canUseClass で止める）
+		if u.ClassID != nil {
+			q += ` AND class_id = ?`
+			args = append(args, *u.ClassID)
 		}
-		q += ` AND class_id = ?`
-		args = append(args, *u.ClassID)
 	case u.isGuardian():
 		if u.GuardianID == nil {
 			return []ClassRoom{}, nil

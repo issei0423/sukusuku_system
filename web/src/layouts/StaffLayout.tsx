@@ -112,6 +112,8 @@ export default function StaffLayout() {
         */}
         <span className="who">
           {user.class_name && <span className="cls">{user.class_name}</span>}
+          {/* 担当クラスの無い一般には「フリー」の印を付ける（図/画面詳細図 (1-1) 注記。GitHub Issue #279） */}
+          {user.role === '2' && !user.class_id && <span className="cls">フリー</span>}
           {user.display_name}
         </span>
         {/* 職員はログアウトをヘッダに常時表示する。共有端末での担当交代に用いる（基本設計書 3-5） */}
@@ -153,14 +155,15 @@ export default function StaffLayout() {
           {/* サーバに届かないときの帯。午睡チェック画面では大きく出す（詳細設計書「つながっているかの表示」(2-8)） */}
           <ConnectionBanner audience="staff" large={pathname.startsWith('/staff/nap')} />
           {/*
-            担当クラスの無い一般の職員は、園児も日誌も1件も見えない。
-            何も出ない理由が画面から分からないため、ここで伝える（GitHub Issue #127）
+            担当クラスの無い一般（フリー）は、全クラスを閲覧のみで見られる。記録の作成・編集はできない。
+            見られる範囲と書けない理由を、メインコンテンツの先頭に示す（図/画面詳細図 (1-1) 注記、
+            基本設計書「権限と利用可能機能」(6-1) ※1。GitHub Issue #127・#279）
           */}
           {user.role === '2' && !user.class_id && (
             <div style={{ marginBottom: 16 }}>
               <Alert soft>
-                担当クラスが割り当てられていません。園児・日誌・チャットは、担当クラスが決まると表示されます。
-                管理者へ割り当てを依頼してください。
+                「フリー」です。担当クラスが割り当てられていないため、全クラスを閲覧のみで見られます（記録の作成・編集はできません）。
+                割り当てが誤りのときは、管理者へ依頼してください。
               </Alert>
             </div>
           )}

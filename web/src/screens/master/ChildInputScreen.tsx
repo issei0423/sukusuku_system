@@ -37,7 +37,9 @@ export default function ChildInputScreen() {
   const restored = (useLocation().state as { form?: ChildInput } | null)?.form;
   const [form, setForm] = useState<ChildInput>(restored ?? {
     child_id: '', child_name: '', child_name_kana: '', nickname: '', birth_date: '',
-    sex: '1', normal_temperature: null, photo_consent_level: '2',
+    // 写真の利用同意の初期値は最も狭い段階（園内記録のみ）。同意を確かめる前に保護者へ写真が出ないようにする
+    // （図/画面詳細図 (7-2) 項目14、基本設計書「園児情報の登録・編集」(4-4)）
+    sex: '1', normal_temperature: null, photo_consent_level: '1',
     class_id: classesForUser[0]?.class_id ?? 1,
     allergies: [], medical_histories: [],
   });

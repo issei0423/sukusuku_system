@@ -36,6 +36,21 @@ func (a *app) handleListChildren(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "園児の一覧を取得できませんでした")
 		return
 	}
+	// 管理者だけ、退園・卒園した園児も出せる。一覧の下にまとめる（図/画面詳細図 (7-1) 項目11。GitHub Issue #279）
+	if u.isAdmin() && r.URL.Query().Get("include_withdrawn") == "1" {
+		left, err := a.db.Query(`SELECT ` + childColumns + ` FROM m_child
+			WHERE is_deleted = 0 AND enrollment_status <> '1' ORDER BY child_name_kana`)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "園児の一覧を取得できませんでした")
+			return
+		}
+		for left.Next() {
+			if c, err := scanChild(left); err == nil {
+				rows = append(rows, c)
+			}
+		}
+		left.Close()
+	}
 	if classID, has := queryInt64(r, "class_id"); has {
 		inClass := map[string]bool{}
 		cc, err := a.db.Query(`SELECT child_id FROM t_class_child WHERE class_id = ?`, classID)
@@ -68,6 +83,35 @@ func (a *app) handleListChildren(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rows)
 }
 
+// handleRemovableChildren は、いま取り消せる園児（記録も保護者も紐づいていない園児）の ID を返す。管理者だけ。
+// 園児一覧の「取消」を、その行にだけ出すために使う（図/画面詳細図 (7-1) 項目10。GitHub Issue #279）。
+// 取り消せるかの最後の判定は handleRemoveChild が行う
+func (a *app) handleRemovableChildren(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireAdmin(w, r); !ok {
+		return
+	}
+	rows, err := a.db.Query(`SELECT child_id FROM m_child WHERE is_deleted = 0 ORDER BY child_id`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "園児を取得できませんでした")
+		return
+	}
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if rows.Scan(&id) == nil {
+			ids = append(ids, id)
+		}
+	}
+	rows.Close()
+	out := []string{}
+	for _, id := range ids {
+		if !a.childHasRecords(id) && !a.childHasGuardian(id) {
+			out = append(out, id)
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 /*
  * 園児情報・アレルギー・既往歴は、保護者には返さない
  * （基本設計書「権限と利用可能機能」(6-1)「園児情報の参照｜保護者 ×」「既往歴の参照｜保護者 ×」
@@ -82,7 +126,7 @@ func (a *app) handleGetChild(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	childID := r.PathValue("childID")
-	if !a.canSeeChild(u, childID) {
+	if !a.canReadChild(u, childID) {
 		writeForbidden(w, "この園児を参照する権限がありません")
 		return
 	}
@@ -118,7 +162,7 @@ func (a *app) handleAllergiesOf(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	childID := r.PathValue("childID")
-	if !a.canSeeChild(u, childID) {
+	if !a.canReadChild(u, childID) {
 		writeForbidden(w, "この園児を参照する権限がありません")
 		return
 	}
@@ -162,7 +206,10 @@ func (a *app) handleAllAllergies(w http.ResponseWriter, r *http.Request) {
 	}
 	// 【仮置き】並びは園児のよみ順（web/仮置き値.md「一覧の並び順」）。モック（web/src/api/mock.ts の allAllergies）も
 	// 同じ並びにした（GitHub Issue #177 の 7）
-	rows, err := a.db.Query(`SELECT `+childColumns+`,
+	// 一覧が使うのは クラス・氏名・対象・症状・対応 だけ。生年月日・平熱・写真の利用同意などは返さない
+	// （図/画面詳細図「アレルギー一覧画面」(7-4) 項目3、基本設計書「権限チェックの実装方針」(6-2)。GitHub Issue #279）。
+	// 担任でない職員にも全園児を返す例外なので、返す列は必要な分に絞る
+	rows, err := a.db.Query(`SELECT child_id, child_name,
 		IFNULL((SELECT class_name FROM m_class c
 		         JOIN t_class_child cc ON cc.class_id = c.class_id
 		        WHERE cc.child_id = m_child.child_id AND c.fiscal_year = ?), '―')
@@ -176,24 +223,22 @@ func (a *app) handleAllAllergies(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
+	type listChild struct {
+		ChildID   string `json:"child_id"`
+		ChildName string `json:"child_name"`
+	}
 	type entry struct {
-		Child     Child     `json:"child"`
+		Child     listChild `json:"child"`
 		ClassName string    `json:"className"`
 		Allergies []Allergy `json:"allergies"`
 	}
 	out := []entry{}
 	for rows.Next() {
-		var (
-			c    Child
-			temp sql.NullFloat64
-			cls  string
-		)
-		if err := rows.Scan(&c.ChildID, &c.ChildName, &c.ChildNameKana, &c.Nickname, &c.BirthDate, &c.Sex,
-			&temp, &c.EnrollmentStatus, &c.PhotoConsentLevel, &c.IsDeleted, &c.CreatedAt, &c.UpdatedAt, &cls); err != nil {
+		var e entry
+		if err := rows.Scan(&e.Child.ChildID, &e.Child.ChildName, &e.ClassName); err != nil {
 			continue
 		}
-		c.NormalTemperature = nullFloat(temp)
-		out = append(out, entry{Child: c, ClassName: cls})
+		out = append(out, e)
 	}
 	// アレルギーの取得はカーソルを閉じたあとに行う。
 	// データベースの接続を1本に絞っているため、行を読みながら別の問い合わせを投げると止まる（db.go）
@@ -213,7 +258,7 @@ func (a *app) handleClassOfChild(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	childID := r.PathValue("childID")
-	if !a.canSeeChild(u, childID) {
+	if !a.canReadChild(u, childID) {
 		writeForbidden(w, "この園児を参照する権限がありません")
 		return
 	}

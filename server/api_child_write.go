@@ -365,6 +365,14 @@ func (a *app) childHasRecords(childID string) bool {
 	return n > 0
 }
 
+// childHasGuardian は、有効（1）か猶予中（3）の保護者の紐づけがあるかを返す。終了（2）は数えない
+// （基本設計書「園児情報の取消（誤登録の削除）」(4-4)「記録または保護者が紐づいている園児は取り消せない」。GitHub Issue #279）
+func (a *app) childHasGuardian(childID string) bool {
+	var n int
+	a.db.QueryRow(`SELECT COUNT(*) FROM t_guardian_child WHERE child_id = ? AND link_status IN ('1','3')`, childID).Scan(&n)
+	return n > 0
+}
+
 // handleRemoveChild は誤登録の取消。論理削除とする（基本設計書 5-1）
 func (a *app) handleRemoveChild(w http.ResponseWriter, r *http.Request) {
 	u, ok := a.requireAdmin(w, r)
@@ -379,10 +387,10 @@ func (a *app) handleRemoveChild(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "園児が見つかりません")
 		return
 	}
-	// 記録のある園児は取り消せない。在籍の終了（退園・卒園）は在籍状態の変更で行う
-	// （基本設計書「園児情報の取消（誤登録の削除）」(4-4)、文言は「メッセージ一覧」(4-9)「取消の不可」）
-	if a.childHasRecords(childID) {
-		writeErr(w, http.StatusBadRequest, "記録が登録されている園児は取り消せません。在籍状態を変更してください。")
+	// 記録か保護者が紐づいている園児は取り消せない。在籍の終了（退園・卒園）は在籍状態の変更で行う
+	// （基本設計書「園児情報の取消（誤登録の削除）」(4-4)、文言は「メッセージ一覧」(4-9)「取消の不可」。GitHub Issue #279）
+	if a.childHasRecords(childID) || a.childHasGuardian(childID) {
+		writeErr(w, http.StatusBadRequest, "記録または保護者が紐づいている園児は取り消せません。在籍状態を変更してください。")
 		return
 	}
 	tx, err := a.db.Begin()
@@ -396,6 +404,11 @@ func (a *app) handleRemoveChild(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := tx.Exec(`UPDATE m_chat_room SET is_archived = 1 WHERE room_type = '4' AND child_id = ?`, childID); err != nil {
+		writeErr(w, http.StatusInternalServerError, "取消に失敗しました")
+		return
+	}
+	// 未使用の招待コードは失効させる（基本設計書「園児情報の取消（誤登録の削除）」(4-4)。1:未使用 → 3:失効）
+	if _, err := tx.Exec(`UPDATE t_invitation_code SET status = '3' WHERE child_id = ? AND status = '1'`, childID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "取消に失敗しました")
 		return
 	}

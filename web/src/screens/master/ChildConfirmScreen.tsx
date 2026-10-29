@@ -67,6 +67,15 @@ export default function ChildConfirmScreen() {
         </div>
       )}
 
+      {/* 新規登録でも、生年月日は月齢の算出の根拠なので確かめてもらう（図/画面詳細図 (7-2) 項目3「確認画面で強調する」。GitHub Issue #279） */}
+      {mode === 'create' && (
+        <div style={{ marginBottom: 16 }}>
+          <Alert soft>
+            生年月日は月齢の算出の根拠です。日付に誤りがないか確かめてください。登録したあとに直すと、過去の記録の月齢表示が変わります。
+          </Alert>
+        </div>
+      )}
+
       {/* 同じ子を重ねて登録していないかを確かめてもらう。登録するボタンは止めない（GitHub Issue #144 の 2） */}
       {sameChildren.length > 0 && (
         <div style={{ marginBottom: 16 }}>
@@ -87,7 +96,7 @@ export default function ChildConfirmScreen() {
             <tr>
               <th scope="col">生年月日</th>
               <td>
-                {formatYMD(form.birth_date)}
+                <strong>{formatYMD(form.birth_date)}</strong>
                 <span className="muted">（{formatAge(form.birth_date, today())}）</span>
               </td>
             </tr>

@@ -62,7 +62,7 @@ import type {
   ContactRecipient, Phrase, NameMatch, FacilityCorrection,
   AiPurpose, AiField, AiTarget, AiDraftInput, AiDraftResult, SettingRow, SettingsView,
 } from './shapes';
-import type { InvitationPreview, AddChildResult } from './shapes';
+import type { InvitationPreview, AddChildResult, AllergyListRow } from './shapes';
 import type { GuardianDiary } from './shapes';
 
 // 画面はこれまでどおり client 経由で型を参照する。定義の実体は shapes.ts が持つ
@@ -231,6 +231,11 @@ function childHasRecords(childId: string): boolean {
     || db.chatMessages.some((m) => personalRooms.has(m.chat_room_id));
 }
 
+/** 有効（1）か猶予中（3）の保護者の紐づけがあるか。サーバ側は server/api_child_write.go の childHasGuardian（GitHub Issue #279） */
+function childHasActiveGuardian(childId: string): boolean {
+  return db.guardianChildren.some((g) => g.child_id === childId && (g.link_status === '1' || g.link_status === '3'));
+}
+
 /**
  * 招待コードを発行できる園児か（取り消していない・在籍中）。一括発行の対象と同じ条件。
  * サーバ側は server/api_admin.go の childIssuable
@@ -256,6 +261,23 @@ function targetLabel(table: string, targetId: number | null): string {
     return [kind, who, d.diary_date].filter(Boolean).join(' ');
   }
   return '';
+}
+
+/**
+ * フリー（担当クラスの無い一般）か。全クラスを閲覧のみで見られる（基本設計書「権限と利用可能機能」(6-1) ※1。
+ * サーバ側は server/scope.go の isFreeStaff）
+ */
+export function isFreeStaff(user: SessionUser): boolean {
+  return user.role === '2' && user.class_id == null;
+}
+
+/**
+ * その職員がそのクラスを読めるか。canUseClass に、フリーの全クラス閲覧を足したもの（書き込みには使わない）。
+ * サーバ側は server/scope.go の canReadClass
+ */
+function canReadClass(user: SessionUser, classId: number): boolean {
+  if (isFreeStaff(user)) return db.classes.some((c) => c.class_id === classId && c.fiscal_year === db.FISCAL_YEAR);
+  return canUseClass(user, classId);
 }
 
 /**
@@ -301,6 +323,16 @@ export function canSeeChild(user: SessionUser, childId: string): boolean {
 }
 
 /**
+ * その利用者がその園児を読めるか。canSeeChild に、フリーの閲覧を足したもの（書き込みには使わない）。
+ * フリーが読めるのは在籍中で取り消していない園児。既往歴は含めない（medicalHistoriesOf は canSeeChild のまま）。
+ * サーバ側は server/scope.go の canReadChild
+ */
+export function canReadChild(user: SessionUser, childId: string): boolean {
+  if (isFreeStaff(user)) return db.children.some((c) => c.child_id === childId && !c.is_deleted && c.enrollment_status === '1');
+  return canSeeChild(user, childId);
+}
+
+/**
  * 保護者へ返す園児の形。園児情報入力画面の項目（既往歴・アレルギー・写真の利用同意・平熱）は保護者に返さない
  * （図/インタフェース一覧.md「経路の一覧」(1) の GET /api/children・/api/children/{childID}・/class。
  * 基本設計書「権限と利用可能機能」(6-1)「園児情報の参照｜保護者 ×」。設計の直しは PR #216 の直-30）。
@@ -333,7 +365,8 @@ export function visibleChildren(user: SessionUser): Child[] {
     .sort((a, b) => a.child_name_kana.localeCompare(b.child_name_kana, 'ja') || a.child_id.localeCompare(b.child_id));
   if (user.role === '1') return alive;
   if (user.role === '2') {
-    if (user.class_id == null) return [];
+    // フリーは全クラスを閲覧のみ（server/scope.go の visibleChildren）
+    if (user.class_id == null) return alive;
     const ids = new Set(db.classChildren.filter((cc) => cc.class_id === user.class_id).map((cc) => cc.child_id));
     return alive.filter((c) => ids.has(c.child_id));
   }
@@ -358,6 +391,8 @@ export function selectableClasses(user: SessionUser): ClassRoom[] {
     const ids = new Set(db.classChildren.filter((cc) => mine.has(cc.child_id)).map((cc) => cc.class_id));
     return current.filter((c) => ids.has(c.class_id));
   }
+  // フリーは全クラスを閲覧のみで見られる（server/scope.go の selectableClasses）
+  if (isFreeStaff(user)) return current;
   return current.filter((c) => c.class_id === user.class_id);
 }
 
@@ -809,17 +844,37 @@ function childNameKey(name: string): string {
 }
 
 export const childApi = {
-  async listChildren(user: SessionUser, filter: { classId?: number; name?: string } = {}): Promise<Child[]> {
+  async listChildren(user: SessionUser, filter: { classId?: number; name?: string; includeWithdrawn?: boolean } = {}): Promise<Child[]> {
     let rows = visibleChildren(user);
-    if (filter.classId) {
-      const ids = new Set(db.classChildren.filter((cc) => cc.class_id === filter.classId).map((cc) => cc.child_id));
-      rows = rows.filter((c) => ids.has(c.child_id));
-    }
-    if (filter.name) {
-      const q = filter.name.trim();
-      rows = rows.filter((c) => c.child_name.includes(q) || c.child_name_kana.includes(q));
-    }
-    return ok([...rows].sort((a, b) => a.child_name_kana.localeCompare(b.child_name_kana, 'ja')));
+    // 管理者だけ、退園・卒園した園児も出せる。一覧の下にまとめる（server/api_child.go の handleListChildren）
+    const left = user.role === '1' && filter.includeWithdrawn
+      ? db.children.filter((c) => !c.is_deleted && c.enrollment_status !== '1')
+        .sort((a, b) => a.child_name_kana.localeCompare(b.child_name_kana, 'ja'))
+      : [];
+    const narrow = (list: Child[]): Child[] => {
+      let out = list;
+      if (filter.classId) {
+        const ids = new Set(db.classChildren.filter((cc) => cc.class_id === filter.classId).map((cc) => cc.child_id));
+        out = out.filter((c) => ids.has(c.child_id));
+      }
+      if (filter.name) {
+        const q = filter.name.trim();
+        out = out.filter((c) => c.child_name.includes(q) || c.child_name_kana.includes(q));
+      }
+      return out;
+    };
+    rows = narrow(rows);
+    return ok([...[...rows].sort((a, b) => a.child_name_kana.localeCompare(b.child_name_kana, 'ja')), ...narrow(left)]);
+  },
+
+  /**
+   * いま取り消せる園児（記録も保護者も紐づいていない園児）の ID。管理者だけ。園児一覧の「取消」を、その行にだけ出すために使う
+   * （図/画面詳細図 (7-1) 項目10。サーバ側は server/api_child.go の handleRemovableChildren）
+   */
+  async removableChildren(user: SessionUser): Promise<string[]> {
+    if (user.role !== '1') return fail('園児情報の取消は管理者のみが行えます');
+    return ok(db.children.filter((c) => !c.is_deleted && !childHasRecords(c.child_id) && !childHasActiveGuardian(c.child_id))
+      .map((c) => c.child_id));
   },
 
   /*
@@ -829,14 +884,14 @@ export const childApi = {
    */
   async getChild(user: SessionUser, childId: string): Promise<Child> {
     if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
-    if (!canSeeChild(user, childId)) return fail('この園児を参照する権限がありません');
+    if (!canReadChild(user, childId)) return fail('この園児を参照する権限がありません');
     const c = findChild(childId);
     return c ? ok(c) : fail('園児が見つかりません');
   },
 
   async allergiesOf(user: SessionUser, childId: string): Promise<Allergy[]> {
     if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
-    if (!canSeeChild(user, childId)) return fail('この園児を参照する権限がありません');
+    if (!canReadChild(user, childId)) return fail('この園児を参照する権限がありません');
     return ok(db.allergies.filter((a) => a.child_id === childId));
   },
 
@@ -846,13 +901,14 @@ export const childApi = {
    * 【仮置き】並びは園児のよみ順（web/仮置き値.md「一覧の並び順」。GitHub Issue #177 の 7）。
    * サーバ側は server/api_child.go の handleAllAllergies
    */
-  async allAllergies(user: SessionUser): Promise<{ child: Child; className: string; allergies: Allergy[] }[]> {
+  async allAllergies(user: SessionUser): Promise<AllergyListRow[]> {
     if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
     const rows = db.children
       .filter((c) => !c.is_deleted && c.enrollment_status === '1')
       .sort((a, b) => a.child_name_kana.localeCompare(b.child_name_kana, 'ja'))
+      // 返すのは氏名と園児 ID だけ。生年月日などは返さない（server/api_child.go の handleAllAllergies と同じ。GitHub Issue #279）
       .map((c) => ({
-        child: c,
+        child: { child_id: c.child_id, child_name: c.child_name },
         className: className(db.classChildren.find((cc) => cc.child_id === c.child_id)?.class_id ?? null),
         allergies: db.allergies.filter((a) => a.child_id === c.child_id),
       }))
@@ -871,7 +927,7 @@ export const childApi = {
    * 所属が分かるため（基本設計書「権限チェックの実装方針」(6-2)。サーバ側は server/api_child.go の handleClassOfChild）
    */
   async classOf(user: SessionUser, childId: string): Promise<number | null> {
-    if (!canSeeChild(user, childId)) return fail('この園児を参照する権限がありません');
+    if (!canReadChild(user, childId)) return fail('この園児を参照する権限がありません');
     return ok(db.classChildren.find((cc) => cc.child_id === childId)?.class_id ?? null);
   },
 
@@ -986,9 +1042,12 @@ export const childApi = {
     if (!c || c.is_deleted) return fail('園児が見つかりません');
     // 記録のある園児は取り消せない。在籍の終了（退園・卒園）は在籍状態の変更で行う
     // （基本設計書「園児情報の取消（誤登録の削除）」(4-4)、文言は「メッセージ一覧」(4-9)「取消の不可」）
-    if (childHasRecords(childId)) return fail('記録が登録されている園児は取り消せません。在籍状態を変更してください。');
+    // 保護者の紐づけは、有効（1）か猶予中（3）を数える（server/api_child_write.go の childHasGuardian。GitHub Issue #279）
+    if (childHasRecords(childId) || childHasActiveGuardian(childId)) return fail('記録または保護者が紐づいている園児は取り消せません。在籍状態を変更してください。');
     c.is_deleted = true;
     c.updated_at = now();
+    // 未使用の招待コードは失効させる（基本設計書「園児情報の取消（誤登録の削除）」(4-4)）
+    db.invitationCodes.filter((i) => i.child_id === childId && i.status === '1').forEach((i) => { i.status = '3'; });
     const room = db.chatRooms.find((r) => r.room_type === '4' && r.child_id === childId);
     if (room) room.is_archived = true;
     log(user.account_id, '6', '4', 'm_child', null, childId, c.child_name, '取消（論理削除）');
@@ -2058,7 +2117,7 @@ export const napApi = {
   // 画面からは必ず user を渡す。渡さない呼び出しはテストのためだけに残している
   async activeSession(classId: number, date: string, user?: SessionUser): Promise<NapSession | null> {
     // 一般（保育士）は自クラスに限る（GitHub Issue #96）
-    if (user && !canUseClass(user, classId)) return fail('このクラスの午睡チェックを参照する権限がありません');
+    if (user && !canReadClass(user, classId)) return fail('このクラスの午睡チェックを参照する権限がありません');
     autoCloseNapSessions();
     return ok(db.napSessions.find((s) => s.class_id === classId && s.session_date === date && s.ended_at === null) ?? null);
   },
@@ -2103,12 +2162,12 @@ export const napApi = {
 
   /** クラス全体の状況。平熱は比較の材料として並べて表示するのみ（画面詳細図 5-1） */
   async classState(user: SessionUser, classId: number, sessionId: number | null): Promise<NapChildState[]> {
-    if (!canUseClass(user, classId)) return fail('このクラスの午睡チェックを参照する権限がありません');
+    if (!canReadClass(user, classId)) return fail('このクラスの午睡チェックを参照する権限がありません');
     const ids = db.classChildren.filter((cc) => cc.class_id === classId).map((cc) => cc.child_id);
     const rows = ids
       .map((id) => findChild(id))
       .filter((c): c is Child => !!c && !c.is_deleted && c.enrollment_status === '1')
-      .filter((c) => canSeeChild(user, c.child_id))
+      .filter((c) => canReadChild(user, c.child_id))
       .sort((a, b) => a.child_name_kana.localeCompare(b.child_name_kana, 'ja'))
       .map((child) => {
         const recs = sessionId
@@ -2857,7 +2916,7 @@ export const devApi = {
    */
   async previousCheck(user: SessionUser, childId: string, beforeDate: string) {
     if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
-    if (!canSeeChild(user, childId)) return fail('この園児を参照する権限がありません');
+    if (!canReadChild(user, childId)) return fail('この園児を参照する権限がありません');
     const prev = db.developmentChecks
       .filter((c) => c.child_id === childId && c.status === '2' && c.checked_on < beforeDate)
       .sort((a, b) => b.checked_on.localeCompare(a.checked_on))[0];
@@ -3153,7 +3212,7 @@ export const physicalApi = {
    */
   async recordsOf(user: SessionUser, childId: string): Promise<PhysicalRecord[]> {
     if (user.role === '3') return fail(MSG.growthForbidden);
-    if (!canSeeChild(user, childId)) return fail('この園児を参照する権限がありません');
+    if (!canReadChild(user, childId)) return fail('この園児を参照する権限がありません');
     return ok(db.physicalRecords
       .filter((r) => !r.is_deleted && r.child_id === childId)
       .sort((a, b) => b.measured_on.localeCompare(a.measured_on)));
@@ -3701,12 +3760,13 @@ function usableInvitationCode(code: string): InvitationCode | string {
   const normalized = normalizeInvitationCode(code);
   const c = db.invitationCodes.find((x) => normalizeInvitationCode(x.code) === normalized);
   if (!c) return MSG.invitationNotFound;
+  // 取り消した・在籍していない園児のコードでは登録させない。園児の状態は言わず、無いコードと同じ文言にする
+  // （GitHub Issue #166 の 4。サーバ側は server/api_auth.go の lookupUsableCode）。取消は未使用のコードを失効にするので
+  // （GitHub Issue #279）、コードの状態より先に見る
+  if (!childIssuable(c.child_id).issuable) return MSG.invitationNotFound;
   if (c.status === '2') return MSG.invitationUsed;
   if (c.status === '3') return MSG.invitationRevoked;
   if (c.expires_on < today()) return MSG.invitationExpired;
-  // 取り消した・在籍していない園児のコードでは登録させない。園児の状態は言わず、無いコードと同じ文言にする
-  // （GitHub Issue #166 の 4。サーバ側は server/api_auth.go の lookupUsableCode）
-  if (!childIssuable(c.child_id).issuable) return MSG.invitationNotFound;
   return c;
 }
 
@@ -3887,6 +3947,19 @@ const CHILD_ID_MAX_LENGTH = 20;
  */
 const TEMPERATURE_FORMAT = /^\d{1,3}(\.\d)?$/;
 
+/**
+ * CSV の性別の値を、園児の性別の値（1:男 2:女 9:未回答）にそろえる。「男」「女」「未回答」の文字か、1・2・9 の数字のどちらでも受ける。
+ * 空欄は受けない（基本設計書「CSV一括登録」(4-4)、GitHub Issue #36・#279。server/api_bulk.go の csvSexCode と同じ）
+ */
+function csvSexCode(v: string): Child['sex'] | null {
+  switch ((v ?? '').trim()) {
+    case '1': case '男': return '1';
+    case '2': case '女': return '2';
+    case '9': case '未回答': return '9';
+    default: return null;
+  }
+}
+
 const bulkApi = {
   /** 取込内容とエラー行の確認。取り込む前に全行を検証して返す（画面詳細図の様式に合わせる） */
   parseChildCsv(text: string): { header: string[]; rows: CsvRow[] } {
@@ -3923,7 +3996,7 @@ const bulkApi = {
         // 実在する日付に限る（2025-02-30 を通さない）。生年月日は月齢算出の唯一の根拠（基本設計書 5-3。GitHub Issue #160）
         if (!isRealDate(values[3])) errors.push('生年月日の形式が正しくありません。YYYY-MM-DD の形で、実在する日付を入力してください');
         else if (values[3] > today()) errors.push('生年月日に未来日は指定できません');
-        if (!['1', '2', '9'].includes(values[4])) errors.push('性別は 1:男 2:女 9:未回答 で入力してください');
+        if (!csvSexCode(values[4])) errors.push('性別は 男・女・未回答（または 1:男 2:女 9:未回答）で入力してください');
         if (!db.classes.some((c) => c.fiscal_year === db.FISCAL_YEAR && c.class_name === values[5])) errors.push('クラス名が見つかりません');
         if (values[6]) {
           // Number() は Infinity・0x24・1e2 も数にする。数字と小数点だけの書き方に限る（TEMPERATURE_FORMAT）
@@ -3983,10 +4056,12 @@ const bulkApi = {
 
     rows.forEach((r) => {
       const [id, name, kana, birth, sex, clsName, temp] = r.values;
+      // 写真の利用同意は取り込まず、最も狭い段階（園内記録のみ）で登録する（基本設計書「CSV一括登録」(4-4)、
+      // 図/画面詳細図 (7-3)。server/api_bulk.go の handleImportChildCsv と同じ）
       db.children.push({
         child_id: id, child_name: name, child_name_kana: kana, birth_date: birth,
-        sex: sex as Child['sex'], normal_temperature: temp ? Number(temp) : null,
-        enrollment_status: '1', photo_consent_level: '2', is_deleted: false,
+        sex: csvSexCode(sex) as Child['sex'], normal_temperature: temp ? Number(temp) : null,
+        enrollment_status: '1', photo_consent_level: '1', is_deleted: false,
         created_at: now(), updated_at: now(),
       });
       const cls = db.classes.find((c) => c.fiscal_year === db.FISCAL_YEAR && c.class_name === clsName)!;
@@ -4320,7 +4395,7 @@ function publishDiary(d: Diary): void {
  */
 function publishNapSession(classId: number): void {
   publish({ type: 'nap', class_id: classId },
-    (u) => isStaffUser(u) && canUseClass(u, classId));
+    (u) => isStaffUser(u) && canReadClass(u, classId));
 }
 
 /**
@@ -4329,7 +4404,7 @@ function publishNapSession(classId: number): void {
  */
 function publishNapChild(classId: number, childId: string): void {
   publish({ type: 'nap', class_id: classId, child_id: childId },
-    (u) => isStaffUser(u) && canSeeChild(u, childId));
+    (u) => isStaffUser(u) && canReadChild(u, childId));
 }
 
 /* ============ 連絡帳（詳細設計書「連絡帳の1ページと家庭から」(4-3)・「午睡（ねた・おきた・対象外）」(4-6)） ============
@@ -4854,7 +4929,7 @@ function plusSeconds(at: string, seconds: number): string {
  */
 function publishDevelopment(childId: string, finalized: boolean): void {
   publish({ type: 'development', child_id: childId },
-    (u) => (u.role === '3' ? finalized && contactAccess(u, childId).read : isStaffUser(u) && canSeeChild(u, childId)));
+    (u) => (u.role === '3' ? finalized && contactAccess(u, childId).read : isStaffUser(u) && canReadChild(u, childId)));
 }
 
 /**
@@ -4864,7 +4939,7 @@ function publishDevelopment(childId: string, finalized: boolean): void {
 function publishPhysical(r: PhysicalRecord): void {
   const shared = settingText('growth.share_physical', '1') === '1';
   publish({ type: 'physical', child_id: r.child_id },
-    (u) => (u.role === '3' ? shared && contactAccess(u, r.child_id).read : canSeeChild(u, r.child_id)));
+    (u) => (u.role === '3' ? shared && contactAccess(u, r.child_id).read : canReadChild(u, r.child_id)));
 }
 
 /* ============ 成長の記録（詳細設計書「成長の記録」(4-12 (1))・「成長の記録に届くもの」(3-7)） ============
