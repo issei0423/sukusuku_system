@@ -203,6 +203,59 @@ func TestServeWebDoesNotListDirectories(t *testing.T) {
 	}
 }
 
+// ---- 2026-10-29：反映のあと、ブラウザが古い画面を出し続けない ----
+// index.html とそこへ寄せる経路は no-cache、ハッシュ付きの /assets/ は immutable、/assets/ に無いファイルは 404
+
+func TestServeWebCacheHeaders(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<!doctype html>index"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "favicon.svg"), []byte("<svg/>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "assets"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "assets", "index-AbC123.js"), []byte("console.log(1)"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	(&app{}).serveWeb(mux, dir)
+
+	get := func(path string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		return rec
+	}
+	cases := []struct {
+		path, cache string
+		code        int
+		bodyHas     string
+	}{
+		{"/", "no-cache", 200, "index"},
+		{"/staff/nap", "no-cache", 200, "index"},
+		{"/favicon.svg", "no-cache", 200, "<svg/>"},
+		{"/assets/index-AbC123.js", "public, max-age=31536000, immutable", 200, "console.log(1)"},
+		{"/assets/", "no-cache", 200, "index"},
+	}
+	for _, c := range cases {
+		rec := get(c.path)
+		if rec.Code != c.code || rec.Header().Get("Cache-Control") != c.cache || !strings.Contains(rec.Body.String(), c.bodyHas) {
+			t.Errorf("%s: code=%d Cache-Control=%q body=%q, want %d %q (%q を含む)",
+				c.path, rec.Code, rec.Header().Get("Cache-Control"), rec.Body.String(), c.code, c.cache, c.bodyHas)
+		}
+	}
+	// 反映で消えた古いハッシュのファイルは、index.html（HTML）を JavaScript として返さず 404 にする
+	if rec := get("/assets/index-Old999.js"); rec.Code != http.StatusNotFound || strings.Contains(rec.Body.String(), "index") {
+		t.Errorf("/assets/ に無いファイル: code=%d body=%q, want 404 で index.html を返さない", rec.Code, rec.Body.String())
+	}
+	// /api/ は今までどおり JSON の 404
+	if rec := get("/api/nope"); rec.Code != http.StatusNotFound {
+		t.Errorf("/api/nope: code=%d, want 404", rec.Code)
+	}
+}
+
 // ---- #159 の 5：存在しないログインIDも、残りの回数とロックが実在のアカウントと同じに進む ----
 
 func TestUnknownLoginIDCountsDownLikeRealAccount(t *testing.T) {
