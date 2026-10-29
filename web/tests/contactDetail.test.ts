@@ -66,10 +66,11 @@ describe('職員の画面には直した職員と時刻を出す（last_change�
   });
 
   it('「成長の記録に残す」の付け外しは、直したことに数えない', async () => {
-    const [toilet] = (await api.recordEvents(teacher, [{ child_id: 'C002', event_type: '2', toilet_label: 'おしっこ' }])).events;
-    const fixed = await api.correctEvent(admin, toilet.contact_event_id, { toilet_label: 'うんち', updated_at: toilet.updated_at! });
-    await api.keepInGrowth(teacher, toilet.contact_event_id, true, fixed.updated_at!);
-    const view = (await api.contactPage(teacher, 'C002')).events.find((e) => e.contact_event_id === toilet.contact_event_id)!;
+    // 付けられるのは、ひとこと・写真だけ
+    const [note] = (await api.recordEvents(teacher, [{ child_id: 'C002', event_type: '4', body: 'おもちゃを順番に貸してあげました' }])).events;
+    const fixed = await api.correctEvent(admin, note.contact_event_id, { body: 'おもちゃを順番に貸してあげていました', updated_at: note.updated_at! });
+    await api.keepInGrowth(teacher, note.contact_event_id, true, fixed.updated_at!);
+    const view = (await api.contactPage(teacher, 'C002')).events.find((e) => e.contact_event_id === note.contact_event_id)!;
     expect(view.last_change?.staff_name).toBe(adminName());
   });
 });
