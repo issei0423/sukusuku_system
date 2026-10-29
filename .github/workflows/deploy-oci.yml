@@ -17,7 +17,7 @@ jobs:
   deploy:
     name: ビルド・反映・公開確認
     runs-on: [self-hosted, linux, x64, sukusuku-prod]
-    timeout-minutes: 120
+    timeout-minutes: 30
     env:
       GOMAXPROCS: '1'
       GOFLAGS: -p=1 -trimpath
@@ -42,11 +42,13 @@ jobs:
         with:
           node-version: 24
 
-      - name: Go の静的検査とテスト
+      # Go のテストは VM では回さない。1GB・1/8 OCPU の VM では go test だけで 22〜24 分かかり、
+      # その間に本線へ入った変更が公開先に届かなかった（2026-10-29、1回の反映が約25分）。
+      # テストはマージの前に、手元の CI（agent-harness/api-agent/scripts/local-ci.sh の5つ）で回す。
+      # ここでは静的検査と、下のビルドが通ることだけを確かめる
+      - name: Go の静的検査
         working-directory: server
-        run: |
-          go vet ./...
-          go test -count=1 -p 1 -timeout 60m ./...
+        run: go vet ./...
 
       - name: Linux amd64 バイナリを作る
         working-directory: server
