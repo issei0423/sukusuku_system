@@ -66,9 +66,11 @@ func TestContactMonth(t *testing.T) {
 		t.Errorf("開いていない今日に「新しい」が付かない: %+v", d)
 	}
 
-	// 開くと、新しいものは無くなる（開いた時刻と同じ秒の記録は新しいと数えないため、開いた時刻を未来にしてから確かめる）
+	// 開くと、新しいものは無くなる。デモの今日の記録は 17:20 までで、本物の時計が昼のうちはまだ来ていない時刻の記録もある。
+	// 時間帯で結果が変わらないよう、開いた時刻はその日の終わりに置いてから確かめる
 	call(t, h, guardian, "POST", "/api/contact/children/C001/read", `{"date":"`+day+`"}`)
-	a.db.Exec(`UPDATE t_contact_read SET read_at = strftime('%Y-%m-%dT%H:%M:%S', read_at, '+1 minute') WHERE account_id = ?`, accGuardian)
+	a.db.Exec(`UPDATE t_contact_read SET read_at = ? WHERE account_id = ? AND contact_date = ?`, day+"T23:59:59", accGuardian, day)
+	asGuardian = monthResp{} // 前の応答の unread が残らないようにする
 	decode(t, call(t, h, guardian, "GET", path, ""), &asGuardian)
 	if d := asGuardian.Days[find(asGuardian, day)]; d.Unread != nil {
 		t.Errorf("開いたあとも「新しい」が付く: %+v", d)

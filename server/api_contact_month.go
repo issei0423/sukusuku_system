@@ -131,6 +131,11 @@ func (a *app) contactMonth(u *SessionUser, childID, month string) (*contactMonth
 	}
 	fr.Close()
 	// きょうのようす（食事・排せつ・体温・ひとこと・写真）。保護者には出す種類だけ数える
+	// 接続は 1 本なので、行を読んでいる間に設定を引かない。種類ごとの可否は先に決めておく
+	seesEvent := map[string]bool{}
+	for _, kind := range []string{"1", "2", "3", "4", "5"} {
+		seesEvent[kind] = !guardian || a.guardianSeesItem(eventItem(kind))
+	}
 	er, err := a.db.Query(`SELECT contact_date, event_type, recorded_at, corrected_at FROM t_contact_event
 		WHERE child_id = ? AND is_deleted = 0 AND contact_date BETWEEN ? AND ?`, childID, first, last)
 	if err != nil {
@@ -142,7 +147,7 @@ func (a *app) contactMonth(u *SessionUser, childID, month string) (*contactMonth
 		if er.Scan(&date, &kind, &at, &fixed) != nil {
 			continue
 		}
-		if guardian && !a.guardianSeesItem(eventItem(kind)) {
+		if guardian && !seesEvent[kind] {
 			continue
 		}
 		count(date)

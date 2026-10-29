@@ -134,13 +134,33 @@ func TestContactEventLastChange(t *testing.T) {
 		t.Errorf("保護者のページに直した職員が出ている: %s", body)
 	}
 
-	// 「成長の記録に残す」の付け外しは、直したことに数えない
+	// 「成長の記録に残す」の付け外しは、直したことに数えない（付けられるのは、ひとこと・写真）
+	got = record(t, h, teacher, `{"child_id":"C001","event_type":"4","body":"おもちゃを順番に貸してあげました"}`)
+	var note eventResp
+	for _, ev := range got.Events {
+		if ev.EventType == "4" {
+			note = ev
+		}
+	}
+	if note.ID == 0 {
+		t.Fatalf("ひとことの記録が返らない: %+v", got.Events)
+	}
+	call(t, h, admin, "POST", "/api/contact/events/"+itoa(note.ID)+"/correct", `{"body":"おもちゃを順番に貸してあげていました","updated_at":"`+note.UpdatedAt+`"}`)
 	_, p = read(teacher)
-	version := p.Events[find(p)].UpdatedAt
-	expectStatus(t, request(t, h, teacher, "POST", "/api/contact/events/"+itoa(meal.ID)+"/keep-in-growth",
+	var noteIdx = -1
+	for i, e := range p.Events {
+		if e.ID == note.ID {
+			noteIdx = i
+		}
+	}
+	if noteIdx < 0 {
+		t.Fatalf("ひとことの記録 %d がページに無い", note.ID)
+	}
+	version := p.Events[noteIdx].UpdatedAt
+	expectStatus(t, request(t, h, teacher, "POST", "/api/contact/events/"+itoa(note.ID)+"/keep-in-growth",
 		`{"keep_in_growth":true,"updated_at":"`+version+`"}`), http.StatusOK)
 	_, p = read(teacher)
-	if e := p.Events[find(p)]; e.LastChange == nil || e.LastChange.StaffName != a.accountName(accAdmin) {
+	if e := p.Events[noteIdx]; e.LastChange == nil || e.LastChange.StaffName != a.accountName(accAdmin) {
 		t.Errorf("成長の記録に残すを付けたあと: %+v", e.LastChange)
 	}
 }
