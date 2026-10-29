@@ -89,6 +89,7 @@
  */
 .main:has(.nap-timer) { scroll-padding-top: calc(var(--nap-timer-h, 0px) + 6px); }
 .nap-timer .big { font-size: 2rem; font-weight: 700; line-height: 1.3; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.nap-sound-notice { font-size: var(--fs-small); font-weight: 700; }
 .nap-timer.over { background: var(--c-alert-soft); border-bottom: 2px solid var(--c-alert); color: var(--c-alert); }
 /*
  * ブラウザの文字の大きさの設定を上げると、タイマーの帯の背が伸び、iPad 横向きでは画面の3割ほどを覆う。
@@ -109,14 +110,14 @@
   border-radius: var(--radius); padding: var(--sp-3);
   display: flex; flex-direction: column; gap: var(--sp-1);
 }
-.nap-card.unrecorded { border-color: var(--c-alert); background: var(--c-alert-soft); }
+.nap-card.is-due { border-color: var(--c-alert); background: var(--c-alert-soft); }
 .nap-card .name { font-weight: 700; }
 .nap-card .last { font-size: var(--fs-small); color: var(--c-text-sub); }
 
 /* iPadを持って巡回しながら、園児の行で直接選んで記録する。 */
 .nap-record-row { gap: var(--sp-3); padding: var(--sp-4); }
-/* 確認の時刻を過ぎた行は、警告色の枠と左の太い線で示す（文言でも示している） */
-.nap-record-row.unrecorded { background: var(--c-surface); border-color: var(--c-alert); border-left: 6px solid var(--c-alert); }
+/* 確認の時刻を過ぎた行は、その時刻から警告色の枠と左の太い線で示す（文言でも示している。図/画面詳細図.md「午睡チェック画面」(5-1) 項目7） */
+.nap-record-row.is-due { background: var(--c-surface); border-color: var(--c-alert); border-left: 6px solid var(--c-alert); }
 /* この実施で異常時の記録がある園児。記録済みでも強調を外さない（基本設計書「異常時の記録」(4-7)「強調表示する」） */
 .nap-record-row.has-abnormal { border-color: var(--c-returned); border-left: 6px solid var(--c-returned); }
 .nap-row-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); }
