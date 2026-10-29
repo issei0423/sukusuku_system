@@ -18,7 +18,7 @@ import Reactions from '../../components/Reactions';
 import { useSecondaryAction, keepInViewport, closeOnUserScroll, MENU_OPENED_TEXT } from '../../secondaryAction';
 import type { MenuAt, SecondaryActionHandlers } from '../../secondaryAction';
 import { CHAT_ROOM_TYPE, THREAD_STATUS, REACTION, GUARDIAN_ROOM_TYPES, SENDER_KIND } from '../../api/codes';
-import { clampChars, formatHM, formatMD } from '../../api/util';
+import { formatHM, formatMD } from '../../api/util';
 import type { ChatMessage } from '../../api/types';
 import type { NameMatch } from '../../api/shapes';
 import NameCheckDialog from '../../components/NameCheckDialog';
@@ -327,16 +327,17 @@ export default function StaffChatScreen() {
             )}
             {current?.canPost ? (
               <>
-                {/* 文字数の上限は符号位置で掛ける（maxLength は UTF-16 で数える。GitHub Issue #310） */}
-                <textarea ref={input} value={text} onChange={(e) => setText(clampChars(e.target.value, 1000))}
+                {/* 文字数は符号位置で数える（maxLength は UTF-16 で数えるので付けない）。上限を超えたら送れない。GitHub Issue #310 */}
+                <textarea ref={input} value={text} onChange={(e) => setText(e.target.value)}
                   placeholder="メッセージを入力" style={{ minHeight: 70 }} />
+                {[...text].length > 1000 && <div className="weak" role="alert">本文は1,000文字以内で入力してください</div>}
                 <div className="row-end">
                   <button onClick={() => alert('添付はモックでは未実装です')}>添付</button>
-                  <button className="btn-primary" onClick={() => send()} disabled={busy || !text.trim()} aria-busy={busy}>送信</button>
+                  <button className="btn-primary" onClick={() => send()} disabled={busy || !text.trim() || [...text].length > 1000} aria-busy={busy}>送信</button>
                 </div>
                 {nameCheck && (
                   <NameCheckDialog names={nameCheck.names} matches={nameCheck.matches} text={nameCheck.text} busy={busy}
-                    onFix={() => { setNameCheck(null); input.current?.focus(); }} onSend={() => send(nameCheck.names)} />
+                    onFix={() => { setNameCheck(null); input.current?.focus(); }} onSend={() => { const names = nameCheck.names; setNameCheck(null); send(names); }} />
                 )}
               </>
             ) : (
@@ -572,13 +573,14 @@ function MessageRow({ message, mine, canEdit, canDelete, showRole, readOnly, onR
         {...(editing || readOnly ? {} : bindPress(openMenu))}>
         {editing ? (
           <>
-            {/* 文字数の上限は符号位置で掛ける（maxLength は UTF-16 で数える。GitHub Issue #310） */}
-            <textarea ref={editor} value={draft} onChange={(e) => setDraft(clampChars(e.target.value, 1000))}
+            {/* 文字数は符号位置で数える（maxLength は UTF-16 で数えるので付けない）。上限を超えたら保存できない。GitHub Issue #310 */}
+            <textarea ref={editor} value={draft} onChange={(e) => setDraft(e.target.value)}
               rows={4} style={{ width: '100%', boxSizing: 'border-box' }} />
+            {[...draft].length > 1000 && <div className="weak" role="alert">本文は1,000文字以内で入力してください</div>}
             {editError && <div className="weak">{editError}</div>}
             <div className="row-end" style={{ marginTop: 4 }}>
               <button className="btn-sm" onClick={cancelEdit}>やめる</button>
-              <button className="btn-sm btn-primary" onClick={() => save()} disabled={!draft.trim() || saving} aria-busy={saving}>保存</button>
+              <button className="btn-sm btn-primary" onClick={() => save()} disabled={!draft.trim() || [...draft].length > 1000 || saving} aria-busy={saving}>保存</button>
             </div>
           </>
         ) : (
@@ -649,7 +651,7 @@ function MessageRow({ message, mine, canEdit, canDelete, showRole, readOnly, onR
       {/* 注意の窓は吹き出しの外に置く。吹き出しの右クリック・長押しの扱いに、窓の中の操作を拾わせないため */}
       {editCheck && (
         <NameCheckDialog names={editCheck.names} matches={editCheck.matches} text={editCheck.text} busy={saving}
-          onFix={() => { setEditCheck(null); editor.current?.focus(); }} onSend={() => save(editCheck.names)} />
+          onFix={() => { setEditCheck(null); editor.current?.focus(); }} onSend={() => { const names = editCheck.names; setEditCheck(null); save(names); }} />
       )}
     </div>
   );

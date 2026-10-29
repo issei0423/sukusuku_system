@@ -21,7 +21,7 @@ import { ConfirmDialog } from '../../components/feedback';
 import Reactions from '../../components/Reactions';
 import { useSecondaryAction, keepInViewport, closeOnUserScroll, MENU_OPENED_TEXT } from '../../secondaryAction';
 import type { MenuAt } from '../../secondaryAction';
-import { clampChars, formatHM, formatMD } from '../../api/util';
+import { formatHM, formatMD } from '../../api/util';
 import type { ChatMessage } from '../../api/types';
 import { useUnsavedInput } from '../../unsavedInput';
 import IncomingLog from './IncomingLog';
@@ -325,13 +325,14 @@ export default function GuardianChatScreen() {
                 {...(editing ? {} : pressHandlers(m.chat_message_id))}>
                 {editing ? (
                   <>
-                    {/* 文字数の上限は符号位置で掛ける（maxLength は UTF-16 で数える。GitHub Issue #310） */}
-                    <textarea aria-label="メッセージの編集" value={draft} onChange={(e) => setDraft(clampChars(e.target.value, 1000))}
+                    {/* 文字数は符号位置で数える（maxLength は UTF-16 で数えるので付けない）。上限を超えたら保存できない。GitHub Issue #310 */}
+                    <textarea aria-label="メッセージの編集" value={draft} onChange={(e) => setDraft(e.target.value)}
                       rows={4} style={{ width: '100%', boxSizing: 'border-box' }} />
+                    {[...draft].length > 1000 && <div className="weak" role="alert">本文は1,000文字以内で入力してください</div>}
                     <div className="row-end" style={{ marginTop: 4 }}>
                       <button className="btn-sm" onClick={() => cancelEdit(m.chat_message_id)}>やめる</button>
                       <button className="btn-sm btn-primary" onClick={() => saveEdit(m.chat_message_id)}
-                        disabled={!draft.trim()}>保存</button>
+                        disabled={!draft.trim() || [...draft].length > 1000}>保存</button>
                     </div>
                   </>
                 ) : (
@@ -397,11 +398,15 @@ export default function GuardianChatScreen() {
         <div className="sr-only" role="status">{menuId !== null ? MENU_OPENED_TEXT : ''}</div>
         {error && <ErrorBox text={error} />}
         {current.canPost ? (
-          <div className="row">
-            <input ref={input} type="text" aria-label="メッセージを入力" value={text} onChange={(e) => setText(clampChars(e.target.value, 1000))}
-              placeholder="メッセージを入力" style={{ flex: 1 }} />
-            <button className="btn-primary" onClick={send} disabled={busy || !text.trim()} aria-busy={busy}>送信</button>
-          </div>
+          <>
+            <div className="row">
+              {/* 文字数は符号位置で数える（maxLength は UTF-16 で数えるので付けない）。上限を超えたら送れない。GitHub Issue #310 */}
+              <input ref={input} type="text" aria-label="メッセージを入力" value={text} onChange={(e) => setText(e.target.value)}
+                placeholder="メッセージを入力" style={{ flex: 1 }} />
+              <button className="btn-primary" onClick={send} disabled={busy || !text.trim() || [...text].length > 1000} aria-busy={busy}>送信</button>
+            </div>
+            {[...text].length > 1000 && <div className="weak" role="alert">本文は1,000文字以内で入力してください</div>}
+          </>
         ) : (
           <div className="muted">{noPostNotice(current.room.room_type)}</div>
         )}
