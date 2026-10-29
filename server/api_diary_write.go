@@ -289,6 +289,15 @@ func (a *app) updateDiary(w http.ResponseWriter, u *SessionUser, in diaryInput) 
 	defer tx.Rollback()
 	// 申請するときは、申請した職員と日時を入れ直す（詳細設計書「日誌の状態」(3-6)）。下書き保存では変えない
 	at := now()
+	/*
+	 * 下書き保存では状態を変えない。差し戻された日誌は差し戻しのまま残す。作成者の一覧とダッシュボードの
+	 * 「差し戻された日誌」から消さないため（詳細設計書「日誌の状態」(3-6)、基本設計書「日誌の作成から承認まで」(4-6)、
+	 * 図/画面詳細図「日誌作成・編集画面」(3-2) 項目12。GitHub Issue #305 の 1）。画面は下書き保存を status 1 で送る
+	 */
+	next := in.Status
+	if next == "1" && status == "4" {
+		next = "4"
+	}
 	// ヒヤリハットの列は、欄で受け取った値で書き換える。ほかの記録種別に変えたときは空にする
 	inc := incidentColumnsOf(in.RecordType, in.Incident)
 	if _, err := tx.Exec(`UPDATE t_diary
@@ -299,7 +308,7 @@ func (a *app) updateDiary(w http.ResponseWriter, u *SessionUser, in diaryInput) 
 		    guardian_notice = ?, guardian_noticed_at = ?, guardian_notice_method = ?, guardian_notice_person = ?,
 		    updated_at = ?
 		WHERE diary_id = ?`,
-		in.RecordType, in.ChildID, in.ClassID, in.DiaryDate, in.Body, in.Status,
+		in.RecordType, in.ChildID, in.ClassID, in.DiaryDate, in.Body, next,
 		in.Status, u.staff(), in.Status, at, inc.occurredAt, inc.place,
 		inc.notice, inc.noticedAt, inc.noticeMethod, inc.noticePerson,
 		nextDiaryVersion(version), *in.DiaryID); err != nil {
@@ -562,7 +571,8 @@ func (a *app) handleReturnDiary(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, notAppliedMessage(a.diaryStatusOf(id), msgDiaryReturnNotApplied))
 		return
 	}
-	a.log(u.AccountID, fnDiary, opApprove, "t_diary", i64(id), nullStr(childID),
+	// 差し戻しは更新（操作区分 2）として残す。承認（3）ではない（詳細設計書「日誌の状態」(3-6)「差し戻す｜…｜1・2」。GitHub Issue #305 の 2）
+	a.log(u.AccountID, fnDiary, opUpdate, "t_diary", i64(id), nullStr(childID),
 		s("申請中"), s("差し戻し："+req.Reason))
 	// 承認待ちが減り、作成者の「差し戻された日誌」が増える（events.go）
 	a.notifyDiary(id)

@@ -439,7 +439,7 @@ INSERT INTO t_physical_record (physical_record_id, child_id, measured_on, height
 INSERT INTO t_operation_log (operation_log_id, account_id, operated_at, function_type, operation_type, target_table, target_id, target_child_id, before_value, after_value) VALUES
  (1,3,'2026-09-01T16:40:00','1','1','t_diary',1,'C001',NULL,'下書き作成'),
  (2,3,'2026-09-01T13:20:30','3','1','t_nap_record',1,'C001',NULL,'体位=仰向け 呼吸=あり 顔色=通常 体温=36.6'),
- (3,1,'2026-08-31T09:10:00','1','3','t_diary',3,'C003','申請中','差し戻し'),
+ (3,1,'2026-08-31T09:10:00','1','2','t_diary',3,'C003','申請中','差し戻し'),
  (4,1,'2026-08-29T18:05:00','1','3','t_diary',4,'C002','申請中','承認済み'),
  (5,3,'2026-09-01T10:00:00','5','1','t_physical_record',7,'C001',NULL,'身長=78.5 体重=9.8'),
  (6,1,'2026-08-25T10:00:00','7','1','t_invitation_code',1,'C001',NULL,'招待コードを発行'),

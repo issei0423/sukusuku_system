@@ -150,6 +150,30 @@ describe('差し戻す理由は承認されるまで残す（基本設計書「�
   });
 });
 
+describe('差し戻しの日誌は、下書き保存しても差し戻しのまま（詳細設計書「日誌の状態」(3-6)。#305）', () => {
+  it('下書き保存で状態が戻らず、申請すれば申請中へ進む。差し戻しの操作ログは更新（操作区分 2）で残す', async () => {
+    const d = await api.saveDiary(teacher, personal(), '2');
+    await api.returnDiary(admin, d.diary_id, '書き足してください');
+    const returnLog = db.operationLogs.find((l) => l.target_table === 't_diary' && l.target_id === d.diary_id && l.after_value?.startsWith('差し戻し'))!;
+    expect([returnLog.function_type, returnLog.operation_type, returnLog.after_value]).toEqual(['1', '2', '差し戻し：書き足してください']);
+
+    const lock_token = await lockOf(teacher, d.diary_id);
+    const saved = await api.saveDiary(teacher, personal({ diary_id: d.diary_id, body: '書き足しました（下書き）', lock_token }), '1');
+    expect(saved.status).toBe('4');
+    expect(statusOf(d.diary_id)).toBe('4');
+    expect((await api.staffSummary(teacher)).returned).toBeGreaterThan(0);
+
+    await api.saveDiary(teacher, personal({ diary_id: d.diary_id, body: '書き足しました', lock_token }), '2');
+    expect(statusOf(d.diary_id)).toBe('2');
+  });
+
+  it('下書きを下書き保存したときは、下書きのまま', async () => {
+    const d = await api.saveDiary(teacher, personal(), '1');
+    await api.saveDiary(teacher, personal({ diary_id: d.diary_id, body: '書き足しました', lock_token: await lockOf(teacher, d.diary_id) }), '1');
+    expect(statusOf(d.diary_id)).toBe('1');
+  });
+});
+
 describe('申請中・承認済みの日誌は保存できない（サーバの updateDiary と同じ）', () => {
   it('申請中（日誌 2）・承認済み（日誌 4）の日誌は、書き換えも申請もできない', async () => {
     await expect(api.saveDiary(teacher, {

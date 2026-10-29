@@ -829,7 +829,7 @@ export const growthStandards: GrowthStandard[] = buildGrowthStandards();
 export const operationLogs: OperationLog[] = [
   { operation_log_id: 1, account_id: 3, operated_at: '2026-09-01T16:40:00', function_type: '1', operation_type: '1', target_table: 't_diary', target_id: 1, target_child_id: 'C001', before_value: null, after_value: '下書き作成' },
   { operation_log_id: 2, account_id: 3, operated_at: '2026-09-01T13:20:30', function_type: '3', operation_type: '1', target_table: 't_nap_record', target_id: 1, target_child_id: 'C001', before_value: null, after_value: '体位=仰向け 呼吸=あり 顔色=通常 体温=36.6' },
-  { operation_log_id: 3, account_id: 1, operated_at: '2026-08-31T09:10:00', function_type: '1', operation_type: '3', target_table: 't_diary', target_id: 3, target_child_id: 'C003', before_value: '申請中', after_value: '差し戻し' },
+  { operation_log_id: 3, account_id: 1, operated_at: '2026-08-31T09:10:00', function_type: '1', operation_type: '2', target_table: 't_diary', target_id: 3, target_child_id: 'C003', before_value: '申請中', after_value: '差し戻し' },
   { operation_log_id: 4, account_id: 1, operated_at: '2026-08-29T18:05:00', function_type: '1', operation_type: '3', target_table: 't_diary', target_id: 4, target_child_id: 'C002', before_value: '申請中', after_value: '承認済み' },
   { operation_log_id: 5, account_id: 3, operated_at: '2026-09-01T10:00:00', function_type: '5', operation_type: '1', target_table: 't_physical_record', target_id: 7, target_child_id: 'C001', before_value: null, after_value: '身長=78.5 体重=9.8' },
   { operation_log_id: 6, account_id: 1, operated_at: '2026-08-25T10:00:00', function_type: '7', operation_type: '1', target_table: 't_invitation_code', target_id: 1, target_child_id: 'C001', before_value: null, after_value: '招待コードを発行' },
