@@ -185,6 +185,14 @@ func (a *app) refreshDemoLock() error {
 
 // serveWeb は React のビルド成果物を配信する。
 // 画面側は React Router で経路を持つため、静的ファイルが無い経路は index.html へ寄せる。
+//
+// 【仮置き】キャッシュの指定（web/仮置き値.md「応答ヘッダ」）。
+//   - index.html と、そこへ寄せる経路は no-cache（毎回サーバに確かめる。変わっていなければ 304 で軽い）。
+//     指定が無いと、ブラウザは Last-Modified から手元の写しを使ってよい時間を見積もり、反映のあとも何時間も
+//     古い画面を出し続けた（2026-10-29、OCI の公開先が「ログインしたまま古い」）
+//   - /assets/ はビルドが中身からハッシュを付けた名前なので、1年持たせて immutable にする
+//   - /assets/ に無いファイルは index.html へ寄せず 404 にする。反映で古いハッシュのファイルが消えたあと、
+//     古い画面がそれを読みに来ると、HTML が JavaScript として返って画面が真っ白になるため
 func (a *app) serveWeb(mux *http.ServeMux, dir string) {
 	index := filepath.Join(dir, "index.html")
 	if _, err := os.Stat(index); err != nil {
@@ -197,11 +205,23 @@ func (a *app) serveWeb(mux *http.ServeMux, dir string) {
 			writeErr(w, http.StatusNotFound, "そのエンドポイントはありません")
 			return
 		}
+		// /assets/ の下のファイル名の形の経路だけ。/assets/ そのもの（フォルダ）は今までどおり index.html へ寄せる
+		hashed := strings.HasPrefix(r.URL.Path, "/assets/") && !strings.HasSuffix(r.URL.Path, "/")
 		// ディレクトリは渡さない。渡すと http.FileServer が中身の一覧を返す（GitHub Issue #236 の 10）
 		if fi, err := os.Stat(filepath.Join(dir, filepath.Clean(r.URL.Path))); err == nil && !fi.IsDir() {
+			if hashed {
+				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			} else {
+				w.Header().Set("Cache-Control", "no-cache")
+			}
 			files.ServeHTTP(w, r)
 			return
 		}
+		if hashed {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-cache")
 		http.ServeFile(w, r, index)
 	})
 }
