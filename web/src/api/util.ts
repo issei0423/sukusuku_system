@@ -206,6 +206,15 @@ export function normalizeInvitationCode(code: string): string {
 }
 
 /**
+ * 入力の文字数を、上限まで符号位置で切る。入力欄の maxLength は UTF-16 の単位で数えるため、4バイトの字（「𠮷」など）を含むと
+ * 上限より早く止まる。文字数は文字（符号位置）で数える（詳細設計書「検査の共通の規則」(4-1 (5))。GitHub Issue #310）
+ */
+export function clampChars(value: string, max: number): string {
+  const chars = [...value];
+  return chars.length > max ? chars.slice(0, max).join('') : value;
+}
+
+/**
  * ログインID（メールアドレス）の必須・桁数・形式を検査する（基本設計書「入力項目の制約値」(4-9)）
  * 問題が無ければ null を返す。届くかどうかまでは確かめない
  */

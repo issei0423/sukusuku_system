@@ -319,7 +319,7 @@ func TestStaffAccountChangesFollowChatMembers(t *testing.T) {
 		if !sameRooms(currentRooms(t, a, 5), 1, 2, 3, 5, 6, 7, 8, 9) {
 			t.Fatalf("久保田の参加: %v", currentRooms(t, a, 5))
 		}
-		call(t, h, kubota, "POST", "/api/chat/rooms/8/messages", `{"body":"新しい担任の久保田です。"}`)
+		call(t, h, kubota, "POST", "/api/chat/rooms/8/messages", `{"body":"新しい担任の久保田です。","acknowledged_names":["久保田 陸"]}`)
 		if rec := chatReq(h, kubota, "POST", "/api/chat/rooms/4/messages", `{"body":"前のクラスへ"}`); rec.Code != http.StatusForbidden {
 			t.Fatalf("前のクラスへ投稿できる: %d", rec.Code)
 		}
