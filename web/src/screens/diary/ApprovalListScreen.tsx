@@ -45,7 +45,11 @@ export default function ApprovalListScreen() {
                   <td className="nowrap">{formatMD(d.diary_date)}</td>
                   <td className="nowrap">{DIARY_RECORD_TYPE[d.record_type]}</td>
                   <td className="nowrap">{className(d.class_id)}</td>
-                  <td>{d.child_id ? childName(d.child_id) : '―'}</td>
+                  <td>
+                    {d.child_id ? childName(d.child_id) : '―'}
+                    {/* 承認すると保護者へ共有される個人日誌（server/api_diary_share.go） */}
+                    {d.record_type === '1' && d.share_to_guardian && <> <Tag label="保護者へ共有" /></>}
+                  </td>
                   <td className="nowrap">
                     {staffName(d.applied_staff_id)}
                     {d.applied_staff_id === user!.staff_id && <> <Tag label="ほかの管理者へ" /></>}

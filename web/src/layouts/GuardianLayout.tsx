@@ -33,6 +33,8 @@ const MENU_PAGES = [
   { to: '/guardian', label: 'ホーム' },
   // 園からの配布物はチャットの一部なので、メニューには置かず「チャット・お知らせ」の画面から開く（職員と同じ形）
   { to: '/guardian/chat', label: 'チャット・お知らせ' },
+  // 保育士が共有を選び、園長が承認した日誌（server/api_diary_share.go）
+  { to: '/guardian/diaries', label: '園からの日誌' },
 ];
 const MENU_ACCOUNT = [
   { to: '/guardian/password', label: 'パスワードの変更' },
