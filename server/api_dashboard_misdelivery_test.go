@@ -64,7 +64,7 @@ func TestStaffSummaryCountsRetractedWithoutRecordForAdminOnly(t *testing.T) {
 
 	// 担任（一般の職員）が個人チャットへ送ったメッセージを取り消すと、管理者の件数が増える
 	byStaff := sentID(t, call(t, h, suzuki, "POST", "/api/chat/rooms/8/messages",
-		`{"body":"（誤送信）西田 太郎くんの発熱の記録"}`).Body)
+		`{"body":"（誤送信）西田 太郎くんの発熱の記録","acknowledged_names":["西田 太郎"]}`).Body)
 	call(t, h, suzuki, "POST", "/api/chat/messages/"+itoa(byStaff)+"/retract", "")
 	expectCount("職員が取り消したあと", before+1)
 
