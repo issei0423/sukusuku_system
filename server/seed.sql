@@ -348,7 +348,7 @@ ORDER BY cl.class_id;
 INSERT INTO t_chat_member (chat_room_id, account_id, joined_at, left_at)
 SELECT r.chat_room_id, a.account_id, '2026-09-01T09:00:00', NULL
 FROM m_chat_room r CROSS JOIN m_account a
-WHERE r.room_type = '2' AND r.class_id = 3 AND a.status = '1' AND a.role = '1';
+WHERE r.room_type = '2' AND r.chat_room_id >= 10 AND a.status = '1' AND a.role = '1';
 
 INSERT INTO t_chat_message (chat_message_id, chat_room_id, sender_account_id, body, source_type, source_id, sent_at, edited_at, is_deleted, deleted_at, deleted_account_id) VALUES
  (1,1,1,'9月の献立表を掲示しました。ご確認ください。','1',NULL,'2026-09-01T08:30:00',NULL,0,NULL,NULL),
