@@ -31,7 +31,7 @@ const newChild = (childId: string): ChildInput => ({
 });
 
 describe('CSV の取込（GitHub Issue #279）', () => {
-  it('性別は「男」「女」「未回答」の文字も数字も受ける。空欄と別の文字は受けない', () => {
+  it('性別は「男」「女」「未回答」の文字も数字も受ける。空欄と別の文字は受けない', async () => {
     const text = head + [
       'C931,文字 男,もじ おとこ,2025-06-01,男,さくら組,',
       'C932,文字 女,もじ おんな,2025-06-01,女,さくら組,',
@@ -40,9 +40,8 @@ describe('CSV の取込（GitHub Issue #279）', () => {
       'C935,空欄,くうらん,2025-06-01,,さくら組,',
       'C936,別の字,べつのじ,2025-06-01,不明,さくら組,',
     ].join('\n');
-    return api.parseChildCsv(admin, text).then((r) => {
-      expect(r.rows.map((x) => x.error !== null)).toEqual([false, false, false, false, true, true]);
-    });
+    const r = await api.parseChildCsv(text);
+    expect(r.rows.map((x) => x.error !== null)).toEqual([false, false, false, false, true, true]);
   });
 
   it('取り込んだ園児は性別を数字にそろえ、写真の利用同意は園内記録のみ（1）で入る', async () => {
@@ -52,7 +51,7 @@ describe('CSV の取込（GitHub Issue #279）', () => {
       'C943,取込 未,とりこみ み,2025-06-01,未回答,もも組,',
       'C944,取込 数,とりこみ すう,2025-06-01,2,さくら組,36.5',
     ].join('\n');
-    const parsed = await api.parseChildCsv(admin, text);
+    const parsed = await api.parseChildCsv(text);
     await api.importChildCsv(admin, parsed.rows, text);
     for (const [id, sex] of [['C941', '1'], ['C942', '2'], ['C943', '9'], ['C944', '2']]) {
       const c = db.children.find((x) => x.child_id === id)!;

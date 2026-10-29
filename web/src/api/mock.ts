@@ -3693,12 +3693,13 @@ function usableInvitationCode(code: string): InvitationCode | string {
   const normalized = normalizeInvitationCode(code);
   const c = db.invitationCodes.find((x) => normalizeInvitationCode(x.code) === normalized);
   if (!c) return MSG.invitationNotFound;
+  // 取り消した・在籍していない園児のコードでは登録させない。園児の状態は言わず、無いコードと同じ文言にする
+  // （GitHub Issue #166 の 4。サーバ側は server/api_auth.go の lookupUsableCode）。取消は未使用のコードを失効にするので
+  // （GitHub Issue #279）、コードの状態より先に見る
+  if (!childIssuable(c.child_id).issuable) return MSG.invitationNotFound;
   if (c.status === '2') return MSG.invitationUsed;
   if (c.status === '3') return MSG.invitationRevoked;
   if (c.expires_on < today()) return MSG.invitationExpired;
-  // 取り消した・在籍していない園児のコードでは登録させない。園児の状態は言わず、無いコードと同じ文言にする
-  // （GitHub Issue #166 の 4。サーバ側は server/api_auth.go の lookupUsableCode）
-  if (!childIssuable(c.child_id).issuable) return MSG.invitationNotFound;
   return c;
 }
 

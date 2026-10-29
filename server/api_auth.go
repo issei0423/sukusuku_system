@@ -402,6 +402,13 @@ func (a *app) lookupUsableCode(code string) (usableCode, error) {
 	if err != nil {
 		return out, errors.New("招待コードの確認に失敗しました")
 	}
+	// 取り消した（誤登録）・在籍していない園児のコードでは登録させない。発行のあとで園児を取り消しても、
+	// 配ったコードで、その園児に紐づく保護者アカウントができてしまうため（GitHub Issue #166 の 4）。
+	// 園児の状態は言わず、無いコードと同じ文言にする。取消は未使用のコードを失効（3）にするので
+	// （GitHub Issue #279）、コードの状態より先に見る。後に見ると「失効しています」と出て、取り消したことが分かる
+	if _, issuable := a.childIssuable(out.ChildID); !issuable {
+		return out, errors.New(msgInvitationNotFound)
+	}
 	switch {
 	case status == "2":
 		return out, errors.New(msgInvitationUsed)
@@ -409,12 +416,6 @@ func (a *app) lookupUsableCode(code string) (usableCode, error) {
 		return out, errors.New(msgInvitationRevoked)
 	case expiresOn < today():
 		return out, errors.New(msgInvitationExpired)
-	}
-	// 取り消した（誤登録）・在籍していない園児のコードでは登録させない。発行のあとで園児を取り消しても、
-	// 配ったコードで、その園児に紐づく保護者アカウントができてしまうため（GitHub Issue #166 の 4）。
-	// 園児の状態は言わず、無いコードと同じ文言にする
-	if _, issuable := a.childIssuable(out.ChildID); !issuable {
-		return out, errors.New(msgInvitationNotFound)
 	}
 	return out, nil
 }
