@@ -77,6 +77,33 @@ describe('午睡チェックを終了したあとのフォーカス（GitHub Iss
     expect(end.isConnected).toBe(false);
     await waitFor(() => expect(document.activeElement).toBe(start));
   });
+
+  /*
+   * 終了の応答より先に、知らせによる裏の読み直しが終わる順（負荷のあるときに、ときどき起きていた。GitHub Issue #265）。
+   * 実施が無いと読めた時点で「午睡チェックを開始する」が出て、そのあとの前面の読み直しで読み込み中の表示に替わると、
+   * 移したフォーカスが body に落ちた。終了の応答を遅らせて、この順を決めて作る
+   */
+  it('終了の応答が遅れて、裏の読み直しが先に終わっても、「午睡チェックを開始する」へフォーカスが残る', async () => {
+    const running = await api.activeSession(1, today(), teacher);
+    if (running) await api.endSession(teacher, running.nap_session_id);
+    vi.spyOn(api, 'classState').mockResolvedValue([]);
+    open('/staff/nap', teacher);
+    const startFirst = await screen.findByRole('button', { name: '午睡チェックを開始する' }, { timeout: 3000 });
+    fireEvent.click(startFirst);
+    const end = await screen.findByRole('button', { name: '午睡チェックを終了' }, { timeout: 3000 });
+    const endSession = api.endSession.bind(api);
+    vi.spyOn(api, 'endSession').mockImplementation(async (...args: Parameters<typeof endSession>) => {
+      const result = await endSession(...args);
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      return result;
+    });
+    press(end);
+    const start = await screen.findByRole('button', { name: '午睡チェックを開始する' }, { timeout: 3000 });
+    // 前面の読み直しの間も、開始のボタンは出したままにする（消えて出し直されると、フォーカスが外れる）
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(start.isConnected).toBe(true);
+    expect(document.activeElement).toBe(start);
+  });
 });
 
 describe('午睡チェックを開始したあとのフォーカス（GitHub Issue #213）', () => {
