@@ -61,6 +61,27 @@ const staffUser = (accountId: number): SessionUser => {
   };
 };
 
+// クラスグループは「クラス × 年度」で自動構成する（要件定義書「グループの種別」(4-4 (a))、基本設計書「チャット」(5-6)）。
+// server/api_chat_membership_test.go の TestClassGroupsExistForEveryClassOfThisYear と同じ観点
+describe('今年度のクラスごとに、クラスグループがある（GitHub Issue #307）', () => {
+  it('今年度のクラスごとに、クラスグループが1つずつある', () => {
+    const thisYear = db.classes.filter((c) => c.fiscal_year === 2026);
+    expect(thisYear).toHaveLength(3);
+    for (const c of thisYear) {
+      expect(db.chatRooms.filter((r) => r.room_type === '2' && r.class_id === c.class_id), c.class_name).toHaveLength(1);
+    }
+  });
+
+  it('管理者のチャンネル一覧に、さくら組・ひまわり組・もも組が出る', async () => {
+    const names = (await api.rooms(admin)).filter((v) => v.room.room_type === '2').map((v) => v.room.room_name);
+    expect(names.sort()).toEqual(['さくら組', 'ひまわり組', 'もも組'].sort());
+  });
+
+  it('担任でない一般は、もも組のグループに入らない', async () => {
+    expect((await api.rooms(kubota)).some((v) => v.room.room_name === 'もも組')).toBe(false);
+  });
+});
+
 describe('グループ編成の API で編成できるのは目的別グループだけ（GitHub Issue #161 の 1）', () => {
   it('ほかのクラスの個人チャットに自分を足せない', async () => {
     await expect(api.updateGroupMembers(kubota, 6, [1, 3, 4, 6, 5])).rejects.toThrow('目的別グループだけ');

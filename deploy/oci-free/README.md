@@ -106,6 +106,39 @@ runner を登録し直す（`config.sh`）ときは、`.env` に行を足すこ�
 
 デモデータには既知の共通パスワード `pass1234` がある。現在の公開先はデモ専用とし、実データを入れない。Anthropic API キーは VM に置かず、AI は無効のままにする。
 
+## 毎晩のデモの作り直し
+
+デモデータは、DB を初めて作ったときに1回だけ入る（`server/db.go` の `openDB`）。反映でコードが新しくなっても DB は残るので、公開先は古いデモの名前と、DB を作った日の日付のままになる。2026-10-29 には、10-23 ごろに作った DB のまま、#282 より前のデモの名前（チームの人の名前）が出ていた。
+
+そこで、毎晩 4:00（日本時間）に DB を作り直す【仮置き】。
+
+- [sukusuku-demo-reset.sh](sukusuku-demo-reset.sh)：反映と同じ鍵を取ってから、次の順に動く
+  1. サービスを止める
+  2. DB（`-wal`・`-shm`・`-journal` も）と `files/`（写真）を `/var/backups/sukusuku/demo-reset-<UTC の日時>/` へ移す（消さない）
+     移す途中で失敗したら（容量が足りないなど）、移したものを戻して起動し直し、失敗で終わる
+  3. 起動する。サーバは DB が無ければ、いまのデモデータで作り直す
+  4. 応答（`/api/terms`）を確かめる。返らなければ、前の DB を戻して起動し直す
+  5. 作り直しの退避は新しい7世代だけ残す【仮置き】。反映のときのバックアップ（`*.db`）には触らない
+- [sukusuku-demo-reset.service](sukusuku-demo-reset.service)・[sukusuku-demo-reset.timer](sukusuku-demo-reset.timer)：毎晩 4:00 に上を回す。VM が止まっていた夜の分は回さない（`Persistent=false`）。昼に起動したときに作り直すと、使っている人がログアウトされるため
+- 作り直すと、ログイン中の人は全員ログアウトされ、試しに入れたデータも消える（退避には残る）
+- 作り直しが鍵を持っている数十秒のあいだに本線へ push されると、反映は「別のデプロイが進行中です」で赤になる（反映の鍵は待たない `flock -n`）。そのときは Actions で実行し直す
+- 手元での確かめ：`bash deploy/oci-free/sukusuku-demo-reset.test.sh`（一時フォルダと偽物の systemctl・flock・mv で6つの場合を見る）
+
+自動デプロイは、この3つを VM に置かない（runner の sudo は反映のコマンドだけ）。**最初の1回だけ、持ち主が Bastion のセッションで置く。** 本線を取り出した所（runner の作業場所の `deploy/oci-free/`）か、手元から写したファイルで行う。
+
+```
+sudo install -o root -g root -m 0755 sukusuku-demo-reset.sh /usr/local/sbin/sukusuku-demo-reset
+sudo install -o root -g root -m 0644 sukusuku-demo-reset.service sukusuku-demo-reset.timer /etc/systemd/system/
+systemd-analyze calendar '*-*-* 04:00:00 Asia/Tokyo'   # 次に動く時刻が日本時間の 4:00 か
+sudo systemctl daemon-reload
+sudo systemctl enable --now sukusuku-demo-reset.timer
+sudo systemctl start sukusuku-demo-reset.service       # いま1回作り直す（最初の1回）
+systemctl list-timers sukusuku-demo-reset.timer         # 次の時刻
+journalctl -u sukusuku-demo-reset -n 20                 # 「デモの DB を作り直しました」が出ているか
+```
+
+止めるときは `sudo systemctl disable --now sukusuku-demo-reset.timer`。前の DB に戻すときは、サービスを止めて、退避の中の `sukusuku.db`（と `files/`）を `/var/lib/sukusuku/` へ戻して起動する。
+
 ## 設置状況（2026-10-23）
 
 既存 VM に runner 2.338.1 を専用ユーザーで登録し、GitHub 側の online を確認した。4GB の swap と release 切替用の配置、更新コマンドだけの sudo 権限を設定済み。初期配置は releases/initial に保持している。自動反映はこの PR のマージ後から有効になる。

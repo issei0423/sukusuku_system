@@ -63,6 +63,7 @@ import type {
   AiPurpose, AiField, AiTarget, AiDraftInput, AiDraftResult, SettingRow, SettingsView,
 } from './shapes';
 import type { InvitationPreview, AddChildResult } from './shapes';
+import type { GuardianDiary } from './shapes';
 
 // 画面はこれまでどおり client 経由で型を参照する。定義の実体は shapes.ts が持つ
 export type {
@@ -382,6 +383,19 @@ function canSeeDiary(user: SessionUser, d: Diary): boolean {
  */
 const DIARY_LOG_APPLY = '申請';
 const DIARY_LOG_CREATE_AND_APPLY = '作成して申請';
+// 共有を選んだ日誌を承認したときの「変更後」の文言。サーバ側（server/api_diary_share.go の diaryLogApproveShared）と同じ
+const DIARY_LOG_APPROVE_SHARED = '承認済み（保護者へ共有）';
+// 【仮置き】保護者に返す共有された日誌の件数の上限（web/仮置き値.md。server/api_diary_share.go の guardianDiaryLimit）
+const GUARDIAN_DIARY_LIMIT = 100;
+
+/**
+ * 保存する共有の印。個人日誌だけが共有でき、ほかの記録種別は常に共有しない。送られなかったときは current
+ * （新しく作るなら false、書き換えるなら今の値）。サーバ側は server/api_diary_share.go の shareColumnOf
+ */
+function shareColumnOf(recordType: Diary['record_type'], input: boolean | undefined, current: boolean): boolean {
+  if (recordType !== '1') return false;
+  return input === undefined ? current : input;
+}
 
 /**
  * 日誌を書き換えるときの新しい updated_at。読んだ版で取り下げ・承認の取り消しを確かめるため、書くたびに必ず前の値より
@@ -1228,6 +1242,7 @@ const diaryApi2 = {
       d.class_id = input.class_id;
       d.diary_date = input.diary_date;
       d.body = body;
+      d.share_to_guardian = shareColumnOf(input.record_type, input.share_to_guardian, !!d.share_to_guardian);
       // ヒヤリハットの列は、欄で受け取った値で書き換える。ほかの記録種別に変えたときは空にする
       Object.assign(d, incidentColumns);
       // 下書き保存では状態を変えない。差し戻された日誌は差し戻しのまま残す（詳細設計書「日誌の状態」(3-6)。
@@ -1265,6 +1280,7 @@ const diaryApi2 = {
       // 作って申請するときは、申請した職員と日時を入れる（詳細設計書「日誌」(4-13 (1))）
       applied_staff_id: status === '2' ? user.staff_id : null, applied_at: status === '2' ? now() : null,
       nap_abnormal_id: null, returned_reason: null,
+      share_to_guardian: shareColumnOf(input.record_type, input.share_to_guardian, false),
       is_deleted: false, created_at: now(), updated_at: now(),
     };
     db.diaries.unshift(row);
@@ -1287,8 +1303,9 @@ const diaryApi2 = {
   },
 
   /**
-   * 承認。承認は園内の確認であり、保護者へは何も届かない（基本設計書「日誌システム（園内の記録）」(4-6)、
-   * 詳細設計書「日誌」(4-13 (2))）。サーバ側は server/api_diary_write.go の handleApproveDiary
+   * 承認（基本設計書「日誌システム（園内の記録）」(4-6)、詳細設計書「日誌」(4-13 (2))）。保育士が申請するときに
+   * 共有を選んだ個人日誌は、承認するとその園児の保護者が読める（server/api_diary_share.go）。共有するかは申請した
+   * 保育士が決め、ここでは選ばない。サーバ側は server/api_diary_write.go の handleApproveDiary
    */
   async approveDiary(user: SessionUser, diaryId: number): Promise<Diary> {
     if (user.role !== '1') return fail(DIARY_MSG.approveAdminOnly);
@@ -1305,7 +1322,8 @@ const diaryApi2 = {
     d.approved_at = now();
     d.returned_reason = null;
     d.updated_at = nextDiaryVersion(d.updated_at);
-    log(user.account_id, '1', '3', 't_diary', d.diary_id, d.child_id, '申請中', '承認済み');
+    log(user.account_id, '1', '3', 't_diary', d.diary_id, d.child_id, '申請中',
+      d.share_to_guardian ? DIARY_LOG_APPROVE_SHARED : '承認済み');
     publishDiary(d);
     return ok(withDiaryNames(d));
   },
@@ -4075,6 +4093,26 @@ const dashboardApi = {
       misdeliveryUnrecorded, activeNap,
       homeUnconfirmed: states.filter((x) => x === 'unconfirmed').length, homeRevised: states.filter((x) => x === 'revised').length, napSleeping,
       facilityUnsent });
+  },
+
+  /**
+   * 保護者に共有された日誌。自児（紐づけが有効な園児）の、承認済みで共有を選んだ個人日誌だけ。記録日の新しい順。
+   * 保護者に見せる項目だけを返す。保護者のみ（server/api_diary_share.go の handleGuardianDiaries）
+   */
+  async guardianDiaries(user: SessionUser): Promise<GuardianDiary[]> {
+    if (user.role !== '3' || !user.guardian_id) return fail('共有された日誌は保護者のみが利用できます');
+    const mine = new Set(db.guardianChildren
+      .filter((gc) => gc.guardian_id === user.guardian_id && gc.link_status === '1').map((gc) => gc.child_id));
+    return ok(db.diaries
+      .filter((d) => !d.is_deleted && d.record_type === '1' && d.status === '3' && d.share_to_guardian
+        && !!d.child_id && mine.has(d.child_id))
+      .sort((a, b) => b.diary_date.localeCompare(a.diary_date)
+        || (b.approved_at ?? '').localeCompare(a.approved_at ?? '') || b.diary_id - a.diary_id)
+      .slice(0, GUARDIAN_DIARY_LIMIT)
+      .map((d) => ({
+        diary_id: d.diary_id, child_id: d.child_id!, child_name: childName(d.child_id!),
+        diary_date: d.diary_date, body: d.body, shared_at: d.approved_at ?? '',
+      })));
   },
 
   /** 保護者ホーム。自児の情報とチャットへの導線（基本設計書「画面の一覧」(3-2)） */

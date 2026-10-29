@@ -1,0 +1,7 @@
+[Unit]
+Description=Sukusuku demo: recreate the database with the current demo data
+After=sukusuku.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/sukusuku-demo-reset

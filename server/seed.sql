@@ -335,6 +335,21 @@ WHERE r.room_type = '4' AND r.chat_room_id >= 10 AND a.status = '1'
     SELECT 1 FROM m_staff s JOIN t_class_staff cs ON cs.staff_id = s.staff_id
     WHERE s.account_id = a.account_id AND cs.class_id = r.class_id)));
 
+-- クラスグループは「クラス × 年度」で自動構成する（要件定義書「グループの種別」(4-4 (a))、
+-- 基本設計書「チャット」(5-6) m_chat_room）。今年度のクラスは3つなので、もも組の部屋も用意する（GitHub Issue #307）。
+-- 既存の部屋番号（6〜）を動かさないよう、個人チャットを作ったあとに足す。
+-- もも組には担任の割り当てがまだ無く、保護者の紐づけも無いので、参加者は管理者だけ（職員の参加は server/chat_membership.go が決める）
+INSERT INTO m_chat_room (room_type, class_id, room_name, is_archived, thread_status, child_id)
+SELECT '2', cl.class_id, cl.class_name, 0, NULL, NULL
+FROM m_class cl
+WHERE cl.fiscal_year = 2026
+  AND NOT EXISTS (SELECT 1 FROM m_chat_room r WHERE r.room_type = '2' AND r.class_id = cl.class_id)
+ORDER BY cl.class_id;
+INSERT INTO t_chat_member (chat_room_id, account_id, joined_at, left_at)
+SELECT r.chat_room_id, a.account_id, '2026-09-01T09:00:00', NULL
+FROM m_chat_room r CROSS JOIN m_account a
+WHERE r.room_type = '2' AND r.chat_room_id >= 10 AND a.status = '1' AND a.role = '1';
+
 INSERT INTO t_chat_message (chat_message_id, chat_room_id, sender_account_id, body, source_type, source_id, sent_at, edited_at, is_deleted, deleted_at, deleted_account_id) VALUES
  (1,1,1,'9月の献立表を掲示しました。ご確認ください。','1',NULL,'2026-09-01T08:30:00',NULL,0,NULL,NULL),
  (2,3,4,'明日の遠足の集合時間ですが、9時でよろしいでしょうか。','1',NULL,'2026-09-01T15:02:00',NULL,0,NULL,NULL),

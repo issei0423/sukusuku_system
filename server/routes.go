@@ -27,6 +27,8 @@ func (a *app) routes(mux *http.ServeMux) {
 func (a *app) routeGuardian(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/guardian/children", a.handleAddChild)
 	mux.HandleFunc("POST /api/guardian/children/{childID}/ai-opt-out", a.handleAiOptOut)
+	// 共有された日誌（保育士が共有を選んで申請し、管理者が承認した個人日誌。api_diary_share.go）
+	mux.HandleFunc("GET /api/guardian/diaries", a.handleGuardianDiaries)
 }
 
 // 連絡帳の読み書きと、ねた・おきた（詳細設計書「経路の一覧」(4-2)）
