@@ -12,6 +12,7 @@ import { Field, Alert } from '../../components/ui';
 import { useSession } from '../../session';
 import { api } from '../../api/client';
 import type { LoginError } from '../../api/client';
+import DemoAccounts from './DemoAccounts';
 
 export default function TopScreen({ entrance }: { entrance: 'staff' | 'guardian' }) {
   const { user, setUser, setEntrance, logout } = useSession();
@@ -94,6 +95,11 @@ export default function TopScreen({ entrance }: { entrance: 'staff' | 'guardian'
           {entrance === 'staff' ? '保護者の方はこちら' : '職員の方はこちら'}
         </Link>
       </div>
+
+      {/* 手元の開発サーバでだけ出す。本番のビルドには入れない（DemoAccounts.tsx） */}
+      {import.meta.env.DEV && (
+        <DemoAccounts entrance={entrance} onPick={(m, p) => { setEmail(m); setPassword(p); }} />
+      )}
     </PublicLayout>
   );
 }

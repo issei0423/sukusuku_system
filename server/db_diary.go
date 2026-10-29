@@ -58,6 +58,17 @@ func ensureInternalDiary(db *sql.DB) error {
 	if n, _ := res.RowsAffected(); n > 0 {
 		log.Printf("日誌・発達身体の共有の知らせ %d 件を、チャットに出ないようにしました", n)
 	}
+
+	// 保護者へ共有する印（share_to_guardian）を足す。既存の日誌は共有しない（0）のまま（api_diary_share.go）
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('t_diary') WHERE name = 'share_to_guardian'`).Scan(&n); err != nil {
+		return fmt.Errorf("t_diary の列を確かめられません: %w", err)
+	}
+	if n == 0 {
+		if _, err := db.Exec(`ALTER TABLE t_diary ADD COLUMN share_to_guardian INTEGER NOT NULL DEFAULT 0 CHECK (share_to_guardian IN (0,1))`); err != nil {
+			return fmt.Errorf("t_diary に share_to_guardian を足せません: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -113,6 +124,7 @@ const diaryTableDDL = `CREATE TABLE %s (
   guardian_notice_person TEXT,
   nap_abnormal_id       INTEGER REFERENCES t_nap_abnormal(nap_abnormal_id),
   returned_reason       TEXT,
+  share_to_guardian     INTEGER NOT NULL DEFAULT 0 CHECK (share_to_guardian IN (0,1)),
   is_deleted            INTEGER NOT NULL DEFAULT 0,
   created_at            TEXT    NOT NULL,
   updated_at            TEXT    NOT NULL,

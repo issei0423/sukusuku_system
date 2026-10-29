@@ -17,11 +17,12 @@ import { api, selectableClasses } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Alert, Modal } from '../../components/ui';
 import { ConfirmDialog } from '../../components/feedback';
 import { BODY_POSITION, BREATHING, COMPLEXION } from '../../api/codes';
-import { formatHM, formatTemperature, today, now, napTimerBase, plusMinutes, jstMs, isOneDecimal } from '../../api/util';
+import { formatHM, formatTemperature, today, napTimerBase, jstMs, isOneDecimal } from '../../api/util';
 import type { BodyPosition, Breathing, Complexion, NapRecord } from '../../api/types';
 import type { NapChildState } from '../../api/shapes';
 import SleepControls from './SleepControls';
 import { focusAfter, focusableIn, focusedNow } from '../../focusAfter';
+import { useNapSound } from '../../napSound';
 
 /** 園児の行に「保存しました」を出しておく時間（仮置き値.md「午睡チェックの動き」） */
 const SAVED_NOTICE_MS = 5000;
@@ -130,9 +131,22 @@ export default function NapCheckScreen() {
     wasActive.current = false;
   }, [s, session.loading]);
 
+  /*
+   * 画面の時計。1秒ごとに進め、確認の時刻になった行をその時刻で警告色にする（60秒ごとの読み直しを待たない）。
+   * タイマーの表示・読み上げ・通知音も同じ時計で動かす（図/画面詳細図.md「午睡チェック画面」(5-1) 項目3・7・20）
+   */
+  const [nowMs, setNowMs] = useState(Date.now());
+  useEffect(() => {
+    if (activeId === null) return;
+    // 画面を開いた時刻のままで判定しないよう、実施が決まったときにすぐ合わせる（PR #322 の review）
+    setNowMs(Date.now());
+    const t = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [activeId]);
+
   // 確認の時刻を過ぎたか。未記録の園児は開始時刻から数える
   const isDue = (latestAt: string | null) =>
-    !!s && plusMinutes(latestAt ?? s.started_at, intervalMinutes) <= now();
+    !!s && jstMs(latestAt ?? s.started_at) + intervalMinutes * 60_000 <= nowMs;
 
   /*
    * この実施で異常時の記録がある園児を、カードで強調して示す。ほかの職員が画面を見ても、
@@ -163,7 +177,7 @@ export default function NapCheckScreen() {
 
   return (
     <div>
-      {s && <NapTimer startedAt={s.started_at} intervalMinutes={intervalMinutes} rows={rows}
+      {s && <NapTimer startedAt={s.started_at} intervalMinutes={intervalMinutes} rows={rows} nowMs={nowMs}
         ready={!!state.data && !state.loading} />}
 
       <div className="page-head">
@@ -239,17 +253,13 @@ export default function NapCheckScreen() {
  * タイマー。次のチェックまでの残り時間を上部に固定して示す（画面詳細図 5-1）
  * 間隔は年齢別のマスタ値を用いる（基本設計書 5-8）
  */
-function NapTimer({ startedAt, intervalMinutes, rows, ready }: {
+function NapTimer({ startedAt, intervalMinutes, rows, nowMs, ready }: {
   startedAt: string; intervalMinutes: number; rows: { latest: { checked_at: string } | null }[];
+  /** 画面の時計（1秒ごと。親が持つ。園児の行の警告色と同じ時刻で動かす） */
+  nowMs: number;
   /** 園児の行を読み込み終えたか。読み込む前の空の一覧を起点にして、開いたときに読まないようにする */
   ready: boolean;
 }) {
-  const [nowMs, setNowMs] = useState(Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setNowMs(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
-
   /*
    * 開始時刻・記録の時刻は日本時間の文字列で届く。端末の現地時刻として読むと、日本時間以外の端末で
    * 時差のぶんだけずれるため、jstMs で日本時間として読む（MOCKUP.md「日本標準時（JST）に固定している」、
@@ -275,16 +285,25 @@ function NapTimer({ startedAt, intervalMinutes, rows, ready }: {
    * 読み上げへは、確認の時刻を過ぎた子が増えたときだけ、そのときの「未確認 n 名」をまとめて1回伝える
    * （詳細設計書「全画面に共通する部品と決まり」(2-0) の (6) の③、GitHub Issue #209）。
    * 記録して数が減ったとき・時刻の前に戻ったときは伝えない（数を読み続けると、記録している途中の読み上げが途切れる）。
-   * 見えている文は今までどおり毎秒の数を出す。開いたときは、そのときの数を起点にして読まない
+   * 見えている文は今までどおり毎秒の数を出す。開いたときは、そのときの数を起点にして読まない。
+   *
+   * 通知音も、読み上げと同じ契機（確認の時刻を過ぎた子が増えたとき）に1回鳴らす（GitHub Issue #298。
+   * 基本設計書「午睡チェックの実施」(4-8) の処理 4「通知音を伴って知らせる」）。鳴らす回数・止め方は設計が定めていない：
+   * 【仮置き】3つの音を1回。自分で止まり、止める操作は置かない。時刻を過ぎたままの間は鳴らし直さない（web/仮置き値.md）
    */
+  const sound = useNapSound(true);
+  const playAlarm = sound.play;
   const [said, setSaid] = useState<{ text: string; seq: number } | null>(null);
   const lastDue = useRef<number | null>(null);
   useEffect(() => {
     if (!ready) return;
     const before = lastDue.current;
     lastDue.current = dueCount;
-    if (before !== null && dueCount > before) setSaid((s) => ({ text: overText, seq: (s?.seq ?? 0) + 1 }));
-  }, [dueCount, ready, overText]);
+    if (before !== null && dueCount > before) {
+      setSaid((s) => ({ text: overText, seq: (s?.seq ?? 0) + 1 }));
+      playAlarm();
+    }
+  }, [dueCount, ready, overText, playAlarm]);
 
   // 1時間を超えるときは時も出す。分だけで表すと「66:57」のように読み取りにくくなるため
   const mmss = (sec: number) => {
@@ -321,6 +340,14 @@ function NapTimer({ startedAt, intervalMinutes, rows, ready }: {
         <div className="muted">{over ? overText : '次のチェックまで'}</div>
         <div className="sr-only" role="status">{said && <span key={said.seq}>{said.text}</span>}</div>
         <div className="big">{over ? `+${mmss(remain)}` : mmss(remain)}</div>
+        {/* 音を出せる状態でないとき。触れば出せるようになる。音と色だけに頼らず、文でも伝える。【仮置き】文言（web/仮置き値.md） */}
+        {(!sound.supported || sound.ready === false) && (
+          <div className="nap-sound-notice">
+            {sound.supported
+              ? '通知音が出る状態になっていません。画面を一度さわってください。'
+              : 'この端末では通知音を出せません。巡回の時刻を、画面のタイマーで確かめてください。'}
+          </div>
+        )}
       </div>
       <div>
         <div className="muted">開始</div>
@@ -429,7 +456,7 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved }: {
     && !(abnormal && abnormal.recorded.slice(0, 16) >= latest.checked_at.slice(0, 16));
 
   return (
-    <section ref={rowRef} className={`nap-card nap-record-row${!excluded && (!row.latest || due) ? ' unrecorded' : ''}${abnormal ? ' has-abnormal' : ''}${excluded ? ' is-excluded' : ''}`}
+    <section ref={rowRef} className={`nap-card nap-record-row${!excluded && due ? ' is-due' : ''}${abnormal ? ' has-abnormal' : ''}${excluded ? ' is-excluded' : ''}`}
       aria-label={`${name}の午睡チェック`}>
       <div className="nap-row-head">
         <strong className="name">{name}</strong>
@@ -440,8 +467,8 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved }: {
           画面の下に重なり、続けて記録する次の行の体位・顔色・体温のボタンを隠すため（iPad 横 1180×820・縦 820×1180・744×1133・1440×900 で確かめた）。
           欄は前から置いておき（入れたときに読まれるように）、「保存しました」を出す間だけ中身を入れる。見えている文は二重に読まれないよう、その間は読み上げから外す
         */}
-        <span className={`nap-row-status${!excluded && (!row.latest || due) ? ' due' : ''}`} aria-hidden={justSaved || undefined}>
-          {justSaved ? '保存しました' : excluded ? 'きょうは対象外' : !row.latest ? '未記録' : due ? 'チェック時刻を過ぎています' : '確認済み'}
+        <span className={`nap-row-status${!excluded && due ? ' due' : ''}`} aria-hidden={justSaved || undefined}>
+          {justSaved ? '保存しました' : excluded ? 'きょうは対象外' : !row.latest ? (due ? '未記録（チェック時刻を過ぎています）' : '未記録') : due ? 'チェック時刻を過ぎています' : '確認済み'}
         </span>
         <span className="sr-only" role="status">{justSaved ? '保存しました' : ''}</span>
         <span className="last">{row.latest ? `前回 ${formatHM(row.latest.checked_at)} ${BODY_POSITION[row.latest.body_position]}` : '前回の記録なし'}</span>

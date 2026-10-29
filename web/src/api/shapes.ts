@@ -86,6 +86,22 @@ export interface DiaryInput {
    * 状況・とった対応・今後の対策を見出しでつないだ本文をサーバ（モック）が作る（決めたこと D-33）
    */
   incident?: DiaryIncidentInput;
+  /**
+   * 保護者へ共有する（個人日誌だけ。server/api_diary_share.go）。送らなければ、新しく作るなら共有しない、
+   * 書き換えるなら今の値のままにする
+   */
+  share_to_guardian?: boolean;
+}
+
+/** 保護者に共有された日誌。保護者に見せる項目だけを持つ（server/api_diary_share.go の GuardianDiary） */
+export interface GuardianDiary {
+  diary_id: number;
+  child_id: string;
+  child_name: string;
+  diary_date: string;
+  body: string;
+  /** 共有された日時（承認した日時） */
+  shared_at: string;
 }
 
 /** 保存のときに送るヒヤリハットの欄。任意の欄は空の文字列で「無し」とする（サーバ側は diaryIncidentInput） */
