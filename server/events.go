@@ -302,16 +302,17 @@ func (a *app) notify(ev liveEvent, see func(u *SessionUser) bool) {
 
 // notifyRoomPost は、新しいメッセージを、いまの参加者へ送る。外れた人は外れたあとの投稿を読めない
 // （api_chat.go の afterLeftClause。保護者は外れた時点でチャンネルごと読めない）
+// 参加していないグループを読み取りだけで並べている管理者にも送る（handleChatMessages の canRead と同じ範囲。GitHub Issue #312）
 func (a *app) notifyRoomPost(roomID int64) {
 	a.notify(liveEvent{Type: evChat, RoomID: roomID}, func(u *SessionUser) bool {
-		return a.isParticipant(u, roomID)
+		return a.isParticipant(u, roomID) || (!a.isMember(u, roomID) && a.canRead(u, roomID))
 	})
 }
 
-// notifyRoomMembers は、チャンネルの一覧に出る人（外れた職員を含む）へ送る。目的別グループの作成・編成のとき
+// notifyRoomMembers は、チャンネルの一覧に出る人（外れた職員と、読み取りだけで並べている管理者を含む）へ送る。目的別グループの作成・編成のとき
 func (a *app) notifyRoomMembers(roomID int64) {
 	a.notify(liveEvent{Type: evChat, RoomID: roomID}, func(u *SessionUser) bool {
-		return a.isMember(u, roomID)
+		return a.canRead(u, roomID)
 	})
 }
 
@@ -319,7 +320,7 @@ func (a *app) notifyRoomMembers(roomID int64) {
 // handleChatMessages と同じ判定：後から加わった保護者には加わる前の（保護者がまだいなかった間を除く）、外れた人には外れたあとのメッセージを見せない
 func (a *app) notifyMessage(roomID, messageID int64) {
 	a.notify(liveEvent{Type: evChat, RoomID: roomID}, func(u *SessionUser) bool {
-		return a.isMember(u, roomID) && a.messageVisibleTo(u, messageID)
+		return a.canRead(u, roomID) && a.messageVisibleTo(u, messageID)
 	})
 }
 

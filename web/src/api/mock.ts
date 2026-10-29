@@ -1471,6 +1471,9 @@ const diaryApi2 = {
 
 /* ============ チャットツール（基本設計書「チャットツール」(4-6)） ============ */
 
+/** 管理者が参加していなくても読めるチャンネルの種別（server/api_chat.go の adminReadOnlyRoomTypes）。個人チャットは参加の行があるものだけ */
+const ADMIN_READ_ONLY_ROOM_TYPES = ['1', '2', '3', '5'];
+
 export const chatApi = {
   /**
    * 参加しているチャンネル。left_at が入っていても職員は参照できる（基本設計書 5-5）。
@@ -1478,12 +1481,22 @@ export const chatApi = {
    */
   async rooms(user: SessionUser): Promise<ChatRoomView[]> {
     const isStaff = user.role === '1' || user.role === '2';
-    const mine = db.chatMembers.filter((m) => m.account_id === user.account_id
-      && (isStaff || m.left_at === null));
+    const mine: { chat_room_id: number; left_at: string | null; joined: boolean }[] = db.chatMembers
+      .filter((m) => m.account_id === user.account_id && (isStaff || m.left_at === null))
+      .map((m) => ({ chat_room_id: m.chat_room_id, left_at: m.left_at, joined: true }));
+    // 管理者には、参加していないグループも読み取りだけで並べる（過年度のクラスグループを含む。外れたチャンネルと同じ閲覧のみの扱い）。
+    // 個人チャットは園児単位で判定するため、参加の行があるものだけ。server/api_chat.go の adminReadOnlyRoomTypes と同じ
+    // （要件定義書「過去ログの参照範囲」(4-4 (c))「管理者｜すべてのグループ（全年度）」。GitHub Issue #312）
+    if (user.role === '1') {
+      db.chatRooms.filter((r) => ADMIN_READ_ONLY_ROOM_TYPES.includes(r.room_type)
+        && !mine.some((m) => m.chat_room_id === r.chat_room_id))
+        .forEach((r) => mine.push({ chat_room_id: r.chat_room_id, left_at: null, joined: false }));
+    }
 
     const views = mine.map((m) => {
       const room = db.chatRooms.find((r) => r.chat_room_id === m.chat_room_id)!;
-      const unread = db.chatMessages.filter((msg) =>
+      // 参加していない部屋は、既読にできないので未読を数えない
+      const unread = !m.joined ? 0 : db.chatMessages.filter((msg) =>
         msg.chat_room_id === room.chat_room_id
         && !msg.is_deleted
         && !hiddenBeforeJoined(user, msg)
@@ -1495,9 +1508,10 @@ export const chatApi = {
       // 園全体は管理者のみ投稿できる。保護者は個人チャットのみ送受信できる
       let canPost = true;
       if (room.room_type === '1') canPost = user.role === '1';
-      if (user.role === '3') canPost = room.room_type === '4';
-      // 外れたチャンネルへは投稿できない（図/画面詳細図.md「グループ編成画面」(4-3) No.8）
-      const left = m.left_at !== null;
+      // 猶予期間中の保護者は読めるが書けない（server/api_chat.go の handleChatRooms。GitHub Issue #308）
+      if (user.role === '3') canPost = room.room_type === '4' && !guardianInGrace(user, room);
+      // 外れたチャンネルへは投稿できない（図/画面詳細図.md「グループ編成画面」(4-3) No.8）。参加していない部屋も閲覧のみ
+      const left = m.left_at !== null || !m.joined;
       if (left) canPost = false;
 
       // 参加している保護者の人数。投稿が保護者にも届くことを入力欄の近くで示すために使う。
@@ -1518,9 +1532,12 @@ export const chatApi = {
 
   async messages(user: SessionUser, roomId: number): Promise<ChatMessage[]> {
     const member = db.chatMembers.find((m) => m.chat_room_id === roomId && m.account_id === user.account_id);
-    if (!member) return fail('このチャンネルを参照する権限がありません');
+    // 管理者は、参加していないグループも読める（server/api_chat.go の canRead。GitHub Issue #312）
+    const adminReads = !member && user.role === '1'
+      && ADMIN_READ_ONLY_ROOM_TYPES.includes(db.chatRooms.find((r) => r.chat_room_id === roomId)?.room_type ?? '');
+    if (!member && !adminReads) return fail('このチャンネルを参照する権限がありません');
     // 保護者は left_at が入った時点で参照できなくなる（基本設計書 5-5）
-    if (user.role === '3' && member.left_at) return fail('このチャンネルは参照できません');
+    if (user.role === '3' && member?.left_at) return fail('このチャンネルは参照できません');
     // 送信者名を添える。保護者はアカウントの名簿を参照できないため、画面側では引けない
     // （サーバ側の api_chat.go も同じ扱い。片方だけ直すと食い違う）
     const isStaff = user.role === '1' || user.role === '2';
@@ -1621,17 +1638,23 @@ export const chatApi = {
     return ok(undefined);
   },
 
-  async send(user: SessionUser, roomId: number, body: string): Promise<ChatMessage> {
-    if (!body.trim()) return fail('メッセージを入力してください');
-    // 編集と同じ上限（基本設計書「入力項目の制約値」(4-9)）
-    if (tooLong(body, 1000)) return fail('本文は1,000文字以内で入力してください');
+  async send(user: SessionUser, roomId: number, body: string, acknowledgedNames?: string[]): Promise<ChatMessage> {
     const rooms = await chatApi.rooms(user);
     const view = rooms.find((r) => r.room.chat_room_id === roomId);
     if (!view) return fail('このチャンネルを参照する権限がありません');
     // 外れたチャンネルへは投稿できない。閲覧のみの権限では拒否する
     // （基本設計書「メッセージの送受信」(4-6)、図/画面詳細図.md 4-3 No.8。GitHub Issue #161）
     if (view.left) return fail(LEFT_ROOM_MESSAGE);
+    // 書ける状態か（権限）を、本文の検査より先に確かめる（server/api_chat.go の handleSendMessage と同じ順）。
+    // 猶予期間中の保護者は、読めるが書けない（基本設計書「メッセージ一覧」(4-12)「猶予期間中の送信」。GitHub Issue #308）
+    if (guardianInGrace(user, view.room)) return fail(MSG_CHAT_GRACE_READ_ONLY);
+    if (!body.trim()) return fail('メッセージを入力してください');
+    // 編集と同じ上限（基本設計書「入力項目の制約値」(4-9)）。符号位置で数える（詳細設計書「検査の共通の規則」(4-1 (5))）
+    if (tooLong(body, 1000)) return fail('本文は1,000文字以内で入力してください');
     if (!view.canPost) return fail('このチャンネルへは投稿できません');
+    // 保護者が参加するチャンネルへ職員が送るときは、他児の名前の注意を通す（server/api_chat.go の writeChatOtherNames。GitHub Issue #299）
+    const names = chatOtherNames(user, view.room, body, acknowledgedNames);
+    if (names) return failOtherNames(names);
 
     const msg: ChatMessage = {
       chat_message_id: nextId(), chat_room_id: roomId, sender_account_id: user.account_id,
@@ -1668,10 +1691,10 @@ export const chatApi = {
     return ok(undefined);
   },
 
-  async edit(user: SessionUser, messageId: number, body: string): Promise<void> {
-    // 空の本文は受け付けない。上限は新規送信と同じ（基本設計書「入力項目の制約値」(4-9)）
+  async edit(user: SessionUser, messageId: number, body: string, acknowledgedNames?: string[]): Promise<void> {
+    // 空の本文は受け付けない。上限は新規送信と同じ（基本設計書「入力項目の制約値」(4-9)）。符号位置で数える（4-1 (5)）
     if (!body.trim()) return fail('本文を入力してください');
-    if ([...body].length > 1000) return fail('本文は1,000文字以内で入力してください');
+    if (tooLong(body, 1000)) return fail('本文は1,000文字以内で入力してください');
     const m = db.chatMessages.find((x) => x.chat_message_id === messageId);
     if (!m) return fail('メッセージが見つかりません');
     /*
@@ -1688,8 +1711,13 @@ export const chatApi = {
     // 外れたチャンネルのメッセージは、送った本人でも編集できない。編集はいまの参加者が読む本文を
     // 書き換えるため、投稿と同じく閲覧のみの権限では拒否する（GitHub Issue #161）
     if (!isParticipant(user, m.chat_room_id)) return fail(LEFT_ROOM_MESSAGE);
+    // 猶予期間中の保護者は、読めるが書けない。編集は送った本文を書き換えるので、送信と同じに止める（GitHub Issue #308）
+    if (room && guardianInGrace(user, room)) return fail(MSG_CHAT_GRACE_READ_ONLY);
     // 取り消し済みのものは編集できない（基本設計書「メッセージの編集」(4-6)）
     if (m.is_deleted) return fail('取り消したメッセージは編集できません');
+    // 保護者が参加するチャンネルで職員が直すときも、他児の名前の注意を通す（基本設計書「メッセージの編集」(4-7) 処理5。GitHub Issue #299）
+    const names = room ? chatOtherNames(user, room, body, acknowledgedNames) : null;
+    if (names) return failOtherNames(names);
     const before = m.body;
     m.body = body;
     m.edited_at = now();
@@ -1725,6 +1753,35 @@ export const chatApi = {
       }));
   },
 };
+
+/** 猶予期間中の保護者が書こうとしたときの知らせ（server/api_chat.go の msgChatGraceReadOnly。基本設計書「メッセージ一覧」(4-12)） */
+const MSG_CHAT_GRACE_READ_ONLY = '卒園・退園したお子さまのやりとりは、読むことだけができます。';
+
+/**
+ * 保護者が、そのチャンネルについて猶予期間中（紐づけが 3:猶予中）で、書けない状態か（server/api_chat.go の guardianInGrace）。
+ * 個人チャットは、その園児との紐づけで判定する。園チャット・クラスグループは、有効な紐づけが1つも無く、猶予中の紐づけがあるとき
+ * （園児単位に分けられないため。保護者はもともとこれらへは書けない。GitHub Issue #308）
+ */
+/** チャンネルの行。個人チャットは園児ID（child_id）を持つ（mockDb の ChatRoomRow） */
+type ChatRoomWithChild = ChatRoom & { child_id?: string | null };
+
+function guardianInGrace(user: SessionUser, room: ChatRoomWithChild): boolean {
+  if (user.role !== '3' || !user.guardian_id) return false;
+  const links = db.guardianChildren.filter((g) => g.guardian_id === user.guardian_id);
+  if (room.room_type === '4') return links.find((g) => g.child_id === room.child_id)?.link_status === '3';
+  return !links.some((g) => g.link_status === '1') && links.some((g) => g.link_status === '3');
+}
+
+/**
+ * 職員が保護者の参加するチャンネル（園チャット・クラスグループ・個人チャット）へ送る・直すときの他児の名前の照合。
+ * 保護者の送信と、職員だけのチャンネルは照合しない。個人チャットは宛先の園児以外、クラスグループ・園チャットは在籍園児の全員が相手
+ * （server/api_chat.go の writeChatOtherNames。詳細設計書「チャット画面（職員・保護者）」(2-9 (5))。GitHub Issue #299）
+ */
+function chatOtherNames(user: SessionUser, room: ChatRoomWithChild, body: string, acknowledged?: string[]): OtherNames | null {
+  if (user.role === '3' || !['1', '2', '4'].includes(room.room_type)) return null;
+  if (room.room_type === '4' && room.child_id) return checkOtherNames(body, 'body', [room.child_id], false, acknowledged);
+  return checkOtherNames(body, 'body', [], true, acknowledged);
+}
 
 /**
  * 読める保護者か。停止中の保護者（紐づけを終えて有効な紐づけがゼロになった人など）は、参加の行が残っていても
@@ -1766,16 +1823,19 @@ function hiddenBeforeJoined(user: SessionUser, m: ChatMessage): boolean {
   const room = db.chatRooms.find((r) => r.chat_room_id === m.chat_room_id);
   if (room?.room_type !== '4') return false;
   const member = db.chatMembers.find((x) => x.chat_room_id === m.chat_room_id && x.account_id === user.account_id);
-  // 【仮置き】時刻は秒の単位で持つため、登録と同じ秒のメッセージは前か後かを区別できない。
-  // 見せない側へ倒す（GitHub Issue #102）。見せる側へ倒すと、登録の直前に送られたものが読めてしまう
+  // 時刻は秒の単位で持つため、登録と同じ秒のメッセージは前か後かを区別できない。見せない側へ倒す
+  // （基本設計書「メッセージの送受信」(4-7)「登録と同じ秒に送られた個人チャットのメッセージは、後から登録した保護者に見せない」。
+  // GitHub Issue #102・#301）。見せる側へ倒すと、登録の直前に送られたものが読めてしまう
   // 【仮置き】最初の参加は first_joined_at（空なら joined_at）で見る。参加し直した行は joined_at が今に書き換わる（決めたこと D-48）ため
   // （server/api_chat.go の firstGuardianJoinedAt と同じ。web/仮置き値.md）
-  const firstGuardianJoin = db.chatMembers
+  // 最初の保護者は (最初の参加の日時, アカウントID) の順で決める（server/api_chat.go の firstGuardianAccountID）。
+  // 先の保護者と後の保護者が同じ秒に登録したときは、最初でない保護者に、その秒のメッセージを見せない
+  const first = db.chatMembers
     .filter((x) => x.chat_room_id === m.chat_room_id && findAccount(x.account_id)?.role === '3')
-    .map((x) => x.first_joined_at ?? x.joined_at)
-    .reduce<string | null>((first, at) => first === null || at < first ? at : first, null);
-  return !!member && firstGuardianJoin !== null && member.joined_at > firstGuardianJoin
-    && m.sent_at <= member.joined_at && m.sent_at >= firstGuardianJoin;
+    .map((x) => ({ at: x.first_joined_at ?? x.joined_at, id: x.account_id }))
+    .reduce<{ at: string; id: number } | null>((best, x) => !best || x.at < best.at || (x.at === best.at && x.id < best.id) ? x : best, null);
+  return !!member && first !== null && (member.joined_at > first.at || user.account_id !== first.id)
+    && m.sent_at <= member.joined_at && m.sent_at >= first.at;
 }
 
 /**
@@ -2893,6 +2953,8 @@ export const devApi = {
     note: string, status: DevelopmentCheck['status'],
     /** 保護者へのひとこと（詳細設計書「発達チェックの保存」(4-12 (2))）。空なら null で保存する */
     guardianMessage: string | null = null,
+    /** 他児の名前の注意で承諾した名前（詳細設計書「他児の名前の照合」(4-5 (2))） */
+    acknowledgedNames?: string[],
   ): Promise<DevelopmentCheck> {
     if (user.role === '3') return fail('発達チェックの入力は職員のみが行えます');
     // その園児を書ける職員（contactAccess の write）。フリーの職員は書けない（server/api_dev_write.go と同じ）
@@ -2902,10 +2964,15 @@ export const devApi = {
     // 画面詳細図 6-2 項目3。GitHub Issue #164）。サーバ側は server/api_dev_write.go の handleSaveDevelopmentCheck
     if (!isISODate(checkedOn)) return fail('実施日の形式が正しくありません');
     if (checkedOn > today()) return fail('実施日に未来日は指定できません');
-    // 保護者へのひとことは前後の空白を除いて500文字以内。空なら null。
-    // 他児の名前の照合（409 other_child_names）は PR #201 の照合と合わせるときに足す
+    // 保護者へのひとことは前後の空白を除いて500文字以内。空なら null
     const message = guardianMessage?.trim() || null;
     if (message && tooLong(message, 500)) return fail(MSG.guardianMessageTooLong);
+    // 確定するときに保護者へのひとことがあれば、他児の名前の注意を通す（宛先はその園児）。下書きは保護者に届かないので照合しない
+    // （詳細設計書「発達チェックの保存」(4-12 (2))。server/api_dev_write.go の handleSaveDevelopmentCheck。GitHub Issue #270 の 1）
+    if (status === '2' && message) {
+      const hit = checkOtherNames(message, 'guardian_message', [childId], false, acknowledgedNames);
+      if (hit) return failOtherNames(hit);
+    }
 
     let check = db.developmentChecks.find((c) => c.child_id === childId && c.checked_on === checkedOn);
     // 初めての保存か。操作ログの操作区分（1:作成 2:変更）に使う（基本設計書「操作ログ（t_operation_log）」(5-8)）。

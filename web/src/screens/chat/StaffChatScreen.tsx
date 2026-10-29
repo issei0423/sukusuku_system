@@ -20,6 +20,8 @@ import type { MenuAt, SecondaryActionHandlers } from '../../secondaryAction';
 import { CHAT_ROOM_TYPE, THREAD_STATUS, REACTION, GUARDIAN_ROOM_TYPES, SENDER_KIND } from '../../api/codes';
 import { formatHM, formatMD } from '../../api/util';
 import type { ChatMessage } from '../../api/types';
+import type { NameMatch } from '../../api/shapes';
+import NameCheckDialog from '../../components/NameCheckDialog';
 import IncomingLog from './IncomingLog';
 import { useIncomingMessages } from './useIncomingMessages';
 import { focusAfter, focusedNow } from '../../focusAfter';
@@ -66,6 +68,11 @@ export default function StaffChatScreen() {
   const [retractBusy, setRetractBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const sending = useRef(false);
+  /*
+   * 他児の名前の注意。保護者が参加するチャンネルへ送るとき、サーバが本文を照合して当たると開く。
+   * 「このまま送る」で承諾を付けて送り直す（詳細設計書「チャット画面（職員・保護者）」(2-9 (5))、GitHub Issue #299）
+   */
+  const [nameCheck, setNameCheck] = useState<{ names: string[]; matches: NameMatch[]; text: string } | null>(null);
   // ダッシュボードの「未対応の個人チャット」から来たときは、そのチャンネルを開いた状態で始める
   const [searchParams] = useSearchParams();
 
@@ -133,7 +140,7 @@ export default function StaffChatScreen() {
    * 送っている間は「送信」を押せなくし、続けて押しても2件にしない（GitHub Issue #303。
    * 詳細設計書「押したときの処理の型」(2-0 (2))）。押せなくなるのは描き直しのあとなので、その前に届いた2回目は sending で止める
    */
-  const send = async () => {
+  const send = async (acknowledged: string[] = []) => {
     if (!roomId || !text.trim() || sending.current) return;
     sending.current = true;
     setBusy(true);
@@ -143,11 +150,21 @@ export default function StaffChatScreen() {
     const body = text;
     setError(null);
     try {
-      await api.send(user!, target, body);
+      await api.send(user!, target, body, acknowledged);
+      setNameCheck(null);
       setDrafts((d) => (d[target] === body ? { ...d, [target]: '' } : d));
       messages.refresh();
       focusAfter(pressed, () => input.current);
-    } catch (e) { setError((e as Error).message); } finally { sending.current = false; setBusy(false); }
+    } catch (e) {
+      const err = e as Error & { kind?: string; names?: string[]; matches?: NameMatch[] };
+      if (err.kind === 'other_child_names' && err.names) {
+        // 入力は残す。注意の窓がフォーカスを受け取るので動かさない
+        setNameCheck({ names: err.names, matches: err.matches ?? [], text: body });
+      } else {
+        setNameCheck(null);
+        setError(err.message);
+      }
+    } finally { sending.current = false; setBusy(false); }
   };
 
   /*
@@ -283,7 +300,7 @@ export default function StaffChatScreen() {
                 onMenu={(open) => setMenuId((cur) => (open ? m.chat_message_id : cur === m.chat_message_id ? null : cur))}
                 onReact={(type) => react(m.chat_message_id, type)}
                 onRetract={() => setRetracting(m)}
-                onEdit={async (body) => { await api.edit(user!, m.chat_message_id, body); messages.refresh(); }} />
+                onEdit={async (body, acknowledged) => { await api.edit(user!, m.chat_message_id, body, acknowledged); messages.refresh(); }} />
             ))}
           </div>
           <IncomingLog entries={incoming} />
@@ -310,12 +327,18 @@ export default function StaffChatScreen() {
             )}
             {current?.canPost ? (
               <>
-                <textarea ref={input} value={text} onChange={(e) => setText(e.target.value)} maxLength={1000}
+                {/* 文字数は符号位置で数える（maxLength は UTF-16 で数えるので付けない）。上限を超えたら送れない。GitHub Issue #310 */}
+                <textarea ref={input} value={text} onChange={(e) => setText(e.target.value)}
                   placeholder="メッセージを入力" style={{ minHeight: 70 }} />
+                {[...text].length > 1000 && <div className="weak" role="alert">本文は1,000文字以内で入力してください</div>}
                 <div className="row-end">
                   <button onClick={() => alert('添付はモックでは未実装です')}>添付</button>
-                  <button className="btn-primary" onClick={send} disabled={busy || !text.trim()} aria-busy={busy}>送信</button>
+                  <button className="btn-primary" onClick={() => send()} disabled={busy || !text.trim() || [...text].length > 1000} aria-busy={busy}>送信</button>
                 </div>
+                {nameCheck && (
+                  <NameCheckDialog names={nameCheck.names} matches={nameCheck.matches} text={nameCheck.text} busy={busy}
+                    onFix={() => { setNameCheck(null); input.current?.focus(); }} onSend={() => { const names = nameCheck.names; setNameCheck(null); send(names); }} />
+                )}
               </>
             ) : (
               <div className="muted">
@@ -412,7 +435,7 @@ function MessageRow({ message, mine, canEdit, canDelete, showRole, readOnly, onR
   showRole: boolean;
   /** 外れたチャンネルの過去ログ。操作の一覧（リアクション・編集・取消）を出さない */
   readOnly: boolean;
-  onRetract: () => void; onEdit: (body: string) => Promise<void>; onReact: (reactionType: string) => void;
+  onRetract: () => void; onEdit: (body: string, acknowledged?: string[]) => Promise<void>; onReact: (reactionType: string) => void;
   menuOpen: boolean; onMenu: (open: boolean) => void;
   /** 右クリック・長押しで一覧を開く扱い（secondaryAction.ts）。画面に1つ置いたものを受け取る */
   bindPress: (open: (el: HTMLElement, at?: MenuAt) => void) => SecondaryActionHandlers;
@@ -480,6 +503,10 @@ function MessageRow({ message, mine, canEdit, canDelete, showRole, readOnly, onR
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.body);
   const [editError, setEditError] = useState('');
+  // 他児の名前の注意（保護者が参加するチャンネルで職員が直すとき。基本設計書「メッセージの編集」(4-7) 処理5。GitHub Issue #299）
+  const [editCheck, setEditCheck] = useState<{ names: string[]; matches: NameMatch[]; text: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const editor = useRef<HTMLTextAreaElement | null>(null);
   // 保存していない編集も、ログアウトの前に確かめる（GitHub Issue #304）
   useUnsavedInput(editing && draft !== message.body);
 
@@ -494,15 +521,27 @@ function MessageRow({ message, mine, canEdit, canDelete, showRole, readOnly, onR
     setDraft(message.body); setEditing(false);
     focusAfter(pressed, bubbleWhenReady);
   };
-  const save = async () => {
+  const save = async (acknowledged: string[] = []) => {
+    if (saving) return;
     const pressed = focusedNow();
     setEditError('');
+    setSaving(true);
     try {
-      await onEdit(draft);
+      await onEdit(draft, acknowledged);
+      setEditCheck(null);
       setEditing(false);
       focusAfter(pressed, bubbleWhenReady);
     } catch (e) {
-      setEditError(e instanceof Error ? e.message : '編集できませんでした');
+      const err = e as Error & { kind?: string; names?: string[]; matches?: NameMatch[] };
+      if (err.kind === 'other_child_names' && err.names) {
+        // 編集中の本文は残す。注意の窓がフォーカスを受け取るので動かさない
+        setEditCheck({ names: err.names, matches: err.matches ?? [], text: draft });
+      } else {
+        setEditCheck(null);
+        setEditError(e instanceof Error ? e.message : '編集できませんでした');
+      }
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -534,12 +573,14 @@ function MessageRow({ message, mine, canEdit, canDelete, showRole, readOnly, onR
         {...(editing || readOnly ? {} : bindPress(openMenu))}>
         {editing ? (
           <>
-            <textarea value={draft} onChange={(e) => setDraft(e.target.value)}
-              maxLength={1000} rows={4} style={{ width: '100%', boxSizing: 'border-box' }} />
+            {/* 文字数は符号位置で数える（maxLength は UTF-16 で数えるので付けない）。上限を超えたら保存できない。GitHub Issue #310 */}
+            <textarea ref={editor} value={draft} onChange={(e) => setDraft(e.target.value)}
+              rows={4} style={{ width: '100%', boxSizing: 'border-box' }} />
+            {[...draft].length > 1000 && <div className="weak" role="alert">本文は1,000文字以内で入力してください</div>}
             {editError && <div className="weak">{editError}</div>}
             <div className="row-end" style={{ marginTop: 4 }}>
               <button className="btn-sm" onClick={cancelEdit}>やめる</button>
-              <button className="btn-sm btn-primary" onClick={save} disabled={!draft.trim()}>保存</button>
+              <button className="btn-sm btn-primary" onClick={() => save()} disabled={!draft.trim() || [...draft].length > 1000 || saving} aria-busy={saving}>保存</button>
             </div>
           </>
         ) : (
@@ -606,6 +647,11 @@ function MessageRow({ message, mine, canEdit, canDelete, showRole, readOnly, onR
             </div>
           </div>
         </div>
+      )}
+      {/* 注意の窓は吹き出しの外に置く。吹き出しの右クリック・長押しの扱いに、窓の中の操作を拾わせないため */}
+      {editCheck && (
+        <NameCheckDialog names={editCheck.names} matches={editCheck.matches} text={editCheck.text} busy={saving}
+          onFix={() => { setEditCheck(null); editor.current?.focus(); }} onSend={() => { const names = editCheck.names; setEditCheck(null); save(names); }} />
       )}
     </div>
   );

@@ -45,11 +45,14 @@ func (a *app) handleChatRooms(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	q := `SELECT r.chat_room_id, r.room_type, r.class_id, r.room_name, r.is_archived, r.thread_status,
-	             m.left_at IS NOT NULL
+	// 管理者には、参加していないグループも読み取りだけで並べる（過年度のクラスグループを含む。管理者が参加していないものは
+	// 外れたチャンネルと同じ閲覧のみの扱いにする）。個人チャットは園児単位で判定するため、参加の行があるものだけ
+	// （要件定義書「過去ログの参照範囲」(4-4 (c))「管理者｜すべてのグループ（全年度）」。GitHub Issue #312）
+	q := `SELECT r.chat_room_id, r.room_type, r.class_id, r.room_name, r.is_archived, r.thread_status, IFNULL(r.child_id, ''),
+	             m.chat_room_id IS NULL OR m.left_at IS NOT NULL
 	        FROM m_chat_room r
-	        JOIN t_chat_member m ON m.chat_room_id = r.chat_room_id
-	       WHERE m.account_id = ?`
+	        LEFT JOIN t_chat_member m ON m.chat_room_id = r.chat_room_id AND m.account_id = ?
+	       WHERE (m.chat_room_id IS NOT NULL OR (? AND r.room_type IN ` + adminReadOnlyRoomTypes + `))`
 	if !u.isStaff() {
 		q += ` AND m.left_at IS NULL`
 	}
@@ -57,21 +60,23 @@ func (a *app) handleChatRooms(w http.ResponseWriter, r *http.Request) {
 	q += ` ORDER BY CASE r.room_type WHEN '1' THEN 0 WHEN '5' THEN 1 WHEN '2' THEN 2
 	                                 WHEN '3' THEN 3 ELSE 4 END, r.chat_room_id`
 
-	rows, err := a.db.Query(q, u.AccountID)
+	rows, err := a.db.Query(q, u.AccountID, u.isAdmin())
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "チャンネルを取得できませんでした")
 		return
 	}
 	views := []ChatRoomView{}
+	childIDs := []string{}
 	for rows.Next() {
 		var (
 			room    ChatRoom
 			classID sql.NullInt64
 			thread  sql.NullString
+			childID string
 			left    bool
 		)
 		if rows.Scan(&room.ChatRoomID, &room.RoomType, &classID, &room.RoomName,
-			&room.IsArchived, &thread, &left) != nil {
+			&room.IsArchived, &thread, &childID, &left) != nil {
 			continue
 		}
 		room.ClassID = nullInt(classID)
@@ -93,12 +98,20 @@ func (a *app) handleChatRooms(w http.ResponseWriter, r *http.Request) {
 			canPost = false
 		}
 		views = append(views, ChatRoomView{Room: room, CanPost: canPost, Left: left})
+		childIDs = append(childIDs, childID)
 	}
 	rows.Close()
 
 	// 未読の数え上げはカーソルを閉じたあとに行う（接続を1本に絞っているため。db.go）
 	for i := range views {
-		views[i].Unread = a.unreadCount(u, views[i].Room.ChatRoomID)
+		// 猶予期間中の保護者は読めるが書けない（GitHub Issue #308）。問い合わせるので、カーソルを閉じたあとに行う
+		if views[i].CanPost && a.guardianInGrace(u, views[i].Room.RoomType, childIDs[i]) {
+			views[i].CanPost = false
+		}
+		// 参加していない部屋（管理者が読み取りだけで並べたグループ）は、既読にできないので未読を数えない
+		if joined, _ := a.memberState(u.AccountID, views[i].Room.ChatRoomID); joined {
+			views[i].Unread = a.unreadCount(u, views[i].Room.ChatRoomID)
+		}
 		// 届く人数は、実際に読める保護者の数。停止中の保護者はログインできず読めないため数えない
 		// （図/画面詳細図.md「チャット画面（職員）」(4-1) No.19、GitHub Issue #171）
 		a.db.QueryRow(`SELECT COUNT(*) FROM t_chat_member m
@@ -111,6 +124,14 @@ func (a *app) handleChatRooms(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, views)
 }
+
+/*
+adminReadOnlyRoomTypes は、管理者が参加していなくても読めるチャンネルの種別（SQL の IN の中身）。
+グループ（園チャット・クラスグループ・目的別グループ・職員チャット）の全年度。個人チャットは園児単位で
+判定し（基本設計書「権限と参照範囲の判定」(4-2)）、参加の行があるものだけにする。
+要件定義書「過去ログの参照範囲」(4-4 (c))「管理者｜すべてのグループ（全年度）」（GitHub Issue #312）
+*/
+const adminReadOnlyRoomTypes = `('1','2','3','5')`
 
 /*
 activeGuardianWhere は、参加者（m_account を ac として引く）のうち、読める保護者に絞る条件。
@@ -136,9 +157,11 @@ beforeJoinedClause は、保護者に見せないメッセージを除く条件�
 （抜けた行も含む）のうち最も早い最初の参加日時（first_joined_at。空なら joined_at）。最初に参加した保護者には何も隠さない。
 メッセージの表を m として引く問い合わせに足し、引数にアカウントIDを1つ加える。
 
-【仮置き】時刻は秒の単位で持つため、登録と同じ秒に送られたメッセージは、登録の前か後かを
-区別できない。見せない側へ倒す（GitHub Issue #102）。見せる側へ倒すと、登録の直前に送られた
-ものが読めてしまう。
+時刻は秒の単位で持つため、登録と同じ秒に送られたメッセージは、登録の前か後かを区別できない。
+見せない側へ倒す（基本設計書「メッセージの送受信」(4-7)「登録と同じ秒に送られた個人チャットのメッセージは、
+後から登録した保護者に見せない」。GitHub Issue #102・#301）。見せる側へ倒すと、登録の直前に送られたものが読めてしまう。
+先の保護者と後の保護者が同じ秒に登録したときは、最初の保護者を (最初の参加の日時, アカウントID) の順で決め
+（firstGuardianAccountID）、最初でない保護者には、その秒のメッセージを見せない。最初の保護者には何も隠さない。
 */
 const beforeJoinedClause = ` AND NOT EXISTS (
 	SELECT 1 FROM t_chat_member gm
@@ -146,7 +169,14 @@ const beforeJoinedClause = ` AND NOT EXISTS (
 	 WHERE gm.chat_room_id = m.chat_room_id AND gm.account_id = ?
 	   AND gr.room_type = '4' AND m.sent_at <= gm.joined_at
 	   AND m.sent_at >= ` + firstGuardianJoinedAt + `
-	   AND gm.joined_at > ` + firstGuardianJoinedAt + `)`
+	   AND (gm.joined_at > ` + firstGuardianJoinedAt + ` OR gm.account_id <> ` + firstGuardianAccountID + `))`
+
+// firstGuardianAccountID は、その部屋に保護者が初めて参加した人のアカウントID。参加の日時が同じ秒のときは、アカウントIDの小さいほう
+// （先に登録した保護者。登録と同じ秒の境を決めるための順。【仮置き】web/仮置き値.md）
+const firstGuardianAccountID = `(SELECT fm.account_id FROM t_chat_member fm
+	     JOIN m_account fa ON fa.account_id = fm.account_id
+	     WHERE fm.chat_room_id = m.chat_room_id AND fa.role = '3'
+	     ORDER BY COALESCE(fm.first_joined_at, fm.joined_at), fm.account_id LIMIT 1)`
 
 // firstGuardianJoinedAt は、その部屋に保護者が初めて参加した日時（抜けた行も含む）。beforeJoinedClause の境。
 // 【仮置き】参加し直した行は joined_at が今に書き換わる（決めたこと D-48）ため、最初の参加は first_joined_at（空なら joined_at）で見る
@@ -209,6 +239,21 @@ func (a *app) isMember(u *SessionUser, roomID int64) bool {
 	return !(left && u.isGuardian())
 }
 
+// canRead は、そのチャンネルのメッセージを読めるか。参加していれば isMember と同じ。
+// 管理者は、参加していないグループも読める（書けない。書けるのは isParticipant の人だけ。GitHub Issue #312）
+func (a *app) canRead(u *SessionUser, roomID int64) bool {
+	if a.isMember(u, roomID) {
+		return true
+	}
+	if !u.isAdmin() {
+		return false
+	}
+	var n int
+	a.db.QueryRow(`SELECT COUNT(*) FROM m_chat_room WHERE chat_room_id = ? AND room_type IN `+adminReadOnlyRoomTypes,
+		roomID).Scan(&n)
+	return n > 0
+}
+
 /*
 isParticipant は、いまそのチャンネルに参加しているか（外れていないか）を判定する。
 
@@ -223,6 +268,52 @@ func (a *app) isParticipant(u *SessionUser, roomID int64) bool {
 
 // leftRoomMessage は、外れたチャンネルへ書こうとしたときの知らせ
 const leftRoomMessage = "このチャンネルからは外れているため、閲覧のみです"
+
+// msgChatGraceReadOnly は、猶予期間中の保護者がチャットへ書こうとしたときの知らせ（基本設計書「メッセージ一覧」(4-12)「猶予期間中の送信」）
+const msgChatGraceReadOnly = "卒園・退園したお子さまのやりとりは、読むことだけができます。"
+
+/*
+guardianInGrace は、保護者が、そのチャンネルについて猶予期間中（紐づけが 3:猶予中）で、書けない状態かを返す。
+猶予中の保護者は卒園・退園した自児の個人チャットの過去ログを読めるが、書けない
+（基本設計書「権限チェックの実装方針」(6-2)・「メッセージ一覧」(4-12)。GitHub Issue #308）。
+個人チャットは、その園児との紐づけで判定する。園チャット・クラスグループは、有効な紐づけが1つも無く、
+猶予中の紐づけがあるとき（園児単位に分けられないため。保護者はもともとこれらへは書けない）。
+モックは web/src/api/mock.ts の guardianInGrace が同じ規則を持つ。
+*/
+func (a *app) guardianInGrace(u *SessionUser, roomType, childID string) bool {
+	if !u.isGuardian() || u.GuardianID == nil {
+		return false
+	}
+	if roomType == "4" {
+		var status string
+		if a.db.QueryRow(`SELECT link_status FROM t_guardian_child WHERE guardian_id = ? AND child_id = ?`,
+			*u.GuardianID, childID).Scan(&status) != nil {
+			return false
+		}
+		return status == "3"
+	}
+	var active, grace int
+	a.db.QueryRow(`SELECT COALESCE(SUM(link_status = '1'), 0), COALESCE(SUM(link_status = '3'), 0)
+		FROM t_guardian_child WHERE guardian_id = ?`, *u.GuardianID).Scan(&active, &grace)
+	return active == 0 && grace > 0
+}
+
+/*
+writeChatOtherNames は、職員が保護者の参加するチャンネル（園チャット・クラスグループ・個人チャット）へ送る・直すときの
+他児の名前の注意（409 other_child_names）を返す。返したら true。保護者の送信と、職員だけのチャンネル（目的別グループ・職員チャット）は照合しない。
+個人チャットは宛先の園児以外の在籍園児、クラスグループ・園チャットは在籍園児の全員が相手
+（詳細設計書「チャット画面（職員・保護者）」(2-9 (5))・「他児の名前の照合」(4-5 (2))、基本設計書「送る時点の守り」(4-2)）。
+連絡帳のひとことと同じ照合（writeOtherNames）を使う。GitHub Issue #299
+*/
+func (a *app) writeChatOtherNames(w http.ResponseWriter, u *SessionUser, roomType, childID, text string, ack []string) bool {
+	if !u.isStaff() || (roomType != "1" && roomType != "2" && roomType != "4") {
+		return false
+	}
+	if roomType == "4" && childID != "" {
+		return a.writeOtherNames(w, text, "body", []string{childID}, false, ack)
+	}
+	return a.writeOtherNames(w, text, "body", nil, true, ack)
+}
 
 // ChatMessage はメッセージ（t_chat_message）
 type ChatMessage struct {
@@ -293,7 +384,7 @@ func (a *app) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	roomID, valid := pathInt64(r, "id")
-	if !valid || !a.isMember(u, roomID) {
+	if !valid || !a.canRead(u, roomID) {
 		writeForbidden(w, "このチャンネルを参照する権限がありません")
 		return
 	}
@@ -563,8 +654,17 @@ func (a *app) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		writeForbidden(w, leftRoomMessage)
 		return
 	}
+	// 書ける状態か（権限）を、本文の検査より先に確かめる（基本設計書「権限チェックの実装方針」(6-2) の書き込みの判定）
+	var roomType, childID string
+	a.db.QueryRow(`SELECT room_type, IFNULL(child_id, '') FROM m_chat_room WHERE chat_room_id = ?`, roomID).Scan(&roomType, &childID)
+	// 猶予期間中の保護者は、読めるが書けない（基本設計書「メッセージ一覧」(4-12)「猶予期間中の送信」。GitHub Issue #308）
+	if a.guardianInGrace(u, roomType, childID) {
+		writeForbidden(w, msgChatGraceReadOnly)
+		return
+	}
 	var req struct {
-		Body string `json:"body"`
+		Body              string   `json:"body"`
+		AcknowledgedNames []string `json:"acknowledged_names"`
 	}
 	if !readJSON(w, r, &req) {
 		return
@@ -573,14 +673,11 @@ func (a *app) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "メッセージを入力してください")
 		return
 	}
-	// 編集と同じ上限（基本設計書「入力項目の制約値」(4-9)）
+	// 編集と同じ上限（基本設計書「入力項目の制約値」(4-9)）。文字数は符号位置で数える（詳細設計書「検査の共通の規則」(4-1 (5))）
 	if tooLong(req.Body, 1000) {
 		writeErr(w, http.StatusBadRequest, "本文は1,000文字以内で入力してください")
 		return
 	}
-
-	var roomType string
-	a.db.QueryRow(`SELECT room_type FROM m_chat_room WHERE chat_room_id = ?`, roomID).Scan(&roomType)
 	// 園全体は管理者のみが投稿できる。保護者は個人チャットのみ
 	if roomType == "1" && !u.isAdmin() {
 		writeForbidden(w, "園全体への投稿は管理者が行います")
@@ -588,6 +685,11 @@ func (a *app) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if u.isGuardian() && roomType != "4" {
 		writeForbidden(w, "このチャンネルへは投稿できません")
+		return
+	}
+	// 保護者が参加するチャンネルへ職員が送るときは、段2の「送る時点の守り」の他児の名前の注意を通す
+	// （基本設計書「送る時点の守り」(4-2) 処理3・「メッセージの送受信」(4-7) 処理6。GitHub Issue #299）
+	if a.writeChatOtherNames(w, u, roomType, childID, req.Body, req.AcknowledgedNames) {
 		return
 	}
 
@@ -689,17 +791,18 @@ func (a *app) handleEditMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Body string `json:"body"`
+		Body              string   `json:"body"`
+		AcknowledgedNames []string `json:"acknowledged_names"`
 	}
 	if !readJSON(w, r, &req) {
 		return
 	}
-	// 空の本文は受け付けない。上限は新規送信と同じ（基本設計書「入力項目の制約値」(4-9)）
+	// 空の本文は受け付けない。上限は新規送信と同じ（基本設計書「入力項目の制約値」(4-9)）。符号位置で数える（4-1 (5)）
 	if strings.TrimSpace(req.Body) == "" {
 		writeErr(w, http.StatusBadRequest, "本文を入力してください")
 		return
 	}
-	if len([]rune(req.Body)) > 1000 {
+	if tooLong(req.Body, 1000) {
 		writeErr(w, http.StatusBadRequest, "本文は1,000文字以内で入力してください")
 		return
 	}
@@ -707,10 +810,10 @@ func (a *app) handleEditMessage(w http.ResponseWriter, r *http.Request) {
 	var sender, roomID int64
 	var before string
 	var isDeleted bool
-	var roomType string
-	if err := a.db.QueryRow(`SELECT m.sender_account_id, m.chat_room_id, m.body, m.is_deleted, r.room_type
+	var roomType, childID string
+	if err := a.db.QueryRow(`SELECT m.sender_account_id, m.chat_room_id, m.body, m.is_deleted, r.room_type, IFNULL(r.child_id, '')
 		FROM t_chat_message m JOIN m_chat_room r ON r.chat_room_id = m.chat_room_id
-		WHERE m.chat_message_id = ?`, id).Scan(&sender, &roomID, &before, &isDeleted, &roomType); err != nil {
+		WHERE m.chat_message_id = ?`, id).Scan(&sender, &roomID, &before, &isDeleted, &roomType, &childID); err != nil {
 		writeErr(w, http.StatusNotFound, "メッセージが見つかりません")
 		return
 	}
@@ -730,9 +833,19 @@ func (a *app) handleEditMessage(w http.ResponseWriter, r *http.Request) {
 		writeForbidden(w, leftRoomMessage)
 		return
 	}
+	// 猶予期間中の保護者は、読めるが書けない。編集は送った本文を書き換えるので、送信と同じに止める（GitHub Issue #308）
+	if a.guardianInGrace(u, roomType, childID) {
+		writeForbidden(w, msgChatGraceReadOnly)
+		return
+	}
 	// 取り消し済みのものは編集できない（基本設計書「メッセージの編集」(4-6)）
 	if isDeleted {
 		writeErr(w, http.StatusConflict, "取り消したメッセージは編集できません")
+		return
+	}
+	// 保護者が参加するチャンネルで職員が直すときも、他児の名前の注意を通す
+	// （基本設計書「メッセージの編集」(4-7) 処理5。GitHub Issue #299）
+	if a.writeChatOtherNames(w, u, roomType, childID, req.Body, req.AcknowledgedNames) {
 		return
 	}
 	// 確かめてから書き込むまでに、取消が割り込むことがある。そのまま書くと、取り消したメッセージに本文が戻る。

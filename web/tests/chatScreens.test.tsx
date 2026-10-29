@@ -224,7 +224,7 @@ describe('取消は確かめてから行い、できなかったときは知ら�
 
 describe('管理者は、他者の誤送信メッセージをチャット画面から削除できる（GitHub Issue #171 の 3）', () => {
   it('管理者には他者のメッセージに「削除」を出し、既読の有無を示して確かめてから削除する', async () => {
-    const sent = await api.send(teacher, 7, 'B1 （誤送信）西田 太郎くんの発熱の記録');
+    const sent = await api.send(teacher, 7, 'B1 （誤送信）西田 太郎くんの発熱の記録', ['西田 太郎']);
     open('/staff/chat?room=7', admin);
     await settled();
     openMenu(await findRow('B1 （誤送信）西田 太郎くんの発熱の記録'));
