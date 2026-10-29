@@ -2,9 +2,11 @@
 Description=Sukusuku demo: recreate the database every night
 
 [Timer]
-# 【仮置き】毎晩 4:00（日本時間）。保育園が使わない時刻。止まっていた夜の分は、起動したときに1回だけ回す
+# 【仮置き】毎晩 4:00（日本時間）。保育園が使わない時刻。
+# VM が止まっていた夜の分は回さない（Persistent=false）。昼に起動したとき作り直すと、使っている人がログアウトされ、
+# 入れている途中のデータも消えるため（API の review の指摘、PR #320）。次の夜に回る
 OnCalendar=*-*-* 04:00:00 Asia/Tokyo
-Persistent=true
+Persistent=false
 
 [Install]
 WantedBy=timers.target

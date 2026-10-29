@@ -120,5 +120,23 @@ else
 fi
 rm -rf "$r"
 
+# 6. 退避の途中で移せなかったら（files で失敗する偽物の mv）、移したものを戻して起動し、終了コード 1
+r=$(new_root)
+cat > "$r/bin/mv" <<'EOF'
+#!/usr/bin/env bash
+[[ $2 == */files ]] && { echo 'mv: 容量が足りません（偽物）' >&2; exit 1; }
+exec mv "$@"
+EOF
+chmod +x "$r/bin/mv"
+status=0
+out=$(run "$r" true SUKUSUKU_MV="$r/bin/mv" 2>&1) || status=$?
+if (( status == 1 )) && [[ $(cat "$r/state/sukusuku.db") == old && -e $r/state/sukusuku.db-wal && -e $r/state/files/a.jpg &&
+      -e $r/active && $(tail -n 1 "$r/calls.log") == 'start sukusuku' && $out == *'移したものを戻して'* ]]; then
+  ok '退避の途中で失敗したら、移したものを戻して起動し、終了コード 1'
+else
+  ng '退避の途中で失敗したら、移したものを戻して起動し、終了コード 1' "終了コード $status: $out / calls: $(cat "$r/calls.log" 2>/dev/null)"
+fi
+rm -rf "$r"
+
 printf '通った %d 件、落ちた %d 件\n' "$passed" "$failed"
 (( failed == 0 ))

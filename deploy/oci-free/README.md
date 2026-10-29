@@ -115,12 +115,14 @@ runner を登録し直す（`config.sh`）ときは、`.env` に行を足すこ�
 - [sukusuku-demo-reset.sh](sukusuku-demo-reset.sh)：反映と同じ鍵を取ってから、次の順に動く
   1. サービスを止める
   2. DB（`-wal`・`-shm`・`-journal` も）と `files/`（写真）を `/var/backups/sukusuku/demo-reset-<UTC の日時>/` へ移す（消さない）
+     移す途中で失敗したら（容量が足りないなど）、移したものを戻して起動し直し、失敗で終わる
   3. 起動する。サーバは DB が無ければ、いまのデモデータで作り直す
   4. 応答（`/api/terms`）を確かめる。返らなければ、前の DB を戻して起動し直す
   5. 作り直しの退避は新しい7世代だけ残す【仮置き】。反映のときのバックアップ（`*.db`）には触らない
-- [sukusuku-demo-reset.service](sukusuku-demo-reset.service)・[sukusuku-demo-reset.timer](sukusuku-demo-reset.timer)：毎晩 4:00 に上を回す。VM が止まっていた夜の分は、起動したときに1回だけ回す（`Persistent=true`）
+- [sukusuku-demo-reset.service](sukusuku-demo-reset.service)・[sukusuku-demo-reset.timer](sukusuku-demo-reset.timer)：毎晩 4:00 に上を回す。VM が止まっていた夜の分は回さない（`Persistent=false`）。昼に起動したときに作り直すと、使っている人がログアウトされるため
 - 作り直すと、ログイン中の人は全員ログアウトされ、試しに入れたデータも消える（退避には残る）
-- 手元での確かめ：`bash deploy/oci-free/sukusuku-demo-reset.test.sh`（一時フォルダと偽物の systemctl で5つの場合を見る）
+- 作り直しが鍵を持っている数十秒のあいだに本線へ push されると、反映は「別のデプロイが進行中です」で赤になる（反映の鍵は待たない `flock -n`）。そのときは Actions で実行し直す
+- 手元での確かめ：`bash deploy/oci-free/sukusuku-demo-reset.test.sh`（一時フォルダと偽物の systemctl・flock・mv で6つの場合を見る）
 
 自動デプロイは、この3つを VM に置かない（runner の sudo は反映のコマンドだけ）。**最初の1回だけ、持ち主が Bastion のセッションで置く。** 本線を取り出した所（runner の作業場所の `deploy/oci-free/`）か、手元から写したファイルで行う。
 

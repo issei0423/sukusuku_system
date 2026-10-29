@@ -22,6 +22,7 @@ keep=${SUKUSUKU_RESET_KEEP:-7}
 lockfile=${SUKUSUKU_LOCK:-/run/lock/sukusuku-deploy.lock}
 systemctl_cmd=${SYSTEMCTL:-systemctl}
 flock_cmd=${FLOCK:-flock}
+mv_cmd=${SUKUSUKU_MV:-mv}
 health_cmd=${SUKUSUKU_HEALTH_CMD:-curl --fail --silent --max-time 2 --output /dev/null http://127.0.0.1:8080/api/terms}
 tries=${SUKUSUKU_HEALTH_TRIES:-120}
 wait_sec=${SUKUSUKU_HEALTH_WAIT:-1}
@@ -63,13 +64,23 @@ healthy() {
 
 "$systemctl_cmd" stop sukusuku
 
+# 移す途中で失敗したら（容量が足りないなど）、移したものを戻して起動し直す。
+# set -e のまま止まると、サービスが止まったまま朝になるため（API の review の指摘、PR #320）
 moved=()
+put_back() {
+  local name
+  for name in "${moved[@]}"; do
+    mv -- "$dest/$name" "$state/$name" || echo "戻せませんでした：$dest/$name" >&2
+  done
+}
+trap 'echo "退避の途中で失敗したので、移したものを戻して起動し直します。" >&2; put_back; "$systemctl_cmd" start sukusuku || true; exit 1' ERR
 for name in sukusuku.db sukusuku.db-wal sukusuku.db-shm sukusuku.db-journal files; do
   if [[ -e $state/$name ]]; then
-    mv -- "$state/$name" "$dest/$name"
+    $mv_cmd -- "$state/$name" "$dest/$name"
     moved+=("$name")
   fi
 done
+trap - ERR
 
 "$systemctl_cmd" start sukusuku || true
 
