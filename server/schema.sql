@@ -169,7 +169,8 @@ CREATE TABLE m_medical_history (
 
 -- ============ 5-4 日誌 ============
 
--- 日誌（t_diary）。記録種別でテーブルを分けない。園内の記録で、どの状態でも保護者には届かない
+-- 日誌（t_diary）。記録種別でテーブルを分けない。園内の記録で、保護者に届くのは、保育士が共有を選んで申請し、
+-- 管理者が承認した個人日誌だけ（2026-10-29 に持ち主が決めた。api_diary_share.go）。
 -- （基本設計書「日誌システム（園内の記録）」(4-6)、詳細設計書「変える表」(5-3)）。
 -- 既存の DB は db_diary.go の ensureInternalDiary が同じ定義に作り直す（定義は2か所で同じにする）
 CREATE TABLE t_diary (
@@ -198,6 +199,9 @@ CREATE TABLE t_diary (
   nap_abnormal_id       INTEGER REFERENCES t_nap_abnormal(nap_abnormal_id),
   -- 差し戻す理由。差し戻しは理由の入力を必須とする（画面詳細図 3-3）
   returned_reason       TEXT,
+  -- 保護者へ共有する（1）。保育士が申請するときに選び、管理者が承認すると、その園児の保護者が読める。
+  -- 個人日誌だけ。既定は共有しない（2026-10-29 に持ち主が決めた。api_diary_share.go）
+  share_to_guardian     INTEGER NOT NULL DEFAULT 0 CHECK (share_to_guardian IN (0,1)),
   is_deleted            INTEGER NOT NULL DEFAULT 0,
   created_at            TEXT    NOT NULL,
   updated_at            TEXT    NOT NULL,

@@ -40,6 +40,7 @@ import GroupEditScreen from './screens/chat/GroupEditScreen';
 import MisdeliveryScreen from './screens/chat/MisdeliveryScreen';
 import StaffHandoutsScreen from './screens/chat/StaffHandoutsScreen';
 import GuardianHandoutsScreen from './screens/chat/GuardianHandoutsScreen';
+import GuardianDiaryScreen from './screens/diary/GuardianDiaryScreen';
 
 // 午睡チェック
 import NapCheckScreen from './screens/nap/NapCheckScreen';
@@ -83,7 +84,7 @@ const pageNames: Record<string, string> = {
   '/staff/admin/staff-accounts': '職員アカウント', '/staff/admin/invitations': '招待コード',
   '/staff/admin/guardian-accounts': '保護者アカウント', '/staff/admin/fiscal-year': '年度更新',
   '/staff/admin/logs': '操作ログ', '/staff/admin/settings': '設定', '/guardian': '保護者ホーム', '/guardian/chat': 'チャット・お知らせ',
-  '/guardian/handouts': '園からの配布物', '/guardian/password': 'パスワードの変更', '/guardian/terms': '利用規約',
+  '/guardian/handouts': '園からの配布物', '/guardian/diaries': '園からの日誌', '/guardian/password': 'パスワードの変更', '/guardian/terms': '利用規約',
 };
 
 function PageNavigation() {
@@ -357,6 +358,7 @@ export default function App() {
         <Route path="growth/:childId" element={<GuardianGrowthScreen />} />
         <Route path="chat" element={<GuardianChatScreen />} />
         <Route path="handouts" element={<GuardianHandoutsScreen />} />
+        <Route path="diaries" element={<GuardianDiaryScreen />} />
         <Route path="password" element={<PasswordChangeScreen />} />
         <Route path="terms" element={<TermsAgreeScreen readOnly />} />
       </Route>
