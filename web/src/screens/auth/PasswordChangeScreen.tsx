@@ -23,7 +23,7 @@ export default function PasswordChangeScreen({ forced }: { forced?: boolean }) {
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
   // 変更する前の入力は、ログアウトの前に確かめる（基本設計書「ログアウト」(4-3)。GitHub Issue #170）
-  useUnsavedInput(!done && (current !== '' || next !== '' || next2 !== ''));
+  useUnsavedInput(current !== '' || next !== '' || next2 !== '');
 
   if (!user) return null;
 
@@ -51,6 +51,8 @@ export default function PasswordChangeScreen({ forced }: { forced?: boolean }) {
       }
       setUser(u);
       setDone(true);
+      // 変えたパスワードは残す値ではないので、欄を空にする（GitHub Issue #304 の 2）
+      setCurrent(''); setNext(''); setNext2('');
     } catch (err) {
       setError((err as Error).message);
     } finally {
