@@ -52,7 +52,7 @@ import type { SessionStatus } from './shapes';
 import type {
   LoginError, ChildInput, DiaryFilter, DiaryInput, DiaryAttachmentInput, DiaryIncidentInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
   DevDraftView,
-  ContactHome, ContactHomeInput, ContactPage, ContactClassView, ContactClassRow, ContactEvent, ContactClass, ContactFacility,
+  ContactHome, ContactHomeInput, ContactPage, ContactMonth, ContactMonthDay, ContactClassView, ContactClassRow, ContactEvent, ContactClass, ContactFacility,
   NapSleep, NapExclusion, HomeState, GuardianToday, TodayItem, MealAmount,
   GrowthRecord, GrowthMeasurement, GrowthEntry,
 } from './shapes';
@@ -4111,7 +4111,8 @@ const dashboardApi = {
 
     // 自分が書いて差し戻された日誌。開いた先の日誌一覧（状態＝差し戻し・自分が書いたもの）と同じ範囲を数える
     // （GitHub Issue #174。サーバ側は server/api_dashboard.go）
-    const returned = db.diaries.filter((d) => canSeeDiary(user, d) && d.status === '4'
+    // 一般にのみ数える。管理者には表示しない（図/画面詳細図「職員ダッシュボード」(2-6) 項目2。GitHub Issue #268）
+    const returned = user.role === '1' ? 0 : db.diaries.filter((d) => canSeeDiary(user, d) && d.status === '4'
       && d.created_staff_id === user.staff_id).length;
 
     const rooms = db.chatMembers.filter((m) => m.account_id === user.account_id).map((m) => m.chat_room_id);
@@ -4139,6 +4140,9 @@ const dashboardApi = {
 
     // 承認待ちの区画は管理者にのみ表示する
     const pending = user.role === '1' ? db.diaries.filter((d) => !d.is_deleted && d.status === '2').length : 0;
+    // そのうち自分が申請したもの。自分の申請は承認できないため「ほかの管理者へ」と添える（GitHub Issue #268）
+    const pendingOwn = user.role === '1'
+      ? db.diaries.filter((d) => !d.is_deleted && d.status === '2' && d.applied_staff_id === user.staff_id).length : 0;
 
     // 誤送信への対応を記録していない取り消し。記録するのは管理者のため、管理者にのみ数える
     // （図/画面詳細図.md「誤送信対応記録画面（管理者）」(4-4)「この記録は管理者が行う」。GitHub Issue #141 の 3）。
@@ -4164,7 +4168,7 @@ const dashboardApi = {
     const facilityUnsent = [...visible].filter((id) => findChild(id)?.enrollment_status === '1'
       && !db.contactFacilities.some((f) => f.child_id === id && f.contact_date === today() && !f.is_deleted)
       && !db.napExclusions.some((x) => x.child_id === id && x.reason === '1' && !x.is_deleted && todaySessions.has(x.nap_session_id))).length;
-    return ok({ returned, unreadChat, unhandledChat, unhandledChatRoom, devOverdue, pending, abnormalWithoutDiary,
+    return ok({ returned, unreadChat, unhandledChat, unhandledChatRoom, devOverdue, pending, pendingOwn, abnormalWithoutDiary,
       misdeliveryUnrecorded, activeNap,
       homeUnconfirmed: states.filter((x) => x === 'unconfirmed').length, homeRevised: states.filter((x) => x === 'revised').length, napSleeping,
       facilityUnsent });
@@ -4512,6 +4516,16 @@ function homeView(h: ContactHomeRecord | undefined, staff: boolean): ContactHome
   return view;
 }
 
+/**
+ * 行を最後に直した職員と時刻（server/api_contact.go の lastChange。詳細設計書「誰が直したかの表示」(4-7 (4))、決めたこと D-28）。
+ * 操作ログ（新しい順）の、変更でいちばん新しい行から引く。「成長の記録に残す」の付け外しは直したことに数えない
+ */
+function lastChangeOf(table: string, id: number): { staff_name: string; at: string } | null {
+  const row = db.operationLogs.find((l) => l.target_table === table && l.target_id === id && l.operation_type === '2'
+    && l.account_id !== null && !(l.after_value ?? '').startsWith('{"成長の記録に残す"'));
+  return row ? { staff_name: accountName(row.account_id!), at: row.operated_at } : null;
+}
+
 function eventView(e: ContactEventRecord, staff: boolean): ContactEvent {
   const view: ContactEvent = {
     contact_event_id: e.contact_event_id, child_id: e.child_id, contact_date: e.contact_date, event_type: e.event_type,
@@ -4519,7 +4533,11 @@ function eventView(e: ContactEventRecord, staff: boolean): ContactEvent {
     temperature: e.temperature, body: e.body, contact_photo_id: e.contact_photo_id, keep_in_growth: e.keep_in_growth,
     corrected_at: e.corrected_at, is_deleted: e.is_deleted,
   };
-  if (staff) { view.staff_name = staffName(e.staff_id); view.updated_at = e.updated_at; }
+  if (staff) {
+    view.staff_name = staffName(e.staff_id); view.updated_at = e.updated_at;
+    const change = lastChangeOf('t_contact_event', e.contact_event_id);
+    if (change) view.last_change = change;
+  }
   return view;
 }
 
@@ -4552,7 +4570,11 @@ function facilityView(f: ContactFacilityRecord | undefined, staff: boolean): Con
     contact_facility_id: f.contact_facility_id, child_id: f.child_id, contact_date: f.contact_date, body: f.body,
     recorded_at: f.recorded_at, corrected_at: f.corrected_at, is_deleted: f.is_deleted,
   };
-  if (staff) { view.staff_name = staffName(f.staff_id); view.updated_at = f.updated_at; }
+  if (staff) {
+    view.staff_name = staffName(f.staff_id); view.updated_at = f.updated_at;
+    const change = lastChangeOf('t_contact_facility', f.contact_facility_id);
+    if (change) view.last_change = change;
+  }
   return view;
 }
 
@@ -4629,7 +4651,8 @@ function guardianTodayOf(user: SessionUser, child: Child): GuardianToday {
       text: e.event_type === '1' ? `${MEAL_KIND_TEXT[e.meal_kind ?? '1']} ${MEAL_AMOUNT_TEXT[e.meal_amount ?? '1']}`
         : e.event_type === '2' ? e.toilet_label ?? ''
           : e.event_type === '3' ? `${(e.temperature ?? 0).toFixed(1)}℃`
-            : e.event_type === '5' ? '写真' : excerpt(e.body ?? '', 40),
+            // 写真の行にも添えた文を出す（server/api_contact.go の todayItemText。画面詳細図「保護者ホーム」(2-7)）
+            : e.event_type === '5' ? ((e.body ?? '').trim() ? excerpt((e.body ?? '').trim(), 40) : '写真') : excerpt(e.body ?? '', 40),
     })),
     ...p.class_notes.map((c): TodayItem => ({ kind: 'class_note', recorded_at: c.recorded_at, corrected_at: c.corrected_at,
       contact_photo_id: c.contact_photo_id, text: excerpt(c.body, 40) })),
@@ -4755,6 +4778,73 @@ const contactApi = {
     return ok(contactPageOf(user, childId, d));
   },
 
+  /**
+   * 連絡帳の月の一覧（GET /api/contact/children/{childID}/month?month=YYYY-MM）。server/api_contact_month.go と同じ規則：
+   * 日ごとに「家庭から」「園から」の有無と、きょうのようすの件数。保護者には出す種類だけ数え、「新しい」を付ける
+   */
+  async contactMonth(user: SessionUser, childId: string, month?: string): Promise<ContactMonth> {
+    if (!contactAccess(user, childId).read) return fail(MSG.contactForbidden);
+    const thisMonth = today().slice(0, 7);
+    const m = month || thisMonth;
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(m) || m > thisMonth) return fail(MSG.contactBadDate);
+    const guardian = user.role === '3';
+    const reads = new Map(db.contactReads.filter((r) => r.child_id === childId && r.account_id === user.account_id)
+      .map((r) => [r.contact_date, r.read_at]));
+    const days = new Map<string, ContactMonthDay>();
+    const day = (date: string) => {
+      let d = days.get(date);
+      if (!d) { d = { date, has_home: false, has_records: false, record_count: 0, has_facility: false }; days.set(date, d); }
+      return d;
+    };
+    const inMonth = (date: string) => date.slice(0, 7) === m;
+    const newer = (date: string, at: string) => { if (guardian && at > (reads.get(date) ?? '')) day(date).unread = true; };
+    const count = (date: string) => { const d = day(date); d.record_count++; d.has_records = true; };
+    const later = (at: string, corrected: string | null) => (corrected && corrected > at ? corrected : at);
+    for (const h of db.contactHomes) if (h.child_id === childId && inMonth(h.contact_date)) day(h.contact_date).has_home = true;
+    for (const f of db.contactFacilities) {
+      if (f.child_id !== childId || f.is_deleted || !inMonth(f.contact_date)) continue;
+      day(f.contact_date).has_facility = true;
+      newer(f.contact_date, later(f.recorded_at, f.corrected_at));
+    }
+    for (const e of db.contactEvents) {
+      if (e.child_id !== childId || e.is_deleted || !inMonth(e.contact_date)) continue;
+      if (guardian && !guardianSeesItem(EVENT_ITEM[e.event_type])) continue;
+      count(e.contact_date);
+      newer(e.contact_date, later(e.recorded_at, e.corrected_at));
+    }
+    if (!guardian || guardianSeesItem('nap')) {
+      for (const s of db.napSleeps) {
+        const date = sessionDateOf(s.nap_session_id);
+        if (s.child_id !== childId || s.is_deleted || !inMonth(date)) continue;
+        count(date);
+        newer(date, s.slept_at);
+      }
+    }
+    const classId = contactClassOf(childId);
+    if (classId !== null && (!guardian || guardianSeesItem('class'))) {
+      for (const c of db.contactClasses) {
+        if (c.class_id !== classId || c.is_deleted || !inMonth(c.contact_date)) continue;
+        count(c.contact_date);
+        newer(c.contact_date, later(c.recorded_at, c.corrected_at));
+      }
+    }
+    // 移れる月の下限：いちばん早く記録のある月（無ければ今月）
+    const dates = [
+      ...db.contactHomes.filter((h) => h.child_id === childId).map((h) => h.contact_date),
+      ...db.contactEvents.filter((e) => e.child_id === childId && !e.is_deleted).map((e) => e.contact_date),
+      ...db.contactFacilities.filter((f) => f.child_id === childId && !f.is_deleted).map((f) => f.contact_date),
+    ].map((d) => d.slice(0, 7));
+    let from = [thisMonth, ...dates].sort()[0];
+    if (m < from) from = m;
+    const out: ContactMonthDay[] = [];
+    for (let d = 1; d <= 31; d++) {
+      const date = `${m}-${String(d).padStart(2, '0')}`;
+      if (!isISODate(date) || date > today()) continue;
+      out.push(days.get(date) ?? { date, has_home: false, has_records: false, record_count: 0, has_facility: false });
+    }
+    return ok({ month: m, from_month: from, to_month: thisMonth, days: out });
+  },
+
   /** 保護者が開いた時刻を残す（POST /api/contact/children/{childID}/read）。知らせは送らない */
   async markContactRead(user: SessionUser, childId: string, date: string): Promise<{ ok: true }> {
     if (user.role !== '3') return fail(MSG.guardianOnly);
@@ -4827,7 +4917,7 @@ const contactApi = {
       // 確認済み・更新の行を送り直すと「更新」。未確認のままなら未確認（詳細設計書「家庭から」(3-1)）
       const revised = old.confirmed_at || old.revised_at ? at : old.revised_at;
       Object.assign(old, checked.value, { guardian_id: user.guardian_id ?? old.guardian_id, submitted_at: at,
-        confirmed_staff_id: null, confirmed_at: null, revised_at: revised, updated_at: at });
+        confirmed_staff_id: null, confirmed_at: null, revised_at: revised, updated_at: laterVersion(old.updated_at) });
       saved = old;
       log(user.account_id, '8', '2', 't_contact_home', saved.contact_home_id, childId, before, homeLogValue(saved));
     }
@@ -4843,7 +4933,7 @@ const contactApi = {
     if (h.confirmed_at) return ok(homeView(h, true)!);
     if (h.updated_at !== updatedAt) return fail(MSG.confirmConflict);
     const at = now();
-    h.confirmed_staff_id = user.staff_id; h.confirmed_at = at; h.updated_at = at;
+    h.confirmed_staff_id = user.staff_id; h.confirmed_at = at; h.updated_at = laterVersion(h.updated_at);
     log(user.account_id, '8', '2', 't_contact_home', h.contact_home_id, h.child_id, null, JSON.stringify({ 確認: '確認しました' }));
     publishContactChild(h.child_id, 'home');
     return ok(homeView(h, true)!);
@@ -5461,7 +5551,7 @@ const contactEventsApi = {
     if (input.updated_at !== e.updated_at) return fail(MSG.fixConflict);
     const [before, after] = changedFields(eventLogFields(e), eventLogFields({ ...e, ...next }));
     const at = now();
-    Object.assign(e, next, { corrected_at: at, updated_at: at });
+    Object.assign(e, next, { corrected_at: at, updated_at: laterVersion(e.updated_at) });
     log(user.account_id, '8', '2', 't_contact_event', e.contact_event_id, e.child_id, before, after);
     publishContactChild(e.child_id, EVENT_ITEM[e.event_type]);
     return ok(eventView(e, true));
@@ -5973,7 +6063,7 @@ const contactFacilityApi = {
     if (input.updated_at !== f.updated_at) return fail(MSG.fixConflict);
     const [before, after] = changedFields([['body', f.body]], [['body', checked.value]]);
     const at = now();
-    Object.assign(f, { body: checked.value, corrected_at: at, updated_at: at });
+    Object.assign(f, { body: checked.value, corrected_at: at, updated_at: laterVersion(f.updated_at) });
     log(user.account_id, '8', '2', 't_contact_facility', f.contact_facility_id, f.child_id, before, after);
     publishContactChild(f.child_id, 'facility');
     return ok(facilityView(f, true)!);

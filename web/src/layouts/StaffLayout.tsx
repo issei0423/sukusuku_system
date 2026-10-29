@@ -73,7 +73,7 @@ export default function StaffLayout() {
   // （誤送信への対応を記録していない取り消しは、管理者にだけ数えて返る。GitHub Issue #141 の 3）
   const s = summary.data;
   const pending = s
-    ? s.returned + s.unreadChat + s.unhandledChat + s.devOverdue + s.pending + s.abnormalWithoutDiary + s.misdeliveryUnrecorded
+    ? s.returned + s.unhandledChat + s.devOverdue + s.pending + s.abnormalWithoutDiary + s.misdeliveryUnrecorded
       + s.homeUnconfirmed + s.homeRevised
     : 0;
 

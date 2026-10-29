@@ -192,7 +192,7 @@ func (a *app) handleCorrectFacility(w http.ResponseWriter, r *http.Request) {
 	}
 	at := now()
 	res, err := a.db.Exec(`UPDATE t_contact_facility SET body = ?, corrected_at = ?, updated_at = ?
-		WHERE contact_facility_id = ? AND is_deleted = 0 AND updated_at = ?`, body, at, at, f.ID, in.UpdatedAt)
+		WHERE contact_facility_id = ? AND is_deleted = 0 AND updated_at = ?`, body, at, nextVersion(f.UpdatedAt), f.ID, in.UpdatedAt)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, msgContactSaveFailed)
 		return

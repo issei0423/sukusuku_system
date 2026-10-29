@@ -169,6 +169,11 @@ func (a *app) handleSaveHome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	at := now()
+	// 版（updated_at）は書くたびに必ず進める。同じ秒のうちの送り直しが同じ版にならない（D-40）
+	version := at
+	if old != nil {
+		version = nextVersion(old.UpdatedAt)
+	}
 	// 検査と書き込みのあいだに、ほかのご家族の送信が入ったら書き込まない（同時編集の検出。基本設計書 (4-2)）。
 	// 初めての行は一意の制約（園児×日）が、送り直しは読んだ版（updated_at）の条件が止める
 	conflict := false
@@ -195,7 +200,7 @@ func (a *app) handleSaveHome(w http.ResponseWriter, r *http.Request) {
 			confirmed_staff_id = NULL, confirmed_at = NULL, revised_at = ?, updated_at = ?
 			WHERE contact_home_id = ? AND updated_at = ?`,
 			u.guardian(), v.Temperature, v.NightSleepFrom, v.NightSleepTo, v.Breakfast, v.MoodLabel,
-			v.PickupType, v.PickupPerson, v.PickupTime, v.Message, at, revised, at, old.ID, old.UpdatedAt)
+			v.PickupType, v.PickupPerson, v.PickupTime, v.Message, at, revised, version, old.ID, old.UpdatedAt)
 		if err == nil {
 			if n, _ := res.RowsAffected(); n == 0 {
 				conflict = true
@@ -271,9 +276,9 @@ func (a *app) handleConfirmHome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	at := now()
-	// 読んだ版のまま、まだ確認されていないときだけ書く（あいだに保護者が直していたら 409）
+	// 読んだ版のまま、まだ確認されていないときだけ書く（あいだに保護者が直していたら 409）。版は必ず進める（D-40）
 	res, err := a.db.Exec(`UPDATE t_contact_home SET confirmed_staff_id = ?, confirmed_at = ?, updated_at = ?
-		WHERE contact_home_id = ? AND confirmed_at IS NULL AND updated_at = ?`, u.staff(), at, at, id, in.UpdatedAt)
+		WHERE contact_home_id = ? AND confirmed_at IS NULL AND updated_at = ?`, u.staff(), at, nextVersion(h.UpdatedAt), id, in.UpdatedAt)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, msgContactSaveFailed)
 		return

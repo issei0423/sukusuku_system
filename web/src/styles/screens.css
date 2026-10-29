@@ -355,6 +355,9 @@ button.guardian-record-link {
 .contact-page-head > a { display: flex; align-items: center; min-height: 44px; }
 .contact-date { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .contact-date button { min-height: 44px; min-width: 44px; }
+/* 月の一覧（MonthList.tsx）。1日1行。押す所は 44px 以上 */
+.contact-month-days { list-style: none; margin: var(--sp-2) 0 0; padding: 0; display: grid; gap: var(--sp-1); }
+.contact-month-days button { width: 100%; min-height: 44px; text-align: left; }
 .contact-section { display: grid; gap: var(--sp-3); }
 .contact-section h2 { font-size: 1.125rem; margin: 0; }
 .contact-home-lines { display: grid; gap: var(--sp-1); margin: 0; }

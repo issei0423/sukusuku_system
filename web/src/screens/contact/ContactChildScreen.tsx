@@ -234,7 +234,7 @@ export default function ContactChildScreen() {
             {data.facility && !editingFacility && (
               <>
                 <p><span className="tag tag-approved">送った {formatHM(data.facility.recorded_at)} {data.facility.staff_name}</span>
-                  {' '}{data.facility.body}{data.facility.corrected_at && <span className="muted">　訂正しました（{formatHM(data.facility.corrected_at)}）</span>}</p>
+                  {' '}{data.facility.body}{data.facility.corrected_at && <span className="muted">　訂正しました（{formatHM(data.facility.corrected_at)}{data.facility.last_change ? ` ${data.facility.last_change.staff_name}` : ''}）</span>}</p>
                 {canFix && (
                   <div className="contact-composer-actions">
                     <button ref={facilityFixRef} type="button" onClick={() => setEditingFacility(true)}>直す</button>

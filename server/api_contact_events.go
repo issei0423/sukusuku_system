@@ -439,7 +439,7 @@ func (a *app) handleCorrectEvent(w http.ResponseWriter, r *http.Request) {
 	at := now()
 	res, err := a.db.Exec(`UPDATE t_contact_event SET meal_amount = ?, toilet_label = ?, temperature = ?, body = ?, recorded_at = ?,
 		corrected_at = ?, updated_at = ? WHERE contact_event_id = ? AND is_deleted = 0 AND updated_at = ?`,
-		mealAmount, toilet, temperature, body, recordedAt, at, at, e.ID, in.UpdatedAt)
+		mealAmount, toilet, temperature, body, recordedAt, at, nextVersion(e.UpdatedAt), e.ID, in.UpdatedAt)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, msgContactSaveFailed)
 		return

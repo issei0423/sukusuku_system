@@ -185,13 +185,13 @@ describe('保護者のクラスのチャンネルに「園からのお知らせ�
   });
 });
 
-describe('職員ダッシュボードの未対応は、0 件の行も出す（GitHub Issue #178 の 6）', () => {
+describe('職員ダッシュボードの園内のことは、0 件の行も出す（GitHub Issue #178 の 6）', () => {
   it('件数が 0 の項目も、ラベル・件数・「開く」を並べる', async () => {
     open('/staff', kubota);
     await settled();
-    const table = screen.getByRole('heading', { name: '未対応' }).closest('section')!;
+    const table = screen.getByRole('heading', { name: '園内のこと' }).closest('section')!;
     // 異常時の記録の行は、下書きのままのヒヤリハットも数えるため名前を変えた（GitHub Issue #142 の 5。web/仮置き値.md）
-    for (const label of ['差し戻された日誌', '未読のチャット', '発達チェックの未実施（担当クラス）', 'ヒヤリハット未起票・下書きのままの異常時の記録']) {
+    for (const label of ['差し戻された日誌', '未対応の個人チャット', '発達チェックの未実施（担当クラス）', 'ヒヤリハット未起票・下書きのままの異常時の記録']) {
       const row = Array.from(table.querySelectorAll('tr')).find((tr) => tr.textContent?.includes(label));
       expect(row, label).toBeTruthy();
       expect(within(row!).getByRole('link', { name: '開く' })).toBeTruthy();

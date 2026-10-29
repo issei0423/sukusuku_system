@@ -34,6 +34,7 @@ func (a *app) routeGuardian(mux *http.ServeMux) {
 // 連絡帳の読み書きと、ねた・おきた（詳細設計書「経路の一覧」(4-2)）
 func (a *app) routeContact(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/contact/children/{childID}", a.handleContactPage)
+	mux.HandleFunc("GET /api/contact/children/{childID}/month", a.handleContactMonth)
 	mux.HandleFunc("POST /api/contact/children/{childID}/read", a.handleContactRead)
 	mux.HandleFunc("PUT /api/contact/children/{childID}/home", a.handleSaveHome)
 	mux.HandleFunc("GET /api/contact/classes", a.handleContactClasses)

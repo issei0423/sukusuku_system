@@ -113,7 +113,7 @@ describe('共通・認証（7画面）', () => {
     open('/staff', teacher);
     await settled();
     expect(screen.getAllByText('ダッシュボード').length).toBeGreaterThan(0);
-    expect(screen.getByText('未対応')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '園内のこと' })).toBeTruthy();
   });
 
   it('保護者ホーム', async () => {
