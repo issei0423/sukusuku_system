@@ -58,4 +58,5 @@ export const backend: 'http' | 'mock' = useMock ? 'mock' : 'http';
 
 export type {
   LoginError, ChildInput, DiaryFilter, DiaryInput, DiaryAttachmentInput, DiaryIncidentInput, ChatRoomView, NapChildState, DevListRow, CsvRow,
+  GuardianDiary,
 } from './shapes';

@@ -44,6 +44,8 @@ interface DiaryDraft {
   photos: DiaryAttachmentInput[];
   /** ヒヤリハットの欄（記録種別がヒヤリハットのときだけ使う） */
   incident?: IncidentForm;
+  /** 保護者へ共有する（個人日誌のときだけ使う） */
+  share?: boolean;
 }
 
 export default function DiaryEditScreen() {
@@ -73,6 +75,11 @@ export default function DiaryEditScreen() {
    * サーバ（モック）が作る（詳細設計書「日誌の画面（作り直し）」(2-13 (8))・「日誌」(4-13 (1))、決めたこと D-33）
    */
   const [incident, setIncident] = useState<IncidentForm>(draft?.incident ?? EMPTY_INCIDENT);
+  /*
+   * 保護者へ共有する。個人日誌だけ選べ、既定は共有しない。申請して管理者が承認すると、その園児の保護者が読める
+   * （2026-10-29 に持ち主が決めた。server/api_diary_share.go）
+   */
+  const [share, setShare] = useState(draft?.share ?? false);
   /*
    * 保存していない入力があるか。一覧へ戻る前に確かめるために持つ（画面詳細図「日誌作成・編集画面」(3-2) 項目1
    * 「未保存の内容がある場合は確認する」）。本文の欄だけでなく、内容を変える操作（記録種別・園児・クラス・記録日・
@@ -121,6 +128,7 @@ export default function DiaryEditScreen() {
       setBody(d.body);
       // ヒヤリハットは、サーバが本文を見出しで分けて返した欄を入れる（異常時の記録から起票したものも同じ）
       setIncident(incidentFormOf(d.incident));
+      setShare(!!d.share_to_guardian);
       api.attachmentsOf(user!, d.diary_id)
         .then((a) => setPhotos(a.map((x) => ({ file_path: x.file_path, file_type: x.file_type }))));
     }
@@ -284,6 +292,7 @@ export default function DiaryEditScreen() {
         class_id: classId === '' ? null : classId,
         diary_date: date, body: isIncident ? '' : body, lock_token: lockToken, attachments: photos,
         incident: isIncident ? incidentInputOf(incident) : undefined,
+        share_to_guardian: canShare && share,
       }, status);
       // 保存できたので、保存していない内容は無い（GitHub Issue #175 の 3）
       setDirty(false);
@@ -300,6 +309,8 @@ export default function DiaryEditScreen() {
   const needsChild = recordType === '1' || recordType === '4';
   // ヒヤリハットは本文の代わりに欄を出し、雛形・定型文を置かない（詳細設計書「日誌の画面（作り直し）」(2-13 (8))）
   const isIncident = recordType === '4';
+  // 保護者へ共有できるのは個人日誌だけ（server/api_diary_share.go）
+  const canShare = recordType === '1';
   const contentReady = isIncident ? incidentReady(incident) : !!body.trim();
   const d = existing.data;
   const readOnly = !!d && (d.status === '2' || d.status === '3');
@@ -340,7 +351,7 @@ export default function DiaryEditScreen() {
     navigate('/staff/diary/confirm', {
       state: { recordType, childId: needsChild ? childId : null, classId: classId === '' ? null : classId,
                date, body: isIncident ? '' : body, diaryId, lockToken, photos,
-               incident: isIncident ? incident : undefined },
+               incident: isIncident ? incident : undefined, share: canShare && share },
     });
   };
 
@@ -395,6 +406,14 @@ export default function DiaryEditScreen() {
                 <br />
                 承認：{staffName(d!.approved_staff_id)}
                 {d!.approved_at && `（${formatMDHM(d!.approved_at)}）`}
+              </>
+            )}
+            {d!.record_type === '1' && (
+              <>
+                <br />
+                {d!.share_to_guardian
+                  ? (d!.status === '3' ? '保護者へ共有しています。' : '承認されると保護者へ共有します。')
+                  : '保護者へは共有しません。'}
               </>
             )}
           </Alert>
@@ -490,6 +509,15 @@ export default function DiaryEditScreen() {
               </div>
               {photos.length >= maxPhotos && <div className="muted">上限の{maxPhotos}枚に達しました。</div>}
             </Field>
+
+            {/* 保護者へ共有する。個人日誌だけ。申請して管理者が承認すると届く（server/api_diary_share.go） */}
+            {canShare && (
+              <label>
+                <input type="checkbox" checked={share} disabled={locked}
+                  onChange={(e) => { setShare(e.target.checked); setDirty(true); }} />
+                保護者へ共有する（管理者が承認すると、この園児の保護者が読めます）
+              </label>
+            )}
 
             {/* 個人日誌・ヒヤリハットは園児を対象にした記録。選ぶまで先へ進めない */}
             {needsChild && !childId && !readOnly && (

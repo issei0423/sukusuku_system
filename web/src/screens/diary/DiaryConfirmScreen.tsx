@@ -32,6 +32,8 @@ interface ConfirmState {
   photos: DiaryAttachmentInput[];
   /** ヒヤリハットの欄（記録種別がヒヤリハットのときだけ。本文の代わりに送る） */
   incident?: IncidentForm;
+  /** 保護者へ共有する（個人日誌のときだけ。server/api_diary_share.go） */
+  share?: boolean;
 }
 
 export default function DiaryConfirmScreen() {
@@ -111,6 +113,7 @@ export default function DiaryConfirmScreen() {
         lock_token: activeToken ?? undefined,
         // ここで示した写真を、そのまま日誌に付ける（画面詳細図「日誌確認画面」(3-3) 項目3。GitHub Issue #175 の 2）
         attachments: state.photos,
+        share_to_guardian: state.recordType === '1' && !!state.share,
       }, '2');
       notify('日誌を申請しました。管理者の承認待ちになります');
       navigate('/staff/diary');
@@ -134,6 +137,9 @@ export default function DiaryConfirmScreen() {
             <tr><th scope="col">対象</th><td>{state.childId ? childName(state.childId) : className(state.classId)}</td></tr>
             <tr><th scope="col">記録日</th><td>{formatYMD(state.date)}</td></tr>
             <tr><th scope="col">写真</th><td>{state.photos.length} 枚</td></tr>
+            {state.recordType === '1' && (
+              <tr><th scope="col">保護者へ共有</th><td>{state.share ? 'する' : 'しない'}</td></tr>
+            )}
           </tbody>
         </table>
         {/* ヒヤリハットは本文の代わりに欄を示す（図/画面詳細図.md「日誌承認画面（管理者）」(3-5) 項目3 と同じ並び） */}
@@ -155,7 +161,8 @@ export default function DiaryConfirmScreen() {
       <section className="card card-sub">
         <div className="muted">
           申請すると管理者の承認待ちになります。
-          {/* 日誌は園内の記録で、承認しても保護者へは届かない（基本設計書「日誌システム（園内の記録）」(4-6)） */}
+          {/* 保護者へ届くのは、共有を選んだ個人日誌を管理者が承認したときだけ（server/api_diary_share.go） */}
+          {state.recordType === '1' && state.share && '承認されると、この園児の保護者へ共有します。'}
         </div>
       </section>
 

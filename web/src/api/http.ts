@@ -18,7 +18,7 @@ import type {
   MisdeliveryRow, RetractedRow, NapChildState, NapAbnormalRow, NapSearchRow,
   DevListRow, DevScheduleRow, CsvRow, FiscalClassRow, StaffAccountRow,
   GuardianAccountRow, InvitationCodeRow, OperationLogRow, StaffSummary, GuardianHomeRow,
-  DevDraftView,
+  DevDraftView, GuardianDiary,
   ContactPage, ContactClassView, ContactHome, ContactHomeInput, NapSleep, NapExclusion, GrowthRecord,
 } from './shapes';
 import type { SendPhotoInput, SendPhotoResult } from './shapes';
@@ -779,6 +779,8 @@ const apiAdmin = {
   /* ---- ダッシュボード ---- */
   staffSummary: (_u: SessionUser) => get<StaffSummary>('/api/dashboard/staff'),
   guardianHome: (_u: SessionUser) => get<GuardianHomeRow[]>('/api/dashboard/guardian'),
+  // 保護者に共有された日誌（server/api_diary_share.go）
+  guardianDiaries: (_u: SessionUser) => get<GuardianDiary[]>('/api/guardian/diaries'),
 };
 
 /* ---- 園からの配布物 ---- */
