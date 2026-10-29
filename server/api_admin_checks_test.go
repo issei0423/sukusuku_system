@@ -73,7 +73,7 @@ func TestRemoveChildRequiresNoRecords(t *testing.T) {
 	t.Run("記録のある園児は取り消せない", func(t *testing.T) {
 		// 西田 太郎（C001）は日誌・身体測定・午睡・個人チャットの記録がある
 		body := expectStatus(t, request(t, h, admin, "DELETE", "/api/children/C001", ""), http.StatusBadRequest)
-		if !strings.Contains(body, "記録が登録されている園児は取り消せません。在籍状態を変更してください。") {
+		if !strings.Contains(body, "記録または保護者が紐づいている園児は取り消せません。在籍状態を変更してください。") {
 			t.Fatalf("文言が違います: %s", body)
 		}
 		var deleted bool

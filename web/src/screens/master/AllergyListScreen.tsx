@@ -5,13 +5,13 @@
  *
  * 園児一覧のアレルギー列とは別。こちらは全園児が対象で、給食室・調理室に掲示する用途を想定する。
  * 参照範囲を自クラスに絞らない理由：誤食は担任以外が配膳する場面でも起こるため。
+ * 列は クラス・氏名・対象・症状・対応。生年月日などは出さない（図/画面詳細図 (7-4) 項目3。GitHub Issue #279）。
  */
 import { useState } from 'react';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api } from '../../api/client';
 import { Loading, ErrorBox, Empty } from '../../components/ui';
-import { formatYMD } from '../../api/util';
 
 export default function AllergyListScreen() {
   const { user } = useSession();
@@ -57,7 +57,7 @@ export default function AllergyListScreen() {
         {data && data.length > 0 && (
           <table className="list">
             <thead>
-              <tr><th scope="col">クラス</th><th scope="col">氏名</th><th scope="col">生年月日</th><th scope="col">対象</th><th scope="col">症状</th><th scope="col">対応</th></tr>
+              <tr><th scope="col">クラス</th><th scope="col">氏名</th><th scope="col">対象</th><th scope="col">症状</th><th scope="col">対応</th></tr>
             </thead>
             <tbody>
               {data.map((r) =>
@@ -65,7 +65,6 @@ export default function AllergyListScreen() {
                   <tr key={a.allergy_id}>
                     {i === 0 && <td className="nowrap" rowSpan={r.allergies.length}>{r.className}</td>}
                     {i === 0 && <td className="nowrap" rowSpan={r.allergies.length}><strong>{r.child.child_name}</strong></td>}
-                    {i === 0 && <td className="nowrap" rowSpan={r.allergies.length}>{formatYMD(r.child.birth_date)}</td>}
                     <td className="nowrap"><span className="tag tag-returned">{a.target_food}</span></td>
                     <td>{a.symptom}</td>
                     <td>{a.response}</td>

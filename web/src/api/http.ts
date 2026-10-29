@@ -26,7 +26,7 @@ import type {
   ContactEvent, ContactEventInput, RecordEventsResult, ContactEventCorrection, NapSleepCorrection, CancelResult, Readers,
   ContactFacility, FacilityCorrection, Phrase, NameMatch, AiTarget, AiDraftInput, AiDraftResult, SettingsView,
 } from './shapes';
-import type { InvitationPreview, AddChildResult } from './shapes';
+import type { InvitationPreview, AddChildResult, AllergyListRow } from './shapes';
 import type { AbnormalGuardianNoticeInput } from './shapes';
 import {
   ProcedureRequiredError, isProcedureKind, notifyProcedureRequired, notifySessionEnded, pendingProcedure,
@@ -409,8 +409,10 @@ const apiAuth = {
   },
 
   /* ---- 園児マスター ---- */
-  listChildren: (_u: SessionUser, f: { classId?: number | ''; name?: string } = {}) =>
-    get<Child[]>('/api/children' + qs({ class_id: f.classId ?? '', name: f.name ?? '' })),
+  listChildren: (_u: SessionUser, f: { classId?: number | ''; name?: string; includeWithdrawn?: boolean } = {}) =>
+    get<Child[]>('/api/children' + qs({ class_id: f.classId ?? '', name: f.name ?? '', include_withdrawn: f.includeWithdrawn ? '1' : '' })),
+
+  removableChildren: (_u: SessionUser) => get<string[]>('/api/children/removable'),
 
   getChild: (_u: SessionUser, childId: string) => get<Child>(`/api/children/${childId}`),
 
@@ -430,7 +432,7 @@ const apiAuth = {
       `/api/children/${childId}/medical-histories`),
   classOf: (_u: SessionUser, childId: string) => get<number | null>(`/api/children/${childId}/class`),
   allAllergies: (_u: SessionUser) =>
-    get<{ child: Child; className: string; allergies: Allergy[] }[]>('/api/children/allergies'),
+    get<AllergyListRow[]>('/api/children/allergies'),
 
   async saveChild(_u: SessionUser, input: ChildInput, mode: 'create' | 'edit'): Promise<Child> {
     const c = await post<Child>('/api/children', { ...input, mode });

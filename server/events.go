@@ -405,7 +405,7 @@ notifyNapSession は、午睡チェックの開始・終了を送る。
 */
 func (a *app) notifyNapSession(classID int64) {
 	a.notify(liveEvent{Type: evNap, ClassID: classID}, func(u *SessionUser) bool {
-		return u.isStaff() && a.canUseClass(u, classID)
+		return u.isStaff() && a.canReadClass(u, classID)
 	})
 }
 
@@ -418,7 +418,7 @@ notifyNapChild は、園児1人の午睡の記録を送る。
 */
 func (a *app) notifyNapChild(classID int64, childID string) {
 	a.notify(liveEvent{Type: evNap, ClassID: classID, ChildID: childID}, func(u *SessionUser) bool {
-		return u.isStaff() && a.canSeeChild(u, childID)
+		return u.isStaff() && a.canReadChild(u, childID)
 	})
 }
 
@@ -470,7 +470,7 @@ func (a *app) notifyDevelopment(childID string, finalized bool) {
 		if u.isGuardian() {
 			return finalized && a.contactAccess(u, childID).Read
 		}
-		return u.isStaff() && a.canSeeChild(u, childID)
+		return u.isStaff() && a.canReadChild(u, childID)
 	})
 }
 
@@ -482,7 +482,7 @@ func (a *app) notifyPhysical(childID string, shared bool) {
 		if u.isGuardian() {
 			return shared && a.contactAccess(u, childID).Read
 		}
-		return a.canSeeChild(u, childID)
+		return a.canReadChild(u, childID)
 	})
 }
 

@@ -50,7 +50,7 @@ func (a *app) handleActiveNapSession(w http.ResponseWriter, r *http.Request) {
 	}
 	classID, _ := queryInt64(r, "class_id")
 	// 一般（保育士）は自クラスに限る（GitHub Issue #96）
-	if !a.canUseClass(u, classID) {
+	if !a.canReadClass(u, classID) {
 		writeForbidden(w, "このクラスの午睡チェックを参照する権限がありません")
 		return
 	}
@@ -253,7 +253,7 @@ func (a *app) handleNapClassState(w http.ResponseWriter, r *http.Request) {
 	}
 	classID, _ := queryInt64(r, "class_id")
 	sessionID, hasSession := queryInt64(r, "session_id")
-	if !a.canUseClass(u, classID) {
+	if !a.canReadClass(u, classID) {
 		writeForbidden(w, "このクラスの午睡チェックを参照する権限がありません")
 		return
 	}

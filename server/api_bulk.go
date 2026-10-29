@@ -143,8 +143,8 @@ func (a *app) parseChildCsv(text string) ([]string, []CsvRow, error) {
 			case values[3] > today():
 				errs = append(errs, "生年月日に未来日は指定できません")
 			}
-			if values[4] != "1" && values[4] != "2" && values[4] != "9" {
-				errs = append(errs, "性別は 1:男 2:女 9:未回答 で入力してください")
+			if _, ok := csvSexCode(values[4]); !ok {
+				errs = append(errs, "性別は 男・女・未回答（または 1:男 2:女 9:未回答）で入力してください")
 			}
 			if !a.classExists(values[5]) {
 				errs = append(errs, "クラス名が見つかりません")
@@ -272,6 +272,7 @@ func (a *app) handleImportChildCsv(w http.ResponseWriter, r *http.Request) {
 
 	for _, row := range rows {
 		v := row.Values
+		sexCode, _ := csvSexCode(v[4])
 		var temp any
 		if len(v) > 6 && v[6] != "" {
 			if f, e := strconv.ParseFloat(v[6], 64); e == nil {
@@ -281,8 +282,8 @@ func (a *app) handleImportChildCsv(w http.ResponseWriter, r *http.Request) {
 		if _, e := tx.Exec(`INSERT INTO m_child
 			(child_id, child_name, child_name_kana, birth_date, sex, normal_temperature,
 			 enrollment_status, photo_consent_level, is_deleted, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, '1', '2', 0, ?, ?)`,
-			v[0], v[1], v[2], v[3], v[4], temp, now(), now()); e != nil {
+			VALUES (?, ?, ?, ?, ?, ?, '1', '1', 0, ?, ?)`,
+			v[0], v[1], v[2], v[3], sexCode, temp, now(), now()); e != nil {
 			writeErr(w, http.StatusInternalServerError, "取り込みに失敗しました")
 			return
 		}
@@ -386,4 +387,21 @@ func (a *app) handlePreviewFiscalYearUpdate(w http.ResponseWriter, r *http.Reque
 		"classes":        list,
 		"note":           "このモックアップでは、年度更新の実行を実装していません。現在の年度の内訳だけを表示しています",
 	})
+}
+
+/*
+csvSexCode は CSV の性別の値を、m_child.sex の値（1:男 2:女 9:未回答）にそろえる。
+「男」「女」「未回答」の文字か、1・2・9 の数字のどちらでも受ける（基本設計書「CSV一括登録」(4-4)、GitHub Issue #36・#279）。
+空欄は受けない。モックは web/src/api/mock.ts の csvSexCode
+*/
+func csvSexCode(v string) (string, bool) {
+	switch strings.TrimSpace(v) {
+	case "1", "男":
+		return "1", true
+	case "2", "女":
+		return "2", true
+	case "9", "未回答":
+		return "9", true
+	}
+	return "", false
 }
