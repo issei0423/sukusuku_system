@@ -17,7 +17,9 @@
     "review:responsive:check": "tsc -p tests/responsive/tsconfig.json",
     "review:security": "playwright test -c playwright.security.config.ts",
     "review:security:check": "tsc -p tests/security/tsconfig.json",
-    "test:a11y": "playwright test -c playwright.a11y.config.ts"
+    "test:a11y": "playwright test -c playwright.a11y.config.ts",
+    "test:acceptance": "playwright test -c playwright.acceptance.config.ts",
+    "test:acceptance:check": "tsc -p tests/acceptance/tsconfig.json && node tests/acceptance/check-cases.mjs"
   },
   "dependencies": {
     "react": "^19.2.7",

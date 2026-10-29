@@ -14,6 +14,8 @@ dist/
 web/responsive-report/
 web/security-report/
 web/a11y-report/
+# 受け入れテストの結果と証跡（web/tests/acceptance/README.md）
+web/acceptance-report/
 web/test-results/
 
 # Go（server/ のサーバ）
