@@ -15,7 +15,9 @@ import (
 
 type operationLogRow struct {
 	OperationLogID int64   `json:"operation_log_id"`
-	AccountID      int64   `json:"account_id"`
+	// システムが行った変更（operator_type = '2'）は空
+	AccountID      *int64  `json:"account_id"`
+	OperatorType   string  `json:"operator_type"`
 	OperatedAt     string  `json:"operated_at"`
 	FunctionType   string  `json:"function_type"`
 	OperationType  string  `json:"operation_type"`
@@ -134,7 +136,7 @@ func (a *app) handleOperationLogs(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.requireAdmin(w, r); !ok {
 		return
 	}
-	q := `SELECT operation_log_id, account_id, operated_at, function_type, operation_type,
+	q := `SELECT operation_log_id, account_id, operator_type, operated_at, function_type, operation_type,
 		target_table, target_id, target_child_id, before_value, after_value
 		FROM t_operation_log WHERE 1 = 1`
 	args := []any{}
@@ -169,13 +171,15 @@ func (a *app) handleOperationLogs(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var (
 			x       operationLogRow
+			account sql.NullInt64
 			target  sql.NullInt64
 			childID sql.NullString
 			before  sql.NullString
 			after   sql.NullString
 		)
-		if rows.Scan(&x.OperationLogID, &x.AccountID, &x.OperatedAt, &x.FunctionType, &x.OperationType,
+		if rows.Scan(&x.OperationLogID, &account, &x.OperatorType, &x.OperatedAt, &x.FunctionType, &x.OperationType,
 			&x.TargetTable, &target, &childID, &before, &after) == nil {
+			x.AccountID = nullInt(account)
 			x.TargetID = nullInt(target)
 			x.TargetChildID = nullStr(childID)
 			x.BeforeValue = nullStr(before)
@@ -186,7 +190,11 @@ func (a *app) handleOperationLogs(w http.ResponseWriter, r *http.Request) {
 	rows.Close()
 
 	for i := range out {
-		out[i].AccountName = a.accountName(out[i].AccountID)
+		if out[i].AccountID == nil {
+			out[i].AccountName = systemOperatorName
+		} else {
+			out[i].AccountName = a.accountName(*out[i].AccountID)
+		}
 		out[i].ChildName = "―"
 		if out[i].TargetChildID != nil {
 			out[i].ChildName = a.childName(*out[i].TargetChildID)

@@ -173,6 +173,23 @@ function log(
   });
 }
 
+/**
+ * システムが行った変更を、操作者を「システム」（operator_type '2'、account_id は null）として記録する
+ * （基本設計書「操作ログの記録」(4-2)・「操作ログ（t_operation_log）」(5-9)。サーバ側は server/oplog.go の logSystem）
+ */
+function logSystem(
+  functionType: FunctionType, operationType: OperationType,
+  table: string, targetId: number | null, childId: string | null,
+  before: string | null, after: string | null,
+): void {
+  db.operationLogs.unshift({
+    operation_log_id: nextId(), account_id: null, operator_type: '2', operated_at: now(),
+    function_type: functionType, operation_type: operationType,
+    target_table: table, target_id: targetId, target_child_id: childId,
+    before_value: before, after_value: after,
+  });
+}
+
 /*
  * 変更前後の値（基本設計書「操作ログ（t_operation_log）」(5-8)）
  * 「変更前後の値は JSON 文字列で保持する。変更のあった項目だけを {"項目名": 値} の形で入れる」。
@@ -2719,7 +2736,7 @@ const napApi2 = {
       const [, child, , key] = head(target.sessionId, target.childId);
       histories.push({
         logId: l.operation_log_id, ...key, recordAt: target.at, at: l.operated_at, cells: [
-          `${target.label}（${child}・${target.at}）`, l.operated_at, accountName(l.account_id),
+          `${target.label}（${child}・${target.at}）`, l.operated_at, l.account_id === null ? 'システム' : accountName(l.account_id),
           napCorrectionText(l.before_value), napCorrectionText(l.after_value), napCorrectionReason(l.after_value),
         ],
       });
@@ -3382,13 +3399,10 @@ export const adminApi = {
     if (!a) return fail('アカウントが見つかりません');
     if (a.account_id === user.account_id) return fail('自分のアカウントは停止できません');
     if (status !== '1' && status !== '2') return fail('状態の指定が正しくありません');
-    // 保護者のアカウントは、有効な紐づけがゼロになった時点で停止する（基本設計書 5-3）。
-    // 紐づけが無いまま再開すると、その規則と合わない状態になる（GitHub Issue #118）
-    if (status === '1' && a.role === '3') {
-      const g = db.guardians.find((x) => x.account_id === a.account_id);
-      const active = db.guardianChildren.filter((x) => x.guardian_id === g?.guardian_id && x.link_status === '1').length;
-      if (active === 0) return fail('有効な紐づけが無いため再開できません。先に紐づけを戻してください');
-    }
+    // 保護者アカウントを管理者が手で停止・再開する操作は設けない。止めるときは紐づけの解除、戻すときは紐づけを戻す
+    // （基本設計書「アカウントの停止と再開」(4-3)、図/画面詳細図「保護者アカウント管理画面」(7-8) 項目5「置かない」）。
+    // 職員の停止・再開はこの経路を使うので、経路は残して保護者だけを断る（server/api_admin.go の handleSetAccountStatus と同じ）
+    if (a.role === '3') return fail('保護者のアカウントは手で停止・再開できません。紐づけの解除と、紐づけを戻す操作で行ってください');
     const before = a.status;
     a.status = status;
     a.updated_at = now();
@@ -3633,9 +3647,10 @@ const adminApi2 = {
 
     const remaining = db.guardianChildren.filter((x) => x.guardian_id === guardianId && x.link_status === '1').length;
     const g = db.guardians.find((x) => x.guardian_id === guardianId);
+    let stopped = false;
     if (remaining === 0 && g) {
       const a = findAccount(g.account_id);
-      if (a) { a.status = '2'; a.updated_at = now(); }
+      if (a && a.status === '1') { a.status = '2'; a.updated_at = now(); stopped = true; }
     }
     /*
      * 解除するとその園児の記録を参照できなくなる（画面詳細図 7-8 項目6）。保護者は left_at が入った時点で
@@ -3647,8 +3662,10 @@ const adminApi2 = {
     if (g) leaveRoomsOfChild(g.account_id, guardianId, childId);
 
     // 紐づけの表は数値の主キーを持たない。相手が分かるよう、保護者のアカウントを対象として残す
-    log(user.account_id, '7', '2', 't_guardian_child', g?.account_id ?? null, childId, '有効',
-      remaining === 0 ? '終了（有効な紐づけがゼロのためアカウントを停止）' : '終了');
+    log(user.account_id, '7', '2', 't_guardian_child', g?.account_id ?? null, childId, '有効', '終了');
+    // 有効な紐づけが無くなったことによる停止は、システムが行った変更として、操作者を「システム」で別の行に残す
+    // （基本設計書「操作ログの記録」(4-2)。server/api_admin.go の handleEndGuardianLink と同じ）
+    if (stopped) logSystem('7', '2', 'm_account', g?.account_id ?? null, childId, '有効', '停止（有効な紐づけがゼロになったため）');
     return ok(undefined);
   },
 
@@ -3671,7 +3688,7 @@ const adminApi2 = {
       a.updated_at = now();
       after = '有効（アカウントを再開）';
     }
-    if (a) rejoinRoomsOfChild(a.account_id, childId);
+    if (a) rejoinRoomsOfChild(a.account_id, gc.linked_at, childId);
     log(user.account_id, '7', '2', 't_guardian_child', g?.account_id ?? null, childId, '終了', after);
     return ok(undefined);
   },
@@ -3702,18 +3719,26 @@ function leaveRoomsOfChild(accountId: number, guardianId: string, childId: strin
 }
 
 /**
- * 紐づけを戻した保護者を、その園児の個人チャットとクラスグループへ戻す（left_at を空にする）。
- * 誤って解除したときの戻し先であり、解除の前の状態へ戻す（GitHub Issue #118・#159。server/api_admin.go の rejoinRoomsOfChild）
+ * 紐づけを戻した保護者を、その園児の個人チャット・いまのクラスのクラスグループ・園全体へ戻す。
+ * 誤って解除したときの戻し先であり、解除の前の状態へ戻す（基本設計書「保護者と園児の紐づけを戻す」(4-3)、
+ * GitHub Issue #118・#159・#272。server/api_admin.go の rejoinRoomsOfChild と同じ規則）。
+ * 参加の行があれば left_at を空にする（参加の時刻は、はじめに参加した時刻のまま）。無ければ、紐づけを結んだ時刻で作る
  */
-function rejoinRoomsOfChild(accountId: number, childId: string): void {
-  const classes = classIdsOfChild(childId);
-  const rooms = new Set(db.chatRooms
-    .filter((r) => (r.room_type === '4' && r.child_id === childId)
-      || (r.room_type === '2' && r.class_id !== null && classes.has(r.class_id)))
-    .map((r) => r.chat_room_id));
-  db.chatMembers
-    .filter((m) => m.account_id === accountId && m.left_at !== null && rooms.has(m.chat_room_id))
-    .forEach((m) => { m.left_at = null; });
+function rejoinRoomsOfChild(accountId: number, linkedAt: string, childId: string): void {
+  const joinedAt = linkedAt > now() ? now() : linkedAt;
+  const classes = new Set(db.classChildren
+    .filter((cc) => cc.child_id === childId && db.classes.some((k) => k.class_id === cc.class_id && k.fiscal_year === db.FISCAL_YEAR))
+    .map((cc) => cc.class_id));
+  const rooms = db.chatRooms
+    .filter((r) => !r.is_archived
+      && (r.room_type === '1'
+        || (r.room_type === '4' && r.child_id === childId)
+        || (r.room_type === '2' && r.class_id !== null && classes.has(r.class_id))));
+  for (const r of rooms) {
+    const m = db.chatMembers.find((x) => x.chat_room_id === r.chat_room_id && x.account_id === accountId);
+    if (!m) db.chatMembers.push({ chat_room_id: r.chat_room_id, account_id: accountId, joined_at: joinedAt, left_at: null });
+    else if (m.left_at !== null) m.left_at = null;
+  }
 }
 
 /**
@@ -3874,7 +3899,7 @@ const adminApi3 = {
     if (user.role !== '1') return fail('操作ログの参照は管理者のみが行えます');
     const perPage = settingNumber('paging.operation_log_per_page', 100);
     let rows = db.operationLogs.map((l) => ({
-      ...l, account_name: accountName(l.account_id), child_name: l.target_child_id ? childName(l.target_child_id) : '―',
+      ...l, account_name: l.account_id === null ? 'システム' : accountName(l.account_id), child_name: l.target_child_id ? childName(l.target_child_id) : '―',
       target_label: targetLabel(l.target_table, l.target_id),
     }));
     if (f.from) rows = rows.filter((l) => l.operated_at.slice(0, 10) >= f.from!);

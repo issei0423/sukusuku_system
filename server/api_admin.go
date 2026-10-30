@@ -243,17 +243,12 @@ func (a *app) handleSetAccountStatus(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "アカウントが見つかりません")
 		return
 	}
-	// 保護者のアカウントは、有効な紐づけがゼロになった時点で停止する（基本設計書 5-3）。
-	// 紐づけが無いまま再開すると、その規則と合わない状態になる（GitHub Issue #118）
-	if req.Status == "1" && role == roleGuardian {
-		var active int
-		a.db.QueryRow(`SELECT COUNT(*) FROM t_guardian_child gc
-			JOIN m_guardian g ON g.guardian_id = gc.guardian_id
-			WHERE g.account_id = ? AND gc.link_status = '1'`, id).Scan(&active)
-		if active == 0 {
-			writeErr(w, http.StatusBadRequest, "有効な紐づけが無いため再開できません。先に紐づけを戻してください")
-			return
-		}
+	// 保護者アカウントを管理者が手で停止・再開する操作は設けない。止めるときは紐づけの解除、戻すときは紐づけを戻す
+	// （基本設計書「アカウントの停止と再開」(4-3)、図/画面詳細図「保護者アカウント管理画面」(7-8) 項目5「置かない」）。
+	// 職員の停止・再開（職員アカウント管理画面）はこの経路を使うので、経路は残して保護者だけを断る
+	if role == roleGuardian {
+		writeErr(w, http.StatusBadRequest, "保護者のアカウントは手で停止・再開できません。紐づけの解除と、紐づけを戻す操作で行ってください")
+		return
 	}
 	tx, err := a.db.Begin()
 	if err != nil {
@@ -976,12 +971,14 @@ func (a *app) handleEndGuardianLink(w http.ResponseWriter, r *http.Request) {
 	a.db.QueryRow(`SELECT COUNT(*) FROM t_guardian_child
 		WHERE guardian_id = ? AND link_status = '1'`, req.GuardianID).Scan(&remaining)
 
-	after := "終了"
+	stopped := false
 	if remaining == 0 {
-		a.db.Exec(`UPDATE m_account SET status = '2', updated_at = ?
-			WHERE account_id = (SELECT account_id FROM m_guardian WHERE guardian_id = ?)`,
+		res, _ := a.db.Exec(`UPDATE m_account SET status = '2', updated_at = ?
+			WHERE status = '1' AND account_id = (SELECT account_id FROM m_guardian WHERE guardian_id = ?)`,
 			now(), req.GuardianID)
-		after = "終了（有効な紐づけがゼロのためアカウントを停止）"
+		if n, _ := res.RowsAffected(); n > 0 {
+			stopped = true
+		}
 	}
 
 	/*
@@ -998,7 +995,14 @@ func (a *app) handleEndGuardianLink(w http.ResponseWriter, r *http.Request) {
 
 	// 紐づけの表は数値の主キーを持たない。相手が分かるよう、保護者のアカウントを対象として残す
 	a.log(u.AccountID, fnAccount, opUpdate, "t_guardian_child", accountID,
-		s(req.ChildID), s("有効"), s(after))
+		s(req.ChildID), s("有効"), s("終了"))
+	// 有効な紐づけが無くなったことによる停止は、システムが行った変更として、操作者を「システム」で別の行に残す
+	// （基本設計書「操作ログの記録」(4-2)。解除は管理者の操作、停止はその結果としてシステムが行う）。
+	// 【仮置き】行の分け方と文言は設計に無い（web/仮置き値.md）
+	if stopped {
+		a.logSystem(fnAccount, opUpdate, "m_account", accountID, s(req.ChildID),
+			s("有効"), s("停止（有効な紐づけがゼロになったため）"))
+	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -1022,16 +1026,38 @@ func (a *app) leaveRoomsOfChild(accountID int64, guardianID, childID string) {
 		now(), accountID, childID, guardianID)
 }
 
-// rejoinRoomsOfChild は、紐づけを戻した保護者を、その園児の個人チャットとクラスグループへ戻す（left_at を空にする）。
-// 誤って解除したときの戻し先であり、解除の前の状態へ戻す（GitHub Issue #118・#159）
-func (a *app) rejoinRoomsOfChild(accountID int64, childID string) {
-	a.db.Exec(`UPDATE t_chat_member SET left_at = NULL
-		 WHERE account_id = ? AND left_at IS NOT NULL
-		   AND chat_room_id IN (
-		     SELECT chat_room_id FROM m_chat_room
-		      WHERE (room_type = '4' AND child_id = ?)
-		         OR (room_type = '2' AND class_id IN (SELECT class_id FROM t_class_child WHERE child_id = ?)))`,
-		accountID, childID, childID)
+// rejoinRoomsOfChild は、紐づけを戻した保護者を、その園児の個人チャット・いまのクラスのクラスグループ・園全体へ戻す。
+// 誤って解除したときの戻し先であり、解除の前の状態へ戻す（基本設計書「保護者と園児の紐づけを戻す」(4-3)、GitHub Issue #118・#159・#272）。
+//   - 参加の行があれば、left_at を空にする。参加の時刻は、はじめに参加した時刻のまま（joined_at を変えない）
+//   - 参加の行が無ければ（デモデータの初期の形や、行を作らずに終えた紐づけ）、作る。参加の時刻は紐づけを結んだ時刻
+//     （linked_at）とする。解除の前に読めていた範囲を、戻したあとも読めるようにするため
+//
+// 【仮置き】園全体も、行が無い・抜けているときは戻す（解除では抜けないが、参加の行が無い保護者がいる）。web/仮置き値.md
+func (a *app) rejoinRoomsOfChild(accountID int64, guardianID, childID string) {
+	var linkedAt string
+	if a.db.QueryRow(`SELECT linked_at FROM t_guardian_child WHERE guardian_id = ? AND child_id = ?`,
+		guardianID, childID).Scan(&linkedAt) != nil || linkedAt > now() {
+		linkedAt = now()
+	}
+	rooms, err := queryIDs(a.db, `SELECT r.chat_room_id FROM m_chat_room r
+		WHERE r.is_archived = 0
+		  AND (r.room_type = '1'
+		       OR (r.room_type = '4' AND r.child_id = ?)
+		       OR (r.room_type = '2' AND r.class_id IN (
+		             SELECT cc.class_id FROM t_class_child cc
+		               JOIN m_class c ON c.class_id = cc.class_id AND c.fiscal_year = ?
+		              WHERE cc.child_id = ?)))
+		ORDER BY r.chat_room_id`, childID, fiscalYear, childID)
+	if err != nil {
+		log.Printf("紐づけを戻した保護者の参加ルームを引けませんでした: %v", err)
+		return
+	}
+	for _, roomID := range rooms {
+		a.db.Exec(`INSERT INTO t_chat_member (chat_room_id, account_id, joined_at, left_at)
+			VALUES (?, ?, ?, NULL)
+			ON CONFLICT(chat_room_id, account_id) DO UPDATE SET left_at = NULL
+			WHERE t_chat_member.left_at IS NOT NULL`, roomID, accountID, linkedAt)
+	}
 }
 
 func (a *app) guardianAccountID(guardianID string) *int64 {
@@ -1078,7 +1104,7 @@ func (a *app) handleRestoreGuardianLink(w http.ResponseWriter, r *http.Request) 
 			a.db.Exec(`UPDATE m_account SET status = '1', updated_at = ? WHERE account_id = ?`, now(), *accountID)
 			after = "有効（アカウントを再開）"
 		}
-		a.rejoinRoomsOfChild(*accountID, req.ChildID)
+		a.rejoinRoomsOfChild(*accountID, req.GuardianID, req.ChildID)
 	}
 	a.log(u.AccountID, fnAccount, opUpdate, "t_guardian_child", accountID, s(req.ChildID), s("終了"), s(after))
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

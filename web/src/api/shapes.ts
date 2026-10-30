@@ -344,7 +344,9 @@ export interface InvitationCodeRow {
 
 export interface OperationLogRow {
   operation_log_id: number;
-  account_id: number;
+  /** システムが行った変更（operator_type '2'）は null（server/api_audit.go の operationLogRow） */
+  account_id: number | null;
+  operator_type?: '1' | '2';
   operated_at: string;
   function_type: FunctionType;
   operation_type: OperationType;
