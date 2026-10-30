@@ -18,7 +18,7 @@ import { notify } from '../../components/feedback';
 import { HANDOUT_TYPE } from '../../api/codes';
 import { formatFileSize, formatMonth, formatMDHM, today } from '../../api/util';
 import type { Handout } from '../../api/types';
-import { BackIcon, AddIcon, CloseIcon, SendIcon, UndoIcon } from '../../components/icons';
+import { BackIcon, AddIcon, CloseIcon, UndoIcon } from '../../components/icons';
 
 export default function StaffHandoutsScreen() {
   const { user } = useSession();
@@ -146,7 +146,7 @@ export default function StaffHandoutsScreen() {
         <Modal title="配布物の掲載" onClose={() => setFormOpen(false)}
           footer={<>
             <button onClick={() => setFormOpen(false)} disabled={busy}><CloseIcon />やめる</button>
-            <button className="btn-primary" onClick={post} disabled={busy || !fTitle.trim() || !file}><SendIcon />掲載する</button>
+            <button className="btn-primary" onClick={post} disabled={busy || !fTitle.trim() || !file}><AddIcon />掲載する</button>
           </>}>
           <div className="stack">
             {formError && <Alert>{formError}</Alert>}

@@ -181,7 +181,7 @@ export const ConfirmIcon = () => <MaterialSymbol name="check" />;
 export const ReturnIcon = () => <MaterialSymbol name="reply" />;
 /** 取り消す */
 export const UndoIcon = () => <MaterialSymbol name="undo" />;
-/** 追加・新しく作る */
+/** 追加・新しく作る・発行する・（配布物を）掲載する。入口のボタンと、ダイアログの確定のボタンで同じ絵にする */
 export const AddIcon = () => <MaterialSymbol name="add" />;
 /** 編集・直す */
 export const EditIcon = () => <MaterialSymbol name="edit" />;
