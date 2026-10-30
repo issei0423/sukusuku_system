@@ -124,6 +124,8 @@ runner を登録し直す（`config.sh`）ときは、`.env` に行を足すこ�
 - 作り直しが鍵を持っている数十秒のあいだに本線へ push されると、反映は「別のデプロイが進行中です」で赤になる（反映の鍵は待たない `flock -n`）。そのときは Actions で実行し直す
 - 手元での確かめ：`bash deploy/oci-free/sukusuku-demo-reset.test.sh`（一時フォルダと偽物の systemctl・flock・mv で6つの場合を見る）
 
+seed.sql が変わったマージの反映でも、サーバは起動時に、いまの seed と違う seed で作られたデモの DB を `sukusuku.db.stale-<UTC の日時>` へ退けて作り直す（`server/db.go` の `openDB`。2026-10-30、seed の名前の入れ替えが公開先に届かずログインできなかった件の手当て）。退けた DB は新しい3つだけ残る。作り直しの timer を置いていなくても効くが、作り直すのは seed が変わったときだけで、日付はそのときの日のままになる。
+
 自動デプロイは、この3つを VM に置かない（runner の sudo は反映のコマンドだけ）。**最初の1回だけ、持ち主が Bastion のセッションで置く。** 本線を取り出した所（runner の作業場所の `deploy/oci-free/`）か、手元から写したファイルで行う。
 
 ```

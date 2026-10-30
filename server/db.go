@@ -4,8 +4,11 @@ import (
 	"database/sql"
 	_ "embed"
 	"fmt"
+	"hash/fnv"
 	"log"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -19,6 +22,12 @@ var schemaSQL string
 var seedSQL string
 
 // openDB はデータベースを開き、無ければスキーマを作成してデモデータを投入する。
+//
+// 【仮置き】既にあるデータベースが、いま埋め込んでいる seed と違う seed で作られたデモの DB なら、
+// 脇へ退けて作り直す（reseedStaleDemoDB。設計に無い動き。web/仮置き値.md「デモの DB の作り直し」）。
+// 2026-10-30、seed.sql でデモアカウントの名前を入れ替えたのに、公開先の DB は「無いときだけ作る」ため
+// 古い seed のまま残り、いまのデモアカウントでログインできなかった。本当の園の DB（メールアドレスが
+// example.jp で終わるアカウントが1つも無い DB）は作り直さない。
 //
 // ドライバは modernc.org/sqlite（純 Go）を使う。cgo を必要とする mattn/go-sqlite3 は
 // gcc の無い環境でビルドできないため（server/README.md）。
@@ -35,6 +44,23 @@ func openDB(path string) (*sql.DB, error) {
 
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("データベースへ接続できません: %w", err)
+	}
+
+	if !fresh {
+		stale, err := isStaleDemoDB(db)
+		if err != nil {
+			db.Close()
+			return nil, err
+		}
+		if stale {
+			db.Close()
+			moved, err := moveAsideStaleDB(path, time.Now())
+			if err != nil {
+				return nil, err
+			}
+			log.Printf("デモの DB が古い seed で作られていたため、%s へ退けて作り直します", moved)
+			return openDB(path)
+		}
 	}
 
 	if fresh {
@@ -57,6 +83,10 @@ func openDB(path string) (*sql.DB, error) {
 		}
 		if err := capFutureDemoDiaryTimes(db, today(), now()); err != nil {
 			return nil, err
+		}
+		// どの seed で作ったかの印。次の起動で seed が変わっていないかを見る（isStaleDemoDB）
+		if _, err := db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, seedFingerprint())); err != nil {
+			return nil, fmt.Errorf("seed の指紋を書けません: %w", err)
 		}
 		log.Printf("デモデータを投入しました")
 	}
@@ -106,6 +136,113 @@ func openDB(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("日誌を園内の記録の形へ移せません: %w", err)
 	}
 	return db, nil
+}
+
+// seedFingerprint は、埋め込んだ seed.sql の指紋（正の 31 ビットの整数。0 にしない）を返す。
+// 改行を LF にそろえてから計算するので、Windows の checkout（CRLF）と VM（LF）で値が変わらない。
+func seedFingerprint() int {
+	return fingerprintOf(seedSQL)
+}
+
+func fingerprintOf(s string) int {
+	h := fnv.New32a()
+	h.Write([]byte(strings.ReplaceAll(s, "\r\n", "\n")))
+	v := int(h.Sum32() & 0x7fffffff)
+	if v == 0 {
+		v = 1
+	}
+	return v
+}
+
+// isStaleDemoDB は、開いた既存の DB が「いまと違う seed で作られたデモの DB」かを返す。
+// デモの DB の目安は、メールアドレスが @hoiku.example.jp か @example.jp で終わるアカウントがあること
+// （seed のアカウントはすべてこの形。本当の園の DB では example.jp を使わない）。
+// デモの DB でなければ、user_version も書かず、今までどおり開く。
+func isStaleDemoDB(db *sql.DB) (bool, error) {
+	var version int
+	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
+		return false, fmt.Errorf("seed の指紋を読めません: %w", err)
+	}
+	if version == seedFingerprint() {
+		return false, nil
+	}
+	var demo int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM m_account
+		WHERE lower(email) LIKE '%@hoiku.example.jp' OR lower(email) LIKE '%@example.jp'`).Scan(&demo); err != nil {
+		// アカウントの表が読めない DB（空のファイルなど）は、作り直さずに今までどおり扱う
+		return false, nil
+	}
+	if demo == 0 {
+		log.Printf("データベースの seed の指紋（%d）がいまと違いますが、デモの DB ではないため作り直しません", version)
+		return false, nil
+	}
+	return true, nil
+}
+
+// staleKeep は、退けた DB を残す数（新しいものから）【仮置き】
+const staleKeep = 3
+
+var dbSideSuffixes = []string{"", "-wal", "-shm", "-journal"}
+
+// moveAsideStaleDB は、DB（と -wal・-shm・-journal）を <path>.stale-<UTC の日時> へ名前を変えて退け、
+// 退けた先（-wal などを除く）を返す。退けた DB は新しいものから staleKeep 個だけ残す。
+// 添付ファイルの置き場（-files）は触らない。
+func moveAsideStaleDB(path string, at time.Time) (string, error) {
+	at = at.UTC()
+	target := path + ".stale-" + at.Format("20060102T150405Z")
+	for { // 同じ秒に2回退けたときは、秒を進めて重ならないようにする
+		if _, err := os.Lstat(target); os.IsNotExist(err) {
+			break
+		}
+		at = at.Add(time.Second)
+		target = path + ".stale-" + at.Format("20060102T150405Z")
+	}
+	var moved []string
+	for _, suf := range dbSideSuffixes {
+		if _, err := os.Lstat(path + suf); err != nil {
+			continue
+		}
+		if err := os.Rename(path+suf, target+suf); err != nil {
+			for _, m := range moved { // 途中で失敗したら戻す
+				os.Rename(target+m, path+m)
+			}
+			return "", fmt.Errorf("古いデモの DB を退けられません: %w", err)
+		}
+		moved = append(moved, suf)
+	}
+	pruneStaleDBs(path)
+	return target, nil
+}
+
+// pruneStaleDBs は、退けた DB（<path>.stale-<日時>）を新しいものから staleKeep 個だけ残し、古いものを
+// 添えもの（-wal など）ごと消す。日時は UTC の固定幅なので、名前の並びが時刻の並びになる。
+func pruneStaleDBs(path string) {
+	dir, base := filepath.Split(path)
+	if dir == "" {
+		dir = "."
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		log.Printf("退けた DB の一覧を読めません: %v", err)
+		return
+	}
+	prefix := base + ".stale-"
+	var names []string
+	for _, e := range entries {
+		n := e.Name()
+		// 日時の部分が 20060102T150405Z の16文字のものだけを数える（-wal などの添えものは含めない）
+		if strings.HasPrefix(n, prefix) && len(n) == len(prefix)+16 {
+			names = append(names, n)
+		}
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(names)))
+	for i := staleKeep; i < len(names); i++ {
+		for _, suf := range dbSideSuffixes {
+			if err := os.Remove(filepath.Join(dir, names[i]+suf)); err != nil && !os.IsNotExist(err) {
+				log.Printf("古い退けた DB を消せません: %v", err)
+			}
+		}
+	}
 }
 
 // ensureChatMemberFirstJoined は、参加の行に最初に参加した日時の列（t_chat_member.first_joined_at）を足す。
