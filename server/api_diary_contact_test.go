@@ -118,6 +118,64 @@ func TestDiaryLinesNeedAccess(t *testing.T) {
 	}
 }
 
+// 共有する個人日誌の注意のために、保護者の連絡帳に出していない項目の名前を返す（照合 c2b-2 の推し。【仮置き】web/仮置き値.md）。
+// きょうのようすから入れる行の hidden_items と、日誌を1件読んだときの、本文に入っている行の hidden_contact_items。
+// 判定して本文を変えることはしない。モックは web/tests/diaryContact.test.ts
+func TestDiaryHiddenContactItems(t *testing.T) {
+	a, h := newTestApp(t)
+	teacher := loginAs(a, 3, "staff")
+	day := today()
+	addMeal(t, a, day, day+"T11:40:00", "1", "3", false, nil, day+"T11:40:00")
+	addNap(t, a, day, day+"T13:05:00", day+"T14:40:00", false, nil, day+"T14:40:00")
+	hiddenLines := func() []string {
+		t.Helper()
+		var got struct {
+			Hidden []string `json:"hidden_items"`
+		}
+		decode(t, call(t, h, teacher, "GET", "/api/contact/children/C004/diary-lines?date="+day, ""), &got)
+		return got.Hidden
+	}
+	hiddenOfDiary := func(id int64) []string {
+		t.Helper()
+		var d struct {
+			Hidden []string `json:"hidden_contact_items"`
+		}
+		decode(t, call(t, h, teacher, "GET", "/api/diaries/"+itoa(id), ""), &d)
+		return d.Hidden
+	}
+
+	// 全部を保護者へ出す設定では、何も挙げない
+	if got := hiddenLines(); got == nil || len(got) != 0 {
+		t.Fatalf("全部出す設定で hidden_items = %v（空の並びのはず）", got)
+	}
+	withMeal := diaryIDFrom(t, call(t, h, teacher, "POST", "/api/diaries", personalDiary(0, "C004", "1", day, "11:40 給食 少し", "1")))
+	if got := hiddenOfDiary(withMeal); len(got) != 0 {
+		t.Fatalf("全部出す設定で hidden_contact_items = %v", got)
+	}
+
+	// 食事を保護者へ出さない設定にする
+	if _, err := a.db.Exec(`UPDATE m_setting SET setting_value = 'nap,toilet,temperature,comment,photo,class' WHERE setting_key = 'contact.show_items'`); err != nil {
+		t.Fatal(err)
+	}
+	if got := hiddenLines(); strings.Join(got, ",") != "食事" {
+		t.Fatalf("hidden_items = %v（食事だけのはず）", got)
+	}
+	// 本文に食事の行が入っていれば挙げる。午睡の行だけなら挙げない
+	if got := hiddenOfDiary(withMeal); strings.Join(got, ",") != "食事" {
+		t.Fatalf("食事の行がある日誌の hidden_contact_items = %v", got)
+	}
+	napOnly := diaryIDFrom(t, call(t, h, teacher, "POST", "/api/diaries", personalDiary(0, "C004", "1", day, "13:05〜14:40 午睡（1時間35分）", "1")))
+	if got := hiddenOfDiary(napOnly); len(got) != 0 {
+		t.Fatalf("午睡の行だけの日誌の hidden_contact_items = %v", got)
+	}
+	// 本文は書き換えない
+	var body string
+	a.db.QueryRow(`SELECT body FROM t_diary WHERE diary_id = ?`, withMeal).Scan(&body)
+	if body != "11:40 給食 少し" {
+		t.Fatalf("本文が変わっています: %q", body)
+	}
+}
+
 // 取り込んだあとに連絡帳で訂正・取り消しされた記録は、日誌を作ったあとのものだけを返す
 func TestDiaryContactChangesOnlyAfterCreation(t *testing.T) {
 	a, h := newTestApp(t)

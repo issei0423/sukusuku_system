@@ -1170,7 +1170,9 @@ export const diaryApi = {
     // 保護者には、どの日誌も返さない。無い日誌・他児の日誌・承認済みの自児の日誌を同じ文言にする（詳細設計書「日誌」(4-13)）
     if (user.role === '3' || !d || !canSeeDiary(user, d)) return fail(DIARY_FORBIDDEN_MESSAGE);
     // 作成した職員・申請した職員・承認した職員の氏名を載せる（承認の経緯。詳細設計書「日誌」(4-13 (6))）
-    return ok({ ...withDiaryNames(d), contact_changes: diaryContactChanges(d) });
+    // 本文に入っている、保護者の連絡帳に出していない項目の名前（【仮置き】照合 c2b-2。server/api_diary.go の handleGetDiary）
+    const hidden = hiddenContactItemsOfDiary(d);
+    return ok({ ...withDiaryNames(d), contact_changes: diaryContactChanges(d), ...(hidden.length ? { hidden_contact_items: hidden } : {}) });
   },
 
   async templates(): Promise<typeof db.diaryTemplates> { return ok(db.diaryTemplates); },
@@ -4982,6 +4984,50 @@ function napDurationText(minutes: number): string {
   return minutes % 60 === 0 ? `${minutes / 60}時間` : `${Math.floor(minutes / 60)}時間${minutes % 60}分`;
 }
 
+/** きょうのようすから入れる1行。item は保護者へ出す項目（contact.show_items）の名前 */
+type DiaryLineRow = { at: string; text: string; item: 'meal' | 'nap' };
+
+/** その園児・その日のきょうのようすから入れる行（時刻の順。server/api_diary_contact.go の diaryLinesOf と同じ） */
+function diaryLineRows(childId: string, d: string): DiaryLineRow[] {
+  const lines: DiaryLineRow[] = [];
+  for (const e of db.contactEvents) {
+    if (e.child_id !== childId || e.contact_date !== d || e.event_type !== '1' || e.is_deleted) continue;
+    lines.push({ at: e.recorded_at, item: 'meal', text: `${e.recorded_at.slice(11, 16)} ${MEAL_KIND_TEXT[e.meal_kind ?? '1']} ${MEAL_AMOUNT_TEXT[e.meal_amount ?? '1']}` });
+  }
+  for (const n of db.napSleeps) {
+    if (n.child_id !== childId || n.is_deleted) continue;
+    if (db.napSessions.find((x) => x.nap_session_id === n.nap_session_id)?.session_date !== d) continue;
+    const from = n.slept_at.slice(11, 16);
+    lines.push(n.woke_at
+      ? { at: n.slept_at, item: 'nap', text: `${from}〜${n.woke_at.slice(11, 16)} 午睡（${napDurationText(Math.floor((jstMs(n.woke_at) - jstMs(n.slept_at)) / 60000))}）` }
+      : { at: n.slept_at, item: 'nap', text: `${from} 午睡（おきたは記録されていません）` });
+  }
+  lines.sort((a, b) => a.at.localeCompare(b.at));
+  return lines;
+}
+
+/** きょうのようすから入れる項目の、画面での名前（設定画面の「保護者へ出す項目」と同じ名前）。並びは注意に出す順 */
+const DIARY_CONTACT_ITEM_LABELS: { item: DiaryLineRow['item']; label: string }[] = [{ item: 'nap', label: '午睡' }, { item: 'meal', label: '食事' }];
+
+/**
+ * きょうのようすから入れる行のうち、保護者へ出さない設定（contact.show_items）の項目の名前。
+ * body を渡せば、その本文に入っている行だけを数える（取り込んだあとに書き換えた・消した行は数えない）。
+ * 共有を選んだ個人日誌の注意に使う。判定して消すことはしない（消すかは人が決める。基本設計書の設計原則1）。
+ * 【仮置き】照合 c2b-2 の推し（web/仮置き値.md）。server/api_diary_contact.go の hiddenContactItems と同じ
+ */
+function hiddenContactItems(lines: DiaryLineRow[], body?: string): string[] {
+  return DIARY_CONTACT_ITEM_LABELS
+    .filter((it) => !guardianSeesItem(it.item)
+      && lines.some((l) => l.item === it.item && (body === undefined || body.includes(l.text))))
+    .map((it) => it.label);
+}
+
+/** 個人日誌の本文に入っている、保護者へ出さない設定の項目の名前（server/api_diary_contact.go の hiddenContactItemsOfDiary） */
+function hiddenContactItemsOfDiary(d: Diary): string[] {
+  if (d.record_type !== '1' || !d.child_id) return [];
+  return hiddenContactItems(diaryLineRows(d.child_id, d.diary_date), d.body);
+}
+
 const contactApi = {
   /**
    * きょうのようすから入れる行（GET /api/contact/children/{childID}/diary-lines?date=）。
@@ -4989,26 +5035,14 @@ const contactApi = {
    * 保護者へ出さない設定の項目も入れる（日誌は園内の記録）。入眠時の体温・5分ごとの確認・対象外は入れない
    * （詳細設計書「日誌」(4-13 (8))。サーバ側は server/api_diary_contact.go の diaryLinesOf）
    */
-  async diaryLines(user: SessionUser, childId: string, date?: string): Promise<{ lines: string[] }> {
+  async diaryLines(user: SessionUser, childId: string, date?: string): Promise<{ lines: string[]; hidden_items: string[] }> {
     if (user.role === '3') return fail(DIARY_FORBIDDEN_MESSAGE);
     if (!contactAccess(user, childId).read) return fail(MSG.contactForbidden);
     const d = contactDate(date);
     if (d === null) return fail(MSG.contactBadDate);
-    const lines: { at: string; text: string }[] = [];
-    for (const e of db.contactEvents) {
-      if (e.child_id !== childId || e.contact_date !== d || e.event_type !== '1' || e.is_deleted) continue;
-      lines.push({ at: e.recorded_at, text: `${e.recorded_at.slice(11, 16)} ${MEAL_KIND_TEXT[e.meal_kind ?? '1']} ${MEAL_AMOUNT_TEXT[e.meal_amount ?? '1']}` });
-    }
-    for (const n of db.napSleeps) {
-      if (n.child_id !== childId || n.is_deleted) continue;
-      if (db.napSessions.find((x) => x.nap_session_id === n.nap_session_id)?.session_date !== d) continue;
-      const from = n.slept_at.slice(11, 16);
-      lines.push(n.woke_at
-        ? { at: n.slept_at, text: `${from}〜${n.woke_at.slice(11, 16)} 午睡（${napDurationText(Math.floor((jstMs(n.woke_at) - jstMs(n.slept_at)) / 60000))}）` }
-        : { at: n.slept_at, text: `${from} 午睡（おきたは記録されていません）` });
-    }
-    lines.sort((a, b) => a.at.localeCompare(b.at));
-    return ok({ lines: lines.map((l) => l.text) });
+    const lines = diaryLineRows(childId, d);
+    // hidden_items：入れる行のうち、保護者の連絡帳に出していない項目の名前（共有する日誌の注意に使う。【仮置き】照合 c2b-2）
+    return ok({ lines: lines.map((l) => l.text), hidden_items: hiddenContactItems(lines) });
   },
 
   /** 連絡帳の1ページ（GET /api/contact/children/{childID}） */

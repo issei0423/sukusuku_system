@@ -87,6 +87,37 @@ describe('取り込んだあとの訂正・取り消しの表示（詳細設計�
   });
 });
 
+/*
+ * 共有する個人日誌の注意のために、保護者の連絡帳に出していない項目の名前を返す（照合 c2b-2 の推し。【仮置き】web/仮置き値.md）。
+ * 入れる行の hidden_items と、日誌を1件読んだときの、本文に入っている行の hidden_contact_items。
+ * server/api_diary_contact_test.go の TestDiaryHiddenContactItems と同じ確かめ
+ */
+describe('保護者の連絡帳に出していない項目（共有する日誌の注意）', () => {
+  it('入れる行と、本文に入っている行から、保護者へ出さない設定の項目の名前を返す。本文は変えない', async () => {
+    const day = '2026-01-07';
+    addMeal(day, `${day}T11:40:00`, '1', '3');
+    addNap(day, `${day}T13:05:00`, `${day}T14:40:00`);
+    const setting = db.settings.find((s) => s.setting_key === 'contact.show_items')!;
+    const saved = setting.setting_value;
+    try {
+      // 全部を保護者へ出す設定では、何も挙げない
+      expect((await api.diaryLines(teacher, 'C004', day)).hidden_items).toEqual([]);
+      const withMeal = await api.saveDiary(teacher, { record_type: '1', child_id: 'C004', class_id: 1, diary_date: day, body: '11:40 給食 少し' }, '1');
+      expect((await api.getDiary(teacher, withMeal.diary_id)).hidden_contact_items).toBeUndefined();
+
+      // 食事を保護者へ出さない設定にする
+      setting.setting_value = 'nap,toilet,temperature,comment,photo,class';
+      expect((await api.diaryLines(teacher, 'C004', day)).hidden_items).toEqual(['食事']);
+      expect((await api.getDiary(teacher, withMeal.diary_id)).hidden_contact_items).toEqual(['食事']);
+      const napOnly = await api.saveDiary(teacher, { record_type: '1', child_id: 'C004', class_id: 1, diary_date: day, body: '13:05〜14:40 午睡（1時間35分）' }, '1');
+      expect((await api.getDiary(teacher, napOnly.diary_id)).hidden_contact_items).toBeUndefined();
+      expect((await api.getDiary(teacher, withMeal.diary_id)).body).toBe('11:40 給食 少し');
+    } finally {
+      setting.setting_value = saved;
+    }
+  });
+});
+
 describe('日誌一覧の園児名・キーワードの絞り込み（図/画面詳細図「日誌一覧画面」(3-1) 項目10・11）', () => {
   it('園児名は名前・よみ・空白なし、キーワードは本文に当たる', async () => {
     const day = today();

@@ -47,6 +47,9 @@ type Diary struct {
 	// 取り込んだあとに連絡帳で訂正・取り消しされた記録。個人日誌を1件読むときだけ（詳細設計書「日誌」(4-13 (6))。
 	// api_diary_contact.go）。無ければ出さない
 	ContactChanges []DiaryContactChange `json:"contact_changes,omitempty"`
+	// 本文に入っている、保護者の連絡帳に出していない項目の名前（きょうのようすから入れた行。個人日誌を1件読むときだけ。
+	// api_diary_contact.go の hiddenContactItemsOfDiary。【仮置き】照合 c2b-2）。無ければ出さない
+	HiddenContactItems []string `json:"hidden_contact_items,omitempty"`
 }
 
 const diaryColumns = `diary_id, record_type, child_id, class_id, diary_date, body, status,
@@ -278,6 +281,7 @@ func (a *app) handleGetDiary(w http.ResponseWriter, r *http.Request) {
 	if changes, err := a.contactChangesOf(d); err == nil {
 		d.ContactChanges = changes
 	}
+	d.HiddenContactItems = a.hiddenContactItemsOfDiary(d)
 	writeJSON(w, http.StatusOK, d)
 }
 
