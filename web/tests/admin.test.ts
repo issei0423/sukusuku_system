@@ -111,9 +111,15 @@ describe('職員アカウント', () => {
 });
 
 describe('保護者アカウントと紐づけ', () => {
-  it('有効な紐づけが無い保護者アカウントは再開できない', async () => {
-    // 鈴木 浩之（アカウント8・G003）は、紐づけが終了して停止している
-    await expect(api.setAccountStatus(admin, 8, '1')).rejects.toThrow('有効な紐づけが無いため再開できません');
+  /*
+   * 保護者アカウントを管理者が手で停止・再開する操作は設けない（基本設計書「アカウントの停止と再開」(4-3)、
+   * 図/画面詳細図「保護者アカウント管理画面」(7-8) 項目5「置かない」。GitHub Issue #272 の 1）。職員の停止・再開は使える
+   */
+  it('保護者のアカウントは、手で停止も再開もできない', async () => {
+    // 村田 真一（アカウント9）は有効、鈴木 浩之（アカウント8・G003）は紐づけが終了して停止している
+    await expect(api.setAccountStatus(admin, 9, '2')).rejects.toThrow('手で停止・再開できません');
+    await expect(api.setAccountStatus(admin, 8, '1')).rejects.toThrow('手で停止・再開できません');
+    expect(db.accounts.find((a) => a.account_id === 9)?.status).toBe('1');
     expect(db.accounts.find((a) => a.account_id === 8)?.status).toBe('2');
   });
 
@@ -131,12 +137,63 @@ describe('保護者アカウントと紐づけ', () => {
     expect(row?.child_name).toBe('鈴木 健');
   });
 
+  /*
+   * 紐づけを戻したら、その園児の個人チャット・クラスグループ・園全体の参加が戻る（基本設計書「保護者と園児の紐づけを戻す」(4-3)。
+   * GitHub Issue #272 の 2）。デモデータの鈴木 浩之は、紐づけが終わっているうえ、園全体のほかに参加の行が無い
+   */
+  it('参加の行が無かった保護者も、紐づけを戻すと個人チャット・クラスグループ・園全体に入っている', async () => {
+    const joined = () => db.chatMembers.filter((m) => m.account_id === 8 && m.left_at === null).map((m) => m.chat_room_id);
+    const personal = db.chatRooms.find((r) => r.room_type === '4' && r.child_id === 'C003')!.chat_room_id;
+    const classGroup = db.chatRooms.find((r) => r.room_type === '2' && r.class_id === 1)!.chat_room_id;
+    // 前の it（紐づけを戻す）で戻っている。ここでは、戻したあとの状態を確かめる
+    expect(joined()).toEqual(expect.arrayContaining([1, personal, classGroup]));
+    const guardian: SessionUser = {
+      account_id: 8, email: 'suzuki.h@example.jp', role: '3', display_name: '鈴木 浩之',
+      staff_id: null, guardian_id: 'G003', class_id: null, class_name: null,
+      is_temp_password: false, terms_agreed: true,
+    };
+    const rooms = await api.rooms(guardian);
+    expect(rooms.map((r) => r.room.chat_room_id)).toEqual(expect.arrayContaining([1, personal, classGroup]));
+    await expect(api.send(guardian, personal, 'ありがとうございます。')).resolves.toBeDefined();
+  });
+
   it('紐づけを解除した操作ログにも、保護者の名前が残る', async () => {
     await api.endGuardianLink(admin, 'G003', 'C003');
     const logs = await api.operationLogs(admin, {});
     const row = logs.rows.find((l) => l.target_table === 't_guardian_child' && l.before_value === '有効');
     expect(row?.target_label).toBe('鈴木 浩之');
     expect(db.accounts.find((a) => a.account_id === 8)?.status).toBe('2');
+  });
+
+  /*
+   * 有効な紐づけが無くなったことによる停止は、システムが行った変更として、操作者を「システム」で残す
+   * （基本設計書「操作ログの記録」(4-2)・「操作ログ（t_operation_log）」(5-9)。GitHub Issue #312 の 3）。
+   * 解除の行は、解除した管理者の操作のまま残る
+   */
+  it('最後の紐づけの解除による停止は、操作者「システム」の行で残り、解除の行は管理者のまま', async () => {
+    await api.restoreGuardianLink(admin, 'G003', 'C003');
+    await api.endGuardianLink(admin, 'G003', 'C003');
+    const logs = (await api.operationLogs(admin, {})).rows.filter((l) => l.target_id === 8 && l.target_child_id === 'C003');
+    const ended = logs.find((l) => l.target_table === 't_guardian_child' && l.before_value === '有効');
+    expect(ended?.account_name).toBe('西田 拓也');
+    expect(ended?.after_value).toBe('終了');
+    const stop = logs.find((l) => l.target_table === 'm_account' && l.after_value?.startsWith('停止'));
+    expect(stop?.account_name).toBe('システム');
+    expect(stop?.account_id).toBeNull();
+    expect(stop?.operator_type).toBe('2');
+    expect(stop?.target_label).toBe('鈴木 浩之');
+  });
+
+  it('ほかに有効な紐づけが残る解除では、停止の行は出ない', async () => {
+    const stops = () => db.operationLogs.filter((l) => l.operator_type === '2').length;
+    const before = stops();
+    // G001 は C001 の1本だけなので、もう1本つないでから解除する
+    db.guardianChildren.push({
+      guardian_id: 'G001', child_id: 'C006', relationship: '父', link_status: '1', linked_at: '2026-09-01T10:00:00', ended_at: null,
+    });
+    await api.endGuardianLink(admin, 'G001', 'C006');
+    expect(db.accounts.find((a) => a.account_id === 6)?.status).toBe('1');
+    expect(stops()).toBe(before);
   });
 });
 

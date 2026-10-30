@@ -332,6 +332,18 @@ export default function InvitationCodesScreen() {
                 <div className="muted" style={{ marginTop: 8 }}>
                   有効期限：{formatYMD(r.expires_on)}　／　このコードは1名分の登録にのみ使えます
                 </div>
+                {/* 登録の手順。園児ごとに切り分けて手渡すので、1枚ごとに載せる。順は新規登録画面の並びに合わせる。
+                    典拠：要件定義書「招待コードの一括発行・配布用出力」(4-1-2)「配布用の一覧（園児名・コード・有効期限・登録手順）」。
+                    【仮置き】手順の文面は設計に無い（web/仮置き値.md） */}
+                <div style={{ marginTop: 8, fontSize: '0.8125rem' }}>
+                  <div style={{ fontWeight: 700 }}>登録の手順</div>
+                  <ol style={{ margin: '4px 0 0', paddingLeft: '1.4em' }}>
+                    <li>保護者用のログイン画面（{window.location.origin}）を開き、「招待コードで新規登録」を押す</li>
+                    <li>上の招待コードを入れて「コードを確認する」を押す</li>
+                    <li>利用規約を読み、同意にチェックを入れる</li>
+                    <li>保護者の氏名・続柄・メールアドレス・パスワードを入れて「登録する」を押す</li>
+                  </ol>
+                </div>
               </div>
             ))}
             {printable.length === 0 && (

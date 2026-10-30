@@ -47,6 +47,27 @@ func (a *app) log(accountID int64, functionType, operationType, table string,
 	}
 }
 
+/*
+logSystem は、システムが行った変更を、操作者を「システム」（operator_type = '2'、account_id は空）として記録する
+（基本設計書「操作ログの記録」(4-2)「有効な紐づけが無くなったことによる保護者アカウントの停止は、操作者を『システム』として記録する」、
+「操作ログ（t_operation_log）」(5-9) operator_type）。
+仮の「システム」アカウントを m_account に作る方式は採らない（同 (5-9)）。参照の画面は、種類が 2 の行の操作者を「システム」と出す。
+*/
+func (a *app) logSystem(functionType, operationType, table string,
+	targetID *int64, childID *string, before, after *string) {
+	_, err := a.db.Exec(`INSERT INTO t_operation_log
+		(account_id, operated_at, function_type, operation_type, target_table, target_id,
+		 target_child_id, before_value, after_value, operator_type)
+		VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, '2')`,
+		now(), functionType, operationType, table, targetID, childID, before, after)
+	if err != nil {
+		log.Printf("操作ログ（システム）の記録に失敗しました（%s/%s %s）: %v", functionType, operationType, table, err)
+	}
+}
+
+// systemOperatorName は、操作者の種類が「システム」の行に出す操作者の名前
+const systemOperatorName = "システム"
+
 func i64(v int64) *int64 { return &v }
 func s(v string) *string { return &v }
 
