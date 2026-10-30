@@ -87,7 +87,7 @@ describe('日誌', () => {
     // 日誌 7 は村田 美咲（C004）の個人日誌（申請中）。日誌の知らせは保護者へ送らない
     // （詳細設計書「PR #196 からの変更」(6-1)・「日誌」(4-13 (2))）
     const misakiGot = watch(misakiGuardian);
-    const approved = { ...(await api.approveDiary(admin, 7)) };
+    const approved = { ...(await api.approveDiary(admin, 7, db.diaries.find((x) => x.diary_id === 7)!.updated_at)) };
     expect(misakiGot).toEqual([]);
 
     // 承認の取り消しも、保護者には知らせず、職員にだけ知らせる（このタブは1人ずつしか見張れない）
@@ -100,7 +100,7 @@ describe('日誌', () => {
       lock_token: await lockTokenOf(admin, 7),
     }, '2');
     adminGot.length = 0;
-    await api.approveDiary(admin2, again.diary_id);
+    await api.approveDiary(admin2, again.diary_id, again.updated_at);
     const approvedAgain = db.diaries.find((x) => x.diary_id === 7)!;
     await api.revokeDiaryApproval(admin, 7, 'もう一度確かめます', approvedAgain.updated_at);
     expect(adminGot).toEqual([{ type: 'diary', diary_id: 7 }, { type: 'diary', diary_id: 7 }]);
@@ -130,7 +130,7 @@ describe('日誌', () => {
     const d = await api.saveDiary(teacher, {
       record_type: '1', child_id: 'C004', class_id: 1, diary_date: today(), body: '砂場で遊んだ。',
     }, '2');
-    await api.approveDiary(admin, d.diary_id);
+    await api.approveDiary(admin, d.diary_id, d.updated_at);
     expect(taroGot).toEqual([]);
   });
 

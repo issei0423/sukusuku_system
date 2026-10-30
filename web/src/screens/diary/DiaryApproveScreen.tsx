@@ -53,10 +53,15 @@ export default function DiaryApproveScreen() {
   // 保育士が保護者への共有を選んだ個人日誌（server/api_diary_share.go）
   const shares = d.record_type === '1' && !!d.share_to_guardian;
 
+  /*
+   * 読んだ版を添えて承認する（取り下げ・承認の取り消しと同じ。詳細設計書「日誌の状態」(3-6)）。開いているあいだに
+   * 取り下げて本文・園児・共有を変えて申請し直されていたら、サーバが 409「他の職員が更新しています。…」で断る。
+   * そのときは文を出して読み直し、いまの本文を見てからもう一度押せるようにする
+   */
   const approve = async () => {
     setBusy(true); setError(null);
     try {
-      await api.approveDiary(user!, diaryId);
+      await api.approveDiary(user!, diaryId, d.updated_at);
       notify(`${target}の${DIARY_RECORD_TYPE[d.record_type]}を承認しました${shares ? '。保護者へ共有しました' : ''}`);
       navigate('/staff/admin/approval');
     } catch (e) { setError((e as Error).message); diary.reload(); } finally { setBusy(false); }

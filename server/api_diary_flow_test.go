@@ -41,6 +41,23 @@ func withLock(body, token string) string {
 	return strings.Replace(body, `"status"`, `"lock_token":"`+token+`","status"`, 1)
 }
 
+// approveBody は承認の要求を作る。承認は、管理者が画面で読んだ版（updated_at）を添えて送る
+// （取り下げ・承認の取り消しと同じ。詳細設計書「日誌の状態」(3-6)）。ここでは今の版を読んで添える
+func approveBody(t *testing.T, a *app, id int64) string {
+	t.Helper()
+	return versionBody(versionOfDiary(t, a, id))
+}
+
+// versionOfDiary は、日誌の今の版（updated_at）を返す
+func versionOfDiary(t *testing.T, a *app, id int64) string {
+	t.Helper()
+	var version string
+	if err := a.db.QueryRow(`SELECT updated_at FROM t_diary WHERE diary_id = ?`, id).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	return version
+}
+
 func statusOfDiary(t *testing.T, a *app, id int64) string {
 	t.Helper()
 	var status string
@@ -63,7 +80,7 @@ func TestApplicantCannotApproveRewrittenDiary(t *testing.T) {
 		personalDiary(1, "C001", "1", today(), "園長が書き直した本文です。", "2"), acquireToken(t, h, admin, "1")))
 
 	t.Run("書き直して申請した管理者は、承認できない", func(t *testing.T) {
-		body := expectStatus(t, request(t, h, admin, "POST", "/api/diaries/1/approve", ""),
+		body := expectStatus(t, request(t, h, admin, "POST", "/api/diaries/1/approve", approveBody(t, a, 1)),
 			http.StatusForbidden)
 		if !strings.Contains(body, "自分が申請した日誌は承認できません") {
 			t.Fatalf("文言が違います: %s", body)
@@ -93,7 +110,7 @@ func TestApplicantCannotApproveRewrittenDiary(t *testing.T) {
 		if d.AppliedStaffID == nil || *d.AppliedStaffID != "S003" {
 			t.Fatalf("applied_staff_id = %v, want S003", d.AppliedStaffID)
 		}
-		call(t, h, admin, "POST", "/api/diaries/1/approve", "")
+		call(t, h, admin, "POST", "/api/diaries/1/approve", approveBody(t, a, 1))
 	})
 
 	t.Run("ほかの管理者が書き直して申請したものは、別の管理者が承認できる", func(t *testing.T) {
@@ -101,9 +118,9 @@ func TestApplicantCannotApproveRewrittenDiary(t *testing.T) {
 		call(t, h, admin, "POST", "/api/diaries/7/return", `{"reason":"書き直します"}`)
 		call(t, h, admin2, "POST", "/api/diaries", withLock(
 			personalDiary(7, "C004", "1", today(), "遠藤が書き直した本文です。", "2"), acquireToken(t, h, admin2, "7")))
-		expectStatus(t, request(t, h, admin2, "POST", "/api/diaries/7/approve", ""),
+		expectStatus(t, request(t, h, admin2, "POST", "/api/diaries/7/approve", approveBody(t, a, 7)),
 			http.StatusForbidden)
-		call(t, h, admin, "POST", "/api/diaries/7/approve", "")
+		call(t, h, admin, "POST", "/api/diaries/7/approve", approveBody(t, a, 7))
 	})
 }
 
@@ -235,7 +252,7 @@ func TestResubmitKeepsReturnedReason(t *testing.T) {
 	}
 	call(t, h, teacher, "POST", "/api/diaries", withLock(
 		personalDiary(d.DiaryID, "C004", "1", today(), "直しました", "2"), acquireToken(t, h, teacher, itoa(d.DiaryID))))
-	call(t, h, admin, "POST", "/api/diaries/"+itoa(d.DiaryID)+"/approve", "")
+	call(t, h, admin, "POST", "/api/diaries/"+itoa(d.DiaryID)+"/approve", approveBody(t, a, d.DiaryID))
 	if got := reasonOf(); got != nil {
 		t.Fatalf("承認のあと: returned_reason = %q, want null", *got)
 	}
