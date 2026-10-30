@@ -74,7 +74,8 @@ describe('設定画面：連絡帳・AI・そのほかの設定値が1つの画�
     expect(dialog.textContent).toContain('保護者へ出すきょうのようすの項目：午睡、食事、排せつ、体温、活動のひとこと、写真、クラスのようす → 午睡、食事、排せつ、体温、活動のひとこと、クラスのようす');
     fireEvent.click(within(dialog).getByRole('button', { name: '保存する' }));
     await waitFor(() => expect(valueOf('contact.show_items')).toBe('nap,meal,toilet,temperature,comment,class'));
-    await screen.findByText('保存しました。', undefined, { timeout: 3000 });
+    // 画面の「保存しました。」（settings-saved）と通知の 2 か所に出る
+    expect((await screen.findAllByText('保存しました。', undefined, { timeout: 3000 })).length).toBeGreaterThanOrEqual(1);
   });
 
   it('連絡帳：「家庭から」の項目を全部外すと断られ、入力は残る。選択肢は足す・上へ・消すができる', async () => {

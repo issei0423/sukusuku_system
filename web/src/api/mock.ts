@@ -61,7 +61,7 @@ import { MSG, MEAL_AMOUNT_TEXT, MEAL_KIND_TEXT, otherNamesMessage, otherNamesFam
 import type {
   ContactEventInput, RecordEventsResult, ContactEventCorrection, NapSleepCorrection, CancelResult, Readers,
   ContactRecipient, Phrase, NameMatch, FacilityCorrection,
-  AiPurpose, AiField, AiTarget, AiDraftInput, AiDraftResult, SettingRow, SettingsView,
+  AiPurpose, AiField, AiTarget, AiDraftInput, AiDraftResult, SettingsView,
 } from './shapes';
 import type { InvitationPreview, AddChildResult, AllergyListRow } from './shapes';
 import type { GuardianDiary } from './shapes';
@@ -6488,9 +6488,12 @@ const settingsApi = {
   },
 
   /** 設定を保存する（POST /api/settings）。1つでも誤りがあれば何も書かない。ほかの管理者が読んだあとに変えていれば 409 */
-  async saveSettings(user: SessionUser, changes: Record<string, string>, readAt: string): Promise<SettingsView> {
+  async saveSettings(user: SessionUser, rawChanges: Record<string, string>, readAt: string): Promise<SettingsView> {
     if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
-    const keys = Object.keys(changes ?? {}).sort();
+    // 値の前後の空白は、検査の前に落とす。保存する値も操作ログの値も、落としたあとの値（server/api_settings.go と同じ）
+    const changes: Record<string, string> = {};
+    for (const [k, v] of Object.entries(rawChanges ?? {})) changes[k] = typeof v === 'string' ? v.trim() : v;
+    const keys = Object.keys(changes).sort();
     if (keys.length === 0 || !isISODateTime(readAt)) return fail(MSG.badRequest);
     for (const k of keys) if (!SETTING_SPECS[k]?.editable) return Promise.reject(new MockApiError({ message: MSG.settingNotEditable, field: k }));
     for (const k of keys) {

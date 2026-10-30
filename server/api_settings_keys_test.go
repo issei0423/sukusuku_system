@@ -75,10 +75,10 @@ func TestSettingsAllKeys(t *testing.T) {
 	}{
 		{"contact.show_items", []string{"nap,nap", "nap,hoge", "nap, meal"}, []string{"", "nap", "nap,meal,toilet,temperature,comment,photo,class"}},
 		{"contact.home_items", []string{"", "mood,mood", "nap"}, []string{"mood", "temperature,message"}},
-		{"contact.toilet_choices", []string{"", "a,,b", "a,a", strings.Repeat("あ", 21), "a\nb", " a", "あ,い,う,え,お,か,き,く,け,こ,さ,し,す,せ,そ,た,ち,つ,て,と,な,に,ぬ,ね,の,は,ひ,ふ,へ,ほ,ま,み,む,め,も,や,ゆ,よ,ら,り,る,れ,ろ,わ,を,ん,あ1,い1,う1,え1,お1,か1,き1,く1,け1,こ1"}, []string{"おしっこ", "おしっこ,うんち", strings.Repeat("あ", 20)}},
+		{"contact.toilet_choices", []string{"", "a,,b", "a,a", strings.Repeat("あ", 21), "a\nb","あ,い,う,え,お,か,き,く,け,こ,さ,し,す,せ,そ,た,ち,つ,て,と,な,に,ぬ,ね,の,は,ひ,ふ,へ,ほ,ま,み,む,め,も,や,ゆ,よ,ら,り,る,れ,ろ,わ,を,ん,あ1,い1,う1,え1,お1,か1,き1,く1,け1,こ1"}, []string{"おしっこ", "おしっこ,うんち", strings.Repeat("あ", 20), " a "}},
 		{"contact.mood_choices", []string{"", "x,x"}, []string{"ごきげん,ふつう"}},
 		{"push.quiet_hours", []string{"21:00-21:00", "21:03-07:00", "25:00-07:00", "21:00", "9:00-10:00"}, []string{"21:00-07:00", "00:00-23:55", "22:30-06:15"}},
-		{"ai.daily_limit", []string{"0", "10001", "05", " 5"}, []string{"1", "10000"}},
+		{"ai.daily_limit", []string{"0", "10001", "05"}, []string{"1", "10000", " 5 "}},
 		{"facility.name", []string{"", "  ", strings.Repeat("園", 51)}, []string{"あ", strings.Repeat("園", 50)}},
 		{"facility.phone_number", []string{"03-0000-000a", "０３-0000", strings.Repeat("1", 21)}, []string{"", "03-1234-5678", strings.Repeat("1", 20)}},
 		{"nap.interval_minutes.age0", []string{"0", "16", "5.5", ""}, []string{"1", "15"}},
@@ -226,5 +226,40 @@ func TestSettingsTakeEffectAndLog(t *testing.T) {
 	rows.Close()
 	if logs[`{"dev.notice_days_before":"7"}`] != `{"dev.notice_days_before":"14"}` || len(logs) != 7 {
 		t.Errorf("操作ログ: %v", logs)
+	}
+}
+
+// 値の前後の空白は、検査の前にサーバで落とす。保存する値も操作ログの値も落としたあと（画面を通らない呼び出しでも同じ）。
+// 空白だけの値は、落とすと空になるので、空を断るキーでは断る
+func TestSettingsTrimsWhitespace(t *testing.T) {
+	a, h := newTestApp(t)
+	admin := loginAs(a, accAdmin, "staff")
+	var cur settingsResp
+	decode(t, call(t, h, admin, "GET", "/api/settings", ""), &cur)
+	post := func(changes string) (int, string) {
+		rec := request(t, h, admin, "POST", "/api/settings", `{"changes":`+changes+`,"read_at":"`+cur.ReadAt+`"}`)
+		return rec.Code, rec.Body.String()
+	}
+	// 半角・全角の空白、改行まで落とす。整数も空白つきで入る
+	if code, body := post(`{"facility.name":"　 すくすく園 \n","dev.notice_days_before":" 10 "}`); code != 200 {
+		t.Fatalf("保存: %d %s", code, body)
+	}
+	if got := a.settingText("facility.name", ""); got != "すくすく園" {
+		t.Errorf("保存した値に空白が残った: %q", got)
+	}
+	if a.settingText("dev.notice_days_before", "") != "10" || a.settingInt("dev.notice_days_before", 0) != 10 {
+		t.Errorf("整数の値に空白が残った: %q", a.settingText("dev.notice_days_before", ""))
+	}
+	var after string
+	a.db.QueryRow(`SELECT after_value FROM t_operation_log WHERE target_table = 'm_setting' AND after_value LIKE '%facility.name%'`).Scan(&after)
+	if after != `{"facility.name":"すくすく園"}` {
+		t.Errorf("操作ログの値に空白が残った: %q", after)
+	}
+	// 空白だけは、落とすと空になる。園の名称は空を断る
+	if code, body := post(`{"facility.name":"  　"}`); code != 400 || !strings.Contains(body, `"field":"facility.name"`) {
+		t.Errorf("空白だけの園の名称が通った: %d %s", code, body)
+	}
+	if a.settingText("facility.name", "") != "すくすく園" {
+		t.Error("誤りなのに書いた")
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"net/http"
 	"sort"
+	"strings"
 )
 
 /*
@@ -82,8 +83,10 @@ func (a *app) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, msgBadRequest)
 		return
 	}
+	// 値の前後の空白は、検査の前に落とす。保存する値も操作ログの値も、落としたあとの値（モックの settingsApi.saveSettings と同じ）
 	keys := make([]string, 0, len(in.Changes))
-	for k := range in.Changes {
+	for k, v := range in.Changes {
+		in.Changes[k] = strings.TrimSpace(v)
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)

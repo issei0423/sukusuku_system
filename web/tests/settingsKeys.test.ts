@@ -27,10 +27,10 @@ const rejected = async (changes: Record<string, string>) => {
 const cases: [string, string[], string[]][] = [
   ['contact.show_items', ['nap,nap', 'nap,hoge', 'nap, meal'], ['', 'nap', 'nap,meal,toilet,temperature,comment,photo,class']],
   ['contact.home_items', ['', 'mood,mood', 'nap'], ['mood', 'temperature,message']],
-  ['contact.toilet_choices', ['', 'a,,b', 'a,a', 'あ'.repeat(21), 'a\nb', ' a'], ['おしっこ', 'おしっこ,うんち', 'あ'.repeat(20)]],
+  ['contact.toilet_choices', ['', 'a,,b', 'a,a', 'あ'.repeat(21), 'a\nb'], ['おしっこ', 'おしっこ,うんち', 'あ'.repeat(20)]],
   ['contact.mood_choices', ['', 'x,x'], ['ごきげん,ふつう']],
   ['push.quiet_hours', ['21:00-21:00', '21:03-07:00', '25:00-07:00', '21:00', '9:00-10:00'], ['21:00-07:00', '00:00-23:55', '22:30-06:15']],
-  ['ai.daily_limit', ['0', '10001', '05', ' 5'], ['1', '10000']],
+  ['ai.daily_limit', ['0', '10001', '05'], ['1', '10000', ' 5 ']],
   ['facility.name', ['', '  ', '園'.repeat(51)], ['あ', '園'.repeat(50)]],
   ['facility.phone_number', ['03-0000-000a', '０３-0000', '1'.repeat(21)], ['', '03-1234-5678', '1'.repeat(20)]],
   ['nap.interval_minutes.age0', ['0', '16', '5.5', ''], ['1', '15']],
@@ -102,6 +102,18 @@ describe('設定画面の全キー（モック。server/api_settings_keys_test.g
     expect((await rejected({ 'dev.notice_days_before': '0' }))?.message).toBe('発達チェックの予定日が近いとする日数は1〜60の整数で入力してください。');
     expect((await rejected({ 'push.quiet_hours': '21:00-21:00' }))?.message).toBe('開始と終了は違う時刻にしてください。');
   }, 60_000);
+
+  it('値の前後の空白は、検査の前に落とし、保存する値も操作ログの値も落としたあと。空白だけは空として断る（server/api_settings_keys_test.go の TestSettingsTrimsWhitespace）', async () => {
+    await save({ 'facility.name': '　 すくすく園 \n', 'dev.notice_days_before': ' 10 ' });
+    expect(valueOf('facility.name')).toBe('すくすく園');
+    expect(valueOf('dev.notice_days_before')).toBe('10');
+    expect(settingNumber('dev.notice_days_before', 0)).toBe(10);
+    const log = db.operationLogs.find((l) => l.function_type === '9' && l.target_table === 'm_setting' && (l.after_value ?? '').includes('facility.name'));
+    expect(log?.after_value).toBe('{"facility.name":"すくすく園"}');
+    const e = await rejected({ 'facility.name': '  　' });
+    expect(e?.field).toBe('facility.name');
+    expect(valueOf('facility.name')).toBe('すくすく園');
+  });
 
   it('読むだけのキーと表に無いキーは、画面から変えられない', async () => {
     for (const key of ['retention.contact_years', 'growth.share_physical', 'attachment.allowed_types', 'nap.temperature_required_at_start']) {
