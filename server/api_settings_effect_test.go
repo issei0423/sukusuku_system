@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -206,6 +207,9 @@ func TestApprovalWarnDaysEffect(t *testing.T) {
 	if r := find(); r.ElapsedDays != 0 || r.Stale {
 		t.Fatalf("当日: %+v", r)
 	}
-	// 管理者だけが見られる
-	expectStatus(t, request(t, h, teacher, "GET", "/api/diaries/pending", ""), http.StatusForbidden)
+	// 管理者だけが見られる。断りの文はモック（web/src/api/mock.ts の pendingDiaries）と同じ（requireAdmin）
+	body := expectStatus(t, request(t, h, teacher, "GET", "/api/diaries/pending", ""), http.StatusForbidden)
+	if !strings.Contains(body, "この操作は管理者のみが行えます") {
+		t.Fatalf("文言が違います: %s", body)
+	}
 }

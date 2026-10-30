@@ -125,8 +125,17 @@ func TestRemoveChildBlockedByGuardianAndExpiresCodes(t *testing.T) {
 		if !set["C902"] || set["C901"] || set["C001"] {
 			t.Errorf("取り消せる園児 = %v（C902 だけが含まれ、C901・C001 は含まれないはず）", ids)
 		}
+		// 管理者だけの経路の断りの文は、モック（web/src/api/mock.ts）と同じ「この操作は管理者のみが行えます」（requireAdmin）
 		teacher := loginAs(a, accTeacher, "staff")
-		expectStatus(t, request(t, h, teacher, "GET", "/api/children/removable", ""), http.StatusForbidden)
+		for _, rq := range []struct{ method, path string }{
+			{"GET", "/api/children/removable"},
+			{"DELETE", "/api/children/C902"},
+		} {
+			body := expectStatus(t, request(t, h, teacher, rq.method, rq.path, ""), http.StatusForbidden)
+			if !strings.Contains(body, "この操作は管理者のみが行えます") {
+				t.Errorf("%s %s の文言が違います: %s", rq.method, rq.path, body)
+			}
+		}
 	})
 
 	t.Run("取り消すと、未使用の招待コードを失効させる", func(t *testing.T) {
