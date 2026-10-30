@@ -17,6 +17,7 @@ import { ENROLLMENT_STATUS } from '../../api/codes';
 import type { Child } from '../../api/types';
 import { Loading, ErrorBox, Empty, Field, Tag } from '../../components/ui';
 import { formatYMD, formatAge, today } from '../../api/util';
+import { SearchIcon, UndoIcon } from '../../components/icons';
 
 export default function ChildListScreen() {
   const { user } = useSession();
@@ -85,7 +86,7 @@ export default function ChildListScreen() {
               退園した園児も出す
             </label>
           )}
-          <button onClick={() => setApplied((n) => n + 1)}>絞り込む</button>
+          <button onClick={() => setApplied((n) => n + 1)}><SearchIcon />絞り込む</button>
         </div>
       </section>
 
@@ -127,7 +128,7 @@ export default function ChildListScreen() {
       </section>
 
       {removing && (
-        <ConfirmDialog title="園児の登録の取消" confirmLabel="取り消す" danger busy={busy}
+        <ConfirmDialog title="園児の登録の取消" confirmLabel="取り消す" confirmIcon={<UndoIcon />} danger busy={busy}
           onConfirm={() => void remove()} onCancel={() => setRemoving(null)}>
           <p>{removing.child_name} の登録を取り消します。誤って登録した園児を一覧から外します。</p>
           <p className="muted">個人チャットも使えなくなり、未使用の招待コードは失効します。記録や保護者が紐づいている園児は取り消せません。</p>

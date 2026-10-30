@@ -16,6 +16,7 @@ import { api } from '../../api/client';
 import { Empty, Field, Alert } from '../../components/ui';
 import { notify } from '../../components/feedback';
 import type { CsvRow } from '../../api/client';
+import { BackIcon, UploadIcon, ConfirmIcon } from '../../components/icons';
 
 const SAMPLE = [
   '園児ID,氏名,氏名かな,生年月日,性別,クラス名,平熱',
@@ -71,7 +72,7 @@ export default function ChildCsvScreen() {
   return (
     <div style={{ maxWidth: 940 }}>
       <div className="page-head">
-        <Link className="btn btn-quiet btn-sm" to="/staff/children">&lt; 園児一覧へ</Link>
+        <Link className="btn btn-quiet btn-sm" to="/staff/children"><BackIcon />園児一覧へ</Link>
         <h1>CSV一括登録</h1>
       </div>
 
@@ -88,7 +89,7 @@ export default function ChildCsvScreen() {
               placeholder={SAMPLE} style={{ fontFamily: 'monospace', minHeight: 140 }} />
           </Field>
           <div className="row">
-            <button onClick={() => void checkText(text)} disabled={!text.trim()}>取込内容を確認する</button>
+            <button onClick={() => void checkText(text)} disabled={!text.trim()}><ConfirmIcon />取込内容を確認する</button>
             <button className="btn-quiet btn-sm" onClick={() => changeText(SAMPLE)}>
               サンプルを入れる
             </button>
@@ -147,7 +148,7 @@ export default function ChildCsvScreen() {
           <div className="row-end" style={{ marginTop: 12 }}>
             <button className="btn-primary" onClick={doImport}
               disabled={busy || errorCount > 0 || parsed.rows.length === 0}>
-              {parsed.rows.length} 件を登録する
+              <UploadIcon />{parsed.rows.length} 件を登録する
             </button>
           </div>
         </section>
