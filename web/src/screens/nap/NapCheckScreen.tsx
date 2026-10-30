@@ -23,6 +23,7 @@ import type { NapChildState } from '../../api/shapes';
 import SleepControls from './SleepControls';
 import { focusAfter, focusableIn, focusedNow } from '../../focusAfter';
 import { useNapSound } from '../../napSound';
+import { StartIcon, EndIcon, CloseIcon } from '../../components/icons';
 
 /** 園児の行に「保存しました」を出しておく時間（仮置き値.md「午睡チェックの動き」） */
 const SAVED_NOTICE_MS = 5000;
@@ -212,7 +213,7 @@ export default function NapCheckScreen() {
             <div className="muted" style={{ marginTop: 12 }}>全クラスを閲覧のみで見られます。午睡チェックの開始・記録はできません。</div>
           ) : (<>
           <div className="row-end">
-            <button ref={startButton} className="btn-primary" onClick={start}>午睡チェックを開始する</button>
+            <button ref={startButton} className="btn-primary" onClick={start}><StartIcon />午睡チェックを開始する</button>
           </div>
           <div className="muted" style={{ marginTop: 12 }}>
             開始すると、この画面は開いたままの運用になります。実施中は自動ログアウトの対象外です。
@@ -228,12 +229,12 @@ export default function NapCheckScreen() {
             <span>記録済み {recorded} / {rows.length} 名</span>
             <div className="spacer" />
             {!readOnly && <Link className="btn" to="/staff/nap/abnormal">異常を記録する</Link>}
-            {!readOnly && <button onClick={() => (recorded < rows.length || stillSleeping.length > 0 ? setEnding(true) : end())}>午睡チェックを終了</button>}
+            {!readOnly && <button onClick={() => (recorded < rows.length || stillSleeping.length > 0 ? setEnding(true) : end())}><EndIcon />午睡チェックを終了</button>}
           </div>
           {ending && (
             /* 終了すると、読み直しで「午睡チェックを終了」が消える。代わりに出る「午睡チェックを開始する」へ移す（GitHub Issue #213） */
             <ConfirmDialog title={recorded < rows.length ? '記録していない園児がいます' : '「おきた」が記録されていない園児がいます'}
-              confirmLabel="このまま終了する" danger onConfirm={end} onCancel={() => setEnding(false)} returnTo={() => startButton.current}>
+              confirmLabel="このまま終了する" confirmIcon={<EndIcon />} danger onConfirm={end} onCancel={() => setEnding(false)} returnTo={() => startButton.current}>
               {recorded < rows.length && <p>{rows.length - recorded} 名の記録がありません。このまま午睡チェックを終了しますか。</p>}
               {stillSleeping.length > 0 && <p>「おきた」が記録されていない園児がいます（{stillSleeping.join('、')}）。このまま終了しますか。</p>}
               <p className="muted">終了したあとは、この実施へ記録を足せません。</p>
@@ -603,7 +604,7 @@ function TemperaturePicker({ name, onClose, onSelect }: {
     : !Number.isFinite(manualValue) ? '数値で入力してください'
       : !isOneDecimal(manualValue) ? '体温は小数第1位まで（例：34.9）で入力してください' : null;
   return (
-    <Modal title={`${name}の体温`} onClose={onClose} footer={<button onClick={onClose}>閉じる</button>}>
+    <Modal title={`${name}の体温`} onClose={onClose} footer={<button onClick={onClose}><CloseIcon />閉じる</button>}>
       <div className="nap-temperature-picker">
         <p className="muted">体温計で測った値を選んでください。測っていない場合は閉じます。</p>
         <div className="nap-temp-heading">{whole === null ? '整数部分を選ぶ' : `${whole}℃ の小数部分を選ぶ`}</div>

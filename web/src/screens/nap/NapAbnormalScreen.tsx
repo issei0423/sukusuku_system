@@ -31,6 +31,7 @@ import { formatMDHM, now, today } from '../../api/util';
 import { GUARDIAN_NOTICE, GUARDIAN_NOTICE_METHOD, GUARDIAN_NOTICE_METHOD_ORDER } from '../../api/codes';
 import type { GuardianNotice, GuardianNoticeMethod } from '../../api/types';
 import type { NapAbnormalRow } from '../../api/shapes';
+import { BackIcon, SaveIcon } from '../../components/icons';
 
 export default function NapAbnormalScreen() {
   const { user } = useSession();
@@ -95,7 +96,7 @@ export default function NapAbnormalScreen() {
   return (
     <div style={{ maxWidth: 900 }}>
       <div className="page-head">
-        <Link className="btn btn-quiet btn-sm" to="/staff/nap">&lt; 午睡チェックへ</Link>
+        <Link className="btn btn-quiet btn-sm" to="/staff/nap"><BackIcon />午睡チェックへ</Link>
         <h1>異常時の記録</h1>
       </div>
 
@@ -177,7 +178,7 @@ export default function NapAbnormalScreen() {
             {/* 発見時刻は必須（画面詳細図 5-2 項目3）。空のまま送ると崩れた値になる（GitHub Issue #158） */}
             <button className="btn-primary" onClick={save}
               disabled={busy || !childId || !foundAt || !situation.trim() || !response.trim() || noticeIncomplete}>
-              記録する
+              <SaveIcon />記録する
             </button>
           </div>
         </div>
