@@ -19,6 +19,7 @@
  * 他児の名前の注意で「直す」を選んだら添える文の欄へ移す。#226 の src/focusAfter.ts が入ったら、そちらへ寄せる
  */
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { CloseIcon, SendIcon, RefreshIcon } from '../../components/icons';
 import { api, settingNumber } from '../../api/client';
 import type { ContactClassView, NameMatch } from '../../api/shapes';
 import { useSession } from '../../session';
@@ -163,8 +164,9 @@ export default function PhotoSendDialog({ classId, date, initialSubjects = [], o
   return (
     <Modal title="写真を送る" onClose={onClose}
       footer={<>
-        <button type="button" onClick={onClose} disabled={busy}>やめる</button>
+        <button type="button" onClick={onClose} disabled={busy}><CloseIcon />やめる</button>
         <button type="button" className="btn-primary" onClick={() => void send([])} disabled={!ready || busy} aria-busy={busy}>
+          {failed && !reachable && !busy ? <RefreshIcon /> : <SendIcon />}
           {busy ? TEXT.sending : failed && !reachable ? TEXT.resend : '送る'}
         </button>
       </>}>

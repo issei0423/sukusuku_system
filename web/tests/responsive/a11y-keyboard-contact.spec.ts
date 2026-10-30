@@ -249,7 +249,7 @@ test.describe('[guardian] contact 保護者の幅（390×844）', () => {
   test('連絡帳画面を Tab で最後まで進み、Shift+Tab で戻っても、上に止めた見出し・下に止めた送る帯の下に隠れない', async ({ page }) => {
     // WCAG 2.4.11 フォーカスの非隠蔽（最低限）。GitHub Issue #212
     const errors = await open(page, 'guardian-contact');
-    const visited = await walkThrough(page, page.getByRole('link', { name: '‹ ホームへ' }), '.contact-page');
+    const visited = await walkThrough(page, page.getByRole('link', { name: 'ホームへ', exact: true }), '.contact-page');
     expect(visited.at(-1), '家庭からの書く欄を通って、下に止めた「家庭からを送る」まで進んだ').toContain('家庭からを送る');
     expect(errors, 'ブラウザ実行エラー').toEqual([]);
   });

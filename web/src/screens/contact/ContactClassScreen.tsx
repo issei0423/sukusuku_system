@@ -39,6 +39,7 @@ import PhotoSendDialog from './PhotoSendDialog';
 import ClassPhotoStrip from './ClassPhotoStrip';
 import HomeArrivalStatus from './HomeArrival';
 import { useHomeArrival } from './useHomeArrival';
+import { PrevIcon, ForwardIcon, PhotoIcon, SaveIcon, RefreshIcon, CloseIcon, BackIcon } from '../../components/icons';
 
 const HOME_STATE_TEXT: Record<HomeState, string> = { none: 'まだ', unconfirmed: '未確認', revised: '更新', confirmed: '確認済み' };
 /** sort=home の並び：「更新」「未確認」「まだ」「確認済み」（詳細設計書 (2-2 (2))） */
@@ -293,9 +294,9 @@ export default function ContactClassScreen() {
           </select>
         </label>
         <nav className="contact-date" aria-label="連絡帳の日付">
-          <button type="button" onClick={() => go({ date: addDays(date, -1) })}>‹ 前の日</button>
+          <button type="button" onClick={() => go({ date: addDays(date, -1) })}><PrevIcon />前の日</button>
           <strong>{dayLabel(date)}</strong>
-          <button type="button" onClick={() => go({ date: addDays(date, 1) })} disabled={isToday}>次の日 ›</button>
+          <button type="button" onClick={() => go({ date: addDays(date, 1) })} disabled={isToday}>次の日<ForwardIcon /></button>
           {!isToday && <button type="button" onClick={() => go({ date: today() })}>今日</button>}
         </nav>
         <label className="contact-inline-field">
@@ -306,7 +307,7 @@ export default function ContactClassScreen() {
             <option value="facility">園からを送っていない園児を上に</option>
           </select>
         </label>
-        {canRecord && <button type="button" onClick={() => setPhotoOpen(true)}>写真を送る</button>}
+        {canRecord && <button type="button" onClick={() => setPhotoOpen(true)}><PhotoIcon />写真を送る</button>}
       </div>
 
       {!isToday && (
@@ -338,16 +339,17 @@ export default function ContactClassScreen() {
                 <>
                   <p className="contact-meal-tentative" role="status">{TEXT.mealTentative(tentativeCount)}</p>
                   <button type="button" className="btn-primary" onClick={saveTentative} disabled={busyKey !== null} aria-busy={busyKey === 'meal-all'}>
+                    {failed && !reachable && busyKey !== 'meal-all' ? <RefreshIcon /> : <SaveIcon />}
                     {busyKey === 'meal-all' ? TEXT.sending : failed && !reachable ? TEXT.resend : '記録する'}
                   </button>
-                  <button type="button" onClick={() => setTentative(null)} disabled={busyKey !== null}>やめる</button>
+                  <button type="button" onClick={() => setTentative(null)} disabled={busyKey !== null}><CloseIcon />やめる</button>
                 </>
               )}
               {pendingSlot && (
                 <div className="contact-meal-confirm" role="alertdialog" aria-label="仮に入れた値を捨てるか">
                   <span>仮に入れた「ぜんぶ」は保存していません。捨てて{slotLabel(pendingSlot)}に切り替えますか。</span>
                   <button type="button" onClick={() => { setSlot(pendingSlot); setTentative(null); setPendingSlot(null); }}>捨てて切り替える</button>
-                  <button type="button" onClick={() => setPendingSlot(null)}>戻る</button>
+                  <button type="button" onClick={() => setPendingSlot(null)}><BackIcon />戻る</button>
                 </div>
               )}
             </section>

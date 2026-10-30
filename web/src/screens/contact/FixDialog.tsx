@@ -21,6 +21,7 @@ import { MEAL_AMOUNT_STAFF_TEXT, TEXT } from '../../messages';
 import { TEMPERATURE_CHOICES } from '../../components/TemperaturePicker';
 import { eventText, sleepLines } from './contactText';
 import type { SessionUser } from '../../api/types';
+import { CloseIcon, UndoIcon, EditIcon, SendIcon } from '../../components/icons';
 
 export type FixTarget =
   | { kind: 'event'; event: ContactEvent; childName: string }
@@ -175,9 +176,9 @@ export default function FixDialog({ target, normalTemperature, startMode = 'edit
     return (
       <Modal title="この記録を取り消しますか" onClose={onClose} returnWithin={returnWithin}
         footer={<>
-          <button type="button" onClick={() => { if (startMode === 'cancel') onClose(); else { setMode('edit'); setError(null); } }} disabled={busy}>やめる</button>
+          <button type="button" onClick={() => { if (startMode === 'cancel') onClose(); else { setMode('edit'); setError(null); } }} disabled={busy}><CloseIcon />やめる</button>
           <button type="button" className="btn-danger" onClick={() => run(async () => { await cancelTarget(user!, target); return cancelledText(summary); })}
-            disabled={busy || readers === null} aria-busy={busy}>{busy ? TEXT.sending : '取り消す'}</button>
+            disabled={busy || readers === null} aria-busy={busy}><UndoIcon />{busy ? TEXT.sending : '取り消す'}</button>
         </>}>
         <p><strong>{summary}</strong></p>
         <p>{readers === null ? '読み込んでいます…' : TEXT.cancelReaders(readers.family_count, readers.guardian_count)}</p>
@@ -190,7 +191,7 @@ export default function FixDialog({ target, normalTemperature, startMode = 'edit
   return (
     <Modal title="記録を直す" onClose={onClose} returnWithin={returnWithin}
       footer={<>
-        <button type="button" onClick={onClose} disabled={busy}>閉じる</button>
+        <button type="button" onClick={onClose} disabled={busy}><CloseIcon />閉じる</button>
         <button type="button" className="btn-danger btn-quiet" onClick={() => { setMode('cancel'); setError(null); }} disabled={busy}>この記録を取り消す</button>
       </>}>
       <div className="fix-dialog">
@@ -231,7 +232,7 @@ export default function FixDialog({ target, normalTemperature, startMode = 'edit
         )}
         {(e?.event_type === '2' || e?.event_type === '3') && (
           <button type="button" className="btn-primary contact-wide-button" onClick={correctOther} disabled={busy} aria-busy={busy}>
-            {busy ? TEXT.sending : '直す'}
+            <EditIcon />{busy ? TEXT.sending : '直す'}
           </button>
         )}
         {e?.event_type === '4' && (
@@ -241,7 +242,7 @@ export default function FixDialog({ target, normalTemperature, startMode = 'edit
               <textarea value={body} maxLength={200} onChange={(ev) => setBody(ev.target.value)} disabled={busy} />
             </label>
             <button type="button" className="btn-primary contact-wide-button" onClick={() => correctBody([])}
-              disabled={busy || body.trim() === '' || body === e.body} aria-busy={busy}>{busy ? TEXT.sending : '直して送る'}</button>
+              disabled={busy || body.trim() === '' || body === e.body} aria-busy={busy}><SendIcon />{busy ? TEXT.sending : '直して送る'}</button>
             {check && (
               <NameCheckDialog names={check.names} matches={check.matches} text={body.trim()} busy={busy}
                 onFix={() => setCheck(null)} onSend={() => correctBody(check.names)} />
@@ -261,7 +262,7 @@ export default function FixDialog({ target, normalTemperature, startMode = 'edit
               </label>
             </div>
             <button type="button" className="btn-primary contact-wide-button" onClick={correctSleep} disabled={busy || !slept} aria-busy={busy}>
-              {busy ? TEXT.sending : '直す'}
+              <EditIcon />{busy ? TEXT.sending : '直す'}
             </button>
           </>
         )}

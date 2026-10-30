@@ -352,7 +352,7 @@ button.guardian-record-link {
 .guardian-main:has(.contact-form-actions) { scroll-padding-bottom: calc(var(--contact-actions-h, 0px) + 6px); }
 .contact-page-head h1 { font-size: 1.375rem; margin: 0; }
 /* 「‹ ホームへ」も押せるものとして高さ 44px 以上にする（詳細設計書「全画面に共通する部品と決まり」(2-0) の「タッチの条件」(4)、GitHub Issue #215） */
-.contact-page-head > a { display: flex; align-items: center; min-height: 44px; }
+.contact-page-head > a { display: flex; align-items: center; gap: var(--sp-2); min-height: 44px; }
 .contact-date { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .contact-date button { min-height: 44px; min-width: 44px; }
 /* 月の一覧（MonthList.tsx）。1日1行。押す所は 44px 以上 */
@@ -372,7 +372,7 @@ button.guardian-record-link {
  * 判定の色を付けず、太字だけで目に入るようにする【仮置き】（web/仮置き値.md）
  */
 .contact-note { margin: 0; font-weight: 700; }
-.contact-wide-button { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 48px; }
+.contact-wide-button { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); width: 100%; min-height: 48px; }
 .contact-home-form { display: grid; gap: var(--sp-3); }
 /* 朝ごはん・きげん・お迎えの選択肢どうしの間は 8px（「タッチの条件」(2-0 (4))、GitHub Issue #215）。1行に2つ並べる */
 .contact-choice-options { flex-wrap: wrap; gap: var(--sp-2); }
@@ -510,7 +510,7 @@ button.guardian-record-link {
 .contact-temp-value { font-size: 1.1rem; }
 /* 連絡帳（園児）画面：左に1日のページ（約 60%）、右に書く欄（約 40%）。縦向きでも並びを変えず幅だけを詰める */
 .contact-child-head { flex-wrap: wrap; gap: var(--sp-3); align-items: center; }
-.contact-back { min-height: 44px; display: inline-flex; align-items: center; }
+.contact-back { min-height: 44px; display: inline-flex; align-items: center; gap: var(--sp-2); }
 .contact-child-name { display: flex; align-items: center; gap: var(--sp-2); }
 .contact-child-name h1 { margin: 0; font-size: 1.5rem; }
 .contact-child-body { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--sp-4); align-items: start; }
@@ -615,7 +615,7 @@ button.guardian-record-link {
 }
 .guardian-panel-link .growth-new { margin-left: var(--sp-2); }
 /* 「ホームへ」も指で押せる高さにする（44px。基本設計書「画面基本構成」(3-5) のタップ領域） */
-.growth-page .contact-page-head > a { display: inline-flex; align-items: center; min-height: 44px; justify-self: start; }
+.growth-page .contact-page-head > a { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: 44px; justify-self: start; }
 .growth-page .contact-page-head > p { margin: 0; }
 /* 職員：ひとこと・写真の行の「成長の記録に残す」（詳細設計書 (2-12 (1))）。指で押せる高さにする */
 .contact-keep-growth { display: inline-flex; align-items: center; gap: var(--sp-1); min-height: 44px; margin-left: var(--sp-2); }

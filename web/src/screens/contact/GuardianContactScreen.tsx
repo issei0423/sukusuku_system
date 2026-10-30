@@ -25,6 +25,7 @@ import HomeForm from './HomeForm';
 import TodayTimeline from './TodayTimeline';
 import MonthList from './MonthList';
 import { dayLabel, homeLines } from './contactText';
+import { BackIcon, PrevIcon, ForwardIcon, EditIcon } from '../../components/icons';
 
 export default function GuardianContactScreen() {
   const { childId = '' } = useParams();
@@ -104,12 +105,12 @@ export default function GuardianContactScreen() {
   return (
     <div className="contact-page">
       <div ref={head} className="contact-page-head">
-        <Link to="/guardian">‹ ホームへ</Link>
+        <Link to="/guardian"><BackIcon />ホームへ</Link>
         <h1>{data.child_name}の連絡帳</h1>
         <nav className="contact-date" aria-label="連絡帳の日付">
-          <button type="button" onClick={() => moveTo(addDays(date, -1))}>‹ 前の日</button>
+          <button type="button" onClick={() => moveTo(addDays(date, -1))}><PrevIcon />前の日</button>
           <strong>{dayLabel(date)}</strong>
-          <button type="button" onClick={() => moveTo(addDays(date, 1))} disabled={isToday}>次の日 ›</button>
+          <button type="button" onClick={() => moveTo(addDays(date, 1))} disabled={isToday}>次の日<ForwardIcon /></button>
           <button type="button" aria-expanded={showMonth} onClick={() => setShowMonth((v) => !v)}>月の一覧</button>
         </nav>
       </div>
@@ -135,7 +136,7 @@ export default function GuardianContactScreen() {
             <p className={h.confirmed_at ? 'contact-confirmed' : 'contact-call'}>
               {h.confirmed_at ? `園が確認しました（${formatHM(h.confirmed_at)}）` : TEXT.callIfUrgent}
             </p>
-            {data.can_write_home && <button ref={fixButton} type="button" className="contact-wide-button" onClick={() => { setError(null); setEditing(true); }}>直す</button>}
+            {data.can_write_home && <button ref={fixButton} type="button" className="contact-wide-button" onClick={() => { setError(null); setEditing(true); }}><EditIcon />直す</button>}
           </div>
         )}
         {!h && !editing && !data.can_write_home && <p className="empty">{TEXT.noHomeYet}</p>}

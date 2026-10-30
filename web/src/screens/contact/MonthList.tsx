@@ -11,6 +11,7 @@ import { useSession } from '../../session';
 import { useAsync } from '../../hooks';
 import { ErrorBox, Loading } from '../../components/ui';
 import { dayLabel } from './contactText';
+import { CloseIcon, PrevIcon, ForwardIcon } from '../../components/icons';
 
 /** 「2026-10」の前の月・次の月 */
 const shiftMonth = (month: string, delta: number) => {
@@ -35,16 +36,16 @@ export default function MonthList({ childId, initialMonth, onPick, onClose }: {
       <div className="row">
         <h2 id="contact-month-title">月の一覧</h2>
         <div className="spacer" />
-        <button type="button" onClick={onClose}>閉じる</button>
+        <button type="button" onClick={onClose}><CloseIcon />閉じる</button>
       </div>
       {loading && !data && <Loading />}
       {error && <ErrorBox text={error} />}
       {data && (
         <>
           <nav className="contact-date" aria-label="月の移動">
-            <button type="button" onClick={() => setMonth(shiftMonth(month, -1))} disabled={month <= data.from_month}>‹ 前の月</button>
+            <button type="button" onClick={() => setMonth(shiftMonth(month, -1))} disabled={month <= data.from_month}><PrevIcon />前の月</button>
             <strong>{monthLabel(month)}</strong>
-            <button type="button" onClick={() => setMonth(shiftMonth(month, 1))} disabled={month >= data.to_month}>次の月 ›</button>
+            <button type="button" onClick={() => setMonth(shiftMonth(month, 1))} disabled={month >= data.to_month}>次の月<ForwardIcon /></button>
           </nav>
           <ul className="contact-month-days">
             {[...data.days].reverse().map((d) => (
