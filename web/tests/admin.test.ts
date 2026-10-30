@@ -155,6 +155,10 @@ describe('保護者アカウントと紐づけ', () => {
     const rooms = await api.rooms(guardian);
     expect(rooms.map((r) => r.room.chat_room_id)).toEqual(expect.arrayContaining([1, personal, classGroup]));
     await expect(api.send(guardian, personal, 'ありがとうございます。')).resolves.toBeDefined();
+    // 個人チャットの参加の時刻は、紐づけを結んだ時刻（はじめに参加した時刻の代わり）。今にしない
+    // （server/api_guardian_link_test.go の TestRestoreGuardianLinkJoinsRoomsEvenWithoutMemberRows と同じ確かめ）
+    const link = db.guardianChildren.find((g) => g.guardian_id === 'G003' && g.child_id === 'C003')!;
+    expect(db.chatMembers.find((m) => m.chat_room_id === personal && m.account_id === 8)?.joined_at).toBe(link.linked_at);
   });
 
   it('紐づけを解除した操作ログにも、保護者の名前が残る', async () => {
@@ -194,6 +198,21 @@ describe('保護者アカウントと紐づけ', () => {
     await api.endGuardianLink(admin, 'G001', 'C006');
     expect(db.accounts.find((a) => a.account_id === 6)?.status).toBe('1');
     expect(stops()).toBe(before);
+  });
+
+  /*
+   * 抜けていた参加は、はじめに参加した時刻のまま戻る（誤った解除の前に読めていたものを、戻したあとも読めるように。
+   * 基本設計書「保護者と園児の紐づけを戻す」(4-3)。server/api_guardian_link_test.go の TestRestoreGuardianLinkKeepsFirstJoinedAt と同じ確かめ）
+   */
+  it('参加の行がある保護者は、解除して戻しても、個人チャットの参加の時刻が変わらない', async () => {
+    // 村田 真一（アカウント9・G004）と村田 美咲（C004）の個人チャットは 8
+    const member = () => db.chatMembers.find((m) => m.chat_room_id === 8 && m.account_id === 9)!;
+    const before = member().joined_at;
+    await api.endGuardianLink(admin, 'G004', 'C004');
+    expect(member().left_at).not.toBeNull();
+    await api.restoreGuardianLink(admin, 'G004', 'C004');
+    expect(member().joined_at).toBe(before);
+    expect(member().left_at).toBeNull();
   });
 });
 
