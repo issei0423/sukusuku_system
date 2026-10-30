@@ -17,6 +17,9 @@ import { useAsync, AUTO_REFRESH_MS } from '../hooks';
 import { onLive } from '../live';
 import { api, settingText } from '../api/client';
 import { BellIcon } from '../components/ui';
+import {
+  HomeIcon, ChatIcon, DiaryIcon, GrowthIcon, AddChildIcon, AiDraftIcon, PasswordIcon, TermsIcon, LogoutIcon, MenuIcon, CloseIcon,
+} from '../components/icons';
 import { ConfirmDialog, ToastHost } from '../components/feedback';
 import ConnectionBanner from '../components/ConnectionBanner';
 import AiOptOutDialog from '../components/AiOptOutDialog';
@@ -27,18 +30,19 @@ import { UnsavedInputContext, useUnsavedInputTracker } from '../unsavedInput';
 
 /**
  * メニューの行き先。スマートフォンのメニュー（ドロワー）と、PC の幅で常に出すメニューで同じものを並べる。
- * あいだに、ダイアログを開く項目（お子さまの追加・AI の下書きの利用）を挟む（dialogItems）
+ * あいだに、ダイアログを開く項目（お子さまの追加・AI の下書きの利用）を挟む（dialogItems）。
+ * 項目の絵（icon）は文字に添えるだけ（components/icons.tsx の【仮置き】の決まり）
  */
 const MENU_PAGES = [
-  { to: '/guardian', label: 'ホーム' },
+  { to: '/guardian', label: 'ホーム', icon: <HomeIcon /> },
   // 園からの配布物はチャットの一部なので、メニューには置かず「チャット・お知らせ」の画面から開く（職員と同じ形）
-  { to: '/guardian/chat', label: 'チャット・お知らせ' },
+  { to: '/guardian/chat', label: 'チャット・お知らせ', icon: <ChatIcon /> },
   // 保育士が共有を選び、園長が承認した日誌（server/api_diary_share.go）
-  { to: '/guardian/diaries', label: '園からの日誌' },
+  { to: '/guardian/diaries', label: '園からの日誌', icon: <DiaryIcon /> },
 ];
 const MENU_ACCOUNT = [
-  { to: '/guardian/password', label: 'パスワードの変更' },
-  { to: '/guardian/terms', label: '利用規約' },
+  { to: '/guardian/password', label: 'パスワードの変更', icon: <PasswordIcon /> },
+  { to: '/guardian/terms', label: '利用規約', icon: <TermsIcon /> },
 ];
 
 /** PC とみなす幅。app.css の保護者レイアウトと同じ値（【仮置き】web/仮置き値.md） */
@@ -110,6 +114,7 @@ export default function GuardianLayout() {
     ...(home.data ?? []).map((h) => ({
       to: `/guardian/growth/${encodeURIComponent(h.child.child_id)}`,
       label: `${h.child.child_name}の成長の記録`,
+      icon: <GrowthIcon />,
     })),
     ...MENU_PAGES.slice(1),
   ];
@@ -123,10 +128,10 @@ export default function GuardianLayout() {
   const dialogItems = (close: () => void) => (
     <>
       <button type="button" className="drawer-item" aria-haspopup="dialog"
-        onClick={() => { close(); setAddChildOpen(true); }}>{ADD_CHILD_TEXT.title}</button>
+        onClick={() => { close(); setAddChildOpen(true); }}><AddChildIcon />{ADD_CHILD_TEXT.title}</button>
       {aiEnabled && (
         <button type="button" className="drawer-item" aria-haspopup="dialog" disabled={!home.data}
-          onClick={() => { close(); setAiOptOutOpen(true); }}>{AI_OPT_OUT_TEXT.title}</button>
+          onClick={() => { close(); setAiOptOutOpen(true); }}><AiDraftIcon />{AI_OPT_OUT_TEXT.title}</button>
       )}
     </>
   );
@@ -159,7 +164,7 @@ export default function GuardianLayout() {
     <div className="guardian-shell">
       <header className="guardian-header">
         <button ref={menuButton} className="guardian-menu-button" onClick={() => setOpen(true)} aria-label="メニューを開く" aria-expanded={open} aria-haspopup="dialog">
-          <span aria-hidden="true">☰</span><span>メニュー</span>
+          <MenuIcon /><span>メニュー</span>
         </button>
         <Link className="guardian-brand" to="/guardian" aria-label="すくすく 保護者ホーム">
           <img className="guardian-brand-mark" src="/crayon-smiles.png" alt="" />
@@ -188,15 +193,15 @@ export default function GuardianLayout() {
             <div className="drawer-head">
               <div className="who">{who}</div>
               <button className="drawer-close" onClick={() => setOpen(false)} aria-label="メニューを閉じる">
-                <span aria-hidden="true">×</span> 閉じる
+                <CloseIcon />閉じる
               </button>
             </div>
-            {pages.map((m) => <Link key={m.to} to={m.to} onClick={() => setOpen(false)}>{m.label}</Link>)}
+            {pages.map((m) => <Link key={m.to} to={m.to} onClick={() => setOpen(false)}>{m.icon}{m.label}</Link>)}
             {dialogItems(() => setOpen(false))}
-            {MENU_ACCOUNT.map((m) => <Link key={m.to} to={m.to} onClick={() => setOpen(false)}>{m.label}</Link>)}
+            {MENU_ACCOUNT.map((m) => <Link key={m.to} to={m.to} onClick={() => setOpen(false)}>{m.icon}{m.label}</Link>)}
             <div className="spacer" />
             {/* 保護者のログアウトはメニュー内（基本設計書 3-5） */}
-            <button className="btn-block" onClick={onLogout}>ログアウト</button>
+            <button className="btn-block" onClick={onLogout}><LogoutIcon />ログアウト</button>
           </nav>
         </>
       )}
@@ -221,11 +226,11 @@ export default function GuardianLayout() {
         {/* PC の幅で常に出すメニュー。スマートフォン・タブレットの幅では CSS で隠し、上のメニューから開く */}
         <nav className="guardian-sidebar" aria-label="メニュー">
           <div className="who">{who}</div>
-          {pages.map((m) => <NavLink key={m.to} to={m.to} end>{m.label}</NavLink>)}
+          {pages.map((m) => <NavLink key={m.to} to={m.to} end>{m.icon}{m.label}</NavLink>)}
           {dialogItems(() => {})}
-          {MENU_ACCOUNT.map((m) => <NavLink key={m.to} to={m.to} end>{m.label}</NavLink>)}
+          {MENU_ACCOUNT.map((m) => <NavLink key={m.to} to={m.to} end>{m.icon}{m.label}</NavLink>)}
           <div className="spacer" />
-          <button className="btn-block" onClick={onLogout}>ログアウト</button>
+          <button className="btn-block" onClick={onLogout}><LogoutIcon />ログアウト</button>
         </nav>
         <main className="guardian-main" tabIndex={-1}>
           {/* 知らせが切れている・サーバに届かないときの帯（詳細設計書「つながっているかの表示」(2-8)） */}

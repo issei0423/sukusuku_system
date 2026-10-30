@@ -9,6 +9,11 @@ import { useAsync, AUTO_REFRESH_MS } from '../hooks';
 import { onLive } from '../live';
 import { api } from '../api/client';
 import { BellIcon, Alert } from '../components/ui';
+import {
+  DashboardIcon, DiaryIcon, ChatIcon, NapIcon, ContactBookIcon, GrowthIcon, ChildrenIcon,
+  ApprovalIcon, StaffAccountIcon, InvitationIcon, GuardianAccountIcon, FiscalYearIcon, LogIcon, MisdeliveryIcon, SettingsIcon,
+  PasswordIcon, TermsIcon, LogoutIcon,
+} from '../components/icons';
 import LiveIndicator from '../components/LiveIndicator';
 import ConnectionBanner from '../components/ConnectionBanner';
 import { ConfirmDialog, ToastHost } from '../components/feedback';
@@ -16,14 +21,18 @@ import SessionTimeoutWarning from '../components/SessionTimeoutWarning';
 import ScreenErrorBoundary from '../components/ScreenErrorBoundary';
 import { UnsavedInputContext, useUnsavedInputTracker } from '../unsavedInput';
 
+/*
+ * 項目の絵（icon）は文字に添えるだけ（components/icons.tsx の【仮置き】の決まり）。
+ * 縦向き（900px 未満）では CSS で隠す（app.css。狭い左メニューで項目名を1行に保つため）
+ */
 const NAV = [
-  { to: '/staff', label: 'ダッシュボード', end: true, adminOnly: false },
-  { to: '/staff/diary', label: '日誌', end: false, adminOnly: false },
-  { to: '/staff/chat', label: 'チャット', end: false, adminOnly: false },
-  { to: '/staff/nap', label: '午睡チェック', end: false, adminOnly: false },
-  { to: '/staff/contact', label: '連絡帳', end: false, adminOnly: false },
-  { to: '/staff/growth', label: '発達・身体', end: false, adminOnly: false },
-  { to: '/staff/children', label: '園児', end: false, adminOnly: false },
+  { to: '/staff', label: 'ダッシュボード', icon: <DashboardIcon />, end: true, adminOnly: false },
+  { to: '/staff/diary', label: '日誌', icon: <DiaryIcon />, end: false, adminOnly: false },
+  { to: '/staff/chat', label: 'チャット', icon: <ChatIcon />, end: false, adminOnly: false },
+  { to: '/staff/nap', label: '午睡チェック', icon: <NapIcon />, end: false, adminOnly: false },
+  { to: '/staff/contact', label: '連絡帳', icon: <ContactBookIcon />, end: false, adminOnly: false },
+  { to: '/staff/growth', label: '発達・身体', icon: <GrowthIcon />, end: false, adminOnly: false },
+  { to: '/staff/children', label: '園児', icon: <ChildrenIcon />, end: false, adminOnly: false },
 ];
 
 /*
@@ -33,19 +42,19 @@ const NAV = [
  * 設計書どうしでそろっていない。【仮置き】職員のメニューであるサイドナビの末尾に置く（web/仮置き値.md）
  */
 const ACCOUNT_NAV = [
-  { to: '/staff/password', label: 'パスワードの変更' },
-  { to: '/staff/terms', label: '利用規約' },
+  { to: '/staff/password', label: 'パスワードの変更', icon: <PasswordIcon /> },
+  { to: '/staff/terms', label: '利用規約', icon: <TermsIcon /> },
 ];
 
 const ADMIN_NAV = [
-  { to: '/staff/admin/approval', label: '承認待ち' },
-  { to: '/staff/admin/staff-accounts', label: '職員アカウント' },
-  { to: '/staff/admin/invitations', label: '招待コード' },
-  { to: '/staff/admin/guardian-accounts', label: '保護者アカウント' },
-  { to: '/staff/admin/fiscal-year', label: '年度更新' },
-  { to: '/staff/admin/logs', label: '操作ログ' },
-  { to: '/staff/admin/misdelivery', label: '誤送信対応' },
-  { to: '/staff/admin/settings', label: '設定' },
+  { to: '/staff/admin/approval', label: '承認待ち', icon: <ApprovalIcon /> },
+  { to: '/staff/admin/staff-accounts', label: '職員アカウント', icon: <StaffAccountIcon /> },
+  { to: '/staff/admin/invitations', label: '招待コード', icon: <InvitationIcon /> },
+  { to: '/staff/admin/guardian-accounts', label: '保護者アカウント', icon: <GuardianAccountIcon /> },
+  { to: '/staff/admin/fiscal-year', label: '年度更新', icon: <FiscalYearIcon /> },
+  { to: '/staff/admin/logs', label: '操作ログ', icon: <LogIcon /> },
+  { to: '/staff/admin/misdelivery', label: '誤送信対応', icon: <MisdeliveryIcon /> },
+  { to: '/staff/admin/settings', label: '設定', icon: <SettingsIcon /> },
 ];
 
 export default function StaffLayout() {
@@ -117,7 +126,7 @@ export default function StaffLayout() {
           {user.display_name}
         </span>
         {/* 職員はログアウトをヘッダに常時表示する。共有端末での担当交代に用いる（基本設計書 3-5） */}
-        <button onClick={onLogout}>ログアウト</button>
+        <button onClick={onLogout}><LogoutIcon />ログアウト</button>
       </header>
 
       <div className="staff-body">
@@ -125,7 +134,7 @@ export default function StaffLayout() {
           {NAV.map((n) => (
             <NavLink key={n.to} to={n.to} end={n.end}
               className={({ isActive }) => (isActive ? 'current' : '')}>
-              {n.label}
+              {n.icon}{n.label}
             </NavLink>
           ))}
           {/* 「管理」は管理者にのみ表示し、一般には項目自体を出さない（画面詳細図 1-1） */}
@@ -136,7 +145,7 @@ export default function StaffLayout() {
               {ADMIN_NAV.map((n) => (
                 <NavLink key={n.to} to={n.to}
                   className={({ isActive }) => (isActive ? 'current' : '')}>
-                  {n.label}
+                  {n.icon}{n.label}
                 </NavLink>
               ))}
             </>
@@ -145,7 +154,7 @@ export default function StaffLayout() {
           {ACCOUNT_NAV.map((n) => (
             <NavLink key={n.to} to={n.to}
               className={({ isActive }) => (isActive ? 'current' : '')}>
-              {n.label}
+              {n.icon}{n.label}
             </NavLink>
           ))}
           {/* 【仮置き】小さい画面で下の項目があることを示す（web/仮置き値.md）。 */}
