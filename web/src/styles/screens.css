@@ -77,7 +77,7 @@
 /* タイマーを画面の上部に固定する。スクロールしても視界から外さない */
 .nap-timer {
   position: sticky; top: calc(var(--main-pad) * -1); z-index: 6;
-  margin: calc(var(--main-pad) * -1) calc(var(--main-pad) * -1) var(--sp-5);
+  margin: calc(var(--main-pad) * -1) calc(var(--main-pad) * -1) var(--sp-3);
   padding: var(--sp-3) var(--main-pad);
   background: var(--c-primary-soft);
   border-bottom: 1px solid var(--c-primary-deep);
@@ -111,6 +111,18 @@
   .nap-timer > div:first-child { flex-basis: 100%; column-gap: var(--sp-3); }
 }
 
+/*
+ * 見出しは1つにまとめる：左に h1・クラス・記録済みの数と、その下に記録者。右に記録を検索・異常を記録する・午睡チェックを終了
+ * （入りきらない幅では、右の操作をまとめて次の段へ送る）。タイマー・見出し・最初の園児の行の間は 12px（sp-3）にし、
+ * 巡回中に見える子を増やす（見直し 2026-10-31 の r2b-07）。実施中のクラスは選べないので文字で出す
+ */
+.nap-page-head { margin-bottom: var(--sp-3); }
+.nap-title { display: flex; flex-direction: column; }
+.nap-title-line { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); }
+.nap-class-name { font-size: 1.125rem; font-weight: 700; }
+/* 操作は右にまとめる。入りきらない幅では、まとめて次の段の右へ送る */
+.nap-head-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); margin-left: auto; }
+.nap-session-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); }
 .nap-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); }
 .nap-card {
   background: var(--c-surface); border: 1px solid var(--c-border);
@@ -134,12 +146,22 @@
  * 分けるため）。時刻を過ぎた行にも付いたときは、時刻を過ぎた印（左の太い線）が残る（web/仮置き値.md）
  */
 .nap-record-row.has-abnormal { border-color: var(--c-alert); }
+/*
+ * 1人の箱：1段目に名前の行と「ねた・おきた」、2段目に体位・呼吸・顔色と、右端に体温・「この子を記録」。
+ * 幅が足りなければ、右の部品から次の段へ送る（折り返しで決めるので、ブラウザの文字の大きさの設定を上げても欄に押し込まれない）
+ */
+.nap-row-top { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); }
+.nap-row-top > .nap-row-head { flex: 1 1 auto; }
+.nap-row-body { container: nap-row-body / inline-size; display: flex; align-items: flex-end; flex-wrap: wrap; gap: var(--sp-3); }
+.nap-row-body > .nap-inline-fields { flex: 1 1 auto; }
+.nap-row-body > .nap-row-actions { margin-left: auto; }
 .nap-row-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); }
 .nap-row-head .name { font-size: 1.25rem; line-height: 1.5; }
 .nap-row-head .last { white-space: nowrap; }
 .nap-row-status { color: var(--c-approved); font-size: var(--fs-body); font-weight: 700; }
 .nap-row-status.due { color: var(--c-alert); }
-.nap-inline-fields { display: grid; grid-template-columns: minmax(255px, 1.4fr) minmax(160px, .8fr) minmax(255px, 1.2fr); gap: var(--sp-3) var(--sp-4); }
+.nap-inline-fields { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
+.nap-inline-fields > .nap-choice-field { flex: 1 1 auto; }
 .nap-choice-field { min-width: 0; margin: 0; padding: 0; border: 0; }
 .nap-choice-field legend { margin-bottom: var(--sp-1); font-size: var(--fs-small); font-weight: 700; }
 /* 午睡の行の体位・呼吸・顔色の名前は、項目の名前（.field > .lbl）と同じ 16px の太字にする。中の選択肢より小さくしない */
@@ -180,13 +202,27 @@
  * 同じ考え方（web/仮置き値.md）。選択肢の名前はすべて全角の字なので、太字にしても幅は変わらず、折り返しは動かない
  */
 .nap-inline-fields .nap-choice span { font-weight: 400; }
+/* 午睡の選択肢は 52px 四方より小さくしない（GitHub Issue #215）。1行に詰めて並べても、2文字の選択肢（あり・通常など）が細くならないようにする */
+.nap-row-body .nap-choice span { min-width: 52px; }
 .nap-inline-fields .nap-choice input:checked + span { font-weight: 700; }
 .nap-choice input:focus-visible + span { outline: 4px solid var(--c-focus); outline-offset: 2px; box-shadow: 0 0 0 2px var(--c-focus-ring); }
 .nap-row-actions { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
-.nap-row-actions .spacer { flex: 1; }
+/* 「この子を記録」を押せない理由。ボタンの左に2行で置き、段の幅を取りすぎないようにする */
+.nap-save-hint { max-width: 9.5em; font-size: var(--fs-small); line-height: 1.5; color: var(--c-text-sub); }
+/* 対象外の行は欄を不透明度 0.75 で薄くする（.is-excluded）。補足の灰色のままでは白地に 4.5:1 を下回るので、黒で書く */
+.nap-card.is-excluded .nap-save-hint { color: var(--c-text); }
+/*
+ * 2段目に体位・呼吸・顔色と、体温・「この子を記録」が1行で並ぶ幅（PC）では、押せない理由をボタンの上（選択肢の名前と同じ高さ）に
+ * 1行で置き、横の幅を取らない。そうしないと体温・「この子を記録」が次の段へ落ち、箱が1段高くなる。
+ * contain: inline-size で、理由の文の幅を並びの幅の計算に入れない
+ */
+@container nap-row-body (min-width: 59.5em) {
+  .nap-save-hint { order: -1; flex-basis: 100%; max-width: none; contain: inline-size; text-align: right; }
+}
 .nap-row-actions > button { min-height: 52px; }
 
-.nap-temperature-button { min-width: 145px; justify-content: flex-start; }
+/* 幅は「体温 未測定」「体温 36.8℃」のどちらでも変わらない広さ（8字ぶん）。選択肢と同じ段の右端に入るよう、決め打ちの 145px から詰めた */
+.nap-temperature-button { min-width: 8em; justify-content: flex-start; }
 
 /* 体温は実測したときだけ選ぶ。選択パネルは画面の下側に置く。 */
 .modal-backdrop:has(.nap-temperature-picker) { align-items: flex-end; }
@@ -200,18 +236,7 @@
 .nap-temp-manual label { font-size: var(--fs-small); font-weight: 700; }
 .nap-temp-manual input { width: 125px; }
 
-/*
- * 欄の並べ方を切り替える幅は em で決める。メディアクエリの em はブラウザの設定の文字の大きさで決まるので、
- * 文字を大きくすると早めに2段・1段へ移り、選択肢が狭い欄に押し込まれない。既定（16px）では 1300px・900px で、前と同じ
- */
-@media (max-width: 81.25em) {
-  .nap-inline-fields { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); }
-  .nap-choice-field:last-child { grid-column: 1 / -1; }
-}
-
 @media (max-width: 56.25em) {
-  .nap-inline-fields { grid-template-columns: minmax(0, 1fr); }
-  .nap-choice-field:last-child { grid-column: auto; }
   .nap-record-row { padding: var(--sp-3); }
 }
 

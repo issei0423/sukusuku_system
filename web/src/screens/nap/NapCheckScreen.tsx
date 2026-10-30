@@ -8,7 +8,7 @@
  * 記録は園児ごとの行で直接行う。体温は実測したときだけ選ぶ。
  * この画面は開いたまま運用し、実施中は自動ログアウトの対象外とする。
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAsync } from '../../hooks';
 import { onNapClass } from '../../live';
@@ -66,7 +66,7 @@ export default function NapCheckScreen() {
 
   /*
    * 開始すると、読み直しで「午睡チェックを開始する」が消えて実施中の画面に替わり、フォーカスが body に落ちていた
-   * （WCAG 2.4.3、GitHub Issue #213）。代わりに出る見出しの並び（記録済みの数・「異常を記録する」・「午睡チェックを終了」）の、
+   * （WCAG 2.4.3、GitHub Issue #213）。代わりに出る実施中の操作の並び（「異常を記録する」・「午睡チェックを終了」）の、
    * 押せる最初の部品へ移す（同じ並びの押せるもの。src/focusAfter.ts）。開始できなかったときはボタンもフォーカスも残る
    */
   const sessionHead = useRef<HTMLDivElement>(null);
@@ -184,20 +184,41 @@ export default function NapCheckScreen() {
       {s && <NapTimer startedAt={s.started_at} intervalMinutes={intervalMinutes} rows={rows} nowMs={nowMs}
         ready={!!state.data && !state.loading} />}
 
-      <div className="page-head">
-        <h1>午睡チェック</h1>
-        <Field label="クラス">
-          <select value={classId} onChange={(e) => setClassId(Number(e.target.value))} disabled={!!s}>
-            {classesForUser.map((c) => <option key={c.class_id} value={c.class_id}>{c.class_name}</option>)}
-          </select>
-        </Field>
-        <div className="spacer" />
-        {/*
-          過去の記録を見返す導線はこの画面が持つ。サイドナビには置かない。
-          実施中の画面から離れる操作を誘わないため（図/画面遷移図.md「午睡チェック」(5)）
-        */}
-        <Link className="btn btn-sm" to="/staff/nap/search">記録を検索</Link>
-        <span className="muted">記録者：{user!.display_name}</span>
+      {/*
+        見出しは1段にまとめる。最初の園児の行までの高さを減らし、巡回中に見える子を増やすため（見直し 2026-10-31 の r2b-07）。
+        実施中はクラスを変えられないので、選ぶ欄（無効の select）でなく文字で出す
+      */}
+      <div className="page-head nap-page-head">
+        {/* 左に見出し・クラス・記録済みの数と、その下に記録者。右に操作をまとめる（画面詳細図「午睡チェック画面」(5-1) の並び） */}
+        <div className="nap-title">
+          <div className="nap-title-line">
+            <h1>午睡チェック</h1>
+            {s ? (
+              <span className="nap-class-name">{classesForUser.find((c) => c.class_id === classId)?.class_name}</span>
+            ) : (
+              <Field label="クラス">
+                <select value={classId} onChange={(e) => setClassId(Number(e.target.value))}>
+                  {classesForUser.map((c) => <option key={c.class_id} value={c.class_id}>{c.class_name}</option>)}
+                </select>
+              </Field>
+            )}
+            {s && <span>記録済み {recorded} / {rows.length} 名</span>}
+          </div>
+          <span className="muted">記録者：{user!.display_name}</span>
+        </div>
+        <div className="nap-head-actions">
+          {/*
+            過去の記録を見返す導線はこの画面が持つ。サイドナビには置かない。
+            実施中の画面から離れる操作を誘わないため（図/画面遷移図.md「午睡チェック」(5)）
+          */}
+          <Link className="btn btn-sm" to="/staff/nap/search">記録を検索</Link>
+          {s && !readOnly && (
+            <div ref={sessionHead} className="nap-session-actions">
+              <Link className="btn" to="/staff/nap/abnormal">異常を記録する</Link>
+              <button onClick={() => (recorded < rows.length || stillSleeping.length > 0 ? setEnding(true) : end())}><EndIcon />午睡チェックを終了</button>
+            </div>
+          )}
+        </div>
       </div>
 
       {error && <div style={{ marginBottom: 16 }}><Alert>{error}</Alert></div>}
@@ -225,12 +246,6 @@ export default function NapCheckScreen() {
 
       {s && (
         <>
-          <div ref={sessionHead} className="page-head">
-            <span>記録済み {recorded} / {rows.length} 名</span>
-            <div className="spacer" />
-            {!readOnly && <Link className="btn" to="/staff/nap/abnormal">異常を記録する</Link>}
-            {!readOnly && <button onClick={() => (recorded < rows.length || stillSleeping.length > 0 ? setEnding(true) : end())}><EndIcon />午睡チェックを終了</button>}
-          </div>
           {ending && (
             /* 終了すると、読み直しで「午睡チェックを終了」が消える。代わりに出る「午睡チェックを開始する」へ移す（GitHub Issue #213） */
             <ConfirmDialog title={recorded < rows.length ? '記録していない園児がいます' : '「おきた」が記録されていない園児がいます'}
@@ -393,6 +408,9 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
   const [justSaved, setJustSaved] = useState(false);
   const id = row.child.child_id;
   const name = row.child.child_name;
+  // 体位・呼吸・顔色の3つがそろうまで「この子を記録」は押せない。押せない理由をボタンの左に出す（下の .nap-save-hint）
+  const complete = !!position && !!breathing && !!complexion;
+  const saveHintId = useId();
   // 対象外の子は、5分ごとの確認の欄を薄くする（詳細設計書「行の状態ごとの表示」(2-4 (2))）
   const excluded = !!row.exclusion;
 
@@ -469,6 +487,11 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
   return (
     <section ref={rowRef} className={`nap-card nap-record-row${!excluded && due ? ' is-due' : ''}${abnormal ? ' has-abnormal' : ''}${excluded ? ' is-excluded' : ''}`}
       aria-label={`${name}の午睡チェック`}>
+      {/*
+        1人の箱は 2〜3 段にする：1段目に名前の行と「ねた・おきた」、2段目に体位・呼吸・顔色と、右端に体温・「この子を記録」。
+        幅が足りなければ、右の部品から次の段へ送る（見直し 2026-10-31 の r2b-07。styles/screens.css の .nap-row-top・.nap-row-body）
+      */}
+      <div className="nap-row-top">
       <div className="nap-row-head">
         <strong className="name">{name}</strong>
         {/*
@@ -487,9 +510,10 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
         <span className="last">平熱 {formatTemperature(row.child.normal_temperature)}℃</span>
         {abnormal && <span className="tag tag-alert">異常時の記録あり {formatHM(abnormal.found)}</span>}
       </div>
+      {/* ねた・おきた（保護者に届く）。5分ごとの確認と同じ箱の、名前の行の右に置く */}
+      {!readOnly && <SleepControls row={row} sessionId={sessionId} onSaved={onSaved} />}
+      </div>
       {!readOnly && (<>
-      {/* ねた・おきた（保護者に届く）。5分ごとの確認と同じ行に置く */}
-      <SleepControls row={row} sessionId={sessionId} onSaved={onSaved} />
 
       {needsAbnormal && latest && (
         <div className="row">
@@ -501,6 +525,7 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
         </div>
       )}
 
+      <div className="nap-row-body">
       <div className="nap-inline-fields">
         <NapChoices label="体位" name={`position-${id}`} options={BODY_POSITION} value={position} onChange={startInput(setPosition)} />
         <NapChoices label="呼吸" name={`breathing-${id}`} options={BREATHING} value={breathing} onChange={startInput(setBreathing)} />
@@ -515,10 +540,6 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
         要件定義書.md「午睡チェック」(4-5)「救急要請…の要否はシステムが判断せず、園の手順に従う」）。
         【仮置き】呼吸の文の言い回しは設計が定めていない（web/仮置き値.md）
       */}
-      {position === '2' && <Alert>うつ伏せです。このまま記録し、仰向けに直したら、直したあとの向きをもう一度記録してください。</Alert>}
-      {breathing === '2' && <Alert>呼吸が確認できません。ただちに、子どもへの対応と応援の要請を行ってください。異常時の記録は、そのあとでかまいません。</Alert>}
-      {error && <Alert>{error}</Alert>}
-
       <div className="nap-row-actions">
         {/*
           読み上げの名前は「（氏名）の体温 未測定」「（氏名）の体温 36.5℃」。見えている文字をそのまま名前に含め、
@@ -532,12 +553,21 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
           {temperatureText}
         </button>
         {temperature !== null && <button type="button" className="btn-quiet btn-sm" onClick={() => setTemperature(null)}>体温を消す</button>}
-        <div className="spacer" />
+        {/*
+          押せない理由をボタンのそばに出し、ボタンの説明（aria-describedby）にもする（DADS「無効ボタンのすぐ近くに、なぜ無効なのかを表示」、
+          詳細設計書の決めたこと D-32 の「押せない形と文言」と同じ考え方。見直し 2026-10-31 の r2c-05）。【仮置き】文言（web/仮置き値.md）
+        */}
+        {!complete && <span id={saveHintId} className="nap-save-hint">体位・呼吸・顔色を選ぶと記録できます</span>}
         <button ref={saveRef} type="button" className="btn-primary" onClick={save}
-          disabled={busy || !position || !breathing || !complexion}>
+          disabled={busy || !complete} aria-describedby={complete ? undefined : saveHintId}>
           {busy ? '保存中…' : 'この子を記録'}
         </button>
       </div>
+      </div>
+
+      {position === '2' && <Alert>うつ伏せです。このまま記録し、仰向けに直したら、直したあとの向きをもう一度記録してください。</Alert>}
+      {breathing === '2' && <Alert>呼吸が確認できません。ただちに、子どもへの対応と応援の要請を行ってください。異常時の記録は、そのあとでかまいません。</Alert>}
+      {error && <Alert>{error}</Alert>}
 
       {temperatureOpen && <TemperaturePicker name={name} onClose={() => setTemperatureOpen(false)}
         onSelect={(value) => { setTemperature(value); setTemperatureOpen(false); }} />}
