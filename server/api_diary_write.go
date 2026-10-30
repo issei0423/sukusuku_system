@@ -515,8 +515,13 @@ handleApproveDiary は承認する（基本設計書「日誌システム（園�
 
 保育士が申請するときに「保護者へ共有する」を選んだ個人日誌は、承認すると、その園児の保護者が読めるようになる。
 保育士の申請と管理者の承認の2つがそろって共有になる（2026-10-29 に持ち主が決めた。api_diary_share.go）。
-共有するかは申請した保育士が決め、管理者は承認か差し戻しで答える。要求の本文は読まない
-（承認の要求に share_to_guardian が送られても使わない）。
+共有するかは申請した保育士が決め、管理者は承認か差し戻しで答える。要求から読むのは、管理者が画面で読んだ版
+（updated_at）だけ（承認の要求に share_to_guardian が送られても使わない）。
+
+読んだ版が今の版と違えば 409（取り下げ・承認の取り消しと同じ。詳細設計書「足す表」(5-2) の決めたこと D-40）。
+承認画面を開いているあいだに、保育士が取り下げて本文・園児・「保護者へ共有する」を変えて申請し直すと、
+状態は申請中に戻るため、状態だけでは見分けられない。版を見ないと、管理者が読んでいない本文が、
+共有と知らないまま保護者へ届く（基本設計書「日誌システム（園内の記録）」(4-6)「管理者が日誌承認画面で内容を確認し」）
 */
 func (a *app) handleApproveDiary(w http.ResponseWriter, r *http.Request) {
 	u, ok := a.requireAdminFor(w, r, msgDiaryApproveAdminOnly)
@@ -526,6 +531,10 @@ func (a *app) handleApproveDiary(w http.ResponseWriter, r *http.Request) {
 	id, valid := pathInt64(r, "id")
 	if !valid {
 		writeErr(w, http.StatusBadRequest, "日誌の指定が正しくありません")
+		return
+	}
+	var req diaryVersionInput
+	if !readJSON(w, r, &req) {
 		return
 	}
 	var (
@@ -553,18 +562,27 @@ func (a *app) handleApproveDiary(w http.ResponseWriter, r *http.Request) {
 		writeForbidden(w, msgDiaryOwnApplication)
 		return
 	}
-	// 状態を条件にして書き換え、取り下げとほぼ同時に押されたときは後に届いたほうを拒む（詳細設計書「日誌の状態」(3-6)）
+	if req.UpdatedAt != version {
+		writeJSON(w, http.StatusConflict, apiError{Message: msgDiaryVersionConflict, Kind: kindVersionConflict})
+		return
+	}
+	// 状態と版を条件にして書き換え、取り下げ・申請し直しとほぼ同時に押されたときは後に届いたほうを拒む（詳細設計書「日誌の状態」(3-6)）
 	at := now()
 	res, err := a.db.Exec(`UPDATE t_diary
 		SET status = '3', approved_staff_id = ?, approved_at = ?, returned_reason = NULL, updated_at = ?
-		WHERE diary_id = ? AND status = '2'`,
-		u.staff(), at, nextDiaryVersion(version), id)
+		WHERE diary_id = ? AND status = '2' AND updated_at = ?`,
+		u.staff(), at, nextDiaryVersion(version), id, req.UpdatedAt)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "承認に失敗しました")
 		return
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		writeErr(w, http.StatusConflict, notAppliedMessage(a.diaryStatusOf(id), msgDiaryApproveNotApplied))
+		// 検査のあとに取り下げ・差し戻し・申請し直しが先に済んだ
+		if latest := a.diaryStatusOf(id); latest != "2" {
+			writeErr(w, http.StatusConflict, notAppliedMessage(latest, msgDiaryApproveNotApplied))
+			return
+		}
+		writeJSON(w, http.StatusConflict, apiError{Message: msgDiaryVersionConflict, Kind: kindVersionConflict})
 		return
 	}
 	after := "承認済み"
@@ -639,7 +657,7 @@ func (a *app) handleReturnDiary(w http.ResponseWriter, r *http.Request) {
 	a.writeDiaryByID(w, id)
 }
 
-// diaryVersionInput は、読んだ版を添える操作の要求（取り下げ・承認の取り消し）
+// diaryVersionInput は、読んだ版を添える操作の要求（取り下げ・承認・承認の取り消し。承認は reason を読まない）
 type diaryVersionInput struct {
 	Reason    string `json:"reason"`
 	UpdatedAt string `json:"updated_at"`

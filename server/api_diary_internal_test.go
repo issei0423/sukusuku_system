@@ -99,7 +99,7 @@ func TestWithdrawDiary(t *testing.T) {
 
 	t.Run("取り下げたあとに届いた承認・差し戻しは 409「この日誌は取り下げられました。」", func(t *testing.T) {
 		for _, c := range []struct{ path, body string }{
-			{"/approve", ""}, {"/return", `{"reason":"直してください"}`},
+			{"/approve", versionBody(d.UpdatedAt)}, {"/return", `{"reason":"直してください"}`},
 		} {
 			e := errorOf(t, request(t, h, admin, "POST", "/api/diaries/"+itoa(d.DiaryID)+c.path, c.body), http.StatusConflict)
 			if e.Message != "この日誌は取り下げられました。" {
@@ -126,7 +126,7 @@ func TestWithdrawDiary(t *testing.T) {
 	})
 
 	t.Run("承認が先に済んでいれば、取り下げは 409「すでに承認または差し戻しされたため…」", func(t *testing.T) {
-		call(t, h, admin, "POST", "/api/diaries/"+itoa(d.DiaryID)+"/approve", "")
+		call(t, h, admin, "POST", "/api/diaries/"+itoa(d.DiaryID)+"/approve", approveBody(t, a, d.DiaryID))
 		e := errorOf(t, request(t, h, teacher, "POST", path, versionBody(d.UpdatedAt)), http.StatusConflict)
 		if e.Message != "すでに承認または差し戻しされたため、取り下げられません。" {
 			t.Fatalf("message = %q", e.Message)
@@ -246,7 +246,7 @@ func TestApprovalUsesApplicantColumn(t *testing.T) {
 			personalDiary(0, "C001", "1", today(), "園長が書き始めた記録", "1")).Body.Bytes())
 		call(t, h, teacher, "POST", "/api/diaries", withLock(
 			personalDiary(draft.DiaryID, "C001", "1", today(), "担任が書き足して申請", "2"), acquireToken(t, h, teacher, itoa(draft.DiaryID))))
-		got := diaryOf(t, call(t, h, admin, "POST", "/api/diaries/"+itoa(draft.DiaryID)+"/approve", "").Body.Bytes())
+		got := diaryOf(t, call(t, h, admin, "POST", "/api/diaries/"+itoa(draft.DiaryID)+"/approve", approveBody(t, a, draft.DiaryID)).Body.Bytes())
 		if got.Status != "3" || got.ApprovedStaffID == nil || *got.ApprovedStaffID != "S001" || got.AppliedStaffName == nil {
 			t.Fatalf("承認のあと: %+v", got)
 		}
@@ -255,7 +255,7 @@ func TestApprovalUsesApplicantColumn(t *testing.T) {
 	t.Run("自分が申請したものは 403", func(t *testing.T) {
 		mine := diaryOf(t, call(t, h, admin2, "POST", "/api/diaries",
 			personalDiary(0, "C001", "1", today(), "遠藤が書いて申請", "2")).Body.Bytes())
-		e := errorOf(t, request(t, h, admin2, "POST", "/api/diaries/"+itoa(mine.DiaryID)+"/approve", ""), http.StatusForbidden)
+		e := errorOf(t, request(t, h, admin2, "POST", "/api/diaries/"+itoa(mine.DiaryID)+"/approve", approveBody(t, a, mine.DiaryID)), http.StatusForbidden)
 		if e.Message != "自分が申請した日誌は承認できません。ほかの管理者に依頼してください。" {
 			t.Fatalf("message = %q", e.Message)
 		}
@@ -272,7 +272,7 @@ func TestApprovalUsesApplicantColumn(t *testing.T) {
 		if got.Status != "4" || got.ApprovedStaffID != nil || got.ApprovedAt != nil {
 			t.Fatalf("差し戻しのあと: %+v", got)
 		}
-		if e := errorOf(t, request(t, h, admin, "POST", "/api/diaries/7/approve", ""), http.StatusConflict); e.Message != "申請中の日誌のみ承認できます" {
+		if e := errorOf(t, request(t, h, admin, "POST", "/api/diaries/7/approve", approveBody(t, a, 7)), http.StatusConflict); e.Message != "申請中の日誌のみ承認できます" {
 			t.Fatalf("message = %q", e.Message)
 		}
 	})
