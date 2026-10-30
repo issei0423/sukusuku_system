@@ -137,12 +137,26 @@ func (a *app) handleSaveChild(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 付け替える前の、いまのクラス（今年度のクラス）。クラスを替えたら、保護者のクラスグループの参加を移すのに使う
+	var prevClass sql.NullInt64
+	if existing > 0 {
+		tx.QueryRow(`SELECT cc.class_id FROM t_class_child cc
+			JOIN m_class c ON c.class_id = cc.class_id AND c.fiscal_year = ?
+			WHERE cc.child_id = ? LIMIT 1`, fiscalYear, in.ChildID).Scan(&prevClass)
+	}
 	// クラス在籍の付け替え。当年度ぶんだけを外し、過年度の割り当ては残す（基本設計書 5-3）
 	tx.Exec(`DELETE FROM t_class_child WHERE child_id = ?
 	          AND class_id IN (SELECT class_id FROM m_class WHERE fiscal_year = ?)`, in.ChildID, fiscalYear)
 	if _, err := tx.Exec(`INSERT INTO t_class_child (class_id, child_id) VALUES (?, ?)`, in.ClassID, in.ChildID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "クラスの割り当てに失敗しました")
 		return
+	}
+	var movedRooms []int64
+	if existing > 0 && (!prevClass.Valid || prevClass.Int64 != in.ClassID) {
+		if movedRooms, err = moveGuardiansClassGroup(tx, in.ChildID, prevClass, in.ClassID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "クラスの割り当てに失敗しました")
+			return
+		}
 	}
 	if hasFirstSchedule {
 		if _, err := tx.Exec(`INSERT INTO t_development_schedule (child_id, scheduled_on, is_manual_override, created_staff_id)
@@ -190,6 +204,10 @@ func (a *app) handleSaveChild(w http.ResponseWriter, r *http.Request) {
 	if roomID != 0 {
 		a.notifyRoomMembers(roomID)
 	}
+	// 保護者の参加が変わったクラスグループへ（お子さまの追加と同じく、参加の変わったルームへだけ送る）
+	for _, id := range movedRooms {
+		a.notifyRoomMembers(id)
+	}
 
 	/*
 	 * 操作ログには、変更のあった項目だけを {"項目名": 値} の JSON で残す（基本設計書「操作ログ（t_operation_log）」(5-8)、
@@ -207,6 +225,71 @@ func (a *app) handleSaveChild(w http.ResponseWriter, r *http.Request) {
 	row := a.db.QueryRow(`SELECT `+childColumns+` FROM m_child WHERE child_id = ?`, in.ChildID)
 	c, _ := scanChild(row)
 	writeJSON(w, http.StatusOK, c)
+}
+
+/*
+moveGuardiansClassGroup は、年度の途中で園児のクラスを替えたとき、その園児に有効な紐づけ（1）のある保護者の
+クラスグループの参加を、いまのクラスへ移す。参加の変わったクラスグループを返す。
+
+保護者が読めるグループは、現在所属しているグループだけ（基本設計書「権限と参照範囲の判定」(4-2)）。
+「いまのクラス」のクラスグループに入る（詳細設計書「判定の関数」(4-1 (2))）。
+  - 前のクラスのクラスグループからは外す（left_at を入れる。所属していた期間の記録は残す。基本設計書 5-5）。
+    ただし、前のクラスに、その保護者のほかに有効な紐づけの子がいれば残す（紐づけの解除の leaveRoomsOfChild と同じ条件）
+  - 新しいクラスのクラスグループへは今の時刻で入る。抜けていた行は、お子さまの追加（api_guardian.go の addChildTx）と同じく
+    参加し直す前の joined_at を first_joined_at に残す
+
+t_class_child はもう付け替えたあと（この園児は前のクラスにいない）として呼ぶ。取引の中で呼ぶので a.db へは問い合わせない（db.go）。
+画面側のモック（web/src/api/mock.ts の moveGuardiansClassGroup）と同じ規則。
+*/
+func moveGuardiansClassGroup(tx dbtx, childID string, from sql.NullInt64, to int64) ([]int64, error) {
+	at := now()
+	var moved []int64
+	if from.Valid {
+		res, err := tx.Exec(`UPDATE t_chat_member SET left_at = ?
+			 WHERE left_at IS NULL
+			   AND chat_room_id IN (SELECT chat_room_id FROM m_chat_room WHERE room_type = '2' AND class_id = ?)
+			   AND account_id IN (
+			     SELECT g.account_id FROM t_guardian_child gc
+			       JOIN m_guardian g ON g.guardian_id = gc.guardian_id
+			      WHERE gc.child_id = ? AND gc.link_status = '1'
+			        AND NOT EXISTS (
+			          SELECT 1 FROM t_class_child cc
+			            JOIN t_guardian_child o ON o.child_id = cc.child_id
+			           WHERE cc.class_id = ? AND o.guardian_id = gc.guardian_id AND o.link_status = '1'))`,
+			at, from.Int64, childID, from.Int64)
+		if err != nil {
+			return nil, err
+		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			rooms, err := queryIDs(tx, `SELECT chat_room_id FROM m_chat_room WHERE room_type = '2' AND class_id = ?`, from.Int64)
+			if err != nil {
+				return nil, err
+			}
+			moved = append(moved, rooms...)
+		}
+	}
+	// INSERT … SELECT に ON CONFLICT を付けるときは、SELECT に WHERE が要る（SQLite の構文の決まり）。結合は WHERE に書く
+	res, err := tx.Exec(`INSERT INTO t_chat_member (chat_room_id, account_id, joined_at, left_at)
+		SELECT r.chat_room_id, g.account_id, ?, NULL
+		  FROM m_chat_room r, t_guardian_child gc, m_guardian g
+		 WHERE r.room_type = '2' AND r.class_id = ? AND r.is_archived = 0
+		   AND gc.child_id = ? AND gc.link_status = '1'
+		   AND g.guardian_id = gc.guardian_id AND g.account_id IS NOT NULL
+		ON CONFLICT(chat_room_id, account_id) DO UPDATE SET
+		  first_joined_at = COALESCE(t_chat_member.first_joined_at, t_chat_member.joined_at),
+		  joined_at = excluded.joined_at, left_at = NULL
+		WHERE t_chat_member.left_at IS NOT NULL`, at, to, childID)
+	if err != nil {
+		return nil, err
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		rooms, err := queryIDs(tx, `SELECT chat_room_id FROM m_chat_room WHERE room_type = '2' AND class_id = ? AND is_archived = 0`, to)
+		if err != nil {
+			return nil, err
+		}
+		moved = append(moved, rooms...)
+	}
+	return moved, nil
 }
 
 // handleChildIDExists は、園児IDがすでに使われているかを返す。
