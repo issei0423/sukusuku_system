@@ -246,6 +246,8 @@ func (a *app) handleDevelopmentList(w http.ResponseWriter, r *http.Request) {
 		ScheduledOn   *string `json:"scheduledOn"`
 		LastCheckedOn *string `json:"lastCheckedOn"`
 		Overdue       bool    `json:"overdue"`
+		// 予定日まで設定の日数（dev.notice_days_before）以内。「過ぎた」とは重ならない（devNear）
+		Near bool `json:"near"`
 		// いちばん新しい記録（下書きを含む）に残っている未入力の項目数。未入力はチェック漏れの対象（基本設計書 5-7）
 		Unfilled int `json:"unfilled"`
 	}
@@ -257,6 +259,8 @@ func (a *app) handleDevelopmentList(w http.ResponseWriter, r *http.Request) {
 		out = append(out, listRow{Child: c})
 	}
 
+	// 設定を変えたら、次に開いたときから効く。一覧を作るたびに読む
+	noticeDays := a.settingInt("dev.notice_days_before", 7)
 	for i := range out {
 		childID := out[i].Child.ChildID
 
@@ -309,6 +313,7 @@ func (a *app) handleDevelopmentList(w http.ResponseWriter, r *http.Request) {
 		// 予定日の当日はまだ未実施にしない（基本設計書「発達チェックの実施」(4-8)「実施予定日を過ぎて未入力の
 		// 項目・園児をチェック漏れとして強調表示」。GitHub Issue #164）。判定は devOverdue と同じ
 		out[i].Overdue = devOverdue(nullStr(scheduled), nullStr(last))
+		out[i].Near = devNear(nullStr(scheduled), nullStr(last), noticeDays)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -323,6 +328,21 @@ devOverdue は、発達チェックが「未実施」かを返す。
 */
 func devOverdue(scheduledOn, lastCheckedOn *string) bool {
 	if scheduledOn == nil || *scheduledOn >= today() {
+		return false
+	}
+	return lastCheckedOn == nil || *lastCheckedOn < *scheduledOn
+}
+
+/*
+devNear は、発達チェックの予定日が「近い」かを返す。
+
+予定日まで、設定の日数（dev.notice_days_before。既定 7 日）以内で、その予定日以降に確定した実施が無ければ近い。
+予定日の当日も近いに入れる（まだ「過ぎた」ではない）。予定日を過ぎたものは devOverdue が数えるので、重ならない。
+典拠：基本設計書「推奨スケジュールの作り方」(4-9)「近づいた　予定日まで、設定の日数（「設定マスタ」(5-9)。既定 7 日）以内」、
+画面詳細図「発達チェック一覧画面」(6-1) 項目13。画面側のモック（web/src/api/mock.ts の isDevNear）と同じ規則
+*/
+func devNear(scheduledOn, lastCheckedOn *string, noticeDays int) bool {
+	if scheduledOn == nil || *scheduledOn < today() || *scheduledOn > addDays(today(), noticeDays) {
 		return false
 	}
 	return lastCheckedOn == nil || *lastCheckedOn < *scheduledOn

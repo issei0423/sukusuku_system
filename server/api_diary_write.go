@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 /*
@@ -404,13 +405,47 @@ func (a *app) handlePendingDiaries(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.requireAdmin(w, r); !ok {
 		return
 	}
-	out, err := a.queryDiaries(`SELECT ` + diaryColumns + ` FROM t_diary
+	diaries, err := a.queryDiaries(`SELECT ` + diaryColumns + ` FROM t_diary
 		WHERE is_deleted = 0 AND status = '2' ORDER BY applied_at, diary_id`)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "承認待ちを取得できませんでした")
 		return
 	}
+	// 設定を変えたら、次に開いたときから効く。一覧を作るたびに読む
+	warnDays := a.settingInt("approval.warn_days", 3)
+	out := make([]pendingDiary, len(diaries))
+	for i, d := range diaries {
+		out[i] = pendingDiary{Diary: d, ElapsedDays: pendingElapsedDays(d.AppliedAt), WarnDays: warnDays}
+		out[i].Stale = out[i].ElapsedDays > warnDays
+	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+/*
+pendingDiary は、承認待ちの一覧の1行。日誌に、申請からの経過日数と、滞留の印を足す。
+
+経過日数は申請した日から今日までの日数で、warn_days（approval.warn_days。既定 3 日）を越えたら Stale にする。
+滞留を見つけるための表示であって、期限の判定ではない（基本設計書「設定マスタ」(5-9)、画面詳細図「承認待ち一覧画面」(3-4) 項目5）。
+画面側のモック（web/src/api/mock.ts の pendingDiaries）と同じ規則
+*/
+type pendingDiary struct {
+	Diary
+	ElapsedDays int  `json:"elapsed_days"`
+	WarnDays    int  `json:"warn_days"`
+	Stale       bool `json:"stale"`
+}
+
+// pendingElapsedDays は、申請の日時から今日までの日数（暦の日の差）を返す。申請の日時が無い・読めないときは 0
+func pendingElapsedDays(appliedAt *string) int {
+	if appliedAt == nil || len(*appliedAt) < 10 {
+		return 0
+	}
+	from, err1 := time.ParseInLocation("2006-01-02", (*appliedAt)[:10], jst)
+	to, err2 := time.ParseInLocation("2006-01-02", today(), jst)
+	if err1 != nil || err2 != nil || to.Before(from) {
+		return 0
+	}
+	return int(to.Sub(from).Hours()/24 + 0.5)
 }
 
 // 日誌の状態の遷移で返す文言（詳細設計書「日誌の状態」(3-6)・「日誌」(4-13)）。モック（web/src/api/mock.ts）と同じ

@@ -21,7 +21,7 @@ import type {
   DevDraftView, GuardianDiary,
   ContactPage, ContactMonth, ContactClassView, ContactHome, ContactHomeInput, NapSleep, NapExclusion, GrowthRecord,
 } from './shapes';
-import type { SendPhotoInput, SendPhotoResult } from './shapes';
+import type { SendPhotoInput, SendPhotoResult, PendingDiary } from './shapes';
 import type {
   ContactEvent, ContactEventInput, RecordEventsResult, ContactEventCorrection, NapSleepCorrection, CancelResult, Readers,
   ContactFacility, FacilityCorrection, Phrase, NameMatch, AiTarget, AiDraftInput, AiDraftResult, SettingsView,
@@ -463,7 +463,7 @@ const apiAuth = {
   pastDiariesOf: (_u: SessionUser, childId: string, exclude?: number) =>
     get<Diary[]>(`/api/children/${childId}/diaries${qs({ exclude })}`),
   timelineOf: (_u: SessionUser, childId: string) => get<Diary[]>(`/api/children/${childId}/timeline`),
-  pendingDiaries: (_u: SessionUser) => get<Diary[]>('/api/diaries/pending'),
+  pendingDiaries: (_u: SessionUser) => get<PendingDiary[]>('/api/diaries/pending'),
 
   saveDiary: (_u: SessionUser, input: DiaryInput, status: '1' | '2') =>
     post<Diary>('/api/diaries', { ...input, status }),

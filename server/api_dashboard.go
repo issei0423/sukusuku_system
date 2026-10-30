@@ -117,7 +117,8 @@ func (a *app) handleStaffSummary(w http.ResponseWriter, r *http.Request) {
 
 	// 発達チェックの未実施。園児ごとに最新の予定日で判定し、発達チェック一覧の「未実施」と同じ数にする
 	// （判定は api_dev.go の devOverdue。過去の予定をすべて数えると一覧と食い違う。GitHub Issue #164）
-	overdueCount := 0
+	overdueCount, nearCount := 0, 0
+	noticeDays := a.settingInt("dev.notice_days_before", 7)
 	rows, err := a.db.Query(`SELECT s.child_id, MAX(s.scheduled_on),
 		(SELECT MAX(checked_on) FROM t_development_check c
 		  WHERE c.child_id = s.child_id AND c.status = '2')
@@ -137,6 +138,10 @@ func (a *app) handleStaffSummary(w http.ResponseWriter, r *http.Request) {
 			}
 			if devOverdue(nullStr(scheduled), nullStr(last)) {
 				overdueCount++
+			}
+			// 「近い」と「過ぎた」は分けて数える（画面詳細図「職員ダッシュボード」(2-6) 項目4）
+			if devNear(nullStr(scheduled), nullStr(last), noticeDays) {
+				nearCount++
 			}
 		}
 		rows.Close()
@@ -173,6 +178,7 @@ func (a *app) handleStaffSummary(w http.ResponseWriter, r *http.Request) {
 		"unhandledChat":        unhandledChat,
 		"unhandledChatRoom":    unhandledChatRoom,
 		"devOverdue":           overdueCount,
+		"devNear":              nearCount,
 		"pending":              pending,
 		"pendingOwn":           pendingOwn,
 		"abnormalWithoutDiary": abnormalWithoutDiary,

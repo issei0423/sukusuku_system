@@ -6,7 +6,7 @@
  * 形の定義は本ファイルの1か所に置く。
  */
 import type {
-  Account, Child, ChatRoom, DevelopmentItem, GuardianChild, NapRecord, NapSession,
+  Account, Child, ChatRoom, Diary, DevelopmentItem, GuardianChild, NapRecord, NapSession,
   DiaryRecordType, DiaryStatus, InvitationStatus, Role, FunctionType, OperationType,
   DevelopmentCheck, DevelopmentResultRecord, MealAmount, ContactEventType, Setting,
 } from './types';
@@ -264,6 +264,17 @@ export interface NapSearchRow {
   can_correct: boolean;
 }
 
+/**
+ * 承認待ち一覧の行。日誌に、申請からの経過日数と滞留の印を足したもの。
+ * stale は、経過日数が warn_days（設定 approval.warn_days。既定 3 日）を越えたとき。
+ * 滞留を見つけるための表示であって、期限の判定ではない（画面詳細図「承認待ち一覧画面」(3-4) 項目5）
+ */
+export interface PendingDiary extends Diary {
+  elapsed_days: number;
+  warn_days: number;
+  stale: boolean;
+}
+
 /** 発達チェック一覧の行。overdue は予定日を過ぎて未実施の状態 */
 export interface DevListRow {
   child: Child;
@@ -271,6 +282,8 @@ export interface DevListRow {
   scheduledOn: string | null;
   lastCheckedOn: string | null;
   overdue: boolean;
+  /** 予定日まで設定の日数（dev.notice_days_before。既定 7 日）以内。overdue とは重ならない */
+  near: boolean;
   /**
    * いちばん新しい記録（下書きを含む）に残っている未入力の項目数。未入力はチェック漏れの対象（基本設計書 5-7）。
    * 下書きの保存していない項目も未入力として数える（要件定義書「チェック漏れの強調」(4-5-2)。GitHub Issue #143）
@@ -377,6 +390,8 @@ export interface StaffSummary {
   /** そのうち、チャット画面の一覧でいちばん上に来るもの。ダッシュボードの「開く」でここを開く。無ければ null */
   unhandledChatRoom: { chat_room_id: number; room_name: string } | null;
   devOverdue: number;
+  /** 発達チェックの予定日が近い園児の数（設定 dev.notice_days_before 以内）。devOverdue とは別に数える */
+  devNear: number;
   pending: number;
   /** 承認待ちのうち、自分が申請したもの（管理者のみ。自分の申請は承認できないため「ほかの管理者へ」と添える） */
   pendingOwn: number;
