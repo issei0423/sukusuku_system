@@ -193,10 +193,10 @@ func (a *app) handleRangeWarning(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *app) rangeWarning(heightCm, weightKg float64) *string {
-	hMin := float64(a.settingInt("physical.height_min", 40))
-	hMax := float64(a.settingInt("physical.height_max", 140))
-	wMin := float64(a.settingInt("physical.weight_min", 2))
-	wMax := float64(a.settingInt("physical.weight_max", 40))
+	hMin := a.settingFloat("physical.height_min", 40)
+	hMax := a.settingFloat("physical.height_max", 140)
+	wMin := a.settingFloat("physical.weight_min", 2)
+	wMax := a.settingFloat("physical.weight_max", 40)
 
 	msgs := []string{}
 	if heightCm > 0 && (heightCm < hMin || heightCm > hMax) {

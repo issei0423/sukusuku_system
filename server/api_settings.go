@@ -4,14 +4,15 @@ import (
 	"database/sql"
 	"net/http"
 	"sort"
-	"strconv"
+	"strings"
 )
 
 /*
 設定画面の経路（詳細設計書「設定」(4-10)・「設定画面（管理者）」(2-14 (5))・「キーが無い・無効・有効にしていないときの画面」(8-8)）。
 
-本版（実装の順番の 10）は AI の区画だけを作る（決めたこと D-15。ai.enabled の既定は「使わない」で、画面が無いと AI のデモができない）。
-GET は AI の区画の2つのキー（ai.enabled・ai.daily_limit）だけを返し、POST もこの2つだけを受け付ける。ほかの区画は実装の順番の 14 で足す。
+GET は settingSpecs の表のキー（連絡帳・通知・AI・そのほか。読むだけのキーも含む）を返し、POST は editable が真のキーだけを受け付ける
+（キーごとの区画・既定値・検査は settings_spec.go）。古いキーは返さない。値は m_setting に文字で持ち、読む側（settingInt など）は
+呼ばれるたびに m_setting を読むため、保存すればすぐ効く。
 どちらも管理者だけ。API キーそのものは返さない（あるか・無効と分かったかの真偽だけ）。
 モックは web/src/api/mock.ts の settingsApi が同じ規則を持つ。
 */
@@ -35,51 +36,11 @@ type settingsView struct {
 	PushAvailable bool         `json:"push_available"`
 }
 
-// editableSetting は、画面から変えられる設定のキーと区画・既定値・検査（4-10 (3) のうち本版で受け付けるもの）
-type editableSetting struct {
-	group, def string
-	check      func(v string) string // 誤りの文言。正しければ空
-}
-
-var editableSettings = map[string]editableSetting{
-	"ai.enabled": {"ai", "0", func(v string) string {
-		if v != "0" && v != "1" {
-			return msgBadChoice
-		}
-		return ""
-	}},
-	"ai.daily_limit": {"ai", "300", func(v string) string {
-		if n, ok := strictInt(v); !ok || n < 1 || n > 10000 {
-			return msgSettingAiDailyLimit
-		}
-		return ""
-	}},
-}
-
-// strictInt は、符号・空白・先頭の0を許さない整数として読む（「 5」「+5」「05」を受けない）
-func strictInt(v string) (int, bool) {
-	if v == "" || len(v) > 9 || (len(v) > 1 && v[0] == '0') {
-		return 0, false
-	}
-	for _, c := range v {
-		if c < '0' || c > '9' {
-			return 0, false
-		}
-	}
-	n, err := strconv.Atoi(v)
-	return n, err == nil
-}
-
 func (a *app) settingsView() (settingsView, error) {
-	keys := make([]string, 0, len(editableSettings))
-	for k := range editableSettings {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
 	v := settingsView{Settings: []settingRow{}, ReadAt: now(), AiKeyPresent: a.ai != nil, AiKeyRejected: a.aiKeyRejected.Load()}
-	for _, k := range keys {
-		e := editableSettings[k]
-		row := settingRow{Key: k, Group: e.group, DefaultValue: e.def, Editable: true}
+	for _, k := range settingOrder {
+		e := settingSpecs[k]
+		row := settingRow{Key: k, Group: e.group, DefaultValue: e.def, Editable: e.editable}
 		err := a.db.QueryRow(`SELECT setting_value, IFNULL(description, ''), updated_staff_id, updated_at FROM m_setting WHERE setting_key = ?`, k).
 			Scan(&row.Value, &row.Description, &row.UpdatedStaff, &row.UpdatedAt)
 		if err == sql.ErrNoRows {
@@ -122,22 +83,35 @@ func (a *app) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, msgBadRequest)
 		return
 	}
+	// 値の前後の空白は、検査の前に落とす。保存する値も操作ログの値も、落としたあとの値（モックの settingsApi.saveSettings と同じ）
 	keys := make([]string, 0, len(in.Changes))
-	for k := range in.Changes {
+	for k, v := range in.Changes {
+		in.Changes[k] = strings.TrimSpace(v)
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		if _, ok := editableSettings[k]; !ok {
+		if e, ok := settingSpecs[k]; !ok || !e.editable {
 			writeJSON(w, http.StatusBadRequest, apiError{Message: msgSettingNotEditable, Field: k})
 			return
 		}
 	}
 	for _, k := range keys {
-		if msg := editableSettings[k].check(in.Changes[k]); msg != "" {
+		if msg := settingSpecs[k].check(in.Changes[k]); msg != "" {
 			writeJSON(w, http.StatusBadRequest, apiError{Message: msg, Field: k})
 			return
 		}
+	}
+
+	// 身長・体重のしきい値は、変えたあとの値で下限 < 上限（変えないほうは、いまの値）
+	if k, msg := settingOrderProblem(func(key string) string {
+		if v, ok := in.Changes[key]; ok {
+			return v
+		}
+		return a.settingText(key, settingSpecs[key].def)
+	}); k != "" {
+		writeJSON(w, http.StatusBadRequest, apiError{Message: msg, Field: k})
+		return
 	}
 
 	tx, err := a.db.Begin()
@@ -162,7 +136,7 @@ func (a *app) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err == sql.ErrNoRows {
-			before = editableSettings[k].def
+			before = settingSpecs[k].def
 			if _, err := tx.Exec(`INSERT INTO m_setting (setting_key, setting_value, description, updated_staff_id, updated_at)
 				VALUES (?, ?, NULL, ?, ?)`, k, in.Changes[k], u.staff(), at); err != nil {
 				writeErr(w, http.StatusInternalServerError, msgContactSaveFailed)

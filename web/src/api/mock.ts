@@ -12,6 +12,7 @@
  * （基本設計書.md「権限チェックの実装方針」(6-2)）。
  */
 import * as db from './mockDb';
+import { SETTING_ORDER, SETTING_SPECS, settingOrderProblem } from './settingSpecs';
 import { DEFAULT_MILESTONE_MONTHS, parseMilestones, recommendedScheduleDate } from './devSchedule';
 import { CURRENT_TERMS_VERSION } from './mockDb';
 import type { AbnormalGuardianNoticeInput } from './shapes';
@@ -60,7 +61,7 @@ import { MSG, MEAL_AMOUNT_TEXT, MEAL_KIND_TEXT, otherNamesMessage, otherNamesFam
 import type {
   ContactEventInput, RecordEventsResult, ContactEventCorrection, NapSleepCorrection, CancelResult, Readers,
   ContactRecipient, Phrase, NameMatch, FacilityCorrection,
-  AiPurpose, AiField, AiTarget, AiDraftInput, AiDraftResult, SettingRow, SettingsView,
+  AiPurpose, AiField, AiTarget, AiDraftInput, AiDraftResult, SettingsView,
 } from './shapes';
 import type { InvitationPreview, AddChildResult, AllergyListRow } from './shapes';
 import type { GuardianDiary } from './shapes';
@@ -6567,22 +6568,17 @@ const aiApi = {
   },
 };
 
-/* ============ 設定画面（詳細設計書「設定」(4-10)。本版は AI の区画だけ。server/api_settings.go と同じ規則） ============ */
-
-const EDITABLE_SETTINGS: Record<string, { group: SettingRow['group']; def: string; check: (v: string) => string | null }> = {
-  'ai.daily_limit': { group: 'ai', def: '300', check: (v) => (/^[1-9][0-9]{0,8}$/.test(v) && Number(v) <= 10000 ? null : MSG.settingAiDailyLimit) },
-  'ai.enabled': { group: 'ai', def: '0', check: (v) => (v === '0' || v === '1' ? null : MSG.badChoice) },
-};
+/* ============ 設定画面（詳細設計書「設定」(4-10)。server/api_settings.go と同じ規則。キーごとの検査は settingSpecs.ts） ============ */
 
 function settingsViewOf(): SettingsView {
   return {
-    settings: Object.keys(EDITABLE_SETTINGS).sort().map((key) => {
+    settings: SETTING_ORDER.map((key) => {
       const row = db.settings.find((s) => s.setting_key === key);
-      const e = EDITABLE_SETTINGS[key];
+      const e = SETTING_SPECS[key];
       return {
         setting_key: key, setting_value: row?.setting_value ?? e.def, description: row?.description ?? '',
         updated_staff_id: row?.updated_staff_id ?? '', updated_at: row?.updated_at ?? '',
-        group: e.group, default_value: e.def, editable: true,
+        group: e.group, default_value: e.def, editable: e.editable,
       };
     }),
     read_at: now(), ai_key_present: mockAi.keyPresent, ai_key_rejected: mockAi.keyRejected, push_available: false,
@@ -6599,15 +6595,21 @@ const settingsApi = {
   },
 
   /** 設定を保存する（POST /api/settings）。1つでも誤りがあれば何も書かない。ほかの管理者が読んだあとに変えていれば 409 */
-  async saveSettings(user: SessionUser, changes: Record<string, string>, readAt: string): Promise<SettingsView> {
+  async saveSettings(user: SessionUser, rawChanges: Record<string, string>, readAt: string): Promise<SettingsView> {
     if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
-    const keys = Object.keys(changes ?? {}).sort();
+    // 値の前後の空白は、検査の前に落とす。保存する値も操作ログの値も、落としたあとの値（server/api_settings.go と同じ）
+    const changes: Record<string, string> = {};
+    for (const [k, v] of Object.entries(rawChanges ?? {})) changes[k] = typeof v === 'string' ? v.trim() : v;
+    const keys = Object.keys(changes).sort();
     if (keys.length === 0 || !isISODateTime(readAt)) return fail(MSG.badRequest);
-    for (const k of keys) if (!EDITABLE_SETTINGS[k]) return Promise.reject(new MockApiError({ message: MSG.settingNotEditable, field: k }));
+    for (const k of keys) if (!SETTING_SPECS[k]?.editable) return Promise.reject(new MockApiError({ message: MSG.settingNotEditable, field: k }));
     for (const k of keys) {
-      const msg = EDITABLE_SETTINGS[k].check(changes[k]);
+      const msg = SETTING_SPECS[k].check(changes[k]);
       if (msg) return Promise.reject(new MockApiError({ message: msg, field: k }));
     }
+    // 身長・体重のしきい値は、変えたあとの値で下限 < 上限（変えないほうは、いまの値）
+    const order = settingOrderProblem((key) => changes[key] ?? settingText(key, SETTING_SPECS[key].def));
+    if (order) return Promise.reject(new MockApiError({ message: order.message, field: order.key }));
     for (const k of keys) {
       const row = db.settings.find((s) => s.setting_key === k);
       if (row && row.updated_at > readAt) return Promise.reject(new MockApiError({ message: MSG.settingConflict, kind: 'version_conflict' }));
@@ -6615,7 +6617,7 @@ const settingsApi = {
     const at = now();
     for (const k of keys) {
       let row = db.settings.find((s) => s.setting_key === k);
-      const before = row?.setting_value ?? EDITABLE_SETTINGS[k].def;
+      const before = row?.setting_value ?? SETTING_SPECS[k].def;
       if (!row) {
         row = { setting_key: k, setting_value: changes[k], description: '', updated_staff_id: user.staff_id ?? '', updated_at: at };
         db.settings.push(row);

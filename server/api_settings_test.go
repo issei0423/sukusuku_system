@@ -8,6 +8,7 @@ import (
 
 /*
 設定画面の AI の区画（詳細設計書「設定」(4-10)・「キーが無い・無効・有効にしていないときの画面」(8-8)、決めたこと D-15）。
+全キーの読み書きは TestSettingsAllKeys（api_settings_keys_test.go）。
 モックの同じ観点は web/tests/ai.test.ts にある。
 */
 
@@ -47,11 +48,11 @@ func TestSettingsAiSection(t *testing.T) {
 	raw := call(t, h, admin, "GET", "/api/settings", "").Body.String()
 	decode(t, call(t, h, admin, "GET", "/api/settings", ""), &v)
 	// キーそのものは返さない。キーが無ければ ai_key_present は偽
-	if v.AiKeyPresent || v.AiKeyRejected || v.PushAvailable || len(v.Settings) != 2 || v.value("ai.enabled") != "0" || v.value("ai.daily_limit") != "300" {
+	if v.AiKeyPresent || v.AiKeyRejected || v.PushAvailable || len(v.Settings) != len(settingOrder) || v.value("ai.enabled") != "0" || v.value("ai.daily_limit") != "300" {
 		t.Fatalf("読み込み: %s", raw)
 	}
 	for _, s := range v.Settings {
-		if s.Group != "ai" || !s.Editable {
+		if strings.HasPrefix(s.Key, "ai.") && (s.Group != "ai" || !s.Editable) {
 			t.Errorf("区画・変えられるか: %+v", s)
 		}
 	}
@@ -74,7 +75,8 @@ func TestSettingsAiSection(t *testing.T) {
 		code                      int
 	}{
 		{"一般は変えられない", `{"ai.enabled":"1"}`, "この操作は管理者のみが行えます", "", 403},
-		{"ほかの区画のキー", `{"paging.diary_per_page":"20"}`, msgSettingNotEditable, "paging.diary_per_page", 400},
+		{"読むだけのキー", `{"retention.contact_years":"20"}`, msgSettingNotEditable, "retention.contact_years", 400},
+		{"表に無いキー", `{"nap.temperature_required_at_start":"false"}`, msgSettingNotEditable, "nap.temperature_required_at_start", 400},
 		{"有効にするかは 0 か 1", `{"ai.enabled":"yes"}`, msgBadChoice, "ai.enabled", 400},
 		{"上限回数が 0", `{"ai.daily_limit":"0"}`, msgSettingAiDailyLimit, "ai.daily_limit", 400},
 		{"上限回数が 10001", `{"ai.daily_limit":"10001"}`, msgSettingAiDailyLimit, "ai.daily_limit", 400},

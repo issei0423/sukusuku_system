@@ -911,6 +911,8 @@ export const settings: Setting[] = [
   setting('nap.temperature_required', '入眠時', '午睡で体温を求める時点'),
   setting('growth.share_physical', '1', '身体測定を成長の記録に出すか'),
   setting('dev.milestone_months', '18,36,60', '乳幼児健診の節目（1歳6か月・3歳・5歳）。推奨スケジュールの重点時期'),
+  setting('dev.notice_days_before', '7', '発達チェックの予定日が「近い」とする日数'),
+  setting('approval.warn_days', '3', '承認待ちの滞留を示す色を付ける日数'),
   setting('retention.contact_years', '5', '連絡帳の保持年数（要決定。決まるまでは記録の保持年数と同じ）'),
 ];
 

@@ -3,10 +3,10 @@
  * 典拠：詳細設計書「設定画面（管理者）」(2-14)・「設定」(4-10)、決めたこと D-15
  *
  * 経路は /staff/admin/settings（クエリ tab）。管理者だけ（一般がアドレスから開いたら職員ダッシュボードへ戻す。App.tsx の RequireAdmin）。
- * 本版（実装の順番の 10）は AI の区画だけを作る（ai.enabled の既定は「使わない」で、画面が無いと AI のデモができないため）。
- * 連絡帳・定型文と雛形・通知・クラス・そのほかの設定値の区画は、実装の順番の 14 で足す。
+ * 区画は連絡帳・AI・そのほかの設定値（段14a）。定型文と雛形・クラスの区画は別の点で足す。通知の区画は、Web Push を作ると決まる
+ * まで（push_available が偽のあいだ）出さない（2-14 (4)）。区画は1つの画面に並べ、「保存する」は1つ（SettingsForm）。
  *
- * 設定は GET /api/settings で読み、区画には読んだ値を渡す。保存したら応答（新しい値と read_at）に入れ替え、
+ * 設定は GET /api/settings で読み、入力（SettingsForm）には読んだ値を渡す。保存したら応答（新しい値と read_at）に入れ替え、
  * ほかの管理者が先に変えていたら（409）読み直して、その旨を出す。
  */
 import { useState } from 'react';
@@ -17,7 +17,7 @@ import { useAsync } from '../../../hooks';
 import { Alert, ErrorBox, Loading } from '../../../components/ui';
 import { notify } from '../../../components/feedback';
 import { AI_TEXT } from '../../../messages';
-import AiSettings from './AiSettings';
+import SettingsForm from './SettingsForm';
 
 export default function SettingsScreen() {
   const { user } = useSession();
@@ -53,7 +53,7 @@ export default function SettingsScreen() {
       {saved && <p className="settings-saved" role="status">{AI_TEXT.saved}</p>}
       {loaded.error && !latest ? <ErrorBox text={loaded.error} />
         : !view ? <Loading />
-          : <AiSettings key={`${view.read_at}#${version}`} view={view} onSaved={(v) => { setNotice(null); setSaved(true); setLatest(v); setVersion((n) => n + 1); notify(AI_TEXT.saved); }}
+          : <SettingsForm key={`${view.read_at}#${version}`} view={view} onSaved={(v) => { setNotice(null); setSaved(true); setLatest(v); setVersion((n) => n + 1); notify(AI_TEXT.saved); }}
             onEdit={() => setSaved(false)} onConflict={(m) => void reload(m)} />}
     </div>
   );

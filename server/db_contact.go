@@ -131,6 +131,8 @@ var contactSettings = [][3]string{
 	{"scope.guardian_grace_days", "30", "保護者の猶予期間（日）"},
 	{"nap.temperature_required", "入眠時", "午睡で体温を求める時点"},
 	{"growth.share_physical", "1", "身体測定を成長の記録に出すか"},
+	{"dev.notice_days_before", "7", "発達チェックの予定日が「近い」とする日数"},
+	{"approval.warn_days", "3", "承認待ちの滞留を示す色を付ける日数"},
 	{"retention.contact_years", "5", "連絡帳の保持年数（要決定。決まるまでは記録の保持年数と同じ）"},
 }
 

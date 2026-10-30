@@ -871,10 +871,14 @@ const contactApi = {
     get<{ available: boolean }>(`/api/ai/status${qs({ child_id: target.child_id, class_id: target.class_id })}`),
   aiDrafts: (_u: SessionUser, input: AiDraftInput) =>
     request<AiDraftResult>('POST', '/api/ai/drafts', input, AI_REQUEST_TIMEOUT_MS),
-  /* 設定画面（詳細設計書「設定」(4-10)。本版は AI の区画だけ。名前はモックの settingsApi と同じ） */
+  /* 設定画面（詳細設計書「設定」(4-10)。名前はモックの settingsApi と同じ） */
   settings: (_u: SessionUser) => get<SettingsView>('/api/settings'),
-  saveSettings: (_u: SessionUser, changes: Record<string, string>, readAt: string) =>
-    post<SettingsView>('/api/settings', { changes, read_at: readAt }),
+  saveSettings: async (_u: SessionUser, changes: Record<string, string>, readAt: string) => {
+    const v = await post<SettingsView>('/api/settings', { changes, read_at: readAt });
+    // 画面が持つ参照表の設定（件数・午睡の間隔など。settingNumber が読む）を、保存した値へ入れ替える。読み直せなくても保存は成功のまま
+    await loadReference().catch(() => undefined);
+    return v;
+  },
   /** 「成長の記録に残す」の付け外し（詳細設計書 (4-12 (3))）。updated_at は読んだ版 */
   keepInGrowth: (_u: SessionUser, eventId: number, keep: boolean, updatedAt: string) =>
     post<ContactEvent>(`/api/contact/events/${eventId}/keep-in-growth`, { keep_in_growth: keep, updated_at: updatedAt }),

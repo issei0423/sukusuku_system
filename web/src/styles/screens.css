@@ -563,7 +563,7 @@ button.guardian-record-link {
 .phrase-list button { min-height: 48px; text-align: left; justify-content: flex-start; white-space: normal; }
 
 /* 設定画面（screens/admin/settings。詳細設計書「設定画面（管理者）」(2-14)） */
-.settings-screen { max-width: 820px; }
+.settings-screen { max-width: 960px; }
 .settings-section { display: grid; gap: var(--sp-3); }
 .settings-field { display: grid; gap: var(--sp-1); margin: 0; padding: 0; border: 0; }
 .settings-field > label, .settings-field > legend { font-weight: 700; }
@@ -573,6 +573,16 @@ button.guardian-record-link {
 .settings-choice { display: inline-flex; align-items: center; gap: var(--sp-1); min-height: var(--tap-min); min-width: var(--tap-min); padding: 0 var(--sp-3);
   border: 1px solid var(--c-border); border-radius: 8px; cursor: pointer; }
 .settings-diff { margin: 0 0 var(--sp-2); padding-left: 1.2em; }
+.settings-save { margin-top: var(--sp-3); }
+.settings-choice-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); }
+.settings-choice-list li { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; }
+.settings-choice-list input, .settings-table input { min-height: var(--tap-min); }
+.settings-choice-list button { min-height: var(--tap-min); min-width: var(--tap-min); }
+.settings-table { table-layout: auto; }
+.settings-table td, .settings-table th { vertical-align: top; }
+.settings-table input[type="text"], .settings-table input[type="number"] { max-width: 16em; }
+.settings-table p { margin: var(--sp-1) 0 0; }
+.settings-key { display: block; }
 
 /* 保護者：成長の記録画面（幅 360px で1列。詳細設計書「成長の記録画面（保護者）」(2-11 (3))）。
    判定に見える色（赤・緑など）を測った値と項目に付けない */

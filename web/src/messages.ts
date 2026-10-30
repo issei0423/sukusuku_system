@@ -157,6 +157,12 @@ export const AI_TEXT = {
   saved: '保存しました。',
 } as const;
 
+/* ---- 設定画面の文言（詳細設計書「設定画面（管理者）」(2-14)） ---- */
+export const SETTINGS_TEXT = {
+  /** 午睡のチェック間隔を既定より長くするときに、確認の窓へ添える。止めない（決めたこと D-46。2-14 (7)） */
+  longInterval: '既定より長い間隔です。東京都の通知（平成30年）は、0歳児は5分に1回、1〜2歳児は10分に1回を望ましい間隔としています。',
+} as const;
+
 /** 他児の名前の注意（基本設計書「メッセージ一覧」(4-12)。server/namecheck.go の otherNamesMessage と同じ） */
 export const otherNamesMessage = (names: string[]) => `ほかのお子さんの名前（${names.join('・')}）が入っています。このまま送りますか。`;
 /**
