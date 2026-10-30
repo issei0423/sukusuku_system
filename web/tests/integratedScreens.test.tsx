@@ -130,8 +130,10 @@ it('配布用の出力は、1枚ごとに登録の手順を載せる', async () 
   openApp('/staff/admin/invitations', admin);
   fireEvent.click(await screen.findByRole('button', { name: '配布用に出力' }));
   const dialog = await screen.findByRole('dialog', { name: '配布用の出力' });
-  const sheets = dialog.textContent!.match(/お子さまのお名前/g)?.length ?? 0;
-  expect(sheets).toBeGreaterThan(0);
+  // 出力の中身は読み込んだ一覧から作る。一覧が届く前に開くと0枚なので、届いて描き直されるのを待つ
+  const count = () => dialog.textContent!.match(/お子さまのお名前/g)?.length ?? 0;
+  await waitFor(() => expect(count()).toBeGreaterThan(0), { timeout: 3000 });
+  const sheets = count();
   expect(dialog.textContent!.match(/登録の手順/g)?.length).toBe(sheets);
   expect(dialog.textContent).toContain('招待コードで新規登録');
   expect(dialog.textContent).toContain('コードを確認する');
