@@ -31,10 +31,12 @@ until mkdir "$L" 2>/dev/null; do
     exit 99
   fi
 done
-printf '%s %s %s\n' "$token" "$(date +%H:%M)" "$*" > "$L/who"
+# who は1行にする。複数行のコマンド（bash -c の中身など）をそのまま書くと、release の照合が行ごとになり、
+# 鍵が外れずに残った（2026-10-31）
+printf '%s %s %s\n' "$token" "$(date +%H:%M)" "$(printf '%s' "$*" | tr '\r\n' '  ')" > "$L/who"
 
 release() {
-  if [ "$(cut -d' ' -f1 "$L/who" 2>/dev/null)" = "$token" ]; then
+  if [ "$(head -n 1 "$L/who" 2>/dev/null | cut -d' ' -f1)" = "$token" ]; then
     rm -f "$L/who"
     rmdir "$L" 2>/dev/null
   fi
