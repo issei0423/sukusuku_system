@@ -168,10 +168,11 @@ export default function StaffDashboard() {
             {data.activeNap && (
               <Link className="btn btn-primary btn-block" to="/staff/nap">
                 {/*
-                  【仮置き】絵を添えると iPad 横向き（1024px）で1行に収まらない。「（開」と「く）」のあいだで割らず、
-                  「（開く）」ごと次の行へ送る（文字を1つの span にまとめ、その中で「（開く）」を折り返さない。web/仮置き値.md「アイコン」）
+                  【仮置き】安全の知らせなので絵を添えない（components/icons.tsx の決まり。web/仮置き値.md「アイコン」）。
+                  絵を添えると iPad 横向き（1024px）で2行に折れ、いちばん目立たせたい知らせが読みにくくなるため。
+                  狭い幅で折り返すときも「（開」と「く）」のあいだで割らない（文字を1つの span にまとめ、その中で「（開く）」を折り返さない）
                 */}
-                <NapIcon /><span>午睡チェックが実施中です<span className="nowrap">（開く）</span></span>
+                <span>午睡チェックが実施中です<span className="nowrap">（開く）</span></span>
               </Link>
             )}
             {!data.activeNap && <Link className="btn btn-block" to="/staff/nap"><NapIcon />午睡チェックを開始</Link>}

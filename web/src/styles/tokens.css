@@ -290,7 +290,8 @@ select:focus-visible, textarea:focus-visible, summary:focus-visible {
  * 幅いっぱいのボタン。文字は中央に置くため、左右の余白は 8px に詰め、字間は付けない。
  * iPad 横向き（1024px）の職員ダッシュボードで「午睡チェックが実施中です（開く）」を1行に収め、
  * 「（開」と「く）」のあいだで折り返さないようにするため。
- * アイコンを添えてからは1行に収まらないので、「（開く）」ごと次の行へ送る（StaffDashboard.tsx の nowrap）
+ * このボタンには絵を添えない（安全の知らせ。絵を添えると1行に収まらない。components/icons.tsx の決まり）。
+ * 狭い幅で折り返すときも「（開く）」ごと次の行へ送る（StaffDashboard.tsx の nowrap）
  */
 .btn-block { width: 100%; padding-left: var(--sp-2); padding-right: var(--sp-2); letter-spacing: 0; }
 

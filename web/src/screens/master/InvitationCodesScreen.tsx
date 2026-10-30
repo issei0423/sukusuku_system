@@ -144,9 +144,13 @@ export default function InvitationCodesScreen() {
       <div className="page-head">
         <h1>招待コード</h1>
         <div className="spacer" />
-        <button onClick={() => setOneOpen(true)}><AddIcon />1枚発行</button>
-        <button onClick={() => setBulkOpen(true)}><AddIcon />一括発行</button>
-        <button onClick={() => setPrintOpen(true)}><PrintIcon />配布用に出力</button>
+        {/*
+          【仮置き】この並びには絵を添えない。「1枚発行」「一括発行」に同じ ＋ が続いて見分けの役に立たず、
+          絵の分だけ iPad 縦（744・768px）で「配布用に出力」が2段目へ落ちるため（components/icons.tsx の決まり。web/仮置き値.md「アイコン」）
+        */}
+        <button onClick={() => setOneOpen(true)}>1枚発行</button>
+        <button onClick={() => setBulkOpen(true)}>一括発行</button>
+        <button onClick={() => setPrintOpen(true)}>配布用に出力</button>
       </div>
 
       {error && <div style={{ marginBottom: 16 }}><Alert>{error}</Alert></div>}
