@@ -317,6 +317,21 @@ func (a *app) settingInt(key string, fallback int) int {
 	return n
 }
 
+// settingFloat は、小数でもよい設定（身長・体重のしきい値。設定画面は小数第1位・第2位まで受け付ける）を読む
+func (a *app) settingFloat(key string, fallback float64) float64 {
+	var v string
+	if err := a.db.QueryRow(`SELECT setting_value FROM m_setting WHERE setting_key = ?`, key).Scan(&v); err != nil {
+		log.Printf("[設定マスタ] %s が見つかりません。既定値 %v を用います", key, fallback)
+		return fallback
+	}
+	n, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		log.Printf("[設定マスタ] %s の値 %q を数値として解釈できません。既定値 %v を用います", key, v, fallback)
+		return fallback
+	}
+	return n
+}
+
 func (a *app) settingText(key, fallback string) string {
 	var v string
 	if err := a.db.QueryRow(`SELECT setting_value FROM m_setting WHERE setting_key = ?`, key).Scan(&v); err != nil {

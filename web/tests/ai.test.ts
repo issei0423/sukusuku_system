@@ -321,19 +321,19 @@ describe('下書きの検査と失敗（8-2・8-7）', () => {
   });
 });
 
-describe('設定画面の AI の区画（詳細設計書「設定」(4-10)。server/api_settings_test.go と同じ観点）', () => {
-  it('管理者だけ。キーそのものは返さず、AI の2つのキーだけを読み書きする。誤りがあれば何も書かない', async () => {
+describe('設定画面の AI の区画（詳細設計書「設定」(4-10)。server/api_settings_test.go と同じ観点。全キーは settingsKeys.test.ts）', () => {
+  it('管理者だけ。キーそのものは返さず、AI の2つのキーを読み書きする。誤りがあれば何も書かない', async () => {
     setSetting('ai.enabled', '0');
     await expect(api.settings(teacher)).rejects.toThrow('この操作は管理者のみが行えます');
     const v = await api.settings(admin);
-    expect(v.settings.map((s) => [s.setting_key, s.setting_value, s.group, s.editable])).toEqual([
-      ['ai.daily_limit', '300', 'ai', true], ['ai.enabled', '0', 'ai', true],
+    expect(v.settings.filter((s) => s.group === 'ai').map((s) => [s.setting_key, s.setting_value, s.group, s.editable])).toEqual([
+      ['ai.enabled', '0', 'ai', true], ['ai.daily_limit', '300', 'ai', true],
     ]);
     expect([v.ai_key_present, v.ai_key_rejected, v.push_available]).toEqual([true, false, false]);
 
     await expect(api.saveSettings(teacher, { 'ai.enabled': '1' }, v.read_at)).rejects.toThrow('この操作は管理者のみが行えます');
     const cases: [Record<string, string>, string, string?][] = [
-      [{ 'paging.diary_per_page': '20' }, MSG.settingNotEditable, 'paging.diary_per_page'],
+      [{ 'retention.contact_years': '20' }, MSG.settingNotEditable, 'retention.contact_years'],
       [{ 'ai.enabled': 'yes' }, MSG.badChoice, 'ai.enabled'],
       [{ 'ai.daily_limit': '0' }, MSG.settingAiDailyLimit, 'ai.daily_limit'],
       [{ 'ai.daily_limit': '10001' }, MSG.settingAiDailyLimit, 'ai.daily_limit'],
@@ -348,7 +348,7 @@ describe('設定画面の AI の区画（詳細設計書「設定」(4-10)。ser
     expect(db.settings.find((s) => s.setting_key === 'ai.enabled')!.setting_value).toBe('0');
 
     const saved = await api.saveSettings(admin, { 'ai.enabled': '1', 'ai.daily_limit': '50' }, v.read_at);
-    expect(saved.settings.map((s) => s.setting_value)).toEqual(['50', '1']);
+    expect(saved.settings.filter((s) => s.group === 'ai').map((s) => s.setting_value)).toEqual(['1', '50']);
     const logs = db.operationLogs.filter((l) => l.function_type === '9' && l.target_table === 'm_setting').slice(0, 2).reverse();
     expect(logs.map((l) => `${l.before_value}→${l.after_value}`)).toEqual([
       '{"ai.daily_limit":"300"}→{"ai.daily_limit":"50"}', '{"ai.enabled":"0"}→{"ai.enabled":"1"}',

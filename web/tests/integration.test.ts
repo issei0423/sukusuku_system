@@ -841,7 +841,8 @@ run('結合：きょうのようすの記録・訂正・取り消しが3秒以�
       const forbidden = await send('/api/settings', {}, staff);
       expect(forbidden.status).toBe(403);
       const view = (await (await send('/api/settings', {}, admin)).json()) as View;
-      expect(view.settings.map((x) => x.setting_key)).toEqual(['ai.daily_limit', 'ai.enabled']);
+      expect(view.settings.map((x) => x.setting_key)).toEqual(expect.arrayContaining(['ai.daily_limit', 'ai.enabled', 'dev.notice_days_before', 'contact.show_items']));
+      expect(view.settings.map((x) => x.setting_key)).not.toContain('nap.temperature_required_at_start');
       expect(JSON.stringify(view)).not.toMatch(/sk-ant/);
       if (view.ai_key_present) {
         console.log('API キーを置いたサーバのため、キーが無いときの確かめを飛ばした');
