@@ -178,7 +178,7 @@ describe('保護者のクラスのチャンネルに「園からのお知らせ�
     expect(document.body.textContent).not.toContain('こちらは園からのお知らせです。');
     expect(document.body.textContent).toContain('こちらはクラスのお知らせです。返信はできません。');
 
-    fireEvent.click(screen.getByRole('button', { name: '< もどる' }));
+    fireEvent.click(screen.getByRole('button', { name: 'もどる' }));
     fireEvent.click(await roomButton('園からのお知らせ'));
     await settled();
     expect(document.body.textContent).toContain('こちらは園からのお知らせです。返信はできません。');

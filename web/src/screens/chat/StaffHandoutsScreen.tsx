@@ -18,6 +18,7 @@ import { notify } from '../../components/feedback';
 import { HANDOUT_TYPE } from '../../api/codes';
 import { formatFileSize, formatMonth, formatMDHM, today } from '../../api/util';
 import type { Handout } from '../../api/types';
+import { BackIcon, AddIcon, CloseIcon, SendIcon, UndoIcon } from '../../components/icons';
 
 export default function StaffHandoutsScreen() {
   const { user } = useSession();
@@ -82,10 +83,10 @@ export default function StaffHandoutsScreen() {
   return (
     <div style={{ maxWidth: 1000 }}>
       <div className="page-head">
-        <Link className="btn btn-quiet btn-sm" to="/staff/chat">&lt; チャットへ</Link>
+        <Link className="btn btn-quiet btn-sm" to="/staff/chat"><BackIcon />チャットへ</Link>
         <h1>園からの配布物</h1>
         <div className="spacer" />
-        {isAdmin && <button className="btn-primary" onClick={openForm}>配布物を掲載する</button>}
+        {isAdmin && <button className="btn-primary" onClick={openForm}><AddIcon />配布物を掲載する</button>}
       </div>
 
       {error && <div style={{ marginBottom: 16 }}><Alert>{error}</Alert></div>}
@@ -144,8 +145,8 @@ export default function StaffHandoutsScreen() {
       {formOpen && (
         <Modal title="配布物の掲載" onClose={() => setFormOpen(false)}
           footer={<>
-            <button onClick={() => setFormOpen(false)} disabled={busy}>やめる</button>
-            <button className="btn-primary" onClick={post} disabled={busy || !fTitle.trim() || !file}>掲載する</button>
+            <button onClick={() => setFormOpen(false)} disabled={busy}><CloseIcon />やめる</button>
+            <button className="btn-primary" onClick={post} disabled={busy || !fTitle.trim() || !file}><SendIcon />掲載する</button>
           </>}>
           <div className="stack">
             {formError && <Alert>{formError}</Alert>}
@@ -190,8 +191,8 @@ export default function StaffHandoutsScreen() {
         /* 取り下げると、開いた行が一覧から消える。同じ一覧の押せる最初のもの、なければ本文へ（GitHub Issue #213） */
         <Modal title="配布物の取り下げ" onClose={() => setWithdrawing(null)} returnWithin={['tr', 'section']}
           footer={<>
-            <button onClick={() => setWithdrawing(null)}>やめる</button>
-            <button className="btn-primary" onClick={withdraw}>取り下げる</button>
+            <button onClick={() => setWithdrawing(null)}><CloseIcon />やめる</button>
+            <button className="btn-primary" onClick={withdraw}><UndoIcon />取り下げる</button>
           </>}>
           <div className="stack">
             <div>「{withdrawing.title}」を取り下げます。</div>

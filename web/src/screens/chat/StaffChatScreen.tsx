@@ -26,6 +26,7 @@ import IncomingLog from './IncomingLog';
 import { useIncomingMessages } from './useIncomingMessages';
 import { focusAfter, focusedNow } from '../../focusAfter';
 import { useUnsavedInput } from '../../unsavedInput';
+import { AttachIcon, SendIcon } from '../../components/icons';
 
 // 詳細設計書「チャット」(2-9)。DB 上の部屋名は既存の「園児名の保護者」のままにする（同「園児の登録と個人チャット」(4-9)）。
 const roomLabel = (room: { room_type: string; room_name: string }) =>
@@ -332,8 +333,8 @@ export default function StaffChatScreen() {
                   placeholder="メッセージを入力" style={{ minHeight: 70 }} />
                 {[...text].length > 1000 && <div className="weak" role="alert">本文は1,000文字以内で入力してください</div>}
                 <div className="row-end">
-                  <button onClick={() => alert('添付はモックでは未実装です')}>添付</button>
-                  <button className="btn-primary" onClick={() => send()} disabled={busy || !text.trim() || [...text].length > 1000} aria-busy={busy}>送信</button>
+                  <button onClick={() => alert('添付はモックでは未実装です')}><AttachIcon />添付</button>
+                  <button className="btn-primary" onClick={() => send()} disabled={busy || !text.trim() || [...text].length > 1000} aria-busy={busy}><SendIcon />送信</button>
                 </div>
                 {nameCheck && (
                   <NameCheckDialog names={nameCheck.names} matches={nameCheck.matches} text={nameCheck.text} busy={busy}
