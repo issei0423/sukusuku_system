@@ -17,6 +17,7 @@ import { SessionProvider } from '../src/session';
 import { api } from '../src/api/client';
 import { clearNotice } from '../src/components/feedback';
 import * as db from '../src/api/mockDb';
+import { today } from '../src/api/util';
 import type { SessionUser } from '../src/api/types';
 
 const admin: SessionUser = {
@@ -277,5 +278,49 @@ describe('配布物の掲載・取り下げの完了の表示（#175 の 5）', 
     const confirm = await screen.findByRole('dialog', { name: '配布物の取り下げ' });
     fireEvent.click(within(confirm).getByRole('button', { name: '取り下げる' }));
     expect(await screen.findByText('「11月の献立表」を取り下げました', {}, { timeout: 3000 })).toBeTruthy();
+  });
+});
+
+/*
+ * きょうのようすから入れる・確認画面からの「戻る」（GitHub Issue #278 の 2・コメントで足された 3。PR #334 の review の 1）
+ * 典拠：詳細設計書「日誌の画面（作り直し）」(2-13 (4))「新しく作る個人日誌は、園児と記録日が決まったら1回だけ自動で入れる」・
+ *      (2-13 (9))「確認画面で「戻る」｜解除しない（編集画面がトークンを受け取って続ける）」
+ */
+describe('きょうのようすから入れる・確認画面から戻る（#278）', () => {
+  it('新しい個人日誌で園児と記録日が決まると、その日の記録を本文へ1回だけ入れる。押せば末尾へもう一度足す', async () => {
+    // デモデータの西田 太郎（C001）には、今日の連絡帳の記録がある。入る行は API の返す行と同じ
+    const { lines } = await api.diaryLines(teacher, 'C001', today());
+    expect(lines.length).toBeGreaterThan(0);
+    const added = `【きょうのようす（連絡帳から）】\n${lines.join('\n')}`;
+    await startPersonal();
+    await waitFor(() => expect(bodyArea().value).toBe(added), { timeout: 3000 });
+    // 自動は1画面で1回だけ。園児を選び直しても、もう入れない
+    fireEvent.change(screen.getByLabelText('対象の園児'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('対象の園児'), { target: { value: 'C001' } });
+    fireEvent.change(bodyArea(), { target: { value: '園庭で遊びました。' } });
+    await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+    expect(bodyArea().value).toBe('園庭で遊びました。');
+    // 押したときは、書いてある本文の末尾へ行を改めて足す（置き換えない）
+    fireEvent.click(button('きょうのようすから入れる'));
+    await waitFor(() => expect(bodyArea().value).toBe(`園庭で遊びました。\n${added}`), { timeout: 3000 });
+  });
+
+  it('確認画面から「戻る」で戻ると、確認画面が持っていた編集ロックをそのまま続ける（取り直さない）', async () => {
+    await startPersonal();
+    fireEvent.change(bodyArea(), { target: { value: 'ロックを持ったまま確認から戻る' } });
+    await saveDraft();
+    const diaryId = db.diaries.find((d) => d.body === 'ロックを持ったまま確認から戻る')!.diary_id;
+    await reopened(diaryId);
+    const tokenNow = () => db.diaryLocks.find((l) => l.diary_id === diaryId)?.lock_token;
+    const before = tokenNow();
+    expect(before).toBeTruthy();
+
+    await waitFor(() => expect(button('確認へ進む').disabled).toBe(false));
+    fireEvent.click(button('確認へ進む'));
+    fireEvent.click(await screen.findByRole('button', { name: '戻る' }, { timeout: 3000 }));
+    await reopened(diaryId);
+    // 取り直すと識別子が替わる（モックの acquireLock は取るたびに新しい識別子を出す）
+    expect(tokenNow()).toBe(before);
+    expect(bodyArea().value).toBe('ロックを持ったまま確認から戻る');
   });
 });
