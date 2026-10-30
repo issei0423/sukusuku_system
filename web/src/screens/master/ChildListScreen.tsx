@@ -157,7 +157,7 @@ function AllergyCell({ childId }: { childId: string }) {
   if (!a.data || a.data.length === 0) return <span className="muted">―</span>;
   return (
     <>
-      {a.data.map((x) => <Tag key={x.allergy_id} label={x.target_food} className="tag-returned" />)}
+      {a.data.map((x) => <Tag key={x.allergy_id} label={x.target_food} className="tag-alert" />)}
     </>
   );
 }
