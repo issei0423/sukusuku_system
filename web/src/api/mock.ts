@@ -2044,7 +2044,7 @@ const chatApi2 = {
       chat_room_id: room.chat_room_id, account_id, joined_at: now(), left_at: null,
     }));
     log(user.account_id, '2', '1', 'm_chat_room', room.chat_room_id, null, null, `グループ「${name}」を作成`);
-    publish({ type: 'chat', room_id: room.chat_room_id }, (u) => isRoomMember(u, room.chat_room_id));
+    publishRoomMembers(room.chat_room_id);
     return ok(room);
   },
 
@@ -2079,7 +2079,7 @@ const chatApi2 = {
     });
     log(user.account_id, '2', '2', 't_chat_member', roomId, null, null, 'メンバーを編成');
     // 加わった人・外れた人の一覧を読み直させる。外れた職員の一覧にも、閲覧のみとして残る
-    publish({ type: 'chat', room_id: roomId }, (u) => isRoomMember(u, roomId));
+    publishRoomMembers(roomId);
     return ok(undefined);
   },
 
@@ -4467,15 +4467,38 @@ function isRoomMember(u: SessionUser, roomId: number): boolean {
   return !!m && !(m.left_at !== null && u.role === '3');
 }
 
-/** 新しいメッセージは、いまの参加者へ（server/events.go の notifyRoomPost） */
+/**
+ * そのチャンネルのメッセージを読めるか。参加していれば isRoomMember と同じ。
+ * 管理者は、参加していないグループも読み取りだけで読める（chatApi.messages の adminReads と同じ範囲。
+ * server/api_chat.go の canRead。GitHub Issue #312）
+ */
+function canReadRoom(u: SessionUser, roomId: number): boolean {
+  if (isRoomMember(u, roomId)) return true;
+  return u.role === '1'
+    && ADMIN_READ_ONLY_ROOM_TYPES.includes(db.chatRooms.find((r) => r.chat_room_id === roomId)?.room_type ?? '');
+}
+
+/**
+ * 新しいメッセージは、いまの参加者へ。参加していないグループを読み取りだけで並べている管理者にも送る。
+ * 外れた職員には、外れたあとの投稿を送らない（server/events.go の notifyRoomPost）
+ */
 function publishRoomPost(roomId: number): void {
-  publish({ type: 'chat', room_id: roomId }, (u) => isParticipant(u, roomId));
+  publish({ type: 'chat', room_id: roomId },
+    (u) => isParticipant(u, roomId) || (!isRoomMember(u, roomId) && canReadRoom(u, roomId)));
+}
+
+/**
+ * チャンネルの一覧に出る人（外れた職員と、読み取りだけで並べている管理者を含む）へ。
+ * 目的別グループの作成・編成、保護者の参加のとき（server/events.go の notifyRoomMembers）
+ */
+function publishRoomMembers(roomId: number): void {
+  publish({ type: 'chat', room_id: roomId }, (u) => canReadRoom(u, roomId));
 }
 
 /** 編集・取消・リアクションは、そのメッセージを見られる人へ（server/events.go の notifyMessage） */
 function publishMessage(m: ChatMessage): void {
   publish({ type: 'chat', room_id: m.chat_room_id },
-    (u) => isRoomMember(u, m.chat_room_id) && !hiddenBeforeJoined(u, m) && !hiddenAfterLeft(u, m));
+    (u) => canReadRoom(u, m.chat_room_id) && !hiddenBeforeJoined(u, m) && !hiddenAfterLeft(u, m));
 }
 
 /**
@@ -6778,7 +6801,7 @@ const guardianApi = {
     log(user.account_id, '7', '1', 't_guardian_child', user.account_id, c.child_id, null,
       existing ? '招待コードでお子さまを追加（終了していた紐づけを有効へ戻した）' : '招待コードでお子さまを追加');
     // 参加したルームの参加者へ（server/events.go の notifyRoomMembers）。保護者が参加したことを知らせる文は送らない
-    joined.forEach((roomId) => publish({ type: 'chat', room_id: roomId }, (u) => isRoomMember(u, roomId)));
+    joined.forEach((roomId) => publishRoomMembers(roomId));
     return ok({ ok: true as const, child_id: c.child_id });
   },
 
