@@ -630,11 +630,17 @@ func (a *app) handleSignUpGuardian(w http.ResponseWriter, r *http.Request) {
 	tx.Exec(`INSERT OR IGNORE INTO t_chat_member (chat_room_id, account_id, joined_at)
 		SELECT chat_room_id, ?, ? FROM m_chat_room WHERE room_type = '4' AND child_id = ?`,
 		accountID, now(), code.ChildID)
+	// クラスグループは、いまのクラス（今年度のクラス）のものだけ。過年度のクラスグループは閲覧のみのアーカイブで、
+	// 保護者は現在所属しているグループしか読めない（基本設計書「権限と参照範囲の判定」(4-2)・「年度更新」(4-4)）。
+	// お子さまの追加（api_guardian.go の addChildTx）・紐づけを戻す（api_admin.go の rejoinRoomsOfChild）と同じ条件
 	tx.Exec(`INSERT OR IGNORE INTO t_chat_member (chat_room_id, account_id, joined_at)
 		SELECT r.chat_room_id, ?, ? FROM m_chat_room r
-		 WHERE r.room_type = '2'
-		   AND r.class_id IN (SELECT class_id FROM t_class_child WHERE child_id = ?)`,
-		accountID, now(), code.ChildID)
+		 WHERE r.room_type = '2' AND r.is_archived = 0
+		   AND r.class_id IN (
+		     SELECT cc.class_id FROM t_class_child cc
+		       JOIN m_class c ON c.class_id = cc.class_id AND c.fiscal_year = ?
+		      WHERE cc.child_id = ?)`,
+		accountID, now(), fiscalYear, code.ChildID)
 	tx.Exec(`INSERT OR IGNORE INTO t_chat_member (chat_room_id, account_id, joined_at)
 		SELECT chat_room_id, ?, ? FROM m_chat_room WHERE room_type = '1'`, accountID, now())
 

@@ -3958,8 +3958,12 @@ const adminApi3 = {
     // 同じ氏名の別の園児がいるとき、別の家庭の個人チャットに入ってしまう（GitHub Issue #163。#140）
     const room = db.chatRooms.find((r) => r.room_type === '4' && r.child_id === c.child_id);
     if (room) db.chatMembers.push({ chat_room_id: room.chat_room_id, account_id: accountId, joined_at: now(), left_at: null });
-    const classId = db.classChildren.find((cc) => cc.child_id === c.child_id)?.class_id ?? null;
-    const classRoom = classId ? db.chatRooms.find((r) => r.room_type === '2' && r.class_id === classId) : null;
+    // クラスグループは、いまのクラス（今年度のクラス）のものだけ。過年度のクラスグループは閲覧のみのアーカイブで、
+    // 保護者は現在所属しているグループしか読めない（基本設計書「権限と参照範囲の判定」(4-2)・「年度更新」(4-4)）。
+    // server/api_auth.go と同じ。お子さまの追加（addChild）・紐づけを戻す（rejoinRoomsOfChild）と同じ条件
+    const classId = contactClassOf(c.child_id);
+    const classRoom = classId !== null
+      ? db.chatRooms.find((r) => r.room_type === '2' && r.class_id === classId && !r.is_archived) : null;
     if (classRoom) db.chatMembers.push({ chat_room_id: classRoom.chat_room_id, account_id: accountId, joined_at: now(), left_at: null });
     const zenRoom = db.chatRooms.find((r) => r.room_type === '1');
     if (zenRoom) db.chatMembers.push({ chat_room_id: zenRoom.chat_room_id, account_id: accountId, joined_at: now(), left_at: null });
