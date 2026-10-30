@@ -4385,7 +4385,9 @@ const dashboardApi = {
     // 保護者ホームは保護者のためのもの。職員が呼ぶと、参照範囲の園児すべてが「自児」として並ぶ
     // （GitHub Issue #159 の 3。server/api_dashboard.go の handleGuardianHome と同じ）
     if (user.role !== '3') return fail('保護者ホームは保護者のみが利用できます');
-    // 「きょう」は連絡帳を読める自児ごとに1件（猶予中を含む）。日誌は canSeeDiary が有効な紐づけの自児に絞る
+    // 「きょう」は連絡帳を読める自児ごとに1件（猶予中を含む。server/contact_scope.go の guardianContactChildren）。
+    // 日誌はここでは返さない。保護者が読める日誌は、共有を選んで承認された有効な紐づけの自児の個人日誌だけで、
+    // 「園からの日誌」の画面が guardianDiaries で読む（server/api_diary_share.go。#325）
     const mine = guardianContactChildren(user);
     const rooms = db.chatMembers.filter((m) => m.account_id === user.account_id && m.left_at === null).map((m) => m.chat_room_id);
     const unread = db.chatMessages.filter((m) =>
