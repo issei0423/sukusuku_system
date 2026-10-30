@@ -130,6 +130,38 @@ func TestStaleNonDemoDBIsKept(t *testing.T) {
 	}
 }
 
+// example.jp のアカウントがあっても、1番のアカウントが seed の管理者でなければデモの DB とみなさない
+// （確認用に example.jp のアカウントを作った本当の園の DB を取り違えない）
+func TestDBWithoutSeedAdminIsKept(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "school.db")
+	db, err := openDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`UPDATE m_account SET email = 'admin@school.test' WHERE account_id = 1`,
+		`INSERT INTO m_setting (setting_key, setting_value, description, updated_staff_id, updated_at)
+		   VALUES ('test.marker', 'school', '目印', 'S001', '2026-04-01T09:00:00')`,
+		`PRAGMA user_version = 0`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	db.Close()
+
+	db, err = openDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var marker int
+	db.QueryRow(`SELECT COUNT(*) FROM m_setting WHERE setting_key = 'test.marker'`).Scan(&marker)
+	db.Close()
+	if marker != 1 || len(staleFiles(t, path)) != 0 {
+		t.Errorf("1番が seed の管理者でないのに作り直された（目印 %d）", marker)
+	}
+}
+
 // 指紋が同じ DB を開き直しても、データは残る
 func TestSameFingerprintDBIsKept(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "same.db")

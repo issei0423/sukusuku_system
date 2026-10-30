@@ -10,7 +10,7 @@ go run . -web ../web/dist     # 配信する静的ファイルの場所
 ```
 
 初回起動時に `sukusuku.db` を作り、スキーマとデモデータを投入する。
-手元の DB も、`seed.sql` が変わると（作ったときの seed の指紋を `PRAGMA user_version` に持つ）起動時に作り直され、前のものは `sukusuku.db.stale-<UTC の日時>` に残る（新しい3つまで。デモのアカウントが1つも無い DB は作り直さない）。
+手元の DB も、`seed.sql` が変わると（作ったときの seed の指紋を `PRAGMA user_version` に持つ）起動時に作り直され、前のものは `sukusuku.db.stale-<UTC の日時>` に残る（新しい3つまで。1番のアカウントが seed の管理者（@hoiku.example.jp）でない DB と、環境変数 `SUKUSUKU_DEMO_RESEED=off` のときは作り直さない）。
 デモ用の編集ロックは起動のたびに現在時刻へ寄せる（「他の職員が編集中」の状態をいつでも見せるため）。
 
 ## 構成

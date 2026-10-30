@@ -163,8 +163,9 @@ func fingerprintOf(s string) int {
 }
 
 // isStaleDemoDB は、開いた既存の DB が「いまと違う seed で作られたデモの DB」かを返す。
-// デモの DB の目安は、メールアドレスが @hoiku.example.jp か @example.jp で終わるアカウントがあること
-// （seed のアカウントはすべてこの形。本当の園の DB では example.jp を使わない）。
+// デモの DB の目安は、1番のアカウントが seed の管理者（メールアドレスが @hoiku.example.jp で終わる）であること。
+// seed は1番に必ずこの形の管理者を置く（10-23 より前の seed も同じ）。本当の園の DB の1番は、その園の管理者になる。
+// example.jp のアカウントが1つあるだけでは目安にしない。確認用に作った本当の園の DB を取り違えるため（PR #332 の review）。
 // デモの DB でなければ、user_version も書かず、今までどおり開く。
 func isStaleDemoDB(db *sql.DB) (bool, error) {
 	var version int
@@ -176,7 +177,7 @@ func isStaleDemoDB(db *sql.DB) (bool, error) {
 	}
 	var demo int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM m_account
-		WHERE lower(email) LIKE '%@hoiku.example.jp' OR lower(email) LIKE '%@example.jp'`).Scan(&demo); err != nil {
+		WHERE account_id = 1 AND lower(email) LIKE '%@hoiku.example.jp'`).Scan(&demo); err != nil {
 		// アカウントの表が読めない DB（空のファイルなど）は、作り直さずに今までどおり扱う
 		return false, nil
 	}
@@ -184,7 +185,7 @@ func isStaleDemoDB(db *sql.DB) (bool, error) {
 		log.Printf("データベースの seed の指紋（%d）がいまと違いますが、デモの DB ではないため作り直しません", version)
 		return false, nil
 	}
-	// example.jp の目安に頼らず止める口（確認用に example.jp のアカウントを置いた本当の園の DB など。PR #332 の review の 2）
+	// 目安に頼らず止める口（PR #332 の review）
 	if os.Getenv("SUKUSUKU_DEMO_RESEED") == "off" {
 		log.Printf("データベースの seed の指紋（%d）がいまと違いますが、SUKUSUKU_DEMO_RESEED=off のため作り直しません", version)
 		return false, nil
