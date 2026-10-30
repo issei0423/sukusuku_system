@@ -152,6 +152,19 @@ it('保護者アカウント管理に「停止」「再開」のボタンは無�
   expect(screen.getAllByRole('button', { name: '紐づけを戻す' }).length).toBeGreaterThan(0);
 });
 
+/*
+ * 紐づけを戻すのは誤って解除したときに限り、戻すと解除していたあいだのやりとりも読める（基本設計書「保護者と園児の紐づけを戻す」(4-3)）。
+ * 守りは運用だけなので、確認ダイアログでその縛りと読める範囲を示す。開くだけで、戻す操作はしない
+ */
+it('「紐づけを戻す」の確認ダイアログは、誤って解除したときだけ使うことと、解除していたあいだのやりとりも読めることを示す', async () => {
+  openApp('/staff/admin/guardian-accounts', admin);
+  fireEvent.click((await screen.findAllByRole('button', { name: '紐づけを戻す' }))[0]);
+  const dialog = await screen.findByRole('dialog', { name: '紐づけを戻す' });
+  expect(dialog.textContent).toContain('誤って解除したときだけ');
+  expect(dialog.textContent).toContain('戻さずに新しい招待コードで紐づけてください');
+  expect(dialog.textContent).toContain('解除していたあいだのやりとりも読めるようになります');
+});
+
 it('操作ログ CSV は適用済みの期間で全ページを出力する', async () => {
   const firstId = Math.max(...db.operationLogs.map((x) => x.operation_log_id)) + 100000;
   const added = Array.from({ length: 110 }, (_, i) => ({ ...db.operationLogs[0],

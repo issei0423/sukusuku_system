@@ -166,4 +166,30 @@ describe('猶予中（紐づけが 3）の保護者は、読めるが書けな�
     }
     await api.send(guardian, 6, '有効に戻したら送れる');
   });
+
+  // 個人チャットは園児単位で判定する。保護者単位にすると、在園中のきょうだいの個人チャットにも書けなくなる
+  // （server/api_chat_guards_test.go の TestChatGraceSiblingStillWrites と同じケース）
+  it('有効な紐づけが残っている保護者は、猶予中の子とは別の子（きょうだい）の個人チャットへ書ける', async () => {
+    // G001 に、有効な紐づけの子（C002 遠藤 花子。個人チャットは 7）をもう1人足し、C001 だけ猶予中にする
+    const sibling = { guardian_id: 'G001', child_id: 'C002', relationship: '父', link_status: '1' as const,
+      linked_at: '2026-01-01T10:00:00', ended_at: null };
+    const member = { chat_room_id: 7, account_id: guardian.account_id, joined_at: '2026-01-01T10:00:00', left_at: null };
+    db.guardianChildren.push(sibling);
+    db.chatMembers.push(member);
+    const link = db.guardianChildren.find((g) => g.guardian_id === 'G001' && g.child_id === 'C001')!;
+    const before = { ...link };
+    link.link_status = '3';
+    link.grace_ends_on = '2099-01-01';
+    try {
+      await expect(api.send(guardian, 6, '猶予中の子')).rejects.toThrow(GRACE);
+      expect(countOf(6, '猶予中の子')).toBe(0);
+      await api.send(guardian, 7, '有効な子');
+      expect(countOf(7, '有効な子')).toBe(1);
+      expect((await api.rooms(guardian)).find((r) => r.room.chat_room_id === 7)!.canPost).toBe(true);
+    } finally {
+      Object.assign(link, before);
+      db.guardianChildren.splice(db.guardianChildren.indexOf(sibling), 1);
+      db.chatMembers.splice(db.chatMembers.indexOf(member), 1);
+    }
+  });
 });

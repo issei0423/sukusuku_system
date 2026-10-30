@@ -111,7 +111,8 @@ describe('approval.warn_days（モックの規則）', () => {
   });
 
   it('管理者だけが見られる', async () => {
-    await expect(api.pendingDiaries(teacher)).rejects.toThrow('承認は管理者のみが行えます');
+    // 一覧の取得は承認ではないので、承認の文ではなく管理者だけの経路の文で断る（server/session.go の requireAdmin と同じ）
+    await expect(api.pendingDiaries(teacher)).rejects.toThrow('この操作は管理者のみが行えます');
   });
 });
 
