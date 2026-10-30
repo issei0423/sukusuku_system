@@ -277,9 +277,12 @@ select:focus-visible, textarea:focus-visible, summary:focus-visible {
 }
 .btn-quiet:disabled { border-color: transparent; background: transparent; }
 
-/* 「日付と種別｜開く」のように2つに分けて書いたボタンは、後ろの短い語を1行に保ち、前の語の側で折り返す */
-.btn > span:last-child:not(:first-child) { flex: none; white-space: nowrap; }
-.btn > span:first-child:not(:last-child) { text-align: left; }
+/*
+ * 「日付と種別｜開く」のように2つに分けて書いたボタンは、後ろの短い語を1行に保ち、前の語の側で折り返す。
+ * アイコン（components/icons.tsx の svg）を前や後ろに添えても同じ span に当たるよう、子の順でなく span の順で選ぶ
+ */
+.btn > span:last-of-type:not(:first-of-type) { flex: none; white-space: nowrap; }
+.btn > span:first-of-type:not(:last-of-type) { text-align: left; }
 
 /* 小さいボタン（DADS のボタン S の見た目）。押せる大きさは 44px を保つ */
 .btn-sm    { min-height: var(--tap-min); padding: var(--sp-1) var(--sp-3); border-radius: var(--radius-sm); }

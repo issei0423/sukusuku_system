@@ -18,7 +18,11 @@
  *   - 付けない：表の中のボタン・小さいボタン（btn-sm）、選択肢（aria-pressed のボタン・ラジオ型）、
  *     午睡チェックの直接入力、チャットのリアクション、テキストボタン（btn-quiet。ただし「戻る」には付ける）
  *   - 置き方：文字の前に置く（<button><SaveIcon />保存する</button>）。button・.btn は inline-flex・間 8px なので、そのまま並ぶ。
+ *     進む・開く（ForwardIcon。もとの「→」「›」）だけは、文字の後ろに置く（「次の日 ›」「確認へ進む」「連絡帳を開く →」）。
  *     絵は aria-hidden なので、読み上げの名前（accessible name）は文字のままで変わらない
+ *   - 文字に混ぜていた記号（「＋ 追加」の＋、「< もどる」「‹ ホームへ」の < ‹、「次の日 ›」の ›、「→」「×」「✓」）は、絵に置き換える。
+ *     記号は読み上げの名前から外れる（「＋ 追加」は「追加」と読まれる）
+ *   - テキストボタン・小さいボタンでも、前の画面へ戻るリンク（「< 園児一覧へ」など）には BackIcon を付ける
  *   - 大きさは CSS の .icon（文字の 1.25 倍。app.css）。ブラウザの文字の大きさの設定に合わせて大きくなる
  *   - 縦向き（900px 未満）では、職員の左メニューのアイコンを出さない。左メニューが 152px に狭まり、
  *     絵を添えると「保護者アカウント」などの項目名が2行に折り返すため（app.css）
@@ -75,6 +79,9 @@ const SYMBOL = {
   refresh: 'M480-160q-134 0-227-93t-93-227q0-134 93-227t227-93q69 0 132 28.5T720-690v-110h80v280H520v-80h168q-32-56-87.5-88T480-720q-100 0-170 70t-70 170q0 100 70 170t170 70q77 0 139-44t87-116h84q-28 106-114 173t-196 67Z',
   play_arrow: 'M320-200v-560l440 280-440 280Zm80-280Zm0 134 210-134-210-134v268Z',
   stop: 'M320-640v320-320Zm-80 400v-480h480v480H240Zm80-80h320v-320H320v320Z',
+  chevron_left: 'M560-240 320-480l240-240 56 56-184 184 184 184-56 56Z',
+  login: 'M480-120v-80h280v-560H480v-80h280q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H480Zm-80-160-55-58 102-102H120v-80h327L345-622l55-58 200 200-200 200Z',
+  attach_file: 'M720-330q0 104-73 177T470-80q-104 0-177-73t-73-177v-370q0-75 52.5-127.5T400-880q75 0 127.5 52.5T580-700v350q0 46-32 78t-78 32q-46 0-78-32t-32-78v-370h80v370q0 13 8.5 21.5T470-320q13 0 21.5-8.5T500-350v-350q-1-42-29.5-71T400-800q-42 0-71 29t-29 71v370q-1 71 49 120.5T470-160q70 0 119-49.5T640-330v-390h80v390Z',
 } as const;
 
 function MaterialSymbol({ name }: { name: keyof typeof SYMBOL }) {
@@ -140,6 +147,10 @@ export const NotifySettingsIcon = () => <MaterialSymbol name="edit_notifications
 export const AiDraftIcon = () => <MaterialSymbol name="smart_toy" />;
 /** ログアウト */
 export const LogoutIcon = () => <MaterialSymbol name="logout" />;
+/** ログイン */
+export const LoginIcon = () => <MaterialSymbol name="login" />;
+/** 新規登録（招待コードで利用者を登録する） */
+export const SignUpIcon = () => <MaterialSymbol name="person_add" />;
 
 /* ---- ヘッダ・印 ---- */
 /** 通知（ヘッダの通知のベル） */
@@ -150,8 +161,10 @@ export const MenuIcon = () => <MaterialSymbol name="menu" />;
 export const CloseIcon = () => <MaterialSymbol name="close" />;
 /** 進む・開く（→） */
 export const ForwardIcon = () => <MaterialSymbol name="chevron_right" />;
-/** 戻る */
+/** 戻る（○○へ戻る・もどる。前の画面へ移るリンク・ボタン） */
 export const BackIcon = () => <MaterialSymbol name="arrow_back" />;
+/** 前へ（‹）。前の日・前の月 */
+export const PrevIcon = () => <MaterialSymbol name="chevron_left" />;
 /** 選んでいる（✓） */
 export const SelectedIcon = () => <MaterialSymbol name="check" />;
 
@@ -194,3 +207,5 @@ export const RefreshIcon = () => <MaterialSymbol name="refresh" />;
 export const StartIcon = () => <MaterialSymbol name="play_arrow" />;
 /** 終了 */
 export const EndIcon = () => <MaterialSymbol name="stop" />;
+/** 添付 */
+export const AttachIcon = () => <MaterialSymbol name="attach_file" />;
