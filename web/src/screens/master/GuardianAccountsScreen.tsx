@@ -3,8 +3,10 @@
  * 典拠：基本設計書.md「画面の一覧」(3-2)
  *      「紐づけの解除、アカウントの停止、未同意者の確認」
  *
- * 紐づけ単位で終了させる。アカウントの停止は有効な紐づけがゼロになった時点（基本設計書 5-3）。
- * 有効な紐づけが無いアカウントは再開できない。誤って解除したときは、紐づけを戻す（GitHub Issue #118）。
+ * 紐づけ単位で終了させる。アカウントの停止は有効な紐づけがゼロになった時点（基本設計書 5-3）で、システムが行う。
+ * 管理者が保護者アカウントを手で停止・再開するボタンは置かない（基本設計書「アカウントの停止と再開」(4-3)、
+ * 図/画面詳細図「保護者アカウント管理画面」(7-8) 項目5「置かない」。GitHub Issue #272）。
+ * 止めるときは紐づけの解除、戻すときは「紐づけを戻す」（停止していたアカウントもあわせて再開する。GitHub Issue #118）。
  */
 import { useState } from 'react';
 import { useAsync } from '../../hooks';
@@ -16,12 +18,9 @@ import { ACCOUNT_STATUS, LINK_STATUS } from '../../api/codes';
 import { formatYMD } from '../../api/util';
 
 type LinkTarget = { guardianId: string; childId: string; guardianName: string; childName: string; last: boolean; stopped: boolean };
-type AccountTarget = { accountId: number; guardianName: string };
 type Pending =
   | ({ kind: 'end' } & LinkTarget)
-  | ({ kind: 'restore' } & LinkTarget)
-  | ({ kind: 'stop' } & AccountTarget)
-  | ({ kind: 'resume' } & AccountTarget);
+  | ({ kind: 'restore' } & LinkTarget);
 
 export default function GuardianAccountsScreen() {
   const { user } = useSession();
@@ -38,14 +37,9 @@ export default function GuardianAccountsScreen() {
       if (pending.kind === 'end') {
         await api.endGuardianLink(user!, pending.guardianId, pending.childId);
         notify(`${pending.guardianName} さんと ${pending.childName} の紐づけを解除しました`);
-      } else if (pending.kind === 'restore') {
+      } else {
         await api.restoreGuardianLink(user!, pending.guardianId, pending.childId);
         notify(`${pending.guardianName} さんと ${pending.childName} の紐づけを戻しました`);
-      } else {
-        await api.setAccountStatus(user!, pending.accountId, pending.kind === 'stop' ? '2' : '1');
-        notify(pending.kind === 'stop'
-          ? `${pending.guardianName} さんのアカウントを停止しました`
-          : `${pending.guardianName} さんのアカウントを再開しました`);
       }
       setTick((n) => n + 1);
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); setPending(null); }
@@ -77,7 +71,7 @@ export default function GuardianAccountsScreen() {
         {data && data.length > 0 && (
           <table className="list">
             <thead>
-              <tr><th scope="col">保護者</th><th scope="col">ログインID</th><th scope="col">電話番号</th><th scope="col">紐づく園児</th><th scope="col">規約</th><th scope="col">状態</th><th scope="col">操作</th></tr>
+              <tr><th scope="col">保護者</th><th scope="col">ログインID</th><th scope="col">電話番号</th><th scope="col">紐づく園児</th><th scope="col">規約</th><th scope="col">状態</th></tr>
             </thead>
             <tbody>
               {data.map((r) => (
@@ -122,24 +116,6 @@ export default function GuardianAccountsScreen() {
                     <Tag label={ACCOUNT_STATUS[r.account.status]}
                       className={r.account.status === '1' ? 'tag-approved' : 'tag-draft'} />
                   </td>
-                  <td className="nowrap">
-                    {r.account.status === '1' ? (
-                      <button className="btn-sm" onClick={() => setPending({
-                        kind: 'stop', accountId: r.account.account_id, guardianName: r.guardian.guardian_name,
-                      })}>
-                        停止
-                      </button>
-                    ) : (
-                      // 有効な紐づけが無いアカウントは再開できない。紐づけを戻すと再開される
-                      <button className="btn-sm" disabled={r.activeLinks === 0}
-                        title={r.activeLinks === 0 ? '有効な紐づけが無いため再開できません。「紐づけを戻す」を使ってください' : undefined}
-                        onClick={() => setPending({
-                          kind: 'resume', accountId: r.account.account_id, guardianName: r.guardian.guardian_name,
-                        })}>
-                        再開
-                      </button>
-                    )}
-                  </td>
                 </tr>
               ))}
             </tbody>
@@ -152,7 +128,7 @@ export default function GuardianAccountsScreen() {
           {/* 紐づけ単位で終了させ、有効な紐づけがゼロになった時点で停止する（基本設計書「クラスと紐づけ」(5-3)） */}
           紐づけは園児ごとに終了させます。有効な紐づけがゼロになった時点で、アカウントは自動的に停止されます。
           <br />
-          有効な紐づけが無いアカウントは再開できません。誤って解除したときは「紐づけを戻す」を使ってください。
+          誤って解除したときは「紐づけを戻す」を使ってください。
           紐づけを戻すと、停止していたアカウントも再開されます。
           <br />
           紐づけを終了しても、その保護者が参加していた期間のやりとりは記録として残ります。
@@ -180,19 +156,6 @@ export default function GuardianAccountsScreen() {
           {pending.stopped && (
             <Alert soft>{pending.guardianName} さんのアカウントは停止中です。紐づけを戻すと、あわせて再開されます。</Alert>
           )}
-        </ConfirmDialog>
-      )}
-      {pending?.kind === 'stop' && (
-        <ConfirmDialog title="アカウントの停止" confirmLabel="停止する" danger busy={busy}
-          onConfirm={run} onCancel={() => setPending(null)}>
-          <p>{pending.guardianName} さんのアカウントを停止します。</p>
-          <p className="muted">停止すると、{pending.guardianName} さんはログインできなくなります。「再開」で戻せます。</p>
-        </ConfirmDialog>
-      )}
-      {pending?.kind === 'resume' && (
-        <ConfirmDialog title="アカウントの再開" confirmLabel="再開する" busy={busy}
-          onConfirm={run} onCancel={() => setPending(null)}>
-          <p>{pending.guardianName} さんのアカウントを再開します。再開すると、ふたたびログインできるようになります。</p>
         </ConfirmDialog>
       )}
     </div>

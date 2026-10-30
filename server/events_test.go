@@ -294,7 +294,8 @@ func TestEventsClosedWhenAccountSuspended(t *testing.T) {
 
 	_, body := openStream(t, srv.URL, other)
 	// 停止は、ほかの知らせを待たずにその場で切る（心拍の間隔は既定の長さのまま）
-	call(t, h, admin, "POST", "/api/admin/accounts/9/status", `{"status":"2"}`)
+	// 保護者は手で停止できない。最後の紐づけの解除で止まる（基本設計書「アカウントの停止と再開」(4-3)）
+	call(t, h, admin, "POST", "/api/admin/guardian-links/end", `{"guardian_id":"G004","child_id":"C004"}`)
 	expectClosed(t, a, body)
 }
 

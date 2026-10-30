@@ -749,7 +749,10 @@ export interface GrowthStandard {
 /** 操作ログ（t_operation_log）。追記のみとし、更新・削除の手段を設けない（5-8） */
 export interface OperationLog {
   operation_log_id: number;
-  account_id: number;
+  /** システムが行った変更（operator_type '2'）は null（5-9。仮の「システム」アカウントは作らない） */
+  account_id: number | null;
+  /** 操作者の種類。'1' アカウント '2' システム。無ければ '1'（server/schema.sql の operator_type） */
+  operator_type?: '1' | '2';
   operated_at: string;
   function_type: FunctionType;
   operation_type: OperationType;

@@ -271,7 +271,8 @@ describe('受け取れない人', () => {
 
   it('停止中の保護者には出さない', async () => {
     const got = watch(misakiGuardian);
-    await api.setAccountStatus(admin, 9, '2');
+    // 保護者は、手で停止せず、最後の紐づけの解除で止まる（基本設計書「アカウントの停止と再開」(4-3)）
+    await api.endGuardianLink(admin, 'G004', 'C004');
     await api.send(teacher, 8, 'お熱は下がりましたか。');
     expect(got).toEqual([]);
   });
