@@ -10,7 +10,7 @@
  * 画面ごとに確認の作りを持たせず、ログアウトの側の1か所で確かめるため。
  * 受け取る側が無い（Provider の外の）画面では、何もしない。
  */
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useLayoutEffect, useRef, useState } from 'react';
 
 type Report = (key: symbol, unsaved: boolean) => void;
 
@@ -29,12 +29,14 @@ export function useUnsavedInputTracker(): { report: Report; hasUnsavedInput: () 
 
 /**
  * 保存していない入力があるかを、ログアウトを置くレイアウトへ知らせる。
- * 画面を離れたら（アンマウントしたら）知らせを取り下げる
+ * 画面を離れたら（アンマウントしたら）知らせを取り下げる。
+ * 知らせは描いた直後（useLayoutEffect）に入れる。useEffect だと、入力を空にした画面が出てから effect が走るまでの間
+ * （負荷のあるときは長い）に押したログアウトが、前の「保存していない入力がある」で確認を出してしまう（GitHub Issue #324）
  */
 export function useUnsavedInput(unsaved: boolean): void {
   const report = useContext(UnsavedInputContext);
   const [key] = useState(() => Symbol('unsaved-input'));
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!report) return;
     report(key, unsaved);
     return () => report(key, false);
