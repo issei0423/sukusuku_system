@@ -14,6 +14,7 @@ import { useSession } from '../../session';
 import { api } from '../../api/client';
 import { validateEmail, validateNewPassword } from '../../api/util';
 import { LoggedInNotice } from './TopScreen';
+import { BackIcon, ConfirmIcon, SignUpIcon } from '../../components/icons';
 
 /** 保護者の氏名の上限（基本設計書「入力項目の制約値」(4-9)「氏名・かな（園児・職員・保護者）｜各50文字以内」） */
 const NAME_MAX = 50;
@@ -110,7 +111,7 @@ export default function SignUpScreen() {
   return (
     <PublicLayout wide>
       <div className="page-head">
-        <Link className="btn btn-quiet btn-sm" to="/">&lt; 戻る</Link>
+        <Link className="btn btn-quiet btn-sm" to="/"><BackIcon />戻る</Link>
         <h1>新規登録</h1>
       </div>
 
@@ -124,7 +125,7 @@ export default function SignUpScreen() {
             <input type="text" value={code} placeholder="ABCD-1234-EFGH"
               onChange={(e) => { setCode(e.target.value); setCodeOk(false); }} />
           </Field>
-          <button onClick={verify} disabled={!code.trim()}>コードを確認する</button>
+          <button onClick={verify} disabled={!code.trim()}><ConfirmIcon />コードを確認する</button>
         </div>
         {codeOk && <div className="muted" role="status" style={{ marginTop: 8 }}>招待コードを確認しました。次へ進んでください。</div>}
         <div className="muted" style={{ marginTop: 8 }}>
@@ -172,7 +173,7 @@ export default function SignUpScreen() {
             <input type="password" value={password2} autoComplete="new-password" onChange={(e) => setPassword2(e.target.value)} />
           </Field>
           <button className="btn-primary btn-block" type="submit" disabled={busy}>
-            {busy ? '登録しています…' : '登録する'}
+            <SignUpIcon />{busy ? '登録しています…' : '登録する'}
           </button>
         </fieldset>
       </form>
