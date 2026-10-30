@@ -31,10 +31,10 @@ type Diary struct {
 	NapAbnormalID  *int64  `json:"nap_abnormal_id"`
 	ReturnedReason *string `json:"returned_reason"`
 	// 保護者へ共有する。個人日誌だけ。承認されると、その園児の保護者が読める（api_diary_share.go）
-	ShareToGuardian bool    `json:"share_to_guardian"`
-	IsDeleted       bool    `json:"is_deleted"`
-	CreatedAt      string  `json:"created_at"`
-	UpdatedAt      string  `json:"updated_at"`
+	ShareToGuardian bool   `json:"share_to_guardian"`
+	IsDeleted       bool   `json:"is_deleted"`
+	CreatedAt       string `json:"created_at"`
+	UpdatedAt       string `json:"updated_at"`
 	// 画面が使う導出値
 	ChildName string `json:"child_name"`
 	ClassName string `json:"class_name"`

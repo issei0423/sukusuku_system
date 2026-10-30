@@ -24,9 +24,9 @@ type DiaryContactChange struct {
 	Kind       string `json:"kind"`        // meal | nap
 	RecordedAt string `json:"recorded_at"` // 記録の時刻（食事は記録した時刻、午睡はねた時刻）
 	// 食事の区分（1:給食 2:おやつ）。「11:40 給食（15:20 に訂正）」と出すために添える（【仮置き】設計の形に足した項目。web/仮置き値.md）
-	MealKind string `json:"meal_kind,omitempty"`
-	Change     string `json:"change"`      // correct | cancel
-	ChangedAt  string `json:"changed_at"`
+	MealKind  string `json:"meal_kind,omitempty"`
+	Change    string `json:"change"` // correct | cancel
+	ChangedAt string `json:"changed_at"`
 }
 
 // diaryLine は、時刻の順に並べるための1行
