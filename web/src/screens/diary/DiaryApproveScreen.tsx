@@ -20,6 +20,7 @@ import { DIARY_RECORD_TYPE, DIARY_STATUS } from '../../api/codes';
 import { formatYMD, formatMDHM } from '../../api/util';
 import { IncidentSummary } from './IncidentFields';
 import { ContactChangesBand } from './ContactChangesBand';
+import { BackIcon, ReturnIcon, ApproveIcon } from '../../components/icons';
 
 export default function DiaryApproveScreen() {
   const { user } = useSession();
@@ -73,7 +74,7 @@ export default function DiaryApproveScreen() {
   return (
     <div style={{ maxWidth: 820 }}>
       <div className="page-head">
-        <Link className="btn btn-quiet btn-sm" to="/staff/admin/approval">&lt; 承認待ち一覧へ</Link>
+        <Link className="btn btn-quiet btn-sm" to="/staff/admin/approval"><BackIcon />承認待ち一覧へ</Link>
         <h1>日誌の承認</h1>
         <div className="spacer" />
         {/* 申請者・申請日時（詳細設計書「日誌の画面（作り直し）」(2-13 (1))）。作成者とは別の職員が申請することがある */}
@@ -147,9 +148,9 @@ export default function DiaryApproveScreen() {
       </section>
 
       <div className="row-end">
-        <button className="btn-danger" onClick={sendBack} disabled={busy || !pending || !reason.trim()}>差し戻す</button>
+        <button className="btn-danger" onClick={sendBack} disabled={busy || !pending || !reason.trim()}><ReturnIcon />差し戻す</button>
         <button className="btn-primary" onClick={approve} disabled={busy || !pending || own}>
-          {shares ? '承認して保護者へ共有する' : '承認する'}
+          <ApproveIcon />{shares ? '承認して保護者へ共有する' : '承認する'}
         </button>
       </div>
 

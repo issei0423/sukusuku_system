@@ -16,6 +16,7 @@ import { api, childName } from '../../api/client';
 import { Loading, ErrorBox, Empty, Tag } from '../../components/ui';
 import { DIARY_RECORD_TYPE, DIARY_STATUS, DIARY_STATUS_CLASS, BODY_POSITION } from '../../api/codes';
 import { formatYMD, formatAge, formatHM, today } from '../../api/util';
+import { BackIcon } from '../../components/icons';
 
 type Entry =
   | { kind: 'diary'; date: string; time: string | null; label: string; status: string; statusClass: string; to: string; detail: string }
@@ -72,7 +73,7 @@ export default function ChildTimelineScreen() {
   return (
     <div style={{ maxWidth: 860 }}>
       <div className="page-head">
-        <Link className="btn btn-quiet btn-sm" to="/staff/children">&lt; 園児一覧へ</Link>
+        <Link className="btn btn-quiet btn-sm" to="/staff/children"><BackIcon />園児一覧へ</Link>
         <h1>{c.child_name} の記録</h1>
         <div className="spacer" />
         <span className="muted">{formatAge(c.birth_date, today())}</span>
