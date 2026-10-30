@@ -128,8 +128,18 @@ func (a *app) handleSaveDiary(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "記録日の形式が正しくありません")
 		return
 	}
-	if in.DiaryDate > today() {
-		writeErr(w, http.StatusBadRequest, "記録日に未来日は指定できません")
+	/*
+	 * 週案・月案だけは365日先まで認める（記録日を「計画の初日」と読む。基本設計書「日付の扱い」(4-6)・
+	 * 「入力項目の制約値」(4-9)、図/画面詳細図.md「日誌作成・編集画面」(3-2) 項目6。GitHub Issue #278 の 1）。
+	 * 文言は基本設計書「メッセージ一覧」(4-12)・詳細設計書「日誌」(4-13 (1))。モック（saveDiary）と同じ規則
+	 */
+	if in.RecordType == "3" {
+		if in.DiaryDate > addDays(today(), diaryPlanMaxDays) {
+			writeErr(w, http.StatusBadRequest, msgDiaryPlanTooFar)
+			return
+		}
+	} else if in.DiaryDate > today() {
+		writeErr(w, http.StatusBadRequest, msgDiaryFutureDate)
 		return
 	}
 	// 個人日誌・ヒヤリハットは対象園児が要る
@@ -282,7 +292,7 @@ func (a *app) updateDiary(w http.ResponseWriter, u *SessionUser, in diaryInput) 
 	 * 識別子が一致しても、ロックを持つ本人でなければ通さない（同 2）
 	 */
 	if !a.holdsDiaryLock(u, *in.DiaryID, in.LockToken) {
-		writeErr(w, http.StatusConflict, "編集ロックが解除されました。内容を再読み込みしてください")
+		writeErr(w, http.StatusConflict, msgDiaryLockReleased)
 		return
 	}
 
@@ -417,7 +427,15 @@ const (
 	msgDiaryRevokeReasonLong  = "承認を取り消す理由は500文字以内で入力してください。"
 	msgDiaryNotApproved       = "承認済みの日誌ではありません。画面を読み込み直してください。"
 	msgDiaryVersionConflict   = "他の職員が更新しています。内容を再読み込みしてください。"
+	// 基本設計書「メッセージ一覧」(4-12) の日誌の文言（句点まで）。GitHub Issue #278 の 5
+	msgDiaryLockReleased = "編集ロックが解除されました。内容を再読み込みしてください。"
+	msgDiaryFutureDate   = "記録日に未来の日付は指定できません。"
+	// 詳細設計書「日誌」(4-13 (1))（本書で足す文言）
+	msgDiaryPlanTooFar = "週案・月案の記録日は365日先までです。"
 )
+
+// diaryPlanMaxDays は、週案・月案の記録日を先の日付にできる日数（基本設計書「日付の扱い」(4-6)）
+const diaryPlanMaxDays = 365
 
 // requireAdminFor は管理者だけを通す。管理者でなければ、その操作の文言で 403 を返す
 func (a *app) requireAdminFor(w http.ResponseWriter, r *http.Request, message string) (*SessionUser, bool) {
@@ -859,7 +877,7 @@ func (a *app) handleTouchLock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !a.holdsDiaryLock(u, id, req.LockToken) {
-		writeErr(w, http.StatusConflict, "編集ロックが解除されました。内容を再読み込みしてください")
+		writeErr(w, http.StatusConflict, msgDiaryLockReleased)
 		return
 	}
 	a.db.Exec(`UPDATE t_diary_lock SET last_active_at = ? WHERE diary_id = ?`, now(), id)

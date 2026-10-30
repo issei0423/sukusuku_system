@@ -450,6 +450,7 @@ const apiAuth = {
     get<Paged<Diary>>('/api/diaries' + qs({
       record_type: f.recordType ?? '', class_id: f.classId ?? '', status: f.status ?? '',
       from: f.from ?? '', to: f.to ?? '', page: f.page ?? 1, mine: f.mine ? 1 : '',
+      child: f.child?.trim() ?? '', keyword: f.keyword?.trim() ?? '',
     })),
 
   getDiary: (_u: SessionUser, diaryId: number) => get<Diary>(`/api/diaries/${diaryId}`),
@@ -824,6 +825,9 @@ const contactApi = {
   ...contactPhotoApi,
   contactPage: (_u: SessionUser, childId: string, date?: string) =>
     get<ContactPage>(`/api/contact/children/${encodeURIComponent(childId)}${date ? qs({ date }) : ''}`),
+  // きょうのようすから入れる行（日誌作成・編集画面）。詳細設計書「日誌」(4-13 (8))
+  diaryLines: (_u: SessionUser, childId: string, date?: string) =>
+    get<{ lines: string[] }>(`/api/contact/children/${childId}/diary-lines${qs({ date })}`),
   contactMonth: (_u: SessionUser, childId: string, month?: string) =>
     get<ContactMonth>(`/api/contact/children/${encodeURIComponent(childId)}/month${month ? qs({ month }) : ''}`),
   markContactRead: (_u: SessionUser, childId: string, date: string) =>

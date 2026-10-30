@@ -27,7 +27,7 @@ const teacher: SessionUser = {
   is_temp_password: false, terms_agreed: true,
 };
 
-const RELEASED = '編集ロックが解除されました。内容を再読み込みしてください';
+const RELEASED = '編集ロックが解除されました。内容を再読み込みしてください。';
 
 // 日誌 1 は鈴木（さくら組）の下書き。西田 太郎（C001）の個人日誌
 const diary1 = (token: string | undefined, body: string): DiaryInput => ({

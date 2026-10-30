@@ -65,7 +65,11 @@ export interface DiaryFilter {
   from?: string;
   to?: string;
   page?: number;
-  /** 【仮置き】自分が書いた日誌に絞る。職員ダッシュボードの「差し戻された日誌」から開いたとき（GitHub Issue #174） */
+  /** 園児名（名前・よみの部分一致。空白は問わない）。図/画面詳細図「日誌一覧画面」(3-1) 項目10 */
+  child?: string;
+  /** キーワード（本文の部分一致。ヒヤリハットは場所も）。同 項目11 */
+  keyword?: string;
+  /** 自分が作成したもの（同 項目12）。職員ダッシュボードの「差し戻された日誌」から開いたときはオン（GitHub Issue #174） */
   mine?: boolean;
 }
 

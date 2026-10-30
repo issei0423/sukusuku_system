@@ -250,6 +250,22 @@ export interface Diary {
   applied_staff_name?: string | null;
   /** ヒヤリハットの欄。ヒヤリハットのときだけ返す導出値（詳細設計書「日誌」(4-13 (6))） */
   incident?: DiaryIncident | null;
+  /**
+   * 取り込んだあとに連絡帳で訂正・取り消しされた記録。個人日誌を1件読んだときだけ、1件以上あれば付く
+   * （詳細設計書「日誌」(4-13 (6))。GitHub Issue #278 の 2）
+   */
+  contact_changes?: DiaryContactChange[];
+}
+
+/** 日誌を作ったあとに連絡帳で訂正・取り消しされた、食事・午睡の記録1件 */
+export interface DiaryContactChange {
+  kind: 'meal' | 'nap';
+  /** 記録の時刻（食事は記録した時刻、午睡はねた時刻） */
+  recorded_at: string;
+  /** 食事の区分（1:給食 2:おやつ）。食事のときだけ。【仮置き】設計の形に足した項目（web/仮置き値.md） */
+  meal_kind?: '1' | '2';
+  change: 'correct' | 'cancel';
+  changed_at: string;
 }
 
 /**
