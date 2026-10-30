@@ -167,7 +167,11 @@ export default function StaffDashboard() {
             <Link className="btn btn-block" to="/staff/contact"><ContactBookIcon />連絡帳</Link>
             {data.activeNap && (
               <Link className="btn btn-primary btn-block" to="/staff/nap">
-                <NapIcon />午睡チェックが実施中です（開く）
+                {/*
+                  【仮置き】絵を添えると iPad 横向き（1024px）で1行に収まらない。「（開」と「く）」のあいだで割らず、
+                  「（開く）」ごと次の行へ送る（文字を1つの span にまとめ、その中で「（開く）」を折り返さない。web/仮置き値.md「アイコン」）
+                */}
+                <NapIcon /><span>午睡チェックが実施中です<span className="nowrap">（開く）</span></span>
               </Link>
             )}
             {!data.activeNap && <Link className="btn btn-block" to="/staff/nap"><NapIcon />午睡チェックを開始</Link>}
