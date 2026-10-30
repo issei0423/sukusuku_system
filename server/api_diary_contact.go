@@ -16,7 +16,6 @@ import (
  * GitHub Issue #278 の 2。モック（web/src/api/mock.ts の contactApi.diaryLines・diaryContactChanges）と同じ文・同じ規則にする
  */
 
-
 // DiaryContactChange は、取り込んだあとに連絡帳で訂正・取り消しされた記録の1件（詳細設計書「日誌」(4-13 (6))）
 type DiaryContactChange struct {
 	Kind       string `json:"kind"`        // meal | nap
