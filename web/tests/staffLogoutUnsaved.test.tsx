@@ -104,10 +104,14 @@ describe('職員のログアウト：保存していない入力（#304 の 1）
 });
 
 describe('パスワードを変えたあとは、欄を空にし、ログアウトで確かめない（#304 の 2）', () => {
-  async function change(current: string, next: string) {
+  async function fill(current: string, next: string) {
     fireEvent.change(await screen.findByLabelText('現在のパスワード', undefined, { timeout: 3000 }), { target: { value: current } });
     fireEvent.change(screen.getByLabelText('新しいパスワード'), { target: { value: next } });
     fireEvent.change(screen.getByLabelText('新しいパスワード（確認）'), { target: { value: next } });
+  }
+
+  async function change(current: string, next: string) {
+    await fill(current, next);
     fireEvent.click(screen.getByRole('button', { name: '変更する' }));
     await screen.findByText('パスワードを変更しました。', undefined, { timeout: 3000 });
     for (const label of ['現在のパスワード', '新しいパスワード', '新しいパスワード（確認）']) {
@@ -119,6 +123,25 @@ describe('パスワードを変えたあとは、欄を空にし、ログアウ�
     open('/staff/password', teacher);
     await change(accountOf(teacher.account_id).password_hash, 'suzuki-5678');
     logoutFromHeader();
+    await screen.findByText('職員用の入口', {}, { timeout: 3000 });
+    expect(screen.queryByRole('dialog', { name: DIALOG })).toBeNull();
+  });
+
+  // 欄が空になったその場（MutationObserver の中。画面の passive effect より前）でログアウトを押しても、確かめない
+  // （GitHub Issue #324）。負荷のあるときは、上の「職員」がこの間にログアウトを押し、確認が出て落ちることがあった
+  it('職員：欄が空になった直後にログアウトを押しても、確かめない', async () => {
+    open('/staff/password', teacher);
+    await fill(accountOf(teacher.account_id).password_hash, 'suzuki-5678');
+    await new Promise<void>((resolve) => {
+      const mo = new MutationObserver(() => {
+        if (!screen.queryByText('パスワードを変更しました。')) return;
+        mo.disconnect();
+        logoutFromHeader();
+        resolve();
+      });
+      mo.observe(document.body, { childList: true, subtree: true });
+      fireEvent.click(screen.getByRole('button', { name: '変更する' }));
+    });
     await screen.findByText('職員用の入口', {}, { timeout: 3000 });
     expect(screen.queryByRole('dialog', { name: DIALOG })).toBeNull();
   });
