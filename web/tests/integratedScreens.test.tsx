@@ -123,6 +123,35 @@ it('同姓同名の別の園児は、招待コード一覧・発行・配布用�
   }
 });
 
+/*
+ * 招待コードの配布用の出力に、登録の手順を載せる（要件定義書「招待コードの一括発行・配布用出力」(4-1-2)
+ * 「配布用の一覧（園児名・コード・有効期限・登録手順）」。GitHub Issue #312 の 2）。園児ごとに切り分けて手渡すので、1枚ごとに載せる
+ */
+it('配布用の出力は、1枚ごとに登録の手順を載せる', async () => {
+  openApp('/staff/admin/invitations', admin);
+  fireEvent.click(await screen.findByRole('button', { name: '配布用に出力' }));
+  const dialog = await screen.findByRole('dialog', { name: '配布用の出力' });
+  // 出力の中身は読み込んだ一覧から作る。一覧が届く前に開くと0枚なので、届いて描き直されるのを待つ
+  const count = () => dialog.textContent!.match(/お子さまのお名前/g)?.length ?? 0;
+  await waitFor(() => expect(count()).toBeGreaterThan(0), { timeout: 3000 });
+  const sheets = count();
+  expect(dialog.textContent!.match(/登録の手順/g)?.length).toBe(sheets);
+  expect(dialog.textContent).toContain('招待コードで新規登録');
+  expect(dialog.textContent).toContain('コードを確認する');
+  expect(dialog.textContent).toContain('登録する');
+});
+
+/*
+ * 保護者アカウント管理に、手で停止・再開するボタンは置かない（図/画面詳細図「保護者アカウント管理画面」(7-8) 項目5「置かない」。
+ * GitHub Issue #272 の 1）。止めるのは紐づけの解除、戻すのは「紐づけを戻す」
+ */
+it('保護者アカウント管理に「停止」「再開」のボタンは無く、「解除」と「紐づけを戻す」がある', async () => {
+  openApp('/staff/admin/guardian-accounts', admin);
+  await screen.findAllByRole('button', { name: '解除' });
+  expect(screen.queryByRole('button', { name: /^(停止|再開)$/ })).toBeNull();
+  expect(screen.getAllByRole('button', { name: '紐づけを戻す' }).length).toBeGreaterThan(0);
+});
+
 it('操作ログ CSV は適用済みの期間で全ページを出力する', async () => {
   const firstId = Math.max(...db.operationLogs.map((x) => x.operation_log_id)) + 100000;
   const added = Array.from({ length: 110 }, (_, i) => ({ ...db.operationLogs[0],
