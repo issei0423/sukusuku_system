@@ -339,7 +339,11 @@ export interface GuardianAccountRow {
     phone_number: string | null;
   };
   account: Account;
-  links: (GuardianChild & { child_name: string })[];
+  /**
+   * restore_until は、終了した紐づけを「紐づけを戻す」で戻せる最後の日（YYYY-MM-DD）。終了の紐づけにだけ付く
+   * （【仮置き】解除から RESTORE_LINK_DAYS 日。web/仮置き値.md。server/api_admin.go の handleGuardianAccounts）
+   */
+  links: (GuardianChild & { child_name: string; restore_until?: string })[];
   activeLinks: number;
   /** 最新版の利用規約に同意済みか */
   termsAgreed: boolean;

@@ -14,8 +14,11 @@ import { useSession } from '../../session';
 import { api } from '../../api/client';
 import { Loading, ErrorBox, Empty, Alert, Tag } from '../../components/ui';
 import { ConfirmDialog, notify } from '../../components/feedback';
-import { ACCOUNT_STATUS, LINK_STATUS } from '../../api/codes';
-import { formatYMD } from '../../api/util';
+import { ACCOUNT_STATUS, LINK_STATUS, RESTORE_LINK_DAYS } from '../../api/codes';
+import { formatYMD, today } from '../../api/util';
+
+/** 終了した紐づけを、いま「紐づけを戻す」で戻せるか。戻せる最後の日はサーバが返す（restore_until）。最後の判定はサーバが行う */
+const canRestore = (restoreUntil: string | undefined) => !!restoreUntil && today() <= restoreUntil;
 
 type LinkTarget = { guardianId: string; childId: string; guardianName: string; childName: string; last: boolean; stopped: boolean };
 type Pending =
@@ -98,10 +101,14 @@ export default function GuardianAccountsScreen() {
                             </button>
                           )}
                           {l.ended_at && <span className="weak">（{formatYMD(l.ended_at.slice(0, 10))} 終了）</span>}
-                          {l.link_status === '2' && (
+                          {l.link_status === '2' && canRestore(l.restore_until) && (
                             <button className="btn-sm btn-quiet" onClick={() => setPending({ kind: 'restore', ...base })}>
                               紐づけを戻す
                             </button>
+                          )}
+                          {/* 戻せる期間を過ぎた紐づけには「紐づけを戻す」を出さず、理由と次にすることを添える（【仮置き】web/仮置き値.md） */}
+                          {l.link_status === '2' && !canRestore(l.restore_until) && (
+                            <span className="weak">解除から{RESTORE_LINK_DAYS}日を過ぎたため戻せません。新しい招待コードで紐づけてください。</span>
                           )}
                         </div>
                       );
@@ -129,7 +136,7 @@ export default function GuardianAccountsScreen() {
           紐づけは園児ごとに終了させます。有効な紐づけがゼロになった時点で、アカウントは自動的に停止されます。
           <br />
           {/* 戻すのは誤って解除したときに限る（基本設計書「保護者と園児の紐づけを戻す」(4-3)） */}
-          誤って解除したときだけ「紐づけを戻す」を使ってください。
+          誤って解除したときだけ「紐づけを戻す」を使ってください。戻せるのは、解除した日から{RESTORE_LINK_DAYS}日までです。
           親権の変更や家庭の事情で解除したあとに改めて結ぶときは、戻さずに新しい招待コードで紐づけてください。
           紐づけを戻すと、停止していたアカウントも再開され、解除していたあいだのやりとりも読めるようになります。
           <br />

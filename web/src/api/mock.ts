@@ -16,7 +16,7 @@ import { SETTING_ORDER, SETTING_SPECS, settingOrderProblem } from './settingSpec
 import { DEFAULT_MILESTONE_MONTHS, parseMilestones, recommendedScheduleDate } from './devSchedule';
 import { CURRENT_TERMS_VERSION } from './mockDb';
 import type { AbnormalGuardianNoticeInput } from './shapes';
-import { GUARDIAN_NOTICE_METHOD_ORDER } from './codes';
+import { GUARDIAN_NOTICE_METHOD_ORDER, RESTORE_LINK_DAYS } from './codes';
 import type { GuardianNoticeMethod } from './types';
 import type {
   Account, Child, ClassRoom, Diary, DiaryContactChange, DiaryIncident, SessionUser, Role,
@@ -3704,6 +3704,8 @@ const adminApi2 = {
       const a = findAccount(g.account_id)!;
       const links = db.guardianChildren.filter((gc) => gc.guardian_id === g.guardian_id).map((gc) => ({
         ...gc, child_name: childName(gc.child_id),
+        // 終了した紐づけを「紐づけを戻す」で戻せる最後の日（server/api_admin.go の handleGuardianAccounts と同じ）
+        ...(gc.link_status === '2' && restoreLinkUntil(gc.ended_at) !== null ? { restore_until: restoreLinkUntil(gc.ended_at)! } : {}),
       }));
       return {
         guardian: g, account: a, links,
@@ -3757,6 +3759,10 @@ const adminApi2 = {
     if (user.role !== '1') return fail('紐づけの変更は管理者のみが行えます');
     const gc = db.guardianChildren.find((x) => x.guardian_id === guardianId && x.child_id === childId && x.link_status === '2');
     if (!gc) return fail('終了した紐づけが見つかりません');
+    // 戻せるのは、解除した日から RESTORE_LINK_DAYS 日まで。過ぎたら戻さず、新しい招待コードで紐づける
+    // （基本設計書「保護者と園児の紐づけを戻す」(4-3)。【仮置き】web/仮置き値.md。server/api_admin.go の handleRestoreGuardianLink と同じ）
+    const until = restoreLinkUntil(gc.ended_at);
+    if (until === null || today() > until) return fail(MSG_RESTORE_LINK_EXPIRED);
     gc.link_status = '1';
     gc.ended_at = null;
 
@@ -3773,6 +3779,17 @@ const adminApi2 = {
     return ok(undefined);
   },
 };
+
+/**
+ * 終了した紐づけを戻せる最後の日（YYYY-MM-DD）。解除した日から RESTORE_LINK_DAYS 日あと。解除した日時が無ければ null（戻せない側へ倒す）。
+ * 【仮置き】web/仮置き値.md。server/api_admin.go の restoreLinkUntil と同じ
+ */
+function restoreLinkUntil(endedAt: string | null | undefined): string | null {
+  return endedAt && endedAt.length >= 10 ? addDays(endedAt.slice(0, 10), RESTORE_LINK_DAYS) : null;
+}
+
+/** 戻せる期間を過ぎた紐づけを戻そうとしたときの文。何が違うかと次にすること（【仮置き】server/api_admin.go の msgRestoreLinkExpired と同じ） */
+const MSG_RESTORE_LINK_EXPIRED = `解除してから${RESTORE_LINK_DAYS}日を過ぎたため、紐づけを戻せません。新しい招待コードで紐づけてください。`;
 
 /** その園児が在籍するクラス */
 const classIdsOfChild = (childId: string) =>

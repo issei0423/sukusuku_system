@@ -864,6 +864,8 @@ func (a *app) handleGuardianAccounts(w http.ResponseWriter, r *http.Request) {
 		LinkedAt   string  `json:"linked_at"`
 		EndedAt    *string `json:"ended_at"`
 		ChildName  string  `json:"child_name"`
+		// 終了した紐づけを「紐づけを戻す」で戻せる最後の日（restoreLinkDays）。終了でなければ付けない
+		RestoreUntil *string `json:"restore_until,omitempty"`
 	}
 	type row struct {
 		Guardian struct {
@@ -919,6 +921,9 @@ func (a *app) handleGuardianAccounts(w http.ResponseWriter, r *http.Request) {
 			)
 			if lr.Scan(&l.GuardianID, &l.ChildID, &l.Relation, &l.LinkStatus, &l.LinkedAt, &ended) == nil {
 				l.EndedAt = nullStr(ended)
+				if l.LinkStatus == "2" {
+					l.RestoreUntil = restoreLinkUntil(ended)
+				}
 				ls = append(ls, l)
 			}
 		}
@@ -1066,6 +1071,26 @@ func (a *app) guardianAccountID(guardianID string) *int64 {
 	return nullInt(id)
 }
 
+// restoreLinkDays は、解除した紐づけを「紐づけを戻す」で戻せる日数。解除した日から数え、その日数あとの日まで戻せる。
+// 【仮置き】設計は「誤って解除したときに限る」とだけ決め、期間を決めていない（web/仮置き値.md。照合 c2b-3 の推し）。
+// 画面とモックは web/src/api/codes.ts の RESTORE_LINK_DAYS
+const restoreLinkDays = 7
+
+// restoreLinkUntil は、終了した紐づけを戻せる最後の日（YYYY-MM-DD）。解除した日時が無ければ nil（戻せない側へ倒す）
+func restoreLinkUntil(endedAt sql.NullString) *string {
+	if !endedAt.Valid || len(endedAt.String) < 10 {
+		return nil
+	}
+	until := addDays(endedAt.String[:10], restoreLinkDays)
+	return &until
+}
+
+// msgRestoreLinkExpired は、戻せる期間を過ぎた紐づけを戻そうとしたときの文。何が違うかと次にすることの2つを持つ
+// （基本設計書「間違えたら何が違うかと次にすること」(4-2)・「メッセージ一覧」(4-12) の形。【仮置き】文は設計に無い）
+func msgRestoreLinkExpired() string {
+	return "解除してから" + strconv.Itoa(restoreLinkDays) + "日を過ぎたため、紐づけを戻せません。新しい招待コードで紐づけてください。"
+}
+
 /*
 handleRestoreGuardianLink は、解除した紐づけを戻す。
 
@@ -1082,6 +1107,19 @@ func (a *app) handleRestoreGuardianLink(w http.ResponseWriter, r *http.Request) 
 		ChildID    string `json:"child_id"`
 	}
 	if !readJSON(w, r, &req) {
+		return
+	}
+	// 戻せるのは、解除した日から restoreLinkDays 日まで。過ぎたら戻さず、新しい招待コードで紐づける
+	// （基本設計書「保護者と園児の紐づけを戻す」(4-3)「誤って解除したときに限る」を、期間で支える。【仮置き】web/仮置き値.md）
+	var status string
+	var endedAt sql.NullString
+	if err := a.db.QueryRow(`SELECT link_status, ended_at FROM t_guardian_child WHERE guardian_id = ? AND child_id = ?`,
+		req.GuardianID, req.ChildID).Scan(&status, &endedAt); err != nil || status != "2" {
+		writeErr(w, http.StatusNotFound, "終了した紐づけが見つかりません")
+		return
+	}
+	if until := restoreLinkUntil(endedAt); until == nil || today() > *until {
+		writeErr(w, http.StatusConflict, msgRestoreLinkExpired())
 		return
 	}
 	res, err := a.db.Exec(`UPDATE t_guardian_child SET link_status = '1', ended_at = NULL

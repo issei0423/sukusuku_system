@@ -4,8 +4,73 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 )
+
+// 紐づけを戻せるのは、解除した日から restoreLinkDays 日まで。過ぎたら 409 で断り、新しい招待コードへ案内する
+// （照合 c2b-3 の推し。【仮置き】web/仮置き値.md）。一覧には戻せる最後の日を載せる。モックは web/tests/admin.test.ts
+func TestRestoreGuardianLinkOnlyWithinDays(t *testing.T) {
+	a, h := newTestApp(t)
+	admin := loginAs(a, 1, "staff")
+	const body = `{"guardian_id":"G004","child_id":"C004"}`
+	call(t, h, admin, "POST", "/api/admin/guardian-links/end", body)
+	endedDaysAgo := func(days int) {
+		t.Helper()
+		if _, err := a.db.Exec(`UPDATE t_guardian_child SET ended_at = ? WHERE guardian_id = 'G004' AND child_id = 'C004'`,
+			addDays(today(), -days)+"T10:00:00"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	linkStatus := func() string {
+		var s string
+		a.db.QueryRow(`SELECT link_status FROM t_guardian_child WHERE guardian_id = 'G004' AND child_id = 'C004'`).Scan(&s)
+		return s
+	}
+
+	// 解除から restoreLinkDays + 1 日：戻せない。一覧の戻せる最後の日は昨日
+	endedDaysAgo(restoreLinkDays + 1)
+	var rows []struct {
+		Guardian struct {
+			GuardianID string `json:"guardian_id"`
+		} `json:"guardian"`
+		Links []struct {
+			ChildID      string  `json:"child_id"`
+			RestoreUntil *string `json:"restore_until"`
+		} `json:"links"`
+	}
+	if err := json.Unmarshal(call(t, h, admin, "GET", "/api/admin/guardian-accounts", "").Body.Bytes(), &rows); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, r := range rows {
+		for _, l := range r.Links {
+			if r.Guardian.GuardianID == "G004" && l.ChildID == "C004" {
+				found = true
+				if l.RestoreUntil == nil || *l.RestoreUntil != addDays(today(), -1) {
+					t.Errorf("restore_until = %v、昨日 %s のはず", l.RestoreUntil, addDays(today(), -1))
+				}
+			}
+		}
+	}
+	if !found {
+		t.Fatal("一覧に G004・C004 の紐づけが無い")
+	}
+	res := expectStatus(t, request(t, h, admin, "POST", "/api/admin/guardian-links/restore", body), http.StatusConflict)
+	if !strings.Contains(res, msgRestoreLinkExpired()) || !strings.Contains(res, "新しい招待コードで紐づけてください") {
+		t.Errorf("断りの文 = %s", res)
+	}
+	if s := linkStatus(); s != "2" {
+		t.Fatalf("期間を過ぎたのに戻った: link_status = %s", s)
+	}
+
+	// 解除からちょうど restoreLinkDays 日：まだ戻せる
+	endedDaysAgo(restoreLinkDays)
+	call(t, h, admin, "POST", "/api/admin/guardian-links/restore", body)
+	if s := linkStatus(); s != "1" {
+		t.Fatalf("期間の内なのに戻らない: link_status = %s", s)
+	}
+}
 
 /*
 保護者アカウント管理の細部（GitHub Issue #272 の 1・2、#312 の 3）
