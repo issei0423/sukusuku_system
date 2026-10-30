@@ -1040,8 +1040,7 @@ export const childApi = {
       db.accounts.filter((a) => a.role === '1' || a.role === '2').forEach((a) => syncStaffChatRooms(a.account_id));
       if (prevClass !== input.class_id) {
         // 保護者の参加が変わったクラスグループへ（server/events.go の notifyRoomMembers。お子さまの追加と同じく、変わったルームへだけ）
-        moveGuardiansClassGroup(input.child_id, prevClass, input.class_id)
-          .forEach((roomId) => publish({ type: 'chat', room_id: roomId }, (u) => isRoomMember(u, roomId)));
+        moveGuardiansClassGroup(input.child_id, prevClass, input.class_id).forEach((roomId) => publishRoomMembers(roomId));
       }
     }
 
