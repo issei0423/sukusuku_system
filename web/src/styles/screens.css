@@ -355,6 +355,12 @@ button.guardian-record-link {
 .contact-page-head > a { display: flex; align-items: center; gap: var(--sp-2); min-height: 44px; }
 .contact-date { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .contact-date button { min-height: 44px; min-width: 44px; }
+/*
+ * 前の日・次の日の ‹ › の絵（PrevIcon・ForwardIcon）は、形の左右に余白を持つ（24 の枠のうち中の 3 割ほど）。
+ * 間を詰めても見た目の間は他のボタンの 8px と変わらないので、間を 0 に、左右の余白を 12px にする。
+ * 保護者の 480px の列で「前の日・日付・次の日・月の一覧」を1行に保つため（【仮置き】web/仮置き値.md「アイコン」）
+ */
+.contact-date button:has(> .icon) { gap: 0; padding-left: var(--sp-3); padding-right: var(--sp-3); }
 /* 月の一覧（MonthList.tsx）。1日1行。押す所は 44px 以上 */
 .contact-month-days { list-style: none; margin: var(--sp-2) 0 0; padding: 0; display: grid; gap: var(--sp-1); }
 .contact-month-days button { width: 100%; min-height: 44px; text-align: left; }
