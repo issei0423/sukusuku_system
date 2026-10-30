@@ -20,6 +20,7 @@ import type { DiaryRecordType } from '../../api/types';
 import { IncidentSummary } from './IncidentFields';
 import { incidentInputOf } from './incidentForm';
 import type { IncidentForm } from './incidentForm';
+import { BackIcon, SendIcon } from '../../components/icons';
 
 interface ConfirmState {
   recordType: DiaryRecordType;
@@ -175,9 +176,9 @@ export default function DiaryConfirmScreen() {
             // 読み込み直しで確認画面が取り直したときは、受け取った識別子でなく、いま持っている識別子を返す
             { state: { draft: { ...state, lockToken: activeToken ?? state.lockToken } }, replace: true },
           );
-        }}>戻る</button>
+        }}><BackIcon />戻る</button>
         <button className="btn-primary" onClick={submit} disabled={busy || (!!state.diaryId && !activeToken)}>
-          {busy ? '申請しています…' : '申請する'}
+          <SendIcon />{busy ? '申請しています…' : '申請する'}
         </button>
       </div>
     </div>

@@ -15,6 +15,7 @@ import type { ReactNode } from 'react';
 import { Modal } from './ui';
 import { isOneDecimal } from '../api/util';
 import { MSG, TEXT } from '../messages';
+import { CloseIcon } from './icons';
 
 /** 一覧に並べる値（35.0〜39.9℃） */
 export const TEMPERATURE_CHOICES = Array.from({ length: 50 }, (_, i) => (350 + i) / 10);
@@ -60,7 +61,7 @@ export default function TemperaturePicker({ title, start, busy, error, onSelect,
   };
 
   return (
-    <Modal title={title} onClose={onClose} footer={<button type="button" onClick={onClose} disabled={busy}>閉じる</button>}>
+    <Modal title={title} onClose={onClose} footer={<button type="button" onClick={onClose} disabled={busy}><CloseIcon />閉じる</button>}>
       <div className="temperature-picker">
         {children}
         <p className="muted">体温計で測った値を押してください。</p>

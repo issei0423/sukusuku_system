@@ -12,6 +12,7 @@ import { Field, Alert } from '../../components/ui';
 import { useSession } from '../../session';
 import { api } from '../../api/client';
 import { useUnsavedInput } from '../../unsavedInput';
+import { SaveIcon, LogoutIcon } from '../../components/icons';
 
 export default function PasswordChangeScreen({ forced }: { forced?: boolean }) {
   const { user, setUser, logout } = useSession();
@@ -96,9 +97,9 @@ export default function PasswordChangeScreen({ forced }: { forced?: boolean }) {
       {/* 8〜128文字。文字種の組み合わせは求めない（基本設計書「入力項目の制約値」(4-9)）。
           よく使われるパスワードは拒否する（同「パスワードの要件」(6-3)。GitHub Issue #159） */}
       <div className="muted">8〜128文字で入力してください。文字の種類の組み合わせは問いません。よく使われるパスワード（password など）は使えません。</div>
-      <button className="btn-primary btn-block" type="submit" disabled={busy}>変更する</button>
+      <button className="btn-primary btn-block" type="submit" disabled={busy}><SaveIcon />変更する</button>
       {forced && (
-        <button type="button" className="btn-block" disabled={busy} onClick={logoutWithoutChange}>変更せずログアウトする</button>
+        <button type="button" className="btn-block" disabled={busy} onClick={logoutWithoutChange}><LogoutIcon />変更せずログアウトする</button>
       )}
     </form>
   );

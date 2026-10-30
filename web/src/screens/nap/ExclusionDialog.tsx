@@ -10,13 +10,14 @@
  * 理由を押したあとの移し先は SleepControls.tsx が決める（対象外にした → 同じ行の「戻す」、送れなかった → 押した理由。WCAG 2.4.3、GitHub Issue #213）
  */
 import { Modal } from '../../components/ui';
+import { CloseIcon } from '../../components/icons';
 
 export default function ExclusionDialog({ name, busy, onSelect, onClose }: {
   name: string; busy: boolean; onSelect: (reason: '1' | '2') => void; onClose: () => void;
 }) {
   return (
     <Modal title={`${name}をきょうは対象外にする`} onClose={onClose}
-      footer={<button type="button" onClick={onClose} disabled={busy} data-initial-focus>やめる</button>}>
+      footer={<button type="button" onClick={onClose} disabled={busy} data-initial-focus><CloseIcon />やめる</button>}>
       <p>理由を選ぶと記録します。対象外にした子は、タイマーと未記録の数から外れます。</p>
       <div className="nap-exclusion-choices">
         <button type="button" className="btn-primary" onClick={() => onSelect('1')} disabled={busy}>欠席</button>

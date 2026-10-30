@@ -182,3 +182,65 @@ func TestChatMessagesReadCount(t *testing.T) {
 		t.Fatalf("保護者への応答に既読の人数が入っている: %d", n)
 	}
 }
+
+type diaryCountsSummary struct {
+	Returned   int `json:"returned"`
+	Pending    int `json:"pending"`
+	PendingOwn int `json:"pendingOwn"`
+}
+
+func diaryCountsOf(t *testing.T, h http.Handler, c *http.Cookie) diaryCountsSummary {
+	t.Helper()
+	var got diaryCountsSummary
+	if err := json.Unmarshal(call(t, h, c, "GET", "/api/dashboard/staff", "").Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
+
+// 差し戻された日誌は一般にのみ数え、承認待ちの「うち自分の申請」は管理者にのみ数える
+// （図/画面詳細図「職員ダッシュボード」(2-6) 項目2・項目8。GitHub Issue #268）。
+// 画面側のモック（web/src/api/mock.ts の staffSummary）と同じ規則であることを、web/tests/contactDetail.test.ts と同じ観点で確かめる
+func TestStaffSummaryAdminCounts(t *testing.T) {
+	a, h := newTestApp(t)
+	admin := loginAs(a, 1, "staff")   // 管理者（S001）
+	teacher := loginAs(a, 3, "staff") // さくら組の担任（S003）
+
+	t.Run("管理者には差し戻された日誌を数えない（自分が書いて差し戻されたものがあっても）", func(t *testing.T) {
+		// 日誌 1 は西田 太郎（さくら組）の個人日誌。まず担任が書いて差し戻された形にし、担任には数えることを確かめる
+		before := diaryCountsOf(t, h, teacher).Returned
+		if _, err := a.db.Exec(`UPDATE t_diary SET status = '4', returned_reason = '書き直してください。'
+			WHERE diary_id = 1`); err != nil {
+			t.Fatal(err)
+		}
+		if got := diaryCountsOf(t, h, teacher).Returned; got != before+1 {
+			t.Fatalf("担任が書いて差し戻された日誌: returned = %d, want %d", got, before+1)
+		}
+		// 書いたのを管理者にしても、管理者には数えない
+		if _, err := a.db.Exec(`UPDATE t_diary SET created_staff_id = 'S001' WHERE diary_id = 1`); err != nil {
+			t.Fatal(err)
+		}
+		if got := diaryCountsOf(t, h, admin).Returned; got != 0 {
+			t.Fatalf("管理者の returned = %d, want 0", got)
+		}
+	})
+
+	t.Run("承認待ちのうち自分が申請したものの数を、管理者にだけ返す", func(t *testing.T) {
+		before := diaryCountsOf(t, h, admin).PendingOwn
+		// 日誌 7（村田 美咲の個人日誌・申請中）を管理者が申請したことにする。日誌 2 は担任（S003）の申請のまま残す
+		if _, err := a.db.Exec(`UPDATE t_diary SET applied_staff_id = 'S001' WHERE diary_id = 7 AND status = '2'`); err != nil {
+			t.Fatal(err)
+		}
+		got := diaryCountsOf(t, h, admin)
+		if got.PendingOwn != before+1 {
+			t.Fatalf("管理者の pendingOwn = %d, want %d", got.PendingOwn, before+1)
+		}
+		if got.PendingOwn > got.Pending {
+			t.Fatalf("pendingOwn = %d が pending = %d を超えている", got.PendingOwn, got.Pending)
+		}
+		// 一般には承認待ちを数えない。自分が申請した日誌（日誌 2）があっても 0
+		if got := diaryCountsOf(t, h, teacher); got.PendingOwn != 0 || got.Pending != 0 {
+			t.Fatalf("一般の pending = %d, pendingOwn = %d, want 0 and 0", got.Pending, got.PendingOwn)
+		}
+	})
+}

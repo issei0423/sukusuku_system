@@ -10,6 +10,7 @@ import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api } from '../../api/client';
 import { Loading, ErrorBox, Alert } from '../../components/ui';
+import { FiscalYearIcon } from '../../components/icons';
 
 export default function FiscalYearScreen() {
   const { user } = useSession();
@@ -56,7 +57,7 @@ export default function FiscalYearScreen() {
 
           <div className="row-end">
             <button className="btn-primary" disabled title="このモックアップでは年度更新の実行を実装していません">
-              年度更新を実行する
+              <FiscalYearIcon />年度更新を実行する
             </button>
           </div>
         </>

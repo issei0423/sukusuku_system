@@ -15,6 +15,7 @@ import { downloadCsv } from '../../csv';
 import { FUNCTION_TYPE, OPERATION_TYPE } from '../../api/codes';
 import { formatMDHM, today, addDays } from '../../api/util';
 import type { FunctionType } from '../../api/types';
+import { DownloadIcon, SearchIcon } from '../../components/icons';
 
 export default function OperationLogScreen() {
   const { user } = useSession();
@@ -75,7 +76,7 @@ export default function OperationLogScreen() {
       <div className="page-head">
         <h1>操作ログ</h1>
         <div className="spacer" />
-        <button onClick={exportCsv} disabled={!data || data.rows.length === 0}>CSV出力</button>
+        <button onClick={exportCsv} disabled={!data || data.rows.length === 0}><DownloadIcon />CSV出力</button>
       </div>
 
       <section className="card">
@@ -100,7 +101,7 @@ export default function OperationLogScreen() {
               {children.map((c) => <option key={c.child_id} value={c.child_id}>{c.child_name}</option>)}
             </select>
           </Field>
-          <button onClick={search}>絞り込む</button>
+          <button onClick={search}><SearchIcon />絞り込む</button>
         </div>
         {rangeError && <ErrorBox text={rangeError} />}
       </section>

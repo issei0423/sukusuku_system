@@ -65,7 +65,7 @@ const templateSelect = () => screen.getByLabelText('雛形を呼び出す') as H
 const optionLabels = (s: HTMLSelectElement) => Array.from(s.options).map((o) => o.textContent);
 const radio = (label: string) => screen.getByLabelText(label) as HTMLInputElement;
 const button = (label: string) => screen.getByRole('button', { name: label }) as HTMLButtonElement;
-const backToList = async () => fireEvent.click(await screen.findByRole('link', { name: '< 日誌一覧へ' }, { timeout: 3000 }));
+const backToList = async () => fireEvent.click(await screen.findByRole('link', { name: '日誌一覧へ' }, { timeout: 3000 }));
 const leaveDialog = () => screen.queryByRole('dialog', { name: '保存していない内容があります' });
 
 /** 一覧へ戻ったこと（日誌一覧画面の見出し）を待つ */
@@ -126,7 +126,7 @@ describe('保存していない内容の確かめ（#175 の 3 とコメント�
   it('写真を足しただけでも、記録種別を変えただけでも、一覧へ戻る前に確かめる', async () => {
     open('/staff/diary/new', teacher);
     await settled();
-    fireEvent.click(button('＋ 追加'));
+    fireEvent.click(button('追加'));
     await backToList();
     expect(leaveDialog()).toBeTruthy();
     cleanup();
@@ -173,8 +173,8 @@ describe('写真（#175 の 2）', () => {
   it('足した写真は下書き保存で日誌に付き、確認画面の枚数のまま申請される', async () => {
     await startPersonal();
     fireEvent.change(bodyArea(), { target: { value: '写真を付けた日誌' } });
-    fireEvent.click(button('＋ 追加'));
-    fireEvent.click(button('＋ 追加'));
+    fireEvent.click(button('追加'));
+    fireEvent.click(button('追加'));
     // 時計が止まっていても、足した写真は別々のものとして並ぶ
     expect(screen.getAllByRole('button', { name: '削除' })).toHaveLength(2);
     await saveDraft();
@@ -185,7 +185,7 @@ describe('写真（#175 の 2）', () => {
     await reopened(saved.diary_id);
     await waitFor(() => expect(screen.getAllByRole('button', { name: '削除' })).toHaveLength(2));
     await waitFor(() => expect(button('確認へ進む').disabled).toBe(false));
-    fireEvent.click(button('＋ 追加'));
+    fireEvent.click(button('追加'));
     fireEvent.click(button('確認へ進む'));
     await screen.findByText('この内容で申請します');
     const photoRow = screen.getByText('写真', { selector: 'th' }).closest('tr')!;
@@ -234,7 +234,7 @@ describe('編集できない日誌の部品（#175 の 4）', () => {
     expect(screen.getByLabelText('対象の園児')).toBeTruthy();
     expect(templateSelect().disabled).toBe(true);
     expect(phraseSelect().disabled).toBe(true);
-    expect(button('＋ 追加').disabled).toBe(true);
+    expect(button('追加').disabled).toBe(true);
   });
 
   it('ほかの職員が編集中の日誌では、記録種別・園児・クラス・記録日・雛形・定型文・写真を動かせない', async () => {
@@ -251,7 +251,7 @@ describe('編集できない日誌の部品（#175 の 4）', () => {
       expect((screen.getByLabelText('記録日') as HTMLInputElement).disabled).toBe(true);
       expect(templateSelect().disabled).toBe(true);
       expect(phraseSelect().disabled).toBe(true);
-      expect(button('＋ 追加').disabled).toBe(true);
+      expect(button('追加').disabled).toBe(true);
       expect(bodyArea().value).toBe(before);
     } finally {
       await api.releaseLock(admin, 1, false, lock.token);

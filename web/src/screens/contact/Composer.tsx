@@ -21,6 +21,7 @@ import NameCheckDialog from '../../components/NameCheckDialog';
 import PhraseMenu from '../../components/PhraseMenu';
 import AiDraftPanel from '../../components/AiDraftPanel';
 import type { AiField } from '../../api/shapes';
+import { SendIcon, RefreshIcon, CloseIcon } from '../../components/icons';
 
 type SendError = Error & { kind?: string; names?: string[]; matches?: NameMatch[] };
 
@@ -105,9 +106,10 @@ export default function Composer({ label, max, scope, recipient, className, init
       {error && <p className="contact-error" role="alert">{error}</p>}
       <div className="contact-composer-actions">
         <button ref={sendButton} type="button" className="btn-primary" onClick={() => send([])} disabled={busy || text.trim() === ''} aria-busy={busy}>
+          {failed && !reachable && !busy ? <RefreshIcon /> : <SendIcon />}
           {busy ? TEXT.sending : failed && !reachable ? TEXT.resend : submitLabel}
         </button>
-        {onCancel && <button type="button" onClick={onCancel} disabled={busy}>やめる</button>}
+        {onCancel && <button type="button" onClick={onCancel} disabled={busy}><CloseIcon />やめる</button>}
       </div>
       {check && (
         /*

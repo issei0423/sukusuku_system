@@ -127,6 +127,12 @@
   .app-header .header-wordmark { width: 88px; }
   /* 文字の大きさは横向きと同じまま、右の余白と字間だけを詰めて「保護者アカウント」を1行に収める */
   .sidenav a { padding: 0 var(--sp-1) 0 var(--sp-3); letter-spacing: 0; }
+  /*
+   * 【仮置き】縦向きでは、左メニューの項目のアイコンを出さない（web/仮置き値.md「アイコン」）。
+   * 幅 152px では、絵（20px）と間を足すと「ダッシュボード」「保護者アカウント」「パスワードの変更」などが2行に折り返すため。
+   * 項目名は文字で読めるので、絵を外しても意味は変わらない
+   */
+  .sidenav a .icon { display: none; }
   .sidenav .group-label { padding: var(--sp-1) var(--sp-3); }
   .sidenav hr { margin: var(--sp-3); }
 }
@@ -182,7 +188,8 @@
   min-height: 52px; min-width: 64px; padding: 2px 6px;
   font-size: var(--fs-small); line-height: 1.2; letter-spacing: 0; white-space: nowrap;
 }
-.guardian-menu-button span:first-child { font-size: 1.25rem; line-height: 1.5rem; }
+/* 印は Material Symbols の menu（components/icons.tsx）。「メニュー」の字（14px）より大きく、24px で置く */
+.guardian-menu-button .icon { width: 1.5rem; height: 1.5rem; }
 .guardian-brand { display: inline-flex; align-items: center; gap: 2px; min-height: 48px; text-decoration: none; }
 .guardian-brand-mark { width: 44px; height: 40px; object-fit: contain; }
 .guardian-brand-wordmark { width: 100px; height: auto; }
@@ -311,9 +318,12 @@
   /* 下端の案内はヘッダへ移したので出さない（.guardian-footer の定義より後ろでも効くよう、列の中に限って書く） */
   .guardian-shell .guardian-footer { display: none; }
 
-  /* メニューと本文。全体は 1200px で頭打ちにし、横いっぱいに引き伸ばさない。メニューの幅は文字に合わせて rem で決める（既定で 240px） */
+  /*
+   * メニューと本文。全体は 1200px で頭打ちにし、横いっぱいに引き伸ばさない。メニューの幅は文字に合わせて rem で決める（既定で 256px）。
+   * 【仮置き】項目にアイコンを添えても「チャット・お知らせ」が1行に収まるよう、240px から 256px に広げた（web/仮置き値.md「アイコン」）
+   */
   .guardian-body {
-    display: grid; grid-template-columns: 15rem minmax(0, 1fr); gap: var(--sp-6);
+    display: grid; grid-template-columns: 16rem minmax(0, 1fr); gap: var(--sp-6);
     width: 100%; max-width: 1200px; margin: 0 auto; padding: var(--sp-6) var(--sp-5);
   }
   .guardian-sidebar {
@@ -322,7 +332,7 @@
   }
   .guardian-sidebar .who { font-weight: 700; padding-bottom: var(--sp-3); border-bottom: 1px solid var(--c-border); margin-bottom: var(--sp-2); }
   .guardian-sidebar a {
-    display: flex; align-items: center; min-height: var(--control-h);
+    display: flex; align-items: center; gap: var(--sp-2); min-height: var(--control-h);
     padding: 0 var(--sp-3); color: var(--c-text); text-decoration: none;
     border-bottom: 1px solid var(--c-border-weak);
   }
@@ -353,7 +363,7 @@
 .drawer-head .who { flex: 1; min-width: 0; margin: 0; padding-top: 10px; border: 0; }
 .drawer-close { flex: none; padding: 0 var(--sp-3); white-space: nowrap; }
 .drawer a {
-  display: flex; align-items: center; min-height: var(--control-h);
+  display: flex; align-items: center; gap: var(--sp-2); min-height: var(--control-h);
   padding: 0 var(--sp-2); color: var(--c-text); text-decoration: none;
   border-bottom: 1px solid var(--c-border-weak);
 }
@@ -398,6 +408,14 @@
 }
 
 /* ============ 共通部品 ============ */
+/*
+ * アイコン（components/icons.tsx。Material Symbols）。文字に添えるだけで、文字は必ず残す。
+ * 【仮置き】大きさは文字の 1.25 倍（既定の 16px の文字で 20px。web/仮置き値.md）。
+ * em で決めるので、ブラウザの文字の大きさの設定に合わせて大きくなる。並ぶ文字に押されて縮まないよう、flex では伸び縮みさせない。
+ * button・.btn は inline-flex・間 8px なので、文字の前に置けば並ぶ
+ */
+.icon { width: 1.25em; height: 1.25em; flex: none; vertical-align: middle; }
+
 .page-head { display: flex; align-items: center; gap: var(--sp-3) var(--sp-4); flex-wrap: wrap; margin-bottom: var(--sp-5); }
 .page-head .spacer { flex: 1; }
 

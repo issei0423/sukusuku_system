@@ -92,7 +92,7 @@ describe('設定画面：連絡帳・AI・そのほかの設定値が1つの画�
     fireEvent.click(within(home).getByRole('checkbox', { name: '連絡事項' }));
     fireEvent.click(screen.getByRole('button', { name: '排せつの選択肢 4 を消す' }));
     fireEvent.click(screen.getByRole('button', { name: '排せつの選択肢 2 を上へ' }));
-    fireEvent.click(screen.getAllByRole('button', { name: '＋ 足す' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: '足す' })[0]);
     fireEvent.change(screen.getByRole('textbox', { name: '排せつの選択肢 4' }), { target: { value: 'ほか,と' } });
     dialog = await confirmSave();
     fireEvent.click(within(dialog).getByRole('button', { name: '保存する' }));

@@ -174,7 +174,7 @@ describe('保護者のログアウト：保存していない入力（#170 の 5
   it('書きかけを残したまま一覧へ戻っても、ログアウトの前に確かめる（書きかけはチャンネルごとに残る。#172 の 2）', async () => {
     const input = await openPersonalChat();
     fireEvent.change(input, { target: { value: '一覧へ戻っても残る書きかけ' } });
-    fireEvent.click(screen.getByText('< もどる'));
+    fireEvent.click(screen.getByRole('button', { name: 'もどる' }));
     await screen.findByRole('button', { name: /担任の先生とのやりとり/ });
     expect(screen.queryByRole('textbox', { name: 'メッセージを入力' })).toBeNull();
     logoutFromMenu();

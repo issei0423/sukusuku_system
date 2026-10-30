@@ -21,6 +21,7 @@ import { Loading, ErrorBox, Empty, Alert } from '../../components/ui';
 import { ACCOUNT_CHANGED_TEXT } from '../../messages';
 import { formatAge, today } from '../../api/util';
 import TodayCard from '../contact/TodayCard';
+import { ForwardIcon } from '../../components/icons';
 
 export default function GuardianHome() {
   const { user } = useSession();
@@ -108,11 +109,11 @@ export default function GuardianHome() {
             </div>
             <p>園からのお知らせや配布物、担任の先生とのやりとりはこちらから。</p>
             <Link className="guardian-panel-link" to="/guardian/chat">
-              <span>チャットを開く</span><span aria-hidden="true">→</span>
+              <span>チャットを開く</span><ForwardIcon />
             </Link>
             {/* 園だより・献立表など、あとから見返すもの */}
             <Link className="guardian-panel-link guardian-handout-link" to="/guardian/handouts">
-              <span>園からの配布物を見る</span><span aria-hidden="true">→</span>
+              <span>園からの配布物を見る</span><ForwardIcon />
             </Link>
           </section>
 

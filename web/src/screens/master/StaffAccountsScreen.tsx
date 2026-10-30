@@ -19,6 +19,7 @@ import { ROLE, ACCOUNT_STATUS } from '../../api/codes';
 import { validateStaffAccountInput } from '../../api/util';
 import type { Role } from '../../api/types';
 import { around, focusAfter, focusedNow } from '../../focusAfter';
+import { AddIcon, CloseIcon, SaveIcon, SuspendIcon, StartIcon, ResetPasswordIcon } from '../../components/icons';
 
 type Row = Awaited<ReturnType<typeof api.staffAccounts>>[number];
 type Pending = { kind: 'stop' | 'resume' | 'reissue'; row: Row };
@@ -156,7 +157,7 @@ export default function StaffAccountsScreen() {
       <div className="page-head">
         <h1>職員アカウント</h1>
         <div className="spacer" />
-        <button className="btn-primary" onClick={openCreate}>＋ アカウントを発行</button>
+        <button className="btn-primary" onClick={openCreate}><AddIcon />アカウントを発行</button>
       </div>
 
       {error && <div style={{ marginBottom: 16 }}><Alert>{error}</Alert></div>}
@@ -231,9 +232,9 @@ export default function StaffAccountsScreen() {
       {creating && (
         <Modal title="職員アカウントの発行" onClose={() => setCreating(false)}
           footer={<>
-            <button onClick={() => setCreating(false)} disabled={busy}>やめる</button>
+            <button onClick={() => setCreating(false)} disabled={busy}><CloseIcon />やめる</button>
             <button className="btn-primary" onClick={create}
-              disabled={busy || !form.staff_id || !form.staff_name || !form.email}>発行する</button>
+              disabled={busy || !form.staff_id || !form.staff_name || !form.email}><AddIcon />発行する</button>
           </>}>
           {formError && <Alert>{formError}</Alert>}
           <div className="stack">
@@ -280,8 +281,8 @@ export default function StaffAccountsScreen() {
       {editing && (
         <Modal title="職員の情報の変更" onClose={() => setEditing(null)}
           footer={<>
-            <button onClick={() => setEditing(null)} disabled={busy}>やめる</button>
-            <button className="btn-primary" onClick={saveEdit} disabled={busy || !editing.name.trim()}>変更する</button>
+            <button onClick={() => setEditing(null)} disabled={busy}><CloseIcon />やめる</button>
+            <button className="btn-primary" onClick={saveEdit} disabled={busy || !editing.name.trim()}><SaveIcon />変更する</button>
           </>}>
           {editError && <Alert>{editError}</Alert>}
           <div className="stack">
@@ -325,7 +326,7 @@ export default function StaffAccountsScreen() {
       )}
 
       {pending?.kind === 'stop' && (
-        <ConfirmDialog title="アカウントの停止" confirmLabel="停止する" danger busy={busy}
+        <ConfirmDialog title="アカウントの停止" confirmLabel="停止する" confirmIcon={<SuspendIcon />} danger busy={busy}
           onConfirm={run} onCancel={() => setPending(null)}>
           <p>{pending.row.staff.staff_name} さん（{ROLE[pending.row.account.role]}）のアカウントを停止します。</p>
           <p className="muted">停止すると、{pending.row.staff.staff_name} さんはログインできなくなります。「再開」で戻せます。</p>
@@ -340,13 +341,13 @@ export default function StaffAccountsScreen() {
         </ConfirmDialog>
       )}
       {pending?.kind === 'resume' && (
-        <ConfirmDialog title="アカウントの再開" confirmLabel="再開する" busy={busy}
+        <ConfirmDialog title="アカウントの再開" confirmLabel="再開する" confirmIcon={<StartIcon />} busy={busy}
           onConfirm={run} onCancel={() => setPending(null)}>
           <p>{pending.row.staff.staff_name} さんのアカウントを再開します。再開すると、ふたたびログインできるようになります。</p>
         </ConfirmDialog>
       )}
       {pending?.kind === 'reissue' && (
-        <ConfirmDialog title="一時パスワードの再発行" confirmLabel="再発行する" danger busy={busy}
+        <ConfirmDialog title="一時パスワードの再発行" confirmLabel="再発行する" confirmIcon={<ResetPasswordIcon />} danger busy={busy}
           onConfirm={run} onCancel={() => setPending(null)}>
           <p>{pending.row.staff.staff_name} さんの一時パスワードを再発行します。</p>
           <p className="muted">

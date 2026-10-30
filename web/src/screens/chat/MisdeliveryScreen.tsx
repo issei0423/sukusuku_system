@@ -12,6 +12,7 @@ import { useSession } from '../../session';
 import { api } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Alert, Modal, Radios } from '../../components/ui';
 import { formatMDHM } from '../../api/util';
+import { CloseIcon, SaveIcon } from '../../components/icons';
 
 export default function MisdeliveryScreen() {
   const { user } = useSession();
@@ -125,8 +126,8 @@ export default function MisdeliveryScreen() {
         /* 記録すると、開いた行が「対応の記録がない」一覧から消える。同じ一覧の押せる最初のもの（次の行）、なければ本文へ（GitHub Issue #213） */
         <Modal title="誤送信への対応を記録する" onClose={() => setTarget(null)} returnWithin={['tr', 'section']}
           footer={<>
-            <button onClick={() => setTarget(null)}>やめる</button>
-            <button className="btn-primary" onClick={save} disabled={busy || !occurredAt || wasRead === null || !response.trim()} aria-busy={busy}>記録する</button>
+            <button onClick={() => setTarget(null)}><CloseIcon />やめる</button>
+            <button className="btn-primary" onClick={save} disabled={busy || !occurredAt || wasRead === null || !response.trim()} aria-busy={busy}><SaveIcon />記録する</button>
           </>}>
           <div className="stack">
             {error && <Alert>{error}</Alert>}

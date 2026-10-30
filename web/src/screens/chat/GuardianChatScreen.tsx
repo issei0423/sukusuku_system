@@ -27,6 +27,7 @@ import { useUnsavedInput } from '../../unsavedInput';
 import IncomingLog from './IncomingLog';
 import { useIncomingMessages } from './useIncomingMessages';
 import { focusAfter, focusedNow } from '../../focusAfter';
+import { ForwardIcon, BackIcon, SendIcon, UndoIcon } from '../../components/icons';
 
 export default function GuardianChatScreen() {
   const { user } = useSession();
@@ -256,7 +257,7 @@ export default function GuardianChatScreen() {
               <span>{labelFor(r.room.room_type, r.room.room_name)}</span>
               <span className="guardian-room-trailing">
                 {r.unread > 0 && <span className="guardian-unread">{r.unread}</span>}
-                <span aria-hidden="true">→</span>
+                <ForwardIcon />
               </span>
             </button>
           ))}
@@ -272,7 +273,7 @@ export default function GuardianChatScreen() {
   return (
     <div className="guardian-chat-thread">
       <div className="page-head guardian-thread-heading">
-        <button className="btn-quiet btn-sm" onClick={() => setRoomId(null)}>&lt; もどる</button>
+        <button className="btn-quiet btn-sm" onClick={() => setRoomId(null)}><BackIcon />もどる</button>
         <h1>{labelFor(current.room.room_type, current.room.room_name)}</h1>
       </div>
 
@@ -403,7 +404,7 @@ export default function GuardianChatScreen() {
               {/* 文字数は符号位置で数える（maxLength は UTF-16 で数えるので付けない）。上限を超えたら送れない。GitHub Issue #310 */}
               <input ref={input} type="text" aria-label="メッセージを入力" value={text} onChange={(e) => setText(e.target.value)}
                 placeholder="メッセージを入力" style={{ flex: 1 }} />
-              <button className="btn-primary" onClick={send} disabled={busy || !text.trim() || [...text].length > 1000} aria-busy={busy}>送信</button>
+              <button className="btn-primary" onClick={send} disabled={busy || !text.trim() || [...text].length > 1000} aria-busy={busy}><SendIcon />送信</button>
             </div>
             {[...text].length > 1000 && <div className="weak" role="alert">本文は1,000文字以内で入力してください</div>}
           </>
@@ -413,7 +414,7 @@ export default function GuardianChatScreen() {
       </div>
 
       {retracting && (
-        <ConfirmDialog title="メッセージを取り消します" confirmLabel="取り消す" danger
+        <ConfirmDialog title="メッセージを取り消します" confirmLabel="取り消す" confirmIcon={<UndoIcon />} danger
           onConfirm={() => retract(retracting.chat_message_id)} onCancel={() => setRetracting(null)}>
           <p>
             {formatMD(retracting.sent_at.slice(0, 10))} {formatHM(retracting.sent_at)} のメッセージを取り消します。

@@ -11,6 +11,7 @@ import { useSession } from '../../session';
 import { api } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Alert, Modal } from '../../components/ui';
 import { ROLE } from '../../api/codes';
+import { BackIcon, AddIcon, CloseIcon, SaveIcon } from '../../components/icons';
 
 export default function GroupEditScreen() {
   const { user } = useSession();
@@ -74,11 +75,11 @@ export default function GroupEditScreen() {
   return (
     <div style={{ maxWidth: 760 }}>
       <div className="page-head">
-        <Link className="btn btn-quiet btn-sm" to="/staff/chat">&lt; チャットへ</Link>
+        <Link className="btn btn-quiet btn-sm" to="/staff/chat"><BackIcon />チャットへ</Link>
         <h1>グループ編成</h1>
         <div className="spacer" />
         <button className="btn-primary" onClick={() => { setPicked([]); setName(''); setCreating(true); }}>
-          ＋ グループを作る
+          <AddIcon />グループを作る
         </button>
       </div>
 
@@ -119,8 +120,8 @@ export default function GroupEditScreen() {
       {creating && (
         <Modal title="グループを作る" onClose={() => setCreating(false)}
           footer={<>
-            <button onClick={() => setCreating(false)}>やめる</button>
-            <button className="btn-primary" onClick={create} disabled={busy || !name.trim()} aria-busy={busy}>作る</button>
+            <button onClick={() => setCreating(false)}><CloseIcon />やめる</button>
+            <button className="btn-primary" onClick={create} disabled={busy || !name.trim()} aria-busy={busy}><AddIcon />作る</button>
           </>}>
           <div className="stack">
             <Field label="グループ名" required>
@@ -136,8 +137,8 @@ export default function GroupEditScreen() {
       {editing && (
         <Modal title="メンバーの編成" onClose={() => setEditing(null)}
           footer={<>
-            <button onClick={() => setEditing(null)}>やめる</button>
-            <button className="btn-primary" onClick={saveMembers} disabled={busy} aria-busy={busy}>保存する</button>
+            <button onClick={() => setEditing(null)}><CloseIcon />やめる</button>
+            <button className="btn-primary" onClick={saveMembers} disabled={busy} aria-busy={busy}><SaveIcon />保存する</button>
           </>}>
           <div className="muted" style={{ marginBottom: 8 }}>
             現在：{members.data?.map((m) => m.name).join('、') || 'なし'}

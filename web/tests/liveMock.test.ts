@@ -80,6 +80,40 @@ describe('チャット', () => {
     await api.markRead(teacher, 6);
     expect(adminGot).toEqual([]);
   });
+
+  // 管理者は参加していないグループも読み取りだけで並べるので、その投稿・編集・取消・作成・編成も受け取る
+  // （server/events.go の notifyRoomPost・notifyMessage・notifyRoomMembers。server/events_test.go の同じケース。GitHub Issue #312）
+  it('管理者は、参加していないグループの投稿・編集・取消・作成・編成も受け取る', async () => {
+    // 運動会実行委員（部屋 5）の参加者は 1・3・5。ほかの管理者（2）は参加していない
+    const got = watch(admin2);
+    const posted = await api.send(teacher, 5, '種目の案をまとめました。');
+    expect(got).toEqual([{ type: 'chat', room_id: 5 }]);
+    await api.edit(teacher, posted.chat_message_id, '種目の案をまとめました。ご確認ください。');
+    expect(got).toHaveLength(2);
+    await api.retract(teacher, posted.chat_message_id);
+    expect(got).toHaveLength(3);
+
+    const room = await api.createGroup(teacher, '遠足の係', [5]);
+    expect(got.at(-1)).toEqual({ type: 'chat', room_id: room.chat_room_id });
+    await api.updateGroupMembers(teacher, room.chat_room_id, [3]);
+    expect(got).toHaveLength(5);
+    expect(got.slice(1)).toEqual([
+      { type: 'chat', room_id: 5 }, { type: 'chat', room_id: 5 },
+      { type: 'chat', room_id: room.chat_room_id }, { type: 'chat', room_id: room.chat_room_id },
+    ]);
+  });
+
+  it('参加していないグループの投稿は、管理者でない職員と保護者には届かない', async () => {
+    // さくら組の担任（3）はひまわり組のクラスグループ（部屋 4）に参加していない
+    const teacherGot = watch(teacher);
+    await api.send(otherTeacher, 4, '明日の持ち物をお知らせします。');
+    expect(teacherGot).toEqual([]);
+    stops.splice(0).forEach((s) => s());
+
+    const guardianGot = watch(taroGuardian);
+    await api.send(teacher, 5, '会場の下見に行きます。');
+    expect(guardianGot).toEqual([]);
+  });
 });
 
 describe('日誌', () => {

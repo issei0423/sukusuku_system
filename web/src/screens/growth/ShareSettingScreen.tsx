@@ -13,6 +13,7 @@ import { useSession } from '../../session';
 import { api } from '../../api/client';
 import { Loading, ErrorBox, Empty, Alert } from '../../components/ui';
 import { ConfirmDialog, notify } from '../../components/feedback';
+import { BackIcon } from '../../components/icons';
 
 export default function ShareSettingScreen() {
   const { user } = useSession();
@@ -48,7 +49,7 @@ export default function ShareSettingScreen() {
   return (
     <div style={{ maxWidth: 820 }}>
       <div className="page-head">
-        <Link className="btn btn-quiet btn-sm" to="/staff/growth">&lt; 発達チェック一覧へ</Link>
+        <Link className="btn btn-quiet btn-sm" to="/staff/growth"><BackIcon />発達チェック一覧へ</Link>
         <h1>共有範囲の設定</h1>
         <div className="spacer" />
         <span className="muted">共有しない項目：{hidden} 件</span>
