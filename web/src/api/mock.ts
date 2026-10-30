@@ -2736,7 +2736,7 @@ const napApi2 = {
       const [, child, , key] = head(target.sessionId, target.childId);
       histories.push({
         logId: l.operation_log_id, ...key, recordAt: target.at, at: l.operated_at, cells: [
-          `${target.label}（${child}・${target.at}）`, l.operated_at, accountName(l.account_id),
+          `${target.label}（${child}・${target.at}）`, l.operated_at, l.account_id === null ? 'システム' : accountName(l.account_id),
           napCorrectionText(l.before_value), napCorrectionText(l.after_value), napCorrectionReason(l.after_value),
         ],
       });
