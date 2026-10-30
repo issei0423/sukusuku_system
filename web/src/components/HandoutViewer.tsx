@@ -10,11 +10,12 @@ import { Modal, Tag } from './ui';
 import { HANDOUT_TYPE } from '../api/codes';
 import { formatFileSize, formatMonth, formatMDHM } from '../api/util';
 import type { Handout } from '../api/types';
+import { CloseIcon } from './icons';
 
 export default function HandoutViewer({ handout, onClose }: { handout: Handout; onClose: () => void }) {
   return (
     <Modal title={handout.title} onClose={onClose}
-      footer={<button className="btn-primary" onClick={onClose}>閉じる</button>}>
+      footer={<button className="btn-primary" onClick={onClose}><CloseIcon />閉じる</button>}>
       <div className="stack">
         <div>
           <Tag label={HANDOUT_TYPE[handout.handout_type] ?? 'その他'} className="tag-applied" />

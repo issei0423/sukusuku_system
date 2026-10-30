@@ -240,18 +240,19 @@ describe('身体記録画面の上書き・同じ月の記録（GitHub Issue #16
     pick('小林 結衣');
     const height = await screen.findByRole('button', { name: '身長' }, { timeout: 3000 });
     const weight = screen.getByRole('button', { name: '体重' });
-    const mark = (button: HTMLElement) => button.querySelector('[aria-hidden="true"]')?.textContent ?? null;
+    // 印は ✓ の絵（components/icons.tsx の SelectedIcon）。読み上げない svg（aria-hidden）
+    const mark = (button: HTMLElement) => button.querySelector('svg.icon[aria-hidden="true"]') !== null;
     expect(height.getAttribute('aria-pressed')).toBe('true');
-    expect(mark(height)).toBe('✓');
+    expect(mark(height)).toBe(true);
     expect(weight.getAttribute('aria-pressed')).toBe('false');
-    expect(mark(weight)).toBeNull();
+    expect(mark(weight)).toBe(false);
     // 太字は保護者の成長の記録画面と同じ規則（.measure-toggle。growthScreens.test.tsx で規則の文を見る）
     expect(height.classList.contains('measure-toggle') && weight.classList.contains('measure-toggle')).toBe(true);
 
     fireEvent.click(weight);
     expect(weight.getAttribute('aria-pressed')).toBe('true');
-    expect(mark(weight)).toBe('✓');
+    expect(mark(weight)).toBe(true);
     expect(height.getAttribute('aria-pressed')).toBe('false');
-    expect(mark(height)).toBeNull();
+    expect(mark(height)).toBe(false);
   });
 });

@@ -11,6 +11,7 @@ import { Alert } from '../../components/ui';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api } from '../../api/client';
+import { ConfirmIcon, LogoutIcon } from '../../components/icons';
 
 export default function TermsAgreeScreen({ readOnly }: { readOnly?: boolean }) {
   const { user, setUser, logout } = useSession();
@@ -71,14 +72,14 @@ export default function TermsAgreeScreen({ readOnly }: { readOnly?: boolean }) {
         利用規約に同意します
       </label>
       <div className="stack" style={{ marginTop: 16 }}>
-        <button className="btn-primary btn-block" disabled={!agreed || busy} onClick={submit}>同意して進む</button>
+        <button className="btn-primary btn-block" disabled={!agreed || busy} onClick={submit}><ConfirmIcon />同意して進む</button>
         {/* 同意しない選択も残す。同意しないままでは利用できないことを明示する */}
         <button className="btn-block"
           onClick={async () => {
             // ログインしていた系統の入口へ戻す（画面詳細図「利用規約同意画面」(2-5)）
             const top = user && user.role !== '3' ? '/staff-top' : '/';
             await logout(); navigate(top);
-          }}>同意せずログアウトする</button>
+          }}><LogoutIcon />同意せずログアウトする</button>
       </div>
     </PublicLayout>
   );

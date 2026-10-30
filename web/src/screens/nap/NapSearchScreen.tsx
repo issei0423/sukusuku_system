@@ -22,6 +22,7 @@ import type { NapSearchRow } from '../../api/shapes';
 import type { BodyPosition, Breathing, Complexion } from '../../api/types';
 import { rowLabel, rowTemperature } from './napReport';
 import { formatMD, formatHM, formatMDHM, today, addDays } from '../../api/util';
+import { BackIcon, DownloadIcon, SearchIcon } from '../../components/icons';
 
 export default function NapSearchScreen() {
   const { user } = useSession();
@@ -98,10 +99,10 @@ export default function NapSearchScreen() {
   return (
     <div>
       <div className="page-head">
-        <Link className="btn btn-quiet btn-sm" to="/staff/nap">&lt; 午睡チェックへ</Link>
+        <Link className="btn btn-quiet btn-sm" to="/staff/nap"><BackIcon />午睡チェックへ</Link>
         <h1>午睡記録の検索</h1>
         <div className="spacer" />
-        {canExport && <button onClick={exportCsv} disabled={exporting}>CSV出力</button>}
+        {canExport && <button onClick={exportCsv} disabled={exporting}><DownloadIcon />CSV出力</button>}
       </div>
 
       {exportError && <section className="card"><ErrorBox text={exportError} /></section>}
@@ -120,7 +121,7 @@ export default function NapSearchScreen() {
           <Field label="園児名">
             <input type="search" value={childNameQ} onChange={(e) => setChildNameQ(e.target.value)} />
           </Field>
-          <button onClick={search}>絞り込む</button>
+          <button onClick={search}><SearchIcon />絞り込む</button>
         </div>
         {rangeError && <ErrorBox text={rangeError} />}
       </section>

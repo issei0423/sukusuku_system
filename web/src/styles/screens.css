@@ -352,9 +352,15 @@ button.guardian-record-link {
 .guardian-main:has(.contact-form-actions) { scroll-padding-bottom: calc(var(--contact-actions-h, 0px) + 6px); }
 .contact-page-head h1 { font-size: 1.375rem; margin: 0; }
 /* 「‹ ホームへ」も押せるものとして高さ 44px 以上にする（詳細設計書「全画面に共通する部品と決まり」(2-0) の「タッチの条件」(4)、GitHub Issue #215） */
-.contact-page-head > a { display: flex; align-items: center; min-height: 44px; }
+.contact-page-head > a { display: flex; align-items: center; gap: var(--sp-2); min-height: 44px; }
 .contact-date { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .contact-date button { min-height: 44px; min-width: 44px; }
+/*
+ * 前の日・次の日の ‹ › の絵（PrevIcon・ForwardIcon）は、形の左右に余白を持つ（24 の枠のうち中の 3 割ほど）。
+ * 間を詰めても見た目の間は他のボタンの 8px と変わらないので、間を 0 に、左右の余白を 12px にする。
+ * 保護者の 480px の列で「前の日・日付・次の日・月の一覧」を1行に保つため（【仮置き】web/仮置き値.md「アイコン」）
+ */
+.contact-date button:has(> .icon) { gap: 0; padding-left: var(--sp-3); padding-right: var(--sp-3); }
 /* 月の一覧（MonthList.tsx）。1日1行。押す所は 44px 以上 */
 .contact-month-days { list-style: none; margin: var(--sp-2) 0 0; padding: 0; display: grid; gap: var(--sp-1); }
 .contact-month-days button { width: 100%; min-height: 44px; text-align: left; }
@@ -372,7 +378,7 @@ button.guardian-record-link {
  * 判定の色を付けず、太字だけで目に入るようにする【仮置き】（web/仮置き値.md）
  */
 .contact-note { margin: 0; font-weight: 700; }
-.contact-wide-button { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 48px; }
+.contact-wide-button { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); width: 100%; min-height: 48px; }
 .contact-home-form { display: grid; gap: var(--sp-3); }
 /* 朝ごはん・きげん・お迎えの選択肢どうしの間は 8px（「タッチの条件」(2-0 (4))、GitHub Issue #215）。1行に2つ並べる */
 .contact-choice-options { flex-wrap: wrap; gap: var(--sp-2); }
@@ -510,7 +516,7 @@ button.guardian-record-link {
 .contact-temp-value { font-size: 1.1rem; }
 /* 連絡帳（園児）画面：左に1日のページ（約 60%）、右に書く欄（約 40%）。縦向きでも並びを変えず幅だけを詰める */
 .contact-child-head { flex-wrap: wrap; gap: var(--sp-3); align-items: center; }
-.contact-back { min-height: 44px; display: inline-flex; align-items: center; }
+.contact-back { min-height: 44px; display: inline-flex; align-items: center; gap: var(--sp-2); }
 .contact-child-name { display: flex; align-items: center; gap: var(--sp-2); }
 .contact-child-name h1 { margin: 0; font-size: 1.5rem; }
 .contact-child-body { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--sp-4); align-items: start; }
@@ -591,7 +597,7 @@ button.guardian-record-link {
 .growth-switch button { min-height: 44px; min-width: 64px; }
 /*
  * 【仮置き】身長・体重の切り替え（保護者の成長の記録画面・職員の身体記録画面。web/仮置き値.md）。選んでいる側は、塗りの色に加えて
- * 「✓」（画面側で添える）と太字で示し、選んでいない側は細字にする（色だけに頼らない。WCAG 1.4.1、GitHub Issue #211）
+ * ✓ の印（画面側で添える SelectedIcon）と太字で示し、選んでいない側は細字にする（色だけに頼らない。WCAG 1.4.1、GitHub Issue #211）
  */
 .measure-toggle { font-weight: 400; }
 .measure-toggle[aria-pressed="true"] { font-weight: 700; }
@@ -615,7 +621,7 @@ button.guardian-record-link {
 }
 .guardian-panel-link .growth-new { margin-left: var(--sp-2); }
 /* 「ホームへ」も指で押せる高さにする（44px。基本設計書「画面基本構成」(3-5) のタップ領域） */
-.growth-page .contact-page-head > a { display: inline-flex; align-items: center; min-height: 44px; justify-self: start; }
+.growth-page .contact-page-head > a { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: 44px; justify-self: start; }
 .growth-page .contact-page-head > p { margin: 0; }
 /* 職員：ひとこと・写真の行の「成長の記録に残す」（詳細設計書 (2-12 (1))）。指で押せる高さにする */
 .contact-keep-growth { display: inline-flex; align-items: center; gap: var(--sp-1); min-height: 44px; margin-left: var(--sp-2); }

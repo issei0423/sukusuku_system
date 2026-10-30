@@ -15,6 +15,7 @@ import { ConfirmDialog, notify } from '../../components/feedback';
 import { INVITATION_STATUS } from '../../api/codes';
 import { formatYMD } from '../../api/util';
 import type { InvitationStatus } from '../../api/types';
+import { AddIcon, PrintIcon, SearchIcon, CloseIcon, SuspendIcon } from '../../components/icons';
 
 // 有効期限は 1〜365 日。欄を空にすると 0 になり、当日期限のコードができる（GitHub Issue #100）
 const validDaysInput = (days: number) => Number.isInteger(days) && days >= 1 && days <= 365;
@@ -143,6 +144,10 @@ export default function InvitationCodesScreen() {
       <div className="page-head">
         <h1>招待コード</h1>
         <div className="spacer" />
+        {/*
+          【仮置き】この並びには絵を添えない。「1枚発行」「一括発行」に同じ ＋ が続いて見分けの役に立たず、
+          絵の分だけ iPad 縦（744・768px）で「配布用に出力」が2段目へ落ちるため（components/icons.tsx の決まり。web/仮置き値.md「アイコン」）
+        */}
         <button onClick={() => setOneOpen(true)}>1枚発行</button>
         <button onClick={() => setBulkOpen(true)}>一括発行</button>
         <button onClick={() => setPrintOpen(true)}>配布用に出力</button>
@@ -173,7 +178,7 @@ export default function InvitationCodesScreen() {
               {Object.entries(INVITATION_STATUS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </Field>
-          <button onClick={() => setApplied((n) => n + 1)}>絞り込む</button>
+          <button onClick={() => setApplied((n) => n + 1)}><SearchIcon />絞り込む</button>
         </div>
       </section>
 
@@ -229,9 +234,9 @@ export default function InvitationCodesScreen() {
       {oneOpen && (
         <Modal title="招待コードの発行（1枚）" onClose={() => setOneOpen(false)}
           footer={<>
-            <button onClick={() => setOneOpen(false)}>やめる</button>
+            <button onClick={() => setOneOpen(false)}><CloseIcon />やめる</button>
             <button className="btn-primary" onClick={issueOne}
-              disabled={busy || !oneChild || !validDaysInput(oneDays)} aria-busy={busy}>発行する</button>
+              disabled={busy || !oneChild || !validDaysInput(oneDays)} aria-busy={busy}><AddIcon />発行する</button>
           </>}>
           <div className="stack">
             <Field label="クラス" required>
@@ -263,9 +268,9 @@ export default function InvitationCodesScreen() {
       {bulkOpen && (
         <Modal title="招待コードの一括発行" onClose={() => setBulkOpen(false)}
           footer={<>
-            <button onClick={() => setBulkOpen(false)}>やめる</button>
+            <button onClick={() => setBulkOpen(false)}><CloseIcon />やめる</button>
             <button className="btn-primary" onClick={bulkIssue}
-              disabled={busy || bulkTargets === 0 || !validDaysInput(validDays) || !validPerChildInput(perChild)} aria-busy={busy}>発行する</button>
+              disabled={busy || bulkTargets === 0 || !validDaysInput(validDays) || !validPerChildInput(perChild)} aria-busy={busy}><AddIcon />発行する</button>
           </>}>
           {bulkError && <Alert>{bulkError}</Alert>}
           <div className="stack">
@@ -315,8 +320,8 @@ export default function InvitationCodesScreen() {
       {printOpen && (
         <Modal title="配布用の出力" onClose={() => setPrintOpen(false)}
           footer={<>
-            <button onClick={() => setPrintOpen(false)}>閉じる</button>
-            <button className="btn-primary" onClick={printSheet} disabled={printable.length === 0}>印刷する</button>
+            <button onClick={() => setPrintOpen(false)}><CloseIcon />閉じる</button>
+            <button className="btn-primary" onClick={printSheet} disabled={printable.length === 0}><PrintIcon />印刷する</button>
           </>}>
           <div className="muted" style={{ marginBottom: 12 }}>
             コードと園児名の対応を取り違えないよう、1枚ずつ切り分けられる様式にしています。
@@ -355,7 +360,7 @@ export default function InvitationCodesScreen() {
 
       {revoking && (
         /* 失効すると、読み直しで行の「失効」が消える。同じ行の押せる最初のもの、なければ本文へ（GitHub Issue #213） */
-        <ConfirmDialog title="招待コードの失効" confirmLabel="失効する" danger returnWithin={['td', 'tr']}
+        <ConfirmDialog title="招待コードの失効" confirmLabel="失効する" confirmIcon={<SuspendIcon />} danger returnWithin={['td', 'tr']}
           onConfirm={revoke} onCancel={() => setRevoking(null)}>
           <p>
             {revoking.childName} の招待コード

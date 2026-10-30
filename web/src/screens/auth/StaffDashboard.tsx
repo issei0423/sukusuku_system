@@ -14,6 +14,7 @@ import { api } from '../../api/client';
 import { Loading, ErrorBox, Alert } from '../../components/ui';
 import { formatYMD, today } from '../../api/util';
 import { ACCOUNT_CHANGED_TEXT } from '../../messages';
+import { ContactBookIcon, NapIcon, DiaryIcon, MeasureIcon, DevCheckIcon } from '../../components/icons';
 
 /** 項目に、数えている範囲を添える（「担当クラス」「全クラス」） */
 const scopeNote = (scope: string) => <span className="muted">（{scope}）</span>;
@@ -163,16 +164,21 @@ export default function StaffDashboard() {
         <section className="card col-5">
           <h2>よく使う</h2>
           <div className="stack">
-            <Link className="btn btn-block" to="/staff/contact">連絡帳</Link>
+            <Link className="btn btn-block" to="/staff/contact"><ContactBookIcon />連絡帳</Link>
             {data.activeNap && (
               <Link className="btn btn-primary btn-block" to="/staff/nap">
-                午睡チェックが実施中です（開く）
+                {/*
+                  【仮置き】安全の知らせなので絵を添えない（components/icons.tsx の決まり。web/仮置き値.md「アイコン」）。
+                  絵を添えると iPad 横向き（1024px）で2行に折れ、いちばん目立たせたい知らせが読みにくくなるため。
+                  狭い幅で折り返すときも「（開」と「く）」のあいだで割らない（文字を1つの span にまとめ、その中で「（開く）」を折り返さない）
+                */}
+                <span>午睡チェックが実施中です<span className="nowrap">（開く）</span></span>
               </Link>
             )}
-            {!data.activeNap && <Link className="btn btn-block" to="/staff/nap">午睡チェックを開始</Link>}
-            <Link className="btn btn-block" to="/staff/diary/new">日誌を書く</Link>
-            <Link className="btn btn-block" to="/staff/growth/physical">身体測定を入力</Link>
-            <Link className="btn btn-block" to="/staff/growth">発達チェックを入力</Link>
+            {!data.activeNap && <Link className="btn btn-block" to="/staff/nap"><NapIcon />午睡チェックを開始</Link>}
+            <Link className="btn btn-block" to="/staff/diary/new"><DiaryIcon />日誌を書く</Link>
+            <Link className="btn btn-block" to="/staff/growth/physical"><MeasureIcon />身体測定を入力</Link>
+            <Link className="btn btn-block" to="/staff/growth"><DevCheckIcon />発達チェックを入力</Link>
           </div>
         </section>
       </div>

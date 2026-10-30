@@ -39,6 +39,7 @@ import type { FixTarget } from './FixDialog';
 import PhotoSendDialog from './PhotoSendDialog';
 import HomeArrivalStatus from './HomeArrival';
 import { useHomeArrival } from './useHomeArrival';
+import { BackIcon, PrevIcon, ForwardIcon, ConfirmIcon, EditIcon, PhotoIcon } from '../../components/icons';
 
 const HOME_STATE_TEXT = { unconfirmed: '未確認', revised: '更新', confirmed: '確認済み' } as const;
 
@@ -179,7 +180,7 @@ export default function ContactChildScreen() {
     <div className="contact-child">
       <HomeArrivalStatus said={arrival} />
       <div className="page-head contact-child-head">
-        <Link className="contact-back" to={classPath}>‹ クラスへ戻る</Link>
+        <Link className="contact-back" to={classPath}><BackIcon />クラスへ戻る</Link>
         <div className="contact-child-name">
           <ChildAvatar name={name} size="lg" />
           <div>
@@ -188,9 +189,9 @@ export default function ContactChildScreen() {
           </div>
         </div>
         <nav className="contact-date" aria-label="連絡帳の日付">
-          <button type="button" onClick={() => moveTo(addDays(date, -1))}>‹ 前の日</button>
+          <button type="button" onClick={() => moveTo(addDays(date, -1))}><PrevIcon />前の日</button>
           <strong>{dayLabel(date)}</strong>
-          <button type="button" onClick={() => moveTo(addDays(date, 1))} disabled={isToday}>次の日 ›</button>
+          <button type="button" onClick={() => moveTo(addDays(date, 1))} disabled={isToday}>次の日<ForwardIcon /></button>
           {!isToday && <button type="button" onClick={() => moveTo(today())}>今日</button>}
         </nav>
       </div>
@@ -217,7 +218,7 @@ export default function ContactChildScreen() {
                   ? <p ref={confirmedRef} className="contact-confirmed" tabIndex={-1}>園が確認しました {formatHM(h.confirmed_at)} {h.confirmed_staff_name}</p>
                   : data.can_write && (
                     <button type="button" className="btn-primary contact-confirm-button" onClick={confirmHome} disabled={busy !== null}
-                      aria-busy={busy === 'home'}>{busy === 'home' ? TEXT.sending : '確認しました'}</button>
+                      aria-busy={busy === 'home'}><ConfirmIcon />{busy === 'home' ? TEXT.sending : '確認しました'}</button>
                   )}
               </div>
             )}
@@ -237,7 +238,7 @@ export default function ContactChildScreen() {
                   {' '}{data.facility.body}{data.facility.corrected_at && <span className="muted">　訂正しました（{formatHM(data.facility.corrected_at)}{data.facility.last_change ? ` ${data.facility.last_change.staff_name}` : ''}）</span>}</p>
                 {canFix && (
                   <div className="contact-composer-actions">
-                    <button ref={facilityFixRef} type="button" onClick={() => setEditingFacility(true)}>直す</button>
+                    <button ref={facilityFixRef} type="button" onClick={() => setEditingFacility(true)}><EditIcon />直す</button>
                     <button type="button" className="btn-quiet" onClick={() => setFix({ target: { kind: 'facility', facility: data.facility!, childName: name }, mode: 'cancel' })}>取り消す</button>
                   </div>
                 )}
@@ -306,7 +307,7 @@ export default function ContactChildScreen() {
               {data.class_id !== null && (
                 <div className="contact-field">
                   <span>写真</span>
-                  <button type="button" className="contact-pick" onClick={() => setPhotoOpen(true)} disabled={busy !== null}>写真を送る</button>
+                  <button type="button" className="contact-pick" onClick={() => setPhotoOpen(true)} disabled={busy !== null}><PhotoIcon />写真を送る</button>
                 </div>
               )}
               <Composer label="活動のひとこと" max={200} scope="2" recipient={data.recipient} className={childClass}

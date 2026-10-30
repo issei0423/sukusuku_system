@@ -15,6 +15,7 @@ import { MEAL_AMOUNT_TEXT, TEXT } from '../../messages';
 import { useReachable } from '../../api/reachability';
 import { useStickyInset } from '../../stickyInset';
 import TemperaturePicker from '../../components/TemperaturePicker';
+import { SendIcon, RefreshIcon, CloseIcon } from '../../components/icons';
 
 /** 基本設計書「設定マスタ」(5-9) の既定（サーバの defaultHomeItems と同じ） */
 const DEFAULT_HOME_ITEMS = 'temperature,night_sleep,breakfast,mood,pickup,message';
@@ -199,9 +200,10 @@ export default function HomeForm({ home, busy, error, onSubmit, onCancel }: {
       {error && <p className="contact-error" role="alert">{error}</p>}
       <div ref={actions} className="contact-form-actions">
         <button type="submit" className="btn-primary" disabled={busy} aria-busy={busy}>
+          {!reachable && !busy ? <RefreshIcon /> : <SendIcon />}
           {busy ? TEXT.sending : !reachable ? TEXT.resend : '家庭からを送る'}
         </button>
-        {onCancel && <button type="button" onClick={onCancel} disabled={busy}>やめる</button>}
+        {onCancel && <button type="button" onClick={onCancel} disabled={busy}><CloseIcon />やめる</button>}
       </div>
     </form>
   );

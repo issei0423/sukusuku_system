@@ -18,6 +18,7 @@ import HandoutViewer from '../../components/HandoutViewer';
 import { HANDOUT_TYPE } from '../../api/codes';
 import { formatMonth } from '../../api/util';
 import type { Handout } from '../../api/types';
+import { BackIcon, ForwardIcon } from '../../components/icons';
 
 export default function GuardianHandoutsScreen() {
   const { user } = useSession();
@@ -33,7 +34,7 @@ export default function GuardianHandoutsScreen() {
   return (
     <div className="guardian-home">
       <div className="guardian-page-intro">
-        <Link className="btn btn-quiet btn-sm" to="/guardian/chat">&lt; チャット・お知らせへ</Link>
+        <Link className="btn btn-quiet btn-sm" to="/guardian/chat"><BackIcon />チャット・お知らせへ</Link>
         <span className="guardian-eyebrow" style={{ marginTop: 8 }}>園からのおたより</span>
         <h1>園からの配布物</h1>
         <p>園だより・献立表などを、月ごとに見返せます。</p>
@@ -63,7 +64,7 @@ export default function GuardianHandoutsScreen() {
                   <Tag label={HANDOUT_TYPE[h.handout_type] ?? 'その他'} className="tag-applied" />
                   <span>{h.title}</span>
                 </span>
-                <span aria-hidden="true">→</span>
+                <ForwardIcon />
               </button>
             ))}
           </div>

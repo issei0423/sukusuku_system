@@ -16,6 +16,7 @@ import { Loading, ErrorBox, Empty, Field, Alert, Disclaimer, Modal, Radios } fro
 import { ConfirmDialog, notify } from '../../components/feedback';
 import GrowthChart from '../../components/GrowthChart';
 import { formatAge, formatYM, formatYMD, today } from '../../api/util';
+import { SaveIcon, SelectedIcon, AddIcon, CloseIcon, PrintIcon } from '../../components/icons';
 
 const DISCLAIMER = '本グラフは発育の判定・診断を行うものではありません。';
 
@@ -243,7 +244,7 @@ export default function PhysicalRecordScreen() {
                 <div className="row-end" style={{ marginTop: 12 }}>
                   <button className="btn-primary" onClick={save}
                     disabled={busy || !height || !weight}>
-                    {warning && warned ? 'このまま登録する' : '登録する'}
+                    <SaveIcon />{warning && warned ? 'このまま登録する' : '登録する'}
                   </button>
                 </div>
               </section>
@@ -252,11 +253,11 @@ export default function PhysicalRecordScreen() {
                 <div className="page-head">
                   <h2>成長グラフ</h2>
                   <div className="row">
-                    {/* 【仮置き】選んでいる側は、塗りの色に加えて「✓」と太字で示す（保護者の成長の記録画面と同じ。WCAG 1.4.1、GitHub Issue #211。web/仮置き値.md） */}
+                    {/* 【仮置き】選んでいる側は、塗りの色に加えて ✓ の印（SelectedIcon）と太字で示す（保護者の成長の記録画面と同じ。WCAG 1.4.1、GitHub Issue #211。web/仮置き値.md） */}
                     <button className={measureType === '1' ? 'measure-toggle btn-primary btn-sm' : 'measure-toggle btn-sm'} aria-pressed={measureType === '1'}
-                      onClick={() => setMeasureType('1')}>{measureType === '1' && <span aria-hidden="true">✓</span>}身長</button>
+                      onClick={() => setMeasureType('1')}>{measureType === '1' && <SelectedIcon />}身長</button>
                     <button className={measureType === '2' ? 'measure-toggle btn-primary btn-sm' : 'measure-toggle btn-sm'} aria-pressed={measureType === '2'}
-                      onClick={() => setMeasureType('2')}>{measureType === '2' && <span aria-hidden="true">✓</span>}体重</button>
+                      onClick={() => setMeasureType('2')}>{measureType === '2' && <SelectedIcon />}体重</button>
                   </div>
                   <div className="spacer" />
                   {/* PDF出力は管理者のみ */}
@@ -308,7 +309,7 @@ export default function PhysicalRecordScreen() {
       </div>
 
       {confirming === 'overwrite' && sameDay && (
-        <ConfirmDialog title="上書きの確認" confirmLabel="上書きする" busy={busy}
+        <ConfirmDialog title="上書きの確認" confirmLabel="上書きする" confirmIcon={<SaveIcon />} busy={busy}
           onConfirm={() => void submit({ confirm_overwrite: true })} onCancel={() => setConfirming(null)}>
           {/* 文言は基本設計書「メッセージ一覧」(4-9)「上書き確認」 */}
           <p>この測定日の記録は登録済みです。上書きしますか。</p>
@@ -319,7 +320,7 @@ export default function PhysicalRecordScreen() {
       )}
       {/* 【仮置き】同じ回（年月）の2件目を登録する前に確かめる（web/仮置き値.md、GitHub Issue #165） */}
       {confirming === 'same_month' && sameMonth && (
-        <ConfirmDialog title="同じ月の記録があります" confirmLabel="別の記録として登録する" busy={busy}
+        <ConfirmDialog title="同じ月の記録があります" confirmLabel="別の記録として登録する" confirmIcon={<AddIcon />} busy={busy}
           onConfirm={() => void submit({ confirm_same_month: true })} onCancel={() => setConfirming(null)}>
           <p>
             {formatYM(measuredOn)}の記録は、{formatYMD(sameMonth.measured_on)}に登録済みです。
@@ -334,8 +335,8 @@ export default function PhysicalRecordScreen() {
       {pdfOpen && (
         <Modal title="PDF出力" onClose={() => setPdfOpen(false)}
           footer={<>
-            <button onClick={() => setPdfOpen(false)}>やめる</button>
-            <button className="btn-primary" onClick={exportPdf} disabled={!purpose}>出力する</button>
+            <button onClick={() => setPdfOpen(false)}><CloseIcon />やめる</button>
+            <button className="btn-primary" onClick={exportPdf} disabled={!purpose}><PrintIcon />出力する</button>
           </>}>
           {/* 出力種別に既定値を置かず、毎回選ばせる（画面詳細図 6-2） */}
           <Field label="出力の目的" required>

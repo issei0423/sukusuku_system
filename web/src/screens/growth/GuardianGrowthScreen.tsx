@@ -22,6 +22,7 @@ import { TEXT } from '../../messages';
 import GrowthTimeline from './GrowthTimeline';
 import { monthDay } from './growthText';
 import MeasurementList from './MeasurementList';
+import { BackIcon, SelectedIcon } from '../../components/icons';
 
 /** この園児の発達チェック・身体測定・連絡帳の知らせだけを通す（詳細設計書 (2-11 (2))） */
 const onGrowthChild = (childId: string) => (e: LiveEvent) =>
@@ -71,7 +72,7 @@ export default function GuardianGrowthScreen() {
   return (
     <div className="contact-page growth-page">
       <div className="contact-page-head">
-        <Link to="/guardian">‹ ホームへ</Link>
+        <Link to="/guardian"><BackIcon />ホームへ</Link>
         <h1>{data.child_name}の成長の記録</h1>
         {data.grace_ends_on && <p className="muted">{monthDay(data.grace_ends_on)}まで読むことができます</p>}
       </div>
@@ -81,12 +82,12 @@ export default function GuardianGrowthScreen() {
           <div className="growth-section-head">
             <h2 id="growth-body-title">身長・体重</h2>
             <div className="growth-switch" role="group" aria-label="グラフの切り替え">
-              {/* 【仮置き】選んでいる側は、塗りの色に加えて「✓」と太字で示す（色だけに頼らない。WCAG 1.4.1、GitHub Issue #211。web/仮置き値.md）。
-                  「✓」は読み上げない（選んでいることは aria-pressed で伝わる） */}
+              {/* 【仮置き】選んでいる側は、塗りの色に加えて ✓ の印（SelectedIcon）と太字で示す（色だけに頼らない。WCAG 1.4.1、GitHub Issue #211。web/仮置き値.md）。
+                  印は読み上げない（選んでいることは aria-pressed で伝わる） */}
               <button type="button" className={measureType === '1' ? 'measure-toggle btn-primary' : 'measure-toggle'} aria-pressed={measureType === '1'}
-                onClick={() => setMeasureType('1')}>{measureType === '1' && <span aria-hidden="true">✓</span>}身長</button>
+                onClick={() => setMeasureType('1')}>{measureType === '1' && <SelectedIcon />}身長</button>
               <button type="button" className={measureType === '2' ? 'measure-toggle btn-primary' : 'measure-toggle'} aria-pressed={measureType === '2'}
-                onClick={() => setMeasureType('2')}>{measureType === '2' && <span aria-hidden="true">✓</span>}体重</button>
+                onClick={() => setMeasureType('2')}>{measureType === '2' && <SelectedIcon />}体重</button>
             </div>
           </div>
           {data.measurements.length === 0 ? (

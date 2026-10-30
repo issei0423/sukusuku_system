@@ -95,7 +95,7 @@ describe('職員アカウント管理画面（GitHub Issue #167 の 1・2）', (
     open('/staff/admin/staff-accounts', admin);
     await settled();
     const before = db.staff.length;
-    fireEvent.click(screen.getByRole('button', { name: '＋ アカウントを発行' }));
+    fireEvent.click(screen.getByRole('button', { name: 'アカウントを発行' }));
     fireEvent.change(screen.getByLabelText('氏名'), { target: { value: '形式 確認' } });
     fireEvent.change(screen.getByLabelText('ログインID（メールアドレス）'), { target: { value: 'abc2' } });
     fireEvent.click(screen.getByRole('button', { name: '発行する' }));

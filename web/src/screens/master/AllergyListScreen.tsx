@@ -12,6 +12,7 @@ import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api } from '../../api/client';
 import { Loading, ErrorBox, Empty } from '../../components/ui';
+import { PrintIcon } from '../../components/icons';
 
 export default function AllergyListScreen() {
   const { user } = useSession();
@@ -36,7 +37,7 @@ export default function AllergyListScreen() {
       <div className="page-head">
         <h1>アレルギー一覧（全園児）</h1>
         <div className="spacer" />
-        <button onClick={print} disabled={!data}>印刷する</button>
+        <button onClick={print} disabled={!data}><PrintIcon />印刷する</button>
       </div>
       {printError && <section className="card"><ErrorBox text={printError} /></section>}
 

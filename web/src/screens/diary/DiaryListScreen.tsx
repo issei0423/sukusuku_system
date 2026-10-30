@@ -17,6 +17,7 @@ import { DIARY_RECORD_TYPE, DIARY_STATUS, DIARY_STATUS_CLASS } from '../../api/c
 import { formatMD, today, addDays } from '../../api/util';
 import type { Diary, DiaryRecordType, DiaryStatus } from '../../api/types';
 import { ConfirmDialog, notify } from '../../components/feedback';
+import { AddIcon, SearchIcon, UndoIcon } from '../../components/icons';
 
 // 期間の開始の初期値は、当日の30日前（図/画面詳細図.md「日誌一覧画面」(3-1) 項目4「開始＝当日の30日前」。GitHub Issue #278）
 const DEFAULT_RANGE_DAYS = 30;
@@ -95,7 +96,7 @@ export default function DiaryListScreen() {
       <div className="page-head">
         <h1>日誌</h1>
         <div className="spacer" />
-        <Link className="btn btn-primary" to="/staff/diary/new">＋ 新しく書く</Link>
+        <Link className="btn btn-primary" to="/staff/diary/new"><AddIcon />新しく書く</Link>
       </div>
 
       <section className="card">
@@ -132,7 +133,7 @@ export default function DiaryListScreen() {
             <input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} />
             自分が作成したもの
           </label>
-          <button onClick={search}>絞り込む</button>
+          <button onClick={search}><SearchIcon />絞り込む</button>
         </div>
         {rangeError && <ErrorBox text={rangeError} />}
         {user!.role === '2' && (
@@ -182,7 +183,7 @@ export default function DiaryListScreen() {
       </section>
       {withdrawing && (
         /* 取り下げると、読み直しで行の「申請を取り下げる」が消える。同じ行の押せる最初のもの（「開く」）へ（GitHub Issue #213） */
-        <ConfirmDialog title="申請の取り下げ" confirmLabel="取り下げる" busy={busy} returnWithin={['td', 'tr']}
+        <ConfirmDialog title="申請の取り下げ" confirmLabel="取り下げる" confirmIcon={<UndoIcon />} busy={busy} returnWithin={['td', 'tr']}
           onConfirm={withdraw} onCancel={() => setWithdrawing(null)}>
           <p>申請を取り下げますか。下書きに戻り、承認待ちから外れます。</p>
         </ConfirmDialog>

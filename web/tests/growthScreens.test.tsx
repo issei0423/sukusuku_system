@@ -81,19 +81,20 @@ describe('成長の記録画面（保護者）', () => {
     await screen.findByRole('heading', { name: '西田 太郎の成長の記録' }, { timeout: 3000 });
     const height = screen.getByRole('button', { name: '身長' });
     const weight = screen.getByRole('button', { name: '体重' });
-    const mark = (button: HTMLElement) => button.querySelector('[aria-hidden="true"]')?.textContent ?? null;
-    // 選んでいる側だけに「✓」。「✓」は読み上げの名前に入れない（名前は「身長」のまま）
+    // 印は ✓ の絵（components/icons.tsx の SelectedIcon。Material Symbols の check）。読み上げない svg（aria-hidden）
+    const mark = (button: HTMLElement) => button.querySelector('svg.icon[aria-hidden="true"]') !== null;
+    // 選んでいる側だけに「✓」の印。印は読み上げの名前に入れない（名前は「身長」のまま）
     expect(height.getAttribute('aria-pressed')).toBe('true');
-    expect(mark(height)).toBe('✓');
+    expect(mark(height)).toBe(true);
     expect(weight.getAttribute('aria-pressed')).toBe('false');
-    expect(mark(weight)).toBeNull();
+    expect(mark(weight)).toBe(false);
     expect(height.classList.contains('measure-toggle') && weight.classList.contains('measure-toggle')).toBe(true);
 
     fireEvent.click(weight);
     expect(weight.getAttribute('aria-pressed')).toBe('true');
-    expect(mark(weight)).toBe('✓');
+    expect(mark(weight)).toBe(true);
     expect(height.getAttribute('aria-pressed')).toBe('false');
-    expect(mark(height)).toBeNull();
+    expect(mark(height)).toBe(false);
 
     // 太字は CSS で当てる（jsdom は画面の CSS を読まないため、規則の文で見る）。選んでいない側は細字
     expect(screensCss).toMatch(/\.measure-toggle\s*\{\s*font-weight:\s*400;\s*\}/);

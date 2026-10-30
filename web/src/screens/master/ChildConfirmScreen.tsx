@@ -21,6 +21,7 @@ import { SEX, PHOTO_CONSENT, ENROLLMENT_STATUS } from '../../api/codes';
 import { formatYMD, formatAge, today } from '../../api/util';
 import type { ChildInput } from '../../api/client';
 import type { Child } from '../../api/types';
+import { BackIcon, SaveIcon } from '../../components/icons';
 
 export default function ChildConfirmScreen() {
   const { user } = useSession();
@@ -134,10 +135,10 @@ export default function ChildConfirmScreen() {
             mode === 'create' ? '/staff/children/new' : `/staff/children/${form.child_id}/edit`,
             { state: { form }, replace: true },
           )}>
-          戻る
+          <BackIcon />戻る
         </button>
         <button className="btn-primary" onClick={submit} disabled={busy}>
-          {mode === 'create' ? '登録する' : '更新する'}
+          <SaveIcon />{mode === 'create' ? '登録する' : '更新する'}
         </button>
       </div>
     </div>

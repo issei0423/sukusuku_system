@@ -9,6 +9,7 @@
 import type { NameMatch } from '../api/shapes';
 import { otherNamesMessage, TEXT } from '../messages';
 import { Modal } from './ui';
+import { EditIcon, SendIcon } from './icons';
 
 /** 本文を、当たった位置で区切る（位置は符号位置で数える） */
 function segments(text: string, matches: NameMatch[]): { text: string; hit: boolean }[] {
@@ -35,8 +36,8 @@ export default function NameCheckDialog({ names, matches, text, busy, onFix, onS
   return (
     <Modal title="ほかのお子さんの名前の注意" onClose={onFix}
       footer={<>
-        <button type="button" onClick={onFix} disabled={busy}>直す</button>
-        <button type="button" className="btn-primary" onClick={onSend} disabled={busy} aria-busy={busy}>{busy ? TEXT.sending : 'このまま送る'}</button>
+        <button type="button" onClick={onFix} disabled={busy}><EditIcon />直す</button>
+        <button type="button" className="btn-primary" onClick={onSend} disabled={busy} aria-busy={busy}><SendIcon />{busy ? TEXT.sending : 'このまま送る'}</button>
       </>}>
       <p className="name-check-message" role="alert">{otherNamesMessage(names)}</p>
       <p className="name-check-text">

@@ -29,6 +29,7 @@ import { EMPTY_INCIDENT, incidentFormOf, incidentInputOf, incidentReady } from '
 import type { IncidentForm } from './incidentForm';
 import { focusAfter, focusedNow } from '../../focusAfter';
 import { useUnsavedInput } from '../../unsavedInput';
+import { BackIcon, AddIcon, UndoIcon, SaveIcon, ForwardIcon } from '../../components/icons';
 
 // 本文の上限（基本設計書「入力項目の制約値」(4-9)）
 const BODY_MAX = 2000;
@@ -432,7 +433,7 @@ export default function DiaryEditScreen() {
     <div>
       <div className="page-head">
         <Link className="btn btn-quiet btn-sm" to="/staff/diary"
-          onClick={(e) => { if (dirty && !readOnly) { e.preventDefault(); setLeaving(true); } }}>&lt; 日誌一覧へ</Link>
+          onClick={(e) => { if (dirty && !readOnly) { e.preventDefault(); setLeaving(true); } }}><BackIcon />日誌一覧へ</Link>
         <h1>{diaryId ? '日誌の編集' : '日誌の作成'}</h1>
         <div className="spacer" />
         {d && <Tag label={`状態：${DIARY_STATUS[d.status]}`} className={DIARY_STATUS_CLASS[d.status]} />}
@@ -582,7 +583,7 @@ export default function DiaryEditScreen() {
                   </span>
                 ))}
                 <button onClick={addPhoto} disabled={locked || photos.length >= maxPhotos}>
-                  ＋ 追加
+                  <AddIcon />追加
                 </button>
               </div>
               {photos.length >= maxPhotos && <div className="muted">上限の{maxPhotos}枚に達しました。</div>}
@@ -614,23 +615,23 @@ export default function DiaryEditScreen() {
             <div className="row-end">
               {/* 申請の取り下げ（申請した本人）・承認の取り消し（管理者）。押すと確かめてから行う */}
               {canWithdraw && (
-                <button onClick={() => setWithdrawing(true)} disabled={busy}>申請を取り下げる</button>
+                <button onClick={() => setWithdrawing(true)} disabled={busy}><UndoIcon />申請を取り下げる</button>
               )}
               {canRevoke && (
-                <button className="btn-danger" onClick={() => setRevoking(true)} disabled={busy}>承認を取り消して差し戻す</button>
+                <button className="btn-danger" onClick={() => setRevoking(true)} disabled={busy}><UndoIcon />承認を取り消して差し戻す</button>
               )}
               {/* 既存の日誌は、ロックを取れるまで保存させない。ロックの無い保存はサーバが断る（GitHub Issue #166） */}
-              <button onClick={() => save('1')} disabled={busy || readOnly || !!heldBy || lockPending}>下書き保存</button>
+              <button onClick={() => save('1')} disabled={busy || readOnly || !!heldBy || lockPending}><SaveIcon />下書き保存</button>
               <button className="btn-primary" onClick={goConfirm}
                 disabled={busy || readOnly || !!heldBy || lockPending || !contentReady || (needsChild && !childId) || classId === ''}>
-                確認へ進む
+                確認へ進む<ForwardIcon />
               </button>
             </div>
           </div>
         </section>
 
         {leaving && (
-          <ConfirmDialog title="保存していない内容があります" confirmLabel="保存せずに戻る" danger
+          <ConfirmDialog title="保存していない内容があります" confirmLabel="保存せずに戻る" confirmIcon={<BackIcon />} danger
             onConfirm={() => navigate('/staff/diary')} onCancel={() => setLeaving(false)}>
             <p>入力した内容を保存していません。このまま一覧へ戻ると、入力した内容は残りません。</p>
             <p className="muted">残すときは、「やめる」を押してから「下書き保存」を押してください。</p>
@@ -639,14 +640,14 @@ export default function DiaryEditScreen() {
 
         {withdrawing && (
           /* 取り下げる・取り消して差し戻すと、読み直しで押したボタンが消える。同じ並びの押せる最初のものへ（GitHub Issue #213） */
-          <ConfirmDialog title="申請の取り下げ" confirmLabel="取り下げる" busy={busy} returnWithin={['.row-end']}
+          <ConfirmDialog title="申請の取り下げ" confirmLabel="取り下げる" confirmIcon={<UndoIcon />} busy={busy} returnWithin={['.row-end']}
             onConfirm={withdraw} onCancel={() => setWithdrawing(false)}>
             <p>申請を取り下げますか。下書きに戻り、承認待ちから外れます。</p>
           </ConfirmDialog>
         )}
 
         {revoking && (
-          <ConfirmDialog title="承認の取り消し" confirmLabel="取り消して差し戻す" danger busy={busy} returnWithin={['.row-end']}
+          <ConfirmDialog title="承認の取り消し" confirmLabel="取り消して差し戻す" confirmIcon={<UndoIcon />} danger busy={busy} returnWithin={['.row-end']}
             confirmDisabled={!revokeReason.trim()}
             onConfirm={revoke} onCancel={() => setRevoking(false)}>
             <p>承認を取り消して差し戻します。作成者の一覧に差し戻しとして出ます。保護者へは何も届いていません。</p>

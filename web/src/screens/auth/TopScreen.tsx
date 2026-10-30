@@ -13,6 +13,7 @@ import { useSession } from '../../session';
 import { api } from '../../api/client';
 import type { LoginError } from '../../api/client';
 import DemoAccounts from './DemoAccounts';
+import { LoginIcon, SignUpIcon, LogoutIcon, BackIcon } from '../../components/icons';
 
 export default function TopScreen({ entrance }: { entrance: 'staff' | 'guardian' }) {
   const { user, setUser, setEntrance, logout } = useSession();
@@ -78,7 +79,7 @@ export default function TopScreen({ entrance }: { entrance: 'staff' | 'guardian'
           onLogout={() => { setError(null); void logout(); }} />}
 
         <button className="btn-primary btn-block" type="submit" disabled={busy}>
-          {busy ? 'ログインしています…' : 'ログイン'}
+          <LoginIcon />{busy ? 'ログインしています…' : 'ログイン'}
         </button>
       </form>
 
@@ -86,7 +87,7 @@ export default function TopScreen({ entrance }: { entrance: 'staff' | 'guardian'
       {entrance === 'guardian' && (
         <div className="row" style={{ marginTop: 20, justifyContent: 'space-between' }}>
           <span className="muted">はじめての方</span>
-          <Link className="btn" to="/signup">招待コードで新規登録</Link>
+          <Link className="btn" to="/signup"><SignUpIcon />招待コードで新規登録</Link>
         </div>
       )}
 
@@ -118,8 +119,8 @@ export function LoggedInNotice({ onLoggedOut }: { onLoggedOut?: () => void }) {
       <p>すでにログインしています。</p>
       <p>別のアカウントでログインするには、先にログアウトしてください。</p>
       <div className="stack">
-        <button className="btn-primary btn-block" onClick={() => { void logout().then(onLoggedOut); }}>ログアウトする</button>
-        <button className="btn-block" onClick={() => navigate(-1)}>前の画面へ戻る</button>
+        <button className="btn-primary btn-block" onClick={() => { void logout().then(onLoggedOut); }}><LogoutIcon />ログアウトする</button>
+        <button className="btn-block" onClick={() => navigate(-1)}><BackIcon />前の画面へ戻る</button>
       </div>
     </PublicLayout>
   );

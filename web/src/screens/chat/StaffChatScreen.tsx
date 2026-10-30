@@ -26,6 +26,7 @@ import IncomingLog from './IncomingLog';
 import { useIncomingMessages } from './useIncomingMessages';
 import { focusAfter, focusedNow } from '../../focusAfter';
 import { useUnsavedInput } from '../../unsavedInput';
+import { AttachIcon, SendIcon, UndoIcon, DeleteIcon } from '../../components/icons';
 
 // 詳細設計書「チャット」(2-9)。DB 上の部屋名は既存の「園児名の保護者」のままにする（同「園児の登録と個人チャット」(4-9)）。
 const roomLabel = (room: { room_type: string; room_name: string }) =>
@@ -332,8 +333,8 @@ export default function StaffChatScreen() {
                   placeholder="メッセージを入力" style={{ minHeight: 70 }} />
                 {[...text].length > 1000 && <div className="weak" role="alert">本文は1,000文字以内で入力してください</div>}
                 <div className="row-end">
-                  <button onClick={() => alert('添付はモックでは未実装です')}>添付</button>
-                  <button className="btn-primary" onClick={() => send()} disabled={busy || !text.trim() || [...text].length > 1000} aria-busy={busy}>送信</button>
+                  <button onClick={() => alert('添付はモックでは未実装です')}><AttachIcon />添付</button>
+                  <button className="btn-primary" onClick={() => send()} disabled={busy || !text.trim() || [...text].length > 1000} aria-busy={busy}><SendIcon />送信</button>
                 </div>
                 {nameCheck && (
                   <NameCheckDialog names={nameCheck.names} matches={nameCheck.matches} text={nameCheck.text} busy={busy}
@@ -404,7 +405,7 @@ function RetractDialog({ message, mine, isAdmin, guardianRoom, busy, onConfirm, 
     : fromGuardian ? '保護者のメッセージを削除します' : 'メッセージを削除します（誤送信への対応）';
   return (
     <ConfirmDialog title={title}
-      confirmLabel={mine ? '取り消す' : '削除する'} danger busy={busy} onConfirm={onConfirm} onCancel={onCancel}>
+      confirmLabel={mine ? '取り消す' : '削除する'} confirmIcon={mine ? <UndoIcon /> : <DeleteIcon />} danger busy={busy} onConfirm={onConfirm} onCancel={onCancel}>
       <div className="stack">
         <p>
           {formatMD(message.sent_at.slice(0, 10))} {formatHM(message.sent_at)} のメッセージを{mine ? '取り消します' : '削除します'}。

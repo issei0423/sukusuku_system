@@ -16,6 +16,7 @@ import { SEX, PHOTO_CONSENT } from '../../api/codes';
 import { today } from '../../api/util';
 import type { Sex, PhotoConsentLevel } from '../../api/types';
 import type { ChildInput } from '../../api/client';
+import { BackIcon, AddIcon, CloseIcon, ForwardIcon } from '../../components/icons';
 
 // 体温として入力しうる範囲（基本設計書「入力項目の制約値」(4-9)）
 const TEMPERATURE_MIN = 30.0;
@@ -124,7 +125,7 @@ export default function ChildInputScreen() {
   return (
     <div style={{ maxWidth: 620 }}>
       <div className="page-head">
-        <Link className="btn btn-quiet btn-sm" to="/staff/children">&lt; 園児一覧へ</Link>
+        <Link className="btn btn-quiet btn-sm" to="/staff/children"><BackIcon />園児一覧へ</Link>
         <h1>園児情報の{mode === 'create' ? '登録' : '編集'}</h1>
       </div>
 
@@ -232,7 +233,7 @@ export default function ChildInputScreen() {
             </div>
           ))}
           <button onClick={() => set('allergies', [...form.allergies, { target_food: '', symptom: '', response: '' }])}>
-            ＋ アレルギーを追加
+            <AddIcon />アレルギーを追加
           </button>
         </div>
       </section>
@@ -247,13 +248,13 @@ export default function ChildInputScreen() {
               <button className="btn-sm" onClick={() => set('medical_histories', form.medical_histories.filter((_, j) => j !== i))}>削除</button>
             </div>
           ))}
-          <button onClick={() => set('medical_histories', [...form.medical_histories, ''])}>＋ 既往歴を追加</button>
+          <button onClick={() => set('medical_histories', [...form.medical_histories, ''])}><AddIcon />既往歴を追加</button>
         </div>
       </section>
 
       <div className="row-end">
-        <button onClick={() => navigate('/staff/children')}>やめる</button>
-        <button className="btn-primary" onClick={next} disabled={busy}>確認へ進む</button>
+        <button onClick={() => navigate('/staff/children')}><CloseIcon />やめる</button>
+        <button className="btn-primary" onClick={next} disabled={busy}>確認へ進む<ForwardIcon /></button>
       </div>
     </div>
   );
