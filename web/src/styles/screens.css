@@ -591,7 +591,7 @@ button.guardian-record-link {
 .growth-switch button { min-height: 44px; min-width: 64px; }
 /*
  * 【仮置き】身長・体重の切り替え（保護者の成長の記録画面・職員の身体記録画面。web/仮置き値.md）。選んでいる側は、塗りの色に加えて
- * 「✓」（画面側で添える）と太字で示し、選んでいない側は細字にする（色だけに頼らない。WCAG 1.4.1、GitHub Issue #211）
+ * ✓ の印（画面側で添える SelectedIcon）と太字で示し、選んでいない側は細字にする（色だけに頼らない。WCAG 1.4.1、GitHub Issue #211）
  */
 .measure-toggle { font-weight: 400; }
 .measure-toggle[aria-pressed="true"] { font-weight: 700; }

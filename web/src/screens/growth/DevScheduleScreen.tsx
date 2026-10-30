@@ -15,6 +15,7 @@ import { api, selectableClasses } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Alert, Tag } from '../../components/ui';
 import { ConfirmDialog, notify } from '../../components/feedback';
 import { formatYMD, formatAge, today } from '../../api/util';
+import { BackIcon } from '../../components/icons';
 
 export default function DevScheduleScreen() {
   const { user } = useSession();
@@ -61,7 +62,7 @@ export default function DevScheduleScreen() {
   return (
     <div style={{ maxWidth: 940 }}>
       <div className="page-head">
-        <Link className="btn btn-quiet btn-sm" to="/staff/growth">&lt; 発達チェック一覧へ</Link>
+        <Link className="btn btn-quiet btn-sm" to="/staff/growth"><BackIcon />発達チェック一覧へ</Link>
         <h1>スケジュール設定</h1>
         <Field label="クラス">
           <select value={classId} onChange={(e) => setClassId(Number(e.target.value))}>

@@ -20,6 +20,7 @@ import type { NameMatch } from '../../api/shapes';
 import NameCheckDialog from '../../components/NameCheckDialog';
 import { notify } from '../../components/feedback';
 import { MSG, TEXT } from '../../messages';
+import { BackIcon, SaveIcon, ConfirmIcon } from '../../components/icons';
 
 const DISCLAIMER = '本機能は発達の判定・診断を行うものではありません。';
 
@@ -119,7 +120,7 @@ export default function DevInputScreen() {
   return (
     <div style={{ maxWidth: 860 }}>
       <div className="page-head">
-        <Link className="btn btn-quiet btn-sm" to="/staff/growth">&lt; 発達チェック一覧へ</Link>
+        <Link className="btn btn-quiet btn-sm" to="/staff/growth"><BackIcon />発達チェック一覧へ</Link>
         <h1>{c.child_name}（{formatAge(c.birth_date, checkedOn)}）</h1>
         <div className="spacer" />
         <Field label="実施日">
@@ -255,10 +256,10 @@ export default function DevInputScreen() {
         </div>
       )}
       <div className="row-end" style={{ marginTop: 12 }}>
-        {!confirmed && <button onClick={() => save('1')} disabled={busy}>下書き保存</button>}
+        {!confirmed && <button onClick={() => save('1')} disabled={busy}><SaveIcon />下書き保存</button>}
         {/* 未入力が残っているときは、確定の前に確かめる。確定そのものは妨げない */}
         <button className="btn-primary" disabled={busy}
-          onClick={() => (unfilled > 0 ? setConfirming(true) : save('2'))}>確定する</button>
+          onClick={() => (unfilled > 0 ? setConfirming(true) : save('2'))}><ConfirmIcon />確定する</button>
       </div>
 
       {nameCheck && (
@@ -269,9 +270,9 @@ export default function DevInputScreen() {
       {confirming && (
         <Modal title="未入力の項目があります" onClose={() => setConfirming(false)}
           footer={<>
-            <button onClick={() => setConfirming(false)} disabled={busy}>戻って入力する</button>
+            <button onClick={() => setConfirming(false)} disabled={busy}><BackIcon />戻って入力する</button>
             <button className="btn-primary" disabled={busy}
-              onClick={() => { setConfirming(false); save('2'); }}>このまま確定する</button>
+              onClick={() => { setConfirming(false); save('2'); }}><ConfirmIcon />このまま確定する</button>
           </>}>
           <div className="stack">
             <div>未入力の項目が {unfilled} 件あります。</div>
