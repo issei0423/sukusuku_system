@@ -100,4 +100,41 @@ describe('日誌の保護者への共有（保育士の申請と管理者の承�
       await expect(api.guardianDiaries(u)).rejects.toThrow('共有された日誌は保護者のみが利用できます');
     }
   });
+
+  /*
+   * 操作ログの1行で、共有を選んで申請したことと、承認の取り消しで共有を止めたことが分かる（照合 c2b-4 の推し。【仮置き】web/仮置き値.md）。
+   * 共有を選ばない日誌は今までどおり。server/api_diary_share_test.go の TestDiaryShareOperationLogText と同じ確かめ
+   */
+  it('操作ログに、共有を選んだ申請と、承認の取り消しで共有を止めたことが残る', async () => {
+    // 古い順に並べる（モックの操作ログは新しい順）
+    const logsOf = (id: number) => db.operationLogs.filter((l) => l.target_table === 't_diary' && l.target_id === id)
+      .map((l) => l.after_value).reverse();
+    const approveAndRevoke = async (id: number) => {
+      const read = await api.getDiary(admin, id);
+      const approved = await api.approveDiary(admin, id, read.updated_at);
+      await api.revokeDiaryApproval(admin, id, '書き直してください', approved.updated_at);
+    };
+
+    const shared = await api.saveDiary(teacher, personal('共有する本文', { share_to_guardian: true }), '2');
+    await approveAndRevoke(shared.diary_id);
+    expect(logsOf(shared.diary_id))
+      .toEqual(['作成して申請（保護者へ共有）', '承認済み（保護者へ共有）', '承認の取り消し（保護者への共有を止めた）：書き直してください']);
+
+    // 共有を選ばずに申請し、取り下げて共有を選んで申請し直す
+    const plain = { ...(await api.saveDiary(teacher, personal('共有しない本文'), '2')) };
+    await api.withdrawDiary(teacher, plain.diary_id, plain.updated_at);
+    const lock = await api.acquireLock(teacher, plain.diary_id);
+    if (!('token' in lock)) throw new Error(`ロックを取れませんでした（${lock.heldBy}さんが編集中）`);
+    await api.saveDiary(teacher, personal('共有する本文に直した', {
+      diary_id: plain.diary_id, share_to_guardian: true, lock_token: lock.token,
+    }), '2');
+    const replied = logsOf(plain.diary_id);
+    expect(replied[0]).toBe('作成して申請');
+    expect(replied.at(-1)).toBe('申請（保護者へ共有）');
+
+    // 共有を選ばない日誌の承認の取り消しは、今までどおり
+    const inner = await api.saveDiary(teacher, personal('園内だけの本文'), '2');
+    await approveAndRevoke(inner.diary_id);
+    expect(logsOf(inner.diary_id)).toEqual(['作成して申請', '承認済み', '承認の取り消し：書き直してください']);
+  });
 });

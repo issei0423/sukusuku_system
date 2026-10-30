@@ -436,6 +436,16 @@ function canSeeDiary(user: SessionUser, d: Diary): boolean {
  */
 const DIARY_LOG_APPLY = '申請';
 const DIARY_LOG_CREATE_AND_APPLY = '作成して申請';
+// 保護者へ共有するを選んで申請したとき・共有していた日誌の承認を取り消したとき（照合 c2b-4 の推し。【仮置き】web/仮置き値.md。
+// サーバ側の diaryLogApplyShared・diaryLogCreateAndApplyShared・diaryLogRevokeSharedNote と同じ文言）
+const DIARY_LOG_APPLY_SHARED = '申請（保護者へ共有）';
+const DIARY_LOG_CREATE_AND_APPLY_SHARED = '作成して申請（保護者へ共有）';
+const DIARY_LOG_REVOKE_SHARED_NOTE = '（保護者への共有を止めた）';
+/** 申請の行の「変更後」の文。共有を選んでいれば「（保護者へ共有）」を付ける（server/api_diary_write.go の diaryApplyLogText） */
+function diaryApplyLogText(created: boolean, share: boolean): string {
+  if (created) return share ? DIARY_LOG_CREATE_AND_APPLY_SHARED : DIARY_LOG_CREATE_AND_APPLY;
+  return share ? DIARY_LOG_APPLY_SHARED : DIARY_LOG_APPLY;
+}
 // 共有を選んだ日誌を承認したときの「変更後」の文言。サーバ側（server/api_diary_share.go の diaryLogApproveShared）と同じ
 const DIARY_LOG_APPROVE_SHARED = '承認済み（保護者へ共有）';
 // 【仮置き】保護者に返す共有された日誌の件数の上限（web/仮置き値.md。server/api_diary_share.go の guardianDiaryLimit）
@@ -1395,7 +1405,7 @@ const diaryApi2 = {
       if (status === '2') db.diaryLocks.splice(db.diaryLocks.indexOf(lock), 1);
       else lock.last_active_at = now();
       log(user.account_id, '1', '2', 't_diary', d.diary_id, d.child_id, before,
-        status === '2' ? DIARY_LOG_APPLY : '下書き保存');
+        status === '2' ? diaryApplyLogText(false, !!d.share_to_guardian) : '下書き保存');
       publishDiary(d);
       return ok(withDiaryNames(d));
     }
@@ -1420,7 +1430,7 @@ const diaryApi2 = {
     db.diaries.unshift(row);
     if (photos) replaceDiaryAttachments(row.diary_id, photos);
     log(user.account_id, '1', '1', 't_diary', row.diary_id, row.child_id, null,
-      status === '2' ? DIARY_LOG_CREATE_AND_APPLY : '下書き作成');
+      status === '2' ? diaryApplyLogText(true, !!row.share_to_guardian) : '下書き作成');
     publishDiary(row);
     return ok(withDiaryNames(row));
   },
@@ -1541,7 +1551,9 @@ const diaryApi2 = {
     d.approved_at = null;
     d.returned_reason = text;
     d.updated_at = nextDiaryVersion(d.updated_at);
-    log(user.account_id, '1', '2', 't_diary', diaryId, d.child_id, before, `承認の取り消し：${text}`);
+    // 共有していた日誌なら、保護者から見えなくなったことを添える（server/api_diary_write.go の diaryLogRevokeSharedNote）
+    log(user.account_id, '1', '2', 't_diary', diaryId, d.child_id, before,
+      `承認の取り消し${d.share_to_guardian ? DIARY_LOG_REVOKE_SHARED_NOTE : ''}：${text}`);
     publishDiary(d);
     return ok(withDiaryNames(d));
   },

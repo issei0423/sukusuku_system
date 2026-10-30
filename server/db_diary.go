@@ -133,10 +133,12 @@ const diaryTableDDL = `CREATE TABLE %s (
   CHECK (guardian_notice IS NOT '1' OR (guardian_noticed_at IS NOT NULL AND guardian_notice_method IS NOT NULL AND guardian_notice_person IS NOT NULL))
 )`
 
-// diaryApplyLogSQL は、その日誌を最後に申請した操作ログの行（詳細設計書「変える表」(5-3) の ①）
+// diaryApplyLogSQL は、その日誌を最後に申請した操作ログの行（詳細設計書「変える表」(5-3) の ①）。
+// 共有を選んで申請した行（「（保護者へ共有）」付き）も申請の行として数える
 const diaryApplyLogSQL = `FROM t_operation_log l
 	WHERE l.function_type = '1' AND l.target_table = 't_diary' AND l.target_id = d.diary_id
-	  AND l.after_value IN ('` + diaryLogApply + `','` + diaryLogCreateAndApply + `')
+	  AND l.after_value IN ('` + diaryLogApply + `','` + diaryLogCreateAndApply + `','` +
+	diaryLogApplyShared + `','` + diaryLogCreateAndApplyShared + `')
 	ORDER BY l.operated_at DESC, l.operation_log_id DESC LIMIT 1`
 
 /*
