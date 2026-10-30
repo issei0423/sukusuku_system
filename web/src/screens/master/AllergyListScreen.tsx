@@ -66,7 +66,7 @@ export default function AllergyListScreen() {
                   <tr key={a.allergy_id}>
                     {i === 0 && <td className="nowrap" rowSpan={r.allergies.length}>{r.className}</td>}
                     {i === 0 && <td className="nowrap" rowSpan={r.allergies.length}><strong>{r.child.child_name}</strong></td>}
-                    <td className="nowrap"><span className="tag tag-returned">{a.target_food}</span></td>
+                    <td className="nowrap"><span className="tag tag-alert">{a.target_food}</span></td>
                     <td>{a.symptom}</td>
                     <td>{a.response}</td>
                   </tr>

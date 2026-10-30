@@ -345,7 +345,8 @@ function NapTimer({ startedAt, intervalMinutes, rows, nowMs, ready }: {
   return (
     <div ref={timerRef} className={`nap-timer${over ? ' over' : ''}`}>
       <div>
-        <div className="muted">{over ? overText : '次のチェックまで'}</div>
+        {/* 時刻を過ぎたときの文は、帯の中でただ1つの状態の文。灰色の小さい字にせず、帯の警告色で太く出す（styles/screens.css） */}
+        <div className={over ? 'nap-timer-over-text' : 'muted'}>{over ? overText : '次のチェックまで'}</div>
         <div className="sr-only" role="status">{said && <span key={said.seq}>{said.text}</span>}</div>
         <div className="big">{over ? `+${mmss(remain)}` : mmss(remain)}</div>
         {/* 音を出せる状態でないとき。触れば出せるようになる。音と色だけに頼らず、文でも伝える。【仮置き】文言（web/仮置き値.md） */}
@@ -484,7 +485,7 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
         <span className="last">{row.latest ? `前回 ${formatHM(row.latest.checked_at)} ${BODY_POSITION[row.latest.body_position]}` : '前回の記録なし'}</span>
         {latest && <LatestObservation record={latest} />}
         <span className="last">平熱 {formatTemperature(row.child.normal_temperature)}℃</span>
-        {abnormal && <span className="tag tag-returned">異常時の記録あり {formatHM(abnormal.found)}</span>}
+        {abnormal && <span className="tag tag-alert">異常時の記録あり {formatHM(abnormal.found)}</span>}
       </div>
       {!readOnly && (<>
       {/* ねた・おきた（保護者に届く）。5分ごとの確認と同じ行に置く */}
@@ -554,8 +555,8 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
 function LatestObservation({ record }: { record: NapRecord }) {
   return (
     <>
-      {record.breathing === '2' && <span className="tag tag-returned">呼吸 {BREATHING[record.breathing]}</span>}
-      {record.complexion !== '1' && <span className="tag tag-returned">顔色 {COMPLEXION[record.complexion]}</span>}
+      {record.breathing === '2' && <span className="tag tag-alert">呼吸 {BREATHING[record.breathing]}</span>}
+      {record.complexion !== '1' && <span className="tag tag-alert">顔色 {COMPLEXION[record.complexion]}</span>}
       {record.temperature !== null && <span className="last">体温 {formatTemperature(record.temperature)}℃</span>}
     </>
   );

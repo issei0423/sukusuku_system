@@ -89,8 +89,15 @@
  */
 .main:has(.nap-timer) { scroll-padding-top: calc(var(--nap-timer-h, 0px) + 6px); }
 .nap-timer .big { font-size: 2rem; font-weight: 700; line-height: 1.3; letter-spacing: 0; font-variant-numeric: tabular-nums; }
-.nap-sound-notice { font-size: var(--fs-small); font-weight: 700; }
-.nap-timer.over { background: var(--c-alert-soft); border-bottom: 2px solid var(--c-alert); color: var(--c-alert); }
+/* 通知音が出ないことの知らせ。帯の中の文なので本文と同じ 16px の細字にする（太字は見出し・ラベル・ボタンに限る。tokens.css） */
+.nap-sound-notice { font-size: var(--fs-body); font-weight: 400; }
+/*
+ * 時刻を過ぎたら、帯を警告色の地にする。赤い字は残り時間（+mm:ss）と超過の文だけにし、開始・経過・チェック間隔の値は
+ * 変わらない情報なので黒のままにする。超過の文は帯の中でただ1つの状態の文なので、16px の太字にする（DADS Std-16B-170）
+ */
+.nap-timer.over { background: var(--c-alert-soft); border-bottom: 2px solid var(--c-alert); }
+.nap-timer.over .big { color: var(--c-alert); }
+.nap-timer-over-text { color: var(--c-alert); font-size: var(--fs-body); font-weight: 700; line-height: 1.6; }
 /*
  * ブラウザの文字の大きさの設定を上げると、タイマーの帯の背が伸び、iPad 横向きでは画面の3割ほどを覆う。
  * そのときは、見出しと残り時間を横に並べ、開始・経過・チェック間隔も見出しと値を1行にして、帯を低くする。
@@ -112,22 +119,31 @@
 }
 .nap-card.is-due { border-color: var(--c-alert); background: var(--c-alert-soft); }
 .nap-card .name { font-weight: 700; }
-.nap-card .last { font-size: var(--fs-small); color: var(--c-text-sub); }
+.nap-card .last { font-size: var(--fs-body); color: var(--c-text-sub); }
 
 /* iPadを持って巡回しながら、園児の行で直接選んで記録する。 */
 .nap-record-row { gap: var(--sp-3); padding: var(--sp-4); }
-/* 確認の時刻を過ぎた行は、その時刻から警告色の枠と左の太い線で示す（文言でも示している。図/画面詳細図.md「午睡チェック画面」(5-1) 項目7） */
+/*
+ * 確認の時刻を過ぎた行は、その時刻から警告色の枠と左の太い線で示す（文言でも示している。図/画面詳細図.md「午睡チェック画面」(5-1) 項目7）。
+ * 【仮置き】左の太い線は、時刻を過ぎた行だけの印にする（web/仮置き値.md）
+ */
 .nap-record-row.is-due { background: var(--c-surface); border-color: var(--c-alert); border-left: 6px solid var(--c-alert); }
-/* この実施で異常時の記録がある園児。記録済みでも強調を外さない（基本設計書「異常時の記録」(4-7)「強調表示する」） */
-.nap-record-row.has-abnormal { border-color: var(--c-returned); border-left: 6px solid var(--c-returned); }
+/*
+ * この実施で異常時の記録がある園児。記録済みでも強調を外さない（基本設計書「異常時の記録」(4-7)「強調表示する」）。
+ * 【仮置き】枠を警告色にし、行の頭に「異常時の記録あり」の札（.tag-alert）を出す。左の太い線は付けない（時刻を過ぎた行の印と
+ * 分けるため）。時刻を過ぎた行にも付いたときは、時刻を過ぎた印（左の太い線）が残る（web/仮置き値.md）
+ */
+.nap-record-row.has-abnormal { border-color: var(--c-alert); }
 .nap-row-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); }
 .nap-row-head .name { font-size: 1.25rem; line-height: 1.5; }
 .nap-row-head .last { white-space: nowrap; }
-.nap-row-status { color: var(--c-approved); font-size: var(--fs-small); font-weight: 700; }
+.nap-row-status { color: var(--c-approved); font-size: var(--fs-body); font-weight: 700; }
 .nap-row-status.due { color: var(--c-alert); }
 .nap-inline-fields { display: grid; grid-template-columns: minmax(255px, 1.4fr) minmax(160px, .8fr) minmax(255px, 1.2fr); gap: var(--sp-3) var(--sp-4); }
 .nap-choice-field { min-width: 0; margin: 0; padding: 0; border: 0; }
 .nap-choice-field legend { margin-bottom: var(--sp-1); font-size: var(--fs-small); font-weight: 700; }
+/* 午睡の行の体位・呼吸・顔色の名前は、項目の名前（.field > .lbl）と同じ 16px の太字にする。中の選択肢より小さくしない */
+.nap-inline-fields .nap-choice-field legend { font-size: var(--fs-body); }
 /* 選択肢どうしの間は 8px。詳細設計書「全画面に共通する部品と決まり」(2-0) の「タッチの条件」(4)（GitHub Issue #215） */
 .nap-choice-options { display: flex; gap: var(--sp-2); }
 .nap-choice { flex: 1; min-width: 0; min-height: 52px; margin: 0; padding: 0; position: relative; }
@@ -159,6 +175,12 @@
   background: var(--c-primary); border-color: var(--c-primary-ink); color: var(--c-primary-ink);
   box-shadow: inset 0 0 0 2px var(--c-primary-ink);
 }
+/*
+ * 【仮置き】午睡の行の選択肢は、選ぶ前は細字、選んだものだけ太字にする。身長・体重の切り替え（.measure-toggle、GitHub Issue #211）と
+ * 同じ考え方（web/仮置き値.md）。選択肢の名前はすべて全角の字なので、太字にしても幅は変わらず、折り返しは動かない
+ */
+.nap-inline-fields .nap-choice span { font-weight: 400; }
+.nap-inline-fields .nap-choice input:checked + span { font-weight: 700; }
 .nap-choice input:focus-visible + span { outline: 4px solid var(--c-focus); outline-offset: 2px; box-shadow: 0 0 0 2px var(--c-focus-ring); }
 .nap-row-actions { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .nap-row-actions .spacer { flex: 1; }
