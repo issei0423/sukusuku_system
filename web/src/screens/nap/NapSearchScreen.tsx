@@ -250,7 +250,7 @@ function SearchRow({ r, editing, onEdit, onClose }: {
         <>
           <td className="nowrap">
             {/* うつ伏せは目を引く色で示す。判定ではなく、見落とさないための表示 */}
-            <span className={r.body_position === '2' ? 'tag tag-returned' : ''}>
+            <span className={r.body_position === '2' ? 'tag tag-alert' : ''}>
               {r.body_position ? BODY_POSITION[r.body_position] : '―'}
             </span>
           </td>

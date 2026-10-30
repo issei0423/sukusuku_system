@@ -136,8 +136,9 @@ export default function SleepControls({ row, sessionId, onSaved }: {
         （詳細設計書 (2-0) の (6) の③、GitHub Issue #209）。自分で押した結果は notify() で読み、ほかの職員の記録は読まない
       */}
       {state && <span className="nap-sleep-state">{state}</span>}
+      {/* 「おきた」は行ごとにくり返す操作なので塗らない（DADS のプライマリーボタンは1画面に原則1つ）。寝ていることは左の「13:06 ねた」の文で示す */}
       {!row.exclusion && (
-        <button type="button" className={open ? 'btn-primary nap-sleep-button' : 'nap-sleep-button'} onClick={press}
+        <button type="button" className="nap-sleep-button" onClick={press}
           disabled={busy} aria-busy={busy} aria-label={`${name}の${label}`}>
           {busy ? TEXT.sending : !reachable && error ? TEXT.resend : label}
         </button>
