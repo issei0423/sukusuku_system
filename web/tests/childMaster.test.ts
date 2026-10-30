@@ -90,7 +90,10 @@ describe('園児の取消（GitHub Issue #279）', () => {
     expect(ids).toContain('C952');
     expect(ids).not.toContain('C951');
     expect(ids).not.toContain('C001');
-    await expect(api.removableChildren(teacher)).rejects.toThrow();
+    // 管理者だけの経路の断りは、Go（server/session.go の requireAdmin）と同じ文にする
+    await expect(api.removableChildren(teacher)).rejects.toThrow('この操作は管理者のみが行えます');
+    await expect(api.removeChild(teacher, 'C952')).rejects.toThrow('この操作は管理者のみが行えます');
+    expect(db.children.find((c) => c.child_id === 'C952')!.is_deleted).toBe(false);
   });
 
   it('取り消すと、未使用の招待コードを失効させる', async () => {

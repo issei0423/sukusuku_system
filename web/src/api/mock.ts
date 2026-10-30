@@ -918,7 +918,8 @@ export const childApi = {
    * （図/画面詳細図 (7-1) 項目10。サーバ側は server/api_child.go の handleRemovableChildren）
    */
   async removableChildren(user: SessionUser): Promise<string[]> {
-    if (user.role !== '1') return fail('園児情報の取消は管理者のみが行えます');
+    // 管理者だけの経路の断り。文は server/session.go の requireAdmin と同じ（詳細設計書「設定」(4-10) も管理者だけの経路をこの文にそろえる）
+    if (user.role !== '1') return fail('この操作は管理者のみが行えます');
     return ok(db.children.filter((c) => !c.is_deleted && !childHasRecords(c.child_id) && !childHasActiveGuardian(c.child_id))
       .map((c) => c.child_id));
   },
@@ -1082,7 +1083,8 @@ export const childApi = {
 
   /** 誤登録の取消。論理削除とする（基本設計書 5-1）。サーバ側は server/api_child_write.go の handleRemoveChild */
   async removeChild(user: SessionUser, childId: string): Promise<void> {
-    if (user.role !== '1') return fail('園児情報の取消は管理者のみが行えます');
+    // 断りの文は server/session.go の requireAdmin と同じ（handleRemoveChild は requireAdmin で断る）
+    if (user.role !== '1') return fail('この操作は管理者のみが行えます');
     const c = findChild(childId);
     // 取り消した園児は「見つからない」として扱う。同じ取消を重ねて受けて、操作ログに 2 行残さない（GitHub Issue #166 の 4）
     if (!c || c.is_deleted) return fail('園児が見つかりません');
@@ -1421,7 +1423,8 @@ const diaryApi2 = {
    * （詳細設計書「日誌の画面（作り直し）」(2-13 (1)) の承認待ち一覧画面。サーバ側は handlePendingDiaries）
    */
   async pendingDiaries(user: SessionUser): Promise<PendingDiary[]> {
-    if (user.role !== '1') return fail(DIARY_MSG.approveAdminOnly);
+    // 一覧の取得は承認ではないので、承認の文（approveAdminOnly）でなく管理者だけの経路の文で断る（server/session.go の requireAdmin と同じ）
+    if (user.role !== '1') return fail('この操作は管理者のみが行えます');
     /*
      * 申請からの経過日数（暦の日の差）が approval.warn_days を越えたら滞留（stale）。滞留を見つけるための表示で、
      * 期限の判定ではない。設定は一覧を作るたびに読み、変えたら次に開いたときから効く
