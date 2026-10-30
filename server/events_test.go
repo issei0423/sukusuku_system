@@ -440,7 +440,7 @@ func TestNotifyDiaryAudience(t *testing.T) {
 
 	// 日誌 7 は村田 美咲（さくら組）の個人日誌（申請中）。承認は園内の確認で、保護者へは何も届かない。
 	// 以前の版の共有の指定が送られても読まず、個人チャットへも流さない（詳細設計書「日誌」(4-13 (2))・「PR #196 からの変更」(6-1)）
-	rec := call(t, h, admin, "POST", "/api/diaries/7/approve", `{"share_to_guardian":true}`)
+	rec := call(t, h, admin, "POST", "/api/diaries/7/approve", `{"share_to_guardian":true,"updated_at":"`+versionOfDiary(t, a, 7)+`"}`)
 	var approved Diary
 	decode(t, rec, &approved)
 	expect(t, "承認（日誌の知らせは職員だけ。村田 美咲の保護者にも何も届かない）", clients, to(sakuraStaff, diary(7)))

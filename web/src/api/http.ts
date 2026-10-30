@@ -468,8 +468,9 @@ const apiAuth = {
   saveDiary: (_u: SessionUser, input: DiaryInput, status: '1' | '2') =>
     post<Diary>('/api/diaries', { ...input, status }),
 
-  approveDiary: (_u: SessionUser, diaryId: number) =>
-    post<Diary>(`/api/diaries/${diaryId}/approve`, {}),
+  // 承認画面で読んだ版を添える。開いたあとに申請し直されていたら 409（server/api_diary_write.go の handleApproveDiary）
+  approveDiary: (_u: SessionUser, diaryId: number, updatedAt: string) =>
+    post<Diary>(`/api/diaries/${diaryId}/approve`, { updated_at: updatedAt }),
   withdrawDiary: (_u: SessionUser, diaryId: number, updatedAt: string) =>
     post<Diary>(`/api/diaries/${diaryId}/withdraw`, { updated_at: updatedAt }),
   revokeDiaryApproval: (_u: SessionUser, diaryId: number, reason: string, updatedAt: string) =>

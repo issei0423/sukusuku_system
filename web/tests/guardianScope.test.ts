@@ -88,7 +88,7 @@ describe('日誌は保護者に見せない', () => {
       incident: { occurred_at: `${today()}T00:00:00`, place: '保育室', situation: '園内限定の記録', response: 'その場で確かめた' },
     }, '2');
     for (const id of [personal.diary_id, incident.diary_id, 2]) { // 2 はさくら組のクラス日誌（申請中）
-      expect((await api.approveDiary(admin, id)).status).toBe('3');
+      expect((await api.approveDiary(admin, id, (await api.getDiary(admin, id)).updated_at)).status).toBe('3');
     }
     expect(db.chatMessages.length).toBe(before);
     const home = await api.guardianHome(guardian);

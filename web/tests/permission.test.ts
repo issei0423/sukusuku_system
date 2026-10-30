@@ -76,7 +76,8 @@ describe('管理者に限る操作', () => {
   });
 
   it('一般は日誌を承認できない', async () => {
-    await expect(api.approveDiary(teacher, 2)).rejects.toThrow('管理者のみ');
+    // 管理者でなければ、読んだ版を見る前に断る
+    await expect(api.approveDiary(teacher, 2, '')).rejects.toThrow('管理者のみ');
   });
 
   it('一般は操作ログを参照できない', async () => {

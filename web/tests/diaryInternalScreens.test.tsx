@@ -161,4 +161,33 @@ describe('承認待ち一覧画面と日誌承認画面（2-13 (1)）', () => {
     expect(button('差し戻す')?.disabled).toBe(true);
     expect(statusOf(d.diary_id)).toBe('1');
   });
+
+  it('開いたあとに取り下げて本文と共有を変えて申請し直されたら、古い画面の承認は断って文を出し、読み直した本文で承認できる', async () => {
+    const d = await api.saveDiary(teacher, {
+      record_type: '1', child_id: 'C001', class_id: 1, diary_date: today(), body: '管理者が読んだ本文',
+    }, '2');
+    open(`/staff/admin/approval/${d.diary_id}`, admin);
+    await settled();
+    expect(document.body.textContent).toContain('管理者が読んだ本文');
+    // 画面を開いたあとに、申請した本人が取り下げ、本文と「保護者へ共有する」を変えて申請し直した
+    await api.withdrawDiary(teacher, d.diary_id, d.updated_at);
+    const lock = await api.acquireLock(teacher, d.diary_id);
+    if (!('token' in lock)) throw new Error(`ロックを取れませんでした（${lock.heldBy}さんが編集中）`);
+    await api.saveDiary(teacher, {
+      diary_id: d.diary_id, record_type: '1', child_id: 'C001', class_id: 1, diary_date: today(),
+      body: '書き換えた本文', share_to_guardian: true, lock_token: lock.token,
+    }, '2');
+
+    // 古い画面のまま「承認する」を押すと断られ、文を出して読み直す
+    fireEvent.click(button('承認する')!);
+    await waitFor(() => expect(document.body.textContent).toContain('他の職員が更新しています。内容を再読み込みしてください。'));
+    expect(statusOf(d.diary_id)).toBe('2');
+    await waitFor(() => expect(document.body.textContent).toContain('書き換えた本文'));
+    expect(document.body.textContent).not.toContain('管理者が読んだ本文');
+    expect(document.body.textContent).toContain('保育士が保護者への共有を選んでいます。');
+
+    // 読み直した本文を見てから押すと承認できる
+    fireEvent.click(button('承認して保護者へ共有する')!);
+    await waitFor(() => expect(statusOf(d.diary_id)).toBe('3'));
+  });
 });

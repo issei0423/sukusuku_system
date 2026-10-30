@@ -84,7 +84,8 @@ func TestApprovalSendsNothingToGuardian(t *testing.T) {
 		`{"record_type":"4","child_id":"C001","class_id":1,"diary_date":"`+today()+`","body":"","status":"2",
 		  "incident":{"occurred_at":"`+today()+`T00:00:00","place":"保育室","situation":"園内限定の記録","response":"その場で確かめた"}}`).Body.Bytes())
 	for _, id := range []int64{personal.DiaryID, incident.DiaryID, 2} { // 2 はさくら組のクラス日誌（申請中）
-		d := diaryOf(t, call(t, h, admin, "POST", "/api/diaries/"+itoa(id)+"/approve", `{"share_to_guardian":true}`).Body.Bytes())
+		d := diaryOf(t, call(t, h, admin, "POST", "/api/diaries/"+itoa(id)+"/approve",
+			`{"share_to_guardian":true,"updated_at":"`+versionOfDiary(t, a, id)+`"}`).Body.Bytes())
 		if d.Status != "3" {
 			t.Fatalf("日誌 %d: status = %s, want 3", id, d.Status)
 		}

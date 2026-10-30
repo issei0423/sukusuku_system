@@ -61,7 +61,7 @@ describe('申請の取り下げ（申請した本人だけ・申請中だけ・�
     expect(l.before_value).toContain(d.applied_at!);
 
     // 取り下げたあとに届いた承認・差し戻しは「取り下げられました」
-    await expect(api.approveDiary(admin, d.diary_id)).rejects.toThrow('この日誌は取り下げられました。');
+    await expect(api.approveDiary(admin, d.diary_id, d.updated_at)).rejects.toThrow('この日誌は取り下げられました。');
     await expect(api.returnDiary(admin, d.diary_id, '直してください')).rejects.toThrow('この日誌は取り下げられました。');
     expect(rowOf(d.diary_id).status).toBe('1');
 
@@ -76,7 +76,7 @@ describe('申請の取り下げ（申請した本人だけ・申請中だけ・�
 
   it('承認・差し戻しが先に済んでいれば、取り下げは「すでに承認または差し戻しされたため…」で断る', async () => {
     const d = { ...(await api.saveDiary(teacher, personal({ body: '先に承認される日誌' }), '2')) };
-    await api.approveDiary(admin, d.diary_id);
+    await api.approveDiary(admin, d.diary_id, d.updated_at);
     await expect(api.withdrawDiary(teacher, d.diary_id, d.updated_at))
       .rejects.toThrow('すでに承認または差し戻しされたため、取り下げられません。');
     expect(rowOf(d.diary_id).status).toBe('3');
@@ -129,18 +129,18 @@ describe('承認・差し戻しの列（詳細設計書「日誌の状態」(3-6
     await api.saveDiary(teacher, personal({
       diary_id: draft.diary_id, body: '担任が書き足して申請', lock_token: await lockOf(teacher, draft.diary_id),
     }), '2');
-    const approved = await api.approveDiary(admin, draft.diary_id);
+    const approved = await api.approveDiary(admin, draft.diary_id, rowOf(draft.diary_id).updated_at);
     expect(approved).toMatchObject({ status: '3', approved_staff_id: 'S001', applied_staff_id: 'S003', applied_staff_name: '鈴木 浩之' });
 
     const mine = await api.saveDiary(admin2, personal({ body: '遠藤が書いて申請' }), '2');
-    await expect(api.approveDiary(admin2, mine.diary_id)).rejects.toThrow('自分が申請した日誌は承認できません。ほかの管理者に依頼してください。');
-    await expect(api.approveDiary(teacher, mine.diary_id)).rejects.toThrow('承認は管理者のみが行えます');
+    await expect(api.approveDiary(admin2, mine.diary_id, mine.updated_at)).rejects.toThrow('自分が申請した日誌は承認できません。ほかの管理者に依頼してください。');
+    await expect(api.approveDiary(teacher, mine.diary_id, mine.updated_at)).rejects.toThrow('承認は管理者のみが行えます');
   });
 
   it('差し戻しは承認者の列を書かない。差し戻したものは承認できない', async () => {
     const got = await api.returnDiary(admin, 7, '書き足してください');
     expect(got).toMatchObject({ status: '4', approved_staff_id: null, approved_at: null });
-    await expect(api.approveDiary(admin, 7)).rejects.toThrow('申請中の日誌のみ承認できます');
+    await expect(api.approveDiary(admin, 7, rowOf(7).updated_at)).rejects.toThrow('申請中の日誌のみ承認できます');
   });
 
   it('承認待ちは申請日時の古い順に並び、申請者を添える', async () => {

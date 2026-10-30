@@ -42,6 +42,8 @@ async function lockOf(user: SessionUser, diaryId: number): Promise<string> {
 }
 
 const statusOf = (id: number) => db.diaries.find((d) => d.diary_id === id)?.status;
+/** 日誌の今の版。承認は、管理者が承認画面で読んだ版を添えて送る（詳細設計書「日誌の状態」(3-6)） */
+const versionOf = (id: number) => db.diaries.find((d) => d.diary_id === id)!.updated_at;
 
 describe('自分が申請した日誌は承認できない（基本設計書「日誌の作成から保護者への共有」(4-5)。#174 の 1）', () => {
   it('担任の下書きを書き直して申請した管理者は承認できず、日誌を開くと申請した職員が分かる', async () => {
@@ -51,7 +53,7 @@ describe('自分が申請した日誌は承認できない（基本設計書「�
     }), '2');
     const before = db.chatMessages.length;
 
-    await expect(api.approveDiary(admin, 1)).rejects.toThrow('自分が申請した日誌は承認できません');
+    await expect(api.approveDiary(admin, 1, versionOf(1))).rejects.toThrow('自分が申請した日誌は承認できません');
     expect(statusOf(1)).toBe('2');
     expect(db.chatMessages.length).toBe(before);
     expect((await api.getDiary(admin, 1)).applied_staff_id).toBe('S001');
@@ -63,7 +65,7 @@ describe('自分が申請した日誌は承認できない（基本設計書「�
       diary_id: 1, child_id: 'C001', body: '鈴木が直した本文です。', lock_token: await lockOf(teacher, 1),
     }), '2');
     expect((await api.getDiary(admin, 1)).applied_staff_id).toBe('S003');
-    await expect(api.approveDiary(admin, 1)).resolves.toMatchObject({ status: '3' });
+    await expect(api.approveDiary(admin, 1, versionOf(1))).resolves.toMatchObject({ status: '3' });
   });
 
   it('ほかの管理者が書き直して申請したものは、別の管理者が承認できる', async () => {
@@ -72,8 +74,8 @@ describe('自分が申請した日誌は承認できない（基本設計書「�
     await api.saveDiary(admin2, personal({
       diary_id: 7, body: '遠藤が書き直した本文です。', lock_token: await lockOf(admin2, 7),
     }), '2');
-    await expect(api.approveDiary(admin2, 7)).rejects.toThrow('自分が申請した日誌は承認できません');
-    await expect(api.approveDiary(admin, 7)).resolves.toMatchObject({ status: '3' });
+    await expect(api.approveDiary(admin2, 7, versionOf(7))).rejects.toThrow('自分が申請した日誌は承認できません');
+    await expect(api.approveDiary(admin, 7, versionOf(7))).resolves.toMatchObject({ status: '3' });
   });
 });
 
@@ -165,7 +167,7 @@ describe('差し戻す理由は承認されるまで残す（基本設計書「�
     await api.saveDiary(teacher, personal({
       diary_id: d.diary_id, body: '直しました', lock_token: await lockOf(teacher, d.diary_id),
     }), '2');
-    await api.approveDiary(admin, d.diary_id);
+    await api.approveDiary(admin, d.diary_id, versionOf(d.diary_id));
     expect((await api.getDiary(admin, d.diary_id)).returned_reason).toBeNull();
   });
 });

@@ -74,7 +74,7 @@ describe('園内の日誌の承認', () => {
       diary_date: '2026-09-02', body: '園内で確かめる日誌',
     }, '2');
     const before = db.chatMessages.length;
-    const approved = await api.approveDiary(admin, d.diary_id);
+    const approved = await api.approveDiary(admin, d.diary_id, d.updated_at);
 
     expect(approved.status).toBe('3');
     expect(approved.applied_staff_id).toBe('S003');
@@ -100,9 +100,9 @@ describe('園内の日誌の承認', () => {
       diary_date: '2026-09-05', body: '下書きのまま',
     }, '1');
     // 下書きへの承認は、取り下げたあとに届いた承認として扱う（詳細設計書「日誌の状態」(3-6)）
-    await expect(api.approveDiary(admin, d.diary_id)).rejects.toThrow('この日誌は取り下げられました。');
+    await expect(api.approveDiary(admin, d.diary_id, d.updated_at)).rejects.toThrow('この日誌は取り下げられました。');
     // 日誌 5 は承認済み
-    await expect(api.approveDiary(admin, 5)).rejects.toThrow('申請中の日誌のみ承認できます');
+    await expect(api.approveDiary(admin, 5, (await api.getDiary(admin, 5)).updated_at)).rejects.toThrow('申請中の日誌のみ承認できます');
   });
 });
 
