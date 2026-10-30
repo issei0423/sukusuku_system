@@ -100,8 +100,9 @@ func TestChildClassChangeMovesGuardianClassGroup(t *testing.T) {
 	t.Run("前のクラスに、ほかに有効な紐づけの子がいなければ、前のクラスのグループから外れて新しいクラスのグループに入る", func(t *testing.T) {
 		// 村田 美咲（C004）をさくら組からひまわり組へ。保護者は村田 真一（アカウント9・G004）だけ
 		const murata = 9
+		// 前提（デモデータの形）が崩れたら、黙って飛ばさずに落とす。崩れたまま緑になると、確かめていないことに気づけない
 		if _, left, ok := memberOf(a, sakura, murata); !ok || left.Valid {
-			t.Skipf("デモデータの前提が変わった（村田 真一のさくら組の参加: ok=%v left=%v）", ok, left)
+			t.Fatalf("デモデータの前提が変わった（村田 真一のさくら組の参加: ok=%v left=%v）", ok, left)
 		}
 		at := now()
 		moveChildClass(t, a, h, admin, "C004", 2)
