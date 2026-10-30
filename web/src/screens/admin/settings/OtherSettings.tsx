@@ -10,6 +10,7 @@
 import { useId } from 'react';
 import type { SectionProps } from './SettingsForm';
 import { OTHER_SETTINGS, READ_ONLY_SETTINGS } from './settingsLabels';
+import { SETTINGS_TEXT } from '../../../messages';
 
 function EditRow({ settingKey, description, view, values, set, error, busy }: SectionProps & { settingKey: string; description: string }) {
   const id = useId();
@@ -26,10 +27,12 @@ function EditRow({ settingKey, description, view, values, set, error, busy }: Se
         {/* 数の欄は spinbutton、文字・小数・カンマ区切りは textbox。入れ方の目安は欄の説明にする */}
         <input id={id} type={label.kind === 'int' ? 'number' : 'text'} inputMode={label.kind === 'text' ? 'text' : label.kind === 'int' ? 'numeric' : 'decimal'}
           step={label.kind === 'int' ? 1 : undefined} value={values[settingKey] ?? ''} disabled={busy}
-          aria-describedby={`${id}-hint`} aria-invalid={failed || undefined}
+          aria-describedby={row.no_effect ? `${id}-hint ${id}-noeffect` : `${id}-hint`} aria-invalid={failed || undefined}
           onChange={(e) => set(settingKey, e.target.value)} />
         {label.unit && <span className="settings-unit"> {label.unit}</span>}
         <p className="muted" id={`${id}-hint`}>{label.hint}</p>
+        {/* その値を読む処理がまだ無い行（server/settings_spec.go の settingNoEffect。【仮置き】web/仮置き値.md） */}
+        {row.no_effect && <p className="muted" id={`${id}-noeffect`}>{SETTINGS_TEXT.noEffect}</p>}
         {failed && <p className="contact-error" role="alert">{error!.message}</p>}
       </td>
       <td>{row.default_value === '' ? '（園が入力）' : `${row.default_value}${label.unit ? ` ${label.unit}` : ''}`}</td>
@@ -44,7 +47,7 @@ export default function OtherSettings(props: SectionProps) {
     <section className="card settings-section" aria-labelledby="settings-other-title">
       <h2 id="settings-other-title">そのほかの設定値</h2>
       {/* 【仮置き】区画の説明（web/仮置き値.md） */}
-      <p className="muted">園の名称・午睡のチェック間隔・ログインや画面の時間・身体測定のしきい値・一覧の件数など、ほかの区画に無い設定です。変えるとすぐ、その値を使う画面と処理に効きます。</p>
+      <p className="muted">園の名称・午睡のチェック間隔・ログインや画面の時間・身体測定のしきい値・一覧の件数など、ほかの区画に無い設定です。変えるとすぐ、その値を使う画面と処理に効きます。その値を使う処理がまだ無い行には、そのことを添えています。</p>
       <table className="list settings-table">
         <caption className="sr-only">そのほかの設定値の一覧</caption>
         <thead>

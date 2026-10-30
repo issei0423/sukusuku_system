@@ -827,8 +827,9 @@ const contactApi = {
   contactPage: (_u: SessionUser, childId: string, date?: string) =>
     get<ContactPage>(`/api/contact/children/${encodeURIComponent(childId)}${date ? qs({ date }) : ''}`),
   // きょうのようすから入れる行（日誌作成・編集画面）。詳細設計書「日誌」(4-13 (8))
+  // hidden_items は、入れる行のうち保護者の連絡帳に出していない項目の名前（共有する日誌の注意。【仮置き】照合 c2b-2）
   diaryLines: (_u: SessionUser, childId: string, date?: string) =>
-    get<{ lines: string[] }>(`/api/contact/children/${childId}/diary-lines${qs({ date })}`),
+    get<{ lines: string[]; hidden_items: string[] }>(`/api/contact/children/${childId}/diary-lines${qs({ date })}`),
   contactMonth: (_u: SessionUser, childId: string, month?: string) =>
     get<ContactMonth>(`/api/contact/children/${encodeURIComponent(childId)}/month${month ? qs({ month }) : ''}`),
   markContactRead: (_u: SessionUser, childId: string, date: string) =>

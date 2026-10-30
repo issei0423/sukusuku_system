@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import DiaryConfirmScreen from '../src/screens/diary/DiaryConfirmScreen';
 import App from '../src/App';
@@ -163,6 +163,24 @@ it('「紐づけを戻す」の確認ダイアログは、誤って解除した�
   expect(dialog.textContent).toContain('誤って解除したときだけ');
   expect(dialog.textContent).toContain('戻さずに新しい招待コードで紐づけてください');
   expect(dialog.textContent).toContain('解除していたあいだのやりとりも読めるようになります');
+});
+
+/*
+ * 戻せる期間（解除から RESTORE_LINK_DAYS 日。【仮置き】web/仮置き値.md）を過ぎた紐づけには「紐づけを戻す」を出さず、
+ * 理由と次にすることを添える（照合 c2b-3 の推し）
+ */
+it('戻せる期間を過ぎた紐づけには「紐づけを戻す」を出さず、新しい招待コードへ案内する', async () => {
+  const link = db.guardianChildren.find((g) => g.guardian_id === 'G003' && g.child_id === 'C003')!;
+  const saved = link.ended_at;
+  link.ended_at = `${addDays(today(), -30)}T10:00:00`;
+  try {
+    openApp('/staff/admin/guardian-accounts', admin);
+    const row = (await screen.findByText('鈴木 浩之')).closest('tr')!;
+    expect(within(row).queryByRole('button', { name: '紐づけを戻す' })).toBeNull();
+    expect(row.textContent).toContain('日を過ぎたため戻せません。新しい招待コードで紐づけてください。');
+  } finally {
+    link.ended_at = saved;
+  }
 });
 
 it('操作ログ CSV は適用済みの期間で全ページを出力する', async () => {

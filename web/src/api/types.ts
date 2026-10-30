@@ -255,6 +255,11 @@ export interface Diary {
    * （詳細設計書「日誌」(4-13 (6))。GitHub Issue #278 の 2）
    */
   contact_changes?: DiaryContactChange[];
+  /**
+   * 本文に入っている、保護者の連絡帳に出していない項目の名前（きょうのようすから入れた行。個人日誌を1件読んだときだけ、あれば付く）。
+   * 共有を選んだ日誌の注意に使う（【仮置き】照合 c2b-2。server/api_diary.go の HiddenContactItems）
+   */
+  hidden_contact_items?: string[];
 }
 
 /** 日誌を作ったあとに連絡帳で訂正・取り消しされた、食事・午睡の記録1件 */

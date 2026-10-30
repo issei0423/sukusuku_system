@@ -26,6 +26,8 @@ type settingRow struct {
 	Group        string `json:"group"`
 	DefaultValue string `json:"default_value"`
 	Editable     bool   `json:"editable"`
+	// この版では、その値を読む処理がまだ無い（settingNoEffect）。画面は行に「保存しても動きには効きません」を添える
+	NoEffect bool `json:"no_effect,omitempty"`
 }
 
 type settingsView struct {
@@ -40,7 +42,7 @@ func (a *app) settingsView() (settingsView, error) {
 	v := settingsView{Settings: []settingRow{}, ReadAt: now(), AiKeyPresent: a.ai != nil, AiKeyRejected: a.aiKeyRejected.Load()}
 	for _, k := range settingOrder {
 		e := settingSpecs[k]
-		row := settingRow{Key: k, Group: e.group, DefaultValue: e.def, Editable: e.editable}
+		row := settingRow{Key: k, Group: e.group, DefaultValue: e.def, Editable: e.editable, NoEffect: settingNoEffect[k]}
 		err := a.db.QueryRow(`SELECT setting_value, IFNULL(description, ''), updated_staff_id, updated_at FROM m_setting WHERE setting_key = ?`, k).
 			Scan(&row.Value, &row.Description, &row.UpdatedStaff, &row.UpdatedAt)
 		if err == sql.ErrNoRows {

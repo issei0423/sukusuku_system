@@ -12,7 +12,15 @@ export interface SettingSpec {
   editable: boolean;
   /** 誤りの文言。正しければ null。editable が偽のキーは使わない */
   check: (v: string) => string | null;
+  /**
+   * 画面から保存できるが、この版ではその値を読む処理がまだ無い（「効くか」の印）。設定画面の行に「保存しても動きには効きません」を添える。
+   * 読む処理を作ったら外す。server/settings_spec.go の settingNoEffect と同じ7つ（【仮置き】照合 c2a-X の推し。web/仮置き値.md）
+   */
+  noEffect?: true;
 }
+
+/** その設定の値を読む処理が、この版ではまだ無いことの印を付ける */
+const noEffect = (s: SettingSpec): SettingSpec => ({ ...s, noEffect: true });
 
 export const SETTING_MSG = {
   showItems: '保護者へ出す項目に、選べない値か重なった値が入っています。画面を読み込み直してください。',
@@ -114,11 +122,11 @@ export const SETTING_SPECS: Record<string, SettingSpec> = {
   'contact.toilet_choices': spec('contact', 'おしっこ,うんち,おむつ交換,トイレでできた', choicesCheck('排せつの選択肢')),
   'contact.mood_choices': spec('contact', 'ごきげん,ふつう,ごきげんななめ', choicesCheck('きげんの選択肢')),
   // 通知
-  'push.quiet_hours': spec('notify', '21:00-07:00', (v) => {
+  'push.quiet_hours': noEffect(spec('notify', '21:00-07:00', (v) => {
     const r = parseHourRange(v);
     if (!r || r[0] % 5 !== 0 || r[1] % 5 !== 0) return SETTING_MSG.quietHoursFormat;
     return r[0] === r[1] ? SETTING_MSG.quietHoursSame : null;
-  }),
+  })),
   // AI
   'ai.enabled': spec('ai', '0', (v) => (v === '0' || v === '1' ? null : SETTING_MSG.badChoice)),
   'ai.daily_limit': spec('ai', '300', intCheck('1日の上限回数', 1, 10000)),
@@ -138,10 +146,10 @@ export const SETTING_SPECS: Record<string, SettingSpec> = {
   'auth.temp_password_hours': other('48', intCheck('一時パスワードの有効時間', 1, 168)),
   'ui.auto_logout_minutes': other('30', intCheck('自動ログアウトまでの無操作の時間', 5, 120)),
   'ui.diary_lock_minutes': other('15', intCheck('日誌の編集ロックの無操作の時間', 5, 60)),
-  'scope.handover_grace_days': other('30', intCheck('職員の引き継ぎ猶予期間', 1, 90)),
-  'scope.guardian_grace_days': other('30', intCheck('保護者の猶予期間', 1, 90)),
-  'scope.fiscal_year_update_date': other('04-01', (v) => (isMonthDay(v) ? null : '年度更新の実行日は、実在する月日の「MM-DD」（2月29日は不可）で入力してください。')),
-  'physical.measure_months': other('4,8,12', intListCheck('身体測定を行う月', 1, 12)),
+  'scope.handover_grace_days': noEffect(other('30', intCheck('職員の引き継ぎ猶予期間', 1, 90))),
+  'scope.guardian_grace_days': noEffect(other('30', intCheck('保護者の猶予期間', 1, 90))),
+  'scope.fiscal_year_update_date': noEffect(other('04-01', (v) => (isMonthDay(v) ? null : '年度更新の実行日は、実在する月日の「MM-DD」（2月29日は不可）で入力してください。'))),
+  'physical.measure_months': noEffect(other('4,8,12', intListCheck('身体測定を行う月', 1, 12))),
   'physical.height_min': other('40', decimalCheck('身長の下限', 20, 200, 1)),
   'physical.height_max': other('140', decimalCheck('身長の上限', 20, 200, 1)),
   'physical.weight_min': other('2', decimalCheck('体重の下限', 0.5, 100, 2)),
@@ -150,8 +158,8 @@ export const SETTING_SPECS: Record<string, SettingSpec> = {
   'dev.notice_days_before': other('7', intCheck('発達チェックの予定日が近いとする日数', 1, 60)),
   'attachment.max_size_mb': other('10', intCheck('添付ファイルの上限サイズ', 1, 20)),
   'attachment.max_count_diary': other('3', intCheck('日誌の写真の上限枚数', 1, 3)),
-  'retention.record_years': other('5', intCheck('記録の保持年数', 1, 30)),
-  'retention.attachment_years': other('3', intCheck('添付ファイルの保持年数', 1, 30)),
+  'retention.record_years': noEffect(other('5', intCheck('記録の保持年数', 1, 30))),
+  'retention.attachment_years': noEffect(other('3', intCheck('添付ファイルの保持年数', 1, 30))),
   'approval.warn_days': other('3', intCheck('承認待ちの滞留を示す日数', 1, 30)),
   'paging.diary_per_page': other('50', intCheck('日誌一覧の1ページの件数', 10, 200)),
   'paging.nap_search_per_page': other('50', intCheck('午睡記録検索の1ページの件数', 10, 200)),

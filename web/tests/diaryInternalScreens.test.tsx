@@ -191,3 +191,55 @@ describe('承認待ち一覧画面と日誌承認画面（2-13 (1)）', () => {
     await waitFor(() => expect(statusOf(d.diary_id)).toBe('3'));
   });
 });
+
+/*
+ * 共有を選んだ個人日誌に、保護者の連絡帳に出していない項目（contact.show_items で外した項目）が、きょうのようすから入っていれば、
+ * 項目の名前を挙げて注意する。判定して消すことはしない（照合 c2b-2 の推し。【仮置き】web/仮置き値.md）
+ */
+describe('日誌作成・編集画面と日誌承認画面：保護者の連絡帳に出していない項目の注意', () => {
+  /** 西田 太郎（C001）のきょうの給食（11:40 少し）を置き、食事を保護者へ出さない設定にして fn を回す。終わったら戻す */
+  async function withHiddenMeal(fn: () => Promise<void>) {
+    const day = today();
+    const at = `${day}T11:40:00`;
+    const ev = {
+      contact_event_id: 99001, child_id: 'C001', class_id: 1, contact_date: day, recorded_at: at, event_type: '1' as const,
+      meal_kind: '1' as const, meal_amount: '3' as const, toilet_label: null, temperature: null, body: null, contact_photo_id: null,
+      keep_in_growth: false, staff_id: 'S003', corrected_at: null, is_deleted: false, created_at: at, updated_at: at,
+    };
+    const setting = db.settings.find((s) => s.setting_key === 'contact.show_items')!;
+    const saved = setting.setting_value;
+    db.contactEvents.push(ev);
+    setting.setting_value = 'nap,toilet,temperature,comment,photo,class';
+    try {
+      await fn();
+    } finally {
+      setting.setting_value = saved;
+      db.contactEvents.splice(db.contactEvents.indexOf(ev), 1);
+    }
+  }
+  const shared = (status: '1' | '2') => api.saveDiary(teacher, {
+    record_type: '1', child_id: 'C001', class_id: 1, diary_date: today(), body: '11:40 給食 少し', share_to_guardian: true,
+  }, status);
+
+  it('承認画面：共有を選んだ日誌に、保護者の連絡帳に出していない項目が入っていれば、名前を挙げて注意する', async () => {
+    await withHiddenMeal(async () => {
+      const d = await shared('2');
+      open(`/staff/admin/approval/${d.diary_id}`, admin);
+      await settled();
+      await waitFor(() => expect(document.body.textContent).toContain('保護者の連絡帳に出していない項目（食事）が、きょうのようすから本文に入っています。'));
+      expect(document.body.textContent).toContain('承認すると、保護者がこの日誌で読みます。');
+    });
+  });
+
+  it('作成・編集画面：共有を選んでいるあいだだけ、名前を挙げて注意する', async () => {
+    await withHiddenMeal(async () => {
+      const d = await shared('1');
+      open(`/staff/diary/${d.diary_id}`, teacher);
+      await settled();
+      await waitFor(() => expect(document.body.textContent).toContain('保護者の連絡帳に出していない項目（食事）'));
+      expect(document.body.textContent).toContain('共有すると、保護者がこの日誌で読みます。');
+      fireEvent.click(screen.getByRole('checkbox', { name: /保護者へ共有する/ }));
+      expect(document.body.textContent).not.toContain('保護者の連絡帳に出していない項目');
+    });
+  });
+});

@@ -20,6 +20,7 @@ import { DIARY_RECORD_TYPE, DIARY_STATUS } from '../../api/codes';
 import { formatYMD, formatMDHM } from '../../api/util';
 import { IncidentSummary } from './IncidentFields';
 import { ContactChangesBand } from './ContactChangesBand';
+import { hiddenContactItemsNote } from '../../messages';
 import { BackIcon, ReturnIcon, ApproveIcon } from '../../components/icons';
 
 export default function DiaryApproveScreen() {
@@ -103,6 +104,12 @@ export default function DiaryApproveScreen() {
       {pending && shares && (
         <div style={{ marginBottom: 16 }}>
           <Alert soft>保育士が保護者への共有を選んでいます。承認すると、{target}の保護者がこの日誌を読めるようになります。</Alert>
+        </div>
+      )}
+      {/* 保護者の連絡帳に出していない項目が、きょうのようすから本文に入っているとき（判定して消すことはしない。【仮置き】照合 c2b-2） */}
+      {pending && shares && (d.hidden_contact_items?.length ?? 0) > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <Alert soft>{hiddenContactItemsNote(d.hidden_contact_items!, true)}</Alert>
         </div>
       )}
       {pending && own && (

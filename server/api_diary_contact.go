@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -26,10 +27,11 @@ type DiaryContactChange struct {
 	ChangedAt string `json:"changed_at"`
 }
 
-// diaryLine は、時刻の順に並べるための1行
+// diaryLine は、時刻の順に並べるための1行。item は保護者へ出す項目（contact.show_items）の名前（meal・nap）
 type diaryLine struct {
 	at   string
 	text string
+	item string
 }
 
 // parseLocal は 'YYYY-MM-DDTHH:MM:SS'（JST）を時刻にする。崩れていれば 0 時刻を返す
@@ -54,7 +56,7 @@ diaryLinesOf は、その園児・その日のきょうのようすのうち、�
 取り消した記録は入れない。保護者へ出さない設定の項目も入れる（日誌は園内の記録であるため）。
 入眠時の体温・5分ごとの確認・対象外は入れない（午睡は「ねた・おきた・何分」、食事は「区分と量」に限る）
 */
-func (a *app) diaryLinesOf(childID, date string) ([]string, error) {
+func (a *app) diaryLinesOf(childID, date string) ([]diaryLine, error) {
 	var lines []diaryLine
 
 	rows, err := a.db.Query(`SELECT recorded_at, meal_kind, meal_amount FROM t_contact_event
@@ -65,7 +67,7 @@ func (a *app) diaryLinesOf(childID, date string) ([]string, error) {
 	for rows.Next() {
 		var at, kind, amount string
 		if rows.Scan(&at, &kind, &amount) == nil {
-			lines = append(lines, diaryLine{at, hm(at) + " " + mealKindText[kind] + " " + mealAmountText[amount]})
+			lines = append(lines, diaryLine{at, hm(at) + " " + mealKindText[kind] + " " + mealAmountText[amount], "meal"})
 		}
 	}
 	err = rows.Err()
@@ -87,11 +89,11 @@ func (a *app) diaryLinesOf(childID, date string) ([]string, error) {
 			continue
 		}
 		if woke == nil {
-			lines = append(lines, diaryLine{slept, hm(slept) + " 午睡（おきたは記録されていません）"})
+			lines = append(lines, diaryLine{slept, hm(slept) + " 午睡（おきたは記録されていません）", "nap"})
 			continue
 		}
 		minutes := int((parseLocal(*woke).Sub(parseLocal(slept))).Minutes())
-		lines = append(lines, diaryLine{slept, hm(slept) + "〜" + hm(*woke) + " 午睡（" + napDurationText(minutes) + "）"})
+		lines = append(lines, diaryLine{slept, hm(slept) + "〜" + hm(*woke) + " 午睡（" + napDurationText(minutes) + "）", "nap"})
 	}
 	err = rows.Err()
 	rows.Close()
@@ -100,11 +102,47 @@ func (a *app) diaryLinesOf(childID, date string) ([]string, error) {
 	}
 
 	sort.SliceStable(lines, func(i, j int) bool { return lines[i].at < lines[j].at })
-	out := make([]string, 0, len(lines))
-	for _, l := range lines {
-		out = append(out, l.text)
+	return lines, nil
+}
+
+// diaryContactItemLabels は、きょうのようすから入れる項目の、画面での名前（設定画面の「保護者へ出す項目」と同じ名前）。並びは注意に出す順
+var diaryContactItemLabels = []struct{ item, label string }{{"nap", "午睡"}, {"meal", "食事"}}
+
+/*
+hiddenContactItems は、きょうのようすから入れる行のうち、保護者へ出さない設定（contact.show_items）の項目の名前を返す。
+body が nil でなければ、その本文に入っている行だけを数える（取り込んだあとに書き換えた・消した行は数えない）。
+
+共有を選んだ個人日誌は、承認すると保護者が読む。保護者の連絡帳に出していない項目が本文に入っていれば、
+日誌作成・編集画面と日誌承認画面に、その項目の名前を挙げた注意を出す。判定して消すことはしない（消すかは人が決める。
+基本設計書の設計原則1）。【仮置き】照合 c2b-2 の推し（web/仮置き値.md）。モックは web/src/api/mock.ts の hiddenContactItems
+*/
+func (a *app) hiddenContactItems(lines []diaryLine, body *string) []string {
+	out := []string{}
+	for _, it := range diaryContactItemLabels {
+		if a.guardianSeesItem(it.item) {
+			continue
+		}
+		for _, l := range lines {
+			if l.item == it.item && (body == nil || strings.Contains(*body, l.text)) {
+				out = append(out, it.label)
+				break
+			}
+		}
 	}
-	return out, nil
+	return out
+}
+
+// hiddenContactItemsOfDiary は、個人日誌の本文に入っている、保護者へ出さない設定の項目の名前（日誌を1件読んだとき）。
+// 本文の行と、その園児・記録日のきょうのようすから入れる行とを、文字のまま照らす
+func (a *app) hiddenContactItemsOfDiary(d Diary) []string {
+	if d.RecordType != "1" || d.ChildID == nil {
+		return nil
+	}
+	lines, err := a.diaryLinesOf(*d.ChildID, d.DiaryDate)
+	if err != nil {
+		return nil
+	}
+	return a.hiddenContactItems(lines, &d.Body)
 }
 
 // GET /api/contact/children/{childID}/diary-lines?date=（詳細設計書「日誌」(4-13 (8))）。職員だけ
@@ -132,7 +170,12 @@ func (a *app) handleDiaryLines(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, msgContactLoadFailed)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"lines": lines})
+	texts := make([]string, 0, len(lines))
+	for _, l := range lines {
+		texts = append(texts, l.text)
+	}
+	// hidden_items：入れる行のうち、保護者の連絡帳に出していない項目の名前（共有する日誌の注意に使う。【仮置き】照合 c2b-2）
+	writeJSON(w, http.StatusOK, map[string]any{"lines": texts, "hidden_items": a.hiddenContactItems(lines, nil)})
 }
 
 /*

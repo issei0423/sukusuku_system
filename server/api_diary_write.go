@@ -254,7 +254,7 @@ func (a *app) handleSaveDiary(w http.ResponseWriter, r *http.Request) {
 
 	after := "下書き作成"
 	if in.Status == "2" {
-		after = diaryLogCreateAndApply
+		after = diaryApplyLogText(true, share)
 	}
 	a.log(u.AccountID, fnDiary, opCreate, "t_diary", i64(id), in.ChildID, nil, s(after))
 	// その日誌を参照できる人の画面（日誌一覧・ダッシュボードの承認待ちなど）へ知らせる（events.go）
@@ -359,7 +359,7 @@ func (a *app) updateDiary(w http.ResponseWriter, u *SessionUser, in diaryInput) 
 
 	after := "下書き保存"
 	if in.Status == "2" {
-		after = diaryLogApply
+		after = diaryApplyLogText(false, share)
 	}
 	a.log(u.AccountID, fnDiary, opUpdate, "t_diary", in.DiaryID, in.ChildID, s(status), s(after))
 	// 差し戻された日誌の件数・承認待ちの件数が変わりうる（events.go）
@@ -376,7 +376,26 @@ func (a *app) updateDiary(w http.ResponseWriter, u *SessionUser, in diaryInput) 
 const (
 	diaryLogApply          = "申請"
 	diaryLogCreateAndApply = "作成して申請"
+	// 保護者へ共有するを選んで申請したとき。操作ログの1行で、共有を選んだことが分かるように
+	// （照合 c2b-4 の推し。【仮置き】詳細設計書 3-6 の文に足した。web/仮置き値.md）
+	diaryLogApplyShared          = "申請（保護者へ共有）"
+	diaryLogCreateAndApplyShared = "作成して申請（保護者へ共有）"
+	// 共有していた日誌の承認を取り消したとき、「承認の取り消し」に添える（保護者から見えなくなったことが分かるように。【仮置き】同上）
+	diaryLogRevokeSharedNote = "（保護者への共有を止めた）"
 )
+
+// diaryApplyLogText は、申請の行の「変更後」の文。共有を選んでいれば「（保護者へ共有）」を付ける
+func diaryApplyLogText(created, share bool) string {
+	switch {
+	case created && share:
+		return diaryLogCreateAndApplyShared
+	case created:
+		return diaryLogCreateAndApply
+	case share:
+		return diaryLogApplyShared
+	}
+	return diaryLogApply
+}
 
 // childInClass は、その園児がそのクラスに在籍している（いた）かを返す
 func (a *app) childInClass(childID string, classID int64) bool {
@@ -796,7 +815,11 @@ func (a *app) handleRevokeDiaryApproval(w http.ResponseWriter, r *http.Request) 
 	if d.ApprovedAt != nil {
 		before += "・承認日時：" + *d.ApprovedAt
 	}
-	a.log(u.AccountID, fnDiary, opUpdate, "t_diary", i64(id), d.ChildID, s(before), s("承認の取り消し："+reason))
+	label := "承認の取り消し"
+	if d.ShareToGuardian {
+		label += diaryLogRevokeSharedNote
+	}
+	a.log(u.AccountID, fnDiary, opUpdate, "t_diary", i64(id), d.ChildID, s(before), s(label+"："+reason))
 	// 作成者の一覧とダッシュボードの「差し戻された日誌」が読み直す（events.go）
 	a.notifyDiary(id)
 	a.writeDiaryByID(w, id)

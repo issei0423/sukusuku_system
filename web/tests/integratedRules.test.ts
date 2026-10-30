@@ -18,7 +18,8 @@ it('園児の選択肢は、サーバと同じよみ順になる', () => {
 
 it('保護者と園児の紐づけの日付も、デモの起動日に合わせて動く', () => {
   const offset = (Date.parse(today()) - Date.parse('2026-09-01')) / 86_400_000;
-  expect(db.guardianChildren.find((x) => x.child_id === 'C003')?.ended_at?.slice(0, 10)).toBe(addDays('2026-08-20', offset));
+  // デモの鈴木 浩之（C003）の解除は基準日の4日前（紐づけを戻せる期間の内に置いた。mockDb.ts・server/seed.sql）
+  expect(db.guardianChildren.find((x) => x.child_id === 'C003')?.ended_at?.slice(0, 10)).toBe(addDays('2026-08-28', offset));
 });
 
 it('体温は整数値でも小数第1位を表示する', () => {

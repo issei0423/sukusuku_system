@@ -88,6 +88,66 @@ func TestDiaryShareNeedsApplicationAndApproval(t *testing.T) {
 	}
 }
 
+// 操作ログの1行で、共有を選んで申請したことと、承認の取り消しで共有を止めたことが分かる（照合 c2b-4 の推し。【仮置き】web/仮置き値.md）。
+// 共有を選ばない日誌は今までどおり。モックは web/tests/diaryShare.test.ts
+func TestDiaryShareOperationLogText(t *testing.T) {
+	a, h := newTestApp(t)
+	admin := loginAs(a, 1, "staff")
+	teacher := loginAs(a, 3, "staff") // さくら組
+	logsOf := func(id int64) []string {
+		t.Helper()
+		rows, err := a.db.Query(`SELECT IFNULL(after_value, '') FROM t_operation_log
+			WHERE target_table = 't_diary' AND target_id = ? ORDER BY operation_log_id`, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rows.Close()
+		var out []string
+		for rows.Next() {
+			var v string
+			rows.Scan(&v)
+			out = append(out, v)
+		}
+		return out
+	}
+	approveAndRevoke := func(id int64) {
+		t.Helper()
+		call(t, h, admin, "POST", "/api/diaries/"+itoa(id)+"/approve", approveBody(t, a, id))
+		cur := diaryOf(t, call(t, h, admin, "GET", "/api/diaries/"+itoa(id), "").Body.Bytes())
+		call(t, h, admin, "POST", "/api/diaries/"+itoa(id)+"/revoke-approval", `{"reason":"書き直してください","updated_at":"`+cur.UpdatedAt+`"}`)
+	}
+
+	t.Run("共有を選んで作成して申請し、承認を取り消す", func(t *testing.T) {
+		d := diaryOf(t, call(t, h, teacher, "POST", "/api/diaries", sharedPersonalDiary("C001", "共有する本文", "2", true)).Body.Bytes())
+		approveAndRevoke(d.DiaryID)
+		want := []string{"作成して申請（保護者へ共有）", "承認済み（保護者へ共有）", "承認の取り消し（保護者への共有を止めた）：書き直してください"}
+		if got := logsOf(d.DiaryID); strings.Join(got, "|") != strings.Join(want, "|") {
+			t.Fatalf("操作ログ = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("共有を選ばずに申請し、取り下げて共有を選んで申請し直す", func(t *testing.T) {
+		d := diaryOf(t, call(t, h, teacher, "POST", "/api/diaries", sharedPersonalDiary("C001", "共有しない本文", "2", false)).Body.Bytes())
+		call(t, h, teacher, "POST", "/api/diaries/"+itoa(d.DiaryID)+"/withdraw", versionBody(d.UpdatedAt))
+		token := acquireToken(t, h, teacher, itoa(d.DiaryID))
+		call(t, h, teacher, "POST", "/api/diaries", `{"diary_id":`+itoa(d.DiaryID)+`,"record_type":"1","child_id":"C001","class_id":1,"diary_date":"`+
+			today()+`","body":"共有する本文に直した","lock_token":"`+token+`","status":"2","share_to_guardian":true}`)
+		got := logsOf(d.DiaryID)
+		if len(got) < 3 || got[0] != "作成して申請" || got[len(got)-1] != "申請（保護者へ共有）" {
+			t.Fatalf("操作ログ = %q（最初が「作成して申請」、最後が「申請（保護者へ共有）」のはず）", got)
+		}
+	})
+
+	t.Run("共有を選ばない日誌の承認の取り消しは、今までどおり", func(t *testing.T) {
+		d := diaryOf(t, call(t, h, teacher, "POST", "/api/diaries", sharedPersonalDiary("C001", "園内だけの本文", "2", false)).Body.Bytes())
+		approveAndRevoke(d.DiaryID)
+		want := []string{"作成して申請", "承認済み", "承認の取り消し：書き直してください"}
+		if got := logsOf(d.DiaryID); strings.Join(got, "|") != strings.Join(want, "|") {
+			t.Fatalf("操作ログ = %q, want %q", got, want)
+		}
+	})
+}
+
 // 既定は共有しない。共有を選ばずに申請した日誌は、承認しても保護者に届かない
 func TestDiaryShareDefaultsToNotShared(t *testing.T) {
 	a, h := newTestApp(t)

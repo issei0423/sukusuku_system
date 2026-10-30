@@ -9,7 +9,8 @@ import { describe, it, expect } from 'vitest';
 import { api } from '../src/api/client';
 import * as db from '../src/api/mockDb';
 import type { SessionUser } from '../src/api/types';
-import { today } from '../src/api/util';
+import { addDays, today } from '../src/api/util';
+import { RESTORE_LINK_DAYS } from '../src/api/codes';
 
 const admin: SessionUser = {
   account_id: 1, email: 'nishida@hoiku.example.jp', role: '1', display_name: '西田 拓也',
@@ -213,6 +214,25 @@ describe('保護者アカウントと紐づけ', () => {
     await api.restoreGuardianLink(admin, 'G004', 'C004');
     expect(member().joined_at).toBe(before);
     expect(member().left_at).toBeNull();
+  });
+
+  /*
+   * 紐づけを戻せるのは、解除した日から RESTORE_LINK_DAYS 日まで。過ぎたら断り、新しい招待コードへ案内する
+   * （照合 c2b-3 の推し。【仮置き】web/仮置き値.md。server/api_guardian_link_test.go の TestRestoreGuardianLinkOnlyWithinDays と同じ確かめ）
+   */
+  it('紐づけを戻せるのは解除から決まった日数まで。過ぎたら断り、一覧には戻せる最後の日が載る', async () => {
+    await api.endGuardianLink(admin, 'G004', 'C004');
+    const link = db.guardianChildren.find((g) => g.guardian_id === 'G004' && g.child_id === 'C004')!;
+
+    link.ended_at = `${addDays(today(), -(RESTORE_LINK_DAYS + 1))}T10:00:00`;
+    const row = (await api.guardianAccounts(admin)).find((r) => r.guardian.guardian_id === 'G004')!;
+    expect(row.links.find((l) => l.child_id === 'C004')?.restore_until).toBe(addDays(today(), -1));
+    await expect(api.restoreGuardianLink(admin, 'G004', 'C004')).rejects.toThrow('新しい招待コードで紐づけてください');
+    expect(link.link_status).toBe('2');
+
+    link.ended_at = `${addDays(today(), -RESTORE_LINK_DAYS)}T10:00:00`;
+    await api.restoreGuardianLink(admin, 'G004', 'C004');
+    expect(link.link_status).toBe('1');
   });
 });
 

@@ -161,7 +161,17 @@ export const AI_TEXT = {
 export const SETTINGS_TEXT = {
   /** 午睡のチェック間隔を既定より長くするときに、確認の窓へ添える。止めない（決めたこと D-46。2-14 (7)） */
   longInterval: '既定より長い間隔です。東京都の通知（平成30年）は、0歳児は5分に1回、1〜2歳児は10分に1回を望ましい間隔としています。',
+  /** その値を読む処理がまだ無い設定の行に添える（【仮置き】照合 c2a-X の推し。web/仮置き値.md） */
+  noEffect: 'この版では、保存しても動きには効きません。',
 } as const;
+
+/**
+ * 共有を選んだ個人日誌の本文に、保護者の連絡帳に出していない項目（contact.show_items で外した項目）が、
+ * きょうのようすから入っているときの注意（日誌作成・編集画面と日誌承認画面）。何が起きるかと次にすることを持つ。
+ * 判定して消すことはしない（消すかは人が決める。基本設計書の設計原則1）。【仮置き】照合 c2b-2 の推し（web/仮置き値.md）
+ */
+export const hiddenContactItemsNote = (names: string[], approving: boolean) =>
+  `保護者の連絡帳に出していない項目（${names.join('・')}）が、きょうのようすから本文に入っています。${approving ? '承認すると' : '共有すると'}、保護者がこの日誌で読みます。残すかどうかを確かめてください。`;
 
 /** 他児の名前の注意（基本設計書「メッセージ一覧」(4-12)。server/namecheck.go の otherNamesMessage と同じ） */
 export const otherNamesMessage = (names: string[]) => `ほかのお子さんの名前（${names.join('・')}）が入っています。このまま送りますか。`;

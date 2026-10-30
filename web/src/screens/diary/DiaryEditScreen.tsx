@@ -28,6 +28,7 @@ import { ContactChangesBand } from './ContactChangesBand';
 import { EMPTY_INCIDENT, incidentFormOf, incidentInputOf, incidentReady } from './incidentForm';
 import type { IncidentForm } from './incidentForm';
 import { focusAfter, focusedNow } from '../../focusAfter';
+import { hiddenContactItemsNote } from '../../messages';
 import { useUnsavedInput } from '../../unsavedInput';
 import { BackIcon, AddIcon, UndoIcon, SaveIcon, ForwardIcon } from '../../components/icons';
 
@@ -94,6 +95,11 @@ export default function DiaryEditScreen() {
    */
   const [share, setShare] = useState(draft?.share ?? false);
   /*
+   * 本文に入っている、保護者の連絡帳に出していない項目の名前（きょうのようすから入れた行）。読み込んだ日誌のものと、
+   * この画面で入れたものを合わせる。共有を選んでいれば注意を出す（判定して消すことはしない。【仮置き】照合 c2b-2）
+   */
+  const [hiddenItems, setHiddenItems] = useState<string[]>([]);
+  /*
    * 保存していない入力があるか。一覧へ戻る前に確かめるために持つ（画面詳細図「日誌作成・編集画面」(3-2) 項目1
    * 「未保存の内容がある場合は確認する」）。本文の欄だけでなく、内容を変える操作（記録種別・園児・クラス・記録日・
    * 雛形・定型文・写真）のすべてで立て、保存できたら下ろす。保存のあとも立てたままだと、保存した直後に
@@ -147,6 +153,7 @@ export default function DiaryEditScreen() {
       // ヒヤリハットは、サーバが本文を見出しで分けて返した欄を入れる（異常時の記録から起票したものも同じ）
       setIncident(incidentFormOf(d.incident));
       setShare(!!d.share_to_guardian);
+      setHiddenItems(d.hidden_contact_items ?? []);
       api.attachmentsOf(user!, d.diary_id)
         .then((a) => setPhotos(a.map((x) => ({ file_path: x.file_path, file_type: x.file_type }))));
     }
@@ -275,12 +282,15 @@ export default function DiaryEditScreen() {
     setLoadingLines(true);
     if (!auto) setContactNote(null);
     try {
-      const { lines } = await api.diaryLines(user!, forChild, forDate);
+      const { lines, hidden_items: hidden } = await api.diaryLines(user!, forChild, forDate);
       if (lines.length === 0) { if (!auto) setContactNote('連絡帳に午睡・食事の記録がありません。'); return; }
       const added = `${FROM_CONTACT_HEADING}\n${lines.join('\n')}`;
       const next = (b: string) => (b === '' || b.endsWith('\n') ? `${b}${added}` : `${b}\n${added}`);
+      // 入れた行に、保護者の連絡帳に出していない項目があれば覚えておく（共有を選んだときの注意。【仮置き】照合 c2b-2）
+      const remember = () => setHiddenItems((h) => [...new Set([...h, ...(hidden ?? [])])]);
       if (auto) {
         setBody((b) => (isTemplateBody(b) ? next(b) : b));
+        remember();
         setDirty(true);
         return;
       }
@@ -289,6 +299,7 @@ export default function DiaryEditScreen() {
         return;
       }
       setBody(next(body));
+      remember();
       setDirty(true);
     } catch (e) { if (!auto) setError((e as Error).message); }
     finally { setLoadingLines(false); }
@@ -597,6 +608,7 @@ export default function DiaryEditScreen() {
                 保護者へ共有する（管理者が承認すると、この園児の保護者が読めます）
               </label>
             )}
+            {canShare && share && hiddenItems.length > 0 && <Alert soft>{hiddenContactItemsNote(hiddenItems, false)}</Alert>}
 
             {/* 個人日誌・ヒヤリハットは園児を対象にした記録。選ぶまで先へ進めない */}
             {needsChild && !childId && !readOnly && (

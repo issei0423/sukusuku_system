@@ -139,6 +139,34 @@ func TestSettingsAllKeys(t *testing.T) {
 	}
 }
 
+// 画面から保存できるが、この版では読む処理の無い7つのキーにだけ no_effect を付ける（照合 c2a-X の推し。【仮置き】web/仮置き値.md）。
+// モックは web/tests/settingsKeys.test.ts（同じ7つ）
+func TestSettingsNoEffectMark(t *testing.T) {
+	a, h := newTestApp(t)
+	admin := loginAs(a, accAdmin, "staff")
+	var v struct {
+		Settings []struct {
+			Key      string `json:"setting_key"`
+			NoEffect bool   `json:"no_effect"`
+		} `json:"settings"`
+	}
+	decode(t, call(t, h, admin, "GET", "/api/settings", ""), &v)
+	want := map[string]bool{
+		"scope.guardian_grace_days": true, "scope.handover_grace_days": true, "scope.fiscal_year_update_date": true,
+		"physical.measure_months": true, "retention.record_years": true, "retention.attachment_years": true, "push.quiet_hours": true,
+	}
+	for _, s := range v.Settings {
+		if s.NoEffect != want[s.Key] {
+			t.Errorf("%s の no_effect = %v（want %v）", s.Key, s.NoEffect, want[s.Key])
+		}
+	}
+	for k := range want {
+		if !settingSpecs[k].editable {
+			t.Errorf("%s は画面から保存できるキーのはず", k)
+		}
+	}
+}
+
 func TestSettingsThresholdOrder(t *testing.T) {
 	a, h := newTestApp(t)
 	admin := loginAs(a, accAdmin, "staff")
