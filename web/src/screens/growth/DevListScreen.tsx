@@ -115,7 +115,7 @@ export default function DevListScreen() {
                     {r.unfilled > 0 && <> <Tag label={`未入力 ${r.unfilled} 件`} className="tag-returned" /></>}
                   </td>
                   <td className="nowrap">
-                    <Link className="btn btn-sm btn-primary" to={`/staff/growth/dev/${r.child.child_id}`}>入力</Link>
+                    <Link className="btn btn-sm" to={`/staff/growth/dev/${r.child.child_id}`}>入力</Link>
                   </td>
                 </tr>
               ))}
