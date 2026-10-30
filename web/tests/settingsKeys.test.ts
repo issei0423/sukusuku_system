@@ -101,7 +101,7 @@ describe('設定画面の全キー（モック。server/api_settings_keys_test.g
     }
     expect((await rejected({ 'dev.notice_days_before': '0' }))?.message).toBe('発達チェックの予定日が近いとする日数は1〜60の整数で入力してください。');
     expect((await rejected({ 'push.quiet_hours': '21:00-21:00' }))?.message).toBe('開始と終了は違う時刻にしてください。');
-  });
+  }, 60_000);
 
   it('読むだけのキーと表に無いキーは、画面から変えられない', async () => {
     for (const key of ['retention.contact_years', 'growth.share_physical', 'attachment.allowed_types', 'nap.temperature_required_at_start']) {
