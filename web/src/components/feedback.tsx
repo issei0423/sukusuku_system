@@ -13,6 +13,7 @@ import type { ReactNode } from 'react';
 import { Modal } from './ui';
 import { useOverlayInset } from '../stickyInset';
 import { focusAfter, focusedNow } from '../focusAfter';
+import { CloseIcon } from './icons';
 
 // 表示する時間。読み上げに拾わせるため、すぐには消さない
 const SHOW_MS = 6000;
@@ -185,8 +186,10 @@ export function ToastHost() {
 }
 
 /** 確定する前に、何が起きるかを確かめる */
-export function ConfirmDialog({ title, children, confirmLabel, danger, busy, confirmDisabled, onConfirm, onCancel, returnTo, returnWithin }: {
+export function ConfirmDialog({ title, children, confirmLabel, confirmIcon, danger, busy, confirmDisabled, onConfirm, onCancel, returnTo, returnWithin }: {
   title: string; children: ReactNode; confirmLabel: string; danger?: boolean; busy?: boolean; confirmDisabled?: boolean;
+  /** 確定するボタンの文字に添えるアイコン（components/icons.tsx の部品。例：<UndoIcon />）。文字に合う絵が無ければ渡さない */
+  confirmIcon?: ReactNode;
   onConfirm: () => void; onCancel: () => void;
   /** 閉じたときに開いた元が消えていたら、フォーカスを移す先（窓の部品 Modal の returnTo） */
   returnTo?: () => HTMLElement | null | undefined;
@@ -196,9 +199,9 @@ export function ConfirmDialog({ title, children, confirmLabel, danger, busy, con
   return (
     <Modal title={title} onClose={onCancel} returnTo={returnTo} returnWithin={returnWithin}
       footer={<>
-        <button onClick={onCancel} disabled={busy}>やめる</button>
+        <button onClick={onCancel} disabled={busy}><CloseIcon />やめる</button>
         <button className={danger ? 'btn-danger' : 'btn-primary'} onClick={onConfirm} disabled={busy || confirmDisabled}>
-          {confirmLabel}
+          {confirmIcon}{confirmLabel}
         </button>
       </>}>
       {children}
