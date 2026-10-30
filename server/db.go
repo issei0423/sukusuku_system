@@ -26,8 +26,8 @@ var seedSQL string
 // 【仮置き】既にあるデータベースが、いま埋め込んでいる seed と違う seed で作られたデモの DB なら、
 // 脇へ退けて作り直す（reseedStaleDemoDB。設計に無い動き。web/仮置き値.md「デモの DB の作り直し」）。
 // 2026-10-30、seed.sql でデモアカウントの名前を入れ替えたのに、公開先の DB は「無いときだけ作る」ため
-// 古い seed のまま残り、いまのデモアカウントでログインできなかった。本当の園の DB（メールアドレスが
-// example.jp で終わるアカウントが1つも無い DB）は作り直さない。
+// 古い seed のまま残り、いまのデモアカウントでログインできなかった。作り直すのは、1番のアカウントが
+// seed の管理者（@hoiku.example.jp）の DB だけ。本当の園の DB と、SUKUSUKU_DEMO_RESEED=off のときは作り直さない。
 //
 // ドライバは modernc.org/sqlite（純 Go）を使う。cgo を必要とする mattn/go-sqlite3 は
 // gcc の無い環境でビルドできないため（server/README.md）。
