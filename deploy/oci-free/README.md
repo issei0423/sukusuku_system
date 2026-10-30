@@ -93,6 +93,7 @@ runner を登録し直す（`config.sh`）ときは、`.env` に行を足すこ�
 ## 確認と復旧
 
 - Actions の「OCI へ自動デプロイ」で `deploy` が緑になったことを確認する。外部から <https://217.142.235.206> を開く。
+- 反映が緑になると、Actions の「公開先のスモークテスト」（`.github/workflows/deployed-smoke.yml`、GitHub 提供の runner）が公開先そのものを確かめる。全部のデモアカウントでログインでき、主な画面が開き、未ログインの API が 401・画面のキャッシュの指定が効いているか。読むだけで、ログインを失敗させない・保存しない・ログアウトしない。毎日 4:30（毎晩の作り直しのあと）にも回る。手元からは `cd web && npm run test:deployed`（向け先は `DEPLOYED_BASE_URL`）
 - VM で `systemctl status sukusuku caddy` と `journalctl -u sukusuku -n 100` を見る。実行中の commit は `/opt/sukusuku/current/commit` にある。
 - 新しいアプリがローカルで応答しなければスクリプトは前の実行ファイルと画面へ戻す。更新前の SQLite バックアップは root だけが読める `/var/backups/sukusuku/` に残す。スキーマ変更時の DB 復元は自動化していないので、復旧時に確認する。
 

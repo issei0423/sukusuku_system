@@ -99,6 +99,9 @@ jobs:
       - name: 型検査（セキュリティレビューの仕組み）
         run: npm run review:security:check
 
+      - name: 型検査（公開先のスモークテスト）
+        run: npm run test:deployed:check
+
       - name: lint（oxlint）
         run: npm run lint
 

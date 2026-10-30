@@ -1,0 +1,62 @@
+name: 公開先のスモークテスト
+
+# 反映が終わったあと、公開先（https://217.142.235.206）そのものに、デモアカウントでログインできるか・主な画面が開くかを確かめる。
+# 読むだけ（ログインを失敗させない・保存しない・ログアウトしない。web/playwright.deployed.config.ts の頭の決まり）。
+# GitHub 提供の runner で回す（リポジトリは public なので分数は無料。本番 VM の runner は 1GB で Chromium を回せない）。
+# 経緯：2026-10-30、公開先の DB が古い seed のまま残り、いまのデモアカウントでログインできなかった（PR #332）。
+# 手元・GitHub の CI は毎回新しい DB で回るので、公開先だけの食い違いに気づけなかった。
+
+on:
+  workflow_run:
+    workflows: [OCI へ自動デプロイ]
+    types: [completed]
+  schedule:
+    - cron: '30 19 * * *'   # 毎日 19:30 UTC = 日本時間 4:30（毎晩の作り直しの 4:00 のあと。GitHub が混んでいると遅れることがある）
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deployed-smoke
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: 公開先のスモークテスト
+    # 反映が失敗した回は確かめない（失敗は反映の回の赤で分かる）
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15     # 止まらなくなっても 15 分で打ち切る
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: 本線を取り出す
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Node.js 24 を入れる
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: 依存を入れる（package-lock.json のとおり）
+        run: npm ci
+
+      - name: Chromium を入れる
+        run: npx playwright install --with-deps chromium
+
+      - name: 公開先へ向けて回す
+        run: npm run test:deployed
+
+      - name: 落ちたときの証跡を残す
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: deployed-smoke-results
+          path: web/test-results/deployed
+          retention-days: 7
