@@ -144,9 +144,17 @@ func seedFingerprint() int {
 	return fingerprintOf(seedSQL)
 }
 
+// fingerprintOf は、コメントだけの行・空行・行の前後の空白を除いた本文から指紋を作る。
+// コメントや字下げだけの直しでは、公開先のデモの DB を作り直さない（PR #332 の review の 1）
 func fingerprintOf(s string) int {
 	h := fnv.New32a()
-	h.Write([]byte(strings.ReplaceAll(s, "\r\n", "\n")))
+	for _, line := range strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "--") {
+			continue
+		}
+		h.Write([]byte(line + "\n"))
+	}
 	v := int(h.Sum32() & 0x7fffffff)
 	if v == 0 {
 		v = 1
@@ -174,6 +182,11 @@ func isStaleDemoDB(db *sql.DB) (bool, error) {
 	}
 	if demo == 0 {
 		log.Printf("データベースの seed の指紋（%d）がいまと違いますが、デモの DB ではないため作り直しません", version)
+		return false, nil
+	}
+	// example.jp の目安に頼らず止める口（確認用に example.jp のアカウントを置いた本当の園の DB など。PR #332 の review の 2）
+	if os.Getenv("SUKUSUKU_DEMO_RESEED") == "off" {
+		log.Printf("データベースの seed の指紋（%d）がいまと違いますが、SUKUSUKU_DEMO_RESEED=off のため作り直しません", version)
 		return false, nil
 	}
 	return true, nil

@@ -212,3 +212,46 @@ func TestSeedFingerprintIgnoresLineEndings(t *testing.T) {
 		t.Errorf("指紋 %d が正の 31 ビットでない", v)
 	}
 }
+
+// コメントだけの行・空行・字下げだけの直しでは、指紋は変わらない（デモの DB を作り直さない）
+func TestSeedFingerprintIgnoresCommentsAndBlankLines(t *testing.T) {
+	base := "-- デモデータ\nINSERT INTO t VALUES (1);\n"
+	same := "-- デモデータ（コメントを直した）\n\n  -- 足したコメント\n    INSERT INTO t VALUES (1);  \n"
+	if fingerprintOf(base) != fingerprintOf(same) {
+		t.Error("コメント・空行・字下げだけの違いで指紋が変わった")
+	}
+	if fingerprintOf(base) == fingerprintOf("-- デモデータ\nINSERT INTO t VALUES (2);\n") {
+		t.Error("値が違うのに指紋が同じ")
+	}
+}
+
+// SUKUSUKU_DEMO_RESEED=off なら、指紋が違うデモの DB でも作り直さない
+func TestDemoReseedCanBeTurnedOff(t *testing.T) {
+	t.Setenv("SUKUSUKU_DEMO_RESEED", "off")
+	path := filepath.Join(t.TempDir(), "keep.db")
+	db, err := openDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`INSERT INTO m_setting (setting_key, setting_value, description, updated_staff_id, updated_at)
+		   VALUES ('test.marker', 'keep', '目印', 'S001', '2026-04-01T09:00:00')`,
+		`PRAGMA user_version = 0`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	db.Close()
+
+	db, err = openDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var marker int
+	db.QueryRow(`SELECT COUNT(*) FROM m_setting WHERE setting_key = 'test.marker'`).Scan(&marker)
+	db.Close()
+	if marker != 1 || len(staleFiles(t, path)) != 0 {
+		t.Errorf("止めたのに作り直された（目印 %d）", marker)
+	}
+}
