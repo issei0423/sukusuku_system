@@ -16,8 +16,6 @@ import (
  * GitHub Issue #278 の 2。モック（web/src/api/mock.ts の contactApi.diaryLines・diaryContactChanges）と同じ文・同じ規則にする
  */
 
-// msgDiaryLinesBadDate は、日付の形が崩れている・未来のときの文言（詳細設計書「日誌」(4-13 (8))）
-const msgDiaryLinesBadDate = "日付の形式が正しくありません。"
 
 // DiaryContactChange は、取り込んだあとに連絡帳で訂正・取り消しされた記録の1件（詳細設計書「日誌」(4-13 (6))）
 type DiaryContactChange struct {
@@ -126,7 +124,8 @@ func (a *app) handleDiaryLines(w http.ResponseWriter, r *http.Request) {
 		date = today()
 	}
 	if !isISODate(date) || date > today() {
-		writeErr(w, http.StatusBadRequest, msgDiaryLinesBadDate)
+		// 日付の形が崩れている・未来のとき（詳細設計書「日誌」(4-13 (8))。連絡帳と同じ文。片方だけ直すとモックとずれる）
+		writeErr(w, http.StatusBadRequest, msgContactBadDate)
 		return
 	}
 	lines, err := a.diaryLinesOf(childID, date)
