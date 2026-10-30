@@ -66,6 +66,21 @@ describe('設定画面：連絡帳・AI・そのほかの設定値が1つの画�
     expect(screen.getByText('共有範囲の設定の画面で変えます。')).toBeTruthy();
   });
 
+  // その値を読む処理がまだ無い行にだけ「この版では、保存しても動きには効きません。」を添える（照合 c2a-X の推し。【仮置き】web/仮置き値.md）
+  it('そのほか：読む処理の無い行にだけ、保存しても効かないことを添える', async () => {
+    open();
+    await loaded();
+    const rowOf = (el: HTMLElement) => el.closest('tr')!;
+    for (const el of [screen.getByRole('textbox', { name: '身体測定を行う月' }), screen.getByRole('spinbutton', { name: '記録の保持年数' }),
+      screen.getByRole('spinbutton', { name: '保護者の猶予期間' })]) {
+      expect(rowOf(el).textContent).toContain(SETTINGS_TEXT.noEffect);
+      expect(el.getAttribute('aria-describedby')).toContain('noeffect');
+    }
+    for (const el of [screen.getByRole('spinbutton', { name: '承認待ちの滞留を示す日数' }), screen.getByRole('spinbutton', { name: '午睡のチェック間隔（0歳児）' })]) {
+      expect(rowOf(el).textContent).not.toContain(SETTINGS_TEXT.noEffect);
+    }
+  });
+
   it('連絡帳：保護者へ出す項目を外して保存すると、確認の窓に前後が並び、保存される（0個でもよい）', async () => {
     open();
     await loaded();

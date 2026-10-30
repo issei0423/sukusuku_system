@@ -136,6 +136,23 @@ var settingSpecs = map[string]settingSpec{
 	"nap.temperature_required": {groupOther, "入眠時", false, nil},
 }
 
+/*
+settingNoEffect は、画面から保存できる（editable）が、この版ではその値を読む処理がまだ無いキー（「効くか」の印）。
+GET /api/settings の行に no_effect を付け、設定画面の行に「この版では、保存しても動きには効きません。」を添える
+（「そのほかの設定値」の説明は「変えるとすぐ、その値を使う画面と処理に効きます」と言うため、効かない行を見分けられるように）。
+読む処理を作ったら、ここから外す。モックは web/src/api/settingSpecs.ts の noEffect が同じ7つを持つ。
+【仮置き】照合 c2a-X の推し（web/仮置き値.md）
+*/
+var settingNoEffect = map[string]bool{
+	"push.quiet_hours":              true, // Web Push は【要決定】で作っていない
+	"scope.handover_grace_days":     true, // 職員の引き継ぎ猶予は次の版（詳細設計書 4-1）
+	"scope.guardian_grace_days":     true, // 猶予の終わりの日を入れる処理（年度更新・退園）がまだ無い
+	"scope.fiscal_year_update_date": true, // 年度更新の実行は作っていない（api_bulk.go）
+	"physical.measure_months":       true,
+	"retention.record_years":        true,
+	"retention.attachment_years":    true,
+}
+
 // settingOrder は、GET が返すキーの並び（区画ごと、画面の並び）
 var settingOrder = []string{
 	"contact.show_items", "contact.home_items", "contact.toilet_choices", "contact.mood_choices",

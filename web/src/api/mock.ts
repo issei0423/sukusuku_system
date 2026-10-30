@@ -6712,6 +6712,8 @@ function settingsViewOf(): SettingsView {
         setting_key: key, setting_value: row?.setting_value ?? e.def, description: row?.description ?? '',
         updated_staff_id: row?.updated_staff_id ?? '', updated_at: row?.updated_at ?? '',
         group: e.group, default_value: e.def, editable: e.editable,
+        // この版では読む処理が無いキーの印（server/api_settings.go の no_effect と同じ）
+        ...(e.noEffect ? { no_effect: true } : {}),
       };
     }),
     read_at: now(), ai_key_present: mockAi.keyPresent, ai_key_rejected: mockAi.keyRejected, push_available: false,

@@ -845,6 +845,8 @@ export interface SettingRow extends Setting {
   default_value: string;
   /** 画面から変えられるか */
   editable: boolean;
+  /** この版では、その値を読む処理がまだ無い（保存しても動きには効かない）。【仮置き】server/settings_spec.go の settingNoEffect */
+  no_effect?: boolean;
 }
 
 /** GET /api/settings の応答。API キーそのものは返さない（あるか・無効と分かったかの真偽だけ。詳細設計書 (8-8)） */

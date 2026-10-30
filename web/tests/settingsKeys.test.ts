@@ -89,6 +89,16 @@ describe('設定画面の全キー（モック。server/api_settings_keys_test.g
     expect(v.push_available).toBe(false);
   });
 
+  // 画面から保存できるが、この版では読む処理の無い7つのキーにだけ no_effect を付ける
+  // （照合 c2a-X の推し。【仮置き】web/仮置き値.md。server/api_settings_keys_test.go の TestSettingsNoEffectMark と同じ7つ）
+  it('読む処理の無い7つのキーにだけ、保存しても効かない印（no_effect）を付ける', async () => {
+    const noEffect = ['scope.guardian_grace_days', 'scope.handover_grace_days', 'scope.fiscal_year_update_date',
+      'physical.measure_months', 'retention.record_years', 'retention.attachment_years', 'push.quiet_hours'];
+    const v = await api.settings(admin);
+    for (const s of v.settings) expect(!!s.no_effect, s.setting_key).toBe(noEffect.includes(s.setting_key));
+    for (const k of noEffect) expect(v.settings.find((s) => s.setting_key === k)!.editable, k).toBe(true);
+  });
+
   it('キーごとの検査：入らない値は field つきの文言で断り、書かない。入る値は入る', async () => {
     for (const [key, bad, good] of cases) {
       const before = valueOf(key);
