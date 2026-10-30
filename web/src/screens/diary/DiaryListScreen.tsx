@@ -18,6 +18,9 @@ import { formatMD, today, addDays } from '../../api/util';
 import type { Diary, DiaryRecordType, DiaryStatus } from '../../api/types';
 import { ConfirmDialog, notify } from '../../components/feedback';
 
+// 期間の開始の初期値は、当日の30日前（図/画面詳細図.md「日誌一覧画面」(3-1) 項目4「開始＝当日の30日前」。GitHub Issue #278）
+const DEFAULT_RANGE_DAYS = 30;
+
 export default function DiaryListScreen() {
   const { user } = useSession();
   const [params] = useSearchParams();
@@ -35,8 +38,11 @@ export default function DiaryListScreen() {
    */
   const fromDashboard = params.get('mine') === '1';
   const [mine, setMine] = useState(fromDashboard);
-  const [from, setFrom] = useState(fromDashboard ? '' : addDays(today(), -31));
+  const [from, setFrom] = useState(fromDashboard ? '' : addDays(today(), -DEFAULT_RANGE_DAYS));
   const [to, setTo] = useState(fromDashboard ? '' : today());
+  // 園児名・キーワード（図/画面詳細図.md「日誌一覧画面」(3-1) 項目10・11）。「絞り込む」で効かせる
+  const [childQuery, setChildQuery] = useState('');
+  const [keyword, setKeyword] = useState('');
   const [page, setPage] = useState(1);
   const [applied, setApplied] = useState(0);
   // 取り下げを確かめている行（申請の取り下げ。詳細設計書「日誌の画面（作り直し）」(2-13 (2))）
@@ -63,7 +69,9 @@ export default function DiaryListScreen() {
     const dashboard = params.get('mine') === '1';
     setStatus((params.get('status') as DiaryStatus) ?? '');
     setMine(dashboard);
-    setFrom(dashboard ? '' : addDays(today(), -31));
+    setChildQuery('');
+    setKeyword('');
+    setFrom(dashboard ? '' : addDays(today(), -DEFAULT_RANGE_DAYS));
     setTo(dashboard ? '' : today());
     setPage(1);
     setApplied((n) => n + 1);
@@ -71,7 +79,7 @@ export default function DiaryListScreen() {
 
   // ほかの職員の保存・申請・承認・差し戻しがあったら、開いたままでも読み直す（live.ts）
   const { data, error, loading } = useAsync(
-    () => api.listDiaries(user!, { recordType, classId, status, from, to, page, mine }),
+    () => api.listDiaries(user!, { recordType, classId, status, from, to, page, mine, child: childQuery, keyword }),
     [user?.account_id, page, applied],
     { live: onLive('diary') },
   );
@@ -113,17 +121,20 @@ export default function DiaryListScreen() {
           </Field>
           <Field label="期間（開始）"><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
           <Field label="期間（終了）"><input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
+          <Field label="園児名">
+            <input type="text" value={childQuery} placeholder="名前・よみ" onChange={(e) => setChildQuery(e.target.value)} />
+          </Field>
+          <Field label="キーワード">
+            <input type="text" value={keyword} placeholder="本文" onChange={(e) => setKeyword(e.target.value)} />
+          </Field>
+          {/* ダッシュボードの「差し戻された日誌」から開いたときはオン（図/画面詳細図.md「日誌一覧画面」(3-1) 項目12） */}
+          <label className="row" style={{ alignSelf: 'flex-end' }}>
+            <input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} />
+            自分が作成したもの
+          </label>
           <button onClick={search}>絞り込む</button>
         </div>
         {rangeError && <ErrorBox text={rangeError} />}
-        {mine && (
-          <div className="row" style={{ marginTop: 8 }}>
-            <span className="muted">自分が書いた日誌に絞っています。</span>
-            <button className="btn-sm" onClick={() => { setMine(false); setPage(1); setApplied((n) => n + 1); }}>
-              作成者で絞らない
-            </button>
-          </div>
-        )}
         {user!.role === '2' && (
           <div className="muted" style={{ marginTop: 8 }}>
             担当するクラスの日誌のみ表示しています。

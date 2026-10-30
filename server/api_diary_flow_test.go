@@ -177,7 +177,7 @@ func TestDiaryDateCannotBeFuture(t *testing.T) {
 		date string
 		want string
 	}{
-		{tomorrow, "記録日に未来日は指定できません"},
+		{tomorrow, "記録日に未来の日付は指定できません。"},
 		{"", "記録日の形式が正しくありません"},
 		{"2026-10-1", "記録日の形式が正しくありません"},
 		{"2026-02-30", "記録日の形式が正しくありません"},

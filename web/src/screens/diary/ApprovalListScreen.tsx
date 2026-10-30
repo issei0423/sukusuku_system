@@ -36,7 +36,7 @@ export default function ApprovalListScreen() {
         {data && data.length > 0 && (
           <table className="list">
             <thead>
-              <tr><th scope="col">申請</th><th scope="col">記録日</th><th scope="col">種別</th><th scope="col">クラス</th><th scope="col">対象</th><th scope="col">申請者</th><th scope="col">操作</th></tr>
+              <tr><th scope="col">申請日時</th><th scope="col">記録日</th><th scope="col">種別</th><th scope="col">クラス</th><th scope="col">対象</th><th scope="col">申請者</th><th scope="col">操作</th></tr>
             </thead>
             <tbody>
               {data.map((d) => (

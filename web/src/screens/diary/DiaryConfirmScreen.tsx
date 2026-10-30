@@ -43,7 +43,7 @@ export default function DiaryConfirmScreen() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [activeToken, setActiveToken] = useState<string | null>(null);
-  // 編集画面へ戻るときは、ロックを編集画面へ返す（外さない。編集画面が取り直す）
+  // 編集画面へ戻るときは、ロックを編集画面へ返す（外さない。編集画面は、いま持っている識別子を受け取って続ける）
   const handBackRef = useRef(false);
 
   /*
@@ -172,7 +172,8 @@ export default function DiaryConfirmScreen() {
           handBackRef.current = true;
           navigate(
             state.diaryId ? `/staff/diary/${state.diaryId}` : '/staff/diary/new',
-            { state: { draft: state }, replace: true },
+            // 読み込み直しで確認画面が取り直したときは、受け取った識別子でなく、いま持っている識別子を返す
+            { state: { draft: { ...state, lockToken: activeToken ?? state.lockToken } }, replace: true },
           );
         }}>戻る</button>
         <button className="btn-primary" onClick={submit} disabled={busy || (!!state.diaryId && !activeToken)}>

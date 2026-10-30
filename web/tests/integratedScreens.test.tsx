@@ -93,9 +93,10 @@ it('管理者のサイドナビにスクロール案内がある', () => {
 
 it('サイドナビから日誌へ戻ると、ダッシュボード由来の条件が外れる', async () => {
   openApp('/staff/diary?status=4&mine=1', teacher);
-  expect(await screen.findByText('自分が書いた日誌に絞っています。')).toBeTruthy();
+  const mine = () => screen.getByRole('checkbox', { name: '自分が作成したもの' }) as HTMLInputElement;
+  expect((await screen.findByRole('checkbox', { name: '自分が作成したもの' }) as HTMLInputElement).checked).toBe(true);
   fireEvent.click(screen.getByRole('link', { name: '日誌' }));
-  await waitFor(() => expect(screen.queryByText('自分が書いた日誌に絞っています。')).toBeNull());
+  await waitFor(() => expect(mine().checked).toBe(false));
   expect((screen.getByLabelText('状態') as HTMLSelectElement).value).toBe('');
 });
 

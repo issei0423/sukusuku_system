@@ -110,7 +110,7 @@ describe('記録日は当日まで（基本設計書「入力項目の制約値�
   it('未来日と形の崩れた日付は、下書きも申請も断る', async () => {
     const tomorrow = addDays(today(), 1);
     const cases: [string, string][] = [
-      [tomorrow, '記録日に未来日は指定できません'],
+      [tomorrow, '記録日に未来の日付は指定できません。'],
       ['', '記録日の形式が正しくありません'],
       ['2026-10-1', '記録日の形式が正しくありません'],
       ['2026-02-30', '記録日の形式が正しくありません'],
@@ -122,8 +122,28 @@ describe('記録日は当日まで（基本設計書「入力項目の制約値�
     }
     const d = await api.saveDiary(teacher, personal({ body: '今日の記録' }), '1');
     await expect(api.saveDiary(teacher, personal({ diary_id: d.diary_id, diary_date: tomorrow }), '1'))
-      .rejects.toThrow('記録日に未来日は指定できません');
+      .rejects.toThrow('記録日に未来の日付は指定できません。');
     expect(db.diaries.some((x) => !x.is_deleted && x.diary_date > today())).toBe(false);
+  });
+});
+
+describe('週案・月案の記録日は365日先まで認める（基本設計書「日付の扱い」(4-6)。#278 の 1）', () => {
+  const plan = (date: string): DiaryInput => ({
+    record_type: '3', child_id: null, class_id: 1, diary_date: date, body: '来週の予定', status: undefined,
+  } as DiaryInput);
+
+  it('明日・365日先は通り、366日先は決まった文言で断る', async () => {
+    const tomorrow = await api.saveDiary(teacher, plan(addDays(today(), 1)), '1');
+    expect(tomorrow.diary_date).toBe(addDays(today(), 1));
+    const far = await api.saveDiary(teacher, plan(addDays(today(), 365)), '2');
+    expect(far).toMatchObject({ record_type: '3', status: '2', diary_date: addDays(today(), 365) });
+    await expect(api.saveDiary(teacher, plan(addDays(today(), 366)), '1'))
+      .rejects.toThrow('週案・月案の記録日は365日先までです。');
+  });
+
+  it('週案・月案のほかの種別は、先の日付を断る', async () => {
+    await expect(api.saveDiary(teacher, { ...plan(addDays(today(), 1)), record_type: '2' }, '1'))
+      .rejects.toThrow('記録日に未来の日付は指定できません。');
   });
 });
 
