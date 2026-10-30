@@ -32,6 +32,8 @@ export default function DevListScreen() {
   }, [classId], { live: onLive('development') });
   const showClass = classId === 'all';
   const overdue = data?.filter((r) => r.overdue) ?? [];
+  // 予定日が近い園児。設定の日数（dev.notice_days_before。既定 7 日）以内。判定はサーバ・モックが行う
+  const near = data?.filter((r) => r.near) ?? [];
 
   return (
     <div>
@@ -67,6 +69,19 @@ export default function DevListScreen() {
         </section>
       )}
 
+      {/* 予定日が近い園児の知らせ。「過ぎた」の知らせの下に置く（画面詳細図「発達チェック一覧画面」(6-1) 項目13） */}
+      {near.length > 0 && (
+        <section className="card">
+          <div className="alert">
+            <span>(!)</span>
+            <span>
+              予定日が近い園児が {near.length} 名います：
+              {near.map((r) => r.child.child_name).join('、')}
+            </span>
+          </div>
+        </section>
+      )}
+
       <section className="card">
         {loading && <Loading />}
         {error && <ErrorBox text={error} />}
@@ -93,7 +108,9 @@ export default function DevListScreen() {
                   <td className="nowrap">
                     {r.overdue
                       ? <Tag label="未実施" className="tag-returned" />
-                      : <Tag label="予定どおり" className="tag-plain" />}
+                      : r.near
+                        ? <Tag label="予定日が近い" className="tag-applied" />
+                        : <Tag label="予定どおり" className="tag-plain" />}
                     {/* 未入力はチェック漏れの対象。未確認は含めない（基本設計書 5-7） */}
                     {r.unfilled > 0 && <> <Tag label={`未入力 ${r.unfilled} 件`} className="tag-returned" /></>}
                   </td>

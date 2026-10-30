@@ -26,11 +26,11 @@ import type {
   ContactHomeRecord, ContactEventRecord, ContactClassRecord, ContactFacilityRecord, NapSleepRecord, NapExclusionRecord,
 } from './types';
 import type { ContactPhotoRecord, PhotoConsentLevel } from './types';
-import type { ContactPhoto, SendPhotoInput, SendPhotoResult } from './shapes';
+import type { ContactPhoto, SendPhotoInput, SendPhotoResult, PendingDiary } from './shapes';
 import { photoConsentMessage } from '../messages';
 import {
   ageInMonths, now, today, addDays, plusMinutes, fromNowMinutes, napAutoCloseAt, normalizeInvitationCode, validateEmail,
-  validateNewPassword, isRealDate, validateStaffAccountInput, formatYM, isOneDecimal,
+  validateNewPassword, isRealDate, validateStaffAccountInput, formatYM, isOneDecimal, daysBetween,
 } from './util';
 import { BODY_POSITION, BREATHING, COMPLEXION, REACTION, HANDOUT_TYPE, SEX, PHOTO_CONSENT } from './codes';
 import {
@@ -1420,11 +1420,20 @@ const diaryApi2 = {
    * 承認待ちの一覧。管理者のみ（画面詳細図 2-4）。申請日時の古い順、同じ時刻は日誌の番号の順
    * （詳細設計書「日誌の画面（作り直し）」(2-13 (1)) の承認待ち一覧画面。サーバ側は handlePendingDiaries）
    */
-  async pendingDiaries(user: SessionUser): Promise<Diary[]> {
+  async pendingDiaries(user: SessionUser): Promise<PendingDiary[]> {
     if (user.role !== '1') return fail(DIARY_MSG.approveAdminOnly);
+    /*
+     * 申請からの経過日数（暦の日の差）が approval.warn_days を越えたら滞留（stale）。滞留を見つけるための表示で、
+     * 期限の判定ではない。設定は一覧を作るたびに読み、変えたら次に開いたときから効く
+     * （基本設計書「設定マスタ」(5-9)、画面詳細図「承認待ち一覧画面」(3-4) 項目5。サーバ側は handlePendingDiaries）
+     */
+    const warnDays = settingNumber('approval.warn_days', 3);
     return ok(db.diaries.filter((d) => !d.is_deleted && d.status === '2')
       .sort((a, b) => (a.applied_at ?? '').localeCompare(b.applied_at ?? '') || a.diary_id - b.diary_id)
-      .map(withDiaryNames));
+      .map((d) => {
+        const elapsed = d.applied_at ? daysBetween(d.applied_at, today()) : 0;
+        return { ...withDiaryNames(d), elapsed_days: elapsed, warn_days: warnDays, stale: elapsed > warnDays };
+      }));
   },
 
   /**
@@ -2915,6 +2924,16 @@ function isDevOverdue(scheduledOn: string | null, lastCheckedOn: string | null):
   return !lastCheckedOn || lastCheckedOn < scheduledOn;
 }
 
+/**
+ * 発達チェックの予定日が「近い」か。予定日まで設定の日数（dev.notice_days_before。既定 7 日）以内で、
+ * その予定日以降に確定した実施が無ければ近い。予定日の当日も近いに入れる。予定日を過ぎたものは isDevOverdue が
+ * 数えるので重ならない（基本設計書「推奨スケジュールの作り方」(4-9)）。サーバ側は server/api_dev.go の devNear
+ */
+function isDevNear(scheduledOn: string | null, lastCheckedOn: string | null, noticeDays: number): boolean {
+  if (!scheduledOn || scheduledOn < today() || scheduledOn > addDays(today(), noticeDays)) return false;
+  return !lastCheckedOn || lastCheckedOn < scheduledOn;
+}
+
 export const devApi = {
   /** 月齢から発達過程区分を引く。区分はマスタから読む（画面詳細図 6-1） */
   categoryFor(ageMonths: number) {
@@ -2935,6 +2954,8 @@ export const devApi = {
     // サーバ側の server/api_dev.go の handleDevelopmentList と同じ。GitHub Issue #177 の 3）
     if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
     const ids = new Set(db.classChildren.filter((cc) => cc.class_id === classId).map((cc) => cc.child_id));
+    // 設定を変えたら、次に開いたときから効く。一覧を作るたびに読む
+    const noticeDays = settingNumber('dev.notice_days_before', 7);
     const rows = visibleChildren(user)
       .filter((c) => ids.has(c.child_id))
       .sort((a, b) => a.child_name_kana.localeCompare(b.child_name_kana, 'ja'))
@@ -2944,6 +2965,7 @@ export const devApi = {
         const last = lastConfirmedCheck(child.child_id);
         const scheduledOn = sch?.scheduled_on ?? null;
         const overdue = isDevOverdue(scheduledOn, last?.checked_on ?? null);
+        const near = isDevNear(scheduledOn, last?.checked_on ?? null, noticeDays);
         /*
          * 未入力は、いちばん新しい記録（下書きを含む）について、その実施日の月齢に対応する項目のうち、
          * 結果のレコードが無いものを数える。入力画面の「未入力の項目」と同じ数になる。
@@ -2968,6 +2990,7 @@ export const devApi = {
           scheduledOn,
           lastCheckedOn: last?.checked_on ?? null,
           overdue,
+          near,
           unfilled,
         };
       });
@@ -4212,6 +4235,11 @@ const dashboardApi = {
     const devOverdue = [...visible].filter((childId) =>
       isDevOverdue(latestSchedule(childId)?.scheduled_on ?? null, lastConfirmedCheck(childId)?.checked_on ?? null)).length;
 
+    // 発達チェックの予定日が近い園児。「過ぎた」とは分けて数える（server/api_dashboard.go と同じ）
+    const noticeDays = settingNumber('dev.notice_days_before', 7);
+    const devNear = [...visible].filter((childId) =>
+      isDevNear(latestSchedule(childId)?.scheduled_on ?? null, lastConfirmedCheck(childId)?.checked_on ?? null, noticeDays)).length;
+
     // 承認待ちの区画は管理者にのみ表示する
     const pending = user.role === '1' ? db.diaries.filter((d) => !d.is_deleted && d.status === '2').length : 0;
     // そのうち自分が申請したもの。自分の申請は承認できないため「ほかの管理者へ」と添える（GitHub Issue #268）
@@ -4242,7 +4270,7 @@ const dashboardApi = {
     const facilityUnsent = [...visible].filter((id) => findChild(id)?.enrollment_status === '1'
       && !db.contactFacilities.some((f) => f.child_id === id && f.contact_date === today() && !f.is_deleted)
       && !db.napExclusions.some((x) => x.child_id === id && x.reason === '1' && !x.is_deleted && todaySessions.has(x.nap_session_id))).length;
-    return ok({ returned, unreadChat, unhandledChat, unhandledChatRoom, devOverdue, pending, pendingOwn, abnormalWithoutDiary,
+    return ok({ returned, unreadChat, unhandledChat, unhandledChatRoom, devOverdue, devNear, pending, pendingOwn, abnormalWithoutDiary,
       misdeliveryUnrecorded, activeNap,
       homeUnconfirmed: states.filter((x) => x === 'unconfirmed').length, homeRevised: states.filter((x) => x === 'revised').length, napSleeping,
       facilityUnsent });

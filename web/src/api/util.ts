@@ -97,6 +97,14 @@ export function formatMDHM(isoDateTime: string): string {
   return `${isoDateTime.slice(5, 7)}/${isoDateTime.slice(8, 10)} ${isoDateTime.slice(11, 16)}`;
 }
 
+/** 2つの日付（'YYYY-MM-DD' か、その日の日時）の暦の日の差。from より to が前なら 0。読めなければ 0 */
+export function daysBetween(from: string, to: string): number {
+  const [fy, fm, fd] = parts(from.slice(0, 10));
+  const [ty, tm, td] = parts(to.slice(0, 10));
+  const n = Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / 86400000);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 /** 日数を加算した 'YYYY-MM-DD' */
 export function addDays(iso: string, days: number): string {
   const [y, m, d] = parts(iso);

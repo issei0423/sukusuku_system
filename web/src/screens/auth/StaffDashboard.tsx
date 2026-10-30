@@ -67,6 +67,9 @@ export default function StaffDashboard() {
       to: firstUnhandled ? `/staff/chat?room=${firstUnhandled.chat_room_id}` : '/staff/chat' },
     // 数える範囲は、参照できる園児の全体。管理者は全クラス、一般は担当クラス（GitHub Issue #125）
     { label: '発達チェックの未実施', count: data.devOverdue, unit: '名', to: '/staff/growth' },
+    // 予定日まで設定の日数（dev.notice_days_before）以内。「過ぎた（未実施）」とは分けて数える
+    // （画面詳細図「職員ダッシュボード」(2-6) 項目4）
+    { label: '発達チェックの予定日が近い', count: data.devNear, unit: '名', to: '/staff/growth' },
     // 【仮置き】起票したヒヤリハットが下書きのまま（申請していない）ものも数え、名前もそれに合わせる
     // （設計の名前は画面詳細図「職員ダッシュボード」(2-6) 項目9 の「ヒヤリハット未起票の異常時の記録」。web/仮置き値.md。GitHub Issue #142 の 5）
     { label: 'ヒヤリハット未起票・下書きのままの異常時の記録', count: data.abnormalWithoutDiary, unit: '件', to: '/staff/nap/abnormal' },
