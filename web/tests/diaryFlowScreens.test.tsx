@@ -93,17 +93,19 @@ describe('ダッシュボードの「差し戻された日誌」から開く日�
     await settled();
     const row = screen.getAllByText('差し戻された日誌').map((el) => el.closest('tr')).find(Boolean)!;
     fireEvent.click(within(row).getByText('開く'));
-    await screen.findByText(/自分が書いた日誌に絞っています/);
+    await screen.findByRole('checkbox', { name: '自分が作成したもの' });
     await settled();
+    expect((screen.getByRole('checkbox', { name: '自分が作成したもの' }) as HTMLInputElement).checked).toBe(true);
 
     const dates = Array.from(document.querySelectorAll('input[type="date"]')) as HTMLInputElement[];
     expect(dates.map((d) => d.value)).toEqual(['', '']);
     expect(openLinks()).toContain(`/staff/diary/${old.diary_id}`);
     expect(openLinks()).not.toContain('/staff/diary/3'); // 村田のヒヤリハット（差し戻し）は自分が書いたものではない
 
-    fireEvent.click(screen.getByText('作成者で絞らない'));
+    // 「自分が作成したもの」は絞り込み条件のチェックボックス。外して「絞り込む」を押すと、ほかの職員の日誌も出る
+    fireEvent.click(screen.getByRole('checkbox', { name: '自分が作成したもの' }));
+    fireEvent.click(screen.getByText('絞り込む'));
     await waitFor(() => expect(openLinks()).toContain('/staff/diary/3'));
-    expect(screen.queryByText(/自分が書いた日誌に絞っています/)).toBeNull();
   });
 });
 
@@ -158,7 +160,7 @@ describe('日誌作成・編集画面（#174 の 2・5）', () => {
     fireEvent.change(document.querySelector('textarea')!, { target: { value: '午前は園庭で遊んだ。' } });
     fireEvent.change(screen.getByLabelText('記録日'), { target: { value: addDays(today(), 7) } });
     fireEvent.click(screen.getByText('確認へ進む'));
-    expect(await screen.findByText(/記録日に未来日は指定できません/)).toBeTruthy();
+    expect(await screen.findByText('記録日に未来の日付は指定できません。')).toBeTruthy();
     expect(screen.queryByText('この内容で申請します')).toBeNull();
   });
 });

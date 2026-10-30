@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"net/http"
+	"strings"
 )
 
 /*
@@ -30,10 +31,10 @@ type Diary struct {
 	NapAbnormalID  *int64  `json:"nap_abnormal_id"`
 	ReturnedReason *string `json:"returned_reason"`
 	// 保護者へ共有する。個人日誌だけ。承認されると、その園児の保護者が読める（api_diary_share.go）
-	ShareToGuardian bool    `json:"share_to_guardian"`
-	IsDeleted       bool    `json:"is_deleted"`
-	CreatedAt      string  `json:"created_at"`
-	UpdatedAt      string  `json:"updated_at"`
+	ShareToGuardian bool   `json:"share_to_guardian"`
+	IsDeleted       bool   `json:"is_deleted"`
+	CreatedAt       string `json:"created_at"`
+	UpdatedAt       string `json:"updated_at"`
 	// 画面が使う導出値
 	ChildName string `json:"child_name"`
 	ClassName string `json:"class_name"`
@@ -43,6 +44,9 @@ type Diary struct {
 	AppliedStaffName  *string `json:"applied_staff_name"`
 	// ヒヤリハットの欄。ヒヤリハットのときだけ（詳細設計書「日誌」(4-13 (6))。api_diary_incident.go）
 	Incident *DiaryIncident `json:"incident"`
+	// 取り込んだあとに連絡帳で訂正・取り消しされた記録。個人日誌を1件読むときだけ（詳細設計書「日誌」(4-13 (6))。
+	// api_diary_contact.go）。無ければ出さない
+	ContactChanges []DiaryContactChange `json:"contact_changes,omitempty"`
 }
 
 const diaryColumns = `diary_id, record_type, child_id, class_id, diary_date, body, status,
@@ -181,6 +185,11 @@ func (a *app) queryDiaries(q string, args ...any) ([]Diary, error) {
 	return out, nil
 }
 
+// stripSpaces は、半角・全角の空白を除く。園児名の部分一致で、姓と名のあいだの空白を問わないため
+func stripSpaces(v string) string {
+	return strings.NewReplacer(" ", "", "　", "").Replace(v)
+}
+
 func (a *app) handleListDiaries(w http.ResponseWriter, r *http.Request) {
 	u, ok := a.requireDiaryStaff(w, r)
 	if !ok {
@@ -205,9 +214,24 @@ func (a *app) handleListDiaries(w http.ResponseWriter, r *http.Request) {
 		q += ` AND status = ?`
 		args = append(args, v)
 	}
-	// 【仮置き】自分が書いた日誌に絞る。職員ダッシュボードの「差し戻された日誌」（自分が書いたものを数える）から
-	// 開いた一覧を、数えた日誌と一致させるため（図/画面詳細図.md「職員ダッシュボード」(2-6) 項目2。GitHub Issue #174）。
-	// 日誌一覧画面（3-1）の絞り込みの項目には無い（web/仮置き値.md）
+	/*
+	 * 園児名とキーワード（図/画面詳細図.md「日誌一覧画面」(3-1) 項目10・11、詳細設計書「日誌」(4-13 (7))。
+	 * GitHub Issue #278 の 4）。園児名は名前・よみの部分一致（空白は問わない）、キーワードは本文の部分一致で、
+	 * ヒヤリハットは場所も探す。モック（listDiaries）と同じ規則
+	 */
+	if v := stripSpaces(r.URL.Query().Get("child")); v != "" {
+		q += ` AND child_id IN (SELECT child_id FROM m_child
+		        WHERE instr(REPLACE(REPLACE(child_name, ' ', ''), '　', ''), ?) > 0
+		           OR instr(REPLACE(REPLACE(IFNULL(child_name_kana, ''), ' ', ''), '　', ''), ?) > 0)`
+		args = append(args, v, v)
+	}
+	if v := strings.TrimSpace(r.URL.Query().Get("keyword")); v != "" {
+		q += ` AND (instr(body, ?) > 0 OR instr(IFNULL(place, ''), ?) > 0)`
+		args = append(args, v, v)
+	}
+	// 「自分が作成したもの」（図/画面詳細図.md「日誌一覧画面」(3-1) 項目12）。職員ダッシュボードの「差し戻された日誌」
+	// （自分が書いたものを数える）から開いた一覧では、オンで開き、期間を問わない
+	// （図/画面詳細図.md「職員ダッシュボード」(2-6) 項目2。GitHub Issue #174。期間を問わない点は web/仮置き値.md）
 	if r.URL.Query().Get("mine") == "1" && u.isStaff() {
 		q += ` AND created_staff_id = ?`
 		args = append(args, u.staff())
@@ -251,6 +275,9 @@ func (a *app) handleGetDiary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.enrich(&d)
+	if changes, err := a.contactChangesOf(d); err == nil {
+		d.ContactChanges = changes
+	}
 	writeJSON(w, http.StatusOK, d)
 }
 

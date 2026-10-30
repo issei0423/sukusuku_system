@@ -20,10 +20,11 @@ import type { DiaryAttachmentInput } from '../../api/client';
 import { Field, Alert, Loading, ErrorBox, Radios, Tag } from '../../components/ui';
 import { ConfirmDialog, notify } from '../../components/feedback';
 import { DIARY_RECORD_TYPE, DIARY_STATUS, DIARY_STATUS_CLASS } from '../../api/codes';
-import { formatMD, formatMDHM, today, now, plusMinutes } from '../../api/util';
+import { formatMD, formatMDHM, today, now, plusMinutes, addDays } from '../../api/util';
 import type { DiaryRecordType } from '../../api/types';
 import { acquireDiaryLock, releaseDiaryLock, releaseDiaryLockNow, markDiaryLockHandOver, LOCK_TOUCH_MS } from './diaryLock';
 import { IncidentFields } from './IncidentFields';
+import { ContactChangesBand } from './ContactChangesBand';
 import { EMPTY_INCIDENT, incidentFormOf, incidentInputOf, incidentReady } from './incidentForm';
 import type { IncidentForm } from './incidentForm';
 import { focusAfter, focusedNow } from '../../focusAfter';
@@ -31,6 +32,10 @@ import { useUnsavedInput } from '../../unsavedInput';
 
 // 本文の上限（基本設計書「入力項目の制約値」(4-9)）
 const BODY_MAX = 2000;
+// 週案・月案の記録日を先の日付にできる日数（基本設計書「日付の扱い」(4-6)。server/api_diary_write.go の diaryPlanMaxDays）
+const PLAN_MAX_DAYS = 365;
+// 「きょうのようすから入れる」の見出し（図/画面詳細図「日誌作成・編集画面」(3-2) 項目22。見出しの文は【仮置き】）
+const FROM_CONTACT_HEADING = '【きょうのようす（連絡帳から）】';
 // 承認を取り消す理由の上限（詳細設計書「日誌」(4-13 (5))）
 const REVOKE_REASON_MAX = 500;
 
@@ -46,6 +51,13 @@ interface DiaryDraft {
   incident?: IncidentForm;
   /** 保護者へ共有する（個人日誌のときだけ使う） */
   share?: boolean;
+  /**
+   * 確認画面で持っていた編集ロックの識別子。「戻る」で戻ったとき、取り直さずに続ける
+   * （詳細設計書「日誌の画面（作り直し）」(2-13 (9))「確認画面で「戻る」｜解除しない（編集画面がトークンを受け取って続ける）」。
+   * GitHub Issue #278 のコメントで足された 3）
+   */
+  diaryId?: number | null;
+  lockToken?: string;
 }
 
 export default function DiaryEditScreen() {
@@ -96,6 +108,11 @@ export default function DiaryEditScreen() {
   const [withdrawing, setWithdrawing] = useState(false);
   const [revoking, setRevoking] = useState(false);
   const [revokeReason, setRevokeReason] = useState('');
+  // 「きょうのようすから入れる」の結果の文（記録が無い・字数を超える）と、読んでいる間
+  const [contactNote, setContactNote] = useState<string | null>(null);
+  const [loadingLines, setLoadingLines] = useState(false);
+  // 新しく作る個人日誌に、きょうのようすを自動で入れたか。1画面で1回だけ（詳細設計書「日誌の画面（作り直し）」(2-13 (4))、決めたこと D-35）
+  const autoLinesRef = useRef(!!draft);
   // いま持っているロックの識別子。画面を離れるときの解除に使う（描画を待たずに読めるよう ref にも持つ）
   const lockRef = useRef<string | undefined>(undefined);
   // 確認画面へ進むときは、ロックを確認画面へ引き継ぐ（外さない。./diaryLock.ts）
@@ -144,7 +161,7 @@ export default function DiaryEditScreen() {
       return;
     }
     let active = true;
-    acquireDiaryLock(user!, d.diary_id).then((r) => {
+    const acquire = () => acquireDiaryLock(user!, d.diary_id).then((r) => {
       if (!active) {
         // 取りにいっている間に画面を離れた。取れたロックは外す
         if ('token' in r) void releaseDiaryLock(user!, d.diary_id, r.token);
@@ -154,6 +171,18 @@ export default function DiaryEditScreen() {
       if ('token' in r) { lockRef.current = r.token; lastTouchRef.current = Date.now(); setLockToken(r.token); setHeldBy(null); }
       else setHeldBy(r.heldBy);
     }).catch((e) => { if (active) setError((e as Error).message); });
+    /*
+     * 確認画面の「戻る」で戻ったときは、確認画面が持っていた識別子を受け取って続ける。取り直すと識別子が替わり、
+     * 確認画面にいる間ずっと持っていたロックと別のものになる。まだ有効かを操作の知らせで確かめ、
+     * 外れていた（強制解除・読み込み直し）ときだけ取り直す
+     */
+    const handedBack = draft?.diaryId === d.diary_id ? draft.lockToken : undefined;
+    if (handedBack) {
+      api.touchLock(user!, d.diary_id, handedBack).then(() => {
+        if (!active) { void releaseDiaryLock(user!, d.diary_id, handedBack); return; }
+        lockRef.current = handedBack; lastTouchRef.current = Date.now(); setLockToken(handedBack); setHeldBy(null);
+      }, () => { if (active) void acquire(); });
+    } else void acquire();
     // 画面を移るときだけでなく、タブを閉じる・読み込み直すときにもロックを外す。解除は識別子を添えて送る
     const onPageHide = () => {
       if (lockRef.current) void releaseDiaryLockNow(user!, d.diary_id, lockRef.current);
@@ -234,6 +263,43 @@ export default function DiaryEditScreen() {
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); setRevoking(false); existing.reload(); }
   };
+
+  /*
+   * きょうのようすから入れる（個人日誌。詳細設計書「日誌の画面（作り直し）」(2-13 (4))）。その園児・記録日の午睡と食事を、
+   * 時刻つきの行にして本文の末尾へ足す（置き換えない）。記録が無ければ本文を変えず、字数を超えるなら入れずに文を出す。
+   * 自動のとき（auto）は、読んでいるあいだに本文が書かれていたら入れず、記録が無くても文を出さない
+   */
+  const isTemplateBody = (b: string) => !b.trim() || !!templates.data?.some((t) => t.body === b);
+  const addFromContact = async (auto: boolean, forChild: string, forDate: string) => {
+    setLoadingLines(true);
+    if (!auto) setContactNote(null);
+    try {
+      const { lines } = await api.diaryLines(user!, forChild, forDate);
+      if (lines.length === 0) { if (!auto) setContactNote('連絡帳に午睡・食事の記録がありません。'); return; }
+      const added = `${FROM_CONTACT_HEADING}\n${lines.join('\n')}`;
+      const next = (b: string) => (b === '' || b.endsWith('\n') ? `${b}${added}` : `${b}\n${added}`);
+      if (auto) {
+        setBody((b) => (isTemplateBody(b) ? next(b) : b));
+        setDirty(true);
+        return;
+      }
+      if ([...next(body)].length > BODY_MAX) {
+        setContactNote('本文が2,000文字を超えるため入れられません。本文を短くしてから押してください。');
+        return;
+      }
+      setBody(next(body));
+      setDirty(true);
+    } catch (e) { if (!auto) setError((e as Error).message); }
+    finally { setLoadingLines(false); }
+  };
+
+  // 新しく作る個人日誌で、園児と記録日が決まり、本文が空か雛形のままのとき、1回だけ自動で入れる
+  useEffect(() => {
+    if (autoLinesRef.current || diaryId || recordType !== '1' || !childId || !date || locked) return;
+    if (!isTemplateBody(body)) return;
+    autoLinesRef.current = true;
+    void addFromContact(true, childId, date);
+  }, [childId, date, recordType, diaryId, body]);
 
   const past = useAsync(
     async () => (childId ? api.pastDiariesOf(user!, childId, diaryId ?? undefined) : []),
@@ -338,12 +404,16 @@ export default function DiaryEditScreen() {
   };
 
   /*
-   * 確認へ進む前に、記録日を確かめる。記録日は当日まで（図/画面詳細図.md「日誌作成・編集画面」(3-2) 項目6）。
+   * 確認へ進む前に、記録日を確かめる。記録日は当日まで（週案・月案は365日先まで。図/画面詳細図.md「日誌作成・編集画面」(3-2) 項目6）。
    * 欄の max だけでは、打ち込んだ先の日付を止められない（GitHub Issue #174）。サーバとモックも同じ規則で断る
    */
   const goConfirm = () => {
     if (!date) { setError('記録日を入力してください'); return; }
-    if (date > today()) { setError('記録日に未来日は指定できません（当日まで）'); return; }
+    // 週案・月案だけは365日先まで認める（図/画面詳細図.md「日誌作成・編集画面」(3-2) 項目6。GitHub Issue #278 の 1）。
+    // 文言は基本設計書「メッセージ一覧」(4-12)・詳細設計書「日誌」(4-13 (1))
+    if (recordType === '3') {
+      if (date > addDays(today(), PLAN_MAX_DAYS)) { setError('週案・月案の記録日は365日先までです。'); return; }
+    } else if (date > today()) { setError('記録日に未来の日付は指定できません。'); return; }
     // ロックは確認画面へ引き継ぐ。確認画面にいる間に、ほかの職員が開いて直せないようにする（GitHub Issue #166 の 1）。
     // 記録日で止めたときは編集画面に残るので、引き継ぎの印は進むと決まってから付ける
     handOverRef.current = true;
@@ -420,6 +490,8 @@ export default function DiaryEditScreen() {
         </div>
       )}
       {error && <div style={{ marginBottom: 16 }}><ErrorBox text={error} /></div>}
+      {/* 取り込んだあとに連絡帳で訂正・取り消しされた記録（個人日誌。保存済みの日誌だけ。図/画面詳細図 3-2 項目25）。本文は書き換えない */}
+      {diaryId && d?.record_type === '1' && <ContactChangesBand changes={d.contact_changes} />}
 
       <div className="grid12">
         <section className="card col-8">
@@ -454,7 +526,7 @@ export default function DiaryEditScreen() {
                 </select>
               </Field>
               <Field label="記録日" required>
-                <input type="date" value={date} max={today()} onChange={(e) => { setDate(e.target.value); setDirty(true); }}
+                <input type="date" value={date} max={recordType === '3' ? addDays(today(), PLAN_MAX_DAYS) : today()} onChange={(e) => { setDate(e.target.value); setDirty(true); }}
                   disabled={locked} />
               </Field>
             </div>
@@ -483,7 +555,13 @@ export default function DiaryEditScreen() {
                     <option value="">定型文を入れる</option>
                     {phrases.data?.map((p) => <option key={p} value={p}>{p}</option>)}
                   </select>
+                  {/* 個人日誌のときだけ。押した時点の午睡・食事を本文の末尾へ足す（図/画面詳細図 3-2 項目22） */}
+                  {recordType === '1' && (
+                    <button onClick={() => void addFromContact(false, childId, date)}
+                      disabled={locked || !childId || !date || loadingLines}>きょうのようすから入れる</button>
+                  )}
                 </div>
+                {contactNote && <div className="muted" role="status">{contactNote}</div>}
 
                 <Field label="本文" required>
                   <textarea value={body} onChange={(e) => { setBody(e.target.value); setDirty(true); }}

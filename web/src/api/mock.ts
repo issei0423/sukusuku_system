@@ -19,7 +19,7 @@ import type { AbnormalGuardianNoticeInput } from './shapes';
 import { GUARDIAN_NOTICE_METHOD_ORDER } from './codes';
 import type { GuardianNoticeMethod } from './types';
 import type {
-  Account, Child, ClassRoom, Diary, DiaryIncident, SessionUser, Role,
+  Account, Child, ClassRoom, Diary, DiaryContactChange, DiaryIncident, SessionUser, Role,
   InvitationCode, NapRecord, NapSession, NapAbnormal, PhysicalRecord, GrowthStandard,
   DevelopmentCheck, DevelopmentResultRecord, DevelopmentItem, ChatRoom, ChatMessage,
   OperationLog, Allergy, FunctionType, OperationType, Paged, Handout,
@@ -482,6 +482,34 @@ const DIARY_MSG = {
   notApproved: '承認済みの日誌ではありません。画面を読み込み直してください。',
   versionConflict: '他の職員が更新しています。内容を再読み込みしてください。',
 } as const;
+
+/**
+ * 取り込んだあとに連絡帳で訂正・取り消しされた、その園児・記録日の食事と午睡（個人日誌のときだけ）。
+ * 日誌を作ったあと（created_at より後）のものに限る。日誌と連絡帳の行を結ぶ列は持たず、時刻で比べる
+ * （基本設計書「取り消し・訂正」(4-5)、詳細設計書「日誌」(4-13 (6))。GitHub Issue #278 の 2）。
+ * サーバ側は server/api_diary_contact.go の contactChangesOf
+ */
+function diaryContactChanges(d: Diary): DiaryContactChange[] {
+  if (d.record_type !== '1' || !d.child_id) return [];
+  const out: DiaryContactChange[] = [];
+  const classify = (isDeleted: boolean, corrected: string | null, updated: string) => {
+    if (isDeleted && updated > d.created_at) return { change: 'cancel' as const, changed_at: updated };
+    if (!isDeleted && corrected && corrected > d.created_at) return { change: 'correct' as const, changed_at: corrected };
+    return null;
+  };
+  for (const e of db.contactEvents) {
+    if (e.child_id !== d.child_id || e.contact_date !== d.diary_date || e.event_type !== '1') continue;
+    const c = classify(e.is_deleted, e.corrected_at, e.updated_at);
+    if (c) out.push({ kind: 'meal', recorded_at: e.recorded_at, meal_kind: e.meal_kind ?? '1', ...c });
+  }
+  for (const n of db.napSleeps) {
+    if (n.child_id !== d.child_id) continue;
+    if (db.napSessions.find((x) => x.nap_session_id === n.nap_session_id)?.session_date !== d.diary_date) continue;
+    const c = classify(n.is_deleted, n.corrected_at, n.updated_at);
+    if (c) out.push({ kind: 'nap', recorded_at: n.slept_at, ...c });
+  }
+  return out.sort((a, b) => a.recorded_at.localeCompare(b.recorded_at));
+}
 
 /**
  * 日誌に名前と、ヒヤリハットの欄を添える。Go サーバ（server/api_diary.go の enrich と scanDiary）と同じ。
@@ -1095,8 +1123,20 @@ export const diaryApi = {
         : d.class_id === classId));
     }
     if (f.status) rows = rows.filter((d) => d.status === f.status);
-    // 【仮置き】自分が書いた日誌に絞る。職員ダッシュボードの「差し戻された日誌」（自分が書いたものを数える）から
-    // 開いた一覧を、数えた日誌と一致させるため（図/画面詳細図.md「職員ダッシュボード」(2-6) 項目2。GitHub Issue #174）
+    // 園児名（名前・よみの部分一致。空白は問わない）とキーワード（本文の部分一致。ヒヤリハットは場所も）
+    // （図/画面詳細図.md「日誌一覧画面」(3-1) 項目10・11。GitHub Issue #278 の 4。サーバ側は server/api_diary.go の handleListDiaries）
+    const childQuery = (f.child ?? '').replace(/[ 　]/g, '');
+    if (childQuery) {
+      const ids = new Set(db.children
+        .filter((c) => c.child_name.replace(/[ 　]/g, '').includes(childQuery)
+          || (c.child_name_kana ?? '').replace(/[ 　]/g, '').includes(childQuery))
+        .map((c) => c.child_id));
+      rows = rows.filter((d) => d.child_id != null && ids.has(d.child_id));
+    }
+    const keyword = (f.keyword ?? '').trim();
+    if (keyword) rows = rows.filter((d) => d.body.includes(keyword) || (d.place ?? '').includes(keyword));
+    // 自分が作成したもの（同 項目12）。職員ダッシュボードの「差し戻された日誌」（自分が書いたものを数える）から
+    // 開いた一覧を、数えた日誌と一致させるため、そこではオンで開く（図/画面詳細図.md「職員ダッシュボード」(2-6) 項目2。GitHub Issue #174）
     if (f.mine && user.staff_id) rows = rows.filter((d) => d.created_staff_id === user.staff_id);
     if (f.from) rows = rows.filter((d) => d.diary_date >= f.from!);
     if (f.to) rows = rows.filter((d) => d.diary_date <= f.to!);
@@ -1111,7 +1151,7 @@ export const diaryApi = {
     // 保護者には、どの日誌も返さない。無い日誌・他児の日誌・承認済みの自児の日誌を同じ文言にする（詳細設計書「日誌」(4-13)）
     if (user.role === '3' || !d || !canSeeDiary(user, d)) return fail(DIARY_FORBIDDEN_MESSAGE);
     // 作成した職員・申請した職員・承認した職員の氏名を載せる（承認の経緯。詳細設計書「日誌」(4-13 (6))）
-    return ok(withDiaryNames(d));
+    return ok({ ...withDiaryNames(d), contact_changes: diaryContactChanges(d) });
   },
 
   async templates(): Promise<typeof db.diaryTemplates> { return ok(db.diaryTemplates); },
@@ -1206,7 +1246,9 @@ export const diaryApi = {
 };
 
 // 文言は基本設計書「メッセージ一覧」(4-9)「ロックの解除」による
-const LOCK_RELEASED_MESSAGE = '編集ロックが解除されました。内容を再読み込みしてください';
+// 週案・月案の記録日を先の日付にできる日数（サーバ側は server/api_diary_write.go の diaryPlanMaxDays）
+const DIARY_PLAN_MAX_DAYS = 365;
+const LOCK_RELEASED_MESSAGE = '編集ロックが解除されました。内容を再読み込みしてください。';
 
 /**
  * その職員が、渡した識別子のロックをいま持っていれば、そのロックを返す。
@@ -1261,7 +1303,13 @@ const diaryApi2 = {
     // 記録日は当日まで。形の崩れた値も断る（基本設計書「入力項目の制約値」(4-9)、
     // 図/画面詳細図.md「日誌作成・編集画面」(3-2) 項目6。GitHub Issue #174）
     if (!isISODate(input.diary_date)) return fail('記録日の形式が正しくありません');
-    if (input.diary_date > today()) return fail('記録日に未来日は指定できません');
+    // 週案・月案だけは365日先まで認める（記録日を「計画の初日」と読む。基本設計書「日付の扱い」(4-6)・「入力項目の制約値」(4-9)。
+    // GitHub Issue #278 の 1）。文言は基本設計書「メッセージ一覧」(4-12)。サーバ側は server/api_diary_write.go の handleSaveDiary
+    if (input.record_type === '3') {
+      if (input.diary_date > addDays(today(), DIARY_PLAN_MAX_DAYS)) return fail('週案・月案の記録日は365日先までです。');
+    } else if (input.diary_date > today()) {
+      return fail('記録日に未来の日付は指定できません。');
+    }
     const needsChild = input.record_type === '1' || input.record_type === '4';
     if (needsChild) {
       if (!input.child_id) return fail('対象の園児を選んでください');
@@ -4795,7 +4843,41 @@ function napSleepTarget(user: SessionUser, sessionId: number, childId: string): 
   return { session };
 }
 
+/** 寝た長さの言葉。「1時間35分」「35分」。ちょうどの時間は「1時間」（サーバ側は server/api_diary_contact.go の napDurationText） */
+function napDurationText(minutes: number): string {
+  if (minutes < 60) return `${minutes}分`;
+  return minutes % 60 === 0 ? `${minutes / 60}時間` : `${Math.floor(minutes / 60)}時間${minutes % 60}分`;
+}
+
 const contactApi = {
+  /**
+   * きょうのようすから入れる行（GET /api/contact/children/{childID}/diary-lines?date=）。
+   * 午睡（ねた・おきた・何分）と食事（区分と量）だけを時刻の順に。取り消した記録は入れない。
+   * 保護者へ出さない設定の項目も入れる（日誌は園内の記録）。入眠時の体温・5分ごとの確認・対象外は入れない
+   * （詳細設計書「日誌」(4-13 (8))。サーバ側は server/api_diary_contact.go の diaryLinesOf）
+   */
+  async diaryLines(user: SessionUser, childId: string, date?: string): Promise<{ lines: string[] }> {
+    if (user.role === '3') return fail(DIARY_FORBIDDEN_MESSAGE);
+    if (!contactAccess(user, childId).read) return fail(MSG.contactForbidden);
+    const d = contactDate(date);
+    if (d === null) return fail(MSG.contactBadDate);
+    const lines: { at: string; text: string }[] = [];
+    for (const e of db.contactEvents) {
+      if (e.child_id !== childId || e.contact_date !== d || e.event_type !== '1' || e.is_deleted) continue;
+      lines.push({ at: e.recorded_at, text: `${e.recorded_at.slice(11, 16)} ${MEAL_KIND_TEXT[e.meal_kind ?? '1']} ${MEAL_AMOUNT_TEXT[e.meal_amount ?? '1']}` });
+    }
+    for (const n of db.napSleeps) {
+      if (n.child_id !== childId || n.is_deleted) continue;
+      if (db.napSessions.find((x) => x.nap_session_id === n.nap_session_id)?.session_date !== d) continue;
+      const from = n.slept_at.slice(11, 16);
+      lines.push(n.woke_at
+        ? { at: n.slept_at, text: `${from}〜${n.woke_at.slice(11, 16)} 午睡（${napDurationText(Math.floor((jstMs(n.woke_at) - jstMs(n.slept_at)) / 60000))}）` }
+        : { at: n.slept_at, text: `${from} 午睡（おきたは記録されていません）` });
+    }
+    lines.sort((a, b) => a.at.localeCompare(b.at));
+    return ok({ lines: lines.map((l) => l.text) });
+  },
+
   /** 連絡帳の1ページ（GET /api/contact/children/{childID}） */
   async contactPage(user: SessionUser, childId: string, date?: string): Promise<ContactPage> {
     if (!contactAccess(user, childId).read) return fail(MSG.contactForbidden);

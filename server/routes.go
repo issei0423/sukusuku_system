@@ -35,6 +35,7 @@ func (a *app) routeGuardian(mux *http.ServeMux) {
 func (a *app) routeContact(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/contact/children/{childID}", a.handleContactPage)
 	mux.HandleFunc("GET /api/contact/children/{childID}/month", a.handleContactMonth)
+	mux.HandleFunc("GET /api/contact/children/{childID}/diary-lines", a.handleDiaryLines)
 	mux.HandleFunc("POST /api/contact/children/{childID}/read", a.handleContactRead)
 	mux.HandleFunc("PUT /api/contact/children/{childID}/home", a.handleSaveHome)
 	mux.HandleFunc("GET /api/contact/classes", a.handleContactClasses)

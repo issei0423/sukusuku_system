@@ -74,7 +74,7 @@ describe('Issue #177 の再現手順で、モックがサーバと同じ結果�
     await api.releaseLock(admin, 1, true);
     expect(await api.acquireLock(admin, 1)).toHaveProperty('token');
     await expect(api.saveDiary(teacher, inputOf(1, mine.token), '1'))
-      .rejects.toThrow('編集ロックが解除されました。内容を再読み込みしてください');
+      .rejects.toThrow('編集ロックが解除されました。内容を再読み込みしてください。');
   });
 });
 

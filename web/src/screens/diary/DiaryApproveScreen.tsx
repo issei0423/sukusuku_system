@@ -19,6 +19,7 @@ import { notify } from '../../components/feedback';
 import { DIARY_RECORD_TYPE, DIARY_STATUS } from '../../api/codes';
 import { formatYMD, formatMDHM } from '../../api/util';
 import { IncidentSummary } from './IncidentFields';
+import { ContactChangesBand } from './ContactChangesBand';
 
 export default function DiaryApproveScreen() {
   const { user } = useSession();
@@ -83,6 +84,8 @@ export default function DiaryApproveScreen() {
       </div>
 
       {error && <div style={{ marginBottom: 16 }}><Alert>{error}</Alert></div>}
+      {/* 取り込んだあとに連絡帳で訂正・取り消しされた記録（図/画面詳細図「日誌承認画面（管理者）」(3-5) 項目9） */}
+      <ContactChangesBand changes={d.contact_changes} />
       {!pending && (
         <div style={{ marginBottom: 16 }}>
           {/* 【仮置き】文言（web/仮置き値.md「承認画面で承認待ちでなくなった日誌」） */}
@@ -98,9 +101,8 @@ export default function DiaryApproveScreen() {
       )}
       {pending && own && (
         <div style={{ marginBottom: 16 }}>
-          <Alert soft>
-            自分が申請した日誌は承認できません。ほかの管理者に承認を依頼してください。差し戻して書き直すことはできます。
-          </Alert>
+          {/* 文は基本設計書「メッセージ一覧」(4-12)「自分の申請の承認」のとおり（GitHub Issue #268 のコメントで足された 3） */}
+          <Alert soft>自分が申請した日誌は承認できません。ほかの管理者に依頼してください。</Alert>
         </div>
       )}
 
