@@ -35,6 +35,18 @@ func memberOf(a *app, roomID, accountID int64) (joinedAt string, leftAt sql.Null
 	return joinedAt, leftAt, err == nil
 }
 
+// moveChildClass は、園児情報の編集で、その園児のクラスだけを替える（ほかの項目はいまの値のまま送る）
+func moveChildClass(t *testing.T, a *app, h http.Handler, admin *http.Cookie, childID string, classID int64) {
+	t.Helper()
+	in := childInput{ChildID: childID, ClassID: classID, Mode: "edit"}
+	if err := a.db.QueryRow(`SELECT child_name, child_name_kana, birth_date, sex, photo_consent_level FROM m_child WHERE child_id = ?`,
+		childID).Scan(&in.ChildName, &in.ChildNameKana, &in.BirthDate, &in.Sex, &in.PhotoConsentLevel); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(in)
+	expectStatus(t, request(t, h, admin, "POST", "/api/children", string(body)), http.StatusOK)
+}
+
 // 新規登録では、いまの年度のクラスのクラスグループにだけ入る。過年度のクラスグループ（閲覧のみのアーカイブ）には入らない
 // （基本設計書「年度更新」(4-4)「過年度のクラスグループは閲覧のみのアーカイブとして残す（保護者は現在所属しているグループしか読めない）」）
 func TestSignUpJoinsOnlyCurrentClassGroup(t *testing.T) {
@@ -75,4 +87,57 @@ func TestSignUpJoinsOnlyCurrentClassGroup(t *testing.T) {
 	if _, _, ok := memberOf(a, pastRoom, accountID); ok {
 		t.Errorf("過年度のクラスグループ（アーカイブ）に入った")
 	}
+}
+
+// 年度の途中で園児のクラスを替えたら、その園児に有効な紐づけのある保護者は、前のクラスのクラスグループから外れ、
+// 新しいクラスのクラスグループへ今の時刻で入る。前のクラスに、ほかに有効な紐づけの子がいれば、前のクラスのグループに残る
+// （紐づけの解除の leaveRoomsOfChild と同じ条件）
+func TestChildClassChangeMovesGuardianClassGroup(t *testing.T) {
+	a, h := newTestApp(t)
+	admin := loginAs(a, accAdmin, "staff")
+	sakura, himawari := classGroupOf(t, a, 1), classGroupOf(t, a, 2)
+
+	t.Run("前のクラスに、ほかに有効な紐づけの子がいなければ、前のクラスのグループから外れて新しいクラスのグループに入る", func(t *testing.T) {
+		// 村田 美咲（C004）をさくら組からひまわり組へ。保護者は村田 真一（アカウント9・G004）だけ
+		const murata = 9
+		if _, left, ok := memberOf(a, sakura, murata); !ok || left.Valid {
+			t.Skipf("デモデータの前提が変わった（村田 真一のさくら組の参加: ok=%v left=%v）", ok, left)
+		}
+		at := now()
+		moveChildClass(t, a, h, admin, "C004", 2)
+
+		if _, left, _ := memberOf(a, sakura, murata); !left.Valid {
+			t.Errorf("前のクラス（さくら組）のグループから外れていない")
+		}
+		joinedAt, left, ok := memberOf(a, himawari, murata)
+		if !ok || left.Valid {
+			t.Fatalf("新しいクラス（ひまわり組）のグループに入っていない: ok=%v left=%v", ok, left)
+		}
+		if joinedAt < at {
+			t.Errorf("参加の時刻 = %q、クラスを替えた時刻（%q 以降）のはず", joinedAt, at)
+		}
+		guardian := loginAs(a, murata, "guardian")
+		rooms := roomIDsOf(t, h, guardian)
+		if !rooms[himawari] || rooms[sakura] {
+			t.Errorf("保護者のチャンネル一覧 = %v（ひまわり組 %d だけがあり、さくら組 %d は無いはず）", rooms, himawari, sakura)
+		}
+	})
+
+	t.Run("前のクラスに、ほかに有効な紐づけの子がいれば、前のクラスのグループに残る", func(t *testing.T) {
+		// 西田 拓也（アカウント6・G001）に、さくら組の遠藤 花子（C002）を有効な紐づけでつなぎ、C002 だけをひまわり組へ。
+		// 西田 太郎（C001）はさくら組に残る
+		const nishida = 6
+		if _, err := a.db.Exec(`INSERT INTO t_guardian_child (guardian_id, child_id, relationship, link_status, linked_at)
+			VALUES ('G001', 'C002', '父', '1', '2026-01-01T10:00:00')`); err != nil {
+			t.Fatal(err)
+		}
+		moveChildClass(t, a, h, admin, "C002", 2)
+
+		if _, left, ok := memberOf(a, sakura, nishida); !ok || left.Valid {
+			t.Errorf("きょうだいが残る前のクラス（さくら組）のグループから外れた: ok=%v left=%v", ok, left)
+		}
+		if _, left, ok := memberOf(a, himawari, nishida); !ok || left.Valid {
+			t.Errorf("新しいクラス（ひまわり組）のグループに入っていない: ok=%v left=%v", ok, left)
+		}
+	})
 }

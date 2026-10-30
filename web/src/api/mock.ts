@@ -1024,8 +1024,11 @@ export const childApi = {
      */
     if (!existing) addFirstSchedule(user, input.child_id, input.birth_date);
 
-    // クラス在籍の付け替え
-    const idx = db.classChildren.findIndex((cc) => cc.child_id === input.child_id);
+    // 付け替える前の、いまのクラス（今年度のクラス）。クラスを替えたら、保護者のクラスグループの参加を移すのに使う
+    const prevClass = existing ? contactClassOf(input.child_id) : null;
+    // クラス在籍の付け替え。当年度の行だけを書き換え、過年度の割り当ては残す（基本設計書 5-3。server/api_child_write.go と同じ）
+    const idx = db.classChildren.findIndex((cc) => cc.child_id === input.child_id
+      && db.classes.some((k) => k.class_id === cc.class_id && k.fiscal_year === db.FISCAL_YEAR));
     if (idx >= 0) db.classChildren[idx].class_id = input.class_id;
     else db.classChildren.push({ class_id: input.class_id, child_id: input.child_id });
 
@@ -1034,6 +1037,11 @@ export const childApi = {
       const room = db.chatRooms.find((r) => r.room_type === '4' && r.child_id === input.child_id);
       if (room) { room.room_name = `${input.child_name}の保護者`; room.class_id = input.class_id; }
       db.accounts.filter((a) => a.role === '1' || a.role === '2').forEach((a) => syncStaffChatRooms(a.account_id));
+      if (prevClass !== input.class_id) {
+        // 保護者の参加が変わったクラスグループへ（server/events.go の notifyRoomMembers。お子さまの追加と同じく、変わったルームへだけ）
+        moveGuardiansClassGroup(input.child_id, prevClass, input.class_id)
+          .forEach((roomId) => publish({ type: 'chat', room_id: roomId }, (u) => isRoomMember(u, roomId)));
+      }
     }
 
     // アレルギー・既往歴は入力内容で置き換える
@@ -3816,6 +3824,40 @@ function rejoinRoomsOfChild(accountId: number, linkedAt: string, childId: string
     if (!m) db.chatMembers.push({ chat_room_id: r.chat_room_id, account_id: accountId, joined_at: joinedAt, left_at: null });
     else if (m.left_at !== null) m.left_at = null;
   }
+}
+
+/**
+ * 年度の途中で園児のクラスを替えたとき、その園児に有効な紐づけ（1）のある保護者のクラスグループの参加を、いまのクラスへ移す。
+ * 参加の変わったクラスグループを返す（server/api_child_write.go の moveGuardiansClassGroup と同じ規則）。
+ * 保護者が読めるグループは現在所属しているグループだけ（基本設計書「権限と参照範囲の判定」(4-2)、詳細設計書「判定の関数」(4-1 (2))）。
+ * - 前のクラスのクラスグループからは外す（left_at を入れる）。ただし前のクラスに、その保護者のほかに有効な紐づけの子がいれば残す
+ *   （leaveRoomsOfChild と同じ条件）
+ * - 新しいクラスのクラスグループへは今の時刻で入る。抜けていた行は、お子さまの追加と同じく参加し直す前の joined_at を first_joined_at に残す
+ * classChildren はもう付け替えたあと（この園児は前のクラスにいない）として呼ぶ
+ */
+function moveGuardiansClassGroup(childId: string, from: number | null, to: number): number[] {
+  const at = now();
+  const moved = new Set<number>();
+  const oldRoom = from === null ? undefined : db.chatRooms.find((r) => r.room_type === '2' && r.class_id === from);
+  const newRoom = db.chatRooms.find((r) => r.room_type === '2' && r.class_id === to && !r.is_archived);
+  for (const gc of db.guardianChildren.filter((g) => g.child_id === childId && g.link_status === '1')) {
+    const accountId = db.guardians.find((g) => g.guardian_id === gc.guardian_id)?.account_id;
+    if (accountId === undefined) continue;
+    if (oldRoom) {
+      const stays = db.classChildren.some((cc) => cc.class_id === from && db.guardianChildren.some((o) =>
+        o.guardian_id === gc.guardian_id && o.child_id === cc.child_id && o.link_status === '1'));
+      const m = db.chatMembers.find((x) => x.chat_room_id === oldRoom.chat_room_id && x.account_id === accountId && x.left_at === null);
+      if (!stays && m) { m.left_at = at; moved.add(oldRoom.chat_room_id); }
+    }
+    if (newRoom) {
+      const m = db.chatMembers.find((x) => x.chat_room_id === newRoom.chat_room_id && x.account_id === accountId);
+      if (m && m.left_at === null) continue;
+      if (m) Object.assign(m, { first_joined_at: m.first_joined_at ?? m.joined_at, joined_at: at, left_at: null });
+      else db.chatMembers.push({ chat_room_id: newRoom.chat_room_id, account_id: accountId, joined_at: at, left_at: null });
+      moved.add(newRoom.chat_room_id);
+    }
+  }
+  return [...moved];
 }
 
 /**
