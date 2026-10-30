@@ -9,6 +9,7 @@
 import { useId } from 'react';
 import type { SectionProps } from './SettingsForm';
 import { HOME_ITEMS, SHOW_ITEMS } from './settingsLabels';
+import { AddIcon } from '../../../components/icons';
 
 /** カンマ区切りの設定のうち、選ぶ項目のチェックボックス */
 function ItemChecks({ title, settingKey, items, values, set, error, busy, note }: SectionProps & {
@@ -62,7 +63,7 @@ function ChoiceList({ title, settingKey, values, set, error, busy, note }: Secti
           </li>
         ))}
       </ol>
-      <div><button type="button" disabled={busy} onClick={() => write([...list, ''])}>＋ 足す</button></div>
+      <div><button type="button" disabled={busy} onClick={() => write([...list, ''])}><AddIcon />足す</button></div>
       <p className="muted" id={`${id}-note`}>{note}</p>
       {error?.field === settingKey && <p className="contact-error" role="alert">{error.message}</p>}
     </fieldset>

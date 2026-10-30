@@ -20,6 +20,7 @@ import { focusAfter, focusedNow } from '../focusAfter';
 import type { AiField, AiPurpose } from '../api/shapes';
 import { useSession } from '../session';
 import { AI_TEXT } from '../messages';
+import { CloseIcon } from './icons';
 
 /** メモの上限（詳細設計書「経路」(8-2)） */
 const MEMO_MAX = 500;
@@ -147,7 +148,7 @@ export default function AiDraftPanel({ childId, date, field, max, text, disabled
           <div className="contact-composer-actions">
             <button type="button" className="btn-primary" onClick={() => void make('facility_note')} disabled={making !== null}
               aria-busy={making === 'facility_note'}>{AI_TEXT.makeDraft}</button>
-            <button type="button" onClick={closeMemo} disabled={making !== null}>閉じる</button>
+            <button type="button" onClick={closeMemo} disabled={making !== null}><CloseIcon />閉じる</button>
           </div>
         </div>
       )}

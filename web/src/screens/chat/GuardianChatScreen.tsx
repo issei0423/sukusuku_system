@@ -27,7 +27,7 @@ import { useUnsavedInput } from '../../unsavedInput';
 import IncomingLog from './IncomingLog';
 import { useIncomingMessages } from './useIncomingMessages';
 import { focusAfter, focusedNow } from '../../focusAfter';
-import { ForwardIcon, BackIcon, SendIcon } from '../../components/icons';
+import { ForwardIcon, BackIcon, SendIcon, UndoIcon } from '../../components/icons';
 
 export default function GuardianChatScreen() {
   const { user } = useSession();
@@ -414,7 +414,7 @@ export default function GuardianChatScreen() {
       </div>
 
       {retracting && (
-        <ConfirmDialog title="メッセージを取り消します" confirmLabel="取り消す" danger
+        <ConfirmDialog title="メッセージを取り消します" confirmLabel="取り消す" confirmIcon={<UndoIcon />} danger
           onConfirm={() => retract(retracting.chat_message_id)} onCancel={() => setRetracting(null)}>
           <p>
             {formatMD(retracting.sent_at.slice(0, 10))} {formatHM(retracting.sent_at)} のメッセージを取り消します。

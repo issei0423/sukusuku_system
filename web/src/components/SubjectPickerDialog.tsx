@@ -9,6 +9,7 @@
  * （写真を送る画面の「送る」が押せなくなる。担保はサーバ）。【仮置き】窓の題・説明・ボタンの文言（web/仮置き値.md）
  */
 import { useState } from 'react';
+import { CloseIcon, ConfirmIcon } from './icons';
 import { MSG } from '../messages';
 import ChildAvatar from './ChildAvatar';
 import { Modal } from './ui';
@@ -38,9 +39,9 @@ export default function SubjectPickerDialog({ candidates, initial, onDone, onClo
   return (
     <Modal title="写っている子を選ぶ" onClose={onClose}
       footer={<>
-        <button type="button" onClick={onClose}>やめる</button>
+        <button type="button" onClick={onClose}><CloseIcon />やめる</button>
         <button type="button" className="btn-primary" disabled={!ready}
-          onClick={() => onDone({ subjects: noChildren ? [] : subjects, noChildren, target: noChildren ? target : null })}>決める</button>
+          onClick={() => onDone({ subjects: noChildren ? [] : subjects, noChildren, target: noChildren ? target : null })}><ConfirmIcon />決める</button>
       </>}>
       <div className="subject-picker">
         <p className="muted">写っている子を、全員選んでください。</p>

@@ -215,7 +215,7 @@ export default function GuardianLayout() {
       )}
 
       {confirmLogout && (
-        <ConfirmDialog title="保存していない入力があります" confirmLabel="破棄してログアウトする" danger
+        <ConfirmDialog title="保存していない入力があります" confirmLabel="破棄してログアウトする" confirmIcon={<LogoutIcon />} danger
           onConfirm={() => { setConfirmLogout(false); void doLogout(); }} onCancel={() => setConfirmLogout(false)}>
           <p>入力した内容を送信・保存していません。このままログアウトすると、入力した内容は破棄されます。</p>
           <p className="muted">残すときは、「やめる」を押してから送信・保存してください。</p>

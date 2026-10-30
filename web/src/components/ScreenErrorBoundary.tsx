@@ -11,6 +11,7 @@
 import { Component } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { Alert } from './ui';
+import { RefreshIcon } from './icons';
 
 type Props = { children: ReactNode };
 type State = { failed: boolean };
@@ -33,7 +34,7 @@ export default class ScreenErrorBoundary extends Component<Props, State> {
       <section className="card">
         <Alert>画面を表示できませんでした。読み込み直しても表示されないときは、管理者へ連絡してください。</Alert>
         <div className="row-end" style={{ marginTop: 12 }}>
-          <button className="btn-primary" onClick={() => window.location.reload()}>読み込み直す</button>
+          <button className="btn-primary" onClick={() => window.location.reload()}><RefreshIcon />読み込み直す</button>
         </div>
       </section>
     );

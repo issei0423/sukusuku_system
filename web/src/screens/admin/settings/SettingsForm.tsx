@@ -19,6 +19,7 @@ import ContactSettings from './ContactSettings';
 import AiSettings from './AiSettings';
 import OtherSettings from './OtherSettings';
 import { describeSetting } from './settingsLabels';
+import { SaveIcon } from '../../../components/icons';
 
 export interface SettingsError { message: string; field?: string }
 
@@ -86,11 +87,11 @@ export default function SettingsForm({ view, onSaved, onEdit, onConflict }: {
 
       {error && !error.field && <p className="contact-error" role="alert">{error.message}</p>}
       <div className="contact-composer-actions settings-save">
-        <button type="button" className="btn-primary" disabled={!dirty || busy} onClick={() => { setError(null); setConfirming(true); }}>保存する</button>
+        <button type="button" className="btn-primary" disabled={!dirty || busy} onClick={() => { setError(null); setConfirming(true); }}><SaveIcon />保存する</button>
       </div>
 
       {confirming && (
-        <ConfirmDialog title="設定を保存しますか" confirmLabel={busy ? '保存しています…' : '保存する'} busy={busy}
+        <ConfirmDialog title="設定を保存しますか" confirmLabel={busy ? '保存しています…' : '保存する'} confirmIcon={<SaveIcon />} busy={busy}
           onConfirm={() => void save()} onCancel={() => setConfirming(false)}>
           <ul className="settings-diff">
             {changedKeys.map((k) => {

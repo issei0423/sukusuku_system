@@ -14,6 +14,7 @@ import type { SessionUser } from '../api/types';
 import { ADD_CHILD_TEXT, MSG } from '../messages';
 import { notify } from './feedback';
 import { Field, Modal } from './ui';
+import { CloseIcon, AddChildIcon, ConfirmIcon } from './icons';
 
 /** 続柄の上限の文字数（詳細設計書「お子さまの追加」(4-15 (1))。server/api_guardian.go の relationshipMax） */
 const RELATIONSHIP_MAX = 20;
@@ -82,11 +83,11 @@ export default function AddChildDialog({ user, onAdded, onClose }: {
   };
 
   const footer = childName === null
-    ? <button type="button" onClick={onClose}>閉じる</button>
+    ? <button type="button" onClick={onClose}><CloseIcon />閉じる</button>
     : (
       <>
-        <button type="button" onClick={onClose}>{ADD_CHILD_TEXT.cancel}</button>
-        <button type="button" className="btn-primary" onClick={() => void add()} disabled={busy}>{ADD_CHILD_TEXT.submit}</button>
+        <button type="button" onClick={onClose}><CloseIcon />{ADD_CHILD_TEXT.cancel}</button>
+        <button type="button" className="btn-primary" onClick={() => void add()} disabled={busy}><AddChildIcon />{ADD_CHILD_TEXT.submit}</button>
       </>
     );
 
@@ -98,7 +99,7 @@ export default function AddChildDialog({ user, onAdded, onClose }: {
           <input type="text" value={code} autoComplete="off" autoCapitalize="characters" placeholder="ABCD-1234-EFGH"
             onChange={(e) => { setCode(e.target.value); setChildName(null); setError(null); }} />
         </Field>
-        <button type="submit" disabled={busy || !code.trim()}>{ADD_CHILD_TEXT.verify}</button>
+        <button type="submit" disabled={busy || !code.trim()}><ConfirmIcon />{ADD_CHILD_TEXT.verify}</button>
       </form>
 
       {/* ② 園児を確かめる */}
