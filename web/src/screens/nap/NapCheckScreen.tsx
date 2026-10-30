@@ -194,7 +194,11 @@ export default function NapCheckScreen() {
           <div className="nap-title-line">
             <h1>午睡チェック</h1>
             {s ? (
-              <span className="nap-class-name">{classesForUser.find((c) => c.class_id === classId)?.class_name}</span>
+              <>
+                {/* 実施中は select をやめて文字だけにしたので、読み上げに「クラス」のラベルを残す */}
+                <span className="sr-only">クラス：</span>
+                <span className="nap-class-name">{classesForUser.find((c) => c.class_id === classId)?.class_name}</span>
+              </>
             ) : (
               <Field label="クラス">
                 <select value={classId} onChange={(e) => setClassId(Number(e.target.value))}>
@@ -408,7 +412,8 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
   const [justSaved, setJustSaved] = useState(false);
   const id = row.child.child_id;
   const name = row.child.child_name;
-  // 体位・呼吸・顔色の3つがそろうまで「この子を記録」は押せない。押せない理由をボタンの左に出す（下の .nap-save-hint）
+  // 体位・呼吸・顔色の3つがそろうまで「この子を記録」は押せない。押せない理由をボタンの近くに出す（下の .nap-save-hint。
+  // PC の幅ではボタンの上、iPad の幅ではボタンの左。screens.css の @container）
   const complete = !!position && !!breathing && !!complexion;
   const saveHintId = useId();
   // 対象外の子は、5分ごとの確認の欄を薄くする（詳細設計書「行の状態ごとの表示」(2-4 (2))）
