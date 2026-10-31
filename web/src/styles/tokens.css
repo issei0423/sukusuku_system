@@ -105,6 +105,38 @@
   --c-link-hover:     var(--dads-blue-900);
   --c-link-active:    var(--dads-orange-800);
 
+  /*
+   * ---- 外枠の色・字・形 ----
+   * 外枠（職員のヘッダと左メニュー、保護者のヘッダ・メニューのボタン・PC の左の欄・ドロワーと幕、緊急連絡の帯）は、
+   * 本文の見た目と切り離して、ここの値と app.css の「外枠」の節で明示した字・行間・字間・太さ・角・枠だけで描く。
+   * 本文の部品や役割の色を変えても、外枠の画素が変わらないようにするため（持ち主が「サイドメニューとかは良い」とした所。
+   * 黄のヘッダの帯は 2026-10-06 に持ち主が決めた）。値は DADS の色の段階のまま
+   */
+  --chrome-band:          var(--dads-yellow-200); /* ヘッダの帯 */
+  --chrome-current:       var(--dads-yellow-100); /* 左メニューの現在地の地 */
+  --chrome-deep:          var(--dads-yellow-700); /* 帯の下の線・現在地の左の線 */
+  --chrome-ink:           var(--dads-gray-900);   /* 帯の上の文字 */
+  --chrome-surface:       var(--dads-white);
+  --chrome-surface-sub:   var(--dads-gray-50);    /* 指したときの地・緊急連絡の帯の地 */
+  --chrome-surface-head:  var(--dads-gray-100);   /* 押しているときの地 */
+  --chrome-border:        var(--dads-gray-420);
+  --chrome-border-weak:   var(--dads-gray-200);
+  --chrome-border-strong: var(--dads-gray-600);   /* ボタンの枠 */
+  --chrome-text:          var(--dads-gray-900);
+  --chrome-text-sub:      var(--dads-gray-700);
+  --chrome-disabled:      var(--dads-gray-300);
+  --chrome-link:          var(--dads-blue-1000);
+  --chrome-link-hover:    var(--dads-blue-900);
+  --chrome-link-active:   var(--dads-orange-800);
+  --chrome-alert:         var(--dads-red-900);    /* 件数の札 */
+  --chrome-live-on:       var(--dads-green-800);
+  --chrome-live-off:      var(--dads-orange-800);
+  --chrome-radius:        8px;
+  --chrome-tap-min:       44px;
+  --chrome-control-h:     48px;
+  --chrome-fs-body:       1rem;
+  --chrome-fs-small:      0.875rem;
+
   /* タップ領域：44×44px 以上を確保する（基本設計書 3-5） */
   --tap-min:          44px;
   /* ボタンと入力欄の高さ。DADS のボタン M・インプットテキスト M の 48px */

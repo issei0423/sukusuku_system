@@ -4,6 +4,67 @@
  * 部品の形は、デジタル庁デザインシステム（DADS）の同じ役割のコンポーネントに合わせる（tokens.css の冒頭を参照）
  */
 
+/*
+ * ============ 外枠（職員のヘッダと左メニュー、保護者のヘッダ・PC の左の欄・ドロワー、緊急連絡の帯） ============
+ * 外枠は本文の見た目と切り離し、tokens.css の --chrome-* と、ここで明示した字の大きさ・行間・字間・太さ・角・枠だけで描く。
+ * 本文の部品（button・a・body の字の調子）の決まりを変えても、外枠の画素が変わらないようにするため。
+ * :where() で包んで、詳細度を tokens.css の button・a の決まりと同じにする（後ろに書いたこちらが勝ち、
+ * 外枠の中の個別の決まり（.notify-btn・.drawer a など）は今までどおりこちらに勝つ）。
+ * 個別の決まりより前に置く（同じ詳細度の :active などで、個別の決まりの色を上書きしないため）。
+ * 字間は body の 0.02em を body の字の大きさ（1rem）で計算した長さが受け継がれていたので、.02rem で書く
+ * （保護者の PC の幅では外枠の字が 18px になるが、字間は 16px の 0.02 倍のままだった）
+ */
+:where(.app-header, .sidenav, .guardian-header, .guardian-sidebar, .drawer, .guardian-footer) {
+  font-size: var(--chrome-fs-body); line-height: 1.7; letter-spacing: .02rem; color: var(--chrome-text);
+}
+:where(.app-header, .guardian-header, .guardian-sidebar, .drawer) button {
+  min-height: var(--chrome-control-h);
+  min-width: var(--chrome-tap-min);
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid var(--chrome-border-strong);
+  border-radius: var(--chrome-radius);
+  background: var(--chrome-surface);
+  color: var(--chrome-text);
+  font: inherit;
+  font-size: var(--chrome-fs-body);
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: .02em;
+  text-align: center;
+  text-decoration: none;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+}
+@media (hover: hover) {
+  :where(.app-header, .guardian-header, .guardian-sidebar, .drawer) button:hover:not(:disabled) {
+    background: var(--chrome-surface-sub);
+    border-color: var(--chrome-text);
+    text-decoration: underline;
+  }
+}
+:where(.app-header, .guardian-header, .guardian-sidebar, .drawer) button:active:not(:disabled) { background: var(--chrome-surface-head); }
+:where(.app-header, .guardian-header, .guardian-sidebar, .drawer) button:disabled {
+  background: var(--chrome-surface);
+  border-color: var(--chrome-disabled);
+  color: var(--chrome-disabled);
+  cursor: not-allowed;
+}
+/* メニューの下のログアウト（btn-block）。本文の幅いっぱいのボタンの決まりを変えても、こちらは変えない */
+:is(.drawer, .guardian-sidebar) .btn-block { width: 100%; padding-left: var(--sp-2); padding-right: var(--sp-2); letter-spacing: 0; }
+:where(.app-header, .sidenav, .guardian-header, .guardian-sidebar, .drawer, .guardian-footer) a {
+  color: var(--chrome-link);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+@media (hover: hover) {
+  :where(.app-header, .sidenav, .guardian-header, .guardian-sidebar, .drawer, .guardian-footer) a:hover { color: var(--chrome-link-hover); text-decoration-thickness: 3px; }
+}
+:where(.app-header, .sidenav, .guardian-header, .guardian-sidebar, .drawer, .guardian-footer) a:active { color: var(--chrome-link-active); }
+
 /* ============ 職員レイアウト（画面詳細図 1-1） ============ */
 .staff-shell { display: flex; flex-direction: column; height: 100%; }
 
@@ -15,9 +76,9 @@
   align-items: center;
   gap: var(--sp-4);
   padding: 0 var(--sp-4) 0 0;
-  background: var(--c-primary-band);
-  border-bottom: 1px solid var(--c-primary-deep);
-  color: var(--c-primary-ink);
+  background: var(--chrome-band);
+  border-bottom: 1px solid var(--chrome-deep);
+  color: var(--chrome-ink);
 }
 .app-header .header-brand {
   align-self: stretch;
@@ -26,17 +87,17 @@
   align-items: center;
   gap: 0;
   padding: 0 12px;
-  background: var(--c-surface);
-  border-right: 1px solid var(--c-border);
+  background: var(--chrome-surface);
+  border-right: 1px solid var(--chrome-border);
 }
 .app-header .header-mark { width: 48px; height: 40px; object-fit: contain; }
 .app-header .header-wordmark { width: 108px; height: auto; }
 .app-header .spacer { flex: 1; }
 
 /* ログイン中の利用者名を常時表示する。職員は所属クラスも（基本設計書 3-5） */
-.app-header .who { font-size: var(--fs-body); font-weight: 700; white-space: nowrap; }
+.app-header .who { font-size: var(--chrome-fs-body); font-weight: 700; white-space: nowrap; }
 .app-header .who .cls { font-weight: 400; margin-right: var(--sp-2); }
-.app-header button { min-height: var(--tap-min); background: var(--c-surface); }
+.app-header button { min-height: var(--chrome-tap-min); background: var(--chrome-surface); }
 
 /* 通知と未対応件数 */
 /* 件数の札がベルの絵に重ならないよう、右側を空けておく。札と空きは文字の大きさに合わせて rem で決める */
@@ -44,8 +105,8 @@
 .notify-badge {
   position: absolute; top: 2px; right: 2px;
   min-width: 1.375rem; height: 1.375rem; padding: 0 6px;
-  border-radius: 0.6875rem; background: var(--c-alert); color: var(--dads-white);
-  font-size: var(--fs-small); font-weight: 700; line-height: 1.375rem; letter-spacing: 0; text-align: center;
+  border-radius: 0.6875rem; background: var(--chrome-alert); color: var(--dads-white);
+  font-size: var(--chrome-fs-small); font-weight: 700; line-height: 1.375rem; letter-spacing: 0; text-align: center;
 }
 
 /*
@@ -54,11 +115,11 @@
  */
 .live-indicator {
   display: inline-flex; align-items: center; gap: var(--sp-1);
-  font-size: var(--fs-small); white-space: nowrap; color: var(--c-primary-ink);
+  font-size: var(--chrome-fs-small); white-space: nowrap; color: var(--chrome-ink);
 }
-.live-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 10px; border: 1px solid var(--c-primary-ink); }
-.live-indicator.is-open .live-dot { background: var(--c-live-on); }
-.live-indicator.is-fallback .live-dot { background: var(--c-live-off); }
+.live-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 10px; border: 1px solid var(--chrome-ink); }
+.live-indicator.is-open .live-dot { background: var(--chrome-live-on); }
+.live-indicator.is-fallback .live-dot { background: var(--chrome-live-off); }
 /*
  * 【仮置き】縦向きの狭い幅で入りきらないときは、文言の区切り（<wbr>）で2行に折り返す。
  * 「自動で／読み直しています」のように、語の途中では切らない（keep-all）。入りきる幅では1行のまま。
@@ -86,31 +147,31 @@
  */
 .sidenav {
   flex: 0 0 var(--sidenav-w);
-  background: var(--c-surface);
-  border-right: 1px solid var(--c-border);
+  background: var(--chrome-surface);
+  border-right: 1px solid var(--chrome-border);
   padding: var(--sp-2) 0;
   overflow-y: auto;
 }
 .sidenav a {
   display: flex; align-items: center; gap: var(--sp-3);
-  min-height: var(--control-h);
+  min-height: var(--chrome-control-h);
   padding: 0 var(--sp-4);
-  color: var(--c-text); text-decoration: none; font-size: var(--fs-body); line-height: 1.3;
+  color: var(--chrome-text); text-decoration: none; font-size: var(--chrome-fs-body); line-height: 1.3;
   border-left: 4px solid transparent;
 }
 @media (hover: hover) {
-  .sidenav a:hover { background: var(--c-surface-sub); color: var(--c-text); text-decoration: underline; text-decoration-thickness: 1px; }
+  .sidenav a:hover { background: var(--chrome-surface-sub); color: var(--chrome-text); text-decoration: underline; text-decoration-thickness: 1px; }
 }
 .sidenav a.current {
-  background: var(--c-primary-soft);
-  border-left-color: var(--c-primary-deep);
+  background: var(--chrome-current);
+  border-left-color: var(--chrome-deep);
   font-weight: 700;
 }
-.sidenav hr { margin: var(--sp-3) var(--sp-4); border: 0; border-top: 1px solid var(--c-border); }
-.sidenav .group-label { padding: var(--sp-1) var(--sp-4); font-size: var(--fs-small); font-weight: 700; color: var(--c-text-sub); }
+.sidenav hr { margin: var(--sp-3) var(--sp-4); border: 0; border-top: 1px solid var(--chrome-border); }
+.sidenav .group-label { padding: var(--sp-1) var(--sp-4); font-size: var(--chrome-fs-small); font-weight: 700; color: var(--chrome-text-sub); }
 .sidenav-hint { display: none; }
 @media (max-height: 900px) {
-  .sidenav-hint { display: block; position: sticky; bottom: 0; padding: 6px 10px; background: var(--c-surface); border-top: 1px solid var(--c-border); color: var(--c-text-sub); font-size: var(--fs-small); text-align: center; }
+  .sidenav-hint { display: block; position: sticky; bottom: 0; padding: 6px 10px; background: var(--chrome-surface); border-top: 1px solid var(--chrome-border); color: var(--chrome-text-sub); font-size: var(--chrome-fs-small); text-align: center; }
 }
 
 .main { flex: 1; min-width: 0; overflow-y: auto; padding: var(--main-pad); background: var(--c-bg); }
@@ -191,15 +252,15 @@
 }
 .guardian-header {
   min-height: 64px; flex: 0 0 64px; display: flex; align-items: center; gap: var(--sp-2);
-  padding: 0 var(--sp-3); background: var(--c-primary-band); border-bottom: 1px solid var(--c-primary-deep);
+  padding: 0 var(--sp-3); background: var(--chrome-band); border-bottom: 1px solid var(--chrome-deep);
 }
 .guardian-header .spacer { flex: 1; }
-.guardian-header button { background: var(--c-surface); }
+.guardian-header button { background: var(--chrome-surface); }
 /* DADS のハンバーガーメニューボタン（ラベル付き）と同じく、印の下に「メニュー」と書く */
 .guardian-menu-button {
   display: flex; flex-direction: column; gap: 0;
   min-height: 52px; min-width: 64px; padding: 2px 6px;
-  font-size: var(--fs-small); line-height: 1.2; letter-spacing: 0; white-space: nowrap;
+  font-size: var(--chrome-fs-small); line-height: 1.2; letter-spacing: 0; white-space: nowrap;
 }
 /* 印は Material Symbols の menu（components/icons.tsx）。「メニュー」の字（14px）より大きく、24px で置く */
 .guardian-menu-button .icon { width: 1.5rem; height: 1.5rem; }
@@ -268,7 +329,7 @@
   .guardian-record-link:hover { color: var(--c-text); text-decoration: underline; text-decoration-thickness: 1px; background: var(--c-surface-sub); }
 }
 .guardian-contact-note { padding: 0; color: var(--c-text-sub); font-size: var(--fs-small); line-height: 1.7; }
-.guardian-drawer { background: var(--c-surface); }
+.guardian-drawer { background: var(--chrome-surface); }
 .guardian-room-list { overflow: hidden; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius); }
 .guardian-room-link {
   width: 100%; min-height: 56px; display: flex; justify-content: space-between; gap: var(--sp-3);
@@ -317,6 +378,8 @@
   /* 文字を 16px → 18px に上げる。画面から目までがスマートフォンより遠く、同じ大きさでは小さく見えるため */
   .guardian-shell {
     --fs-body: 1.125rem; --fs-small: 1rem;
+    /* 外枠（ヘッダ・左の欄）の字も同じに上げる（外枠の字は --chrome-fs-* で決める） */
+    --chrome-fs-body: 1.125rem; --chrome-fs-small: 1rem;
     font-size: var(--fs-body);
     max-width: none; height: auto; min-height: 100%;
     border: 0; background: var(--c-bg);
@@ -325,9 +388,9 @@
   .guardian-menu-button, .guardian-shell .drawer, .guardian-shell .drawer-backdrop { display: none; }
   .guardian-header-phone {
     display: flex; align-items: center; gap: var(--sp-2); margin-right: var(--sp-3);
-    font-size: var(--fs-small); font-weight: 700;
+    font-size: var(--chrome-fs-small); font-weight: 700;
   }
-  .guardian-header-phone a { display: inline-flex; align-items: center; min-height: var(--tap-min); font-size: 1.25rem; }
+  .guardian-header-phone a { display: inline-flex; align-items: center; min-height: var(--chrome-tap-min); font-size: 1.25rem; }
   /* 下端の案内はヘッダへ移したので出さない（.guardian-footer の定義より後ろでも効くよう、列の中に限って書く） */
   .guardian-shell .guardian-footer { display: none; }
 
@@ -341,16 +404,16 @@
   }
   .guardian-sidebar {
     display: flex; flex-direction: column; position: sticky; top: calc(64px + var(--sp-5)); align-self: start;
-    padding: var(--sp-4); background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius);
+    padding: var(--sp-4); background: var(--chrome-surface); border: 1px solid var(--chrome-border); border-radius: var(--chrome-radius);
   }
-  .guardian-sidebar .who { font-weight: 700; padding-bottom: var(--sp-3); border-bottom: 1px solid var(--c-border); margin-bottom: var(--sp-2); }
+  .guardian-sidebar .who { font-weight: 700; padding-bottom: var(--sp-3); border-bottom: 1px solid var(--chrome-border); margin-bottom: var(--sp-2); }
   .guardian-sidebar a {
-    display: flex; align-items: center; gap: var(--sp-2); min-height: var(--control-h);
-    padding: 0 var(--sp-3); color: var(--c-text); text-decoration: none;
-    border-bottom: 1px solid var(--c-border-weak);
+    display: flex; align-items: center; gap: var(--sp-2); min-height: var(--chrome-control-h);
+    padding: 0 var(--sp-3); color: var(--chrome-text); text-decoration: none;
+    border-bottom: 1px solid var(--chrome-border-weak);
   }
   /* いまの画面を、色だけでなく太さと左の線でも示す */
-  .guardian-sidebar a[aria-current="page"] { font-weight: 700; box-shadow: inset 4px 0 0 var(--c-primary-deep); background: var(--c-surface-sub); }
+  .guardian-sidebar a[aria-current="page"] { font-weight: 700; box-shadow: inset 4px 0 0 var(--chrome-deep); background: var(--chrome-surface-sub); }
   .guardian-sidebar .spacer { height: var(--sp-5); }
   /* ダイアログを開く項目も、となりのリンクと同じ左の余白にそろえる */
   .guardian-body .guardian-sidebar button.drawer-item { padding: 0 var(--sp-3); }
@@ -361,36 +424,36 @@
   .guardian-message-compose { bottom: 0; }
 }
 @media (min-width: 1024px) and (hover: hover) {
-  .guardian-sidebar a:hover { background: var(--c-surface-sub); color: var(--c-text); text-decoration: underline; text-decoration-thickness: 1px; }
+  .guardian-sidebar a:hover { background: var(--chrome-surface-sub); color: var(--chrome-text); text-decoration: underline; text-decoration-thickness: 1px; }
 }
 
 .drawer-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .5); z-index: 40; }
 /* DADS のドロワー。幅 288px */
 .drawer {
   position: fixed; top: 0; left: 0; bottom: 0; width: min(288px, 85vw); z-index: 41;
-  background: var(--c-surface); border-right: 1px solid var(--c-border);
+  background: var(--chrome-surface); border-right: 1px solid var(--chrome-border);
   padding: var(--sp-4); display: flex; flex-direction: column; gap: 0;
 }
-.drawer .who { font-weight: 700; padding-bottom: var(--sp-3); border-bottom: 1px solid var(--c-border); margin-bottom: var(--sp-2); }
-.drawer-head { display: flex; align-items: flex-start; gap: var(--sp-2); border-bottom: 1px solid var(--c-border); margin-bottom: var(--sp-2); padding-bottom: var(--sp-2); }
+.drawer .who { font-weight: 700; padding-bottom: var(--sp-3); border-bottom: 1px solid var(--chrome-border); margin-bottom: var(--sp-2); }
+.drawer-head { display: flex; align-items: flex-start; gap: var(--sp-2); border-bottom: 1px solid var(--chrome-border); margin-bottom: var(--sp-2); padding-bottom: var(--sp-2); }
 .drawer-head .who { flex: 1; min-width: 0; margin: 0; padding-top: 10px; border: 0; }
 .drawer-close { flex: none; padding: 0 var(--sp-3); white-space: nowrap; }
 .drawer a {
-  display: flex; align-items: center; gap: var(--sp-2); min-height: var(--control-h);
-  padding: 0 var(--sp-2); color: var(--c-text); text-decoration: none;
-  border-bottom: 1px solid var(--c-border-weak);
+  display: flex; align-items: center; gap: var(--sp-2); min-height: var(--chrome-control-h);
+  padding: 0 var(--sp-2); color: var(--chrome-text); text-decoration: none;
+  border-bottom: 1px solid var(--chrome-border-weak);
 }
 @media (hover: hover) {
-  .drawer a:hover { background: var(--c-surface-sub); color: var(--c-text); text-decoration: underline; text-decoration-thickness: 1px; }
+  .drawer a:hover { background: var(--chrome-surface-sub); color: var(--chrome-text); text-decoration: underline; text-decoration-thickness: 1px; }
 }
 /* メニューの中でダイアログを開く項目（保護者のメニューの「AI の下書きの利用」）。ボタンでも、となりのリンクと同じ行の見た目にそろえる */
 .drawer button.drawer-item, .guardian-sidebar button.drawer-item {
   justify-content: flex-start; width: 100%; padding: 0 var(--sp-2); background: none;
-  border: 0; border-bottom: 1px solid var(--c-border-weak); border-radius: 0;
+  border: 0; border-bottom: 1px solid var(--chrome-border-weak); border-radius: 0;
   font-weight: inherit; letter-spacing: inherit; text-align: left;
 }
 @media (hover: hover) {
-  .drawer button.drawer-item:hover:not(:disabled), .guardian-sidebar button.drawer-item:hover:not(:disabled) { background: var(--c-surface-sub); border-color: var(--c-border-weak); text-decoration-thickness: 1px; }
+  .drawer button.drawer-item:hover:not(:disabled), .guardian-sidebar button.drawer-item:hover:not(:disabled) { background: var(--chrome-surface-sub); border-color: var(--chrome-border-weak); text-decoration-thickness: 1px; }
 }
 /* 移る先の並びと、ログアウトのあいだを空ける。並びの続きに見えないようにする */
 .drawer .spacer { flex: none; height: var(--sp-5); }
@@ -639,10 +702,10 @@ summary { min-height: var(--tap-min); padding: 10px 0; cursor: pointer; }
 .guardian-footer {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0 var(--sp-2);
   min-height: 52px; padding: var(--sp-1) var(--sp-2);
-  border-top: 1px solid var(--c-border); background: var(--c-surface-sub);
-  font-size: var(--fs-small); letter-spacing: 0; color: var(--c-text);
+  border-top: 1px solid var(--chrome-border); background: var(--chrome-surface-sub);
+  font-size: var(--chrome-fs-small); letter-spacing: 0; color: var(--chrome-text);
 }
 .guardian-footer a {
-  display: inline-flex; align-items: center; min-height: var(--tap-min); padding: 0 var(--sp-1);
-  font-size: var(--fs-body); font-weight: 700; letter-spacing: 0;
+  display: inline-flex; align-items: center; min-height: var(--chrome-tap-min); padding: 0 var(--sp-1);
+  font-size: var(--chrome-fs-body); font-weight: 700; letter-spacing: 0;
 }
