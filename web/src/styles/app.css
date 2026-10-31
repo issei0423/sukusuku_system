@@ -256,7 +256,7 @@
   border-right: 1px solid var(--c-border-weak);
 }
 .guardian-header {
-  min-height: 64px; flex: 0 0 64px; display: flex; align-items: center; gap: var(--sp-2);
+  min-height: var(--chrome-guardian-header-h); flex: 0 0 var(--chrome-guardian-header-h); display: flex; align-items: center; gap: var(--sp-2);
   padding: 0 var(--sp-3); background: var(--chrome-band); border-bottom: 1px solid var(--chrome-deep);
 }
 .guardian-header .spacer { flex: 1; }
@@ -431,7 +431,7 @@
     width: 100%; max-width: 1200px; margin: 0 auto; padding: var(--sp-6) var(--sp-5);
   }
   .guardian-sidebar {
-    display: flex; flex-direction: column; position: sticky; top: calc(64px + var(--sp-5)); align-self: start;
+    display: flex; flex-direction: column; position: sticky; top: calc(var(--chrome-guardian-header-h) + var(--sp-5)); align-self: start;
     padding: var(--sp-4); background: var(--chrome-surface); border: 1px solid var(--chrome-border); border-radius: var(--chrome-radius);
   }
   .guardian-sidebar .who { font-weight: 700; padding-bottom: var(--sp-3); border-bottom: 1px solid var(--chrome-border); margin-bottom: var(--sp-2); }

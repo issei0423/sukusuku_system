@@ -16,7 +16,7 @@ import { api, childName } from '../../api/client';
 import { Loading, ErrorBox, Empty, Tag } from '../../components/ui';
 import { DIARY_RECORD_TYPE, DIARY_STATUS, DIARY_STATUS_CLASS, BODY_POSITION } from '../../api/codes';
 import { formatYMD, formatAge, formatHM, today } from '../../api/util';
-import { BackIcon } from '../../components/icons';
+import { BackIcon, ForwardIcon } from '../../components/icons';
 
 type Entry =
   | { kind: 'diary'; date: string; time: string | null; label: string; status: string; statusClass: string; to: string; detail: string }
@@ -95,7 +95,7 @@ export default function ChildTimelineScreen() {
                   </td>
                   <td>{e.detail}</td>
                   <td className="nowrap">
-                    {e.kind === 'diary' && <Link className="btn btn-sm" to={e.to}>開く</Link>}
+                    {e.kind === 'diary' && <Link className="btn btn-sm btn-quiet" to={e.to}>開く<ForwardIcon /></Link>}
                   </td>
                 </tr>
               ))}

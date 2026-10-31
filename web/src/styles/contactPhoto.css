@@ -6,7 +6,7 @@
  */
 .photo-send { display: grid; gap: var(--sp-4); }
 .photo-send-step { display: grid; gap: var(--sp-2); }
-.photo-send-step h3 { margin: 0; font-size: 1rem; }
+.photo-send-step h3 { margin: 0; }
 .photo-send-file input[type="file"] { min-height: 44px; }
 .photo-send-preview { max-width: 100%; max-height: 240px; object-fit: contain; border: 1px solid var(--c-border); border-radius: var(--radius); }
 .photo-send-subjects { margin: 0; font-weight: 700; }

@@ -112,7 +112,7 @@ export default function GuardianHome() {
               <span>チャットを開く</span><ForwardIcon />
             </Link>
             {/* 園だより・献立表など、あとから見返すもの */}
-            <Link className="guardian-panel-link guardian-handout-link" to="/guardian/handouts">
+            <Link className="guardian-panel-link" to="/guardian/handouts">
               <span>園からの配布物を見る</span><ForwardIcon />
             </Link>
           </section>

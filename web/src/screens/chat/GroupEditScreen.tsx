@@ -99,7 +99,7 @@ export default function GroupEditScreen() {
                   <td>{g.room_name}</td>
                   <td><MemberNames roomId={g.chat_room_id} tick={tick} /></td>
                   <td className="nowrap">
-                    <button className="btn-sm" onClick={() => openEdit(g.chat_room_id)}>メンバーを編成</button>
+                    <button className="btn-sm btn-tonal" onClick={() => openEdit(g.chat_room_id)}>メンバーを編成</button>
                   </td>
                 </tr>
               ))}
