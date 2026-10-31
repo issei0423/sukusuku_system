@@ -114,13 +114,28 @@ func (a *app) enrich(d *Diary) {
 	}
 }
 
-// visibleDiaryCondition は参照範囲の条件を組み立てる。
+// visibleDiaryCondition は参照範囲（読める範囲）の条件を組み立てる。
 //
 // 個人日誌・ヒヤリハットは対象園児で、クラス日誌・週案は対象クラスで判定する。
 // 承認済みであっても参照範囲は広がらない。保護者はこの経路では読めない
 // （基本設計書「日誌システム（園内の記録）」(4-6)、詳細設計書「日誌」(4-13 (10))）。
-// 共有された個人日誌を保護者が読むのは、別の経路（api_diary_share.go）で、保護者に見せる項目だけを返す
+// 共有された個人日誌を保護者が読むのは、別の経路（api_diary_share.go）で、保護者に見せる項目だけを返す。
+//
+// 担当クラスの無い一般（フリー）は、全クラスの日誌を閲覧のみで読める（基本設計書「権限と利用可能機能」(6-1) ※1、
+// 図/画面詳細図「職員（タブレット／PC）」(1-1) の注記）。読める園児・クラスは canReadChild・canReadClass と同じ範囲
+// （在籍中で取り消していない園児、今年度のクラス）。書く操作は writableDiaryCondition（フリーは書けない）で止める
 func (a *app) visibleDiaryCondition(u *SessionUser) (string, []any) {
+	if u.isFreeStaff() {
+		return `((child_id IS NOT NULL AND child_id IN (SELECT child_id FROM m_child WHERE is_deleted = 0 AND enrollment_status = '1'))
+		         OR (child_id IS NULL AND class_id IN (SELECT class_id FROM m_class WHERE fiscal_year = ?)))`, []any{fiscalYear}
+	}
+	return a.writableDiaryCondition(u)
+}
+
+// writableDiaryCondition は、日誌を書ける範囲（書き換え・申請の取り下げ・編集ロックの取得）の条件を組み立てる。
+// 管理者は全部、一般（保育士）は自クラスの園児の日誌と自クラスのクラス日誌・週案。
+// 担当クラスの無い一般（フリー）は書けない（基本設計書「権限と利用可能機能」(6-1) ※1「記録の作成・編集・確認はできない」）
+func (a *app) writableDiaryCondition(u *SessionUser) (string, []any) {
 	switch u.Role {
 	case "1":
 		return "1 = 1", nil
@@ -138,6 +153,10 @@ func (a *app) visibleDiaryCondition(u *SessionUser) (string, []any) {
 // msgDiaryForbidden は、その日誌を読めないときの文言（既存）。保護者が日誌の経路を呼んだときも同じ文言にする
 // （詳細設計書「日誌」(4-13)「保護者が呼んだら 403」）。モック（web/src/api/mock.ts）と同じ
 const msgDiaryForbidden = "この日誌を参照する権限がありません"
+
+// msgDiaryWriteForbidden は、その日誌を書けないときの文言（既存。書き換え・編集ロックの取得で使っていたもの）。
+// 読めても書けない人（フリーの職員）の申請の取り下げにも使う。モック（web/src/api/mock.ts）と同じ
+const msgDiaryWriteForbidden = "この日誌を編集する権限がありません"
 
 // requireDiaryStaff は、日誌の経路を職員だけに通す。保護者には 403 を返す（詳細設計書「日誌」(4-13)）。
 // 共有日誌閲覧画面を外したため、保護者が日誌を読む経路は無い
@@ -157,6 +176,18 @@ func (a *app) requireDiaryStaff(w http.ResponseWriter, r *http.Request) (*Sessio
 // 無い日誌も「参照できない」とする。あるかどうかを推測させないため
 func (a *app) canSeeDiary(u *SessionUser, diaryID int64) bool {
 	cond, args := a.visibleDiaryCondition(u)
+	return a.diaryMatches(cond, args, diaryID)
+}
+
+// canWriteDiary は、その日誌を書けるか（書き換え・申請の取り下げ・編集ロックの取得）を返す。
+// 読めても書けない人（フリーの職員）がいるため、書く操作は canSeeDiary でなくこちらで判定する
+func (a *app) canWriteDiary(u *SessionUser, diaryID int64) bool {
+	cond, args := a.writableDiaryCondition(u)
+	return a.diaryMatches(cond, args, diaryID)
+}
+
+// diaryMatches は、取り消していないその日誌が、渡した範囲の条件に入るかを返す
+func (a *app) diaryMatches(cond string, args []any, diaryID int64) bool {
 	args = append(args, diaryID)
 	var n int
 	err := a.db.QueryRow(`SELECT COUNT(*) FROM t_diary
@@ -296,7 +327,8 @@ func (a *app) handlePastDiaries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	childID := r.PathValue("childID")
-	if !a.canSeeChild(u, childID) {
+	// 読むだけの経路なので、フリーの職員の閲覧も通す（canReadChild。日誌の参照範囲 visibleDiaryCondition と同じ園児の範囲）
+	if !a.canReadChild(u, childID) {
 		writeForbidden(w, "この園児を参照する権限がありません")
 		return
 	}
