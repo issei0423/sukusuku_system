@@ -499,18 +499,20 @@
 
 /*
  * 押せるもののうち、M3 でボタンではなく「リストの行」（チャンネル・園児の選び・配布物・定型文・月の一覧・保護者のチャットの部屋）、
- * 「チップ」（連絡帳の選ぶもの・リアクション）、「セグメント」（身長・体重の切り替え）、「数の盤」（体温）、
+ * 「チップ」（リアクション）、「セグメント」（身長・体重の切り替え）、「数の盤」（体温）、
  * 「写真の格子」にあたるものは、字をアウトラインボタンの primary にせず on-surface のままにする。
+ * 連絡帳の選ぶもの（.contact-pick[aria-pressed]）は screens.css のチップの決まりで描く。aria-pressed の無い .contact-pick（排せつの記録・
+ * ＋体温・定型文など、押すと記録や操作が起きるもの）は、ふだんのボタンのまま（w4 の m2）
  * 詳細度は button と同じ（:where）にし、選んだときの決まり（.btn-primary・[aria-pressed="true"] など）がこれに勝つようにする
  */
 button:where(.channel, .picker button, .guardian-room-link, .guardian-record-link, .handout-row, .phrase-list button,
-  .contact-month-days button, .contact-pick, .measure-toggle, .reaction, .temperature-grid button, .nap-temp-grid button,
+  .contact-month-days button, .measure-toggle, .reaction, .temperature-grid button, .nap-temp-grid button,
   .subject-cell, .contact-photo-button) { color: var(--c-text); }
 /*
- * そのうちリストの行・チップ・数の盤は、ボタンの全丸にせず M3 の small（8px）の角にする（チップは M3 の FilterChip と同じ）。
+ * そのうちリストの行・数の盤は、ボタンの全丸にせず M3 の small（8px）の角にする。
  * 幅いっぱいの行や格子に全丸の押すものを並べると端が膨らんで見え、数の盤では角の外を axe が「重なり」と見て字の地を決めきれなかった
  */
-button:where(.phrase-list button, .contact-month-days button, .handout-row, .contact-pick, .temperature-grid button, .nap-temp-grid button) {
+button:where(.phrase-list button, .contact-month-days button, .handout-row, .temperature-grid button, .nap-temp-grid button) {
   border-radius: var(--radius);
 }
 

@@ -15,7 +15,7 @@ M3 の色を作る道具（material-color-utilities）は、作業場所の外�
 | 色の値（`--dads-*`。外枠とフォーカスの印にだけ使う）、影の値（`--elevation-2`・`--elevation-3`） | `src/styles/tokens.css` | `@digital-go-jp/design-tokens` v2.0.1 の `dist/tokens.css`（<https://github.com/digital-go-jp/design-tokens>） | MIT License（下の 1） |
 | フォーカスの印の太さと色の組み合わせ（セレクトボックスの下向きの印も写していたが、2026-10-31 に下の Material Symbols の arrow_drop_down に替えた） | `src/styles/tokens.css` | DADS の HTML 実装例 `design-system-example-components-html`（<https://github.com/digital-go-jp/design-system-example-components-html>、2026-10-17 に `main` の `af8b665` を参照） | MIT License（下の 2） |
 | アイコンの形（SVG の `path`。52 個。Outlined・太さ 400・opsz 24・塗りなし） | `src/components/icons.tsx` | Google の Material Symbols。公式リポジトリ `google/material-design-icons`（<https://github.com/google/material-design-icons>、2026-10-31 に `master` の `10ecc14` を参照）の `symbols/web/<名前>/materialsymbolsoutlined/<名前>_24px.svg`。`path` は変えずに写した（枠・色の指定は `icons.tsx` で付けた） | Apache License 2.0（下の 3） |
-| セレクトボックスの下向きの印（arrow_drop_down）とチェックボックスの印（check）の SVG の `path` | `src/styles/tokens.css`（data: の画像） | 上の行と同じ Material Symbols の公式リポジトリ・同じ版の `arrow_drop_down_24px.svg`・`check_24px.svg`。`path` は変えずに写した（色は tokens.css で付けた） | Apache License 2.0（下の 3） |
+| セレクトボックスの下向きの印（arrow_drop_down）、チェックボックスと選んだチップの印（check）、午睡の行の警告の印（warning）の SVG の `path` | `src/styles/tokens.css`・`src/styles/screens.css`（data: の画像） | 上の行と同じ Material Symbols の公式リポジトリ・同じ版の `arrow_drop_down_24px.svg`・`check_24px.svg`・`warning_24px.svg`。`path` は変えずに写した（色は tokens.css で付けた） | Apache License 2.0（下の 3） |
 
 次のものは写していない。参照しただけである。
 
