@@ -50,7 +50,8 @@ func sleepLogFields(sleptAt string, wokeAt *string) []field {
 	return []field{{"slept_at", sleptAt}, {"woke_at", wokeAt}}
 }
 
-// POST /api/nap/sleeps/{id}/correct。要求 { slept_at?, woke_at?, updated_at }。slept_at < woke_at ≦ サーバの今、両方とも実施の日の中
+// POST /api/nap/sleeps/{id}/correct。要求 { slept_at?, woke_at?, updated_at }。slept_at < woke_at ≦ サーバの今、両方とも実施の日の中。
+// 「サーバの今」と「実施の日の中」は、元の値から変えた時刻にだけ当てる（同じ秒の「おきた」は今より1秒先のことがある。handleWake）
 func (a *app) handleCorrectSleep(w http.ResponseWriter, r *http.Request) {
 	u, ok := a.requireStaff(w, r)
 	if !ok {
@@ -79,7 +80,13 @@ func (a *app) handleCorrectSleep(w http.ResponseWriter, r *http.Request) {
 	if in.WokeAt != nil {
 		wokeAt = in.WokeAt
 	}
-	if !inDayUntilNow(sleptAt, sessionDate) || (wokeAt != nil && !inDayUntilNow(*wokeAt, sessionDate)) {
+	// 【仮置き】「その日の0時からいままで」を検査するのは、元の値から変えた時刻だけ。元の値と同じ時刻はそのまま通す（web/仮置き値.md）。
+	// 「ねた」と「おきた」が同じ秒に押されると、おきたは ねた＋1秒（handleWake）で、まだ来ていない時刻になる。
+	// 変えていない時刻まで検査すると、その直後に同じ組を直せない（受け入れテスト 04-017）。
+	// 順（ねた < おきた）は、変えたかどうかに関わらず下で確かめる。モックは web/src/api/mock.ts の correctSleep
+	sleptChanged := sleptAt != sleep.SleptAt
+	wokeChanged := wokeAt != nil && (sleep.WokeAt == nil || *wokeAt != *sleep.WokeAt)
+	if (sleptChanged && !inDayUntilNow(sleptAt, sessionDate)) || (wokeChanged && !inDayUntilNow(*wokeAt, sessionDate)) {
 		writeErr(w, http.StatusBadRequest, msgEventTimeRange)
 		return
 	}

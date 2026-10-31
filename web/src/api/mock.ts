@@ -5939,7 +5939,12 @@ const contactEventsApi = {
     return ok(readersOf(childIds, e.contact_date, e.created_at));
   },
 
-  /** ねた・おきたを直す（POST /api/nap/sleeps/{id}/correct）。実施の後も直せる。slept_at < woke_at ≦ 今、実施の日の中 */
+  /**
+   * ねた・おきたを直す（POST /api/nap/sleeps/{id}/correct）。実施の後も直せる。slept_at < woke_at ≦ 今、実施の日の中。
+   * 【仮置き】「今」と「実施の日の中」は、元の値から変えた時刻にだけ当てる。元の値と同じ時刻はそのまま通す（web/仮置き値.md）。
+   * 「ねた」と「おきた」が同じ秒に押されると、おきたは ねた＋1秒（wake）で今より先になり、変えていない時刻まで検査すると
+   * 直後に直せない（受け入れテスト 04-017。server/api_nap_sleep_fix.go の handleCorrectSleep と同じ）。順（ねた < おきた）はいつも確かめる
+   */
   async correctSleep(user: SessionUser, sleepId: number, input: NapSleepCorrection): Promise<NapSleep> {
     if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
     const target = sleepTarget(user, sleepId);
@@ -5948,7 +5953,10 @@ const contactEventsApi = {
     if (input.slept_at === undefined && input.woke_at === undefined) return fail(MSG.badChoice);
     const sleptAt = input.slept_at ?? sleep.slept_at;
     const wokeAt = input.woke_at ?? sleep.woke_at;
-    if (!inDayUntilNow(sleptAt, session.session_date) || (wokeAt !== null && !inDayUntilNow(wokeAt, session.session_date))) {
+    const sleptChanged = sleptAt !== sleep.slept_at;
+    const wokeChanged = wokeAt !== null && wokeAt !== sleep.woke_at;
+    if ((sleptChanged && !inDayUntilNow(sleptAt, session.session_date))
+      || (wokeChanged && !inDayUntilNow(wokeAt, session.session_date))) {
       return fail(MSG.eventTimeRange);
     }
     if (wokeAt !== null && wokeAt <= sleptAt) return fail(MSG.wakeBeforeSleep);

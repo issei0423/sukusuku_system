@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 /*
@@ -432,5 +433,56 @@ func TestNapSleepCorrectCancel(t *testing.T) {
 	a.db.QueryRow(`SELECT COUNT(*) FROM t_operation_log WHERE function_type = '3' AND target_table = 't_nap_sleep' AND operation_type IN ('2','4')`).Scan(&n)
 	if n != 2 {
 		t.Errorf("ねた・おきたの訂正・取り消しの操作ログ = %d, want 2", n)
+	}
+}
+
+/*
+「ねた」と「おきた」が同じ秒に押されると、おきたは ねた＋1秒になり（handleWake。詳細設計書「午睡」(4-6 (3))）、まだ来ていない時刻になる。
+その直後に同じ組を直しても断らない。直すときに「その日の0時からいままで」を検査するのは要求で変えた時刻だけで、
+元の値と同じ時刻はそのまま通す（受け入れテスト 04-017 で見つかった）。変えた時刻が先なら、これまでどおり断る。
+モックは web/tests/contactEvents.test.ts の同じ観点の確かめ
+*/
+func TestNapSleepCorrectRightAfterSameSecondWake(t *testing.T) {
+	a, h := newTestApp(t)
+	teacher := loginAs(a, accTeacher, "staff")
+	s := startOwnNap(t, h, teacher)
+	var slept napSleepOut
+	decode(t, call(t, h, teacher, "POST", "/api/nap/session/"+itoa(s.NapSessionID)+"/sleeps", `{"child_id":"C001"}`), &slept)
+	// Go のテストの時計は止められない。「ねた」を2秒先へずらし、「おきた」が「ねた」と同じ秒（より前）に押された形を作る
+	const layout = "2006-01-02T15:04:05"
+	ahead := nowTime().Add(2 * time.Second)
+	if ahead.Add(2*time.Second).Format("2006-01-02") != today() {
+		t.Skip("日付の変わり目に近い（ねた・おきたが翌日になる）")
+	}
+	mustExec(t, a, `UPDATE t_nap_sleep SET slept_at = ? WHERE nap_sleep_id = ?`, ahead.Format(layout), slept.ID)
+	var woke napSleepOut
+	decode(t, call(t, h, teacher, "POST", "/api/nap/sleeps/"+itoa(slept.ID)+"/wake", ""), &woke)
+	if want := ahead.Add(time.Second).Format(layout); woke.WokeAt == nil || *woke.WokeAt != want {
+		t.Fatalf("同じ秒のおきた = %v、ねた＋1秒 %s のはず", woke.WokeAt, want)
+	}
+	if *woke.WokeAt <= now() {
+		t.Fatalf("おきた %s がもう過ぎている（テストが遅い）", *woke.WokeAt)
+	}
+	path := "/api/nap/sleeps/" + itoa(slept.ID) + "/correct"
+	start := today() + "T00:00:00"
+
+	// すぐ「ねた」を直す。おきたは送らない（画面は変えた時刻だけを送る。FixDialog.tsx）
+	var fixed napSleepOut
+	decode(t, call(t, h, teacher, "POST", path, `{"slept_at":"`+start+`","updated_at":"`+woke.UpdatedAt+`"}`), &fixed)
+	if fixed.SleptAt != start || fixed.WokeAt == nil || *fixed.WokeAt != *woke.WokeAt || fixed.CorrectedAt == nil {
+		t.Fatalf("同じ秒のおきたのあとの訂正: %+v", fixed)
+	}
+	// おきたを元の値のまま添えても通す
+	next := today() + "T00:00:01"
+	decode(t, call(t, h, teacher, "POST", path,
+		`{"slept_at":"`+next+`","woke_at":"`+*woke.WokeAt+`","updated_at":"`+fixed.UpdatedAt+`"}`), &fixed)
+	if fixed.SleptAt != next || fixed.WokeAt == nil || *fixed.WokeAt != *woke.WokeAt {
+		t.Fatalf("元のおきたを添えた訂正: %+v", fixed)
+	}
+	// おきたを、まだ来ていない別の時刻へ変えるのは断る
+	later := ahead.Add(2 * time.Second).Format(layout)
+	b := expectStatus(t, request(t, h, teacher, "POST", path, `{"woke_at":"`+later+`","updated_at":"`+fixed.UpdatedAt+`"}`), http.StatusBadRequest)
+	if !strings.Contains(b, msgEventTimeRange) {
+		t.Errorf("先のおきたへの訂正: %s", b)
 	}
 }
