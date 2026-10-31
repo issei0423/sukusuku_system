@@ -147,6 +147,19 @@
 
 /* 列の多い一覧は、画面全体ではなくカードの中だけを横に送る */
 .card:has(> table.list) { overflow-x: auto; }
+/*
+ * 【仮置き】横に送れる向きにだけ、端に内側の影（rgba(0,0,0,.1)）を出す。送った量（scroll-driven animation）で左右の影を出し分ける。
+ * 地の画像（background-image）で作ると、axe が表の中の字の地の色を決められず、色のコントラストを検査しなくなる（約 990 か所）ので、
+ * 内側の影（box-shadow）で作る。対応していないブラウザでは影が出ないだけ（見直し 2026-10-31 の r2b-01。web/仮置き値.md）
+ */
+@supports (animation-timeline: scroll()) {
+  .card:has(> table.list) { animation: list-edge-shadow linear both; animation-timeline: scroll(self inline); }
+}
+@keyframes list-edge-shadow {
+  0% { box-shadow: inset 12px 0 12px -12px rgba(0, 0, 0, 0), inset -12px 0 12px -12px rgba(0, 0, 0, .1); }
+  2%, 98% { box-shadow: inset 12px 0 12px -12px rgba(0, 0, 0, .1), inset -12px 0 12px -12px rgba(0, 0, 0, .1); }
+  100% { box-shadow: inset 12px 0 12px -12px rgba(0, 0, 0, .1), inset -12px 0 12px -12px rgba(0, 0, 0, 0); }
+}
 
 /* 12カラムグリッド（基本設計書 3-5） */
 .grid12 { display: grid; grid-template-columns: repeat(var(--grid-cols), 1fr); gap: var(--sp-4); }
@@ -470,7 +483,8 @@ table.list tbody tr:focus-within td { background: var(--c-primary-faint); }
   table.list tbody tr:hover td { background: var(--c-primary-faint); }
 }
 table.list tr > :first-child { padding-left: var(--sp-3); }
-table.list tbody tr:last-child td { border-bottom: 0; }
+/* 最後の行は下の線を引かない。行の見出し（th scope="row"）にも効かせる（前は園児名にだけ線が残っていた） */
+table.list tbody tr:last-child > * { border-bottom: 0; }
 table.list td.num { text-align: right; font-variant-numeric: tabular-nums; }
 /*
  * 行の中に並べたボタン（園児一覧の「記録」「編集」、職員アカウントの「変更」「一時パスワード再発行」「停止」など）の間を 8px 空ける。

@@ -145,8 +145,8 @@ func TestEnsureInternalDiaryUpgradesOldDB(t *testing.T) {
 		}
 	})
 
-	t.Run("既存のヒヤリハットの発生日時は記録日の 0:00、場所は「（第3.0版より前の記録）」", func(t *testing.T) {
-		if r := read(5); r.occured.String != "2026-09-01T00:00:00" || r.place.String != "（第3.0版より前の記録）" {
+	t.Run("既存のヒヤリハットの発生日時は記録日の 0:00、場所は「（以前の形式の記録）」", func(t *testing.T) {
+		if r := read(5); r.occured.String != "2026-09-01T00:00:00" || r.place.String != "（以前の形式の記録）" {
 			t.Errorf("日誌 5: %+v", r)
 		}
 		if r := read(1); r.occured.Valid || r.place.Valid {

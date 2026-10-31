@@ -9,7 +9,7 @@
  * 誤りはダイアログの中に出す（図/画面詳細図「全画面に共通する規定」(0-2) のダイアログの中の誤り）。
  * 直せる人かはサーバが確かめる。画面は直せない人にこのダイアログを開く部品を出さない。
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { api, settingText } from '../../api/client';
 import type { ContactEvent, ContactFacility, MealAmount, NameMatch, NapSleep, Readers } from '../../api/shapes';
 import NameCheckDialog from '../../components/NameCheckDialog';
@@ -27,6 +27,17 @@ export type FixTarget =
   | { kind: 'event'; event: ContactEvent; childName: string }
   | { kind: 'sleep'; sleep: NapSleep; childName: string; date: string }
   | { kind: 'facility'; facility: ContactFacility; childName: string };
+
+/**
+ * 排せつの選択肢の名前を、ボタンの中で語の途中で割らないように描く。ボタンは word-break: keep-all（styles/screens.css の
+ * .contact-picks.is-toilet）で、割れるのは <wbr> の所だけ。「トイレでできた」は「トイレで／できた」で割る
+ * （前は「トイレでで／きた」と割れていた。見直し 2026-10-31 の r2b-03）
+ */
+export function toiletLabel(label: string): ReactNode {
+  const at = label.indexOf('トイレで') + 'トイレで'.length;
+  if (at < 'トイレで'.length || at >= label.length) return label;
+  return <>{label.slice(0, at)}<wbr />{label.slice(at)}</>;
+}
 
 /** 排せつの選択肢（設定。サーバの defaultToiletChoices と同じ既定） */
 export function toiletChoices(): string[] {

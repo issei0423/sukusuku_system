@@ -443,6 +443,9 @@ button.guardian-record-link {
 /* 朝ごはん・きげん・お迎えの選択肢どうしの間は 8px（「タッチの条件」(2-0 (4))、GitHub Issue #215）。1行に2つ並べる */
 .contact-choice-options { flex-wrap: wrap; gap: var(--sp-2); }
 .contact-choice-options .nap-choice { flex: 1 1 calc(50% - var(--sp-2)); min-width: 7em; }
+/* 【仮置き】保護者の「家庭から」の選択肢も、選ぶ前は細字、選んだものだけ太字（午睡の選択肢と同じ。見直し 2026-10-31 の r2a-03。web/仮置き値.md） */
+.contact-choice-options .nap-choice span { font-weight: 400; }
+.contact-choice-options .nap-choice input:checked + span { font-weight: 700; }
 .contact-field { display: grid; gap: var(--sp-1); }
 /* ボタンの並びを2段に重ねた欄（連絡帳（園児）画面の食事の区分と量）は、段の間を 8px にする（「タッチの条件」(2-0 (4))、GitHub Issue #215） */
 .contact-field:has(> .contact-picks + .contact-picks) { gap: var(--sp-2); }
@@ -484,18 +487,35 @@ button.guardian-record-link {
 .contact-class-head { flex-wrap: wrap; gap: var(--sp-3); }
 .contact-inline-field { display: inline-flex; align-items: center; gap: var(--sp-1); }
 .contact-inline-field > span { white-space: nowrap; }
-.contact-inline-field select { min-height: 44px; }
+/* 並べ方の選ぶ欄は中身の幅にする（幅いっぱいに伸びると「写真を送る」が次の段へ落ちた。見直し 2026-10-31 の r2b-12） */
+.contact-inline-field select { min-height: 44px; width: auto; }
 .contact-class-error { margin: var(--sp-2) 0; }
 /*
  * 表を横に送ったとき、フォーカスした部品が左に止めた園児名の列の下に隠れないよう、送る先を列の幅ぶんずらす（GitHub Issue #212）。
  * 列の幅は ContactClassScreen が測って --contact-col-child-w に入れる。フォーカスの枠の幅（6px）を足す
  */
 .contact-table-wrap { overflow-x: auto; scroll-padding-left: calc(var(--contact-col-child-w, 0px) + 6px); }
-.contact-class-table { min-width: 1080px; }
-.contact-class-table th, .contact-class-table td { vertical-align: top; padding: var(--sp-2) var(--sp-3); height: 56px; }
+/*
+ * 【仮置き】右に送れるあいだは右端に内側の影を出し、表を送っているあいだは左に止めた園児名の列の右端に影を出す
+ * （ContactClassScreen が data-more・data-scrolled を付ける。どのブラウザでも出す。地の画像にしないのは .card:has(> table.list) と同じ理由）。
+ * 見直し 2026-10-31 の r2b-01（web/仮置き値.md）
+ */
+.contact-table-wrap[data-more="true"] { box-shadow: inset -12px 0 12px -12px rgba(0, 0, 0, .1); }
+.contact-table-wrap[data-scrolled="true"] .contact-col-child { box-shadow: 6px 0 6px -4px rgba(0, 0, 0, .1); }
+/* 【仮置き】列の幅は、園児・給食を詰め、排せつを広げて、表の幅を増やさない（見直し 2026-10-31 の r2b-01・r2b-03。web/仮置き値.md） */
+.contact-class-table { min-width: 1040px; }
+/*
+ * セルは上寄せ・上下 8px／左右 12px（DADS「縦方向は上寄せ」）。table.list の真ん中寄せに負けないよう、table.list を付けて強くする
+ * （前は詳細度が低く効いていなかった。見直し 2026-10-31 の r2b-02）。ほかの表の縦の寄せは変えない
+ */
+table.list.contact-class-table :is(th, td) { vertical-align: top; padding: var(--sp-2) var(--sp-3); height: 56px; }
 .contact-class-table .contact-col-child {
-  position: sticky; left: 0; z-index: 1; min-width: 160px; background: var(--c-surface); text-align: left;
+  position: sticky; left: 0; z-index: 1; min-width: 7em; background: var(--c-surface); text-align: left;
 }
+/* 見出しの行の「園児」も、ほかの見出しと同じ灰の地にする（前は白だった） */
+.contact-class-table thead .contact-col-child { background: var(--c-surface-head); }
+/* 行の見出しの園児名は、同じ行の選択肢より小さくしない（16px の太字。見直し 2026-10-31 の r2a-08） */
+.contact-class-table tbody .contact-col-child { font-size: var(--fs-body); }
 /*
  * 表の中のリンク（園児名・午睡・ひとこと・写真・園から）は、高さ 44px・幅 44px 以上の押す場所にする
  * （「タッチの条件」(2-0 (4)) の 44×44px、GitHub Issue #215。直す前は高さ 20px、「―」は 14×20px だった）。
@@ -515,6 +535,7 @@ button.guardian-record-link {
 .contact-home-cell { display: grid; gap: var(--sp-1); }
 .contact-home-cell p { margin: 0; }
 .contact-home-cell .contact-home-lines > div { grid-template-columns: 5.5em 1fr; }
+/* 「確認しました」は行ごとにくり返す操作なので塗らない（DADS のプライマリーボタンは1画面に原則1つ。見直し 2026-10-31 の r2c-03） */
 .contact-confirm-button { min-height: 44px; }
 .dashboard-count.is-due { font-weight: 700; color: var(--c-alert); }
 
@@ -532,19 +553,34 @@ button.guardian-record-link {
   background: var(--c-primary); border-color: var(--c-primary-ink); color: var(--c-primary-ink);
   box-shadow: inset 0 0 0 2px var(--c-primary-ink);
 }
+/*
+ * 【仮置き】選ぶもの（食事の量・区分、排せつ、直す窓の選び直し）は、選ぶ前は細字、選んだもの（aria-pressed="true"）だけ太字にする。
+ * 午睡の選択肢・身長と体重の切り替え（GitHub Issue #211）と同じ考え方（見直し 2026-10-31 の r2a-03。web/仮置き値.md）。
+ * 「定型文」「写真」「＋体温」などの操作のボタンは、ほかのボタンと同じ太字のまま
+ */
+.contact-pick[aria-pressed="false"], .contact-picks:is(.is-meal, .is-toilet) .contact-pick:not([aria-pressed="true"]) { font-weight: 400; }
+.contact-pick[aria-pressed="true"] { font-weight: 700; }
+/* 排せつの選択肢は、語の途中で割らない（割れるのは「トイレで／できた」の <wbr> の所だけ。FixDialog.tsx の toiletLabel。r2b-03） */
+.contact-picks.is-toilet .contact-pick { word-break: keep-all; overflow-wrap: anywhere; letter-spacing: 0; }
+/*
+ * 食事の量・排せつのボタンは、左右の余白 4px・字間 0 にして、列を詰めても名前を1行に収める
+ * （給食の列 192px で「食べない」、排せつの列 280px で「トイレでできた」が1行に入る。前は余白 8px）
+ */
+.contact-picks:is(.is-meal, .is-toilet) .contact-pick { padding-inline: var(--sp-1); letter-spacing: 0; }
 .contact-pick.is-tentative { border: 2px dashed var(--c-primary-ink); background: var(--c-surface); box-shadow: none; }
 .contact-pick-note { flex-basis: 100%; font-size: var(--fs-small); }
 .contact-picks.is-meal .contact-pick, .contact-picks.is-toilet .contact-pick { flex: 1 1 calc(50% - var(--sp-2)); }
-.contact-class-table .contact-col-meal { width: 220px; min-width: 220px; }
-.contact-class-table .contact-col-toilet { width: 240px; min-width: 240px; }
+.contact-class-table .contact-col-meal { width: 192px; min-width: 192px; }
+/* ボタン1つに「トイレでできた」が1行で入る幅（セルの左右 12px を引いて、2つ並べて 1つ 124px） */
+.contact-class-table .contact-col-toilet { width: 280px; min-width: 280px; }
 .contact-class-table .contact-col-temp { width: 120px; min-width: 120px; }
 /* 記録のボタンと、その下の「（時刻）を直す」・「＋体温」との間は 8px（「タッチの条件」(2-0 (4))、GitHub Issue #215。直す前は 4px） */
 .contact-last { min-height: 44px; margin-top: var(--sp-2); text-align: left; white-space: normal; }
 .contact-temp-add { margin-top: var(--sp-2); }
+/* 食事の区分と「全員ぜんぶ」の段。枠で囲まず、ただの段にする（箱を重ねない。見直し 2026-10-31） */
 .contact-meal-bar {
   display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3);
-  margin: var(--sp-2) 0 var(--sp-3); padding: var(--sp-2) var(--sp-3);
-  border: 1px solid var(--c-border); border-radius: var(--radius); background: var(--c-surface);
+  margin: var(--sp-2) 0 var(--sp-3);
 }
 .contact-meal-bar > button { min-height: 44px; }
 .contact-meal-tentative { margin: 0; font-weight: 700; flex: 1 1 320px; }

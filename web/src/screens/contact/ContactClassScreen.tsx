@@ -33,7 +33,7 @@ import { focusAfter, focusedNow } from '../../focusAfter';
 import TemperaturePicker from '../../components/TemperaturePicker';
 import { MEAL_AMOUNT_STAFF_TEXT, MEAL_KIND_TEXT, TEXT } from '../../messages';
 import { dayLabel, eventText, homeLines, latestSleepText } from './contactText';
-import FixDialog, { cancelAction, toiletChoices } from './FixDialog';
+import FixDialog, { cancelAction, toiletChoices, toiletLabel } from './FixDialog';
 import type { FixTarget } from './FixDialog';
 import PhotoSendDialog from './PhotoSendDialog';
 import ClassPhotoStrip from './ClassPhotoStrip';
@@ -57,6 +57,15 @@ function mealOf(row: ContactClassRow, slot: MealSlot): ContactEvent | undefined 
   return row.events.filter((e) => e.event_type === '1' && e.meal_kind === slot.kind)[slot.round - 1];
 }
 
+/**
+ * 表を横に送っているか（data-scrolled）と、まだ右に送れるか（data-more）。左に止めた園児名の列の右端と、枠の右端に
+ * 影を出すのに使う（styles/screens.css の .contact-table-wrap）
+ */
+function markScrolled(wrap: HTMLElement) {
+  wrap.dataset.scrolled = wrap.scrollLeft > 1 ? 'true' : 'false';
+  wrap.dataset.more = wrap.scrollLeft + wrap.clientWidth < wrap.scrollWidth - 1 ? 'true' : 'false';
+}
+
 function HomeCell({ row, canConfirm, busy, onConfirm }: {
   row: ContactClassRow; canConfirm: boolean; busy: boolean; onConfirm: () => void;
 }) {
@@ -64,8 +73,9 @@ function HomeCell({ row, canConfirm, busy, onConfirm }: {
   if (!h) return <span className="muted">{HOME_STATE_TEXT.none}</span>;
   return (
     <div className={`contact-home-cell is-${row.home_state}`}>
+      {/* 未確認・更新の札は「申請中」と同じ青にする。差し戻しの色（赤紫）は日誌の差し戻しだけに使う（見直し 2026-10-31。【仮置き】web/仮置き値.md） */}
       <p className="contact-home-state">
-        <span className={`tag ${row.home_state === 'confirmed' ? 'tag-approved' : 'tag-returned'}`}>{HOME_STATE_TEXT[row.home_state]}</span>
+        <span className={`tag ${row.home_state === 'confirmed' ? 'tag-approved' : 'tag-applied'}`}>{HOME_STATE_TEXT[row.home_state]}</span>
         {' '}{h.guardian_relationship || h.guardian_name} {formatHM(h.submitted_at)}
       </p>
       <dl className="contact-home-lines">
@@ -79,7 +89,7 @@ function HomeCell({ row, canConfirm, busy, onConfirm }: {
         // 「確認しました」を押したあとのフォーカスの移し先（tabIndex -1。Tab では止まらない。GitHub Issue #213）
         ? <p className="contact-confirmed" tabIndex={-1} data-confirmed-home={h.contact_home_id}>園が確認しました {formatHM(h.confirmed_at)} {h.confirmed_staff_name}</p>
         : canConfirm && (
-          <button type="button" className="btn-primary contact-confirm-button" onClick={onConfirm} disabled={busy} aria-busy={busy}
+          <button type="button" className="contact-confirm-button" onClick={onConfirm} disabled={busy} aria-busy={busy}
             aria-label={`${row.child.child_name}の家庭からを確認しました`}>
             {busy ? TEXT.sending : '確認しました'}
           </button>
@@ -163,6 +173,35 @@ export default function ContactClassScreen() {
    */
   const childColumn = useStickyInset('.contact-table-wrap', '--contact-col-child-w', 'width');
   const fillAllButton = useRef<HTMLButtonElement>(null);
+  /*
+   * 「園からを送っていない園児を上に」（sort=facility。ダッシュボードの「園からのひとことを送っていない園児 → 開く」で来る形）で
+   * 開いたときは、表を「園から」の列が見えるところまで横に送る。列の順は設計の並びのまま（詳細設計書 (2-2)、画面詳細図 8-1）。
+   * クラス・日付ごとに、描いたあとに1回だけ送り、読み直しのたびには送らない（どのクラス・日付の表かは応答で見る。読み込んでいる間は前の応答のまま）。
+   * 送れない（表が枠に収まっている）ときは何もしない（見直し 2026-10-31 の r2b-01）
+   */
+  const tableWrap = useRef<HTMLDivElement>(null);
+  const facilityShown = useRef<string | null>(null);
+  const shownKey = data ? `${data.class_id}:${data.contact_date}` : null;
+  useLayoutEffect(() => {
+    if (sort !== 'facility') { facilityShown.current = null; return; }
+    const wrap = tableWrap.current;
+    const column = wrap?.querySelector<HTMLElement>('th.contact-col-facility');
+    if (!shownKey || facilityShown.current === shownKey || !wrap || !column) return;
+    facilityShown.current = shownKey;
+    const target = column.offsetLeft + column.offsetWidth - wrap.clientWidth;
+    if (target > 0) wrap.scrollLeft = target;
+    markScrolled(wrap);
+  }, [sort, shownKey]);
+  // 表を描いたとき・枠の幅が変わったときに、影を出すかを決め直す（送ったときは onScroll で決め直す）
+  useLayoutEffect(() => {
+    const wrap = tableWrap.current;
+    if (!wrap) return undefined;
+    markScrolled(wrap);
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(() => markScrolled(wrap));
+    observer.observe(wrap);
+    return () => observer.disconnect();
+  }, [data]);
 
   const go = (next: { class?: number; date?: string; sort?: string }) => {
     const p: Record<string, string> = {};
@@ -355,7 +394,7 @@ export default function ContactClassScreen() {
             </section>
           )}
           {rows.length === 0 ? <Empty text={TEXT.noChildren} /> : (
-            <div className="contact-table-wrap">
+            <div ref={tableWrap} className="contact-table-wrap" onScroll={(e) => markScrolled(e.currentTarget)}>
               <table className="list contact-class-table">
                 <thead>
                   <tr>
@@ -366,7 +405,7 @@ export default function ContactClassScreen() {
                     <th scope="col" className="contact-col-temp">体温</th>
                     <th scope="col">午睡</th>
                     <th scope="col">ひとこと・写真</th>
-                    <th scope="col">園から</th>
+                    <th scope="col" className="contact-col-facility">園から</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -407,7 +446,7 @@ export default function ContactClassScreen() {
                               {shownChoices.map((label) => (
                                 <button key={label} type="button" className="contact-pick" disabled={rowBusy}
                                   aria-label={`${name}の排せつ ${label}`}
-                                  onClick={() => recordOne(row, `toilet-${id}`, { child_id: id, event_type: '2', toilet_label: label })}>{label}</button>
+                                  onClick={() => recordOne(row, `toilet-${id}`, { child_id: id, event_type: '2', toilet_label: label })}>{toiletLabel(label)}</button>
                               ))}
                               {moreChoices.length > 0 && (
                                 <select aria-label={`${name}の排せつ（ほか）`} value="" disabled={rowBusy}
