@@ -79,6 +79,12 @@ const OUT_NEXT_CHECK = '実装対象の外（画面詳細図「モックアッ�
 const OUT_ELAPSED = '実装対象の外（画面詳細図「モックアップでは実装しないもの」(12-1) の「共通」：経過時間は端末の時計から日本時間を求めている（午睡チェックの経過・残り時間を含む））';
 const OUT_SAVED_AT = '実装対象の外（画面詳細図「モックアップでは実装しないもの」(12-1) の 5-2 項目4：保存時刻の表示）';
 const OUT_NOTICE_LATER = '実装対象の外（詳細設計書「午睡チェック画面」(2-4) の (5)：異常時の記録の「保護者への連絡」は次の版。記録したあとから足す口が無い）';
+const OUT_CHECKED_AT = '実装対象の外（図/画面詳細図「午睡チェック画面」(5-1) 項目26 の「チェックした時刻」。詳細設計書「午睡チェック画面」(2-4) の (5) で、チェックした時刻の後追い入力は次の版。04-008・04-I001〜04-I003 と同じ扱い）';
+
+/** 画面にその文字があれば通り、無ければ実装対象の外として備考に残す（04-004 の「次の確認」と同じ形） */
+async function checkOrNote(target: Locator, text: string, what: string, out: string) {
+  if (!(await target.innerText()).includes(text)) outOfScope(`${what}は確かめていない：${out}`);
+}
 
 /** 確かめなかった部分（実装対象の外）を、テストの注記と回の記録に残す */
 function outOfScope(text: string) {
@@ -228,7 +234,8 @@ test.describe('午睡チェック画面：開始と出し分け', () => {
     expect.soft(head, '記録者').toContain('鈴木 浩之');
     expect.soft(head, '開始時刻（サーバの時刻）').toMatch(new RegExp(`開始\\s*${anyHm(hmNear(t0)).source}`));
     expect.soft(head, '経過時間').toContain('経過');
-    expect.soft(head, '次の確認').toContain('次の確認');
+    // 上部の「次の確認」（次に確認が要る園児の時刻と名前）は実装対象の外。画面にあれば通る（04-004 と同じ）
+    if (!/次の確認/.test(head)) outOfScope(`上部の「次の確認」は確かめていない：${OUT_NEXT_CHECK}`);
 
     // 1人1行、ページを分けずに並ぶ
     const n = enrolledCount('さくら組');
@@ -237,13 +244,15 @@ test.describe('午睡チェック画面：開始と出し分け', () => {
     const row = napRow(page, names[0]);
     await expect.soft(row.getByText(names[0], { exact: true }).first()).toBeVisible();
     await expect.soft(row, '平熱').toContainText('平熱');
-    await expect.soft(row, '最後の確認').toContainText('最後の確認');
-    await expect.soft(row, '次の確認').toContainText('次の確認');
+    // 最後に確認した時刻（図/画面詳細図 5-1 項目7。表示名は設計が決めていない。画面では「前回 13:25 仰向け」「前回の記録なし」）
+    await expect.soft(row, '最後の確認（画面では「前回」）').toContainText(/最後の確認|前回/);
+    await checkOrNote(row, '次の確認', '行の「次の確認」', OUT_NEXT_CHECK);
     await expect.soft(row.getByRole('button', { name: /ねた$/ })).toBeVisible();
     for (const g of ['体位', '呼吸', '顔色']) await expect.soft(row.getByRole('group', { name: g })).toBeVisible();
     await expect.soft(row.getByRole('button', { name: /体温/ })).toBeVisible();
-    await expect.soft(row, 'チェックした時刻').toContainText('チェックした時刻');
-    await expect.soft(row.getByRole('button', { name: '記録する', exact: true }), '「記録する」').toBeVisible();
+    await checkOrNote(row, 'チェックした時刻', '行の「チェックした時刻」', OUT_CHECKED_AT);
+    await expect.soft(recordButton(row), '「記録する」').toBeVisible();
+    await expect.soft(recordButton(row), '行のボタンの表示名「記録する」').toHaveText('記録する');
     await expect.soft(row.getByRole('button', { name: /きょうは対象外/ })).toBeVisible();
 
     await expect.soft(startButton(page)).toBeHidden();
@@ -322,7 +331,7 @@ test.describe('午睡チェック画面：開始と出し分け', () => {
     for (const name of ['午睡チェックを開始する', '午睡チェックを終了', '異常を記録する']) {
       await expect.soft(main.getByRole('button', { name }).or(main.getByRole('link', { name })), `「${name}」が出ない`).toHaveCount(0);
     }
-    await expect.soft(main.getByRole('button', { name: /ねた$|おきた$|対象外|^記録する$|この子を記録/ }), '行の記録のボタンが出ない').toHaveCount(0);
+    await expect.soft(main.getByRole('button', { name: /ねた$|おきた$|対象外|^(.+を)?記録する$|この子を記録/ }), '行の記録のボタンが出ない').toHaveCount(0);
     await evidence(f.page, '04-003');
     await f.context.close();
     await s.context.close();
@@ -413,7 +422,10 @@ test.describe('午睡チェック画面：タイマー', () => {
     await login(page, 'admin');
     const t0 = await freshSession(page, 'もも組');
     const plus1 = anyHm([addMinutesHM(t0, 0), addMinutesHM(t0, 1), addMinutesHM(t0, 2)]);
-    expect.soft(await headerText(page), '「次の確認」が開始時刻＋1分').toMatch(new RegExp(`次の確認.*${plus1.source}`));
+    // 「次の確認」の時刻は実装対象の外（04-004 と同じ）。画面にあれば確かめる。時刻を過ぎたときの知らせ（下）は対象の内
+    const head0 = await headerText(page);
+    if (/次の確認/.test(head0)) expect.soft(head0, '「次の確認」が開始時刻＋1分').toMatch(new RegExp(`次の確認.*${plus1.source}`));
+    else outOfScope(`上部の「次の確認」の時刻は確かめていない：${OUT_NEXT_CHECK}`);
     const names = await rowNames(page);
     const before = await napRow(page, names[0]).evaluate((el) => `${el.className}|${getComputedStyle(el).backgroundColor}|${getComputedStyle(el).borderColor}`);
     const sounds0 = await soundCount(page);
@@ -450,13 +462,23 @@ test.describe('午睡チェック画面：5分ごとの確認', () => {
     expect.soft(page.url(), '別の画面へ移らない').toBe(url);
     const row = napRow(page, names[0]);
     await expect.soft(row.getByRole('status'), '行の見えない status に「保存しました」').toHaveText('保存しました');
-    await expect.soft(row, '「最後の確認」が押した時刻').toContainText(new RegExp(`最後の確認.*${anyHm(hmNear(pressed)).source}`));
-    await expect.soft(row, '「次の確認」がその5分後').toContainText(new RegExp(`次の確認.*${anyHm([addMinutesHM(pressed, 4), addMinutesHM(pressed, 5), addMinutesHM(pressed, 6)]).source}`));
+    // 最後に確認した時刻は、画面では「前回 H:MM 体位」（04-001 と同じ）
+    await expect.soft(row, '「最後の確認」（画面では「前回」）が押した時刻').toContainText(new RegExp(`(最後の確認|前回).*${anyHm(hmNear(pressed)).source}`));
     const head = await headerText(page);
-    expect.soft(head, '上部の「次の確認」は開始時刻＋5分').toMatch(new RegExp(`次の確認.*${anyHm([addMinutesHM(t0, 4), addMinutesHM(t0, 5), addMinutesHM(t0, 6)]).source}`));
-    expect.soft(head, '上部の「次の確認」の名前から1人目が外れる').not.toContain(names[0]);
+    // 行と上部の「次の確認」は実装対象の外（04-004 と同じ）。画面にあれば確かめる
+    if (/次の確認/.test(await row.innerText())) {
+      await expect.soft(row, '「次の確認」がその5分後').toContainText(new RegExp(`次の確認.*${anyHm([addMinutesHM(pressed, 4), addMinutesHM(pressed, 5), addMinutesHM(pressed, 6)]).source}`));
+    } else {
+      outOfScope(`行の「次の確認」は確かめていない：${OUT_NEXT_CHECK}`);
+    }
+    if (/次の確認/.test(head)) {
+      expect.soft(head, '上部の「次の確認」は開始時刻＋5分').toMatch(new RegExp(`次の確認.*${anyHm([addMinutesHM(t0, 4), addMinutesHM(t0, 5), addMinutesHM(t0, 6)]).source}`));
+      expect.soft(head, '上部の「次の確認」の名前から1人目が外れる').not.toContain(names[0]);
+    } else {
+      outOfScope(`上部の「次の確認」の時刻と名前は確かめていない：${OUT_NEXT_CHECK}`);
+    }
     expect.soft(head, '記録済みが 1').toMatch(/記録済み\s*1\s*\//);
-    await expect.soft(row.getByRole('button', { name: '記録する', exact: true }), 'ボタンの表示名「記録する」').toBeVisible();
+    await expect.soft(recordButton(row), 'ボタンの表示名「記録する」').toHaveText('記録する');
     const rec = recordsOf(names[0]).at(-1);
     expect(rec, '確認の行').toBeTruthy();
     expect.soft(hmNear(pressed)).toContain(dbHM(rec?.checked_at));
@@ -1278,11 +1300,16 @@ test.describe('異常時記録画面', () => {
     await expect(page.getByRole('main').getByRole('button', { name: '絞り込む' })).toBeVisible();
     const sameRange = page.getByRole('main').getByRole('row').filter({ hasText: '受入テスト 04-034 状況' });
     await expect.soft(sameRange.first(), '検索画面の「同じ期間の異常時の記録」に行が出る').toBeVisible();
-    if (await sameRange.count()) {
-      // 行の中の移る口（リンクかボタン）を押す。無ければ行そのものを押す
-      const go = sameRange.first().getByRole('link').or(sameRange.first().getByRole('button'));
-      if (await go.count()) await go.first().click();
-      else await sameRange.first().click();
+    /*
+     * 異常時記録画面へ移る導線（図/画面詳細図「午睡記録検索画面」(5-3) 項目11「異常時記録画面へ移る導線を置く」）。
+     * 行ごとに置くとは決めていないので、一覧の見出しの「異常時の記録へ」で受ける。行の中に口があれば、それを押す
+     */
+    const listSection = page.getByRole('main').locator('section').filter({ has: page.getByRole('heading', { name: '同じ期間の異常時の記録' }) });
+    const inRow = sameRange.first().getByRole('link').or(sameRange.first().getByRole('button'));
+    const go = (await inRow.count()) ? inRow.first() : listSection.getByRole('link', { name: /異常時の記録/ }).first();
+    await expect.soft(go, '「同じ期間の異常時の記録」から異常時記録画面へ移る口').toBeVisible();
+    if (await go.count()) {
+      await go.click();
       await expect.soft(page.getByRole('heading', { name: '異常時の記録', exact: true }), '異常時記録画面へ移る').toBeVisible({ timeout: 5_000 });
       if (!page.url().includes('/nap/search')) await page.goBack();
     }

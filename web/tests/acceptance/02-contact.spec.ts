@@ -587,7 +587,7 @@ test.describe('午睡（段1・段3）', () => {
     await pick(row, '体位', '仰向け');
     await pick(row, '呼吸', 'あり');
     await pick(row, '顔色', '通常');
-    await row.getByRole('button', { name: 'この子を記録' }).click();
+    await row.getByRole('button', { name: `${TARO}を記録する` }).click();
     await expect(row).toContainText('37.1');
 
     await page.waitForTimeout(3_000);

@@ -264,8 +264,11 @@ export async function choose(row: Locator, group: '体位' | '呼吸' | '顔色'
   await expect(row.getByRole('radio', { name: label, exact: true })).toBeChecked();
 }
 
-/** 行の「記録する」（画面の表示名が設計書と違っても探せるように、両方の名前で探す。名前は 04-007 で確かめる） */
-export const recordButton = (row: Locator) => row.getByRole('button', { name: /^(記録する|この子を記録)$/ });
+/**
+ * 行の「記録する」。表示名は「記録する」、読み上げの名前は「（氏名）を記録する」（図/画面詳細図「午睡チェック画面」(5-1) 項目15。
+ * 表示名は 04-001・04-007 で確かめる）
+ */
+export const recordButton = (row: Locator) => row.getByRole('button', { name: /^(.+を)?記録する$/ });
 
 /** 体温を入れる。一覧（35〜40℃）にあれば一覧から、無ければ「範囲外の値を入力」から */
 export async function enterTemperature(page: Page, row: Locator, child: string, value: string) {
