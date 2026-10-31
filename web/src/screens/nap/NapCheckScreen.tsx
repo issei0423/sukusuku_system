@@ -365,9 +365,14 @@ function NapTimer({ startedAt, intervalMinutes, rows, nowMs, ready }: {
     return () => { observer.disconnect(); main.style.removeProperty('--nap-timer-h'); };
   }, []);
 
+  /*
+   * 帯は2つのまとまりにする：残り時間（状態の文・残り時間・通知音の文）と、開始・経過・チェック間隔。
+   * PC の幅では前と同じく1行に並べる。iPad の幅では帯を低くするため、通知音の文を残り時間の下の1行にし、
+   * 開始・経過・チェック間隔はまとめて残り時間の右か次の行へ送る（styles/screens.css の .nap-timer-now・.nap-timer-facts）
+   */
   return (
     <div ref={timerRef} className={`nap-timer${over ? ' over' : ''}`}>
-      <div>
+      <div className="nap-timer-now">
         {/* 時刻を過ぎたときの文は、帯の中でただ1つの状態の文。灰色の小さい字にせず、帯の警告色で太く出す（styles/screens.css） */}
         <div className={over ? 'nap-timer-over-text' : 'muted'}>{over ? overText : '次のチェックまで'}</div>
         <div className="sr-only" role="status">{said && <span key={said.seq}>{said.text}</span>}</div>
@@ -381,17 +386,19 @@ function NapTimer({ startedAt, intervalMinutes, rows, nowMs, ready }: {
           </div>
         )}
       </div>
-      <div>
-        <div className="muted">開始</div>
-        <div>{formatHM(startedAt)}</div>
-      </div>
-      <div>
-        <div className="muted">経過</div>
-        <div>{hmm(elapsed)}</div>
-      </div>
-      <div>
-        <div className="muted">チェック間隔</div>
-        <div>{intervalMinutes} 分</div>
+      <div className="nap-timer-facts">
+        <div>
+          <div className="muted">開始</div>
+          <div>{formatHM(startedAt)}</div>
+        </div>
+        <div>
+          <div className="muted">経過</div>
+          <div>{hmm(elapsed)}</div>
+        </div>
+        <div>
+          <div className="muted">チェック間隔</div>
+          <div>{intervalMinutes} 分</div>
+        </div>
       </div>
     </div>
   );
@@ -548,7 +555,13 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
         救命の手順そのものは書かない（同 (5-1) の項目10「呼吸」、利用手引き.md「午睡チェック（最も重要な運用）」(2-5)、
         要件定義書.md「午睡チェック」(4-5)「救急要請…の要否はシステムが判断せず、園の手順に従う」）。
         【仮置き】呼吸の文の言い回しは設計が定めていない（web/仮置き値.md）
+        置き場所は、選んだ欄のすぐ後ろ、体温・「この子を記録」より前。2段目の並び（.nap-row-body）の中で幅いっぱいにし、
+        体温・「この子を記録」はその下の段へ送る。iPad 縦のように段が折れる幅でも、保存のボタンより先に文が目に入るようにするため
+        （見直し 2026-10-31 の c5-06。#349 では「この子を記録」の下に出ていた）。文が出ているときだけ箱が伸びる
       */}
+      {position === '2' && <Alert>うつ伏せです。このまま記録し、仰向けに直したら、直したあとの向きをもう一度記録してください。</Alert>}
+      {breathing === '2' && <Alert>呼吸が確認できません。ただちに、子どもへの対応と応援の要請を行ってください。異常時の記録は、そのあとでかまいません。</Alert>}
+
       <div className="nap-row-actions">
         {/*
           読み上げの名前は「（氏名）の体温 未測定」「（氏名）の体温 36.5℃」。見えている文字をそのまま名前に含め、
@@ -574,8 +587,6 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
       </div>
       </div>
 
-      {position === '2' && <Alert>うつ伏せです。このまま記録し、仰向けに直したら、直したあとの向きをもう一度記録してください。</Alert>}
-      {breathing === '2' && <Alert>呼吸が確認できません。ただちに、子どもへの対応と応援の要請を行ってください。異常時の記録は、そのあとでかまいません。</Alert>}
       {error && <Alert>{error}</Alert>}
 
       {temperatureOpen && <TemperaturePicker name={name} onClose={() => setTemperatureOpen(false)}
@@ -586,14 +597,18 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
 }
 
 /**
- * 直近の記録のうち、体位のほかに見ておくべきもの（呼吸が確認できない・顔色が通常でない・体温）を並べる。
+ * 直近の記録のうち、見ておくべきもの（うつ伏せ・呼吸が確認できない・顔色が通常でない・体温）を並べる。
  * あとから画面を見たほかの職員にも、記録した内容が分かるようにする（GitHub Issue #142）。
- * 保育士が選んだ値をそのまま示すだけで、システムは判定しない（平熱との比較もしない）。
+ * 保育士が選んだ値をそのまま示すだけで、システムは判定しない（平熱との比較もしない。行の状態の文「確認済み」なども変えない）。
+ * うつ伏せは、午睡記録検索と同じ札で示す。記録すると選んだ欄が空に戻り、うつ伏せの注意の文は消えるので、
+ * 仰向けに直して記録し直すまで、前回の記録がうつ伏せだったことを行に残す（見直し 2026-10-31 の c5-01。
+ * こども家庭庁・内閣府「教育・保育施設等における事故防止及び事故発生時の対応のためのガイドライン」の午睡中の体位の確認）。
  * 【仮置き】画面詳細図 5-1 項目7 はカードに時刻と体位を出すとだけ定めている（web/仮置き値.md）
  */
 function LatestObservation({ record }: { record: NapRecord }) {
   return (
     <>
+      {record.body_position === '2' && <span className="tag tag-alert">体位 {BODY_POSITION[record.body_position]}</span>}
       {record.breathing === '2' && <span className="tag tag-alert">呼吸 {BREATHING[record.breathing]}</span>}
       {record.complexion !== '1' && <span className="tag tag-alert">顔色 {COMPLEXION[record.complexion]}</span>}
       {record.temperature !== null && <span className="last">体温 {formatTemperature(record.temperature)}℃</span>}

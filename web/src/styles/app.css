@@ -494,7 +494,7 @@ table.list td > :is(button, .btn) + :is(button, .btn) { margin-left: var(--sp-2)
 .tag-approved { color: var(--dads-green-900); border-color: var(--c-approved); background: var(--dads-green-50); }
 .tag-plain    { color: var(--c-text-sub); border-color: var(--c-border); background: var(--c-surface); }
 /*
- * 安全にかかわる印（午睡の「異常時の記録あり」「呼吸 確認できず」「顔色」、午睡記録検索の「うつ伏せ」、アレルギーの食品）。
+ * 安全にかかわる印（午睡の「異常時の記録あり」「体位 うつ伏せ」「呼吸 確認できず」「顔色」、午睡記録検索の「うつ伏せ」、アレルギーの食品）。
  * 警告色は午睡チェックの異常などに使う（基本設計書「画面基本構成」(3-5) の警告色）。塗るのは差し戻しだけ（画面詳細図 3-1）なので、
  * 白地に警告色（red-900）の枠と字、太字で示す。【仮置き】設計は安全の印の札の形を定めていない（web/仮置き値.md）
  */
