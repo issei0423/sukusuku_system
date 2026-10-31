@@ -263,3 +263,58 @@ func TestNapRecordFollowsChildClass(t *testing.T) {
 		t.Fatalf("ほかのクラスの園児の記録が %d 件付いています", n)
 	}
 }
+
+/*
+GET /api/nap/session の ended=1 は、その日に最後に終えた実施を返す。午睡チェック画面が、終えたあとも園児の行を
+状態の表示だけで出すため（詳細設計書「行の状態ごとの表示」(2-4 (2)) の「実施の後」。受け入れテスト 04-021）。
+参照の範囲は実施中のものと同じ（一般は自クラスに限る）。ended を付けないときは今までどおり実施中のものだけ。
+【仮置き】設計に無い口（web/仮置き値.md）。モックの同じ観点は web/tests/napCheckRows.test.tsx の lastEndedSession
+*/
+func TestLastEndedNapSession(t *testing.T) {
+	a, h := newTestApp(t)
+	teacher := loginAs(a, accTeacher, "staff")
+	otherTeacher := loginAs(a, accOtherTeacher, "staff")
+	// 実施が無いときの応答は、本文の無い 200（writeJSON の nil。画面は null として読む）
+	session := func(c *http.Cookie, path string) *NapSession {
+		t.Helper()
+		rec := call(t, h, c, "GET", path, "")
+		if strings.TrimSpace(rec.Body.String()) == "" {
+			return nil
+		}
+		var s *NapSession
+		decode(t, rec, &s)
+		return s
+	}
+	ended := func(c *http.Cookie, date string) *NapSession {
+		t.Helper()
+		return session(c, "/api/nap/session?class_id=1&date="+date+"&ended=1")
+	}
+	active := func() *NapSession {
+		t.Helper()
+		return session(teacher, "/api/nap/session?class_id=1")
+	}
+
+	// デモの実施を終えて、新しく開始する（startFreshNap）。終えた実施はデモの実施、実施中は新しいもの
+	s := startFreshNap(t, a, h, teacher)
+	if got := ended(teacher, today()); got == nil || got.NapSessionID == s.NapSessionID || got.EndedAt == nil {
+		t.Fatalf("終えた実施（デモ） = %+v、実施中は %d", got, s.NapSessionID)
+	}
+	if got := active(); got == nil || got.NapSessionID != s.NapSessionID {
+		t.Fatalf("ended を付けないときは実施中のもの: %+v", got)
+	}
+
+	// 新しい実施を終えると、終えた時刻が同じ秒でも、後に作ったほうを返す。実施中のものは無くなる
+	call(t, h, teacher, "POST", "/api/nap/session/"+itoa(s.NapSessionID)+"/end", "")
+	if got := ended(teacher, today()); got == nil || got.NapSessionID != s.NapSessionID || got.EndedStaffID == nil || *got.EndedStaffID != "S003" {
+		t.Fatalf("最後に終えた実施 = %+v, want %d", got, s.NapSessionID)
+	}
+	if got := active(); got != nil {
+		t.Fatalf("終えたあとの実施中 = %+v, want null", got)
+	}
+
+	// 終えた実施の無い日は null。ほかのクラスの担任は読めない
+	if got := ended(teacher, addDays(today(), 1)); got != nil {
+		t.Fatalf("終えた実施の無い日 = %+v, want null", got)
+	}
+	expectStatus(t, request(t, h, otherTeacher, "GET", "/api/nap/session?class_id=1&ended=1", ""), http.StatusForbidden)
+}
