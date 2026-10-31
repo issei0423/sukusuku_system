@@ -116,6 +116,50 @@ describe('保護者の連絡帳に出していない項目（共有する日誌�
       setting.setting_value = saved;
     }
   });
+
+  /*
+   * 本文の行は、記録ごとの変わらない頭（食事は「HH:MM 区分」、午睡は「HH:MM〜」か「HH:MM 午睡」）で照らす。
+   * 取り込んだあとに「おきた」が付いた・食事を訂正したでは注意が消えず、保育士が行を消したら消える
+   * （照合 c5-05。【仮置き】web/仮置き値.md。server/api_diary_contact_test.go の TestDiaryHiddenContactItemsFollowHeads と同じ確かめ）
+   */
+  it('取り込んだあとに おきた が付いても、食事を訂正しても注意は残り、保育士が行を消したら消える', async () => {
+    const day = '2026-01-08';
+    addMeal(day, `${day}T11:40:00`, '1', '3');
+    // 午睡のあいだに日誌を書く。おきたはまだ無い
+    addNap(day, `${day}T13:05:00`, null);
+    const setting = db.settings.find((s) => s.setting_key === 'contact.show_items')!;
+    const saved = setting.setting_value;
+    try {
+      // 午睡と食事を保護者へ出さない設定
+      setting.setting_value = 'toilet,temperature,comment,photo,class';
+      // 画面の「きょうのようすから入れる」と同じに、見出しの下へ入れる行を並べた本文で作る
+      const { lines } = await api.diaryLines(teacher, 'C004', day);
+      expect(lines).toEqual(['11:40 給食 少し', '13:05 午睡（おきたは記録されていません）']);
+      const d = await api.saveDiary(teacher, {
+        record_type: '1', child_id: 'C004', class_id: 1, diary_date: day, body: `【きょうのようす（連絡帳から）】\n${lines.join('\n')}`,
+      }, '1');
+      const hidden = async () => (await api.getDiary(teacher, d.diary_id)).hidden_contact_items ?? [];
+      expect(await hidden()).toEqual(['午睡', '食事']);
+
+      // 取り込んだあとに「おきた」が付いた（午睡の行の文は「13:05〜14:40 午睡（1時間35分）」に変わる）
+      db.napSleeps.find((n) => n.child_id === 'C004' && n.slept_at === `${day}T13:05:00`)!.woke_at = `${day}T14:40:00`;
+      expect(await hidden()).toEqual(['午睡', '食事']);
+      // 食事を訂正した（量が「少し」から「ぜんぶ」へ）
+      Object.assign(db.contactEvents.find((e) => e.child_id === 'C004' && e.recorded_at === `${day}T11:40:00`)!,
+        { meal_amount: '1', corrected_at: now() });
+      expect(await hidden()).toEqual(['午睡', '食事']);
+
+      // 保育士が午睡の行を消した
+      const row = db.diaries.find((x) => x.diary_id === d.diary_id)!;
+      row.body = '【きょうのようす（連絡帳から）】\n11:40 給食 少し';
+      expect(await hidden()).toEqual(['食事']);
+      // 食事の行も消した
+      row.body = 'きょうは園庭で砂遊びをしました。';
+      expect(await hidden()).toEqual([]);
+    } finally {
+      setting.setting_value = saved;
+    }
+  });
 });
 
 describe('日誌一覧の園児名・キーワードの絞り込み（図/画面詳細図「日誌一覧画面」(3-1) 項目10・11）', () => {

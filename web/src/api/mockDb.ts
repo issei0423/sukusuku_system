@@ -159,7 +159,8 @@ export const classStaff: ClassStaff[] = [
 export const guardianChildren: GuardianChild[] = [
   { guardian_id: 'G001', child_id: 'C001', relationship: '父', link_status: '1', linked_at: '2025-06-10T10:00:00', ended_at: null },
   { guardian_id: 'G002', child_id: 'C002', relationship: '父', link_status: '1', linked_at: '2025-04-05T10:00:00', ended_at: null },
-  // 退園にともない紐づけを終了した例。参照範囲の判定に用いる。解除は基準日の4日前で、紐づけを戻せる期間（解除から7日。【仮置き】）の内（server/seed.sql と同じ）
+  // 誤って解除した例（紐づけを戻すの見本）。参照範囲の判定にも用いる。解除は基準日の4日前で、解除のあいだも読める形で戻せる期間
+  // （解除から7日。【仮置き】）の内。退園の流れは猶予（3）を通る別のもの（server/seed.sql と同じ）
   { guardian_id: 'G003', child_id: 'C003', relationship: '父', link_status: '2', linked_at: '2025-06-20T10:00:00', ended_at: '2026-08-28T10:00:00' },
   { guardian_id: 'G004', child_id: 'C004', relationship: '父', link_status: '1', linked_at: '2025-07-01T10:00:00', ended_at: null },
   { guardian_id: 'G005', child_id: 'C005', relationship: '父', link_status: '1', linked_at: '2025-07-05T10:00:00', ended_at: null },
@@ -845,10 +846,13 @@ export const operationLogs: OperationLog[] = [
   { operation_log_id: 4, account_id: 1, operated_at: '2026-08-29T18:05:00', function_type: '1', operation_type: '3', target_table: 't_diary', target_id: 4, target_child_id: 'C002', before_value: '申請中', after_value: '承認済み' },
   { operation_log_id: 5, account_id: 3, operated_at: '2026-09-01T10:00:00', function_type: '5', operation_type: '1', target_table: 't_physical_record', target_id: 7, target_child_id: 'C001', before_value: null, after_value: '身長=78.5 体重=9.8' },
   { operation_log_id: 6, account_id: 1, operated_at: '2026-08-25T10:00:00', function_type: '7', operation_type: '1', target_table: 't_invitation_code', target_id: 1, target_child_id: 'C001', before_value: null, after_value: '招待コードを発行' },
-  { operation_log_id: 7, account_id: 1, operated_at: '2026-08-28T10:00:00', function_type: '7', operation_type: '2', target_table: 'm_account', target_id: 8, target_child_id: null, before_value: '有効', after_value: '停止' },
+  { operation_log_id: 7, account_id: 1, operated_at: '2026-08-28T10:00:00', function_type: '7', operation_type: '2', target_table: 't_guardian_child', target_id: 8, target_child_id: 'C003', before_value: '有効', after_value: '終了' },
   { operation_log_id: 8, account_id: 2, operated_at: '2026-08-18T11:30:00', function_type: '5', operation_type: '5', target_table: 't_physical_record', target_id: null, target_child_id: 'C002', before_value: null, after_value: 'PDF出力（保護者引き渡し）' },
   { operation_log_id: 9, account_id: 3, operated_at: '2026-08-27T16:15:00', function_type: '2', operation_type: '4', target_table: 't_chat_message', target_id: 10, target_child_id: 'C002', before_value: '（本文）', after_value: '取消' },
   { operation_log_id: 10, account_id: 4, operated_at: '2026-08-30T18:00:00', function_type: '1', operation_type: '1', target_table: 't_diary', target_id: 3, target_child_id: 'C003', before_value: null, after_value: 'ヒヤリハットを起票' },
+  // 7 の解除で鈴木 浩之（G003）の有効な紐づけがゼロになり、アカウントが止まった。止めたのはシステムなので、操作者の無い別の行で残す
+  // （いまの解除が残す形と同じ。mock.ts の endGuardianLink・server/seed.sql と同じ）
+  { operation_log_id: 11, account_id: null, operator_type: '2', operated_at: '2026-08-28T10:00:00', function_type: '7', operation_type: '2', target_table: 'm_account', target_id: 8, target_child_id: 'C003', before_value: '有効', after_value: '停止（有効な紐づけがゼロになったため）' },
 ];
 
 /* ============ 設定マスタ（m_setting） ============

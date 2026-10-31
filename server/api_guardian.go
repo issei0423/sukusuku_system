@@ -187,6 +187,7 @@ addChildTx は、お子さまの追加の書き込みを1つの処理で行う�
  3. その園児の個人チャットへ、今の時刻で参加する。終了した紐づけを戻すときも、管理者の「紐づけを戻す」
     （api_admin.go の rejoinRoomsOfChild。もとの参加の時刻を保つ）と違い、今の時刻で新しく参加する（決めたこと D-48）
  4. いまのクラス（今年度）のクラスグループへ、まだ参加していなければ参加する。園全体は新規登録で参加済み
+    （3・4 は joinRoomsOfChildNow。管理者の「結び直す」も同じものを使う）
 
 【仮置き】個人チャット・クラスグループのルームが無いときは、参加を飛ばして失敗にしない（新規登録の handleSignUpGuardian と同じ。
 web/仮置き値.md）。設計では個人チャットは園児の登録の時点で作ってある（詳細設計書「園児の登録と個人チャット」(4-9)。PR #198）。
@@ -246,41 +247,58 @@ func (a *app) addChildTx(u *SessionUser, code usableCode, relationship string) (
 	}
 
 	// 3・4. 個人チャットと、いまのクラスのクラスグループ。参加中ならそのまま、抜けていたら今の時刻で参加し直す
-	rooms, err := queryIDs(tx, `SELECT r.chat_room_id FROM m_chat_room r
-		WHERE r.is_archived = 0
-		  AND ((r.room_type = '4' AND r.child_id = ?)
-		       OR (r.room_type = '2' AND r.class_id IN (
-		             SELECT cc.class_id FROM t_class_child cc
-		               JOIN m_class c ON c.class_id = cc.class_id AND c.fiscal_year = ?
-		              WHERE cc.child_id = ?)))
-		ORDER BY r.chat_room_id`, code.ChildID, fiscalYear, code.ChildID)
-	if err != nil {
+	if out.rooms, err = joinRoomsOfChildNow(tx, u.AccountID, code.ChildID, at); err != nil {
 		return out, failed
-	}
-	for _, roomID := range rooms {
-		// 【仮置き】参加し直す前の joined_at を first_joined_at に残す（すでにあれば変えない）。
-		// DO UPDATE の中の t_chat_member.joined_at は書き換える前の値。個人チャットの「保護者がまだ1人もいなかった間の投稿は見せる」
-		// 境（api_chat.go の firstGuardianJoinedAt）が、ここで joined_at を今にしても動かないように（web/仮置き値.md）
-		res, err := tx.Exec(`INSERT INTO t_chat_member (chat_room_id, account_id, joined_at, left_at)
-			VALUES (?, ?, ?, NULL)
-			ON CONFLICT(chat_room_id, account_id) DO UPDATE SET
-			  first_joined_at = COALESCE(t_chat_member.first_joined_at, t_chat_member.joined_at),
-			  joined_at = excluded.joined_at, left_at = NULL
-			WHERE t_chat_member.left_at IS NOT NULL`, roomID, u.AccountID, at)
-		if err != nil {
-			return out, failed
-		}
-		// 参加中だった（きょうだいが同じクラスにいる）ルームは変わらない。
-		// 【仮置き】知らせは参加の変わったルームへだけ送る（web/仮置き値.md）
-		if n, _ := res.RowsAffected(); n > 0 {
-			out.rooms = append(out.rooms, roomID)
-		}
 	}
 
 	if err := tx.Commit(); err != nil {
 		return out, failed
 	}
 	return out, nil
+}
+
+/*
+joinRoomsOfChildNow は、保護者を、その園児の個人チャットと、いまのクラス（今年度）のクラスグループへ、今の時刻（at）で参加させる。
+参加中ならそのまま、抜けていたら今の時刻で参加し直す。参加の変わったルームを返す（知らせを送る先）。
+新しい招待コードで結ぶときと同じ読める範囲になる（決めたこと D-48）。お子さまの追加（addChildTx）と、
+解除から日数を過ぎた紐づけの結び直し（api_admin.go の handleRestoreGuardianLink）が使う。
+園全体は新規登録で参加済みなので扱わない。
+
+【仮置き】ルームが無いときは、参加を飛ばして失敗にしない（web/仮置き値.md）
+*/
+func joinRoomsOfChildNow(q dbtx, accountID int64, childID, at string) ([]int64, error) {
+	rooms, err := queryIDs(q, `SELECT r.chat_room_id FROM m_chat_room r
+		WHERE r.is_archived = 0
+		  AND ((r.room_type = '4' AND r.child_id = ?)
+		       OR (r.room_type = '2' AND r.class_id IN (
+		             SELECT cc.class_id FROM t_class_child cc
+		               JOIN m_class c ON c.class_id = cc.class_id AND c.fiscal_year = ?
+		              WHERE cc.child_id = ?)))
+		ORDER BY r.chat_room_id`, childID, fiscalYear, childID)
+	if err != nil {
+		return nil, err
+	}
+	var joined []int64
+	for _, roomID := range rooms {
+		// 【仮置き】参加し直す前の joined_at を first_joined_at に残す（すでにあれば変えない）。
+		// DO UPDATE の中の t_chat_member.joined_at は書き換える前の値。個人チャットの「保護者がまだ1人もいなかった間の投稿は見せる」
+		// 境（api_chat.go の firstGuardianJoinedAt）が、ここで joined_at を今にしても動かないように（web/仮置き値.md）
+		res, err := q.Exec(`INSERT INTO t_chat_member (chat_room_id, account_id, joined_at, left_at)
+			VALUES (?, ?, ?, NULL)
+			ON CONFLICT(chat_room_id, account_id) DO UPDATE SET
+			  first_joined_at = COALESCE(t_chat_member.first_joined_at, t_chat_member.joined_at),
+			  joined_at = excluded.joined_at, left_at = NULL
+			WHERE t_chat_member.left_at IS NOT NULL`, roomID, accountID, at)
+		if err != nil {
+			return nil, err
+		}
+		// 参加中だった（きょうだいが同じクラスにいる）ルームは変わらない。
+		// 【仮置き】知らせは参加の変わったルームへだけ送る（web/仮置き値.md）
+		if n, _ := res.RowsAffected(); n > 0 {
+			joined = append(joined, roomID)
+		}
+	}
+	return joined, nil
 }
 
 // aiOptOutLogField は、操作ログの変更前後に入れる項目の名前（詳細設計書「AI の下書きの利用」(4-15 (3))）

@@ -82,7 +82,8 @@ INSERT INTO t_class_staff (class_id, staff_id) VALUES
  (1,'S003'),(1,'S004'),(2,'S005'),(11,'S003');
 
 -- 紐づけ単位で終了させる。アカウントの停止は有効な紐づけがゼロになった時点
--- 鈴木 浩之（G003）の解除は基準日の4日前。紐づけを戻せる期間（解除から7日。【仮置き】web/仮置き値.md）の内に置き、デモで「紐づけを戻す」を見せる
+-- 鈴木 浩之（G003）は、誤って解除した例（紐づけを戻すの見本）。解除は基準日の4日前で、解除のあいだも読める形で戻せる期間
+-- （解除から7日。【仮置き】web/仮置き値.md）の内に置き、デモで「紐づけを戻す」を見せる。退園の流れは猶予（3）を通る別のもの
 INSERT INTO t_guardian_child (guardian_id, child_id, relationship, link_status, linked_at, ended_at) VALUES
  ('G001','C001','父','1','2025-06-10T10:00:00',NULL),
  ('G002','C002','父','1','2025-04-05T10:00:00',NULL),
@@ -459,10 +460,14 @@ INSERT INTO t_operation_log (operation_log_id, account_id, operated_at, function
  (4,1,'2026-08-29T18:05:00','1','3','t_diary',4,'C002','申請中','承認済み'),
  (5,3,'2026-09-01T10:00:00','5','1','t_physical_record',7,'C001',NULL,'身長=78.5 体重=9.8'),
  (6,1,'2026-08-25T10:00:00','7','1','t_invitation_code',1,'C001',NULL,'招待コードを発行'),
- (7,1,'2026-08-28T10:00:00','7','2','m_account',8,NULL,'有効','停止'),
+ (7,1,'2026-08-28T10:00:00','7','2','t_guardian_child',8,'C003','有効','終了'),
  (8,2,'2026-08-18T11:30:00','5','5','t_physical_record',NULL,'C002',NULL,'PDF出力（保護者引き渡し）'),
  (9,3,'2026-08-27T16:15:00','2','4','t_chat_message',10,'C002','（本文）','取消'),
  (10,4,'2026-08-30T18:00:00','1','1','t_diary',3,'C003',NULL,'ヒヤリハットを起票');
+-- 7 の解除で鈴木 浩之（G003）の有効な紐づけがゼロになり、アカウントが止まった。止めたのはシステムなので、操作者の無い別の行で残す
+-- （いまの解除が残す形と同じ。server/api_admin.go の handleEndGuardianLink・基本設計書「操作ログの記録」(4-2)）
+INSERT INTO t_operation_log (operation_log_id, account_id, operated_at, function_type, operation_type, target_table, target_id, target_child_id, before_value, after_value, operator_type) VALUES
+ (11,NULL,'2026-08-28T10:00:00','7','2','m_account',8,'C003','有効','停止（有効な紐づけがゼロになったため）','2');
 
 -- ============ 設定マスタ ============
 -- 値はすべて仮置き（web/仮置き値.md）。
