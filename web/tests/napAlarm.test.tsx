@@ -116,6 +116,30 @@ describe('午睡チェック画面：確認の時刻の通知音と、過ぎた�
     // 手元の CI の全体の負荷で5秒を越えて落ちたため（2026-10-29、76af1001）、この1件だけ長くする
   }, 15_000);
 
+  // 行が警告色になったその場（MutationObserver の中。画面の passive effect より前）で、音はもう鳴っている（GitHub Issue #345）。
+  // 鳴らす処理が描いたあと（useEffect）に遅れて走っていたため、上の1件が警告色を見てから音を数えるまで（Testing Library が
+  // 待ちのあとに置く setTimeout(0)）に鳴らす処理が間に合わず、音の数が 0 で落ちることがあった。その並びを毎回作る
+  it('行が警告色になったときには、通知音はもう鳴っている（色と音を同じ描画で決める）', async () => {
+    audio.allow = true;
+    await startNap();
+    open('/staff/nap', teacher);
+    const row = await rowOf('西田 太郎');
+    // 画面に触れて、音を出せる状態にしておく（鳴らす処理が、音の準備を待たずにその場で鳴らす）
+    fireEvent.pointerDown(document.body);
+    await waitFor(() => expect(audio.ctx?.state).toBe('running'), { timeout: 3000 });
+    const before = audio.started;
+    const startedWhenDue = await new Promise<number>((resolve) => {
+      const mo = new MutationObserver(() => {
+        if (!row.className.includes('is-due')) return;
+        mo.disconnect();
+        resolve(audio.started);
+      });
+      mo.observe(row, { attributes: true, attributeFilter: ['class'] });
+      vi.setSystemTime(Date.now() + (api.intervalMinutesFor(1) + 1) * 60_000);
+    });
+    expect(startedWhenDue).toBe(before + ONE_ALARM);
+  });
+
   it('画面を開いたとき、すでに時刻を過ぎている子がいても、開いたことでは鳴らさない（読み上げと同じ起点）', async () => {
     audio.allow = true;
     await startNap();
