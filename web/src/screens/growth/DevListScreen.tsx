@@ -20,6 +20,8 @@ export default function DevListScreen() {
   const classesForUser = selectableClasses(user!);
   // 管理者は園全体の抜けを見る。最初から全クラスを出す（GitHub Issue #125）
   const isAdmin = user!.role === '1';
+  // 担任などで選べるクラスが1つだけなら、変えられない値として文字で見せる（.select-fixed。r2c-05）
+  const fixedClass = !isAdmin && classesForUser.length === 1;
   const [classId, setClassId] = useState<number | 'all'>(
     isAdmin ? 'all' : (user!.class_id ?? classesForUser[0]?.class_id ?? 1));
 
@@ -40,7 +42,7 @@ export default function DevListScreen() {
       <div className="page-head">
         <h1>発達チェック</h1>
         <Field label="クラス">
-          <select value={classId}
+          <select value={classId} disabled={fixedClass} className={fixedClass ? 'select-fixed' : undefined}
             onChange={(e) => setClassId(e.target.value === 'all' ? 'all' : Number(e.target.value))}>
             {isAdmin && <option value="all">すべて</option>}
             {classesForUser.map((c) => <option key={c.class_id} value={c.class_id}>{c.class_name}</option>)}

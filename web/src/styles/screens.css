@@ -819,3 +819,23 @@ table.list.contact-class-table :is(th, td) { vertical-align: top; padding: var(-
 /* 職員：ひとこと・写真の行の「成長の記録に残す」（詳細設計書 (2-12 (1))）。指で押せる高さにする */
 .contact-keep-growth { display: inline-flex; align-items: center; gap: var(--sp-1); min-height: 44px; margin-left: var(--sp-2); }
 .contact-keep-growth input { width: 20px; height: 20px; }
+
+/*
+ * 招待コードの配布用の出力（screens/master/InvitationCodesScreen.tsx）。前は札の見出しと登録の手順が 13px だった（見直し 2026-10-31 の r2a-11）。
+ * 見出し（お子さまのお名前・招待コード・登録の手順）は M3 の label-large（14px・600）、手順は本文（16px・行間 1.7）。名前とコードは前のまま
+ */
+.invite-sheet-label { color: var(--c-text-sub); font-size: var(--fs-small); font-weight: 600; line-height: calc(20 / 14); }
+.invite-sheet-name { margin-bottom: var(--sp-2); font-size: 1.125rem; font-weight: 700; }
+.invite-sheet-code { font-family: monospace; font-size: 1.375rem; letter-spacing: .08em; }
+.invite-sheet-steps { margin-top: var(--sp-2); }
+.invite-sheet-steps ol { margin: var(--sp-1) 0 0; padding-left: 1.4em; line-height: 1.7; }
+
+/*
+ * 異常時の記録の一覧（screens/nap/NapAbnormalScreen.tsx）。縦向き（900px 未満）では、時刻・園児・記録者・ヒヤリハットの列も折り返して、
+ * 状況・対応の列に幅を回す。前は折り返さない列が幅を取り、iPad 縦向き（768px）で状況・対応が1行に2〜3字で折り返して読みにくかった。
+ * 折り返すのは空白と括弧の前だけ（keep-all）。「08/31 14:10」「久保田 陸」「起票済み（開く）」を語の途中で割らない
+ */
+@media (max-width: 899px) {
+  .nap-abnormal-list td.nowrap { white-space: normal; word-break: keep-all; }
+  .nap-abnormal-list td:nth-child(3), .nap-abnormal-list td:nth-child(4) { min-width: 5em; }
+}

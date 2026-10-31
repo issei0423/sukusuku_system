@@ -515,6 +515,8 @@
   margin: -8px auto 0;
 }
 .public-card .brand .sub  { font-size: var(--fs-small); color: var(--c-text-sub); }
+/* 入口の見出し（「保護者用の入口」「職員用の入口」）。h1 の字の段（24px）のまま、ロゴの下に中央でそろえる。前は 20px の灰の字に上書きしていた（見直し 2026-10-31 の r2a-12） */
+.public-card .public-title { margin: calc(var(--sp-4) * -1) 0 var(--sp-4); text-align: center; }
 @media (max-width: 480px) {
   .public-card { padding: var(--sp-5) var(--sp-4); }
 }
@@ -636,7 +638,9 @@ table.list td > :is(button, .btn) + :is(button, .btn) { margin-left: var(--sp-2)
 .tag-approved { color: var(--c-on-approved-soft); background: var(--c-approved-soft); }
 .tag-plain    { color: var(--c-text-sub); border-color: var(--c-border-weak); background: var(--c-surface); }
 /*
- * 安全にかかわる印（午睡の「異常時の記録あり」「体位 うつ伏せ」「呼吸 確認できず」「顔色」、午睡記録検索の「うつ伏せ」、アレルギーの食品）。
+ * 警告色の札。安全にかかわる印（午睡の「異常時の記録あり」「体位 うつ伏せ」「呼吸 確認できず」「顔色」、午睡記録検索の「うつ伏せ」、アレルギーの食品）と、
+ * 期限・日数を過ぎたもの・漏れ・誤り（承認待ちの「滞留」、発達チェックの「未実施」「未入力」、招待コードの「期限切れ」、職員の「ロック中」、
+ * 園児 CSV の「エラー n 行」、誤送信の「既読あり」。w4 の m5・m6。前は差し戻しの赤紫の塗りだった）。
  * 警告色は午睡チェックの異常などに使う（基本設計書「画面基本構成」(3-5) の警告色）。塗るのは差し戻しだけ（画面詳細図 3-1）なので、
  * 白地に警告色（M3 の error）の枠と字、太字で示す。【仮置き】設計は安全の印の札の形を定めていない（web/仮置き値.md）
  */
