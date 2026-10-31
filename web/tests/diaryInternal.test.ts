@@ -31,6 +31,13 @@ const lockOf = async (u: SessionUser, diaryId: number) => {
   return r.token;
 };
 const rowOf = (id: number) => db.diaries.find((d) => d.diary_id === id)!;
+/** 断られたときの文と種類（kind）。断られなければ落とす */
+type Rejected = Error & { kind?: string };
+async function rejection(p: Promise<unknown>): Promise<Rejected> {
+  try { await p; } catch (e) { return e as Rejected; }
+  throw new Error('断られなかった');
+}
+const VERSION_CONFLICT = '他の職員が更新しています。内容を再読み込みしてください。';
 const lastLogOf = (id: number) => db.operationLogs.find((l) => l.target_table === 't_diary' && l.target_id === id)!;
 
 describe('申請の取り下げ（申請した本人だけ・申請中だけ・読んだ版のときだけ）', () => {
@@ -42,9 +49,9 @@ describe('申請の取り下げ（申請した本人だけ・申請中だけ・�
       await expect(api.withdrawDiary(u, d.diary_id, d.updated_at)).rejects.toThrow('申請を取り下げられるのは、申請した本人だけです。');
     }
     await expect(api.withdrawDiary(guardian, d.diary_id, d.updated_at)).rejects.toThrow('この日誌を参照する権限がありません');
-    // 読んだ版が違う
-    await expect(api.withdrawDiary(teacher, d.diary_id, '2000-01-01T00:00:00'))
-      .rejects.toThrow('他の職員が更新しています。内容を再読み込みしてください。');
+    // 読んだ版が違う。種類 version_conflict を添える（server/api_diary_write.go の handleWithdrawDiary と同じ）
+    const e = await rejection(api.withdrawDiary(teacher, d.diary_id, '2000-01-01T00:00:00'));
+    expect([e.message, e.kind]).toEqual([VERSION_CONFLICT, 'version_conflict']);
     expect(rowOf(d.diary_id).status).toBe('2');
   });
 
@@ -97,7 +104,9 @@ describe('承認の取り消し（管理者だけ・理由が必須・承認済�
     }
     await expect(api.revokeDiaryApproval(admin, 4, 'あ'.repeat(501), d.updated_at))
       .rejects.toThrow('承認を取り消す理由は500文字以内で入力してください。');
-    await expect(api.revokeDiaryApproval(admin, 4, '確かめ直します', '2000-01-01T00:00:00')).rejects.toThrow('他の職員が更新しています');
+    // 読んだ版が違う。種類 version_conflict を添える（server/api_diary_write.go の handleRevokeDiaryApproval と同じ）
+    const e = await rejection(api.revokeDiaryApproval(admin, 4, '確かめ直します', '2000-01-01T00:00:00'));
+    expect([e.message, e.kind]).toEqual([VERSION_CONFLICT, 'version_conflict']);
     expect(rowOf(4).status).toBe('3');
   });
 

@@ -1528,7 +1528,8 @@ const diaryApi2 = {
     // 承認・差し戻しのあとも申請者の列は残るため、本人なら次の状態の検査で断る
     if (!d.applied_staff_id || d.applied_staff_id !== user.staff_id) return fail(DIARY_MSG.withdrawOwnOnly);
     if (d.status !== '2') return fail(DIARY_MSG.withdrawTooLate);
-    if (d.updated_at !== updatedAt) return fail(DIARY_MSG.versionConflict);
+    // 版の食い違いは kind を添える（承認と同じ。server/api_diary_write.go の handleWithdrawDiary の kindVersionConflict）
+    if (d.updated_at !== updatedAt) return failKind(DIARY_MSG.versionConflict, 'version_conflict');
     const before = `申請者：${staffName(d.applied_staff_id)}（${d.applied_staff_id}）・申請日時：${d.applied_at ?? ''}`;
     d.status = '1';
     d.applied_staff_id = null;
@@ -1552,7 +1553,8 @@ const diaryApi2 = {
     const d = db.diaries.find((x) => x.diary_id === diaryId && !x.is_deleted);
     if (!d) return fail('日誌が見つかりません');
     if (d.status !== '3') return fail(DIARY_MSG.notApproved);
-    if (d.updated_at !== updatedAt) return fail(DIARY_MSG.versionConflict);
+    // 版の食い違いは kind を添える（承認と同じ。server/api_diary_write.go の handleRevokeDiaryApproval の kindVersionConflict）
+    if (d.updated_at !== updatedAt) return failKind(DIARY_MSG.versionConflict, 'version_conflict');
     let before = '承認者：';
     if (d.approved_staff_id) before += `${staffName(d.approved_staff_id)}（${d.approved_staff_id}）`;
     if (d.approved_at) before += `・承認日時：${d.approved_at}`;
