@@ -18,6 +18,10 @@
  * 拾わない数字の形：日付（10-31・04-01・2026-10-31）、時刻（13:00-15:00）、電話番号（03-1234-5678）、
  * 単位の付いた範囲（「1-5 件」「0-2歳児」「2-4列目」）、体温（36.5）、「小数第1位」「第1条」、手順の番号「(1)」。
  * 括弧の中に数字の範囲だけを書くと章番号と見分けられないので、範囲は「1〜5 件」のように単位を付けて書く。
+ *
+ * サーバが返す文言（エラーの文・DB に入れる値）は server/visible_wording_test.go が同じ規則で見張る。
+ * FORBIDDEN・CHAPTER_REF を変えたら、そちらの forbiddenWording・chapterRef も同じに直し、
+ * 拾う例・拾わない例の表も両方に同じものを置く。
  */
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -111,6 +115,8 @@ describe('画面に出す文言に、設計書の名前や章番号を出さな�
       '同 5-5 のとおり',
       '第3.7版の定めによる',
       '第2.x版',
+      '（同\u30005-5）', // 全角の空白
+      '同\u30005-5',
     ];
     const allowed = [
       '10-31',
@@ -139,6 +145,8 @@ describe('画面に出す文言に、設計書の名前や章番号を出さな�
       '（同上）',
       '同じ日の中',
       '乳幼児健診の節目（1歳6か月・3歳・5歳）',
+      '同 5-123',
+      '（以前の形式の記録）',
     ];
     expect(refs.filter((s) => !CHAPTER_REF.test(s))).toEqual([]);
     expect(allowed.filter((s) => CHAPTER_REF.test(s))).toEqual([]);

@@ -147,7 +147,9 @@ rebuildDiarySteps は t_diary の作り直しの手順を返す。移す値（�
   - ① 申請中・承認済みの行の申請者・申請日時は、操作ログの「申請」「作成して申請」の最も新しい行の操作者と時刻。
     無ければ作成者と updated_at
   - ② class_id が空の行は diaryClassSQL のクラス
-  - ③ 既存のヒヤリハットの発生日時は記録日の 0:00、場所は「（第3.0版より前の記録）」
+  - ③ 既存のヒヤリハットの発生日時は記録日の 0:00、場所は「（以前の形式の記録）」。場所は画面の「場所」欄に出るので、
+    設計書の版番号は書かない（server/visible_wording_test.go が見張る）。以前は「（第3.0版より前の記録）」を入れていた。
+    この作り直しは古い DB を移すときに1回だけ走るので、もう移した DB の値は書き換えない
   - 差し戻し・下書きの行の承認者は空にする。以前の版は差し戻した管理者を承認者の列に入れていた
 */
 func rebuildDiarySteps() []string {
@@ -165,7 +167,7 @@ func rebuildDiarySteps() []string {
 		   CASE WHEN d.status = '3' THEN d.approved_staff_id END,
 		   CASE WHEN d.status = '3' THEN d.approved_at END,
 		   CASE WHEN d.record_type = '4' THEN d.diary_date || 'T00:00:00' END,
-		   CASE WHEN d.record_type = '4' THEN '（第3.0版より前の記録）' END,
+		   CASE WHEN d.record_type = '4' THEN '（以前の形式の記録）' END,
 		   d.nap_abnormal_id, d.returned_reason, d.is_deleted, d.created_at, d.updated_at
 		 FROM t_diary d`,
 		`DROP TABLE t_diary`,
