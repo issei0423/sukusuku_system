@@ -278,55 +278,78 @@
  * ページの頭。小見出し（DADS の見出しの「ショルダー」）と見出しと説明文。
  * 小見出しは見出しに付く札であり、色や字間で飾らない
  */
-.guardian-home { display: flex; flex-direction: column; gap: var(--sp-5); }
+/*
+ * まとまりの間。スマートフォンでは 16px にし、「きょう」の区画を画面の上のほうから始める（見直し 2026-10-31 の r2b-15）。
+ * 768px 以上は前のとおり 24px
+ */
+.guardian-home { display: flex; flex-direction: column; gap: var(--sp-4); }
 .guardian-home-intro, .guardian-page-intro { padding: 0; }
 .guardian-page-intro { padding-bottom: var(--sp-4); }
-.guardian-eyebrow { display: block; color: var(--c-text-sub); font-size: var(--fs-body); font-weight: 700; line-height: 1.7; }
-.guardian-home-intro h1, .guardian-page-intro h1 { margin: 0 0 var(--sp-2); font-size: 1.5rem; }
+/* 小見出しは M3 の label-large（14px・行間 20px・Medium。Medium は 600 で書く。tokens.css の見出しの注） */
+.guardian-eyebrow { display: block; color: var(--c-text-sub); font-size: var(--fs-small); font-weight: 600; line-height: calc(20 / 14); }
+.guardian-home-intro h1, .guardian-page-intro h1 { margin: 0 0 var(--sp-2); }
 .guardian-home-intro p, .guardian-page-intro p { margin: 0; color: var(--c-text-sub); font-size: var(--fs-body); }
+/*
+ * 前の画面へ戻るテキストボタン（「ホームへ」「チャット・お知らせへ」「もどる」）は、矢印を本文の左端にそろえる。
+ * ボタンの左の余白（12px）の分だけ左へ出す（押せる範囲と指したときの地は、本文の外の余白にかかる）
+ */
+.contact-page-head > a.btn-quiet,
+.guardian-page-intro > .btn-quiet:first-child,
+.guardian-thread-heading > .btn-quiet:first-child { margin-left: calc(var(--sp-3) * -1); }
+/* ホームの説明文は、スマートフォンでは出さない（見出し「こんにちは」とメニューで足りる。r2b-15） */
+@media (max-width: 767px) {
+  .guardian-home-intro p { display: none; }
+  .guardian-home-intro h1 { margin-bottom: 0; }
+}
 
 .guardian-child-section { display: flex; flex-direction: column; gap: var(--sp-4); }
 .guardian-child-section + .guardian-child-section { padding-top: var(--sp-5); border-top: 1px solid var(--c-border); }
+/* お子さまの箱。名前は h2（M3 の title-large）。上下の余白と絵を詰める（r2b-15） */
 .guardian-child-card {
   display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
-  padding: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
   background: var(--c-surface); border: 1px solid var(--c-border-weak); border-radius: var(--radius-card);
 }
-.guardian-child-card h2 { margin: 0; font-size: 1.5rem; }
+.guardian-child-card h2 { margin: 0; }
 .guardian-child-card p { margin: 0; color: var(--c-text-sub); }
-.guardian-child-card img { flex: none; width: 64px; height: 56px; object-fit: contain; }
+.guardian-child-card img { flex: none; width: 48px; height: 42px; object-fit: contain; }
 
 .guardian-home-panel {
   padding: var(--sp-4);
   background: var(--c-surface);
   border: 1px solid var(--c-border-weak); border-radius: var(--radius-card);
 }
-.guardian-panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
-.guardian-panel-heading h2 { font-size: 1.25rem; }
+/*
+ * 区画の頭：1行目に小見出しと件数の札（.badge）、2行目に見出しを幅いっぱいに置く。
+ * 前は札を見出しの右に並べ、狭い幅で「西田 太郎さんのきょう」が語の途中で折り返した。
+ * 小見出しと見出しを包む div は形を持たないので、display: contents で中の2つを直に並べる
+ */
+.guardian-panel-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--sp-3); }
+.guardian-panel-heading > div { display: contents; }
+.guardian-panel-heading h2 { grid-column: 1 / -1; }
+.guardian-panel-heading > .badge { grid-row: 1; grid-column: 2; }
 .guardian-home-panel p { margin: var(--sp-2) 0 var(--sp-4); color: var(--c-text-sub); }
-/* 件数の札。DADS のチップラベル（塗り）と同じ形 */
-.guardian-unread {
-  flex: none; margin-top: 2px; padding: 3px 8px; border-radius: var(--radius-full);
-  background: var(--c-alert); color: var(--c-on-alert);
-  font-size: var(--fs-small); font-weight: 700; line-height: 1.3;
-}
-/* 主な導線は、DADS の塗りボタンと同じ見た目にする */
+/*
+ * ホームの導線（連絡帳を開く・成長の記録・園とのやりとり・チャットを開く・園からの配布物を見る）。
+ * M3 のリストの行：地なし、on-surface の字（16px・Regular）、行の上に outline-variant の線、末尾に chevron_right、高さ 48px 以上。
+ * 前は5つとも塗りボタンで、朝にまず押す「家庭からを書く」が目立たなかった。塗りは画面に1つ（「家庭からを書く」）にする（見直し 2026-10-31 の r2b-06）
+ */
 .guardian-panel-link {
   display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2);
-  min-height: var(--control-h); padding: 0 var(--sp-4);
-  border: 1px solid var(--c-primary-deep); border-radius: var(--radius-button);
-  background: var(--c-primary); color: var(--c-primary-ink);
-  text-decoration: none; font-weight: 700;
+  min-height: var(--control-h); padding: var(--sp-1) 0;
+  border-top: 1px solid var(--c-border-weak);
+  color: var(--c-text); text-decoration: none; font-weight: 400;
 }
+.guardian-panel-link > .icon { flex: none; color: var(--c-text-sub); }
 @media (hover: hover) {
-  .guardian-panel-link:hover { background: var(--c-primary-hover); color: var(--c-primary-ink); text-decoration: underline; text-decoration-thickness: 1px; }
+  .guardian-panel-link:hover { background: var(--c-surface-sub); color: var(--c-text); text-decoration: underline; text-decoration-thickness: 1px; }
 }
-.guardian-panel-link:active { background: var(--c-primary-active); color: var(--c-primary-ink); }
-/* 記録・配布物の並び。DADS のメニューリスト（ボックス型）と同じく、行の全体を押せるようにする */
-.guardian-record-list { margin-top: var(--sp-2); border-top: 1px solid var(--c-border); }
+.guardian-panel-link:active { background: var(--c-surface-head); color: var(--c-text); }
+/* 記録・配布物の並び。DADS のメニューリスト（ボックス型）と同じく、行の全体を押せるようにする。線は M3 の区切り（outline-variant） */
+.guardian-record-list { margin-top: var(--sp-2); border-top: 1px solid var(--c-border-weak); }
 .guardian-record-link {
   display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
-  min-height: var(--control-h); padding: var(--sp-1) 0; border-bottom: 1px solid var(--c-border);
+  min-height: var(--control-h); padding: var(--sp-1) 0; border-bottom: 1px solid var(--c-border-weak);
   color: var(--c-text); text-decoration: none;
 }
 .guardian-record-link > span:last-child { color: var(--c-text); }
@@ -338,26 +361,25 @@
 .guardian-room-list { overflow: hidden; background: var(--c-surface); border: 1px solid var(--c-border-weak); border-radius: var(--radius-card); }
 .guardian-room-link {
   width: 100%; min-height: 56px; display: flex; justify-content: space-between; gap: var(--sp-3);
-  padding: var(--sp-3) var(--sp-4); border: 0; border-bottom: 1px solid var(--c-border); border-radius: 0;
+  padding: var(--sp-3) var(--sp-4); border: 0; border-bottom: 1px solid var(--c-border-weak); border-radius: 0;
   background: transparent; text-align: left; font-weight: 400;
 }
 .guardian-room-link:last-child { border-bottom: 0; }
 @media (hover: hover) {
-  .guardian-room-link:hover:not(:disabled) { border-color: var(--c-border); background: var(--c-surface-sub); }
+  .guardian-room-link:hover:not(:disabled) { border-color: var(--c-border-weak); background: var(--c-surface-sub); }
 }
 .guardian-room-trailing { display: inline-flex; align-items: center; gap: var(--sp-2); color: var(--c-text); }
+.guardian-room-trailing > .icon { color: var(--c-text-sub); }
 .guardian-chat-list .guardian-contact-note { padding-top: var(--sp-4); }
 .guardian-chat-thread { display: flex; flex-direction: column; min-height: 100%; }
-.guardian-thread-heading { padding: 0 0 var(--sp-3); border-bottom: 1px solid var(--c-border); }
-.guardian-thread-heading h1 { font-size: 1.25rem; }
+.guardian-thread-heading { padding: 0 0 var(--sp-3); border-bottom: 1px solid var(--c-border-weak); }
 .guardian-message-list { flex: 1; padding-top: var(--sp-4); }
 .guardian-message-compose {
   position: sticky; bottom: calc(var(--sp-6) * -1); padding: var(--sp-3) 0;
-  background: var(--c-surface); border-top: 1px solid var(--c-border);
+  background: var(--c-surface); border-top: 1px solid var(--c-border-weak);
 }
 .guardian-message-compose input { min-width: 0; }
 .guardian-diary-card { padding: var(--sp-5) var(--sp-4); }
-.guardian-diary-card h2 { font-size: 1.25rem; }
 
 /*
  * 保護者レイアウトの幅ごとの切り替え。スマートフォンの形を基本に書き、幅が広いときだけ上書きする。
@@ -374,6 +396,7 @@
 @media (min-width: 768px) {
   .guardian-shell { max-width: 960px; }
   .guardian-main { padding: var(--sp-6) var(--sp-5); }
+  .guardian-home { gap: var(--sp-5); }
   /* お子さまの情報は横いっぱい、その下にチャットと記録を並べる */
   .guardian-child-section { display: grid; grid-template-columns: 1fr 1fr; align-items: start; gap: var(--sp-5); }
   .guardian-child-section > .guardian-child-card { grid-column: 1 / -1; }
@@ -425,6 +448,14 @@
   /* 列の内側でなく、ページ全体を送る。ブラウザの拡大・縮小やマウスのホイールと素直に合う */
   .guardian-main { overflow: visible; padding: 0; background: transparent; }
   .guardian-main p { max-width: 40em; }
+  /*
+   * 見出しも本文と一緒に1段上げる。前は本文だけ 18px に上げ、見出しは 16〜24px のままで、h3 が本文より小さかった（見直し 2026-10-31 の r2a-06）。
+   * h1＝M3 の headline-medium（28/36）、h2＝headline-small（24/32）、h3＝18px・行間 24px・600。
+   * 【仮置き】M3 の字の段に 18px は無い。本文（18px）より小さくしないために置いた（web/仮置き値.md「保護者の PC の幅の見出し」）
+   */
+  .guardian-main h1 { font-size: 1.75rem; line-height: calc(36 / 28); }
+  .guardian-main h2 { font-size: 1.5rem; line-height: calc(32 / 24); }
+  .guardian-main h3 { font-size: 1.125rem; line-height: calc(24 / 18); }
   /* チャットの入力欄は、ページの下端に付ける */
   .guardian-message-compose { bottom: 0; }
 }

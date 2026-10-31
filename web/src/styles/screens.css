@@ -383,15 +383,13 @@
 .handout-row { justify-content: space-between; text-align: left; gap: var(--sp-2); }
 /* 保護者の画面では、保護者ホームの記録の行と同じ見た目にそろえる */
 button.guardian-record-link {
-  width: 100%; padding: var(--sp-1) 0; background: none; border: 0; border-bottom: 1px solid var(--c-border);
+  width: 100%; padding: var(--sp-1) 0; background: none; border: 0; border-bottom: 1px solid var(--c-border-weak);
   border-radius: 0; font: inherit; font-weight: 400; cursor: pointer;
 }
 @media (hover: hover) {
-  button.guardian-record-link:hover:not(:disabled) { border-color: var(--c-border); background: var(--c-surface-sub); }
+  button.guardian-record-link:hover:not(:disabled) { border-color: var(--c-border-weak); background: var(--c-surface-sub); }
 }
 .guardian-record-link .handout-title { padding: var(--sp-1) 0; }
-/* 保護者ホームの「チャット・お知らせ」の区画で、「チャットを開く」の下に置く */
-.guardian-handout-link { margin-top: var(--sp-2); }
 /* 「チャット・お知らせ」の画面の見出しの下に置く */
 .guardian-handout-button { align-self: flex-start; margin-top: var(--sp-2); }
 .handout-title { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; flex: 1; flex-wrap: wrap; }
@@ -429,9 +427,33 @@ button.guardian-record-link {
 
 /* 保護者：連絡帳画面（幅 360px で1列） */
 .contact-page { max-width: 720px; margin: 0 auto; display: grid; gap: var(--sp-4); }
+/*
+ * 上に止めた見出し（園児名と日付）。M3 の上のバーの形：狭い幅（1023px まで）は「ホームへ」・見出し・日付の操作を段に重ね
+ * （medium top app bar）、PC の幅（1024px 以上）は「ホームへ」と見出しを1行に並べる（small top app bar）。
+ * 前は止めたとき、スクロールする枠の上の余白（24px。768px 以上は 32px）が透け、後ろの中身が見出しの上にのぞいていた
+ * （見直し 2026-10-31 の r2b-05）。午睡チェックのタイマーと同じく、枠の上端（余白の外）で止め、見出しの地で覆う。
+ * 画面の始めに置いたときは、余白の分だけ上へずらし、止める前と後で見出しが動かないようにする（知らせの帯が上にあるときはずらさない）。
+ * 下に outline-variant の線を引き、後ろを流れる中身と分ける。見出しの高さは --contact-head-h に入る（#212 の scroll-padding-top）。
+ * ページ全体を送る PC の幅は、上に止めたヘッダ（64px）の下で止める
+ */
 .contact-page-head {
-  position: sticky; top: 0; z-index: 2; display: grid; gap: var(--sp-2);
-  padding: var(--sp-2) 0; background: var(--c-bg, var(--c-surface));
+  --contact-head-bleed: var(--sp-5);
+  position: sticky; top: calc(var(--contact-head-bleed) * -1); z-index: 2;
+  display: grid; gap: var(--sp-2);
+  padding: var(--sp-2) 0;
+  background: var(--c-bg); border-bottom: 1px solid var(--c-border-weak);
+}
+.guardian-main > .contact-page:first-child > .contact-page-head { margin-top: calc(var(--contact-head-bleed) * -1); }
+@media (min-width: 768px) and (max-width: 1023px) {
+  .contact-page-head { --contact-head-bleed: var(--sp-6); }
+}
+@media (min-width: 1024px) {
+  .contact-page-head {
+    --contact-head-bleed: 0px; top: 64px;
+    grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: var(--sp-3);
+    padding: var(--sp-4) 0;
+  }
+  .contact-page-head > :not(a, h1) { grid-column: 1 / -1; }
 }
 /*
  * 上に止めた見出しと下に止めた「家庭からを送る」の帯の下に、フォーカスが隠れないよう、スクロールする枠の上下に余白を取る（GitHub Issue #212）。
@@ -440,9 +462,10 @@ button.guardian-record-link {
  */
 .guardian-main:has(.contact-page-head) { scroll-padding-top: calc(var(--contact-head-h, 0px) + 6px); }
 .guardian-main:has(.contact-form-actions) { scroll-padding-bottom: calc(var(--contact-actions-h, 0px) + 6px); }
-.contact-page-head h1 { font-size: 1.375rem; margin: 0; }
-/* 「‹ ホームへ」も押せるものとして高さ 44px 以上にする（詳細設計書「全画面に共通する部品と決まり」(2-0) の「タッチの条件」(4)、GitHub Issue #215） */
-.contact-page-head > a { display: flex; align-items: center; gap: var(--sp-2); min-height: 44px; }
+/* 見出しは h1 の字の段のまま（M3 の headline-small。前は 22px に上書きしていた。r2a-12） */
+.contact-page-head h1 { margin: 0; }
+/* 「‹ ホームへ」（テキストボタン）も押せるものとして高さ 44px 以上にする（詳細設計書「全画面に共通する部品と決まり」(2-0) の「タッチの条件」(4)、GitHub Issue #215） */
+.contact-page-head > a { display: flex; align-items: center; gap: var(--sp-2); min-height: 44px; justify-self: start; }
 .contact-date { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .contact-date button { min-height: 44px; min-width: 44px; }
 /*
@@ -455,7 +478,9 @@ button.guardian-record-link {
 .contact-month-days { list-style: none; margin: var(--sp-2) 0 0; padding: 0; display: grid; gap: var(--sp-1); }
 .contact-month-days button { width: 100%; min-height: 44px; text-align: left; }
 .contact-section { display: grid; gap: var(--sp-3); }
-.contact-section h2 { font-size: 1.125rem; margin: 0; }
+/* 保護者の画面の区画の見出しは h2 の字の段のまま（M3 の title-large。r2a-12）。職員の連絡帳（園児）画面は前の 18px のまま（職員の画面の点で直す） */
+.contact-section h2 { margin: 0; }
+.contact-child-page .contact-section h2 { font-size: 1.125rem; }
 .contact-home-lines { display: grid; gap: var(--sp-1); margin: 0; }
 .contact-home-lines > div { display: grid; grid-template-columns: 6.5em 1fr; gap: var(--sp-2); }
 .contact-home-lines dt { font-weight: 700; color: var(--c-text-weak); }
@@ -502,22 +527,22 @@ button.guardian-record-link {
 .contact-timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); }
 .contact-timeline li { display: flex; align-items: baseline; gap: var(--sp-2); }
 .contact-timeline time { flex: 0 0 3.2em; font-variant-numeric: tabular-nums; font-weight: 700; }
-.contact-timeline .is-nap { font-weight: 700; font-size: 1.1rem; }
+.contact-timeline .is-nap { font-weight: 700; font-size: 1.125rem; }
 .contact-timeline-heading { display: block; font-size: var(--fs-small); }
 .contact-timeline-text { flex: 1; overflow-wrap: anywhere; }
 .contact-new { flex: none; }
-.contact-nap { font-size: 1.15rem; font-weight: 700; margin: 0; }
+.contact-nap { font-size: 1.125rem; font-weight: 700; margin: 0; }
 .contact-nap-note { font-size: var(--fs-small); }
 
 /* 保護者ホームの「きょう」 */
 .contact-today-card { display: grid; gap: var(--sp-3); }
-.contact-today-name { font-size: 1.25rem; }
 .contact-today-block { display: grid; gap: var(--sp-1); }
-.contact-today-block h3 { font-size: 1rem; margin: 0; }
+.contact-today-block h3 { margin: 0; }
 .contact-today-block p { margin: 0; }
 .contact-latest { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1); }
 .contact-latest time { font-weight: 700; margin-right: var(--sp-1); }
-.contact-today-links { display: grid; gap: var(--sp-2); }
+/* 導線はリストの行（app.css の .guardian-panel-link）。行の間は線だけで分ける */
+.contact-today-links { display: grid; gap: 0; }
 
 /* 職員：連絡帳（クラス）画面。園児名の列を左に止め、表の中だけを横に送る（詳細設計書 (2-2 (2))） */
 .contact-class-head { flex-wrap: wrap; gap: var(--sp-3); }

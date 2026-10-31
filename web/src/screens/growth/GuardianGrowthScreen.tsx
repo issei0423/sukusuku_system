@@ -72,7 +72,7 @@ export default function GuardianGrowthScreen() {
   return (
     <div className="contact-page growth-page">
       <div className="contact-page-head">
-        <Link to="/guardian"><BackIcon />ホームへ</Link>
+        <Link className="btn btn-quiet btn-sm" to="/guardian"><BackIcon />ホームへ</Link>
         <h1>{data.child_name}の成長の記録</h1>
         {data.grace_ends_on && <p className="muted">{monthDay(data.grace_ends_on)}まで読むことができます</p>}
       </div>
