@@ -8,7 +8,7 @@
  * 記録は園児ごとの行で直接行う。体温は実測したときだけ選ぶ。
  * この画面は開いたまま運用し、実施中は自動ログアウトの対象外とする。
  */
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAsync } from '../../hooks';
 import { onNapClass } from '../../live';
@@ -317,12 +317,16 @@ function NapTimer({ startedAt, intervalMinutes, rows, nowMs, ready }: {
    * 通知音も、読み上げと同じ契機（確認の時刻を過ぎた子が増えたとき）に1回鳴らす（GitHub Issue #298。
    * 基本設計書「午睡チェックの実施」(4-8) の処理 4「通知音を伴って知らせる」）。鳴らす回数・止め方は設計が定めていない：
    * 【仮置き】3つの音を1回。自分で止まり、止める操作は置かない。時刻を過ぎたままの間は鳴らし直さない（web/仮置き値.md）
+   *
+   * 鳴らす・読み上げる処理は、描いた直後（useLayoutEffect）に走らせる。行の警告色とタイマーの文は同じ時計（nowMs）で
+   * 同じ描画に出るので、警告色が画面に出たときには、音を鳴らす処理と読み上げの文はもう済んでいる。useEffect だと描いたあと
+   * （次の順番）へ遅れ、警告色の行が出てから音が鳴るまでに間が空いていた（GitHub Issue #345。#324 と同じ形）
    */
   const sound = useNapSound(true);
   const playAlarm = sound.play;
   const [said, setSaid] = useState<{ text: string; seq: number } | null>(null);
   const lastDue = useRef<number | null>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!ready) return;
     const before = lastDue.current;
     lastDue.current = dueCount;
