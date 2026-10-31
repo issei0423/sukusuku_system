@@ -168,6 +168,21 @@
  * 段が折れる幅（iPad 縦など）でも、保存のボタンより先に文が目に入るようにする（見直し 2026-10-31 の c5-06）
  */
 .nap-row-body > .alert { flex-basis: 100%; }
+/*
+ * 【仮置き】午睡の行の中の警告（うつ伏せ・呼吸「確認できず」・前回の呼吸が確認できていない・保存の失敗）は、命にかかわる知らせなので、
+ * M3 の淡い地（error-container）に加えて、error の 2px の枠と警告の印（Material Symbols の warning）で示す。
+ * ほかの画面の .alert は淡い地だけ（M3 のまま）。「(!)」の字（読み上げない）を印に置き換える（w4 の m2。#363 の見直しで、枠を消して弱く見えた）
+ */
+.nap-card .alert { border: 2px solid var(--c-alert); }
+.nap-card .alert > span:first-child {
+  width: 24px; height: 24px; overflow: hidden; font-size: 0; color: transparent;
+  background-color: var(--c-alert);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='m40-120 440-760 440 760H40Zm138-80h604L480-720 178-200Zm302-40q17 0 28.5-11.5T520-280q0-17-11.5-28.5T480-320q-17 0-28.5 11.5T440-280q0 17 11.5 28.5T480-240Zm-40-120h80v-200h-80v200Zm40-100Z'/%3E%3C/svg%3E") center / 24px 24px no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='m40-120 440-760 440 760H40Zm138-80h604L480-720 178-200Zm302-40q17 0 28.5-11.5T520-280q0-17-11.5-28.5T480-320q-17 0-28.5 11.5T440-280q0 17 11.5 28.5T480-240Zm-40-120h80v-200h-80v200Zm40-100Z'/%3E%3C/svg%3E") center / 24px 24px no-repeat;
+}
+@media (forced-colors: active) {
+  .nap-card .alert > span:first-child { forced-color-adjust: none; background-color: CanvasText; }
+}
 .nap-row-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); }
 .nap-row-head .name { font-size: 1.25rem; line-height: 1.5; }
 .nap-row-head .last { white-space: nowrap; }
@@ -176,9 +191,11 @@
 .nap-inline-fields { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
 .nap-inline-fields > .nap-choice-field { flex: 1 1 auto; }
 .nap-choice-field { min-width: 0; margin: 0; padding: 0; border: 0; }
-.nap-choice-field legend { margin-bottom: var(--sp-1); font-size: var(--fs-small); font-weight: 700; }
-/* 午睡の行の体位・呼吸・顔色の名前は、項目の名前（.field > .lbl）と同じ 16px の太字にする。中の選択肢より小さくしない */
-.nap-inline-fields .nap-choice-field legend { font-size: var(--fs-body); }
+/*
+ * まとまりの名前（午睡の体位・呼吸・顔色、保護者の朝ごはん・きげん・お迎え）は、項目の名前（.field > .lbl）と同じ 16px の 600 にする。
+ * 中の選択肢より小さくしない（見直し 2026-10-31 の r2a-04）
+ */
+.nap-choice-field legend { margin-bottom: var(--sp-1); font-size: var(--fs-body); font-weight: 600; }
 /* 選択肢どうしの間は 8px。詳細設計書「全画面に共通する部品と決まり」(2-0) の「タッチの条件」(4)（GitHub Issue #215） */
 .nap-choice-options { display: flex; gap: var(--sp-2); }
 .nap-choice { flex: 1; min-width: 0; min-height: 52px; margin: 0; padding: 0; position: relative; }
@@ -196,28 +213,34 @@
  * 押すのは今までどおり label で、ラジオは指・マウスを受けない（pointer-events: none）
  */
 .nap-choice input { position: absolute; top: 0; left: 0; width: 100%; height: 100%; margin: 0; opacity: 0; pointer-events: none; }
+/*
+ * 選ぶもの（M3 のフィルターチップ。Jetpack Compose の FilterChipTokens）。午睡の体位・呼吸・顔色と、保護者の連絡帳の朝ごはん・きげん・お迎え。
+ * 角 8px。選ぶ前は白の地・outline の線・on-surface-variant の細字。選んだものは secondary-container の地と on-secondary-container の 600 の字に、
+ * チェックの印（Material Symbols の check）を添える（色だけに頼らない。WCAG 1.4.1）。前の黄の塗りと黒の太枠はやめた（w4 の m2）。
+ * 【仮置き】選ぶ前の線は M3 の outline-variant でなく outline にする（押せる部品の枠に 3:1 が要るため。WCAG 1.4.11）。
+ * 選択肢の名前はすべて全角の字なので、600 にしても幅は変わらない
+ */
 .nap-choice span {
-  display: flex; align-items: center; justify-content: center;
+  display: flex; align-items: center; justify-content: center; gap: var(--sp-1);
   width: 100%; min-height: 52px; padding: var(--sp-1) 2px;
-  border: 1px solid var(--c-border-strong); border-radius: var(--radius);
-  background: var(--c-surface); font-weight: 700; text-align: center; line-height: 1.3; letter-spacing: 0;
+  border: 1px solid var(--c-border); border-radius: var(--radius);
+  background: var(--c-surface); color: var(--c-text-sub);
+  font-weight: 400; text-align: center; line-height: 1.3; letter-spacing: 0;
 }
 @media (hover: hover) {
-  .nap-choice:hover span { background: var(--c-surface-sub); text-decoration: underline; text-underline-offset: 3px; }
+  .nap-choice:hover span { background: color-mix(in srgb, var(--c-text-sub) 8%, var(--c-surface)); }
+  .nap-choice:hover input:checked + span { background: var(--c-primary-hover); border-color: var(--c-primary-hover); }
 }
-/* 選んだものは、テーマカラーの塗りに加えて枠を太く黒くする（色だけに頼らない） */
 .nap-choice input:checked + span {
-  background: var(--c-primary); border-color: var(--c-primary-ink); color: var(--c-primary-ink);
-  box-shadow: inset 0 0 0 2px var(--c-primary-ink);
+  background: var(--c-primary); border-color: var(--c-primary); color: var(--c-primary-ink); font-weight: 600;
 }
-/*
- * 【仮置き】午睡の行の選択肢は、選ぶ前は細字、選んだものだけ太字にする。身長・体重の切り替え（.measure-toggle、GitHub Issue #211）と
- * 同じ考え方（web/仮置き値.md）。選択肢の名前はすべて全角の字なので、太字にしても幅は変わらず、折り返しは動かない
- */
-.nap-inline-fields .nap-choice span { font-weight: 400; }
 /* 午睡の選択肢は 52px 四方より小さくしない（GitHub Issue #215）。1行に詰めて並べても、2文字の選択肢（あり・通常など）が細くならないようにする */
 .nap-row-body .nap-choice span { min-width: 52px; }
-.nap-inline-fields .nap-choice input:checked + span { font-weight: 700; }
+/*
+ * 【仮置き】午睡の行は選択肢で横の幅がいっぱいなので、チェックの印を字の前（M3 の置き方）でなく字の上に置く。
+ * 字の前に置くと、選んだ選択肢だけ幅が増えて、選ぶたびに行の折り返しが動くため。高さ 52px の中に収まる
+ */
+.nap-inline-fields .nap-choice input:checked + span { flex-direction: column; gap: 0; }
 .nap-choice input:focus-visible + span { outline: 4px solid var(--c-focus); outline-offset: 2px; box-shadow: 0 0 0 2px var(--c-focus-ring); }
 .nap-row-actions { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 /* 「この子を記録」を押せない理由。ボタンの左に2行で置き、段の幅を取りすぎないようにする */
@@ -382,7 +405,8 @@ button.guardian-record-link {
  * 体温・午睡の長さに判定の色を付けない。
  */
 .nap-sleep-controls { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); }
-.nap-sleep-state { font-weight: 700; }
+/* 「13:06 ねた」は文なので太字にしない（見直し 2026-10-31 の r2a-13。太字は見出し・ラベル・ボタンに限る） */
+.nap-sleep-state { font-weight: 400; }
 .nap-sleep-button { min-height: 52px; min-width: 120px; }
 .nap-sleep-error { color: var(--c-alert); font-size: var(--fs-small); }
 .nap-exclude-button { min-height: 52px; min-width: 88px; }
@@ -443,13 +467,11 @@ button.guardian-record-link {
 /* 朝ごはん・きげん・お迎えの選択肢どうしの間は 8px（「タッチの条件」(2-0 (4))、GitHub Issue #215）。1行に2つ並べる */
 .contact-choice-options { flex-wrap: wrap; gap: var(--sp-2); }
 .contact-choice-options .nap-choice { flex: 1 1 calc(50% - var(--sp-2)); min-width: 7em; }
-/* 【仮置き】保護者の「家庭から」の選択肢も、選ぶ前は細字、選んだものだけ太字（午睡の選択肢と同じ。見直し 2026-10-31 の r2a-03。web/仮置き値.md） */
-.contact-choice-options .nap-choice span { font-weight: 400; }
-.contact-choice-options .nap-choice input:checked + span { font-weight: 700; }
 .contact-field { display: grid; gap: var(--sp-1); }
 /* ボタンの並びを2段に重ねた欄（連絡帳（園児）画面の食事の区分と量）は、段の間を 8px にする（「タッチの条件」(2-0 (4))、GitHub Issue #215） */
 .contact-field:has(> .contact-picks + .contact-picks) { gap: var(--sp-2); }
-.contact-field > span:first-child { font-weight: 700; font-size: var(--fs-small); }
+/* 欄の名前（排せつ・体温・食事など）も 16px の 600（r2a-04） */
+.contact-field > span:first-child { font-weight: 600; font-size: var(--fs-body); }
 .contact-field select, .contact-field input { min-height: 44px; }
 .contact-field textarea { display: block; width: 100%; min-height: 96px; }
 .contact-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); }
@@ -551,23 +573,28 @@ table.list.contact-class-table :is(th, td) { vertical-align: top; padding: var(-
  * 連絡帳：きょうのようすの記録（食事・排せつ・体温）と、直す・取り消す、連絡帳（園児）画面
  * 典拠：詳細設計書「タッチの条件」(2-0 (4))（押せるものは 44×44px 以上、隣り合うボタンの間は 8px 以上）・
  *      「連絡帳（クラス）画面」(2-2)・「連絡帳（園児）画面」(2-3)・「食事の列の画面の中の状態」(3-2)（仮は点線の枠）
- * 選んだものは、テーマカラーの塗りに加えて枠を太く黒くする（色だけに頼らない）。体温に判定の色を付けない。
+ * 選んだ状態を持つボタン（aria-pressed。食事の区分と量・直す窓の選び直し）は、午睡の選択肢と同じフィルターチップにする。
+ * aria-pressed の無いもの（排せつ・連絡帳（園児）の食事の量・＋体温・定型文・写真・AI の下書き）は、押すと記録や操作が起きるので、
+ * ふだんのボタン（全丸・primary の字）のまま。チップ（選ぶもの）とボタン（押すと何かが起きる）を形で見分けられるようにする（w4 の m2）。
+ * 体温に判定の色を付けない。
  */
 .pre-wrap { white-space: pre-wrap; }
 .toast .btn-sm { white-space: nowrap; }
 .contact-picks { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
-.contact-pick { min-height: 44px; min-width: 44px; padding: 0 var(--sp-2); font-weight: 700; }
-.contact-pick[aria-pressed="true"] {
-  background: var(--c-primary); border-color: var(--c-primary-ink); color: var(--c-primary-ink);
-  box-shadow: inset 0 0 0 2px var(--c-primary-ink);
+.contact-pick { min-height: 44px; min-width: 44px; padding: 0 var(--sp-2); }
+/* 【仮置き】チップ（M3 のフィルターチップ）：角 8px・高さ 48px。選ぶ前は白の地・outline の線・on-surface-variant の細字 */
+.contact-pick[aria-pressed] {
+  min-height: 48px; gap: var(--sp-1);
+  border-color: var(--c-border); border-radius: var(--radius); background: var(--c-surface); color: var(--c-text-sub); font-weight: 400;
 }
-/*
- * 【仮置き】選ぶもの（食事の量・区分、排せつ、直す窓の選び直し）は、選ぶ前は細字、選んだもの（aria-pressed="true"）だけ太字にする。
- * 午睡の選択肢・身長と体重の切り替え（GitHub Issue #211）と同じ考え方（見直し 2026-10-31 の r2a-03。web/仮置き値.md）。
- * 「定型文」「写真」「＋体温」などの操作のボタンは、ほかのボタンと同じ太字のまま
- */
-.contact-pick[aria-pressed="false"], .contact-picks:is(.is-meal, .is-toilet) .contact-pick:not([aria-pressed="true"]) { font-weight: 400; }
-.contact-pick[aria-pressed="true"] { font-weight: 700; }
+@media (hover: hover) {
+  .contact-pick[aria-pressed="false"]:hover:not(:disabled) { background: color-mix(in srgb, var(--c-text-sub) 8%, var(--c-surface)); }
+  .contact-pick[aria-pressed="true"]:hover:not(:disabled) { background: var(--c-primary-hover); border-color: var(--c-primary-hover); }
+}
+/* 選んだもの：secondary-container の地・on-secondary-container の 600 の字とチェックの印 */
+.contact-pick[aria-pressed="true"] {
+  background: var(--c-primary); border-color: var(--c-primary); color: var(--c-primary-ink); font-weight: 600;
+}
 /* 排せつの選択肢は、語の途中で割らない（割れるのは「トイレで／できた」の <wbr> の所だけ。FixDialog.tsx の toiletLabel。r2b-03） */
 .contact-picks.is-toilet .contact-pick { word-break: keep-all; overflow-wrap: anywhere; letter-spacing: 0; }
 /*
@@ -575,7 +602,23 @@ table.list.contact-class-table :is(th, td) { vertical-align: top; padding: var(-
  * （給食の列 192px で「食べない」、排せつの列 280px で「トイレでできた」が1行に入る。前は余白 8px）
  */
 .contact-picks:is(.is-meal, .is-toilet) .contact-pick { padding-inline: var(--sp-1); letter-spacing: 0; }
-.contact-pick.is-tentative { border: 2px dashed var(--c-primary-ink); background: var(--c-surface); box-shadow: none; }
+/* 仮に入れた量（保存していない）は、白の地に濃い点線の枠（「食事の列の画面の中の状態」(3-2)）。チェックの印は付く */
+.contact-pick.is-tentative { border: 2px dashed var(--c-primary-ink); background: var(--c-surface); }
+/*
+ * チェックの印（Material Symbols の check。icons.tsx と同じ形）。選んだチップの字の前に置く（M3 の置き方）。
+ * 【仮置き】連絡帳（クラス）の表の食事の量は、列の幅（2つ並べて 80px）に印と「食べない」が並ばないので、午睡と同じく字の上に置く
+ */
+.nap-choice input:checked + span::before, .contact-pick[aria-pressed="true"]::before {
+  content: ""; flex: none; width: 18px; height: 18px;
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z'/%3E%3C/svg%3E") center / 18px 18px no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z'/%3E%3C/svg%3E") center / 18px 18px no-repeat;
+}
+.contact-class-table .contact-picks.is-meal .contact-pick[aria-pressed="true"] { flex-direction: column; gap: 0; }
+@media (forced-colors: active) {
+  .nap-choice input:checked + span::before, .contact-pick[aria-pressed="true"]::before { forced-color-adjust: none; background-color: CanvasText; }
+  .nap-choice input:checked + span, .contact-pick[aria-pressed="true"] { outline: 2px solid CanvasText; outline-offset: -4px; }
+}
 .contact-pick-note { flex-basis: 100%; font-size: var(--fs-small); }
 .contact-picks.is-meal .contact-pick, .contact-picks.is-toilet .contact-pick { flex: 1 1 calc(50% - var(--sp-2)); }
 .contact-class-table .contact-col-meal { width: 192px; min-width: 192px; }
