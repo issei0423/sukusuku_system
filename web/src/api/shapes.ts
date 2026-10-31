@@ -340,7 +340,8 @@ export interface GuardianAccountRow {
   };
   account: Account;
   /**
-   * restore_until は、終了した紐づけを「紐づけを戻す」で戻せる最後の日（YYYY-MM-DD）。終了の紐づけにだけ付く
+   * restore_until は、終了した紐づけを「紐づけを戻す」で、解除のあいだも読める形で戻せる最後の日（YYYY-MM-DD）。
+   * 過ぎたら（付いていなければ）「結び直す」になる。終了の紐づけにだけ付く
    * （【仮置き】解除から RESTORE_LINK_DAYS 日。web/仮置き値.md。server/api_admin.go の handleGuardianAccounts）
    */
   links: (GuardianChild & { child_name: string; restore_until?: string })[];

@@ -7,6 +7,8 @@
  * 管理者が保護者アカウントを手で停止・再開するボタンは置かない（基本設計書「アカウントの停止と再開」(4-3)、
  * 図/画面詳細図「保護者アカウント管理画面」(7-8) 項目5「置かない」。GitHub Issue #272）。
  * 止めるときは紐づけの解除、戻すときは「紐づけを戻す」（停止していたアカウントもあわせて再開する。GitHub Issue #118）。
+ * 解除から RESTORE_LINK_DAYS 日を過ぎた紐づけは「結び直す」（新しい招待コードで結んだときと同じく、解除していたあいだの
+ * やりとりは読めない。止まったアカウントを再開する道はこれしか無いので断らない。照合 c5-04。【仮置き】web/仮置き値.md）。
  */
 import { useState } from 'react';
 import { useAsync } from '../../hooks';
@@ -17,13 +19,17 @@ import { ConfirmDialog, notify } from '../../components/feedback';
 import { ACCOUNT_STATUS, LINK_STATUS, RESTORE_LINK_DAYS } from '../../api/codes';
 import { formatYMD, today } from '../../api/util';
 
-/** 終了した紐づけを、いま「紐づけを戻す」で戻せるか。戻せる最後の日はサーバが返す（restore_until）。最後の判定はサーバが行う */
+/**
+ * 終了した紐づけを、いま「紐づけを戻す」（解除のあいだも読める形）で戻せるか。過ぎていれば「結び直す」。
+ * 戻せる最後の日はサーバが返す（restore_until）。どちらになるかの最後の判定はサーバが行う
+ */
 const canRestore = (restoreUntil: string | undefined) => !!restoreUntil && today() <= restoreUntil;
 
 type LinkTarget = { guardianId: string; childId: string; guardianName: string; childName: string; last: boolean; stopped: boolean };
 type Pending =
   | ({ kind: 'end' } & LinkTarget)
-  | ({ kind: 'restore' } & LinkTarget);
+  | ({ kind: 'restore' } & LinkTarget)
+  | ({ kind: 'relink' } & LinkTarget);
 
 export default function GuardianAccountsScreen() {
   const { user } = useSession();
@@ -41,8 +47,11 @@ export default function GuardianAccountsScreen() {
         await api.endGuardianLink(user!, pending.guardianId, pending.childId);
         notify(`${pending.guardianName} さんと ${pending.childName} の紐づけを解除しました`);
       } else {
+        // 戻すのも結び直すのも同じ経路。どちらになるかはサーバが解除した日から決める
         await api.restoreGuardianLink(user!, pending.guardianId, pending.childId);
-        notify(`${pending.guardianName} さんと ${pending.childName} の紐づけを戻しました`);
+        notify(pending.kind === 'relink'
+          ? `${pending.guardianName} さんと ${pending.childName} の紐づけを結び直しました`
+          : `${pending.guardianName} さんと ${pending.childName} の紐づけを戻しました`);
       }
       setTick((n) => n + 1);
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); setPending(null); }
@@ -106,9 +115,11 @@ export default function GuardianAccountsScreen() {
                               紐づけを戻す
                             </button>
                           )}
-                          {/* 戻せる期間を過ぎた紐づけには「紐づけを戻す」を出さず、理由と次にすることを添える（【仮置き】web/仮置き値.md） */}
+                          {/* 戻せる期間を過ぎた紐づけは「結び直す」（解除していたあいだのやりとりは読めない。【仮置き】web/仮置き値.md） */}
                           {l.link_status === '2' && !canRestore(l.restore_until) && (
-                            <span className="weak">解除から{RESTORE_LINK_DAYS}日を過ぎたため戻せません。新しい招待コードで紐づけてください。</span>
+                            <button className="btn-sm btn-quiet" onClick={() => setPending({ kind: 'relink', ...base })}>
+                              結び直す
+                            </button>
                           )}
                         </div>
                       );
@@ -139,6 +150,8 @@ export default function GuardianAccountsScreen() {
           誤って解除したときだけ「紐づけを戻す」を使ってください。戻せるのは、解除した日から{RESTORE_LINK_DAYS}日までです。
           親権の変更や家庭の事情で解除したあとに改めて結ぶときは、戻さずに新しい招待コードで紐づけてください。
           紐づけを戻すと、停止していたアカウントも再開され、解除していたあいだのやりとりも読めるようになります。
+          {/* 過ぎたら断らずに結び直す。止まったアカウントを再開する道はこれしか無い（照合 c5-04。【仮置き】web/仮置き値.md） */}
+          {RESTORE_LINK_DAYS}日を過ぎた紐づけは「結び直す」になります。新しい招待コードで紐づけたときと同じく、個人チャットは結び直したあとのやりとりから読めます（解除していたあいだのやりとりは読めません）。停止していたアカウントは再開されます。
           <br />
           {/* 保護者は left_at が入った時点でチャンネルごと参照できなくなる（基本設計書「チャット」(5-6)。第2.x版の番号では 5-5） */}
           紐づけを終了しても、その保護者が参加していた期間のやりとりは記録として残ります。
@@ -168,6 +181,18 @@ export default function GuardianAccountsScreen() {
           <p>戻すのは、誤って解除したときだけです。親権の変更や家庭の事情で解除したあとに改めて結ぶときは、戻さずに新しい招待コードで紐づけてください。</p>
           {pending.stopped && (
             <Alert soft>{pending.guardianName} さんのアカウントは停止中です。紐づけを戻すと、あわせて再開されます。</Alert>
+          )}
+        </ConfirmDialog>
+      )}
+      {pending?.kind === 'relink' && (
+        <ConfirmDialog title="紐づけを結び直す" confirmLabel="結び直す" busy={busy}
+          onConfirm={run} onCancel={() => setPending(null)}>
+          <p>{pending.guardianName} さんと {pending.childName} の紐づけを、結び直します。</p>
+          {/* 解除から日数を過ぎたので、新しい招待コードで結んだときと同じく今の時刻でチャットに入り直す
+              （server/api_admin.go の handleRestoreGuardianLink・joinRoomsOfChildNow。決めたこと D-48。【仮置き】web/仮置き値.md） */}
+          <p>解除から{RESTORE_LINK_DAYS}日を過ぎているため、新しい招待コードで紐づけたときと同じ扱いになります。{pending.guardianName} さんは {pending.childName} の記録とチャットを参照できるようになりますが、個人チャットは結び直したあとのやりとりから読めます。解除していたあいだのやりとりは読めません。</p>
+          {pending.stopped && (
+            <Alert soft>{pending.guardianName} さんのアカウントは停止中です。結び直すと、あわせて再開されます。</Alert>
           )}
         </ConfirmDialog>
       )}

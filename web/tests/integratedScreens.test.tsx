@@ -166,10 +166,11 @@ it('「紐づけを戻す」の確認ダイアログは、誤って解除した�
 });
 
 /*
- * 戻せる期間（解除から RESTORE_LINK_DAYS 日。【仮置き】web/仮置き値.md）を過ぎた紐づけには「紐づけを戻す」を出さず、
- * 理由と次にすることを添える（照合 c2b-3 の推し）
+ * 戻せる期間（解除から RESTORE_LINK_DAYS 日。【仮置き】web/仮置き値.md）を過ぎた紐づけは、断らずに「結び直す」を出す。
+ * 確認ダイアログで、解除していたあいだのやりとりは読めないことと、止まったアカウントの再開を示す（照合 c2b-3・c5-04 の推し）。
+ * 開くだけで、結び直す操作はしない
  */
-it('戻せる期間を過ぎた紐づけには「紐づけを戻す」を出さず、新しい招待コードへ案内する', async () => {
+it('戻せる期間を過ぎた紐づけには「紐づけを戻す」でなく「結び直す」を出し、読めない範囲を示す', async () => {
   const link = db.guardianChildren.find((g) => g.guardian_id === 'G003' && g.child_id === 'C003')!;
   const saved = link.ended_at;
   link.ended_at = `${addDays(today(), -30)}T10:00:00`;
@@ -177,7 +178,12 @@ it('戻せる期間を過ぎた紐づけには「紐づけを戻す」を出さ�
     openApp('/staff/admin/guardian-accounts', admin);
     const row = (await screen.findByText('鈴木 浩之')).closest('tr')!;
     expect(within(row).queryByRole('button', { name: '紐づけを戻す' })).toBeNull();
-    expect(row.textContent).toContain('日を過ぎたため戻せません。新しい招待コードで紐づけてください。');
+    expect(row.textContent).not.toContain('戻せません');
+    fireEvent.click(within(row).getByRole('button', { name: '結び直す' }));
+    const dialog = await screen.findByRole('dialog', { name: '紐づけを結び直す' });
+    expect(dialog.textContent).toContain('新しい招待コードで紐づけたときと同じ扱い');
+    expect(dialog.textContent).toContain('解除していたあいだのやりとりは読めません');
+    expect(dialog.textContent).toContain('結び直すと、あわせて再開されます');
   } finally {
     link.ended_at = saved;
   }

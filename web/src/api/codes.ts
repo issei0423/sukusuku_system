@@ -52,8 +52,9 @@ export const SHARE_STATUS: Record<ShareStatus, string> = { '0': '対象外', '1'
 export const MEASURE_TYPE: Record<MeasureType, string> = { '1': '身長', '2': '体重' };
 export const LINK_STATUS: Record<LinkStatus, string> = { '1': '有効', '2': '終了', '3': '猶予中' };
 /**
- * 終了した紐づけを「紐づけを戻す」で戻せる日数。解除した日から数え、その日数あとの日まで戻せる
+ * 終了した紐づけを「紐づけを戻す」で、解除のあいだも読める形で戻せる日数。解除した日から数え、その日数あとの日まで
  * （基本設計書「保護者と園児の紐づけを戻す」(4-3)「誤って解除したときに限る」を期間で支える）。
+ * 過ぎた紐づけは断らずに「結び直す」（新しい招待コードで結んだときと同じく、今の時刻でチャットに入り直す。照合 c5-04）。
  * 【仮置き】設計は期間を決めていない（web/仮置き値.md）。サーバ側は server/api_admin.go の restoreLinkDays
  */
 export const RESTORE_LINK_DAYS = 7;

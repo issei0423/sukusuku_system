@@ -3773,44 +3773,59 @@ const adminApi2 = {
   },
 
   /**
-   * 解除した紐づけを戻す。誤って解除したときの戻し先。
-   * 解除によってアカウントが停止していた場合は、あわせて再開する（GitHub Issue #118）
+   * 解除した紐づけを有効へ戻す。解除によってアカウントが停止していた場合は、あわせて再開する（GitHub Issue #118）。
+   * 止まった保護者アカウントを再開する道はこの操作だけ（基本設計書「アカウントの停止と再開」(4-3)）なので、日数で断らない（照合 c5-04）。
+   * - 解除した日から RESTORE_LINK_DAYS 日まで：「紐づけを戻す」。誤って解除したときの戻し先で、解除の前の状態へ戻す
+   *   （rejoinRoomsOfChild。参加の時刻ははじめのまま。解除していたあいだのやりとりも読める）
+   * - 過ぎたら（解除した日時の無い古い行も）：「結び直す」。新しい招待コードで結んだときと同じ扱い。紐づけた日時を今にし、
+   *   個人チャットといまのクラスのクラスグループへ今の時刻で参加し直す（お子さまの追加と同じ joinRoomsOfChildNow。決めたこと D-48）
+   * 【仮置き】web/仮置き値.md。server/api_admin.go の handleRestoreGuardianLink と同じ
    */
   async restoreGuardianLink(user: SessionUser, guardianId: string, childId: string): Promise<void> {
     if (user.role !== '1') return fail('紐づけの変更は管理者のみが行えます');
     const gc = db.guardianChildren.find((x) => x.guardian_id === guardianId && x.child_id === childId && x.link_status === '2');
     if (!gc) return fail('終了した紐づけが見つかりません');
-    // 戻せるのは、解除した日から RESTORE_LINK_DAYS 日まで。過ぎたら戻さず、新しい招待コードで紐づける
-    // （基本設計書「保護者と園児の紐づけを戻す」(4-3)。【仮置き】web/仮置き値.md。server/api_admin.go の handleRestoreGuardianLink と同じ）
     const until = restoreLinkUntil(gc.ended_at);
-    if (until === null || today() > until) return fail(MSG_RESTORE_LINK_EXPIRED);
+    const relink = until === null || today() > until;
+    const at = now();
     gc.link_status = '1';
     gc.ended_at = null;
+    if (relink) gc.linked_at = at;
 
     const g = db.guardians.find((x) => x.guardian_id === guardianId);
     const a = g ? findAccount(g.account_id) : undefined;
-    let after = '有効';
+    let reopened = false;
     if (a && a.status === '2') {
       a.status = '1';
-      a.updated_at = now();
-      after = '有効（アカウントを再開）';
+      a.updated_at = at;
+      reopened = true;
     }
-    if (a) rejoinRoomsOfChild(a.account_id, gc.linked_at, childId);
-    log(user.account_id, '7', '2', 't_guardian_child', g?.account_id ?? null, childId, '終了', after);
+    let joined: number[] = [];
+    if (a && relink) joined = joinRoomsOfChildNow(a.account_id, childId, at);
+    else if (a) rejoinRoomsOfChild(a.account_id, gc.linked_at, childId);
+    log(user.account_id, '7', '2', 't_guardian_child', g?.account_id ?? null, childId, '終了', restoreLinkLogAfter(relink, reopened));
+    // 結び直したときは、お子さまの追加と同じく、参加の変わったルームへ知らせる
+    joined.forEach((roomId) => publishRoomMembers(roomId));
     return ok(undefined);
   },
 };
 
 /**
- * 終了した紐づけを戻せる最後の日（YYYY-MM-DD）。解除した日から RESTORE_LINK_DAYS 日あと。解除した日時が無ければ null（戻せない側へ倒す）。
- * 【仮置き】web/仮置き値.md。server/api_admin.go の restoreLinkUntil と同じ
+ * 終了した紐づけを、解除のあいだも読める形で戻せる最後の日（YYYY-MM-DD）。解除した日から RESTORE_LINK_DAYS 日あと。
+ * 解除した日時が無ければ null（結び直す側へ倒す）。【仮置き】web/仮置き値.md。server/api_admin.go の restoreLinkUntil と同じ
  */
 function restoreLinkUntil(endedAt: string | null | undefined): string | null {
   return endedAt && endedAt.length >= 10 ? addDays(endedAt.slice(0, 10), RESTORE_LINK_DAYS) : null;
 }
 
-/** 戻せる期間を過ぎた紐づけを戻そうとしたときの文。何が違うかと次にすること（【仮置き】server/api_admin.go の msgRestoreLinkExpired と同じ） */
-const MSG_RESTORE_LINK_EXPIRED = `解除してから${RESTORE_LINK_DAYS}日を過ぎたため、紐づけを戻せません。新しい招待コードで紐づけてください。`;
+/**
+ * 「紐づけを戻す」「結び直す」の操作ログの変更後の値。戻したときは「有効」、結び直したときは「有効（結び直し）」。
+ * 止まっていたアカウントを再開したら「アカウントを再開」を添える（【仮置き】server/api_admin.go の restoreLinkLogAfter と同じ）
+ */
+function restoreLinkLogAfter(relink: boolean, reopened: boolean): string {
+  const notes = [...(relink ? ['結び直し'] : []), ...(reopened ? ['アカウントを再開'] : [])];
+  return notes.length === 0 ? '有効' : `有効（${notes.join('、')}）`;
+}
 
 /** その園児が在籍するクラス */
 const classIdsOfChild = (childId: string) =>
@@ -6837,6 +6852,42 @@ function addChildPreview(guardianId: string, c: InvitationCode): Promise<Invitat
 }
 
 /**
+ * 保護者を、その園児の個人チャットと、いまのクラスのクラスグループへ、今の時刻（at）で参加させる。参加中ならそのまま、
+ * 抜けていたら今の時刻で参加し直す。参加の変わったルームを返す（知らせを送る先）。新しい招待コードで結ぶときと同じ読める範囲になる
+ * （決めたこと D-48）。お子さまの追加（guardianApi.addChild）と、解除から日数を過ぎた紐づけの結び直し（restoreGuardianLink）が使う。
+ * 園全体は新規登録で参加済みなので扱わない（server/api_guardian.go の joinRoomsOfChildNow と同じ）。
+ * undo を渡すと、書いたものを戻す手順を積む。beforeJoin は1部屋ごとに先に呼ぶ（お子さまの追加の途中で止めるテストのため）。
+ * 【仮置き】ルームが無ければ飛ばす。知らせは参加の変わったルームへだけ（web/仮置き値.md）
+ */
+function joinRoomsOfChildNow(accountId: number, childId: string, at: string,
+  opts: { undo?: (() => void)[]; beforeJoin?: () => void } = {}): number[] {
+  const classId = contactClassOf(childId);
+  const rooms = db.chatRooms
+    .filter((r) => !r.is_archived && ((r.room_type === '4' && r.child_id === childId)
+      || (r.room_type === '2' && classId !== null && r.class_id === classId)))
+    .sort((a, b) => a.chat_room_id - b.chat_room_id);
+  const joined: number[] = [];
+  for (const r of rooms) {
+    opts.beforeJoin?.();
+    const m = db.chatMembers.find((x) => x.chat_room_id === r.chat_room_id && x.account_id === accountId);
+    if (m && m.left_at === null) continue;
+    if (m) {
+      const memberBefore = { ...m };
+      opts.undo?.push(() => { delete m.first_joined_at; Object.assign(m, memberBefore); });
+      // 【仮置き】参加し直す前の joined_at を first_joined_at に残す（すでにあれば変えない。server/api_guardian.go と同じ。
+      // 個人チャットの「保護者がまだ1人もいなかった間の投稿は見せる」境が今へ動かないように。web/仮置き値.md）
+      Object.assign(m, { first_joined_at: m.first_joined_at ?? m.joined_at, joined_at: at, left_at: null });
+    } else {
+      const row = { chat_room_id: r.chat_room_id, account_id: accountId, joined_at: at, left_at: null };
+      db.chatMembers.push(row);
+      opts.undo?.push(() => { db.chatMembers.splice(db.chatMembers.indexOf(row), 1); });
+    }
+    joined.push(r.chat_room_id);
+  }
+  return joined;
+}
+
+/**
  * お子さまの追加の途中で失敗させる（テストだけが使う）。サーバの同じテストは DB のトリガーで同じところを止める
  * （server/api_guardian_add_test.go の TestAddChildRollsBack）。null のあいだは何もしない
  */
@@ -6889,30 +6940,8 @@ const guardianApi = {
       }
       addChildStep('link');
 
-      // 3・4. 個人チャットと、いまのクラスのクラスグループ。参加中ならそのまま、抜けていたら今の時刻で参加し直す。
-      // 【仮置き】ルームが無ければ飛ばす。知らせは参加の変わったルームへだけ（web/仮置き値.md。server/api_guardian.go と同じ）
-      const classId = contactClassOf(c.child_id);
-      const rooms = db.chatRooms
-        .filter((r) => !r.is_archived && ((r.room_type === '4' && r.child_id === c.child_id)
-          || (r.room_type === '2' && classId !== null && r.class_id === classId)))
-        .sort((a, b) => a.chat_room_id - b.chat_room_id);
-      for (const r of rooms) {
-        addChildStep('join');
-        const m = db.chatMembers.find((x) => x.chat_room_id === r.chat_room_id && x.account_id === user.account_id);
-        if (m && m.left_at === null) continue;
-        if (m) {
-          const memberBefore = { ...m };
-          undo.push(() => { delete m.first_joined_at; Object.assign(m, memberBefore); });
-          // 【仮置き】参加し直す前の joined_at を first_joined_at に残す（すでにあれば変えない。server/api_guardian.go の addChildTx と同じ。
-          // 個人チャットの「保護者がまだ1人もいなかった間の投稿は見せる」境が今へ動かないように。web/仮置き値.md）
-          Object.assign(m, { first_joined_at: m.first_joined_at ?? m.joined_at, joined_at: at, left_at: null });
-        } else {
-          const row = { chat_room_id: r.chat_room_id, account_id: user.account_id, joined_at: at, left_at: null };
-          db.chatMembers.push(row);
-          undo.push(() => { db.chatMembers.splice(db.chatMembers.indexOf(row), 1); });
-        }
-        joined.push(r.chat_room_id);
-      }
+      // 3・4. 個人チャットと、いまのクラスのクラスグループ。参加中ならそのまま、抜けていたら今の時刻で参加し直す
+      joined.push(...joinRoomsOfChildNow(user.account_id, c.child_id, at, { undo, beforeJoin: () => addChildStep('join') }));
     } catch {
       undo.reverse().forEach((f) => f());
       return fail(MSG.addChildFailed);

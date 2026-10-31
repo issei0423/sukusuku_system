@@ -9,7 +9,7 @@ import { describe, it, expect } from 'vitest';
 import { api } from '../src/api/client';
 import * as db from '../src/api/mockDb';
 import type { SessionUser } from '../src/api/types';
-import { addDays, today } from '../src/api/util';
+import { addDays, now, today } from '../src/api/util';
 import { RESTORE_LINK_DAYS } from '../src/api/codes';
 
 const admin: SessionUser = {
@@ -217,22 +217,67 @@ describe('保護者アカウントと紐づけ', () => {
   });
 
   /*
-   * 紐づけを戻せるのは、解除した日から RESTORE_LINK_DAYS 日まで。過ぎたら断り、新しい招待コードへ案内する
-   * （照合 c2b-3 の推し。【仮置き】web/仮置き値.md。server/api_guardian_link_test.go の TestRestoreGuardianLinkOnlyWithinDays と同じ確かめ）
+   * 解除した日から RESTORE_LINK_DAYS 日までは「紐づけを戻す」：参加の時刻ははじめのままで、解除の前のやりとりも読める。
+   * 過ぎたら（解除した日時の無い古い行も）断らずに「結び直す」：新しい招待コードで結んだときと同じく今の時刻で参加し直し、
+   * 止まっていたアカウントは再開する。解除の前のやりとりは読めない（照合 c2b-3・c5-04 の推し。【仮置き】web/仮置き値.md。
+   * server/api_guardian_link_test.go の TestRestoreGuardianLinkWithinDaysOrRelink と同じ確かめ）
    */
-  it('紐づけを戻せるのは解除から決まった日数まで。過ぎたら断り、一覧には戻せる最後の日が載る', async () => {
-    await api.endGuardianLink(admin, 'G004', 'C004');
+  it('解除から決まった日数までは戻し、過ぎたら断らずに結び直す。一覧には戻せる最後の日が載る', async () => {
+    // 村田 真一（G004・アカウント9）の紐づけは村田 美咲（C004）の1本だけで、解除するとアカウントが止まる。個人チャットは 8
     const link = db.guardianChildren.find((g) => g.guardian_id === 'G004' && g.child_id === 'C004')!;
+    const member = () => db.chatMembers.find((m) => m.chat_room_id === 8 && m.account_id === 9)!;
+    const accountStatus = () => db.accounts.find((a) => a.account_id === 9)?.status;
+    // 操作ログは新しいものが先頭（mock.ts の log は unshift）
+    const lastLogAfter = () => db.operationLogs
+      .find((l) => l.target_table === 't_guardian_child' && l.target_child_id === 'C004' && l.before_value === '終了')?.after_value;
+    const murata: SessionUser = {
+      account_id: 9, email: 'murata.s@example.jp', role: '3', display_name: '村田 真一',
+      staff_id: null, guardian_id: 'G004', class_id: null, class_name: null,
+      is_temp_password: false, terms_agreed: true,
+    };
+    // 解除の前（はじめの参加のあと）に園が送ったやりとり
+    const first = member().joined_at;
+    const old = `${addDays(today(), -20)}T10:00:00`;
+    expect(first < old).toBe(true);
+    const oldId = Math.max(...db.chatMessages.map((m) => m.chat_message_id)) + 1;
+    db.chatMessages.push({ chat_message_id: oldId, chat_room_id: 8, sender_account_id: 3, body: '解除の前のやりとり',
+      source_type: '1', source_id: null, sent_at: old, edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null });
+    const readsOld = async () => (await api.messages(murata, 8)).some((m) => m.chat_message_id === oldId);
 
-    link.ended_at = `${addDays(today(), -(RESTORE_LINK_DAYS + 1))}T10:00:00`;
-    const row = (await api.guardianAccounts(admin)).find((r) => r.guardian.guardian_id === 'G004')!;
-    expect(row.links.find((l) => l.child_id === 'C004')?.restore_until).toBe(addDays(today(), -1));
-    await expect(api.restoreGuardianLink(admin, 'G004', 'C004')).rejects.toThrow('新しい招待コードで紐づけてください');
-    expect(link.link_status).toBe('2');
-
+    // 解除からちょうど RESTORE_LINK_DAYS 日：「紐づけを戻す」。参加の時刻は変わらず、解除の前のやりとりも読める
+    await api.endGuardianLink(admin, 'G004', 'C004');
+    expect(accountStatus()).toBe('2');
     link.ended_at = `${addDays(today(), -RESTORE_LINK_DAYS)}T10:00:00`;
     await api.restoreGuardianLink(admin, 'G004', 'C004');
     expect(link.link_status).toBe('1');
+    expect(accountStatus()).toBe('1');
+    expect(member().joined_at).toBe(first);
+    expect(member().left_at).toBeNull();
+    expect(await readsOld()).toBe(true);
+    expect(lastLogAfter()).toBe('有効（アカウントを再開）');
+
+    // 解除から RESTORE_LINK_DAYS + 1 日：断らずに「結び直す」。一覧の戻せる最後の日は昨日
+    await api.endGuardianLink(admin, 'G004', 'C004');
+    link.ended_at = `${addDays(today(), -(RESTORE_LINK_DAYS + 1))}T10:00:00`;
+    const row = (await api.guardianAccounts(admin)).find((r) => r.guardian.guardian_id === 'G004')!;
+    expect(row.links.find((l) => l.child_id === 'C004')?.restore_until).toBe(addDays(today(), -1));
+    await api.restoreGuardianLink(admin, 'G004', 'C004');
+    expect(link.link_status).toBe('1');
+    expect(accountStatus()).toBe('1');
+    // 新しい招待コードで結んだときと同じく、今の時刻で参加し直す。はじめの参加は first_joined_at に残す
+    expect(member().joined_at).toBe(now());
+    expect(member().first_joined_at).toBe(first);
+    expect(member().left_at).toBeNull();
+    expect(link.linked_at).toBe(now());
+    expect(await readsOld()).toBe(false);
+    expect(lastLogAfter()).toBe('有効（結び直し、アカウントを再開）');
+
+    // 解除した日時の無い古い終了の行も、断らずに結び直す
+    await api.endGuardianLink(admin, 'G004', 'C004');
+    link.ended_at = null;
+    await api.restoreGuardianLink(admin, 'G004', 'C004');
+    expect(link.link_status).toBe('1');
+    expect(lastLogAfter()).toBe('有効（結び直し、アカウントを再開）');
   });
 });
 
