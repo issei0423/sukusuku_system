@@ -118,7 +118,7 @@ export default function OperationLogScreen() {
         {data?.rows.length === 0 && <Empty text="該当する操作ログはありません。" />}
         {data && data.rows.length > 0 && (
           <>
-            <table className="list">
+            <table className="list list-dense">
               <thead>
                 <tr>
                   <th scope="col">操作日時</th><th scope="col">操作者</th><th scope="col">機能</th><th scope="col">操作</th>

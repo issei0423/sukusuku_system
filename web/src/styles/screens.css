@@ -241,6 +241,12 @@
  * 字の前に置くと、選んだ選択肢だけ幅が増えて、選ぶたびに行の折り返しが動くため。高さ 52px の中に収まる
  */
 .nap-inline-fields .nap-choice input:checked + span { flex-direction: column; gap: 0; }
+/*
+ * 字の上に印を置く所は、印のぶんの高さ（18px）を選ぶ前から取っておき、選んでも箱の高さが動かないようにする（上下の線 2px も足す）。
+ * ブラウザの文字の大きさの設定を上げると、字と印が 52px に収まらず、選んだ選択肢だけ背が伸びて行が動いていた（#366 の見直し）。
+ * 字は折り返さない（前から max-content で1行。行の折り返しは選択肢ごと）
+ */
+.nap-inline-fields .nap-choice span { min-height: max(52px, calc(1.3em + 18px + 2 * var(--sp-1) + 2px)); white-space: nowrap; }
 .nap-choice input:focus-visible + span { outline: 4px solid var(--c-focus); outline-offset: 2px; box-shadow: 0 0 0 2px var(--c-focus-ring); }
 .nap-row-actions { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 /* 「記録する」を押せない理由。ボタンの左に2行で置き、段の幅を取りすぎないようにする */
@@ -567,7 +573,16 @@ table.list.contact-class-table :is(th, td) { vertical-align: top; padding: var(-
 .contact-home-cell .contact-home-lines > div { grid-template-columns: 5.5em 1fr; }
 /* 「確認しました」は行ごとにくり返す操作なので塗らない（DADS のプライマリーボタンは1画面に原則1つ。見直し 2026-10-31 の r2c-03） */
 .contact-confirm-button { min-height: 44px; }
-.dashboard-count.is-due { font-weight: 700; color: var(--c-alert); }
+/*
+ * 職員・管理者ダッシュボードの表（見直し 2026-10-31 の r2a-07。w4 の m3）。名前の列を広げ、件数と「開く」の列を詰めて、
+ * 「届けること」と「園内のこと」で件数の位置をそろえる。件数は右にそろえ（.num）、1 以上は 600、0 と「ありません」は補足の色の細字。
+ * 家庭からの未確認・更新が 1 以上のときは警告色（前から）。「開く」は枠のないテキストボタン（StaffDashboard.tsx の OpenLink）
+ */
+.dashboard-list td:first-child { width: 100%; }
+.dashboard-list td:not(:first-child) { width: 1%; white-space: nowrap; }
+.dashboard-count { font-weight: 600; }
+.dashboard-count.is-due { color: var(--c-alert); }
+.dashboard-zero { color: var(--c-text-sub); font-weight: 400; }
 
 /*
  * 連絡帳：きょうのようすの記録（食事・排せつ・体温）と、直す・取り消す、連絡帳（園児）画面
@@ -590,6 +605,10 @@ table.list.contact-class-table :is(th, td) { vertical-align: top; padding: var(-
 @media (hover: hover) {
   .contact-pick[aria-pressed="false"]:hover:not(:disabled) { background: color-mix(in srgb, var(--c-text-sub) 8%, var(--c-surface)); }
   .contact-pick[aria-pressed="true"]:hover:not(:disabled) { background: var(--c-primary-hover); border-color: var(--c-primary-hover); }
+  /* 仮に入れた量は、指しても保存済みの地にしない。白に濃い字の色を 8% 重ね、点線の枠を残す（#366 の見直し） */
+  .contact-pick.is-tentative[aria-pressed]:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--c-primary-ink) 8%, var(--c-surface)); border-color: var(--c-primary-ink);
+  }
 }
 /* 選んだもの：secondary-container の地・on-secondary-container の 600 の字とチェックの印 */
 .contact-pick[aria-pressed="true"] {
@@ -615,6 +634,8 @@ table.list.contact-class-table :is(th, td) { vertical-align: top; padding: var(-
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z'/%3E%3C/svg%3E") center / 18px 18px no-repeat;
 }
 .contact-class-table .contact-picks.is-meal .contact-pick[aria-pressed="true"] { flex-direction: column; gap: 0; }
+/* 午睡の行と同じく、字の上の印のぶんの高さを選ぶ前から取っておき、字は折り返さない（#366 の見直し） */
+.contact-class-table .contact-picks.is-meal .contact-pick[aria-pressed] { min-height: max(48px, calc(1.3em + 18px + 2px)); white-space: nowrap; }
 @media (forced-colors: active) {
   .nap-choice input:checked + span::before, .contact-pick[aria-pressed="true"]::before { forced-color-adjust: none; background-color: CanvasText; }
   .nap-choice input:checked + span, .contact-pick[aria-pressed="true"] { outline: 2px solid CanvasText; outline-offset: -4px; }
