@@ -1,7 +1,7 @@
 /*
  * 画面ごとのレイアウト
  * 典拠：図/画面詳細図.md 各画面のワイヤーフレーム
- * 色・文字・角は tokens.css の値（デジタル庁デザインシステムに沿ったもの）だけを使う
+ * 色・文字・角は tokens.css の値（Material Design 3 に寄せたもの）だけを使う
  */
 
 /* ---- チャット画面（職員）：チャンネル／メッセージ／メンバーの3ペイン（画面詳細図 4-1） ---- */
@@ -42,7 +42,7 @@
 }
 .channel .unread {
   margin-left: auto; flex: none; min-width: 1.375rem; padding: 0 6px; border-radius: 0.6875rem;
-  background: var(--c-alert); color: var(--dads-white);
+  background: var(--c-alert); color: var(--c-on-alert);
   font-size: var(--fs-small); font-weight: 700; line-height: 1.375rem; letter-spacing: 0; text-align: center;
 }
 .channel-group { padding: var(--sp-3) var(--sp-3) var(--sp-1); font-size: var(--fs-small); font-weight: 700; color: var(--c-text-sub); }
@@ -392,10 +392,10 @@ button.guardian-record-link {
  * 対象外の子の行は、5分ごとの確認の欄を薄くする。入力と保存は残す（詳細設計書「午睡チェック画面」(2-4 (2))、決めたこと D-41）。
  * 押せる部品の文字なので、薄くしても白地に 4.5:1（WCAG 1.4.3）、枠に 3:1（1.4.11）を残す。0.45 では文字が 2.9:1 だった。
  * 対象外であることは、行の「きょうは対象外」の文字でも示している（薄さだけに頼らない。WCAG 1.4.1）。
- * 【仮置き】薄さ 0.75（web/仮置き値.md）
+ * 【仮置き】薄さ 0.85（web/仮置き値.md）。本文の色を M3 にしたとき、0.75 ではボタンの primary の字が 3.7:1・選択肢の枠が 2.9:1 に下がったので上げた
  */
 .nap-card.is-excluded .nap-inline-fields,
-.nap-card.is-excluded .nap-row-actions { opacity: .75; }
+.nap-card.is-excluded .nap-row-actions { opacity: .85; }
 
 /* 保護者：連絡帳画面（幅 360px で1列） */
 .contact-page { max-width: 720px; margin: 0 auto; display: grid; gap: var(--sp-4); }
@@ -431,7 +431,7 @@ button.guardian-record-link {
 .contact-home-lines dt { font-weight: 700; color: var(--c-text-weak); }
 .contact-home-lines dd { margin: 0; overflow-wrap: anywhere; }
 .contact-home-lines .is-marked dt { color: var(--c-primary-ink); }
-.contact-confirmed { font-weight: 700; color: var(--dads-green-900); }
+.contact-confirmed { font-weight: 700; color: var(--c-approved); }
 .contact-call { font-weight: 700; }
 /*
  * 入力欄の近くに常に出す固定の文（職員の体温の一覧の「記録すると保護者に数字が出ます。…」、保護者の連絡事項の「お薬・食事の除去のご依頼は…」）。
@@ -459,7 +459,15 @@ button.guardian-record-link {
 /* 送るボタンは画面の下端に止める（詳細設計書「配置（幅 360px）」(2-6 (2))） */
 .contact-form-actions {
   position: sticky; bottom: 0; display: flex; gap: var(--sp-2); padding: var(--sp-2) 0;
-  background: var(--c-surface);
+  background: var(--c-surface); border-top: 1px solid var(--c-border-weak);
+}
+/*
+ * 前は帯が、スクロールする枠の下の余白（32px）の上で止まり、帯の下に後ろの選択肢がのぞいて、「家庭からを送る」のすぐ下に
+ * 別の押せるものが見えていた（見直し 2026-10-31 の r2b-04）。家庭からの欄がある画面では枠の下の余白を 0 にし、帯を枠の下端に付ける。
+ * 帯の高さはそのまま --contact-actions-h に入る（#212 の scroll-padding-bottom）。ページ全体を送る PC の幅（1024px 以上）は前から余白が 0
+ */
+@media (max-width: 1023px) {
+  .guardian-main:has(.contact-form-actions) { padding-bottom: 0; }
 }
 .contact-form-actions button { min-height: 48px; }
 .contact-form-actions .btn-primary { flex: 1; }
@@ -510,10 +518,10 @@ button.guardian-record-link {
  */
 table.list.contact-class-table :is(th, td) { vertical-align: top; padding: var(--sp-2) var(--sp-3); height: 56px; }
 .contact-class-table .contact-col-child {
-  position: sticky; left: 0; z-index: 1; min-width: 7em; background: var(--c-surface); text-align: left;
+  position: sticky; left: 0; z-index: 1; min-width: 7em; background: var(--c-bg); text-align: left;
 }
-/* 見出しの行の「園児」も、ほかの見出しと同じ灰の地にする（前は白だった） */
-.contact-class-table thead .contact-col-child { background: var(--c-surface-head); }
+/* 見出しの行も、左に止めた「園児」の列も、本文の地にする（この表は箱に入れず本文の地に直に置くので、白の帯にしない。地は透かさない） */
+.contact-class-table thead th { background: var(--c-bg); }
 /* 行の見出しの園児名は、同じ行の選択肢より小さくしない（16px の太字。見直し 2026-10-31 の r2a-08） */
 .contact-class-table tbody .contact-col-child { font-size: var(--fs-body); }
 /*

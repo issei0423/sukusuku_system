@@ -1,8 +1,69 @@
 /*
  * 共通レイアウトと共通部品
  * 典拠：図/画面詳細図.md「共通レイアウト」(1)
- * 部品の形は、デジタル庁デザインシステム（DADS）の同じ役割のコンポーネントに合わせる（tokens.css の冒頭を参照）
+ * 部品の形は、Material Design 3 の同じ役割のコンポーネントに合わせる。外枠（ヘッダ・左メニューなど）は DADS のまま止める（tokens.css の冒頭を参照）
  */
+
+/*
+ * ============ 外枠（職員のヘッダと左メニュー、保護者のヘッダ・PC の左の欄・ドロワー、緊急連絡の帯） ============
+ * 外枠は本文の見た目と切り離し、tokens.css の --chrome-* と、ここで明示した字の大きさ・行間・字間・太さ・角・枠だけで描く。
+ * 本文の部品（button・a・body の字の調子）の決まりを変えても、外枠の画素が変わらないようにするため。
+ * :where() で包んで、詳細度を tokens.css の button・a の決まりと同じにする（後ろに書いたこちらが勝ち、
+ * 外枠の中の個別の決まり（.notify-btn・.drawer a など）は今までどおりこちらに勝つ）。
+ * 個別の決まりより前に置く（同じ詳細度の :active などで、個別の決まりの色を上書きしないため）。
+ * 字間は body の 0.02em を body の字の大きさ（1rem）で計算した長さが受け継がれていたので、.02rem で書く
+ * （保護者の PC の幅では外枠の字が 18px になるが、字間は 16px の 0.02 倍のままだった）
+ */
+:where(.app-header, .sidenav, .guardian-header, .guardian-sidebar, .drawer, .guardian-footer) {
+  font-size: var(--chrome-fs-body); line-height: 1.7; letter-spacing: .02rem; color: var(--chrome-text);
+}
+:where(.app-header, .guardian-header, .guardian-sidebar, .drawer) button {
+  min-height: var(--chrome-control-h);
+  min-width: var(--chrome-tap-min);
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid var(--chrome-border-strong);
+  border-radius: var(--chrome-radius);
+  background: var(--chrome-surface);
+  color: var(--chrome-text);
+  font: inherit;
+  font-size: var(--chrome-fs-body);
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: .02em;
+  text-align: center;
+  text-decoration: none;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+}
+@media (hover: hover) {
+  :where(.app-header, .guardian-header, .guardian-sidebar, .drawer) button:hover:not(:disabled) {
+    background: var(--chrome-surface-sub);
+    border-color: var(--chrome-text);
+    text-decoration: underline;
+  }
+}
+:where(.app-header, .guardian-header, .guardian-sidebar, .drawer) button:active:not(:disabled) { background: var(--chrome-surface-head); }
+:where(.app-header, .guardian-header, .guardian-sidebar, .drawer) button:disabled {
+  background: var(--chrome-surface);
+  border-color: var(--chrome-disabled);
+  color: var(--chrome-disabled);
+  cursor: not-allowed;
+}
+/* メニューの下のログアウト（btn-block）。本文の幅いっぱいのボタンの決まりを変えても、こちらは変えない */
+:is(.drawer, .guardian-sidebar) .btn-block { width: 100%; padding-left: var(--sp-2); padding-right: var(--sp-2); letter-spacing: 0; }
+:where(.app-header, .sidenav, .guardian-header, .guardian-sidebar, .drawer, .guardian-footer) a {
+  color: var(--chrome-link);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+@media (hover: hover) {
+  :where(.app-header, .sidenav, .guardian-header, .guardian-sidebar, .drawer, .guardian-footer) a:hover { color: var(--chrome-link-hover); text-decoration-thickness: 3px; }
+}
+:where(.app-header, .sidenav, .guardian-header, .guardian-sidebar, .drawer, .guardian-footer) a:active { color: var(--chrome-link-active); }
 
 /* ============ 職員レイアウト（画面詳細図 1-1） ============ */
 .staff-shell { display: flex; flex-direction: column; height: 100%; }
@@ -15,9 +76,9 @@
   align-items: center;
   gap: var(--sp-4);
   padding: 0 var(--sp-4) 0 0;
-  background: var(--c-primary-band);
-  border-bottom: 1px solid var(--c-primary-deep);
-  color: var(--c-primary-ink);
+  background: var(--chrome-band);
+  border-bottom: 1px solid var(--chrome-deep);
+  color: var(--chrome-ink);
 }
 .app-header .header-brand {
   align-self: stretch;
@@ -26,17 +87,17 @@
   align-items: center;
   gap: 0;
   padding: 0 12px;
-  background: var(--c-surface);
-  border-right: 1px solid var(--c-border);
+  background: var(--chrome-surface);
+  border-right: 1px solid var(--chrome-border);
 }
 .app-header .header-mark { width: 48px; height: 40px; object-fit: contain; }
 .app-header .header-wordmark { width: 108px; height: auto; }
 .app-header .spacer { flex: 1; }
 
 /* ログイン中の利用者名を常時表示する。職員は所属クラスも（基本設計書 3-5） */
-.app-header .who { font-size: var(--fs-body); font-weight: 700; white-space: nowrap; }
+.app-header .who { font-size: var(--chrome-fs-body); font-weight: 700; white-space: nowrap; }
 .app-header .who .cls { font-weight: 400; margin-right: var(--sp-2); }
-.app-header button { min-height: var(--tap-min); background: var(--c-surface); }
+.app-header button { min-height: var(--chrome-tap-min); background: var(--chrome-surface); }
 
 /* 通知と未対応件数 */
 /* 件数の札がベルの絵に重ならないよう、右側を空けておく。札と空きは文字の大きさに合わせて rem で決める */
@@ -44,8 +105,8 @@
 .notify-badge {
   position: absolute; top: 2px; right: 2px;
   min-width: 1.375rem; height: 1.375rem; padding: 0 6px;
-  border-radius: 0.6875rem; background: var(--c-alert); color: var(--dads-white);
-  font-size: var(--fs-small); font-weight: 700; line-height: 1.375rem; letter-spacing: 0; text-align: center;
+  border-radius: 0.6875rem; background: var(--chrome-alert); color: var(--dads-white);
+  font-size: var(--chrome-fs-small); font-weight: 700; line-height: 1.375rem; letter-spacing: 0; text-align: center;
 }
 
 /*
@@ -54,11 +115,11 @@
  */
 .live-indicator {
   display: inline-flex; align-items: center; gap: var(--sp-1);
-  font-size: var(--fs-small); white-space: nowrap; color: var(--c-primary-ink);
+  font-size: var(--chrome-fs-small); white-space: nowrap; color: var(--chrome-ink);
 }
-.live-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 10px; border: 1px solid var(--c-primary-ink); }
-.live-indicator.is-open .live-dot { background: var(--c-live-on); }
-.live-indicator.is-fallback .live-dot { background: var(--c-live-off); }
+.live-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 10px; border: 1px solid var(--chrome-ink); }
+.live-indicator.is-open .live-dot { background: var(--chrome-live-on); }
+.live-indicator.is-fallback .live-dot { background: var(--chrome-live-off); }
 /*
  * 【仮置き】縦向きの狭い幅で入りきらないときは、文言の区切り（<wbr>）で2行に折り返す。
  * 「自動で／読み直しています」のように、語の途中では切らない（keep-all）。入りきる幅では1行のまま。
@@ -74,9 +135,9 @@
  * サーバに届かないときは警告色、保護者の「自動で読み直しています」は細い帯。午睡チェック画面では大きく出す
  */
 .connection-banner { margin: 0 0 var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: 8px; font-weight: 700; }
-.connection-banner.is-unreachable { background: var(--c-alert); color: var(--dads-white); }
+.connection-banner.is-unreachable { background: var(--c-alert); color: var(--c-on-alert); }
 .connection-banner.is-unreachable.is-large { min-height: 64px; display: flex; align-items: center; font-size: 1.25rem; }
-.connection-banner.is-fallback { padding: var(--sp-1) var(--sp-3); background: var(--c-alert-soft); color: var(--c-primary-ink); font-weight: 400; font-size: var(--fs-small); }
+.connection-banner.is-fallback { padding: var(--sp-1) var(--sp-3); background: var(--c-alert-soft); color: var(--c-alert-deep); font-weight: 400; font-size: var(--fs-small); }
 
 .staff-body { flex: 1; display: flex; min-height: 0; position: relative; }
 
@@ -86,34 +147,36 @@
  */
 .sidenav {
   flex: 0 0 var(--sidenav-w);
-  background: var(--c-surface);
-  border-right: 1px solid var(--c-border);
+  background: var(--chrome-surface);
+  border-right: 1px solid var(--chrome-border);
   padding: var(--sp-2) 0;
   overflow-y: auto;
 }
 .sidenav a {
   display: flex; align-items: center; gap: var(--sp-3);
-  min-height: var(--control-h);
+  min-height: var(--chrome-control-h);
   padding: 0 var(--sp-4);
-  color: var(--c-text); text-decoration: none; font-size: var(--fs-body); line-height: 1.3;
+  color: var(--chrome-text); text-decoration: none; font-size: var(--chrome-fs-body); line-height: 1.3;
   border-left: 4px solid transparent;
 }
 @media (hover: hover) {
-  .sidenav a:hover { background: var(--c-surface-sub); color: var(--c-text); text-decoration: underline; text-decoration-thickness: 1px; }
+  .sidenav a:hover { background: var(--chrome-surface-sub); color: var(--chrome-text); text-decoration: underline; text-decoration-thickness: 1px; }
 }
 .sidenav a.current {
-  background: var(--c-primary-soft);
-  border-left-color: var(--c-primary-deep);
+  background: var(--chrome-current);
+  border-left-color: var(--chrome-deep);
   font-weight: 700;
 }
-.sidenav hr { margin: var(--sp-3) var(--sp-4); border: 0; border-top: 1px solid var(--c-border); }
-.sidenav .group-label { padding: var(--sp-1) var(--sp-4); font-size: var(--fs-small); font-weight: 700; color: var(--c-text-sub); }
+.sidenav hr { margin: var(--sp-3) var(--sp-4); border: 0; border-top: 1px solid var(--chrome-border); }
+.sidenav .group-label { padding: var(--sp-1) var(--sp-4); font-size: var(--chrome-fs-small); font-weight: 700; color: var(--chrome-text-sub); }
 .sidenav-hint { display: none; }
 @media (max-height: 900px) {
-  .sidenav-hint { display: block; position: sticky; bottom: 0; padding: 6px 10px; background: var(--c-surface); border-top: 1px solid var(--c-border); color: var(--c-text-sub); font-size: var(--fs-small); text-align: center; }
+  .sidenav-hint { display: block; position: sticky; bottom: 0; padding: 6px 10px; background: var(--chrome-surface); border-top: 1px solid var(--chrome-border); color: var(--chrome-text-sub); font-size: var(--chrome-fs-small); text-align: center; }
 }
 
 .main { flex: 1; min-width: 0; overflow-y: auto; padding: var(--main-pad); background: var(--c-bg); }
+/* 【仮置き】職員の本文の段落は 40 字で折り返す（保護者の PC の幅と同じ。長い1行を読ませない。見直し 2026-10-31 の r2a-14） */
+.main p { max-width: 40em; }
 
 /*
  * 想定する端末と向き（基本設計書 3-5）。職員画面はタブレット横向きを基準に組む
@@ -137,6 +200,8 @@
   .sidenav hr { margin: var(--sp-3); }
 }
 @media (min-width: 1400px) {
+  /* 【仮置き】PC の幅で、真ん中に置いた職員の画面の外を surface-container の地にする（外も白だった。見直し 2026-10-31 の r2b-13） */
+  body { background: var(--c-surface-sub); }
   .staff-shell {
     max-width: max(var(--staff-base-w), calc(100vh * var(--staff-ratio)));
     margin: 0 auto;
@@ -162,7 +227,8 @@
 }
 
 /* 12カラムグリッド（基本設計書 3-5） */
-.grid12 { display: grid; grid-template-columns: repeat(var(--grid-cols), 1fr); gap: var(--sp-4); }
+/* 【仮置き】段の間は 24px。グリッドの外で積むカードの間（24px）とそろえる（見直し 2026-10-31 の r2b-09） */
+.grid12 { display: grid; grid-template-columns: repeat(var(--grid-cols), 1fr); gap: var(--sp-5); }
 .grid12 > .card { margin-bottom: 0; }
 .col-3  { grid-column: span 3; }
 .col-4  { grid-column: span 4; }
@@ -191,15 +257,15 @@
 }
 .guardian-header {
   min-height: 64px; flex: 0 0 64px; display: flex; align-items: center; gap: var(--sp-2);
-  padding: 0 var(--sp-3); background: var(--c-primary-band); border-bottom: 1px solid var(--c-primary-deep);
+  padding: 0 var(--sp-3); background: var(--chrome-band); border-bottom: 1px solid var(--chrome-deep);
 }
 .guardian-header .spacer { flex: 1; }
-.guardian-header button { background: var(--c-surface); }
+.guardian-header button { background: var(--chrome-surface); }
 /* DADS のハンバーガーメニューボタン（ラベル付き）と同じく、印の下に「メニュー」と書く */
 .guardian-menu-button {
   display: flex; flex-direction: column; gap: 0;
   min-height: 52px; min-width: 64px; padding: 2px 6px;
-  font-size: var(--fs-small); line-height: 1.2; letter-spacing: 0; white-space: nowrap;
+  font-size: var(--chrome-fs-small); line-height: 1.2; letter-spacing: 0; white-space: nowrap;
 }
 /* 印は Material Symbols の menu（components/icons.tsx）。「メニュー」の字（14px）より大きく、24px で置く */
 .guardian-menu-button .icon { width: 1.5rem; height: 1.5rem; }
@@ -224,7 +290,7 @@
 .guardian-child-card {
   display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
   padding: var(--sp-4);
-  background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius);
+  background: var(--c-surface); border: 1px solid var(--c-border-weak); border-radius: var(--radius-card);
 }
 .guardian-child-card h2 { margin: 0; font-size: 1.5rem; }
 .guardian-child-card p { margin: 0; color: var(--c-text-sub); }
@@ -233,22 +299,22 @@
 .guardian-home-panel {
   padding: var(--sp-4);
   background: var(--c-surface);
-  border: 1px solid var(--c-border); border-radius: var(--radius);
+  border: 1px solid var(--c-border-weak); border-radius: var(--radius-card);
 }
 .guardian-panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
 .guardian-panel-heading h2 { font-size: 1.25rem; }
 .guardian-home-panel p { margin: var(--sp-2) 0 var(--sp-4); color: var(--c-text-sub); }
 /* 件数の札。DADS のチップラベル（塗り）と同じ形 */
 .guardian-unread {
-  flex: none; margin-top: 2px; padding: 3px 8px; border-radius: var(--radius);
-  background: var(--c-alert); color: var(--dads-white);
+  flex: none; margin-top: 2px; padding: 3px 8px; border-radius: var(--radius-full);
+  background: var(--c-alert); color: var(--c-on-alert);
   font-size: var(--fs-small); font-weight: 700; line-height: 1.3;
 }
 /* 主な導線は、DADS の塗りボタンと同じ見た目にする */
 .guardian-panel-link {
   display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2);
   min-height: var(--control-h); padding: 0 var(--sp-4);
-  border: 1px solid var(--c-primary-deep); border-radius: var(--radius);
+  border: 1px solid var(--c-primary-deep); border-radius: var(--radius-button);
   background: var(--c-primary); color: var(--c-primary-ink);
   text-decoration: none; font-weight: 700;
 }
@@ -268,8 +334,8 @@
   .guardian-record-link:hover { color: var(--c-text); text-decoration: underline; text-decoration-thickness: 1px; background: var(--c-surface-sub); }
 }
 .guardian-contact-note { padding: 0; color: var(--c-text-sub); font-size: var(--fs-small); line-height: 1.7; }
-.guardian-drawer { background: var(--c-surface); }
-.guardian-room-list { overflow: hidden; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius); }
+.guardian-drawer { background: var(--chrome-surface); }
+.guardian-room-list { overflow: hidden; background: var(--c-surface); border: 1px solid var(--c-border-weak); border-radius: var(--radius-card); }
 .guardian-room-link {
   width: 100%; min-height: 56px; display: flex; justify-content: space-between; gap: var(--sp-3);
   padding: var(--sp-3) var(--sp-4); border: 0; border-bottom: 1px solid var(--c-border); border-radius: 0;
@@ -317,6 +383,8 @@
   /* 文字を 16px → 18px に上げる。画面から目までがスマートフォンより遠く、同じ大きさでは小さく見えるため */
   .guardian-shell {
     --fs-body: 1.125rem; --fs-small: 1rem;
+    /* 外枠（ヘッダ・左の欄）の字も同じに上げる（外枠の字は --chrome-fs-* で決める） */
+    --chrome-fs-body: 1.125rem; --chrome-fs-small: 1rem;
     font-size: var(--fs-body);
     max-width: none; height: auto; min-height: 100%;
     border: 0; background: var(--c-bg);
@@ -325,9 +393,9 @@
   .guardian-menu-button, .guardian-shell .drawer, .guardian-shell .drawer-backdrop { display: none; }
   .guardian-header-phone {
     display: flex; align-items: center; gap: var(--sp-2); margin-right: var(--sp-3);
-    font-size: var(--fs-small); font-weight: 700;
+    font-size: var(--chrome-fs-small); font-weight: 700;
   }
-  .guardian-header-phone a { display: inline-flex; align-items: center; min-height: var(--tap-min); font-size: 1.25rem; }
+  .guardian-header-phone a { display: inline-flex; align-items: center; min-height: var(--chrome-tap-min); font-size: 1.25rem; }
   /* 下端の案内はヘッダへ移したので出さない（.guardian-footer の定義より後ろでも効くよう、列の中に限って書く） */
   .guardian-shell .guardian-footer { display: none; }
 
@@ -341,16 +409,16 @@
   }
   .guardian-sidebar {
     display: flex; flex-direction: column; position: sticky; top: calc(64px + var(--sp-5)); align-self: start;
-    padding: var(--sp-4); background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius);
+    padding: var(--sp-4); background: var(--chrome-surface); border: 1px solid var(--chrome-border); border-radius: var(--chrome-radius);
   }
-  .guardian-sidebar .who { font-weight: 700; padding-bottom: var(--sp-3); border-bottom: 1px solid var(--c-border); margin-bottom: var(--sp-2); }
+  .guardian-sidebar .who { font-weight: 700; padding-bottom: var(--sp-3); border-bottom: 1px solid var(--chrome-border); margin-bottom: var(--sp-2); }
   .guardian-sidebar a {
-    display: flex; align-items: center; gap: var(--sp-2); min-height: var(--control-h);
-    padding: 0 var(--sp-3); color: var(--c-text); text-decoration: none;
-    border-bottom: 1px solid var(--c-border-weak);
+    display: flex; align-items: center; gap: var(--sp-2); min-height: var(--chrome-control-h);
+    padding: 0 var(--sp-3); color: var(--chrome-text); text-decoration: none;
+    border-bottom: 1px solid var(--chrome-border-weak);
   }
   /* いまの画面を、色だけでなく太さと左の線でも示す */
-  .guardian-sidebar a[aria-current="page"] { font-weight: 700; box-shadow: inset 4px 0 0 var(--c-primary-deep); background: var(--c-surface-sub); }
+  .guardian-sidebar a[aria-current="page"] { font-weight: 700; box-shadow: inset 4px 0 0 var(--chrome-deep); background: var(--chrome-surface-sub); }
   .guardian-sidebar .spacer { height: var(--sp-5); }
   /* ダイアログを開く項目も、となりのリンクと同じ左の余白にそろえる */
   .guardian-body .guardian-sidebar button.drawer-item { padding: 0 var(--sp-3); }
@@ -361,36 +429,36 @@
   .guardian-message-compose { bottom: 0; }
 }
 @media (min-width: 1024px) and (hover: hover) {
-  .guardian-sidebar a:hover { background: var(--c-surface-sub); color: var(--c-text); text-decoration: underline; text-decoration-thickness: 1px; }
+  .guardian-sidebar a:hover { background: var(--chrome-surface-sub); color: var(--chrome-text); text-decoration: underline; text-decoration-thickness: 1px; }
 }
 
 .drawer-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .5); z-index: 40; }
 /* DADS のドロワー。幅 288px */
 .drawer {
   position: fixed; top: 0; left: 0; bottom: 0; width: min(288px, 85vw); z-index: 41;
-  background: var(--c-surface); border-right: 1px solid var(--c-border);
+  background: var(--chrome-surface); border-right: 1px solid var(--chrome-border);
   padding: var(--sp-4); display: flex; flex-direction: column; gap: 0;
 }
-.drawer .who { font-weight: 700; padding-bottom: var(--sp-3); border-bottom: 1px solid var(--c-border); margin-bottom: var(--sp-2); }
-.drawer-head { display: flex; align-items: flex-start; gap: var(--sp-2); border-bottom: 1px solid var(--c-border); margin-bottom: var(--sp-2); padding-bottom: var(--sp-2); }
+.drawer .who { font-weight: 700; padding-bottom: var(--sp-3); border-bottom: 1px solid var(--chrome-border); margin-bottom: var(--sp-2); }
+.drawer-head { display: flex; align-items: flex-start; gap: var(--sp-2); border-bottom: 1px solid var(--chrome-border); margin-bottom: var(--sp-2); padding-bottom: var(--sp-2); }
 .drawer-head .who { flex: 1; min-width: 0; margin: 0; padding-top: 10px; border: 0; }
 .drawer-close { flex: none; padding: 0 var(--sp-3); white-space: nowrap; }
 .drawer a {
-  display: flex; align-items: center; gap: var(--sp-2); min-height: var(--control-h);
-  padding: 0 var(--sp-2); color: var(--c-text); text-decoration: none;
-  border-bottom: 1px solid var(--c-border-weak);
+  display: flex; align-items: center; gap: var(--sp-2); min-height: var(--chrome-control-h);
+  padding: 0 var(--sp-2); color: var(--chrome-text); text-decoration: none;
+  border-bottom: 1px solid var(--chrome-border-weak);
 }
 @media (hover: hover) {
-  .drawer a:hover { background: var(--c-surface-sub); color: var(--c-text); text-decoration: underline; text-decoration-thickness: 1px; }
+  .drawer a:hover { background: var(--chrome-surface-sub); color: var(--chrome-text); text-decoration: underline; text-decoration-thickness: 1px; }
 }
 /* メニューの中でダイアログを開く項目（保護者のメニューの「AI の下書きの利用」）。ボタンでも、となりのリンクと同じ行の見た目にそろえる */
 .drawer button.drawer-item, .guardian-sidebar button.drawer-item {
   justify-content: flex-start; width: 100%; padding: 0 var(--sp-2); background: none;
-  border: 0; border-bottom: 1px solid var(--c-border-weak); border-radius: 0;
+  border: 0; border-bottom: 1px solid var(--chrome-border-weak); border-radius: 0;
   font-weight: inherit; letter-spacing: inherit; text-align: left;
 }
 @media (hover: hover) {
-  .drawer button.drawer-item:hover:not(:disabled), .guardian-sidebar button.drawer-item:hover:not(:disabled) { background: var(--c-surface-sub); border-color: var(--c-border-weak); text-decoration-thickness: 1px; }
+  .drawer button.drawer-item:hover:not(:disabled), .guardian-sidebar button.drawer-item:hover:not(:disabled) { background: var(--chrome-surface-sub); border-color: var(--chrome-border-weak); text-decoration-thickness: 1px; }
 }
 /* 移る先の並びと、ログアウトのあいだを空ける。並びの続きに見えないようにする */
 .drawer .spacer { flex: none; height: var(--sp-5); }
@@ -403,7 +471,7 @@
 }
 .public-card {
   width: 100%; max-width: 440px; background: var(--c-surface);
-  border: 1px solid var(--c-border); border-radius: var(--radius);
+  border: 1px solid var(--c-border-weak); border-radius: var(--radius-card);
   padding: var(--sp-6) var(--sp-5);
 }
 .public-card.wide { max-width: 560px; }
@@ -429,13 +497,34 @@
  */
 .icon { width: 1.25em; height: 1.25em; flex: none; vertical-align: middle; }
 
+/*
+ * 押せるもののうち、M3 でボタンではなく「リストの行」（チャンネル・園児の選び・配布物・定型文・月の一覧・保護者のチャットの部屋）、
+ * 「チップ」（連絡帳の選ぶもの・リアクション）、「セグメント」（身長・体重の切り替え）、「数の盤」（体温）、
+ * 「写真の格子」にあたるものは、字をアウトラインボタンの primary にせず on-surface のままにする。
+ * 詳細度は button と同じ（:where）にし、選んだときの決まり（.btn-primary・[aria-pressed="true"] など）がこれに勝つようにする
+ */
+button:where(.channel, .picker button, .guardian-room-link, .guardian-record-link, .handout-row, .phrase-list button,
+  .contact-month-days button, .contact-pick, .measure-toggle, .reaction, .temperature-grid button, .nap-temp-grid button,
+  .subject-cell, .contact-photo-button) { color: var(--c-text); }
+/*
+ * そのうちリストの行・チップ・数の盤は、ボタンの全丸にせず M3 の small（8px）の角にする（チップは M3 の FilterChip と同じ）。
+ * 幅いっぱいの行や格子に全丸の押すものを並べると端が膨らんで見え、数の盤では角の外を axe が「重なり」と見て字の地を決めきれなかった
+ */
+button:where(.phrase-list button, .contact-month-days button, .handout-row, .contact-pick, .temperature-grid button, .nap-temp-grid button) {
+  border-radius: var(--radius);
+}
+
 .page-head { display: flex; align-items: center; gap: var(--sp-3) var(--sp-4); flex-wrap: wrap; margin-bottom: var(--sp-5); }
 .page-head .spacer { flex: 1; }
 
-/* 区切りの箱。DADS は置いてあるだけのものに影を付けないため、線だけで囲む */
+/*
+ * 区切りの箱。M3 の Outlined card（Jetpack Compose の OutlinedCardTokens）：白（surface-container-lowest）の地、
+ * outline-variant の 1px の線、角 12px、影なし。本文の地（surface-container-low）との差でも箱が分かる。
+ * 地を変えた箱（.card-sub）は surface-container
+ */
 .card {
-  background: var(--c-surface); border: 1px solid var(--c-border);
-  border-radius: var(--radius); padding: var(--sp-4); margin-bottom: var(--sp-5);
+  background: var(--c-surface); border: 1px solid var(--c-border-weak);
+  border-radius: var(--radius-card); padding: var(--sp-4); margin-bottom: var(--sp-5);
 }
 .card > h2, .card > h3 { margin-bottom: var(--sp-3); }
 .card .page-head { margin-bottom: var(--sp-3); }
@@ -448,7 +537,7 @@
 .filterbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-4); }
 /* ラベルと入力欄。DADS のラベル（S：16px 太字）を入力欄の 8px 上に置く */
 .field { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
-.field > .lbl { font-size: var(--fs-body); color: var(--c-text); font-weight: 700; line-height: 1.5; }
+.field > .lbl { font-size: var(--fs-body); color: var(--c-text); font-weight: 600; line-height: 1.5; }
 .field > label.lbl { display: block; min-height: 0; }
 /*
  * 必須の印。DADS の必須ラベルと同じく、赤の細字で項目名の後ろに置く。
@@ -460,23 +549,24 @@
 }
 
 /*
- * 表：DADS のテーブル。見出し行は灰色の地と太字にし、その下をひと段濃い線で区切る。行は灰色の線で区切る。
- * 縞模様は付けない（DADS では付けるかどうかを選べる）。
- * 行の上下の余白は、DADS のテーブルの「Dense」と同じ 12px に詰める。
- * 文字は 14px にする。DADS のタイポグラフィは本文を 16px 以上とし、14px は「16px を使いにくい領域の
- * 制約がある場合」に限って認めている。16px にすると、iPad 縦向きで日誌一覧などの列が収まらず、
- * 表を横に送らないと「開く」に届かなくなるため、表はこれに当たるとした
+ * 表：見出し行に地を敷かず、600 の on-surface-variant の字で示す。行は outline-variant の線で区切る。縞模様は付けない。
+ * 行の上下の余白は 12px。
+ * 【仮置き】字は本文と同じ 16px（行間 24px）を既定にする。列の多い表（午睡記録検索・操作ログ・日誌一覧・連絡帳（クラス）など）だけ、
+ * 表に .list-dense を付けて 14px（行間 20px）にする。前は全部の表を 14px にしていたが、その理由（iPad 縦で列が収まらない）は
+ * 列の多い表にしか当たらなかった（見直し 2026-10-31 の r2a-09）
  */
-table.list { width: 100%; border-collapse: collapse; font-size: var(--fs-small); line-height: 1.5; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+table.list { width: 100%; border-collapse: collapse; font-size: var(--fs-body); line-height: 1.5; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+table.list.list-dense { font-size: var(--fs-small); line-height: calc(20 / 14); }
 table.list th, table.list td {
   padding: var(--sp-3) var(--sp-2);
-  border-bottom: 1px solid var(--c-border);
+  border-bottom: 1px solid var(--c-border-weak);
   text-align: left; vertical-align: middle;
 }
+/* 見出し行の地は表の箱と同じ白（見た目は地なし）。透かすと、横に送って端が隠れた見出しの字の地を axe が決めきれない */
 table.list th {
-  background: var(--c-surface-head);
-  border-bottom: 1px solid var(--dads-gray-536);
-  color: var(--c-text); font-weight: 700; white-space: nowrap;
+  background: var(--c-surface);
+  border-bottom: 1px solid var(--c-border-weak);
+  color: var(--c-text-sub); font-weight: 600; white-space: nowrap;
 }
 table.list tbody tr:focus-within td { background: var(--c-primary-faint); }
 @media (hover: hover) {
@@ -487,6 +577,11 @@ table.list tr > :first-child { padding-left: var(--sp-3); }
 table.list tbody tr:last-child > * { border-bottom: 0; }
 table.list td.num { text-align: right; font-variant-numeric: tabular-nums; }
 /*
+ * 行をまたぐセル（アレルギー一覧・招待コードの園児名など）は、最初の行にそろえて上に寄せる。どの行の見出しかを最初の行と並べて示す。
+ * 真ん中に置くと字が次の行の箱にかかり、axe が字の地の色を決めきれなかった（字を 16px にしたとき）
+ */
+table.list td[rowspan] { vertical-align: top; }
+/*
  * 行の中に並べたボタン（園児一覧の「記録」「編集」、職員アカウントの「変更」「一時パスワード再発行」「停止」など）の間を 8px 空ける。
  * 詳細設計書「全画面に共通する部品と決まり」(2-0) の「タッチの条件」(4)：隣り合うボタンの間は 8px 以上（GitHub Issue #215）
  */
@@ -495,38 +590,48 @@ table.list td > :is(button, .btn) + :is(button, .btn) { margin-left: var(--sp-2)
 .pager { display: flex; align-items: center; gap: var(--sp-3); justify-content: flex-end; margin-top: var(--sp-3); font-size: var(--fs-small); color: var(--c-text-sub); }
 
 /*
- * 状態の札。DADS のチップラベル。角は 8px で、丸い錠剤の形にはしない。
- * 差し戻しだけを塗りつぶす（画面詳細図 3-1）
+ * 状態の札。M3 のチップの形（角 8px）。
+ * 【仮置き】下書き・申請中・承認済は淡い地に濃い字（トーナル。枠の線なし）、差し戻しだけを塗りつぶす（画面詳細図 3-1）
  */
 .tag {
-  display: inline-block; padding: 2px 7px; border: 1px solid; border-radius: var(--radius);
+  display: inline-block; padding: 2px 7px; border: 1px solid transparent; border-radius: var(--radius);
   font-size: var(--fs-small); font-weight: 400; line-height: 1.5; letter-spacing: .02em; white-space: nowrap;
 }
-.tag-draft    { color: var(--c-draft);    border-color: var(--c-draft);    background: var(--c-surface-sub); }
-.tag-applied  { color: var(--dads-blue-800); border-color: var(--c-applied); background: var(--dads-blue-50); }
-.tag-returned { color: var(--dads-white); border-color: var(--c-returned); background: var(--c-returned); font-weight: 700; }
-.tag-approved { color: var(--dads-green-900); border-color: var(--c-approved); background: var(--dads-green-50); }
-.tag-plain    { color: var(--c-text-sub); border-color: var(--c-border); background: var(--c-surface); }
+.tag-draft    { color: var(--c-draft);            background: var(--c-surface-head); }
+.tag-applied  { color: var(--c-on-applied-soft);  background: var(--c-applied-soft); }
+.tag-returned { color: var(--c-on-returned);      background: var(--c-returned); font-weight: 600; }
+.tag-approved { color: var(--c-on-approved-soft); background: var(--c-approved-soft); }
+.tag-plain    { color: var(--c-text-sub); border-color: var(--c-border-weak); background: var(--c-surface); }
 /*
  * 安全にかかわる印（午睡の「異常時の記録あり」「体位 うつ伏せ」「呼吸 確認できず」「顔色」、午睡記録検索の「うつ伏せ」、アレルギーの食品）。
  * 警告色は午睡チェックの異常などに使う（基本設計書「画面基本構成」(3-5) の警告色）。塗るのは差し戻しだけ（画面詳細図 3-1）なので、
- * 白地に警告色（red-900）の枠と字、太字で示す。【仮置き】設計は安全の印の札の形を定めていない（web/仮置き値.md）
+ * 白地に警告色（M3 の error）の枠と字、太字で示す。【仮置き】設計は安全の印の札の形を定めていない（web/仮置き値.md）
  */
-.tag-alert    { color: var(--c-alert);    border-color: var(--c-alert);    background: var(--c-surface); font-weight: 700; }
+.tag-alert    { color: var(--c-alert); border-color: var(--c-alert); background: var(--c-surface); font-weight: 700; }
+/*
+ * 件数・新着の札（M3 の Badge。BadgeTokens：error の地・全丸）。「新しく n 件」「未読」などに付ける。
+ * 【仮置き】字は 14px（M3 の 11sp より大きく。14px より小さい字を使わない）。付ける画面は画面ごとの点で直す
+ */
+.badge {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  min-width: 1.5rem; min-height: 1.5rem; padding: 0 var(--sp-2); border-radius: var(--radius-full);
+  background: var(--c-alert); color: var(--c-on-alert);
+  font-size: var(--fs-small); font-weight: 600; line-height: 1; letter-spacing: 0; white-space: nowrap;
+}
 
 /*
  * 警告・注意喚起。判定ではない。
- * DADS のノティフィケーションバナー：白地を色の付いた枠で囲み、印に色を付け、文は黒で書く
+ * 【仮置き】M3 の error-container の地（枠の線なし、角 12px）に、on-error-container の字（7.24:1）で書く。印は太字
  */
 .alert {
   display: flex; align-items: flex-start; gap: var(--sp-2);
-  padding: var(--sp-3) var(--sp-4); border-radius: var(--radius);
-  background: var(--c-surface); border: 2px solid var(--c-alert);
-  color: var(--c-text); font-size: var(--fs-body); font-weight: 400; line-height: 1.7;
+  padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-card);
+  background: var(--c-alert-soft); border: 0;
+  color: var(--c-alert-deep); font-size: var(--fs-body); font-weight: 400; line-height: 1.7;
 }
-.alert > span:first-child { flex: none; color: var(--c-alert); font-weight: 700; }
-/* 知らせるだけのもの（DADS のインフォメーション2：灰色） */
-.alert-soft { border-color: var(--dads-gray-536); }
+.alert > span:first-child { flex: none; color: var(--c-alert-deep); font-weight: 700; }
+/* 知らせるだけのもの。surface-container-high の地に on-surface の字 */
+.alert-soft { background: var(--c-surface-head); color: var(--c-text); }
 .alert-soft > span:first-child { color: var(--c-text); }
 /*
  * 箱の中身が警告ひとつだけのときは、箱の枠を消して警告の枠だけを見せる。
@@ -537,13 +642,13 @@ table.list td > :is(button, .btn) + :is(button, .btn) { margin-left: var(--sp-2)
 /*
  * 免責表示。成長グラフ・発達チェックの比較に常時表示し、スクロールしても視界から外さない
  * （基本設計書 3-5／画面詳細図 6-1・6-2）。
- * 誤りではないため警告色を使わず、DADS のインフォメーション2（灰色）の形にする
+ * 誤りではないため警告色を使わず、surface-container-highest の地にする（枠の線なし）
  */
 .disclaimer {
   position: sticky; bottom: 0; z-index: 5;
   display: flex; align-items: center; gap: var(--sp-2);
   margin-top: var(--sp-4); padding: var(--sp-2) var(--sp-4);
-  background: var(--c-surface-sub); border: 1px solid var(--dads-gray-536);
+  background: var(--md-sys-color-surface-container-highest); border: 0;
   border-radius: var(--radius); color: var(--c-text);
   /* 重ねて置く帯なので、DADS が場所の限られる所に許す 14px にして、重なる範囲を小さくする（GitHub Issue #154） */
   font-size: var(--fs-small); font-weight: 700; line-height: 1.5;
@@ -571,7 +676,7 @@ table.list td > :is(button, .btn) + :is(button, .btn) { margin-left: var(--sp-2)
   background: var(--c-surface); border-top: 1px solid var(--c-border-weak);
 }
 
-.muted { color: var(--c-text-sub); font-size: var(--fs-small); line-height: 1.6; }
+.muted { color: var(--c-text-sub); font-size: var(--fs-small); line-height: calc(20 / 14); }
 .weak  { color: var(--c-text-weak); }
 .row   { display: flex; gap: var(--sp-3); align-items: center; flex-wrap: wrap; }
 .row-end { display: flex; gap: var(--sp-3); align-items: center; justify-content: flex-end; flex-wrap: wrap; }
@@ -583,27 +688,34 @@ table.list td > :is(button, .btn) + :is(button, .btn) { margin-left: var(--sp-2)
 /* 開閉するまとまり。押せる大きさを 44px にする */
 summary { min-height: var(--tap-min); padding: 10px 0; cursor: pointer; }
 
-/* ダイアログ。画面として起こさないもの（基本設計書 3-1 基準3）。DADS のモーダルダイアログ */
-.modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .6); display: flex; align-items: center; justify-content: center; z-index: 50; padding: var(--sp-4); }
+/*
+ * ダイアログ。画面として起こさないもの（基本設計書 3-1 基準3）。
+ * M3 の Dialog：surface-container-high の地、角 28px、枠の線なし。後ろは scrim（黒の 32%）で暗くする。
+ * 【仮置き】中身が長くて送るときに区切りが分かるよう、題と操作の段の境に outline-variant の線を残す
+ */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .32); display: flex; align-items: center; justify-content: center; z-index: 50; padding: var(--sp-4); }
 .modal {
-  background: var(--c-surface); border: 1px solid var(--c-text); border-radius: var(--radius);
+  background: var(--c-surface-head); border: 0; border-radius: var(--radius-dialog);
   box-shadow: var(--elevation-3);
   width: 100%; max-width: 560px; max-height: 90vh; overflow-y: auto;
 }
-.modal-head { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--c-border); }
+.modal-head { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--c-border-weak); }
 .modal-body { padding: var(--sp-5); }
-.modal-foot { padding: var(--sp-4) var(--sp-5); border-top: 1px solid var(--c-border); display: flex; justify-content: flex-end; gap: var(--sp-3); }
+.modal-foot { padding: var(--sp-4) var(--sp-5); border-top: 1px solid var(--c-border-weak); display: flex; justify-content: flex-end; gap: var(--sp-3); }
 /* ダイアログの中で起きた誤りは、ダイアログの中に出す。後ろに出すと隠れて読めない */
 .modal-body .alert { margin-bottom: var(--sp-3); }
 
-/* 操作が完了したことの表示。画面の下端に重ねて出し、並びを押し広げない */
+/*
+ * 操作が完了したことの表示。画面の下端に重ねて出し、並びを押し広げない。
+ * M3 の Snackbar：inverse-surface の地に inverse-on-surface の字、角 4px。中の操作は inverse-primary の字のテキストボタン
+ */
 .toast {
   position: fixed; left: 50%; bottom: var(--sp-4); transform: translateX(-50%); z-index: 60;
   display: flex; align-items: center; gap: var(--sp-3);
   max-width: min(640px, calc(100vw - 2 * var(--sp-4)));
   padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4);
-  background: var(--c-text); color: var(--c-surface);
-  border-radius: var(--radius); box-shadow: var(--elevation-2);
+  background: var(--md-sys-color-inverse-surface); color: var(--md-sys-color-inverse-on-surface);
+  border-radius: var(--radius-input); box-shadow: var(--elevation-2);
 }
 /*
  * 表示が出ている間、スクロールする枠の下端のうち表示が覆う高さ（ToastHost が測って --toast-cover に入れる。src/stickyInset.ts）を
@@ -614,17 +726,17 @@ summary { min-height: var(--tap-min); padding: 10px 0; cursor: pointer; }
 .guardian-shell:has(> .toast) > .guardian-main {
   scroll-padding-bottom: calc(max(var(--toast-cover, 0px), var(--contact-actions-h, 0px)) + 6px);
 }
-.toast .btn-sm { color: inherit; border-color: currentColor; background: transparent; }
+.toast .btn-sm { color: var(--md-sys-color-inverse-primary); border-color: transparent; background: transparent; }
 @media (hover: hover) {
-  .toast .btn-sm:hover:not(:disabled) { color: inherit; border-color: currentColor; background: rgba(255, 255, 255, .15); }
+  .toast .btn-sm:hover:not(:disabled) { color: var(--md-sys-color-inverse-primary); border-color: transparent; background: color-mix(in srgb, var(--md-sys-color-inverse-primary) 8%, transparent); }
 }
 
 /* 段階を上から順に踏ませる（画面詳細図 2-3 新規登録画面） */
-.step { border: 1px solid var(--c-border); border-radius: var(--radius); padding: var(--sp-4); margin-bottom: var(--sp-4); }
+.step { border: 1px solid var(--c-border-weak); border-radius: var(--radius-card); padding: var(--sp-4); margin-bottom: var(--sp-4); }
 .step.locked { background: var(--c-surface-sub); color: var(--c-text-sub); }
 .step fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .step.locked fieldset:disabled { cursor: not-allowed; }
-.step .step-title { font-size: 1.0625rem; font-weight: 700; margin-bottom: var(--sp-3); }
+.step .step-title { font-size: 1rem; line-height: 1.5; font-weight: 600; margin-bottom: var(--sp-3); }
 
 .terms-box { max-height: 220px; overflow-y: auto; border: 1px solid var(--c-border); border-radius: var(--radius); padding: var(--sp-3) var(--sp-4); background: var(--c-surface-sub); white-space: pre-wrap; }
 .skip-link { position: absolute; left: 8px; top: -100px; z-index: 100; background: var(--c-surface); padding: 8px 16px; }
@@ -639,10 +751,10 @@ summary { min-height: var(--tap-min); padding: 10px 0; cursor: pointer; }
 .guardian-footer {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0 var(--sp-2);
   min-height: 52px; padding: var(--sp-1) var(--sp-2);
-  border-top: 1px solid var(--c-border); background: var(--c-surface-sub);
-  font-size: var(--fs-small); letter-spacing: 0; color: var(--c-text);
+  border-top: 1px solid var(--chrome-border); background: var(--chrome-surface-sub);
+  font-size: var(--chrome-fs-small); letter-spacing: 0; color: var(--chrome-text);
 }
 .guardian-footer a {
-  display: inline-flex; align-items: center; min-height: var(--tap-min); padding: 0 var(--sp-1);
-  font-size: var(--fs-body); font-weight: 700; letter-spacing: 0;
+  display: inline-flex; align-items: center; min-height: var(--chrome-tap-min); padding: 0 var(--sp-1);
+  font-size: var(--chrome-fs-body); font-weight: 700; letter-spacing: 0;
 }
