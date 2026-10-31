@@ -643,7 +643,7 @@ function incidentBody(situation: string, response: string, countermeasure: strin
 
 /**
  * ヒヤリハットの本文を見出しで分け、状況・とった対応・今後の対策を返す（詳細設計書「日誌」(4-13 (6))）。
- * 【仮置き】最初の見出しより前に文があれば（第3.0版より前の記録の「【発生日時】」など）、状況の頭に入れる
+ * 【仮置き】最初の見出しより前に文があれば（以前の形式の記録の「【発生日時】」など）、状況の頭に入れる
  * （web/仮置き値.md「ヒヤリハットの欄」）。捨てると、以前の記録を開いて保存し直したときに本文から消えるため。
  * 同じ見出しが2回あれば、つないで返す。サーバ側は splitIncidentBody
  */
@@ -1528,7 +1528,8 @@ const diaryApi2 = {
     // 承認・差し戻しのあとも申請者の列は残るため、本人なら次の状態の検査で断る
     if (!d.applied_staff_id || d.applied_staff_id !== user.staff_id) return fail(DIARY_MSG.withdrawOwnOnly);
     if (d.status !== '2') return fail(DIARY_MSG.withdrawTooLate);
-    if (d.updated_at !== updatedAt) return fail(DIARY_MSG.versionConflict);
+    // 版の食い違いは kind を添える（承認と同じ。server/api_diary_write.go の handleWithdrawDiary の kindVersionConflict）
+    if (d.updated_at !== updatedAt) return failKind(DIARY_MSG.versionConflict, 'version_conflict');
     const before = `申請者：${staffName(d.applied_staff_id)}（${d.applied_staff_id}）・申請日時：${d.applied_at ?? ''}`;
     d.status = '1';
     d.applied_staff_id = null;
@@ -1552,7 +1553,8 @@ const diaryApi2 = {
     const d = db.diaries.find((x) => x.diary_id === diaryId && !x.is_deleted);
     if (!d) return fail('日誌が見つかりません');
     if (d.status !== '3') return fail(DIARY_MSG.notApproved);
-    if (d.updated_at !== updatedAt) return fail(DIARY_MSG.versionConflict);
+    // 版の食い違いは kind を添える（承認と同じ。server/api_diary_write.go の handleRevokeDiaryApproval の kindVersionConflict）
+    if (d.updated_at !== updatedAt) return failKind(DIARY_MSG.versionConflict, 'version_conflict');
     let before = '承認者：';
     if (d.approved_staff_id) before += `${staffName(d.approved_staff_id)}（${d.approved_staff_id}）`;
     if (d.approved_at) before += `・承認日時：${d.approved_at}`;
@@ -3789,7 +3791,9 @@ const adminApi2 = {
    *   個人チャットといまのクラスのクラスグループへ今の時刻で参加し直す（お子さまの追加と同じ joinRoomsOfChildNow。決めたこと D-48）
    * - relinkRequested を true で呼べば、日数に関わらず「結び直す」（親権の変更・家庭の事情で解除したあとに改めて結ぶとき。
    *   アカウントが止まった保護者は新しい招待コードを使えないため。頭役の決め。省略は false）
-   * 【仮置き】web/仮置き値.md。server/api_admin.go の handleRestoreGuardianLink と同じ
+   * 書き込み（紐づけ・アカウントの再開・チャットへの参加）は1つの処理にし、途中で失敗したら書いたものを全部戻して
+   * 「紐づけを戻せませんでした」で断る（お子さまの追加と同じ作り。PR #355 のレビューの指摘）。操作ログと知らせは書き終えたあと。
+   * 【仮置き】web/仮置き値.md。server/api_admin.go の handleRestoreGuardianLink・restoreGuardianLinkTx と同じ
    */
   async restoreGuardianLink(user: SessionUser, guardianId: string, childId: string, relinkRequested = false): Promise<void> {
     if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
@@ -3798,21 +3802,37 @@ const adminApi2 = {
     const until = restoreLinkUntil(gc.ended_at);
     const relink = relinkRequested || until === null || today() > until;
     const at = now();
-    gc.link_status = '1';
-    gc.ended_at = null;
-    if (relink) gc.linked_at = at;
-
     const g = db.guardians.find((x) => x.guardian_id === guardianId);
     const a = g ? findAccount(g.account_id) : undefined;
+    const undo: (() => void)[] = [];
     let reopened = false;
-    if (a && a.status === '2') {
-      a.status = '1';
-      a.updated_at = at;
-      reopened = true;
-    }
     let joined: number[] = [];
-    if (a && relink) joined = joinRoomsOfChildNow(a.account_id, childId, at);
-    else if (a) rejoinRoomsOfChild(a.account_id, gc.linked_at, childId);
+    try {
+      // 1. 紐づけ。結び直すときは紐づけた日時を今にする
+      const linkBefore = { ...gc };
+      undo.push(() => { Object.assign(gc, linkBefore); });
+      gc.link_status = '1';
+      gc.ended_at = null;
+      if (relink) gc.linked_at = at;
+
+      if (a) {
+        // 2. 止まっていたアカウントを再開する
+        if (a.status === '2') {
+          const accountBefore = { status: a.status, updated_at: a.updated_at };
+          undo.push(() => { Object.assign(a, accountBefore); });
+          a.status = '1';
+          a.updated_at = at;
+          reopened = true;
+        }
+        // 3. チャットへ参加し直す
+        if (relink) joined = joinRoomsOfChildNow(a.account_id, childId, at, { undo });
+        else rejoinRoomsOfChild(a.account_id, gc.linked_at, childId, undo);
+      }
+      restoreLinkStep('join');
+    } catch {
+      undo.reverse().forEach((f) => f());
+      return fail('紐づけを戻せませんでした');
+    }
     log(user.account_id, '7', '2', 't_guardian_child', g?.account_id ?? null, childId, '終了', restoreLinkLogAfter(relink, reopened));
     // 結び直したときは、お子さまの追加と同じく、参加の変わったルームへ知らせる
     joined.forEach((roomId) => publishRoomMembers(roomId));
@@ -3865,9 +3885,10 @@ function leaveRoomsOfChild(accountId: number, guardianId: string, childId: strin
  * 紐づけを戻した保護者を、その園児の個人チャット・いまのクラスのクラスグループ・園全体へ戻す。
  * 誤って解除したときの戻し先であり、解除の前の状態へ戻す（基本設計書「保護者と園児の紐づけを戻す」(4-3)、
  * GitHub Issue #118・#159・#272。server/api_admin.go の rejoinRoomsOfChild と同じ規則）。
- * 参加の行があれば left_at を空にする（参加の時刻は、はじめに参加した時刻のまま）。無ければ、紐づけを結んだ時刻で作る
+ * 参加の行があれば left_at を空にする（参加の時刻は、はじめに参加した時刻のまま）。無ければ、紐づけを結んだ時刻で作る。
+ * undo には、書いたものを戻す手順を積む（restoreGuardianLink が途中で失敗したときに戻す）
  */
-function rejoinRoomsOfChild(accountId: number, linkedAt: string, childId: string): void {
+function rejoinRoomsOfChild(accountId: number, linkedAt: string, childId: string, undo: (() => void)[]): void {
   const joinedAt = linkedAt > now() ? now() : linkedAt;
   const classes = new Set(db.classChildren
     .filter((cc) => cc.child_id === childId && db.classes.some((k) => k.class_id === cc.class_id && k.fiscal_year === db.FISCAL_YEAR))
@@ -3879,9 +3900,26 @@ function rejoinRoomsOfChild(accountId: number, linkedAt: string, childId: string
         || (r.room_type === '2' && r.class_id !== null && classes.has(r.class_id))));
   for (const r of rooms) {
     const m = db.chatMembers.find((x) => x.chat_room_id === r.chat_room_id && x.account_id === accountId);
-    if (!m) db.chatMembers.push({ chat_room_id: r.chat_room_id, account_id: accountId, joined_at: joinedAt, left_at: null });
-    else if (m.left_at !== null) m.left_at = null;
+    if (!m) {
+      const row = { chat_room_id: r.chat_room_id, account_id: accountId, joined_at: joinedAt, left_at: null };
+      db.chatMembers.push(row);
+      undo.push(() => { db.chatMembers.splice(db.chatMembers.indexOf(row), 1); });
+    } else if (m.left_at !== null) {
+      const leftAt = m.left_at;
+      undo.push(() => { m.left_at = leftAt; });
+      m.left_at = null;
+    }
   }
+}
+
+/**
+ * 「紐づけを戻す」「結び直す」を途中で失敗させる（テストだけが使う）。'join' はチャットへの参加を書き終えたところで止め、
+ * 紐づけ・アカウントの再開・参加のどれも残らないかを確かめる。サーバの同じテストは DB のトリガーで参加の書き込みを止める
+ * （server/api_guardian_link_test.go の TestRestoreGuardianLinkRollsBack）。null のあいだは何もしない
+ */
+export const mockRestoreLinkFault: { at: null | 'join' } = { at: null };
+function restoreLinkStep(step: 'join'): void {
+  if (mockRestoreLinkFault.at === step) throw new Error(`テストで止める（${step}）`);
 }
 
 /**
@@ -5903,7 +5941,12 @@ const contactEventsApi = {
     return ok(readersOf(childIds, e.contact_date, e.created_at));
   },
 
-  /** ねた・おきたを直す（POST /api/nap/sleeps/{id}/correct）。実施の後も直せる。slept_at < woke_at ≦ 今、実施の日の中 */
+  /**
+   * ねた・おきたを直す（POST /api/nap/sleeps/{id}/correct）。実施の後も直せる。slept_at < woke_at ≦ 今、実施の日の中。
+   * 【仮置き】「今」と「実施の日の中」は、元の値から変えた時刻にだけ当てる。元の値と同じ時刻はそのまま通す（web/仮置き値.md）。
+   * 「ねた」と「おきた」が同じ秒に押されると、おきたは ねた＋1秒（wake）で今より先になり、変えていない時刻まで検査すると
+   * 直後に直せない（受け入れテスト 04-017。server/api_nap_sleep_fix.go の handleCorrectSleep と同じ）。順（ねた < おきた）はいつも確かめる
+   */
   async correctSleep(user: SessionUser, sleepId: number, input: NapSleepCorrection): Promise<NapSleep> {
     if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
     const target = sleepTarget(user, sleepId);
@@ -5912,7 +5955,10 @@ const contactEventsApi = {
     if (input.slept_at === undefined && input.woke_at === undefined) return fail(MSG.badChoice);
     const sleptAt = input.slept_at ?? sleep.slept_at;
     const wokeAt = input.woke_at ?? sleep.woke_at;
-    if (!inDayUntilNow(sleptAt, session.session_date) || (wokeAt !== null && !inDayUntilNow(wokeAt, session.session_date))) {
+    const sleptChanged = sleptAt !== sleep.slept_at;
+    const wokeChanged = wokeAt !== null && wokeAt !== sleep.woke_at;
+    if ((sleptChanged && !inDayUntilNow(sleptAt, session.session_date))
+      || (wokeChanged && !inDayUntilNow(wokeAt, session.session_date))) {
       return fail(MSG.eventTimeRange);
     }
     if (wokeAt !== null && wokeAt <= sleptAt) return fail(MSG.wakeBeforeSleep);

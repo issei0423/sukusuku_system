@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/rand"
 	"database/sql"
+	"errors"
 	"log"
 	"math/big"
 	"net/http"
@@ -1038,14 +1039,19 @@ func (a *app) leaveRoomsOfChild(accountID int64, guardianID, childID string) {
 //   - 参加の行が無ければ（デモデータの初期の形や、行を作らずに終えた紐づけ）、作る。参加の時刻は紐づけを結んだ時刻
 //     （linked_at）とする。解除の前に読めていた範囲を、戻したあとも読めるようにするため
 //
+// 「紐づけを戻す」の取引の中で呼ぶ（restoreGuardianLinkTx）。書き込みに失敗したら誤りを返し、呼ぶ側が全部を戻す。
+//
 // 【仮置き】園全体も、行が無い・抜けているときは戻す（解除では抜けないが、参加の行が無い保護者がいる）。web/仮置き値.md
-func (a *app) rejoinRoomsOfChild(accountID int64, guardianID, childID string) {
+func rejoinRoomsOfChild(q dbtx, accountID int64, guardianID, childID string) error {
 	var linkedAt string
-	if a.db.QueryRow(`SELECT linked_at FROM t_guardian_child WHERE guardian_id = ? AND child_id = ?`,
-		guardianID, childID).Scan(&linkedAt) != nil || linkedAt > now() {
+	if err := q.QueryRow(`SELECT linked_at FROM t_guardian_child WHERE guardian_id = ? AND child_id = ?`,
+		guardianID, childID).Scan(&linkedAt); err != nil {
+		return err
+	}
+	if linkedAt > now() {
 		linkedAt = now()
 	}
-	rooms, err := queryIDs(a.db, `SELECT r.chat_room_id FROM m_chat_room r
+	rooms, err := queryIDs(q, `SELECT r.chat_room_id FROM m_chat_room r
 		WHERE r.is_archived = 0
 		  AND (r.room_type = '1'
 		       OR (r.room_type = '4' AND r.child_id = ?)
@@ -1055,15 +1061,17 @@ func (a *app) rejoinRoomsOfChild(accountID int64, guardianID, childID string) {
 		              WHERE cc.child_id = ?)))
 		ORDER BY r.chat_room_id`, childID, fiscalYear, childID)
 	if err != nil {
-		log.Printf("紐づけを戻した保護者の参加ルームを引けませんでした: %v", err)
-		return
+		return err
 	}
 	for _, roomID := range rooms {
-		a.db.Exec(`INSERT INTO t_chat_member (chat_room_id, account_id, joined_at, left_at)
+		if _, err := q.Exec(`INSERT INTO t_chat_member (chat_room_id, account_id, joined_at, left_at)
 			VALUES (?, ?, ?, NULL)
 			ON CONFLICT(chat_room_id, account_id) DO UPDATE SET left_at = NULL
-			WHERE t_chat_member.left_at IS NOT NULL`, roomID, accountID, linkedAt)
+			WHERE t_chat_member.left_at IS NOT NULL`, roomID, accountID, linkedAt); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func (a *app) guardianAccountID(guardianID string) *int64 {
@@ -1122,6 +1130,10 @@ handleRestoreGuardianLink は、解除した紐づけを有効へ戻す。解除
     7日以内でも解除していたあいだを読ませずに結べるようにする。最後の紐づけを解除してアカウントが止まった保護者は
     ログインできず、新しい招待コードを使えないため（頭役の決め。省略は false）
 
+書き込み（紐づけ・アカウントの再開・チャットへの参加）は1つの処理（restoreGuardianLinkTx）。どれかに失敗したら全部を戻し、
+500「紐づけを戻せませんでした」（お子さまの追加の addChildTx と同じ作り。PR #355 のレビューの指摘）。
+操作ログと知らせは、書き込みが確定したあとに行う。
+
 【仮置き】日数と、過ぎたら結び直すこと、relink で選べること（web/仮置き値.md）
 */
 func (a *app) handleRestoreGuardianLink(w http.ResponseWriter, r *http.Request) {
@@ -1138,56 +1150,120 @@ func (a *app) handleRestoreGuardianLink(w http.ResponseWriter, r *http.Request) 
 	if !readJSON(w, r, &req) {
 		return
 	}
-	var status string
-	var endedAt sql.NullString
-	if err := a.db.QueryRow(`SELECT link_status, ended_at FROM t_guardian_child WHERE guardian_id = ? AND child_id = ?`,
-		req.GuardianID, req.ChildID).Scan(&status, &endedAt); err != nil || status != "2" {
+	res, err := a.restoreGuardianLinkTx(req.GuardianID, req.ChildID, req.Relink)
+	if errors.Is(err, errEndedLinkNotFound) {
 		writeErr(w, http.StatusNotFound, "終了した紐づけが見つかりません")
 		return
 	}
+	if err != nil {
+		log.Printf("紐づけを戻せませんでした（%s・%s）: %v", req.GuardianID, req.ChildID, err)
+		writeErr(w, http.StatusInternalServerError, "紐づけを戻せませんでした")
+		return
+	}
+	a.log(u.AccountID, fnAccount, opUpdate, "t_guardian_child", res.accountID, s(req.ChildID), s("終了"),
+		s(restoreLinkLogAfter(res.relink, res.reopened)))
+	// 結び直したときは、お子さまの追加と同じく、参加の変わったルームへ知らせる
+	for _, roomID := range res.joined {
+		a.notifyRoomMembers(roomID)
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// errEndedLinkNotFound は、戻す相手の終了（2）の紐づけが無い（404「終了した紐づけが見つかりません」）
+var errEndedLinkNotFound = errors.New("終了した紐づけが見つかりません")
+
+// restoreLinkResult は、「紐づけを戻す」「結び直す」で書いたもの。操作ログと知らせに使う
+type restoreLinkResult struct {
+	// 保護者のアカウント（無ければ nil）
+	accountID *int64
+	// 結び直したか（偽なら、解除の前の状態へ戻した）
+	relink bool
+	// 止まっていたアカウントを再開したか
+	reopened bool
+	// 結び直して参加の変わったルーム。知らせを送る先
+	joined []int64
+}
+
+/*
+restoreGuardianLinkTx は、「紐づけを戻す」「結び直す」の書き込みを1つの処理で行う（handleRestoreGuardianLink）。
+お子さまの追加（api_guardian.go の addChildTx）と同じく、どこかで失敗したら全部を戻す（defer の Rollback）。
+取引の中では a.db へ問い合わせない（接続は1本。db.go）。
+
+ 1. 終了（2）の紐づけを有効へ戻す。結び直すときは紐づけた日時（linked_at）を今にする
+ 2. 止まっていた（2）保護者アカウントを再開する
+ 3. チャットへ参加し直す。戻すときは解除の前の状態へ（rejoinRoomsOfChild）、結び直すときは今の時刻で
+    （joinRoomsOfChildNow）
+
+終了の紐づけが無ければ errEndedLinkNotFound を返す。
+*/
+func (a *app) restoreGuardianLinkTx(guardianID, childID string, relinkRequested bool) (restoreLinkResult, error) {
+	var out restoreLinkResult
+	tx, err := a.db.Begin()
+	if err != nil {
+		return out, err
+	}
+	defer tx.Rollback()
+
+	// 1. 紐づけ
+	var status string
+	var endedAt sql.NullString
+	err = tx.QueryRow(`SELECT link_status, ended_at FROM t_guardian_child WHERE guardian_id = ? AND child_id = ?`,
+		guardianID, childID).Scan(&status, &endedAt)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && status != "2") {
+		return out, errEndedLinkNotFound
+	}
+	if err != nil {
+		return out, err
+	}
 	until := restoreLinkUntil(endedAt)
-	relink := req.Relink || until == nil || today() > *until
+	out.relink = relinkRequested || until == nil || today() > *until
 	at := now()
 	q := `UPDATE t_guardian_child SET link_status = '1', ended_at = NULL
 		WHERE guardian_id = ? AND child_id = ? AND link_status = '2'`
-	args := []any{req.GuardianID, req.ChildID}
-	if relink {
+	args := []any{guardianID, childID}
+	if out.relink {
 		q = `UPDATE t_guardian_child SET link_status = '1', ended_at = NULL, linked_at = ?
 		WHERE guardian_id = ? AND child_id = ? AND link_status = '2'`
 		args = append([]any{at}, args...)
 	}
-	res, err := a.db.Exec(q, args...)
+	res, err := tx.Exec(q, args...)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "紐づけを戻せませんでした")
-		return
+		return out, err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		writeErr(w, http.StatusNotFound, "終了した紐づけが見つかりません")
-		return
+		return out, errEndedLinkNotFound
 	}
 
-	reopened := false
-	var joined []int64
-	accountID := a.guardianAccountID(req.GuardianID)
-	if accountID != nil {
-		var status string
-		a.db.QueryRow(`SELECT status FROM m_account WHERE account_id = ?`, *accountID).Scan(&status)
-		if status == "2" {
-			a.db.Exec(`UPDATE m_account SET status = '1', updated_at = ? WHERE account_id = ?`, at, *accountID)
-			reopened = true
+	var accountID sql.NullInt64
+	err = tx.QueryRow(`SELECT account_id FROM m_guardian WHERE guardian_id = ?`, guardianID).Scan(&accountID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return out, err
+	}
+	out.accountID = nullInt(accountID)
+	if out.accountID != nil {
+		// 2. 止まっていたアカウントを再開する
+		var accountStatus string
+		if err := tx.QueryRow(`SELECT status FROM m_account WHERE account_id = ?`, *out.accountID).Scan(&accountStatus); err != nil {
+			return out, err
 		}
-		if relink {
-			if joined, err = joinRoomsOfChildNow(a.db, *accountID, req.ChildID, at); err != nil {
-				log.Printf("結び直した保護者を参加させられませんでした: %v", err)
+		if accountStatus == "2" {
+			if _, err := tx.Exec(`UPDATE m_account SET status = '1', updated_at = ? WHERE account_id = ?`, at, *out.accountID); err != nil {
+				return out, err
 			}
-		} else {
-			a.rejoinRoomsOfChild(*accountID, req.GuardianID, req.ChildID)
+			out.reopened = true
+		}
+		// 3. チャットへ参加し直す
+		if out.relink {
+			if out.joined, err = joinRoomsOfChildNow(tx, *out.accountID, childID, at); err != nil {
+				return out, err
+			}
+		} else if err := rejoinRoomsOfChild(tx, *out.accountID, guardianID, childID); err != nil {
+			return out, err
 		}
 	}
-	a.log(u.AccountID, fnAccount, opUpdate, "t_guardian_child", accountID, s(req.ChildID), s("終了"), s(restoreLinkLogAfter(relink, reopened)))
-	// 結び直したときは、お子さまの追加と同じく、参加の変わったルームへ知らせる
-	for _, roomID := range joined {
-		a.notifyRoomMembers(roomID)
+
+	if err := tx.Commit(); err != nil {
+		return out, err
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	return out, nil
 }

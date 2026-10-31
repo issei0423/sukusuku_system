@@ -7,6 +7,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { api } from '../src/api/client';
+import { mockRestoreLinkFault } from '../src/api/mock';
 import * as db from '../src/api/mockDb';
 import type { SessionUser } from '../src/api/types';
 import { addDays, now, today } from '../src/api/util';
@@ -317,6 +318,43 @@ describe('保護者アカウントと紐づけ', () => {
     // 操作ログは新しいものが先頭（mock.ts の log は unshift）
     expect(db.operationLogs.find((l) => l.target_table === 't_guardian_child' && l.target_child_id === 'C005' && l.before_value === '終了')
       ?.after_value).toBe('有効（結び直し、アカウントを再開）');
+  });
+
+  /*
+   * 「紐づけを戻す」「結び直す」の書き込み（紐づけ・アカウントの再開・チャットへの参加）は1つの処理。途中で失敗したら全部を戻す。
+   * 紐づけは終了のまま、アカウントは止まったまま、参加も抜けたまま、操作ログも残さない（PR #355 のレビューの指摘。
+   * server/api_guardian_link_test.go の TestRestoreGuardianLinkRollsBack と同じ確かめ。モックは参加を書き終えたところで止める）
+   */
+  it('紐づけを戻す・結び直すが途中で失敗すると、紐づけ・アカウントの再開・参加のどれも残さない。止めるのをやめれば戻せる', async () => {
+    // 村田 真一（G004・アカウント9）の紐づけは村田 美咲（C004）の1本だけで、解除するとアカウントが止まる。個人チャットは 8
+    const link = db.guardianChildren.find((g) => g.guardian_id === 'G004' && g.child_id === 'C004')!;
+    const account = () => db.accounts.find((a) => a.account_id === 9)!;
+    const members = () => structuredClone(db.chatMembers.filter((m) => m.account_id === 9));
+    const restoreLogs = () => db.operationLogs
+      .filter((l) => l.target_table === 't_guardian_child' && l.target_child_id === 'C004' && l.before_value === '終了').length;
+
+    await api.endGuardianLink(admin, 'G004', 'C004');
+    const ended = { link: { ...link }, account: { ...account() }, members: members(), logs: restoreLogs() };
+    expect([ended.link.link_status, ended.account.status]).toEqual(['2', '2']);
+    expect(ended.members.find((m) => m.chat_room_id === 8)?.left_at).not.toBeNull();
+
+    mockRestoreLinkFault.at = 'join';
+    try {
+      for (const relink of [false, true]) {
+        await expect(api.restoreGuardianLink(admin, 'G004', 'C004', relink)).rejects.toThrow('紐づけを戻せませんでした');
+        expect(link).toEqual(ended.link);
+        expect(account()).toEqual(ended.account);
+        expect(members()).toEqual(ended.members);
+        expect(restoreLogs()).toBe(ended.logs);
+      }
+    } finally {
+      mockRestoreLinkFault.at = null;
+    }
+
+    await api.restoreGuardianLink(admin, 'G004', 'C004');
+    expect([link.link_status, account().status]).toEqual(['1', '1']);
+    expect(members().find((m) => m.chat_room_id === 8)?.left_at).toBeNull();
+    expect(restoreLogs()).toBe(ended.logs + 1);
   });
 });
 

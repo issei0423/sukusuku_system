@@ -242,4 +242,35 @@ describe('ねた・おきたの訂正・取り消し（詳細設計書 (4-6 (4))
     expect((await api.cancelSleep(admin, row.nap_sleep_id)).ok).toBe(true);
     expect((await api.contactPage(taroGuardian, 'C001')).sleeps.some((x) => x.nap_sleep_id === row.nap_sleep_id)).toBe(false);
   });
+
+  /*
+   * 「ねた」と「おきた」が同じ秒に押されると、おきたは ねた＋1秒になり、まだ来ていない時刻になる（テストの時計は止まっているので、
+   * ここでは必ず同じ秒になる）。その直後に同じ組を直しても断らない。「その日の0時からいままで」を検査するのは要求で変えた時刻だけで、
+   * 元の値と同じ時刻はそのまま通す（受け入れテスト 04-017 で見つかった。server/api_contact_events_test.go の
+   * TestNapSleepCorrectRightAfterSameSecondWake と同じ確かめ）。変えた時刻が先なら、これまでどおり断る
+   */
+  it('同じ秒に「ねた」「おきた」を押した直後でも、「ねた」を直せる。おきたを先の時刻へ変えるのは断る', async () => {
+    const active = await api.activeSession(1, today(), admin);
+    if (active) await api.endSession(admin, active.nap_session_id);
+    const s = await api.startSession(teacher, 1, today());
+    try {
+      const slept = await api.sleep(teacher, s.nap_session_id, 'C001');
+      const woke = await api.wake(teacher, slept.nap_sleep_id);
+      expect(woke.woke_at! > now()).toBe(true);
+      const start = `${today()}T00:00:00`;
+
+      // すぐ「ねた」を直す。おきたは送らない（画面は変えた時刻だけを送る。FixDialog.tsx）
+      const fixed = await api.correctSleep(teacher, slept.nap_sleep_id, { slept_at: start, updated_at: woke.updated_at! });
+      expect([fixed.slept_at, fixed.woke_at, fixed.corrected_at !== null]).toEqual([start, woke.woke_at, true]);
+      // おきたを元の値のまま添えても通す
+      const next = `${today()}T00:00:01`;
+      const again = await api.correctSleep(teacher, slept.nap_sleep_id, { slept_at: next, woke_at: woke.woke_at!, updated_at: fixed.updated_at! });
+      expect([again.slept_at, again.woke_at]).toEqual([next, woke.woke_at]);
+      // おきたを、まだ来ていない別の時刻（その日の終わり）へ変えるのは断る
+      await expect(api.correctSleep(teacher, slept.nap_sleep_id, { woke_at: `${today()}T23:59:59`, updated_at: again.updated_at! }))
+        .rejects.toThrow(MSG.eventTimeRange);
+    } finally {
+      await api.endSession(teacher, s.nap_session_id);
+    }
+  });
 });
