@@ -150,7 +150,7 @@ export default function DiaryListScreen() {
         {data && data.rows.length === 0 && <Empty text="該当する日誌はありません。" />}
         {data && data.rows.length > 0 && (
           <>
-            <table className="list">
+            <table className="list list-dense">
               <thead>
                 <tr>
                   <th scope="col">記録日</th><th scope="col">種別</th><th scope="col">対象</th><th scope="col">作成者</th><th scope="col">状態</th><th scope="col">操作</th>

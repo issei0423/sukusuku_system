@@ -395,7 +395,7 @@ export default function ContactClassScreen() {
           )}
           {rows.length === 0 ? <Empty text={TEXT.noChildren} /> : (
             <div ref={tableWrap} className="contact-table-wrap" onScroll={(e) => markScrolled(e.currentTarget)}>
-              <table className="list contact-class-table">
+              <table className="list list-dense contact-class-table">
                 <thead>
                   <tr>
                     <th ref={childColumn} scope="col" className="contact-col-child">園児</th>

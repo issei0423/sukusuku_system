@@ -87,7 +87,7 @@ export default function DevListScreen() {
         {error && <ErrorBox text={error} />}
         {data?.length === 0 && <Empty text="対象の園児がいません。" />}
         {data && data.length > 0 && (
-          <table className="list">
+          <table className="list list-dense">
             <thead>
               <tr>
                 <th scope="col">園児</th>{showClass && <th scope="col">クラス</th>}
