@@ -190,3 +190,56 @@ describe('一覧の並び順を Go サーバとそろえる（Issue #177 の 7�
     expect(ids).toEqual([900012, 900011, 900010, 900015, 900014, 900013]);
   });
 });
+
+/*
+ * 管理者だけの経路は、承認・承認の取り消しのほかは、Go の requireAdmin（server/session.go）と同じ総称の文で断る
+ * （照合 c2a-05・c5-07）。ロックの強制解除・操作ログと招待コードの出力は、職員の経路の中で管理者だけに許す操作なので、
+ * 固有の文のまま（ここでは見ない）。server/api_admin_only_test.go の TestAdminOnlyRoutesUseGenericMessage と同じ経路を見る
+ */
+describe('管理者だけの経路の断りの文', () => {
+  it('承認・承認の取り消しのほかは「この操作は管理者のみが行えます」で断る', async () => {
+    const calls: [string, () => Promise<unknown>][] = [
+      ['removableChildren', () => api.removableChildren(teacher)],
+      ['saveChild', () => api.saveChild(teacher, {} as never, 'create')],
+      ['childIdExists', () => api.childIdExists(teacher, 'C001')],
+      ['sameNameBirthChildren', () => api.sameNameBirthChildren(teacher, 'x', '2024-04-01')],
+      ['removeChild', () => api.removeChild(teacher, 'C001')],
+      ['pendingDiaries', () => api.pendingDiaries(teacher)],
+      ['returnDiary', () => api.returnDiary(teacher, 1, 'x')],
+      ['misdeliveryRecords', () => api.misdeliveryRecords(teacher)],
+      ['addMisdeliveryRecord', () => api.addMisdeliveryRecord(teacher, {} as never)],
+      ['retractedWithoutRecord', () => api.retractedWithoutRecord(teacher)],
+      ['setSchedule', () => api.setSchedule(teacher, 'C001', today(), true)],
+      ['applyRecommendedSchedules', () => api.applyRecommendedSchedules(teacher)],
+      ['shareSettings', () => api.shareSettings(teacher)],
+      ['setShareable', () => api.setShareable(teacher, 1, true)],
+      ['remove（測定値）', () => api.remove(teacher, 1)],
+      ['exportPdf', () => api.exportPdf(teacher, 'C001', 'internal')],
+      ['allAccounts', () => api.allAccounts(teacher)],
+      ['staffAccounts', () => api.staffAccounts(teacher)],
+      ['createStaffAccount', () => api.createStaffAccount(teacher, {} as never)],
+      ['updateStaffAccount', () => api.updateStaffAccount(teacher, 'S005', {} as never)],
+      ['reissueTempPassword', () => api.reissueTempPassword(teacher, 5)],
+      ['unlock', () => api.unlock(teacher, 5)],
+      ['setAccountStatus', () => api.setAccountStatus(teacher, 5, '2')],
+      ['guardianAccounts', () => api.guardianAccounts(teacher)],
+      ['endGuardianLink', () => api.endGuardianLink(teacher, 'G001', 'C001')],
+      ['restoreGuardianLink', () => api.restoreGuardianLink(teacher, 'G003', 'C003')],
+      ['invitationCodes', () => api.invitationCodes(teacher)],
+      ['issueOneInvitationCode', () => api.issueOneInvitationCode(teacher, 'C001', 30)],
+      ['issueInvitationCodes', () => api.issueInvitationCodes(teacher, 1, 1, 30)],
+      ['revokeInvitationCode', () => api.revokeInvitationCode(teacher, 1)],
+      ['operationLogs', () => api.operationLogs(teacher)],
+      ['importChildCsv', () => api.importChildCsv(teacher, [])],
+      ['previewFiscalYearUpdate', () => api.previewFiscalYearUpdate(teacher)],
+      ['postHandout', () => api.postHandout(teacher, {} as never)],
+      ['withdrawHandout', () => api.withdrawHandout(teacher, 1)],
+    ];
+    const wrong: string[] = [];
+    for (const [name, call] of calls) {
+      const message = await call().then(() => '断られなかった', (e: Error) => e.message);
+      if (message !== 'この操作は管理者のみが行えます') wrong.push(`${name}: ${message}`);
+    }
+    expect(wrong).toEqual([]);
+  });
+});

@@ -80,6 +80,13 @@ function fail<T = never>(message: string): Promise<T> {
 }
 
 /**
+ * 管理者だけの経路の断りの文。承認・承認の取り消しのほかは、Go の requireAdmin（server/session.go）と同じこの総称にそろえる
+ * （照合 c2a-05・c5-07。server/api_admin_only_test.go・web/tests/mockServerRules.test.ts）。ロックの強制解除・操作ログと
+ * 招待コードの出力は、職員の経路の中で管理者だけに許す操作なので、Go と同じ固有の文のまま
+ */
+const ADMIN_ONLY_MESSAGE = 'この操作は管理者のみが行えます';
+
+/**
  * ログイン中の利用者を、もう通さないときの応答。サーバの 401（server/session.go の requireLogin）にあたる。
  * 画面（App.tsx）へ知らせて入口へ戻させる（api/procedure.ts の onSessionEnded。GitHub Issue #159）
  */
@@ -929,7 +936,7 @@ export const childApi = {
    */
   async removableChildren(user: SessionUser): Promise<string[]> {
     // 管理者だけの経路の断り。文は server/session.go の requireAdmin と同じ（詳細設計書「設定」(4-10) も管理者だけの経路をこの文にそろえる）
-    if (user.role !== '1') return fail('この操作は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     return ok(db.children.filter((c) => !c.is_deleted && !childHasRecords(c.child_id) && !childHasActiveGuardian(c.child_id))
       .map((c) => c.child_id));
   },
@@ -990,7 +997,7 @@ export const childApi = {
 
   /** 登録・編集は管理者のみ（画面詳細図 7-1） */
   async saveChild(user: SessionUser, input: ChildInput, mode: 'create' | 'edit'): Promise<Child> {
-    if (user.role !== '1') return fail('園児情報の登録・編集は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     if (!input.child_id.trim()) return fail('園児IDを入力してください');
     if (!input.child_name.trim()) return fail('氏名を入力してください');
     // 【仮置き】よみを必須とする。一覧の並びと検索がよみに頼っているため（GitHub Issue #119）
@@ -1085,7 +1092,7 @@ export const childApi = {
 
   /** 園児IDがすでに使われているか。入力の時点で重複を知らせるために使う（GitHub Issue #121） */
   async childIdExists(user: SessionUser, childId: string): Promise<boolean> {
-    if (user.role !== '1') return fail('園児情報の登録・編集は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     return ok(db.children.some((c) => c.child_id === childId.trim()));
   },
 
@@ -1094,14 +1101,14 @@ export const childApi = {
    * サーバ側は server/api_child_write.go の handleSameNameBirthChildren
    */
   async sameNameBirthChildren(user: SessionUser, childName: string, birthDate: string): Promise<Child[]> {
-    if (user.role !== '1') return fail('園児情報の登録・編集は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     return ok(findSameNameBirthChildren(childName, birthDate.trim()));
   },
 
   /** 誤登録の取消。論理削除とする（基本設計書 5-1）。サーバ側は server/api_child_write.go の handleRemoveChild */
   async removeChild(user: SessionUser, childId: string): Promise<void> {
     // 断りの文は server/session.go の requireAdmin と同じ（handleRemoveChild は requireAdmin で断る）
-    if (user.role !== '1') return fail('この操作は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     const c = findChild(childId);
     // 取り消した園児は「見つからない」として扱う。同じ取消を重ねて受けて、操作ログに 2 行残さない（GitHub Issue #166 の 4）
     if (!c || c.is_deleted) return fail('園児が見つかりません');
@@ -1443,7 +1450,7 @@ const diaryApi2 = {
    */
   async pendingDiaries(user: SessionUser): Promise<PendingDiary[]> {
     // 一覧の取得は承認ではないので、承認の文（approveAdminOnly）でなく管理者だけの経路の文で断る（server/session.go の requireAdmin と同じ）
-    if (user.role !== '1') return fail('この操作は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     /*
      * 申請からの経過日数（暦の日の差）が approval.warn_days を越えたら滞留（stale）。滞留を見つけるための表示で、
      * 期限の判定ではない。設定は一覧を作るたびに読み、変えたら次に開いたときから効く
@@ -1494,7 +1501,7 @@ const diaryApi2 = {
    * 承認していない人が「承認の経緯」に出るため（詳細設計書「日誌の状態」(3-6)）
    */
   async returnDiary(user: SessionUser, diaryId: number, reason: string): Promise<Diary> {
-    if (user.role !== '1') return fail('差し戻しは管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     if (!reason.trim()) return fail('差し戻す理由を入力してください');
     if (tooLong(reason, 500)) return fail('差し戻す理由は500文字以内で入力してください');
     const d = db.diaries.find((x) => x.diary_id === diaryId && !x.is_deleted);
@@ -2137,7 +2144,7 @@ const chatApi2 = {
 
   /** 誤送信への対応の記録。管理者のみ（画面詳細図 3-2 の一覧に対応） */
   async misdeliveryRecords(user: SessionUser) {
-    if (user.role !== '1') return fail('誤送信対応の記録は管理者のみが参照できます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     return ok(db.misdeliveryRecords.map((r) => {
       const m = db.chatMessages.find((x) => x.chat_message_id === r.chat_message_id);
       const room = m ? db.chatRooms.find((x) => x.chat_room_id === m.chat_room_id) : undefined;
@@ -2149,7 +2156,7 @@ const chatApi2 = {
     user: SessionUser,
     input: { chat_message_id: number; occurred_at: string; was_read: boolean; response: string },
   ): Promise<void> {
-    if (user.role !== '1') return fail('誤送信対応の記録は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     if (!input.response.trim()) return fail('とった対応を入力してください');
     if (tooLong(input.response, 1000)) return fail('とった対応は1,000文字以内で入力してください');
     // 発生日時は必須（図/画面詳細図.md「誤送信対応記録画面（管理者）」(4-4) 項目3）。記録した時刻で埋めない
@@ -2170,7 +2177,7 @@ const chatApi2 = {
    * （web/仮置き値.md「一覧の並び順」。サーバ側の server/api_chat.go の handleRetractedWithoutRecord と同じ。GitHub Issue #177 の 7）
    */
   async retractedWithoutRecord(user: SessionUser) {
-    if (user.role !== '1') return fail('誤送信対応の記録は管理者のみが参照できます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     return ok(retractedMessagesWithoutRecord()
       .sort((a, b) => b.sent_at.localeCompare(a.sent_at) || b.chat_message_id - a.chat_message_id)
       .map((m) => ({
@@ -3209,7 +3216,7 @@ const devApi2 = {
   },
 
   async setSchedule(user: SessionUser, childId: string, scheduledOn: string, manual: boolean): Promise<void> {
-    if (user.role !== '1') return fail('スケジュールの設定は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     // 予定日は 'YYYY-MM-DD' の形の、実在する日付に限る（GitHub Issue #164。サーバ側は handleSetSchedule）
     if (!isISODate(scheduledOn)) return fail('次回の予定日の形式が正しくありません');
     // 手で決める予定日に、過ぎた日は入れさせない。「提案に戻す」は、予定日を過ぎた園児では
@@ -3244,7 +3251,7 @@ const devApi2 = {
    * （web/仮置き値.md「一括で当てる範囲」）
    */
   async applyRecommendedSchedules(user: SessionUser): Promise<{ applied: number }> {
-    if (user.role !== '1') return fail('この操作は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     const scheduled = new Set(db.developmentSchedules.map((s) => s.child_id));
     const targets = db.children
       .filter((c) => !c.is_deleted && c.enrollment_status === '1' && !scheduled.has(c.child_id))
@@ -3270,7 +3277,7 @@ const devApi2 = {
 
   /** 共有範囲設定。項目ごとの保護者への共有可否（要件定義書「発達チェック」(4-5)） */
   async shareSettings(user: SessionUser) {
-    if (user.role !== '1') return fail('共有範囲の設定は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     return ok(db.developmentItems
       .sort((a, b) => a.development_category_id - b.development_category_id || a.display_order - b.display_order)
       .map((item) => ({
@@ -3281,7 +3288,7 @@ const devApi2 = {
   },
 
   async setShareable(user: SessionUser, itemId: number, shareable: boolean): Promise<void> {
-    if (user.role !== '1') return fail('共有範囲の設定は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     const s = db.shareSettings.find((x) => x.development_item_id === itemId);
     if (s) {
       s.is_shareable = shareable;
@@ -3426,7 +3433,7 @@ export const physicalApi = {
   },
 
   async remove(user: SessionUser, recordId: number): Promise<void> {
-    if (user.role !== '1') return fail('測定値の削除は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     const r = db.physicalRecords.find((x) => x.physical_record_id === recordId);
     if (!r) return fail('記録が見つかりません');
     r.is_deleted = true;
@@ -3439,7 +3446,7 @@ export const physicalApi = {
 
   /** PDF出力。管理者のみ。出力種別に既定値を置かず毎回選ばせる（画面詳細図 6-2） */
   async exportPdf(user: SessionUser, childId: string, purpose: 'internal' | 'guardian'): Promise<void> {
-    if (user.role !== '1') return fail('PDF出力は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     log(user.account_id, '5', '5', 't_physical_record', null, childId, null,
       `PDF出力（${purpose === 'internal' ? '園内利用' : '保護者引き渡し'}）`);
     return ok(undefined);
@@ -3451,7 +3458,7 @@ export const physicalApi = {
 export const adminApi = {
   /** 職員アカウントの一覧（職員アカウント管理画面。管理者のみ） */
   async staffAccounts(user: SessionUser) {
-    if (user.role !== '1') return fail('アカウント管理は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     return ok(db.staff.map((s) => {
       const a = findAccount(s.account_id)!;
       const cs = db.classStaff.find((x) => x.staff_id === s.staff_id
@@ -3466,7 +3473,7 @@ export const adminApi = {
 
   /** 一時パスワードの再発行（基本設計書「一時パスワードの再発行」(4-3)） */
   async reissueTempPassword(user: SessionUser, accountId: number): Promise<string> {
-    if (user.role !== '1') return fail('一時パスワードの再発行は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     const a = findAccount(accountId);
     if (!a) return fail('アカウントが見つかりません');
     const hours = settingNumber('auth.temp_password_hours', 48);
@@ -3483,7 +3490,7 @@ export const adminApi = {
 
   /** ロックの解除。管理者は経過を待たず解除できる（基本設計書 5-2） */
   async unlock(user: SessionUser, accountId: number): Promise<void> {
-    if (user.role !== '1') return fail('ロックの解除は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     const a = findAccount(accountId);
     if (!a) return fail('アカウントが見つかりません');
     // ロックされていないアカウントの解除を通すと、操作ログに事実と違う「変更前：ロック中」が残る（GitHub Issue #166 の 6）
@@ -3495,7 +3502,7 @@ export const adminApi = {
   },
 
   async setAccountStatus(user: SessionUser, accountId: number, status: Account['status']): Promise<void> {
-    if (user.role !== '1') return fail('アカウントの停止・再開は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     const a = findAccount(accountId);
     if (!a) return fail('アカウントが見つかりません');
     if (a.account_id === user.account_id) return fail('自分のアカウントは停止できません');
@@ -3520,7 +3527,7 @@ export const adminApi = {
     user: SessionUser,
     input: { staff_id: string; staff_name: string; email: string; role: Role; class_id: number | null },
   ): Promise<string> {
-    if (user.role !== '1') return fail('職員アカウントの発行は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     if (input.role === '3') return fail('保護者アカウントは招待コードによる自己登録で作成します');
     /*
      * 前後の空白を除いてから、必須・桁数・形式を確かめる（基本設計書「入力項目の制約値」(4-9)。GitHub Issue #167 の 1）。
@@ -3568,7 +3575,7 @@ export const adminApi = {
     user: SessionUser, staffId: string,
     input: { staff_name: string; role: Role; class_id: number | null },
   ): Promise<void> {
-    if (user.role !== '1') return fail('職員アカウントの変更は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     const name = input.staff_name.trim();
     if (!name) return fail('氏名を入力してください');
     if (tooLong(name, 50)) return fail('氏名は50文字以内で入力してください');
@@ -3632,7 +3639,7 @@ const emailTaken = (email: string) => db.accounts.some((a) => a.email.toLowerCas
 const adminApi2 = {
   /** 招待コードの一覧。同じ園児に複数枚が並ぶため園児名でまとめて見せる（画面詳細図 7-3） */
   async invitationCodes(user: SessionUser, f: { classId?: number | ''; status?: InvitationCode['status'] | '' } = {}) {
-    if (user.role !== '1') return fail('招待コードの管理は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     let rows = db.invitationCodes.map((c) => ({
       ...c,
       child_name: childName(c.child_id),
@@ -3660,7 +3667,7 @@ const adminApi2 = {
   async issueInvitationCodes(
     user: SessionUser, classId: number, perChild: number, validDays: number, includeExisting = false,
   ): Promise<{ issued: number; skipped: number }> {
-    if (user.role !== '1') return fail('招待コードの発行は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     // 園児1名あたりの枚数は 1〜5 枚（図/画面詳細図.md「招待コード管理画面」(7-7) 項目10。GitHub Issue #167 の 3）
     if (!validPerChild(perChild)) return fail(PER_CHILD_MESSAGE);
     if (!validInvitationDays(validDays)) return fail(INVITATION_DAYS_MESSAGE);
@@ -3690,7 +3697,7 @@ const adminApi2 = {
   },
 
   async issueOneInvitationCode(user: SessionUser, childId: string, validDays: number): Promise<string> {
-    if (user.role !== '1') return fail('招待コードの発行は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     if (!validInvitationDays(validDays)) return fail(INVITATION_DAYS_MESSAGE);
     // 取り消した・在籍していない園児には発行しない。一括発行と同じ条件（GitHub Issue #166 の 4）
     const target = childIssuable(childId);
@@ -3707,7 +3714,7 @@ const adminApi2 = {
   },
 
   async revokeInvitationCode(user: SessionUser, codeId: number): Promise<void> {
-    if (user.role !== '1') return fail('招待コードの失効は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     const c = db.invitationCodes.find((x) => x.invitation_code_id === codeId);
     if (!c) return fail('招待コードが見つかりません');
     if (c.status === '2') return fail('使用済みの招待コードは失効できません');
@@ -3720,7 +3727,7 @@ const adminApi2 = {
 
   /** 保護者アカウントの一覧（保護者アカウント管理画面。管理者のみ） */
   async guardianAccounts(user: SessionUser) {
-    if (user.role !== '1') return fail('アカウント管理は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     return ok(db.guardians.map((g) => {
       const a = findAccount(g.account_id)!;
       const links = db.guardianChildren.filter((gc) => gc.guardian_id === g.guardian_id).map((gc) => ({
@@ -3742,7 +3749,7 @@ const adminApi2 = {
    * （基本設計書 5-3）
    */
   async endGuardianLink(user: SessionUser, guardianId: string, childId: string): Promise<void> {
-    if (user.role !== '1') return fail('紐づけの解除は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     const gc = db.guardianChildren.find((x) => x.guardian_id === guardianId && x.child_id === childId && x.link_status === '1');
     if (!gc) return fail('有効な紐づけが見つかりません');
     gc.link_status = '2';
@@ -3782,7 +3789,7 @@ const adminApi2 = {
    * 【仮置き】web/仮置き値.md。server/api_admin.go の handleRestoreGuardianLink と同じ
    */
   async restoreGuardianLink(user: SessionUser, guardianId: string, childId: string): Promise<void> {
-    if (user.role !== '1') return fail('紐づけの変更は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     const gc = db.guardianChildren.find((x) => x.guardian_id === guardianId && x.child_id === childId && x.link_status === '2');
     if (!gc) return fail('終了した紐づけが見つかりません');
     const until = restoreLinkUntil(gc.ended_at);
@@ -4067,7 +4074,7 @@ const adminApi3 = {
     user: SessionUser,
     f: { from?: string; to?: string; accountId?: number | ''; functionType?: FunctionType | ''; childId?: string; page?: number } = {},
   ): Promise<Paged<OperationLog & { account_name: string; child_name: string; target_label: string }>> {
-    if (user.role !== '1') return fail('操作ログの参照は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     const perPage = settingNumber('paging.operation_log_per_page', 100);
     let rows = db.operationLogs.map((l) => ({
       ...l, account_name: l.account_id === null ? 'システム' : accountName(l.account_id), child_name: l.target_child_id ? childName(l.target_child_id) : '―',
@@ -4116,7 +4123,7 @@ const adminApi3 = {
   },
 
   async allAccounts(user: SessionUser) {
-    if (user.role !== '1') return fail('アカウント一覧は管理者のみが参照できます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     return ok(db.accounts.map((a) => ({ account_id: a.account_id, name: accountName(a.account_id), role: a.role })));
   },
 };
@@ -4237,7 +4244,7 @@ const bulkApi = {
    * （server/api_bulk.go の handleImportChildCsv と同じ。GitHub Issue #160 の 3）
    */
   async importChildCsv(user: SessionUser, confirmed: CsvRow[], text?: string): Promise<number> {
-    if (user.role !== '1') return fail('CSV一括登録は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     let rows: CsvRow[];
     try {
       rows = bulkApi.parseChildCsv(text ?? confirmed.map((r) => r.values.join(',')).join('\n')).rows;
@@ -4279,7 +4286,7 @@ const bulkApi = {
 
   /** 年度更新。実行前に更新内容を一覧で確認させる（基本設計書「年度更新」(4-4)） */
   async previewFiscalYearUpdate(user: SessionUser) {
-    if (user.role !== '1') return fail('年度更新は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     const next = db.FISCAL_YEAR + 1;
     const current = db.classes.filter((c) => c.fiscal_year === db.FISCAL_YEAR);
     return ok({
@@ -4466,7 +4473,7 @@ const handoutApi = {
     input: { handout_type: string; title: string; target_month: string; class_id: number | null;
              file_name: string; file_type: string; file_size: number },
   ): Promise<Handout> {
-    if (user.role !== '1') return fail('この操作は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     const title = input.title.trim();
     if (!(input.handout_type in HANDOUT_TYPE)) return fail('種類を選んでください');
     if (!title) return fail('題名を入力してください');
@@ -4509,7 +4516,7 @@ const handoutApi = {
 
   /** 配布物を取り下げる。論理削除とし、一覧から消す。掲載の知らせも取り消す。管理者のみ */
   async withdrawHandout(user: SessionUser, handoutId: number): Promise<void> {
-    if (user.role !== '1') return fail('この操作は管理者のみが行えます');
+    if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     const h = db.handouts.find((x) => x.handout_id === handoutId && !x.is_deleted);
     if (!h) return fail('配布物が見つかりません');
     h.is_deleted = true;
@@ -6780,7 +6787,6 @@ function settingsViewOf(): SettingsView {
   };
 }
 
-const ADMIN_ONLY_MESSAGE = 'この操作は管理者のみが行えます';
 
 const settingsApi = {
   /** 設定を読む（GET /api/settings）。管理者だけ */
