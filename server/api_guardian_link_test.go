@@ -272,11 +272,13 @@ func TestEndLastGuardianLinkLogsSystemStop(t *testing.T) {
 	}
 
 	// 参照の画面は、操作者を「システム」と出す。account_id が空の行を読み飛ばさない
+	// （デモデータにも鈴木 浩之（アカウント8）の停止のシステムの行があるので、村田 真一（アカウント9）の行だけを数える）
 	var out struct {
 		Rows []struct {
 			AccountID   *int64 `json:"account_id"`
 			AccountName string `json:"account_name"`
 			TargetTable string `json:"target_table"`
+			TargetID    *int64 `json:"target_id"`
 		} `json:"rows"`
 	}
 	if err := json.Unmarshal(call(t, h, admin, "GET", "/api/admin/logs", "").Body.Bytes(), &out); err != nil {
@@ -284,6 +286,9 @@ func TestEndLastGuardianLinkLogsSystemStop(t *testing.T) {
 	}
 	var systemRows, adminEnd int
 	for _, r := range out.Rows {
+		if r.TargetID == nil || *r.TargetID != 9 {
+			continue
+		}
 		if r.AccountName == "システム" && r.AccountID == nil && r.TargetTable == "m_account" {
 			systemRows++
 		}
@@ -306,8 +311,49 @@ func TestEndGuardianLinkWithRemainingLinkLogsNoSystemRow(t *testing.T) {
 	}
 	call(t, h, admin, "POST", "/api/admin/guardian-links/end", `{"guardian_id":"G004","child_id":"C004"}`)
 	var n int
-	a.db.QueryRow(`SELECT COUNT(*) FROM t_operation_log WHERE operator_type = '2'`).Scan(&n)
+	// デモデータの鈴木 浩之（アカウント8）の停止の行は数えない
+	a.db.QueryRow(`SELECT COUNT(*) FROM t_operation_log WHERE operator_type = '2' AND target_id = 9`).Scan(&n)
 	if n != 0 {
 		t.Fatalf("システムの行が %d 件ある", n)
+	}
+}
+
+/*
+デモの鈴木 浩之（G003・アカウント8）は、誤って解除した例（紐づけを戻すの見本）。操作ログは、いまの解除が残す形と同じ2行：
+管理者の解除の行（t_guardian_child・有効→終了）と、有効な紐づけがゼロになったことによるシステムの停止の行（照合 c5-08）。
+モックは web/tests/admin.test.ts
+*/
+func TestDemoUnlinkLogMatchesEndGuardianLink(t *testing.T) {
+	a, _ := newTestApp(t)
+	type logRow struct {
+		account                     *int64
+		operator, before, after, at string
+	}
+	read := func(table string) logRow {
+		t.Helper()
+		var r logRow
+		if err := a.db.QueryRow(`SELECT account_id, operator_type, before_value, after_value, operated_at FROM t_operation_log
+			WHERE target_table = ? AND target_id = 8 AND target_child_id = 'C003'`, table).
+			Scan(&r.account, &r.operator, &r.before, &r.after, &r.at); err != nil {
+			t.Fatalf("%s の行が無い: %v", table, err)
+		}
+		return r
+	}
+	end, stop := read("t_guardian_child"), read("m_account")
+	if end.account == nil || *end.account != 1 || end.operator != "1" || end.before != "有効" || end.after != "終了" {
+		t.Errorf("解除の行 = %+v（管理者1・有効→終了のはず）", end)
+	}
+	if stop.account != nil || stop.operator != "2" || stop.before != "有効" || stop.after != "停止（有効な紐づけがゼロになったため）" {
+		t.Errorf("停止の行 = %+v（システム・有効→停止（有効な紐づけがゼロになったため）のはず）", stop)
+	}
+	var endedAt string
+	a.db.QueryRow(`SELECT ended_at FROM t_guardian_child WHERE guardian_id = 'G003' AND child_id = 'C003'`).Scan(&endedAt)
+	if end.at != endedAt || stop.at != endedAt {
+		t.Errorf("操作の日時 解除 %s・停止 %s、紐づけの解除 %s と同じはず", end.at, stop.at, endedAt)
+	}
+	var manual int
+	a.db.QueryRow(`SELECT COUNT(*) FROM t_operation_log WHERE target_table = 'm_account' AND target_id = 8 AND operator_type = '1'`).Scan(&manual)
+	if manual != 0 {
+		t.Errorf("管理者が鈴木 浩之のアカウントを止めた行が %d 件ある（保護者は手で止めない）", manual)
 	}
 }
