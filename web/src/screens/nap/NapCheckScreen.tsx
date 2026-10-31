@@ -9,7 +9,7 @@
  * この画面は開いたまま運用し、実施中は自動ログアウトの対象外とする。
  */
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useAsync } from '../../hooks';
 import { onNapClass } from '../../live';
 import { useSession } from '../../session';
@@ -34,7 +34,14 @@ const SAVED_NOTICE_MS = 5000;
 export default function NapCheckScreen() {
   const { user } = useSession();
   const classesForUser = selectableClasses(user!);
-  const [classId, setClassId] = useState<number>(user!.class_id ?? classesForUser[0]?.class_id ?? 1);
+  /*
+   * 開くクラス。ほかの画面から渡されたクラス（state.classId。実施中のログアウトの窓の「午睡チェック画面へ」が、自分が開始した実施の
+   * クラスを渡す。layouts/StaffLayout.tsx）が選べるクラスならそれを、無ければ担当クラス、それも無ければ最初のクラス
+   */
+  const wantedClass = (useLocation().state as { classId?: number } | null)?.classId;
+  const [classId, setClassId] = useState<number>(() =>
+    (wantedClass !== undefined && classesForUser.some((c) => c.class_id === wantedClass)
+      ? wantedClass : user!.class_id ?? classesForUser[0]?.class_id ?? 1));
   const [tick, setTick] = useState(0);
 
   // 選べるクラスが無い（担当クラスの無い一般の職員）ときは、問い合わせない。

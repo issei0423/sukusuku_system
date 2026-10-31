@@ -101,4 +101,20 @@ describe('職員のログアウト：午睡チェックの実施中（04-025）'
     expect(screen.queryByRole('dialog', { name: DIALOG })).toBeNull();
     await api.endSession(murata, sessionId);
   });
+
+  /*
+   * 管理者は全クラスを扱え、午睡チェック画面は既定で最初のクラスを開く。窓の「午睡チェック画面へ」は、自分が開始した実施の
+   * クラス（ここではもも組）を開く。そうしないと別のクラスが出て、終了のボタンが見つからない
+   */
+  it('管理者が「午睡チェック画面へ」を押すと、自分が開始した実施のクラスを開く', async () => {
+    const own = await api.startSession(admin, 3, today());
+    open('/staff', admin);
+    await screen.findByRole('navigation', { name: '職員メニュー' }, { timeout: 3000 });
+    logoutFromHeader();
+    const dialog = await screen.findByRole('dialog', { name: DIALOG });
+    fireEvent.click(within(dialog).getByRole('button', { name: /午睡チェック画面へ/ }));
+    await screen.findByRole('button', { name: '午睡チェックを終了' }, { timeout: 3000 });
+    expect(document.querySelector('.nap-class-name')?.textContent).toBe('もも組');
+    await api.endSession(admin, own.nap_session_id);
+  });
 });
