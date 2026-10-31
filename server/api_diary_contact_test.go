@@ -185,6 +185,15 @@ func TestDiaryHiddenContactItemsFollowHeads(t *testing.T) {
 	a, h := newTestApp(t)
 	teacher := loginAs(a, 3, "staff")
 	day := today()
+	// デモデータは起動日へずれ、時刻によって村田 美咲（C004）のきょうの給食・午睡が入っている（11:40 の給食など）。
+	// このテストで置く記録だけを照らすため、その日の C004 の食事と午睡を取り消しにしておく（本物の時計で動くため）
+	if _, err := a.db.Exec(`UPDATE t_contact_event SET is_deleted = 1 WHERE child_id = 'C004' AND contact_date = ? AND event_type = '1'`, day); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.db.Exec(`UPDATE t_nap_sleep SET is_deleted = 1 WHERE child_id = 'C004'
+		AND nap_session_id IN (SELECT nap_session_id FROM t_nap_session WHERE session_date = ?)`, day); err != nil {
+		t.Fatal(err)
+	}
 	addMeal(t, a, day, day+"T11:40:00", "1", "3", false, nil, day+"T11:40:00")
 	// 午睡のあいだに日誌を書く。おきたはまだ無い
 	addNap(t, a, day, day+"T13:05:00", "", false, nil, day+"T13:05:00")
@@ -217,14 +226,14 @@ func TestDiaryHiddenContactItemsFollowHeads(t *testing.T) {
 	}
 
 	// 取り込んだあとに「おきた」が付いた（午睡の行の文は「13:05〜14:40 午睡（1時間35分）」に変わる）
-	if _, err := a.db.Exec(`UPDATE t_nap_sleep SET woke_at = ? WHERE child_id = 'C004' AND slept_at = ?`, day+"T14:40:00", day+"T13:05:00"); err != nil {
+	if _, err := a.db.Exec(`UPDATE t_nap_sleep SET woke_at = ? WHERE child_id = 'C004' AND slept_at = ? AND is_deleted = 0`, day+"T14:40:00", day+"T13:05:00"); err != nil {
 		t.Fatal(err)
 	}
 	if got := hidden(); got != "午睡,食事" {
 		t.Fatalf("おきたが付いたあとの hidden_contact_items = %q（午睡も残るはず）", got)
 	}
 	// 食事を訂正した（量が「少し」から「ぜんぶ」へ）
-	if _, err := a.db.Exec(`UPDATE t_contact_event SET meal_amount = '1', corrected_at = ? WHERE child_id = 'C004' AND recorded_at = ?`,
+	if _, err := a.db.Exec(`UPDATE t_contact_event SET meal_amount = '1', corrected_at = ? WHERE child_id = 'C004' AND recorded_at = ? AND is_deleted = 0`,
 		now(), day+"T11:40:00"); err != nil {
 		t.Fatal(err)
 	}
