@@ -105,7 +105,7 @@ export default function GuardianContactScreen() {
   return (
     <div className="contact-page">
       <div ref={head} className="contact-page-head">
-        <Link to="/guardian"><BackIcon />ホームへ</Link>
+        <Link className="btn btn-quiet btn-sm" to="/guardian"><BackIcon />ホームへ</Link>
         <h1>{data.child_name}の連絡帳</h1>
         <nav className="contact-date" aria-label="連絡帳の日付">
           <button type="button" onClick={() => moveTo(addDays(date, -1))}><PrevIcon />前の日</button>

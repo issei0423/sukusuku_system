@@ -256,7 +256,7 @@ export default function GuardianChatScreen() {
               onClick={() => setRoomId(r.room.chat_room_id)}>
               <span>{labelFor(r.room.room_type, r.room.room_name)}</span>
               <span className="guardian-room-trailing">
-                {r.unread > 0 && <span className="guardian-unread">{r.unread}</span>}
+                {r.unread > 0 && <span className="badge">{r.unread}</span>}
                 <ForwardIcon />
               </span>
             </button>

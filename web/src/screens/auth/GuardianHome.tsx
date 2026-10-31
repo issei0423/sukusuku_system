@@ -105,7 +105,7 @@ export default function GuardianHome() {
                 <span className="guardian-eyebrow">園とのやりとり</span>
                 <h2>チャット・お知らせ</h2>
               </div>
-              {h.unread > 0 && <span className="guardian-unread">未読 {h.unread}</span>}
+              {h.unread > 0 && <span className="badge">未読 {h.unread}</span>}
             </div>
             <p>園からのお知らせや配布物、担任の先生とのやりとりはこちらから。</p>
             <Link className="guardian-panel-link" to="/guardian/chat">
