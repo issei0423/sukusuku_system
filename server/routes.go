@@ -43,6 +43,8 @@ func (a *app) routeContact(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/contact/home/{id}/confirm", a.handleConfirmHome)
 	mux.HandleFunc("POST /api/nap/session/{id}/sleeps", a.handleSleep)
 	mux.HandleFunc("POST /api/nap/sleeps/{id}/wake", a.handleWake)
+	// 入眠時の体温（詳細設計書「午睡（ねた・おきた・対象外）」(4-6) の (2)。api_nap_sleep.go）
+	mux.HandleFunc("POST /api/nap/sleeps/{id}/temperature", a.handleSleepTemperature)
 	mux.HandleFunc("POST /api/nap/session/{id}/exclusions", a.handleExclude)
 	mux.HandleFunc("POST /api/nap/exclusions/{id}/cancel", a.handleCancelExclusion)
 	// きょうのようすの記録と、訂正・取り消し（詳細設計書「きょうのようす」(4-4)・「訂正・取り消し」(4-7)・(4-6 (4))）

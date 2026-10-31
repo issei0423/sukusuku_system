@@ -13,7 +13,7 @@ import { Link } from 'react-router-dom';
 import { useAsync } from '../../hooks';
 import { onNapClass } from '../../live';
 import { useSession } from '../../session';
-import { api, selectableClasses } from '../../api/client';
+import { api, selectableClasses, settingText } from '../../api/client';
 import { Loading, ErrorBox, Empty, Field, Alert, Modal } from '../../components/ui';
 import { ConfirmDialog } from '../../components/feedback';
 import { BODY_POSITION, BREATHING, COMPLEXION } from '../../api/codes';
@@ -23,6 +23,7 @@ import type { NapChildState } from '../../api/shapes';
 import SleepControls from './SleepControls';
 import { EXCLUSION_REASON_LABEL } from '../../api/napReport';
 import { durationText } from '../contact/contactText';
+import { TEXT } from '../../messages';
 import { focusAfter, focusableIn, focusedNow } from '../../focusAfter';
 import { useNapSound } from '../../napSound';
 import { StartIcon, EndIcon, CloseIcon } from '../../components/icons';
@@ -534,6 +535,37 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
   const temperatureText = `体温 ${temperature === null ? '未測定' : `${temperature.toFixed(1)}℃`}`;
 
   /*
+   * 入眠時の体温（図/画面詳細図「午睡チェック画面」(5-1) 項目12・24、詳細設計書「行の状態ごとの表示」(2-4 (2)) の「おひるね中」、
+   * 基本設計書「ねた・おきた」(4-8)）。設定（nap.temperature_required）が「入眠時」で、「おひるね中」の組に体温がまだ無ければ、
+   * 行を目立たせて「体温を入れてください。」を出す。「ねた」は先に保存してある（押した時刻を遅らせないため。決めたこと D-7）。
+   * 体温は行に1つの「体温」のボタン（項目12）で入れ、選んだらすぐ入眠時の体温として保存する（5分ごとの確認の体温には入れない）。
+   * 入ると文は消える。入眠時の体温は監査の層の値で、保護者の連絡帳の体温（きょうのようすの体温の記録）とは別の記録
+   * （基本設計書 (4-8)・「ねた・おきた（t_nap_sleep）」(5-7)）。範囲の外は1度確かめてから保存する（記録は妨げない。4-12）
+   */
+  const openSleep = row.sleeps.find((x) => !x.woke_at) ?? null;
+  const needsSleepTemp = settingText('nap.temperature_required', '入眠時') === '入眠時'
+    && !!openSleep && openSleep.sleep_temperature == null;
+  const sleepTemp = (openSleep ?? row.sleeps.at(-1))?.sleep_temperature ?? null;
+  const sleepTempHintId = useId();
+  const [sleepTempBusy, setSleepTempBusy] = useState(false);
+  const [confirmedSleepTemp, setConfirmedSleepTemp] = useState<number | null>(null);
+  const saveSleepTemp = async (value: number) => {
+    if (!openSleep || sleepTempBusy) return;
+    if ((value < TEMP_MIN || value > TEMP_MAX) && confirmedSleepTemp !== value) {
+      setConfirmedSleepTemp(value);
+      setError(`体温が ${TEMP_MIN.toFixed(1)}〜${TEMP_MAX.toFixed(1)}℃ の外です。入力に誤りがなければ、もう一度同じ値を入れてください。`);
+      return;
+    }
+    setSleepTempBusy(true); setError(null);
+    try {
+      await api.sleepTemperature(user!, openSleep.nap_sleep_id, value);
+      setConfirmedSleepTemp(null);
+      onSaved();
+    } catch (e) { setError((e as Error).message); }
+    finally { setSleepTempBusy(false); }
+  };
+
+  /*
    * 直近の記録で「呼吸 確認できず」としたのに、そのあとの異常時の記録が無いときは、その園児を選んだ状態で
    * 異常時記録画面へ移る導線を出す（図/画面詳細図.md「異常時記録画面」(5-2) 項目2「初期値：午睡チェック画面で選んでいた園児」、
    * 「午睡チェック画面」(5-1) 項目10。GitHub Issue #142）。発見時刻は分までで入るため、分の単位で比べる。
@@ -544,7 +576,7 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
     && !(abnormal && abnormal.recorded.slice(0, 16) >= latest.checked_at.slice(0, 16));
 
   return (
-    <section ref={rowRef} className={`nap-card nap-record-row${!excluded && due ? ' is-due' : ''}${abnormal ? ' has-abnormal' : ''}${excluded ? ' is-excluded' : ''}`}
+    <section ref={rowRef} className={`nap-card nap-record-row${!excluded && due ? ' is-due' : ''}${abnormal ? ' has-abnormal' : ''}${excluded ? ' is-excluded' : ''}${!readOnly && needsSleepTemp ? ' needs-temperature' : ''}`}
       aria-label={`${name}の午睡チェック`}>
       {/*
         1人の箱は 2〜3 段にする：1段目に名前の行と「ねた・おきた」、2段目に体位・呼吸・顔色と、右端に体温・「記録する」。
@@ -567,6 +599,8 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
         <span className="last">{row.latest ? `前回 ${formatHM(row.latest.checked_at)} ${BODY_POSITION[row.latest.body_position]}` : '前回の記録なし'}</span>
         {latest && <LatestObservation record={latest} />}
         <span className="last">平熱 {formatTemperature(row.child.normal_temperature)}℃</span>
+        {/* 入れた入眠時の体温。値を並べるだけで判定しない（5分ごとの確認の体温とは別に出す）。【仮置き】出し方（web/仮置き値.md） */}
+        {sleepTemp !== null && <span className="last">入眠時の体温 {formatTemperature(sleepTemp)}℃</span>}
         {abnormal && <span className="tag tag-alert">異常時の記録あり {formatHM(abnormal.found)}</span>}
       </div>
       {/* ねた・おきた（保護者に届く）。5分ごとの確認と同じ箱の、名前の行の右に置く */}
@@ -613,8 +647,15 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
           氏名を .sr-only の要素で添えると、Chromium は要素の境目に空白を足し「（氏名）の 体温」になるため、
           見えている文字と同じ文字列から aria-label を作る
         */}
+        {/*
+          入眠時の体温が要るときは、ボタンのそばに「体温を入れてください。」を出し、ボタンの説明（aria-describedby）にもする
+          （基本設計書「メッセージ一覧」(4-12) の体温の入力待ち）。行の状態の文と同じく role="status" にはしない（GitHub Issue #209）。
+          「ねた」を押したときの結果の表示で読み上げる（SleepControls.tsx）
+        */}
+        {needsSleepTemp && <span id={sleepTempHintId} className="tag tag-alert">{TEXT.sleepTemperatureNeeded}</span>}
         <button type="button" className="nap-temperature-button" onClick={() => setTemperatureOpen(true)}
-          aria-label={`${name}の${temperatureText}`}>
+          aria-label={`${name}の${temperatureText}`} disabled={sleepTempBusy} aria-busy={sleepTempBusy || undefined}
+          aria-describedby={needsSleepTemp ? sleepTempHintId : undefined}>
           {temperatureText}
         </button>
         {temperature !== null && <button type="button" className="btn-quiet btn-sm" onClick={() => setTemperature(null)}>体温を消す</button>}
@@ -639,7 +680,12 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
       {error && <Alert>{error}</Alert>}
 
       {temperatureOpen && <TemperaturePicker name={name} onClose={() => setTemperatureOpen(false)}
-        onSelect={(value) => { setTemperature(value); setTemperatureOpen(false); }} />}
+        note={needsSleepTemp ? '入眠時の体温として、選んだらすぐに記録します。' : undefined}
+        onSelect={(value) => {
+          setTemperatureOpen(false);
+          if (needsSleepTemp) void saveSleepTemp(value);
+          else setTemperature(value);
+        }} />}
       </>)}
     </section>
   );
@@ -726,8 +772,11 @@ function NapChoices<T extends string>({ label, name, options, value, onChange }:
 }
 
 /** 実測したときだけ開く体温パネル。よく使う範囲はキーボードなしで2タップ。 */
-function TemperaturePicker({ name, onClose, onSelect }: {
-  name: string; onClose: () => void; onSelect: (value: number) => void;
+function TemperaturePicker({ name, note, onClose, onSelect }: {
+  name: string;
+  /** 何として記録するか（入眠時の体温のとき）。【仮置き】文言（web/仮置き値.md） */
+  note?: string;
+  onClose: () => void; onSelect: (value: number) => void;
 }) {
   const [whole, setWhole] = useState<number | null>(null);
   const [manual, setManual] = useState('');
@@ -743,6 +792,7 @@ function TemperaturePicker({ name, onClose, onSelect }: {
   return (
     <Modal title={`${name}の体温`} onClose={onClose} footer={<button onClick={onClose}><CloseIcon />閉じる</button>}>
       <div className="nap-temperature-picker">
+        {note && <p>{note}</p>}
         <p className="muted">体温計で測った値を選んでください。測っていない場合は閉じます。</p>
         <div className="nap-temp-heading">{whole === null ? '整数部分を選ぶ' : `${whole}℃ の小数部分を選ぶ`}</div>
         <div className={`nap-temp-grid${whole === null ? ' whole' : ''}`}>
