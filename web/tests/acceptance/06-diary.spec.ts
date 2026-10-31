@@ -1674,9 +1674,13 @@ test.describe('一覧・タイムライン', () => {
     await login(page, 'admin');
     await gotoList(page);
     const pdf = mainOf(page).getByRole('button', { name: /PDF/ });
-    await expect.soft(pdf, '管理者の画面に「PDF 出力」がある').toBeVisible();
     await evidence(page, '06-039');
-    if (!(await pdf.isVisible().catch(() => false))) return;
+    /*
+     * 日誌の PDF はモックアップでは作らない（要決定事項「web/仮置き値.md §7 を 12-1 に載せるか」の推し「載せる → 該当ケースは未実施」をとった。
+     * 午睡の帳票も PDF は演習で作らないと決めた前例：要決定事項「午睡チェックの帳票の形式」）。画面詳細図「モックアップでは実装しないもの」(12-1) に
+     * 「3-1 項目14：PDF 出力｜無い」を載せる直しは docs で行う。ボタンが無いときは実装対象の外として未実施にする
+     */
+    test.skip(!(await pdf.isVisible().catch(() => false)), notIn121('日誌一覧画面の PDF 出力（3-1 項目14）'));
     const logBefore = maxLogId();
     await pdf.click();
     const dialog = page.getByRole('dialog');
