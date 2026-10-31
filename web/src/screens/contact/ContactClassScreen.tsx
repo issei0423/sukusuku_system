@@ -176,20 +176,22 @@ export default function ContactClassScreen() {
   /*
    * 「園からを送っていない園児を上に」（sort=facility。ダッシュボードの「園からのひとことを送っていない園児 → 開く」で来る形）で
    * 開いたときは、表を「園から」の列が見えるところまで横に送る。列の順は設計の並びのまま（詳細設計書 (2-2)、画面詳細図 8-1）。
-   * 描いたあとに1回だけ送り、読み直しのたびには送らない。送れない（表が枠に収まっている）ときは何もしない（見直し 2026-10-31 の r2b-01）
+   * クラス・日付ごとに、描いたあとに1回だけ送り、読み直しのたびには送らない（どのクラス・日付の表かは応答で見る。読み込んでいる間は前の応答のまま）。
+   * 送れない（表が枠に収まっている）ときは何もしない（見直し 2026-10-31 の r2b-01）
    */
   const tableWrap = useRef<HTMLDivElement>(null);
-  const facilityShown = useRef(false);
+  const facilityShown = useRef<string | null>(null);
+  const shownKey = data ? `${data.class_id}:${data.contact_date}` : null;
   useLayoutEffect(() => {
-    if (sort !== 'facility') { facilityShown.current = false; return; }
+    if (sort !== 'facility') { facilityShown.current = null; return; }
     const wrap = tableWrap.current;
     const column = wrap?.querySelector<HTMLElement>('th.contact-col-facility');
-    if (facilityShown.current || !wrap || !column) return;
-    facilityShown.current = true;
+    if (!shownKey || facilityShown.current === shownKey || !wrap || !column) return;
+    facilityShown.current = shownKey;
     const target = column.offsetLeft + column.offsetWidth - wrap.clientWidth;
     if (target > 0) wrap.scrollLeft = target;
     markScrolled(wrap);
-  }, [sort, data]);
+  }, [sort, shownKey]);
   // 表を描いたとき・枠の幅が変わったときに、影を出すかを決め直す（送ったときは onScroll で決め直す）
   useLayoutEffect(() => {
     const wrap = tableWrap.current;

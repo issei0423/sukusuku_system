@@ -28,7 +28,6 @@ export type FixTarget =
   | { kind: 'sleep'; sleep: NapSleep; childName: string; date: string }
   | { kind: 'facility'; facility: ContactFacility; childName: string };
 
-/** 排せつの選択肢（設定。サーバの defaultToiletChoices と同じ既定） */
 /**
  * 排せつの選択肢の名前を、ボタンの中で語の途中で割らないように描く。ボタンは word-break: keep-all（styles/screens.css の
  * .contact-picks.is-toilet）で、割れるのは <wbr> の所だけ。「トイレでできた」は「トイレで／できた」で割る
@@ -40,6 +39,7 @@ export function toiletLabel(label: string): ReactNode {
   return <>{label.slice(0, at)}<wbr />{label.slice(at)}</>;
 }
 
+/** 排せつの選択肢（設定。サーバの defaultToiletChoices と同じ既定） */
 export function toiletChoices(): string[] {
   return settingText('contact.toilet_choices', 'おしっこ,うんち,おむつ交換,トイレでできた').split(',').map((v) => v.trim()).filter(Boolean);
 }
