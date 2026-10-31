@@ -228,6 +228,67 @@ func TestRestoreGuardianLinkRelinkWithinDays(t *testing.T) {
 }
 
 /*
+「紐づけを戻す」「結び直す」の書き込み（紐づけ・アカウントの再開・チャットへの参加）は1つの処理。
+チャットへの参加で失敗したら全部を戻し、500 を返す。紐づけは終了のまま、アカウントは止まったまま、参加も抜けたまま、
+操作ログも残さない（お子さまの追加の TestAddChildRollsBack と同じ作り。PR #355 のレビューの指摘）。
+モックは web/tests/admin.test.ts の同じ観点の確かめ
+*/
+func TestRestoreGuardianLinkRollsBack(t *testing.T) {
+	a, h := newTestApp(t)
+	admin := loginAs(a, 1, "staff")
+	// 村田 真一（G004・アカウント9）の紐づけは村田 美咲（C004）の1本だけで、解除するとアカウントが止まる。個人チャットは 8
+	const body = `{"guardian_id":"G004","child_id":"C004"}`
+	type state struct {
+		link, endedAt, linkedAt, account string
+		left                             *string
+		logs                             int
+	}
+	read := func() state {
+		t.Helper()
+		var st state
+		if err := a.db.QueryRow(`SELECT link_status, IFNULL(ended_at, ''), linked_at FROM t_guardian_child
+			WHERE guardian_id = 'G004' AND child_id = 'C004'`).Scan(&st.link, &st.endedAt, &st.linkedAt); err != nil {
+			t.Fatal(err)
+		}
+		a.db.QueryRow(`SELECT status FROM m_account WHERE account_id = 9`).Scan(&st.account)
+		a.db.QueryRow(`SELECT left_at FROM t_chat_member WHERE chat_room_id = 8 AND account_id = 9`).Scan(&st.left)
+		a.db.QueryRow(`SELECT COUNT(*) FROM t_operation_log
+			WHERE target_table = 't_guardian_child' AND target_child_id = 'C004' AND before_value = '終了'`).Scan(&st.logs)
+		return st
+	}
+
+	call(t, h, admin, "POST", "/api/admin/guardian-links/end", body)
+	ended := read()
+	if ended.link != "2" || ended.account != "2" || ended.left == nil {
+		t.Fatalf("解除したあと: %+v（終了・アカウント停止・参加が抜けている、のはず）", ended)
+	}
+
+	// 最後の書き込み（チャットへの参加）で失敗させる
+	mustExec(t, a, `CREATE TRIGGER test_fail_rejoin BEFORE INSERT ON t_chat_member WHEN NEW.account_id = 9
+		BEGIN SELECT RAISE(ABORT, 'テストで止める'); END`)
+	for name, req := range map[string]string{
+		"紐づけを戻す": body,
+		"結び直す":   `{"guardian_id":"G004","child_id":"C004","relink":true}`,
+	} {
+		e := errorOf(t, request(t, h, admin, "POST", "/api/admin/guardian-links/restore", req), http.StatusInternalServerError)
+		if e.Message != "紐づけを戻せませんでした" {
+			t.Errorf("%s: message = %q", name, e.Message)
+		}
+		if got := read(); got.link != ended.link || got.endedAt != ended.endedAt || got.linkedAt != ended.linkedAt ||
+			got.account != "2" || got.left == nil || got.logs != ended.logs {
+			t.Errorf("%s の途中で失敗したのに書き込みが残った: %+v（解除したあと %+v のまま、のはず）", name, got, ended)
+		}
+	}
+
+	// 止めるのをやめれば戻せる
+	mustExec(t, a, `DROP TRIGGER test_fail_rejoin`)
+	call(t, h, admin, "POST", "/api/admin/guardian-links/restore", body)
+	if got := read(); got.link != "1" || got.account != "1" || got.left != nil || got.logs != ended.logs+1 {
+		t.Fatalf("やり直し: %+v", got)
+	}
+}
+
+/*
 保護者アカウント管理の細部（GitHub Issue #272 の 1・2、#312 の 3）
 典拠：基本設計書「アカウントの停止と再開」(4-3)・「保護者と園児の紐づけを戻す」(4-3)・「操作ログの記録」(4-2)・
 「操作ログ（t_operation_log）」(5-9)、図/画面詳細図「保護者アカウント管理画面」(7-8) 項目5
