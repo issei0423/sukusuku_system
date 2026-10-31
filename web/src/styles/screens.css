@@ -19,7 +19,8 @@
   display: flex; flex-direction: column; min-height: 0;
   overflow: hidden;
 }
-.chat-pane > h2 { padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--c-border); background: var(--c-surface-sub); font-size: var(--fs-body); }
+/* 欄の題（チャンネル・メッセージ・メンバー）は M3 の title-medium（16px・行間 24px・600）。前は 16px の細字に上書きしていた（r2a-12） */
+.chat-pane > h2 { padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--c-border); background: var(--c-surface-sub); font-size: var(--fs-body); line-height: 1.5; font-weight: 600; }
 .chat-scroll { flex: 1; overflow-y: auto; padding: var(--sp-3); }
 .chat-compose { border-top: 1px solid var(--c-border); padding: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2); }
 
@@ -434,7 +435,7 @@ button.guardian-record-link {
  * （見直し 2026-10-31 の r2b-05）。午睡チェックのタイマーと同じく、枠の上端（余白の外）で止め、見出しの地で覆う。
  * 画面の始めに置いたときは、余白の分だけ上へずらし、止める前と後で見出しが動かないようにする（知らせの帯が上にあるときはずらさない）。
  * 下に outline-variant の線を引き、後ろを流れる中身と分ける。見出しの高さは --contact-head-h に入る（#212 の scroll-padding-top）。
- * ページ全体を送る PC の幅は、上に止めたヘッダ（64px）の下で止める
+ * ページ全体を送る PC の幅は、上に止めたヘッダの下で止める（高さは外枠の --chrome-guardian-header-h。64px）
  */
 .contact-page-head {
   --contact-head-bleed: var(--sp-5);
@@ -449,7 +450,7 @@ button.guardian-record-link {
 }
 @media (min-width: 1024px) {
   .contact-page-head {
-    --contact-head-bleed: 0px; top: 64px;
+    --contact-head-bleed: 0px; top: var(--chrome-guardian-header-h);
     grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: var(--sp-3);
     padding: var(--sp-4) 0;
   }
@@ -478,9 +479,8 @@ button.guardian-record-link {
 .contact-month-days { list-style: none; margin: var(--sp-2) 0 0; padding: 0; display: grid; gap: var(--sp-1); }
 .contact-month-days button { width: 100%; min-height: 44px; text-align: left; }
 .contact-section { display: grid; gap: var(--sp-3); }
-/* 保護者の画面の区画の見出しは h2 の字の段のまま（M3 の title-large。r2a-12）。職員の連絡帳（園児）画面は前の 18px のまま（職員の画面の点で直す） */
+/* 区画の見出しは h2 の字の段のまま（M3 の title-large。保護者の画面は w4 の m4、職員の連絡帳（園児）画面は m5 で上書きを消した。r2a-12） */
 .contact-section h2 { margin: 0; }
-.contact-child-page .contact-section h2 { font-size: 1.125rem; }
 .contact-home-lines { display: grid; gap: var(--sp-1); margin: 0; }
 .contact-home-lines > div { display: grid; grid-template-columns: 6.5em 1fr; gap: var(--sp-2); }
 .contact-home-lines dt { font-weight: 700; color: var(--c-text-weak); }
@@ -706,16 +706,16 @@ table.list.contact-class-table :is(th, td) { vertical-align: top; padding: var(-
 }
 .child-avatar.is-lg { width: 56px; height: 56px; font-size: 1.5rem; }
 .contact-temp-row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
-.contact-temp-value { font-size: 1.1rem; }
+.contact-temp-value { font-size: 1.125rem; }
 /* 連絡帳（園児）画面：左に1日のページ（約 60%）、右に書く欄（約 40%）。縦向きでも並びを変えず幅だけを詰める */
 .contact-child-head { flex-wrap: wrap; gap: var(--sp-3); align-items: center; }
 .contact-back { min-height: 44px; display: inline-flex; align-items: center; gap: var(--sp-2); }
 .contact-child-name { display: flex; align-items: center; gap: var(--sp-2); }
-.contact-child-name h1 { margin: 0; font-size: 1.5rem; }
+.contact-child-name h1 { margin: 0; }
 .contact-child-body { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--sp-4); align-items: start; }
 .contact-child-page { display: grid; gap: var(--sp-4); min-width: 0; }
 .contact-child-record { display: grid; gap: var(--sp-3); position: sticky; top: var(--sp-2); }
-.contact-child-record h2 { font-size: 1.125rem; margin: 0; }
+.contact-child-record h2 { margin: 0; }
 @media (max-width: 760px) {
   .contact-child-body { grid-template-columns: 1fr; }
   .contact-child-record { position: static; }

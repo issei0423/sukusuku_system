@@ -112,7 +112,7 @@ export default function DevScheduleScreen() {
                         onChange={(e) => setEdits({ ...edits, [r.child.child_id]: e.target.value })} />
                     </td>
                     <td className="nowrap">
-                      <button className="btn-sm" disabled={!changed}
+                      <button className="btn-sm btn-tonal" disabled={!changed}
                         onClick={() => apply(r.child.child_id, value, true)}>
                         上書きする
                       </button>

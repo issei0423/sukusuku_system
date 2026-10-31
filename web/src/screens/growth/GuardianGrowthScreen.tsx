@@ -82,11 +82,11 @@ export default function GuardianGrowthScreen() {
           <div className="growth-section-head">
             <h2 id="growth-body-title">身長・体重</h2>
             <div className="growth-switch" role="group" aria-label="グラフの切り替え">
-              {/* 【仮置き】選んでいる側は、塗りの色に加えて ✓ の印（SelectedIcon）と太字で示す（色だけに頼らない。WCAG 1.4.1、GitHub Issue #211。web/仮置き値.md）。
+              {/* 【仮置き】選んでいる側は、トーナルの地（M3 の segmented button の secondary-container）に加えて ✓ の印（SelectedIcon）と太字で示す（色だけに頼らない。WCAG 1.4.1、GitHub Issue #211。web/仮置き値.md）。
                   印は読み上げない（選んでいることは aria-pressed で伝わる） */}
-              <button type="button" className={measureType === '1' ? 'measure-toggle btn-primary' : 'measure-toggle'} aria-pressed={measureType === '1'}
+              <button type="button" className={measureType === '1' ? 'measure-toggle btn-tonal' : 'measure-toggle'} aria-pressed={measureType === '1'}
                 onClick={() => setMeasureType('1')}>{measureType === '1' && <SelectedIcon />}身長</button>
-              <button type="button" className={measureType === '2' ? 'measure-toggle btn-primary' : 'measure-toggle'} aria-pressed={measureType === '2'}
+              <button type="button" className={measureType === '2' ? 'measure-toggle btn-tonal' : 'measure-toggle'} aria-pressed={measureType === '2'}
                 onClick={() => setMeasureType('2')}>{measureType === '2' && <SelectedIcon />}体重</button>
             </div>
           </div>

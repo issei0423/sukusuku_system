@@ -17,7 +17,7 @@ import { DIARY_RECORD_TYPE, DIARY_STATUS, DIARY_STATUS_CLASS } from '../../api/c
 import { formatMD, today, addDays } from '../../api/util';
 import type { Diary, DiaryRecordType, DiaryStatus } from '../../api/types';
 import { ConfirmDialog, notify } from '../../components/feedback';
-import { AddIcon, SearchIcon, UndoIcon } from '../../components/icons';
+import { AddIcon, ForwardIcon, SearchIcon, UndoIcon } from '../../components/icons';
 
 // 期間の開始の初期値は、当日の30日前（図/画面詳細図.md「日誌一覧画面」(3-1) 項目4「開始＝当日の30日前」。GitHub Issue #278）
 const DEFAULT_RANGE_DAYS = 30;
@@ -108,8 +108,9 @@ export default function DiaryListScreen() {
             </select>
           </Field>
           <Field label="クラス">
+            {/* 担任は自分のクラスだけ。変えられない値なので、押せない入力欄の灰の箱にせず文字で見せる（.select-fixed。r2c-05） */}
             <select value={classId} onChange={(e) => setClassId(e.target.value ? Number(e.target.value) : '')}
-              disabled={user!.role === '2'}>
+              disabled={user!.role === '2'} className={user!.role === '2' ? 'select-fixed' : undefined}>
               {user!.role !== '2' && <option value="">すべて</option>}
               {classesForUser.map((c) => <option key={c.class_id} value={c.class_id}>{c.class_name}</option>)}
             </select>
@@ -165,10 +166,10 @@ export default function DiaryListScreen() {
                     <td className="nowrap">{staffName(d.created_staff_id)}</td>
                     <td className="nowrap"><Tag label={DIARY_STATUS[d.status]} className={DIARY_STATUS_CLASS[d.status]} /></td>
                     <td className="nowrap">
-                      <Link className="btn btn-sm" to={`/staff/diary/${d.diary_id}`}>開く</Link>
+                      <Link className="btn btn-sm btn-quiet" to={`/staff/diary/${d.diary_id}`}>開く<ForwardIcon /></Link>
                       {/* 申請した本人の、申請中の行だけ（サーバも本人以外を断る） */}
                       {d.status === '2' && !!d.applied_staff_id && d.applied_staff_id === user!.staff_id && (
-                        <button className="btn-sm" style={{ marginLeft: 8 }} onClick={() => setWithdrawing(d)} disabled={busy}>
+                        <button className="btn-sm btn-quiet" style={{ marginLeft: 8 }} onClick={() => setWithdrawing(d)} disabled={busy}>
                           申請を取り下げる
                         </button>
                       )}

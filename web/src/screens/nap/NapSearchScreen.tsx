@@ -112,8 +112,9 @@ export default function NapSearchScreen() {
           <Field label="期間（開始）"><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
           <Field label="期間（終了）"><input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
           <Field label="クラス">
+            {/* 担任は自分のクラスだけ。変えられない値なので、押せない入力欄の灰の箱にせず文字で見せる（.select-fixed。r2c-05） */}
             <select value={classId} onChange={(e) => setClassId(e.target.value ? Number(e.target.value) : '')}
-              disabled={user!.role === '2'}>
+              disabled={user!.role === '2'} className={user!.role === '2' ? 'select-fixed' : undefined}>
               {user!.role !== '2' && <option value="">すべて</option>}
               {classesForUser.map((c) => <option key={c.class_id} value={c.class_id}>{c.class_name}</option>)}
             </select>
@@ -267,7 +268,7 @@ function SearchRow({ r, editing, onEdit, onClose }: {
         <div className="row">
           {r.kind === 'check' && r.corrected_at && <span className="tag tag-plain">修正あり</span>}
           {r.kind === 'check' && r.can_correct && !editing && (
-            <button ref={editButton} type="button" className="btn-sm" onClick={onEdit}
+            <button ref={editButton} type="button" className="btn-sm btn-quiet" onClick={onEdit}
               aria-label={`${r.child_name}の${formatHM(r.checked_at)}の記録を修正`}>
               修正
             </button>

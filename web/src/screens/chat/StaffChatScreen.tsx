@@ -226,7 +226,8 @@ export default function StaffChatScreen() {
     <div>
       <div className="page-head">
         <h1>チャット</h1>
-        {unhandled > 0 && <Tag label={`未対応 ${unhandled} 件`} className="tag-returned" />}
+        {/* 未対応は、連絡帳の「未確認」と同じ青の札。差し戻しの色（赤紫の塗り）は日誌の差し戻しだけ（見直し 2026-10-31 の r2c-02） */}
+        {unhandled > 0 && <Tag label={`未対応 ${unhandled} 件`} className="tag-applied" />}
         <div className="spacer" />
         {/* 園だより・献立表など、保護者があとから見返すものはこちらに掲載する */}
         <Link className="btn btn-sm" to="/staff/handouts">園からの配布物</Link>
@@ -272,7 +273,7 @@ export default function StaffChatScreen() {
             {current?.room.room_type === '4' && !current.left && (
               <span style={{ float: 'right' }}>
                 <Tag label={THREAD_STATUS[current.room.thread_status ?? '2'] ?? '対応済み'}
-                  className={current.room.thread_status === '1' ? 'tag-returned' : 'tag-approved'} />
+                  className={current.room.thread_status === '1' ? 'tag-applied' : 'tag-approved'} />
                 {' '}
                 {current.room.thread_status === '1'
                   ? <button className="btn-sm" onClick={() => setThread('2')}>対応済みにする</button>
@@ -581,7 +582,7 @@ function MessageRow({ message, mine, canEdit, canDelete, showRole, readOnly, onR
             {editError && <div className="weak">{editError}</div>}
             <div className="row-end" style={{ marginTop: 4 }}>
               <button className="btn-sm" onClick={cancelEdit}>やめる</button>
-              <button className="btn-sm btn-primary" onClick={() => save()} disabled={!draft.trim() || [...draft].length > 1000 || saving} aria-busy={saving}>保存</button>
+              <button className="btn-sm btn-tonal" onClick={() => save()} disabled={!draft.trim() || [...draft].length > 1000 || saving} aria-busy={saving}>保存</button>
             </div>
           </>
         ) : (
