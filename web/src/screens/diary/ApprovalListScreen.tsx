@@ -16,6 +16,7 @@ import { onLive } from '../../live';
 import { useSession } from '../../session';
 import { api, childName, className, staffName } from '../../api/client';
 import { Loading, ErrorBox, Empty, Tag } from '../../components/ui';
+import { ForwardIcon } from '../../components/icons';
 import { DIARY_RECORD_TYPE } from '../../api/codes';
 import { formatMD, formatMDHM } from '../../api/util';
 
@@ -60,11 +61,13 @@ export default function ApprovalListScreen() {
                   </td>
                   <td className="nowrap">
                     {d.elapsed_days} 日
-                    {d.stale && <> <Tag label="滞留" className="tag-returned" /></>}
+                    {/* 滞留は警告色の札（.tag-alert）。差し戻しの色（赤紫の塗り）は日誌の差し戻しだけに使う（見直し 2026-10-31 の r2c-02） */}
+                    {d.stale && <> <Tag label="滞留" className="tag-alert" /></>}
                   </td>
                   <td className="nowrap">
-                    <Link className="btn btn-sm btn-primary" to={`/staff/admin/approval/${d.diary_id}`}>
-                      {d.applied_staff_id === user!.staff_id ? '開く' : '承認へ'}
+                    {/* 行ごとにくり返す操作なので塗らず、職員ダッシュボードの「開く」と同じテキストボタンにする（r2c-03） */}
+                    <Link className="btn btn-sm btn-quiet" to={`/staff/admin/approval/${d.diary_id}`}>
+                      {d.applied_staff_id === user!.staff_id ? '開く' : '承認へ'}<ForwardIcon />
                     </Link>
                   </td>
                 </tr>

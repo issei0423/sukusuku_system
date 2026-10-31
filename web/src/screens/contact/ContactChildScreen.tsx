@@ -204,7 +204,8 @@ export default function ContactChildScreen() {
             {!h ? <p className="empty">{TEXT.noHomeYet}</p> : (
               <div className={`contact-home-cell is-${homeState}`}>
                 <p>
-                  <span className={`tag ${homeState === 'confirmed' ? 'tag-approved' : 'tag-returned'}`}>{HOME_STATE_TEXT[homeState!]}</span>
+                  {/* 未確認・更新は、連絡帳（クラス）と同じ青の札。差し戻しの色は日誌の差し戻しだけ（r2c-02） */}
+                  <span className={`tag ${homeState === 'confirmed' ? 'tag-approved' : 'tag-applied'}`}>{HOME_STATE_TEXT[homeState!]}</span>
                   {' '}{h.guardian_relationship || h.guardian_name}が {formatHM(h.submitted_at)} に送りました
                 </p>
                 <dl className="contact-home-lines">

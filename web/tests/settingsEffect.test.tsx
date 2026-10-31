@@ -130,7 +130,8 @@ async function settled() {
     expect(document.body.textContent).not.toContain('読み込んでいます');
   }, { timeout: 3000 });
 }
-const staleTags = () => Array.from(document.querySelectorAll('table.list .tag-returned'))
+// 滞留の札は警告色（.tag-alert）。差し戻しの色（.tag-returned）は日誌の差し戻しだけに使う（見直し 2026-10-31 の r2c-02）
+const staleTags = () => Array.from(document.querySelectorAll('table.list .tag-alert'))
   .filter((e) => e.textContent === '滞留');
 
 describe('画面', () => {

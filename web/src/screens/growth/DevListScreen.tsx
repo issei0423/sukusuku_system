@@ -69,10 +69,11 @@ export default function DevListScreen() {
         </section>
       )}
 
-      {/* 予定日が近い園児の知らせ。「過ぎた」の知らせの下に置く（画面詳細図「発達チェック一覧画面」(6-1) 項目13） */}
+      {/* 予定日が近い園児の知らせ。「過ぎた」の知らせの下に置く（画面詳細図「発達チェック一覧画面」(6-1) 項目13）。
+          近いだけで、まだ漏れではないので、警告の帯でなく知らせの帯（.alert-soft。札の「予定日が近い」の青と同じ扱い。r2c-02） */}
       {near.length > 0 && (
         <section className="card">
-          <div className="alert">
+          <div className="alert alert-soft">
             <span>(!)</span>
             <span>
               予定日が近い園児が {near.length} 名います：
@@ -107,15 +108,17 @@ export default function DevListScreen() {
                   <td className="nowrap">{r.scheduledOn ? formatYMD(r.scheduledOn) : '―'}</td>
                   <td className="nowrap">
                     {r.overdue
-                      ? <Tag label="未実施" className="tag-returned" />
+                      ? <Tag label="未実施" className="tag-alert" />
                       : r.near
                         ? <Tag label="予定日が近い" className="tag-applied" />
                         : <Tag label="予定どおり" className="tag-plain" />}
                     {/* 未入力はチェック漏れの対象。未確認は含めない（基本設計書 5-7） */}
-                    {r.unfilled > 0 && <> <Tag label={`未入力 ${r.unfilled} 件`} className="tag-returned" /></>}
+                    {/* 未実施・未入力（チェック漏れ）は警告色の札（.tag-alert）。差し戻しの色は日誌の差し戻しだけ（r2c-02） */}
+                    {r.unfilled > 0 && <> <Tag label={`未入力 ${r.unfilled} 件`} className="tag-alert" /></>}
                   </td>
                   <td className="nowrap">
-                    <Link className="btn btn-sm" to={`/staff/growth/dev/${r.child.child_id}`}>入力</Link>
+                    {/* 行ごとにくり返す操作なので塗らず、トーナルにする（r2c-03） */}
+                    <Link className="btn btn-sm btn-tonal" to={`/staff/growth/dev/${r.child.child_id}`}>入力</Link>
                   </td>
                 </tr>
               ))}

@@ -84,7 +84,7 @@ export default function MisdeliveryScreen() {
                     <td>{p.room_name}</td>
                     <td className="nowrap">{p.sender_name}</td>
                     <td className="nowrap">
-                      <button className="btn-sm btn-primary" onClick={() => open(p)}>対応を記録する</button>
+                      <button className="btn-sm btn-tonal" onClick={() => open(p)}>対応を記録する</button>
                     </td>
                   </tr>
                 ))}
@@ -109,7 +109,8 @@ export default function MisdeliveryScreen() {
                   <td className="nowrap">{formatMDHM(r.occurred_at)}</td>
                   <td className="nowrap">{r.room_name}</td>
                   <td className="nowrap">
-                    <span className={`tag ${r.was_read ? 'tag-returned' : 'tag-plain'}`}>
+                    {/* 誤って届いた先で読まれたものは警告色の札（.tag-alert）。差し戻しの色は日誌の差し戻しだけ（r2c-02） */}
+                    <span className={`tag ${r.was_read ? 'tag-alert' : 'tag-plain'}`}>
                       {r.was_read ? '既読あり' : '既読なし'}
                     </span>
                   </td>

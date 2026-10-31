@@ -257,16 +257,17 @@ function AbnormalRow({ a, editing, onEdit, onRaise, onClose }: {
         </td>
         <td className="nowrap">{a.staff_name}</td>
         <td className="nowrap">
-          {/* 【仮置き】ヒヤリハットが下書きのまま（申請していない）なら「起票済み（下書き・開く）」（web/仮置き値.md。GitHub Issue #142 の 5） */}
+          {/* 【仮置き】ヒヤリハットが下書きのまま（申請していない）なら「起票済み（下書き・開く）」（web/仮置き値.md。GitHub Issue #142 の 5）。
+              行ごとにくり返すのでテキストボタン。名前に「開く」があるので進む印は添えない（印のぶん iPad 縦向きで表が横にはみ出す） */}
           {a.diary_id
-            ? <Link className="btn btn-sm" to={`/staff/diary/${a.diary_id}`}>{a.diary_draft ? '起票済み（下書き・開く）' : '起票済み（開く）'}</Link>
-            : <button className="btn-sm btn-primary" onClick={onRaise}>起票する</button>}
+            ? <Link className="btn btn-sm btn-quiet" to={`/staff/diary/${a.diary_id}`}>{a.diary_draft ? '起票済み（下書き・開く）' : '起票済み（開く）'}</Link>
+            : <button className="btn-sm btn-tonal" onClick={onRaise}>起票する</button>}
         </td>
         <td className="nowrap">
           <div className="row">
             {a.corrected_at && <span className="tag tag-plain">修正あり</span>}
             {a.can_correct && !editing && (
-              <button ref={editButton} type="button" className="btn-sm" onClick={onEdit}
+              <button ref={editButton} type="button" className="btn-sm btn-quiet" onClick={onEdit}
                 aria-label={`${a.child_name}の${formatMDHM(a.found_at)}の異常時の記録を修正`}>
                 修正
               </button>

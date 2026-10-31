@@ -189,6 +189,7 @@
   --chrome-radius:        8px;
   --chrome-tap-min:       44px;
   --chrome-control-h:     48px;
+  --chrome-guardian-header-h: 64px; /* 保護者のヘッダの高さ。PC の幅で上に止めるものは、この下で止める */
   --chrome-fs-body:       1rem;
   --chrome-fs-small:      0.875rem;
 
@@ -470,6 +471,16 @@ select {
 }
 select:disabled {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 -960 960 960'%3E%3Cpath d='M480-360 280-560h400L480-360Z' fill='%231f1b13' fill-opacity='.38'/%3E%3C/svg%3E");
+}
+/*
+ * 変えられない値を示すだけの選ぶ欄（担任が開いた日誌一覧・午睡記録検索の「クラス」）。
+ * 押せない入力欄の灰の箱（線・地・下向きの印）にせず、ふつうの字で値だけを見せる（見直し 2026-10-31 の r2c-05）。
+ * 要素は押せない select のまま（読み上げは「クラス」とその値。画面詳細図と受け入れテスト 04-038・06-001 が選ぶ欄を前提にしているため）
+ */
+select.select-fixed:disabled {
+  width: auto; padding-left: 0; padding-right: 0;
+  border-color: transparent; background: transparent;
+  color: var(--c-text); -webkit-text-fill-color: var(--c-text); opacity: 1; cursor: default;
 }
 textarea { min-height: 120px; resize: vertical; line-height: 1.7; }
 /*
