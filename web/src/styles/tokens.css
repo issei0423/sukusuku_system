@@ -110,6 +110,13 @@
   --c-on-filled:      var(--md-sys-color-on-primary);
   --c-filled-hover:   color-mix(in srgb, var(--md-sys-color-primary), var(--md-sys-color-on-primary) 8%);
   --c-filled-active:  color-mix(in srgb, var(--md-sys-color-primary), var(--md-sys-color-on-primary) 10%);
+  /* アウトラインボタンとテキストボタンの字。指したとき・押したときは、その字の色を 8%・10% 地に重ねる */
+  --c-outlined-ink:   var(--md-sys-color-primary);
+  --c-state-hover:    color-mix(in srgb, var(--md-sys-color-primary) 8%, var(--md-sys-color-surface-container-lowest));
+  --c-state-press:    color-mix(in srgb, var(--md-sys-color-primary) 10%, var(--md-sys-color-surface-container-lowest));
+  /* 押せないもの（M3）：地と線は on-surface の 12%、字は 38% */
+  --c-disabled-container: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent);
+  --c-disabled-content:   color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent);
 
   /* フォーカスの印。DADS は「黒の線＋黄色の縁」の2重にし、変えないことを求めている（M3 に合わせず、DADS のまま残す） */
   --c-focus:          var(--dads-black);
@@ -120,6 +127,8 @@
   --c-on-alert:       var(--md-sys-color-on-error);
   --c-alert-deep:     var(--md-sys-color-on-error-container);
   --c-alert-soft:     var(--md-sys-color-error-container);
+  --c-alert-hover:    color-mix(in srgb, var(--md-sys-color-error), var(--md-sys-color-on-error) 8%);
+  --c-alert-active:   color-mix(in srgb, var(--md-sys-color-error), var(--md-sys-color-on-error) 10%);
 
   /* 日誌の状態色。差し戻しは他と区別できる色にする（画面詳細図 3-1）。上のカスタム色を使う */
   --c-draft:          var(--md-sys-color-on-surface-variant);
@@ -147,8 +156,6 @@
   --c-text:           var(--md-sys-color-on-surface);
   --c-text-sub:       var(--md-sys-color-on-surface-variant);
   --c-text-weak:      var(--md-sys-color-on-surface-variant);
-  /* 押せない部品の字と枠。M3 の on-surface の 38% を白地に重ねた色 */
-  --c-disabled:       color-mix(in srgb, var(--md-sys-color-on-surface) 38%, var(--md-sys-color-surface-container-lowest));
   --c-link:           var(--md-sys-color-primary);
   --c-link-hover:     var(--md-sys-color-primary);
   --c-link-active:    var(--md-sys-color-on-primary-container);
@@ -293,11 +300,19 @@ p, .pre-wrap, .msg .bubble, textarea { line-height: 1.7; }
 
 /*
  * ---- 押せるもの。タップ領域 44×44px 以上（基本設計書 3-5） ----
- * 形は DADS のボタン。ふだんのボタンは「アウトラインボタン」、主ボタンは「塗りボタン」、
- * 目立たせないボタンは「テキストボタン」。指したときに下線を引く。影や押し込みの動きは付けない。
- *
+ * 形は M3 のボタン（Jetpack Compose の FilledButtonTokens・FilledTonalButtonTokens・OutlinedButtonTokens・TextButtonTokens）。
+ * 強さは4段。塗りは画面でいちばん先に押すもの1つに使い、くり返す操作は弱い段にする。
+ *   - 塗り（.btn-primary）…… primary の地に白の字
+ *   - トーナル（.btn-tonal）… 淡い secondary-container の地に濃い字
+ *   - アウトライン（button・.btn。ふだんのボタン）… 白の地・outline の線・primary の字
+ *   - テキスト（.btn-quiet）… 線も地もなし・primary の字。下線は付けない
+ * 警告の操作（.btn-danger）は error の地に白の字。押せないときは on-surface の 12%（地・線）と 38%（字）。
+ * 指したとき・押したときは、字の色を 8%・10% 重ねる（M3 の状態の層）。影や押し込みの動きは付けない。
+ * 【仮置き】M3 から外した所：高さ 48px（小さいボタン 44px。M3 は 40dp）・字 16px（M3 は 14sp）は DADS のまま、字の太さは 600（M3 は 500）。
+ * アウトラインボタンの地は白にする（M3 は透明）。本文の地の上でも箱の白とそろい、表を横に送って端が隠れたボタンでも、
+ * アクセシビリティの自動検査（axe）が字の地の色を決められるようにするため（透明にすると決めきれない件数が増えた）
  * 指したときの見た目は、DADS と同じく (hover: hover) の端末にだけ付ける。
- * iPad・iPhone では、タップしたあとも :hover が残り、押していないボタンに下線と灰色の地が付いて見えるため
+ * iPad・iPhone では、タップしたあとも :hover が残り、押していないボタンに地が付いて見えるため
  */
 button, .btn {
   min-height: var(--control-h);
@@ -306,10 +321,10 @@ button, .btn {
   border: 1px solid var(--c-border-strong);
   border-radius: var(--radius-button);
   background: var(--c-surface);
-  color: var(--c-text);
+  color: var(--c-outlined-ink);
   font: inherit;
   font-size: var(--fs-body);
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.3;
   letter-spacing: .02em;
   text-align: center;
@@ -322,17 +337,13 @@ button, .btn {
   gap: var(--sp-2);
 }
 @media (hover: hover) {
-  button:hover:not(:disabled), .btn:hover {
-    background: var(--c-surface-sub);
-    border-color: var(--c-text);
-    text-decoration: underline;
-  }
+  button:hover:not(:disabled), .btn:hover { background: var(--c-state-hover); }
 }
-button:active:not(:disabled), .btn:active { background: var(--c-surface-head); }
+button:active:not(:disabled), .btn:active { background: var(--c-state-press); }
 button:disabled {
   background: var(--c-surface);
-  border-color: var(--c-disabled);
-  color: var(--c-disabled);
+  border-color: var(--c-disabled-container);
+  color: var(--c-disabled-content);
   cursor: not-allowed;
 }
 
@@ -345,43 +356,54 @@ select:focus-visible, textarea:focus-visible, summary:focus-visible {
   box-shadow: 0 0 0 2px var(--c-focus-ring);
 }
 
+/* 塗りボタン（M3 の Filled button） */
 .btn-primary {
   background: var(--c-filled);
   border-color: var(--c-filled);
   color: var(--c-on-filled);
 }
 @media (hover: hover) {
-  .btn-primary:hover:not(:disabled) { background: var(--c-filled-hover); border-color: var(--c-filled-hover); }
+  .btn-primary:hover:not(:disabled), .btn.btn-primary:hover { background: var(--c-filled-hover); border-color: var(--c-filled-hover); }
 }
-.btn-primary:active:not(:disabled) { background: var(--c-filled-active); border-color: var(--c-filled-active); }
-.btn-primary:disabled { background: var(--c-disabled); border-color: var(--c-disabled); color: var(--c-surface-sub); }
+.btn-primary:active:not(:disabled), .btn.btn-primary:active { background: var(--c-filled-active); border-color: var(--c-filled-active); }
 
+/* トーナルボタン（M3 の Filled tonal button）。塗りの次に強い操作・くり返す操作 */
+.btn-tonal {
+  background: var(--c-primary);
+  border-color: var(--c-primary);
+  color: var(--c-primary-ink);
+}
+@media (hover: hover) {
+  .btn-tonal:hover:not(:disabled), .btn.btn-tonal:hover { background: var(--c-primary-hover); border-color: var(--c-primary-hover); }
+}
+.btn-tonal:active:not(:disabled), .btn.btn-tonal:active { background: var(--c-primary-active); border-color: var(--c-primary-active); }
+
+/* 警告の操作（取り消し・停止など） */
 .btn-danger {
   background: var(--c-alert);
   border-color: var(--c-alert);
   color: var(--c-on-alert);
 }
 @media (hover: hover) {
-  .btn-danger:hover:not(:disabled) { background: var(--c-alert-deep); border-color: var(--c-alert-deep); }
+  .btn-danger:hover:not(:disabled), .btn.btn-danger:hover { background: var(--c-alert-hover); border-color: var(--c-alert-hover); }
 }
-.btn-danger:disabled { background: var(--c-disabled); border-color: var(--c-disabled); color: var(--c-surface-sub); }
+.btn-danger:active:not(:disabled), .btn.btn-danger:active { background: var(--c-alert-active); border-color: var(--c-alert-active); }
 
-/* テキストボタン。リンクと同じ色と下線で、押せることを示す */
+/* 地のあるボタンが押せないとき。地を on-surface の 12%、字を 38% にする */
+.btn-primary:disabled, .btn-tonal:disabled, .btn-danger:disabled {
+  background: var(--c-disabled-container); border-color: transparent; color: var(--c-disabled-content);
+}
+
+/* テキストボタン（M3 の Text button）。線も地もなく、primary の字だけで押せることを示す。下線は付けない */
 .btn-quiet {
   border-color: transparent;
   background: transparent;
-  color: var(--c-link);
-  text-decoration: underline;
-  text-decoration-thickness: 1px;
+  color: var(--c-outlined-ink);
 }
 @media (hover: hover) {
-  .btn-quiet:hover:not(:disabled), .btn.btn-quiet:hover {
-    border-color: transparent;
-    background: var(--c-surface-sub);
-    color: var(--c-link-hover);
-    text-decoration-thickness: 3px;
-  }
+  .btn-quiet:hover:not(:disabled), .btn.btn-quiet:hover { border-color: transparent; background: var(--c-state-hover); }
 }
+.btn-quiet:active:not(:disabled), .btn.btn-quiet:active { background: var(--c-state-press); }
 .btn-quiet:disabled { border-color: transparent; background: transparent; }
 
 /*
@@ -402,7 +424,10 @@ select:focus-visible, textarea:focus-visible, summary:focus-visible {
  */
 .btn-block { width: 100%; padding-left: var(--sp-2); padding-right: var(--sp-2); letter-spacing: 0; }
 
-/* ---- 入力欄：DADS のインプットテキスト・セレクトボックス（M） ---- */
+/*
+ * ---- 入力欄：M3 の Outlined text field の形（角 4px・outline の線・白の地） ----
+ * 【仮置き】高さ 48px（M3 は 56dp）と字 16px は DADS のまま。項目の名前は欄の外の上に置く（M3 の欄の中に浮く名前にしない）
+ */
 input[type="text"], input[type="password"], input[type="email"],
 input[type="date"], input[type="datetime-local"], input[type="number"], input[type="search"], input[type="file"],
 select, textarea {
@@ -424,55 +449,66 @@ select, textarea {
   }
 }
 input[readonly], textarea[readonly] { border-style: dashed; }
+/*
+ * 押せない入力欄。線は on-surface の 12%。【仮置き】中の字は M3 の 38% にせず outline の色（白地に 4.49:1）で読めるまま残す
+ * （押せないクラスの選ぶ欄が、いま見ているクラスを示しているため。文字にする直しは別の点）
+ */
 input:disabled, select:disabled, textarea:disabled {
-  border-color: var(--c-disabled); background-color: var(--c-surface-sub); color: var(--c-border);
+  border-color: var(--c-disabled-container); background-color: var(--c-surface-sub); color: var(--c-border);
 }
 input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--c-alert); }
 /*
- * 下向きの印は、DADS のセレクトボックスの実装例（design-system-example-components-html、MIT License）と同じ形。
- * 選べないときも印は残し、灰色にする（DADS と同じ）
+ * 下向きの印は Material Symbols の arrow_drop_down（icons.tsx と同じ公式リポジトリ・同じ版から path を写した。Apache License 2.0）。
+ * 色は on-surface-variant（#4c4639）。押せないときは on-surface（#1f1b13）の 38%。
+ * data: の画像の中では CSS の変数を使えないので、tokens.css の --md-sys-color-* と同じ値を書いている（色を作り直したら合わせて直す）
  */
 select {
   appearance: none;
   -webkit-appearance: none;
-  padding-right: 36px;
-  background: var(--c-surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24'%3E%3Cpath d='M12 17L3 8L4 7L12 15L20 7L21 8L12 17Z' fill='%231a1a1a'/%3E%3C/svg%3E") no-repeat right 12px center / 16px 16px;
+  padding-right: 40px;
+  background: var(--c-surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 -960 960 960'%3E%3Cpath d='M480-360 280-560h400L480-360Z' fill='%234c4639'/%3E%3C/svg%3E") no-repeat right 8px center / 24px 24px;
 }
 select:disabled {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24'%3E%3Cpath d='M12 17L3 8L4 7L12 15L20 7L21 8L12 17Z' fill='%23949494'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 -960 960 960'%3E%3Cpath d='M480-360 280-560h400L480-360Z' fill='%231f1b13' fill-opacity='.38'/%3E%3C/svg%3E");
 }
 textarea { min-height: 120px; resize: vertical; line-height: 1.7; }
 /*
- * チェックボックス・ラジオボタン：DADS の形。枠は白地に対して 3:1 以上の灰色（端末の既定の枠は薄すぎる）。
- * 選んだときは黒で塗る
+ * チェックボックス・ラジオボタン：M3 の形（Jetpack Compose の CheckboxTokens・RadioButtonTokens）。
+ * 選ぶ前の枠は on-surface-variant の 2px（白地に 9.36:1）、選んだら primary で塗り、白の印（Material Symbols の check）を置く。
+ * 【仮置き】大きさは 24px（M3 は 18dp・20dp）のまま。指で押しやすくするため（DADS の大きさ）
  */
 input[type="checkbox"], input[type="radio"] {
   appearance: none; -webkit-appearance: none;
   flex: none; width: 24px; height: 24px; margin: 0;
-  border: 2px solid var(--c-border-strong); background: var(--c-surface);
+  border: 2px solid var(--c-text-sub); background: var(--c-surface);
   cursor: pointer;
 }
-input[type="checkbox"] { border-radius: 4px; }
+input[type="checkbox"] { border-radius: 2px; }
 input[type="radio"]    { border-radius: 50%; }
 @media (hover: hover) {
   input[type="checkbox"]:not(:disabled):hover, input[type="radio"]:not(:disabled):hover { border-color: var(--c-text); }
 }
 input[type="checkbox"]:checked {
-  border-color: var(--c-text);
-  background: var(--c-text) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M4 10.5l4 4 8-9' fill='none' stroke='%23fff' stroke-width='2.6'/%3E%3C/svg%3E") center / 18px 18px no-repeat;
+  border-color: var(--c-filled);
+  background: var(--c-filled) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z' fill='%23fff'/%3E%3C/svg%3E") center / 20px 20px no-repeat;
 }
 input[type="radio"]:checked {
-  border-color: var(--c-text);
-  background: radial-gradient(circle, var(--c-text) 0 5px, var(--c-surface) 5.5px);
+  border-color: var(--c-filled);
+  background: radial-gradient(circle, var(--c-filled) 0 5px, var(--c-surface) 5.5px);
 }
-input[type="checkbox"]:disabled, input[type="radio"]:disabled { border-color: var(--c-disabled); background-color: var(--c-surface-sub); cursor: not-allowed; }
+input[type="checkbox"]:disabled, input[type="radio"]:disabled { border-color: var(--c-disabled-content); background-color: var(--c-surface-sub); cursor: not-allowed; }
+input[type="checkbox"]:checked:disabled { border-color: transparent; background-color: var(--c-disabled-content); }
+input[type="radio"]:checked:disabled { background: radial-gradient(circle, var(--c-disabled-content) 0 5px, var(--c-surface-sub) 5.5px); }
 @media (forced-colors: active) {
   input[type="checkbox"], input[type="radio"] { appearance: auto; -webkit-appearance: auto; }
 }
 
 label { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: var(--tap-min); cursor: pointer; }
 
-/* リンク：DADS のリンクテキスト。下線を常に引き、指したときは太くする */
+/*
+ * リンク：DADS のリンクテキストの決まりを残す。下線を常に引き、指したときは太くする。色は primary（白地に 6.45:1）。
+ * ボタンの形のリンク（a.btn）は下線を引かず、ボタンの段の字の色にする
+ */
 a {
   color: var(--c-link);
   text-decoration-thickness: 1px;
@@ -482,7 +518,8 @@ a {
   a:hover { color: var(--c-link-hover); text-decoration-thickness: 3px; }
 }
 a:active { color: var(--c-link-active); }
-a.btn, a.btn:hover, a.btn:active { color: var(--c-text); text-decoration-thickness: 1px; }
-a.btn-quiet, a.btn-quiet:hover { color: var(--c-link); }
-a.btn-quiet:hover { color: var(--c-link-hover); text-decoration-thickness: 3px; }
-a.btn-primary, a.btn-primary:hover { color: var(--c-on-filled); }
+a.btn, a.btn:hover, a.btn:active { color: var(--c-outlined-ink); text-decoration: none; }
+a.btn-quiet, a.btn-quiet:hover, a.btn-quiet:active { color: var(--c-outlined-ink); }
+a.btn-primary, a.btn-primary:hover, a.btn-primary:active { color: var(--c-on-filled); }
+a.btn-tonal, a.btn-tonal:hover, a.btn-tonal:active { color: var(--c-primary-ink); }
+a.btn-danger, a.btn-danger:hover, a.btn-danger:active { color: var(--c-on-alert); }

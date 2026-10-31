@@ -1,7 +1,7 @@
 /*
  * 共通レイアウトと共通部品
  * 典拠：図/画面詳細図.md「共通レイアウト」(1)
- * 部品の形は、デジタル庁デザインシステム（DADS）の同じ役割のコンポーネントに合わせる（tokens.css の冒頭を参照）
+ * 部品の形は、Material Design 3 の同じ役割のコンポーネントに合わせる。外枠（ヘッダ・左メニューなど）は DADS のまま止める（tokens.css の冒頭を参照）
  */
 
 /*
@@ -175,6 +175,8 @@
 }
 
 .main { flex: 1; min-width: 0; overflow-y: auto; padding: var(--main-pad); background: var(--c-bg); }
+/* 【仮置き】職員の本文の段落は 40 字で折り返す（保護者の PC の幅と同じ。長い1行を読ませない。見直し 2026-10-31 の r2a-14） */
+.main p { max-width: 40em; }
 
 /*
  * 想定する端末と向き（基本設計書 3-5）。職員画面はタブレット横向きを基準に組む
@@ -198,6 +200,8 @@
   .sidenav hr { margin: var(--sp-3); }
 }
 @media (min-width: 1400px) {
+  /* 【仮置き】PC の幅で、真ん中に置いた職員の画面の外を surface-container の地にする（外も白だった。見直し 2026-10-31 の r2b-13） */
+  body { background: var(--c-surface-sub); }
   .staff-shell {
     max-width: max(var(--staff-base-w), calc(100vh * var(--staff-ratio)));
     margin: 0 auto;
@@ -223,7 +227,8 @@
 }
 
 /* 12カラムグリッド（基本設計書 3-5） */
-.grid12 { display: grid; grid-template-columns: repeat(var(--grid-cols), 1fr); gap: var(--sp-4); }
+/* 【仮置き】段の間は 24px。グリッドの外で積むカードの間（24px）とそろえる（見直し 2026-10-31 の r2b-09） */
+.grid12 { display: grid; grid-template-columns: repeat(var(--grid-cols), 1fr); gap: var(--sp-5); }
 .grid12 > .card { margin-bottom: 0; }
 .col-3  { grid-column: span 3; }
 .col-4  { grid-column: span 4; }
@@ -285,7 +290,7 @@
 .guardian-child-card {
   display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
   padding: var(--sp-4);
-  background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius-card);
+  background: var(--c-surface); border: 1px solid var(--c-border-weak); border-radius: var(--radius-card);
 }
 .guardian-child-card h2 { margin: 0; font-size: 1.5rem; }
 .guardian-child-card p { margin: 0; color: var(--c-text-sub); }
@@ -294,7 +299,7 @@
 .guardian-home-panel {
   padding: var(--sp-4);
   background: var(--c-surface);
-  border: 1px solid var(--c-border); border-radius: var(--radius-card);
+  border: 1px solid var(--c-border-weak); border-radius: var(--radius-card);
 }
 .guardian-panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
 .guardian-panel-heading h2 { font-size: 1.25rem; }
@@ -330,7 +335,7 @@
 }
 .guardian-contact-note { padding: 0; color: var(--c-text-sub); font-size: var(--fs-small); line-height: 1.7; }
 .guardian-drawer { background: var(--chrome-surface); }
-.guardian-room-list { overflow: hidden; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius-card); }
+.guardian-room-list { overflow: hidden; background: var(--c-surface); border: 1px solid var(--c-border-weak); border-radius: var(--radius-card); }
 .guardian-room-link {
   width: 100%; min-height: 56px; display: flex; justify-content: space-between; gap: var(--sp-3);
   padding: var(--sp-3) var(--sp-4); border: 0; border-bottom: 1px solid var(--c-border); border-radius: 0;
@@ -466,7 +471,7 @@
 }
 .public-card {
   width: 100%; max-width: 440px; background: var(--c-surface);
-  border: 1px solid var(--c-border); border-radius: var(--radius-card);
+  border: 1px solid var(--c-border-weak); border-radius: var(--radius-card);
   padding: var(--sp-6) var(--sp-5);
 }
 .public-card.wide { max-width: 560px; }
@@ -492,12 +497,33 @@
  */
 .icon { width: 1.25em; height: 1.25em; flex: none; vertical-align: middle; }
 
+/*
+ * 押せるもののうち、M3 でボタンではなく「リストの行」（チャンネル・園児の選び・配布物・定型文・月の一覧・保護者のチャットの部屋）、
+ * 「チップ」（連絡帳の選ぶもの・リアクション）、「セグメント」（身長・体重の切り替え）、「数の盤」（体温）、
+ * 「写真の格子」にあたるものは、字をアウトラインボタンの primary にせず on-surface のままにする。
+ * 詳細度は button と同じ（:where）にし、選んだときの決まり（.btn-primary・[aria-pressed="true"] など）がこれに勝つようにする
+ */
+button:where(.channel, .picker button, .guardian-room-link, .guardian-record-link, .handout-row, .phrase-list button,
+  .contact-month-days button, .contact-pick, .measure-toggle, .reaction, .temperature-grid button, .nap-temp-grid button,
+  .subject-cell, .contact-photo-button) { color: var(--c-text); }
+/*
+ * そのうちリストの行・チップ・数の盤は、ボタンの全丸にせず M3 の small（8px）の角にする（チップは M3 の FilterChip と同じ）。
+ * 幅いっぱいの行や格子に全丸の押すものを並べると端が膨らんで見え、数の盤では角の外を axe が「重なり」と見て字の地を決めきれなかった
+ */
+button:where(.phrase-list button, .contact-month-days button, .handout-row, .contact-pick, .temperature-grid button, .nap-temp-grid button) {
+  border-radius: var(--radius);
+}
+
 .page-head { display: flex; align-items: center; gap: var(--sp-3) var(--sp-4); flex-wrap: wrap; margin-bottom: var(--sp-5); }
 .page-head .spacer { flex: 1; }
 
-/* 区切りの箱。DADS は置いてあるだけのものに影を付けないため、線だけで囲む */
+/*
+ * 区切りの箱。M3 の Outlined card（Jetpack Compose の OutlinedCardTokens）：白（surface-container-lowest）の地、
+ * outline-variant の 1px の線、角 12px、影なし。本文の地（surface-container-low）との差でも箱が分かる。
+ * 地を変えた箱（.card-sub）は surface-container
+ */
 .card {
-  background: var(--c-surface); border: 1px solid var(--c-border);
+  background: var(--c-surface); border: 1px solid var(--c-border-weak);
   border-radius: var(--radius-card); padding: var(--sp-4); margin-bottom: var(--sp-5);
 }
 .card > h2, .card > h3 { margin-bottom: var(--sp-3); }
@@ -523,23 +549,24 @@
 }
 
 /*
- * 表：DADS のテーブル。見出し行は灰色の地と太字にし、その下をひと段濃い線で区切る。行は灰色の線で区切る。
- * 縞模様は付けない（DADS では付けるかどうかを選べる）。
- * 行の上下の余白は、DADS のテーブルの「Dense」と同じ 12px に詰める。
- * 文字は 14px にする。DADS のタイポグラフィは本文を 16px 以上とし、14px は「16px を使いにくい領域の
- * 制約がある場合」に限って認めている。16px にすると、iPad 縦向きで日誌一覧などの列が収まらず、
- * 表を横に送らないと「開く」に届かなくなるため、表はこれに当たるとした
+ * 表：見出し行に地を敷かず、600 の on-surface-variant の字で示す。行は outline-variant の線で区切る。縞模様は付けない。
+ * 行の上下の余白は 12px。
+ * 【仮置き】字は本文と同じ 16px（行間 24px）を既定にする。列の多い表（午睡記録検索・操作ログ・日誌一覧・連絡帳（クラス）など）だけ、
+ * 表に .list-dense を付けて 14px（行間 20px）にする。前は全部の表を 14px にしていたが、その理由（iPad 縦で列が収まらない）は
+ * 列の多い表にしか当たらなかった（見直し 2026-10-31 の r2a-09）
  */
-table.list { width: 100%; border-collapse: collapse; font-size: var(--fs-small); line-height: 1.5; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+table.list { width: 100%; border-collapse: collapse; font-size: var(--fs-body); line-height: 1.5; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+table.list.list-dense { font-size: var(--fs-small); line-height: calc(20 / 14); }
 table.list th, table.list td {
   padding: var(--sp-3) var(--sp-2);
-  border-bottom: 1px solid var(--c-border);
+  border-bottom: 1px solid var(--c-border-weak);
   text-align: left; vertical-align: middle;
 }
+/* 見出し行の地は表の箱と同じ白（見た目は地なし）。透かすと、横に送って端が隠れた見出しの字の地を axe が決めきれない */
 table.list th {
-  background: var(--c-surface-head);
-  border-bottom: 1px solid var(--c-border);
-  color: var(--c-text); font-weight: 700; white-space: nowrap;
+  background: var(--c-surface);
+  border-bottom: 1px solid var(--c-border-weak);
+  color: var(--c-text-sub); font-weight: 600; white-space: nowrap;
 }
 table.list tbody tr:focus-within td { background: var(--c-primary-faint); }
 @media (hover: hover) {
@@ -550,6 +577,11 @@ table.list tr > :first-child { padding-left: var(--sp-3); }
 table.list tbody tr:last-child > * { border-bottom: 0; }
 table.list td.num { text-align: right; font-variant-numeric: tabular-nums; }
 /*
+ * 行をまたぐセル（アレルギー一覧・招待コードの園児名など）は、最初の行にそろえて上に寄せる。どの行の見出しかを最初の行と並べて示す。
+ * 真ん中に置くと字が次の行の箱にかかり、axe が字の地の色を決めきれなかった（字を 16px にしたとき）
+ */
+table.list td[rowspan] { vertical-align: top; }
+/*
  * 行の中に並べたボタン（園児一覧の「記録」「編集」、職員アカウントの「変更」「一時パスワード再発行」「停止」など）の間を 8px 空ける。
  * 詳細設計書「全画面に共通する部品と決まり」(2-0) の「タッチの条件」(4)：隣り合うボタンの間は 8px 以上（GitHub Issue #215）
  */
@@ -558,38 +590,48 @@ table.list td > :is(button, .btn) + :is(button, .btn) { margin-left: var(--sp-2)
 .pager { display: flex; align-items: center; gap: var(--sp-3); justify-content: flex-end; margin-top: var(--sp-3); font-size: var(--fs-small); color: var(--c-text-sub); }
 
 /*
- * 状態の札。DADS のチップラベル。角は 8px で、丸い錠剤の形にはしない。
- * 差し戻しだけを塗りつぶす（画面詳細図 3-1）
+ * 状態の札。M3 のチップの形（角 8px）。
+ * 【仮置き】下書き・申請中・承認済は淡い地に濃い字（トーナル。枠の線なし）、差し戻しだけを塗りつぶす（画面詳細図 3-1）
  */
 .tag {
-  display: inline-block; padding: 2px 7px; border: 1px solid; border-radius: var(--radius);
+  display: inline-block; padding: 2px 7px; border: 1px solid transparent; border-radius: var(--radius);
   font-size: var(--fs-small); font-weight: 400; line-height: 1.5; letter-spacing: .02em; white-space: nowrap;
 }
-.tag-draft    { color: var(--c-draft);    border-color: var(--c-draft);    background: var(--c-surface-sub); }
-.tag-applied  { color: var(--c-on-applied-soft); border-color: var(--c-applied); background: var(--c-applied-soft); }
-.tag-returned { color: var(--c-on-returned); border-color: var(--c-returned); background: var(--c-returned); font-weight: 700; }
-.tag-approved { color: var(--c-on-approved-soft); border-color: var(--c-approved); background: var(--c-approved-soft); }
-.tag-plain    { color: var(--c-text-sub); border-color: var(--c-border); background: var(--c-surface); }
+.tag-draft    { color: var(--c-draft);            background: var(--c-surface-head); }
+.tag-applied  { color: var(--c-on-applied-soft);  background: var(--c-applied-soft); }
+.tag-returned { color: var(--c-on-returned);      background: var(--c-returned); font-weight: 600; }
+.tag-approved { color: var(--c-on-approved-soft); background: var(--c-approved-soft); }
+.tag-plain    { color: var(--c-text-sub); border-color: var(--c-border-weak); background: var(--c-surface); }
 /*
  * 安全にかかわる印（午睡の「異常時の記録あり」「呼吸 確認できず」「顔色」、午睡記録検索の「うつ伏せ」、アレルギーの食品）。
  * 警告色は午睡チェックの異常などに使う（基本設計書「画面基本構成」(3-5) の警告色）。塗るのは差し戻しだけ（画面詳細図 3-1）なので、
- * 白地に警告色（red-900）の枠と字、太字で示す。【仮置き】設計は安全の印の札の形を定めていない（web/仮置き値.md）
+ * 白地に警告色（M3 の error）の枠と字、太字で示す。【仮置き】設計は安全の印の札の形を定めていない（web/仮置き値.md）
  */
-.tag-alert    { color: var(--c-alert);    border-color: var(--c-alert);    background: var(--c-surface); font-weight: 700; }
+.tag-alert    { color: var(--c-alert); border-color: var(--c-alert); background: var(--c-surface); font-weight: 700; }
+/*
+ * 件数・新着の札（M3 の Badge。BadgeTokens：error の地・全丸）。「新しく n 件」「未読」などに付ける。
+ * 【仮置き】字は 14px（M3 の 11sp より大きく。14px より小さい字を使わない）。付ける画面は画面ごとの点で直す
+ */
+.badge {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  min-width: 1.5rem; min-height: 1.5rem; padding: 0 var(--sp-2); border-radius: var(--radius-full);
+  background: var(--c-alert); color: var(--c-on-alert);
+  font-size: var(--fs-small); font-weight: 600; line-height: 1; letter-spacing: 0; white-space: nowrap;
+}
 
 /*
  * 警告・注意喚起。判定ではない。
- * DADS のノティフィケーションバナー：白地を色の付いた枠で囲み、印に色を付け、文は黒で書く
+ * 【仮置き】M3 の error-container の地（枠の線なし、角 12px）に、on-error-container の字（7.24:1）で書く。印は太字
  */
 .alert {
   display: flex; align-items: flex-start; gap: var(--sp-2);
   padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-card);
-  background: var(--c-surface); border: 2px solid var(--c-alert);
-  color: var(--c-text); font-size: var(--fs-body); font-weight: 400; line-height: 1.7;
+  background: var(--c-alert-soft); border: 0;
+  color: var(--c-alert-deep); font-size: var(--fs-body); font-weight: 400; line-height: 1.7;
 }
-.alert > span:first-child { flex: none; color: var(--c-alert); font-weight: 700; }
-/* 知らせるだけのもの（DADS のインフォメーション2：灰色） */
-.alert-soft { border-color: var(--c-border); }
+.alert > span:first-child { flex: none; color: var(--c-alert-deep); font-weight: 700; }
+/* 知らせるだけのもの。surface-container-high の地に on-surface の字 */
+.alert-soft { background: var(--c-surface-head); color: var(--c-text); }
 .alert-soft > span:first-child { color: var(--c-text); }
 /*
  * 箱の中身が警告ひとつだけのときは、箱の枠を消して警告の枠だけを見せる。
@@ -600,13 +642,13 @@ table.list td > :is(button, .btn) + :is(button, .btn) { margin-left: var(--sp-2)
 /*
  * 免責表示。成長グラフ・発達チェックの比較に常時表示し、スクロールしても視界から外さない
  * （基本設計書 3-5／画面詳細図 6-1・6-2）。
- * 誤りではないため警告色を使わず、DADS のインフォメーション2（灰色）の形にする
+ * 誤りではないため警告色を使わず、surface-container-highest の地にする（枠の線なし）
  */
 .disclaimer {
   position: sticky; bottom: 0; z-index: 5;
   display: flex; align-items: center; gap: var(--sp-2);
   margin-top: var(--sp-4); padding: var(--sp-2) var(--sp-4);
-  background: var(--c-surface-sub); border: 1px solid var(--c-border);
+  background: var(--md-sys-color-surface-container-highest); border: 0;
   border-radius: var(--radius); color: var(--c-text);
   /* 重ねて置く帯なので、DADS が場所の限られる所に許す 14px にして、重なる範囲を小さくする（GitHub Issue #154） */
   font-size: var(--fs-small); font-weight: 700; line-height: 1.5;
@@ -646,27 +688,34 @@ table.list td > :is(button, .btn) + :is(button, .btn) { margin-left: var(--sp-2)
 /* 開閉するまとまり。押せる大きさを 44px にする */
 summary { min-height: var(--tap-min); padding: 10px 0; cursor: pointer; }
 
-/* ダイアログ。画面として起こさないもの（基本設計書 3-1 基準3）。DADS のモーダルダイアログ */
-.modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .6); display: flex; align-items: center; justify-content: center; z-index: 50; padding: var(--sp-4); }
+/*
+ * ダイアログ。画面として起こさないもの（基本設計書 3-1 基準3）。
+ * M3 の Dialog：surface-container-high の地、角 28px、枠の線なし。後ろは scrim（黒の 32%）で暗くする。
+ * 【仮置き】中身が長くて送るときに区切りが分かるよう、題と操作の段の境に outline-variant の線を残す
+ */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .32); display: flex; align-items: center; justify-content: center; z-index: 50; padding: var(--sp-4); }
 .modal {
-  background: var(--c-surface); border: 1px solid var(--c-text); border-radius: var(--radius-dialog);
+  background: var(--c-surface-head); border: 0; border-radius: var(--radius-dialog);
   box-shadow: var(--elevation-3);
   width: 100%; max-width: 560px; max-height: 90vh; overflow-y: auto;
 }
-.modal-head { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--c-border); }
+.modal-head { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--c-border-weak); }
 .modal-body { padding: var(--sp-5); }
-.modal-foot { padding: var(--sp-4) var(--sp-5); border-top: 1px solid var(--c-border); display: flex; justify-content: flex-end; gap: var(--sp-3); }
+.modal-foot { padding: var(--sp-4) var(--sp-5); border-top: 1px solid var(--c-border-weak); display: flex; justify-content: flex-end; gap: var(--sp-3); }
 /* ダイアログの中で起きた誤りは、ダイアログの中に出す。後ろに出すと隠れて読めない */
 .modal-body .alert { margin-bottom: var(--sp-3); }
 
-/* 操作が完了したことの表示。画面の下端に重ねて出し、並びを押し広げない */
+/*
+ * 操作が完了したことの表示。画面の下端に重ねて出し、並びを押し広げない。
+ * M3 の Snackbar：inverse-surface の地に inverse-on-surface の字、角 4px。中の操作は inverse-primary の字のテキストボタン
+ */
 .toast {
   position: fixed; left: 50%; bottom: var(--sp-4); transform: translateX(-50%); z-index: 60;
   display: flex; align-items: center; gap: var(--sp-3);
   max-width: min(640px, calc(100vw - 2 * var(--sp-4)));
   padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4);
-  background: var(--c-text); color: var(--c-surface);
-  border-radius: var(--radius); box-shadow: var(--elevation-2);
+  background: var(--md-sys-color-inverse-surface); color: var(--md-sys-color-inverse-on-surface);
+  border-radius: var(--radius-input); box-shadow: var(--elevation-2);
 }
 /*
  * 表示が出ている間、スクロールする枠の下端のうち表示が覆う高さ（ToastHost が測って --toast-cover に入れる。src/stickyInset.ts）を
@@ -677,13 +726,13 @@ summary { min-height: var(--tap-min); padding: 10px 0; cursor: pointer; }
 .guardian-shell:has(> .toast) > .guardian-main {
   scroll-padding-bottom: calc(max(var(--toast-cover, 0px), var(--contact-actions-h, 0px)) + 6px);
 }
-.toast .btn-sm { color: inherit; border-color: currentColor; background: transparent; }
+.toast .btn-sm { color: var(--md-sys-color-inverse-primary); border-color: transparent; background: transparent; }
 @media (hover: hover) {
-  .toast .btn-sm:hover:not(:disabled) { color: inherit; border-color: currentColor; background: rgba(255, 255, 255, .15); }
+  .toast .btn-sm:hover:not(:disabled) { color: var(--md-sys-color-inverse-primary); border-color: transparent; background: color-mix(in srgb, var(--md-sys-color-inverse-primary) 8%, transparent); }
 }
 
 /* 段階を上から順に踏ませる（画面詳細図 2-3 新規登録画面） */
-.step { border: 1px solid var(--c-border); border-radius: var(--radius-card); padding: var(--sp-4); margin-bottom: var(--sp-4); }
+.step { border: 1px solid var(--c-border-weak); border-radius: var(--radius-card); padding: var(--sp-4); margin-bottom: var(--sp-4); }
 .step.locked { background: var(--c-surface-sub); color: var(--c-text-sub); }
 .step fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .step.locked fieldset:disabled { cursor: not-allowed; }
