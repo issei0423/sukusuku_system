@@ -203,11 +203,12 @@ export default function InvitationCodesScreen() {
                     <td className="nowrap">
                       <Tag label={INVITATION_STATUS[r.status]}
                         className={r.status === '2' ? 'tag-approved' : r.status === '3' ? 'tag-draft' : 'tag-applied'} />
-                      {r.expired && <> <Tag label="期限切れ" className="tag-returned" /></>}
+                      {/* 期限を過ぎたものは警告色の札（.tag-alert）。差し戻しの色は日誌の差し戻しだけ（r2c-02） */}
+                      {r.expired && <> <Tag label="期限切れ" className="tag-alert" /></>}
                     </td>
                     <td className="nowrap">
                       {r.status === '1' && (
-                        <button className="btn-sm"
+                        <button className="btn-sm btn-quiet"
                           onClick={() => setRevoking({ id: r.invitation_code_id, code: r.code, childName: r.child_name })}>
                           失効
                         </button>
@@ -330,19 +331,20 @@ export default function InvitationCodesScreen() {
           <div className="stack">
             {printable.map((r) => (
               <div key={r.invitation_code_id} className="card" style={{ margin: 0 }}>
-                <div style={{ fontSize: '0.8125rem', color: 'var(--c-text-sub)' }}>お子さまのお名前</div>
-                <div style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: 8 }}>{childLabel(r.child_id, r.child_name, r.class_id)}</div>
-                <div style={{ fontSize: '0.8125rem', color: 'var(--c-text-sub)' }}>招待コード</div>
-                <div style={{ fontSize: '1.375rem', fontFamily: 'monospace', letterSpacing: '.08em' }}>{r.code}</div>
+                {/* 字の大きさは screens.css の .invite-sheet-*（13px をやめて 14px 以上に。見直し 2026-10-31 の r2a-11） */}
+                <div className="invite-sheet-label">お子さまのお名前</div>
+                <div className="invite-sheet-name">{childLabel(r.child_id, r.child_name, r.class_id)}</div>
+                <div className="invite-sheet-label">招待コード</div>
+                <div className="invite-sheet-code">{r.code}</div>
                 <div className="muted" style={{ marginTop: 8 }}>
                   有効期限：{formatYMD(r.expires_on)}　／　このコードは1名分の登録にのみ使えます
                 </div>
                 {/* 登録の手順。園児ごとに切り分けて手渡すので、1枚ごとに載せる。順は新規登録画面の並びに合わせる。
                     典拠：要件定義書「招待コードの一括発行・配布用出力」(4-1-2)「配布用の一覧（園児名・コード・有効期限・登録手順）」。
                     【仮置き】手順の文面は設計に無い（web/仮置き値.md） */}
-                <div style={{ marginTop: 8, fontSize: '0.8125rem' }}>
-                  <div style={{ fontWeight: 700 }}>登録の手順</div>
-                  <ol style={{ margin: '4px 0 0', paddingLeft: '1.4em' }}>
+                <div className="invite-sheet-steps">
+                  <div className="invite-sheet-label">登録の手順</div>
+                  <ol>
                     <li>保護者用のログイン画面（{window.location.origin}）を開き、「招待コードで新規登録」を押す</li>
                     <li>上の招待コードを入れて「コードを確認する」を押す</li>
                     <li>利用規約を読み、同意にチェックを入れる</li>
