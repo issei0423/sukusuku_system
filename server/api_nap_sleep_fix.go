@@ -95,11 +95,13 @@ func (a *app) handleCorrectSleep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	at := now()
-	// おきたを新しく入れたときは、入れた職員を woke_staff_id に残す
+	// おきたを新しく入れたときは、入れた職員を woke_staff_id に残す。
+	// 版（updated_at）は書くたびに必ず進める（詳細設計書「足す表」(5-2)、決めたこと D-40）。同じ秒に2回直しても版が変わり、
+	// 1回目の版のままの訂正は書き換えの文の条件で 409 になる
 	res, err := a.db.Exec(`UPDATE t_nap_sleep SET slept_at = ?, woke_at = ?,
 		woke_staff_id = CASE WHEN woke_staff_id IS NULL AND ? IS NOT NULL THEN ? ELSE woke_staff_id END,
 		corrected_at = ?, updated_at = ? WHERE nap_sleep_id = ? AND is_deleted = 0 AND updated_at = ?`,
-		sleptAt, wokeAt, wokeAt, u.staff(), at, at, sleep.ID, in.UpdatedAt)
+		sleptAt, wokeAt, wokeAt, u.staff(), at, nextVersion(sleep.UpdatedAt), sleep.ID, in.UpdatedAt)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, msgContactSaveFailed)
 		return
@@ -131,7 +133,9 @@ func (a *app) handleCancelSleep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	families, _ := a.readersOf([]string{sleep.ChildID}, sessionDate, a.sleepCreatedAt(sleep.ID))
-	res, err := a.db.Exec(`UPDATE t_nap_sleep SET is_deleted = 1, updated_at = ? WHERE nap_sleep_id = ? AND is_deleted = 0`, now(), sleep.ID)
+	// 版は書くたびに必ず進める（決めたこと D-40）
+	res, err := a.db.Exec(`UPDATE t_nap_sleep SET is_deleted = 1, updated_at = ? WHERE nap_sleep_id = ? AND is_deleted = 0`,
+		nextVersion(sleep.UpdatedAt), sleep.ID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, msgContactSaveFailed)
 		return

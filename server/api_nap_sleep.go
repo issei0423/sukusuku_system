@@ -138,8 +138,9 @@ func (a *app) handleWake(w http.ResponseWriter, r *http.Request) {
 		t, _ := time.ParseInLocation("2006-01-02T15:04:05", sleep.SleptAt, jst)
 		at = t.Add(time.Second).Format("2006-01-02T15:04:05")
 	}
+	// 版（updated_at）は書くたびに必ず進める（詳細設計書「足す表」(5-2)、決めたこと D-40）。同じ秒の訂正と見分けるため
 	res, err := a.db.Exec(`UPDATE t_nap_sleep SET woke_at = ?, woke_staff_id = ?, updated_at = ?
-		WHERE nap_sleep_id = ? AND woke_at IS NULL AND is_deleted = 0`, at, u.staff(), now(), id)
+		WHERE nap_sleep_id = ? AND woke_at IS NULL AND is_deleted = 0`, at, u.staff(), nextVersion(sleep.UpdatedAt), id)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, msgContactSaveFailed)
 		return

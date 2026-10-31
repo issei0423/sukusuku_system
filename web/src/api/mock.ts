@@ -5348,7 +5348,8 @@ const contactApi = {
     if (row.woke_at) return fail(MSG.wokeTwice);
     let at = now();
     if (at <= row.slept_at) at = plusSeconds(row.slept_at, 1);
-    row.woke_at = at; row.woke_staff_id = user.staff_id; row.updated_at = now();
+    // 版は書くたびに必ず進める（詳細設計書「足す表」(5-2)、決めたこと D-40。server/api_nap_sleep.go の handleWake と同じ）
+    row.woke_at = at; row.woke_staff_id = user.staff_id; row.updated_at = laterVersion(row.updated_at);
     log(user.account_id, '3', '2', 't_nap_sleep', row.nap_sleep_id, row.child_id, JSON.stringify({ woke_at: null }), JSON.stringify({ woke_at: at }));
     publishNapChild(target.session.class_id, row.child_id);
     publishContactChild(row.child_id, 'nap');
@@ -5999,7 +6000,8 @@ const contactEventsApi = {
     const at = now();
     // おきたを新しく入れたときは、入れた職員を残す
     if (sleep.woke_staff_id === null && wokeAt !== null) sleep.woke_staff_id = user.staff_id;
-    Object.assign(sleep, { slept_at: sleptAt, woke_at: wokeAt, corrected_at: at, updated_at: at });
+    // 版は書くたびに必ず進める（決めたこと D-40）。同じ秒に2回直しても版が変わり、1回目の版のままの訂正は上で断る
+    Object.assign(sleep, { slept_at: sleptAt, woke_at: wokeAt, corrected_at: at, updated_at: laterVersion(sleep.updated_at) });
     log(user.account_id, '3', '2', 't_nap_sleep', sleep.nap_sleep_id, sleep.child_id, before, after);
     publishNapChild(session.class_id, sleep.child_id);
     publishContactChild(sleep.child_id, 'nap');
@@ -6014,7 +6016,7 @@ const contactEventsApi = {
     const { sleep, session } = target;
     const { family_count } = readersOf([sleep.child_id], session.session_date, sleep.created_at);
     sleep.is_deleted = true;
-    sleep.updated_at = now();
+    sleep.updated_at = laterVersion(sleep.updated_at); // 版は書くたびに必ず進める（決めたこと D-40）
     log(user.account_id, '3', '4', 't_nap_sleep', sleep.nap_sleep_id, sleep.child_id,
       fieldsJSON([['slept_at', sleep.slept_at], ['woke_at', sleep.woke_at]]), null);
     publishNapChild(session.class_id, sleep.child_id);

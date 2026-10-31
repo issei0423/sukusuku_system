@@ -486,3 +486,59 @@ func TestNapSleepCorrectRightAfterSameSecondWake(t *testing.T) {
 		t.Errorf("先のおきたへの訂正: %s", b)
 	}
 }
+
+/*
+「ねた・おきた」の版（updated_at）は、おきた・訂正・取り消しのたびに必ず進める（詳細設計書「足す表」(5-2)、決めたこと D-40
+「t_contact_*（と t_nap_sleep・t_diary）の updated_at は、書くたびに必ず前の値より進める」）。同じ秒に2回直しても版が変わり、
+1回目の版のままの訂正は 409 になる。Go のテストの時計は止められないので、版を今より先に置いて同じ秒を作る
+（新しい版は「サーバの今」と「前の版＋1秒」の遅いほう＝前の版＋1秒）。モックは web/tests/contactEvents.test.ts の同じ観点の確かめ
+*/
+func TestNapSleepVersionAdvancesOnEveryWrite(t *testing.T) {
+	a, h := newTestApp(t)
+	teacher := loginAs(a, accTeacher, "staff")
+	s := startOwnNap(t, h, teacher)
+	var slept napSleepOut
+	decode(t, call(t, h, teacher, "POST", "/api/nap/session/"+itoa(s.NapSessionID)+"/sleeps", `{"child_id":"C001"}`), &slept)
+	const layout = "2006-01-02T15:04:05"
+	ahead := nowTime().Add(5 * time.Second)
+	if ahead.Add(5*time.Second).Format("2006-01-02") != today() {
+		t.Skip("日付の変わり目に近い（版が翌日になる）")
+	}
+	next := func(v string) string {
+		t.Helper()
+		at, err := time.ParseInLocation(layout, v, jst)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return at.Add(time.Second).Format(layout)
+	}
+	mustExec(t, a, `UPDATE t_nap_sleep SET updated_at = ? WHERE nap_sleep_id = ?`, ahead.Format(layout), slept.ID)
+
+	// おきた
+	var woke napSleepOut
+	decode(t, call(t, h, teacher, "POST", "/api/nap/sleeps/"+itoa(slept.ID)+"/wake", ""), &woke)
+	if want := next(ahead.Format(layout)); woke.UpdatedAt != want {
+		t.Errorf("おきたの版 = %s、前の版＋1秒 %s のはず", woke.UpdatedAt, want)
+	}
+	// 同じ秒に2回直す
+	path := "/api/nap/sleeps/" + itoa(slept.ID)
+	var first, second napSleepOut
+	decode(t, call(t, h, teacher, "POST", path+"/correct", `{"slept_at":"`+today()+`T00:00:00","updated_at":"`+woke.UpdatedAt+`"}`), &first)
+	if want := next(woke.UpdatedAt); first.UpdatedAt != want {
+		t.Errorf("1回目の訂正の版 = %s、%s のはず", first.UpdatedAt, want)
+	}
+	decode(t, call(t, h, teacher, "POST", path+"/correct", `{"slept_at":"`+today()+`T00:00:01","updated_at":"`+first.UpdatedAt+`"}`), &second)
+	if want := next(first.UpdatedAt); second.UpdatedAt != want {
+		t.Errorf("2回目の訂正の版 = %s、%s のはず", second.UpdatedAt, want)
+	}
+	// 1回目の版のままの訂正は、ほかの人が直したあとなので断る
+	expectStatus(t, request(t, h, teacher, "POST", path+"/correct",
+		`{"slept_at":"`+today()+`T00:00:02","updated_at":"`+first.UpdatedAt+`"}`), http.StatusConflict)
+	// 取り消しも版を進める
+	call(t, h, teacher, "POST", path+"/cancel", `{}`)
+	var cancelled string
+	a.db.QueryRow(`SELECT updated_at FROM t_nap_sleep WHERE nap_sleep_id = ?`, slept.ID).Scan(&cancelled)
+	if want := next(second.UpdatedAt); cancelled != want {
+		t.Errorf("取り消しの版 = %s、%s のはず", cancelled, want)
+	}
+}
