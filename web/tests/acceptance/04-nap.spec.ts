@@ -702,7 +702,10 @@ test.describe('午睡チェック画面：ねた・おきた・対象外', () =>
     const gm = g.page.getByRole('main');
     await expect.poll(async () => (await gm.innerText()).includes('おひるね中'), { message: '保護者：2組目の「おひるね中」' }).toBe(true);
     await expect.soft(gm, '保護者：1組目のおきたと寝た長さ').toContainText(/おきた（1分）/);
-    const rows = sleepsOf('西田 太郎').filter((r) => !r.is_deleted);
+    // この実施の組だけを数える。前の日のデモの「ねた・おきた」（seed.sql の実施2）も同じ園児の行にあるため
+    // （テスト仕様書「NG の分析と処置」の「04-015 の行の数はケースの誤り」）
+    const sid = openSession('さくら組')?.nap_session_id;
+    const rows = sleepsOf('西田 太郎').filter((r) => !r.is_deleted && r.nap_session_id === sid);
     expect.soft(rows.length).toBe(2);
     expect.soft(rows[0]?.woke_at).not.toBeNull();
     expect.soft(rows[0]?.woke_staff_id).toBe(staffId('鈴木 浩之'));
