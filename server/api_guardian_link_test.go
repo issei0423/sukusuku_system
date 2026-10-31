@@ -289,6 +289,64 @@ func TestRestoreGuardianLinkRollsBack(t *testing.T) {
 }
 
 /*
+紐づけの解除の書き込み（紐づけの終了・アカウントの停止・チャットから外す）は1つの処理。チャットから外す書き込みで失敗したら
+全部を戻し、500「解除に失敗しました」を返す。紐づけは有効のまま、アカウントも有効のまま、チャットの参加も残り、
+ログイン中のセッションも切らない。操作ログ（管理者の解除の行・システムの停止の行）も残さない
+（「紐づけを戻す」の TestRestoreGuardianLinkRollsBack と同じ作り）。モックは web/tests/admin.test.ts の同じ観点の確かめ
+*/
+func TestEndGuardianLinkRollsBack(t *testing.T) {
+	a, h := newTestApp(t)
+	admin := loginAs(a, 1, "staff")
+	murata := loginAs(a, 9, "guardian")
+	// 村田 真一（G004・アカウント9）の紐づけは村田 美咲（C004）の1本だけで、解除するとアカウントが止まる。個人チャットは 8
+	const body = `{"guardian_id":"G004","child_id":"C004"}`
+	type state struct {
+		link, endedAt, account string
+		left                   *string
+		logs                   int
+	}
+	read := func() state {
+		t.Helper()
+		var st state
+		if err := a.db.QueryRow(`SELECT link_status, IFNULL(ended_at, '') FROM t_guardian_child
+			WHERE guardian_id = 'G004' AND child_id = 'C004'`).Scan(&st.link, &st.endedAt); err != nil {
+			t.Fatal(err)
+		}
+		a.db.QueryRow(`SELECT status FROM m_account WHERE account_id = 9`).Scan(&st.account)
+		a.db.QueryRow(`SELECT left_at FROM t_chat_member WHERE chat_room_id = 8 AND account_id = 9`).Scan(&st.left)
+		// 管理者の解除の行と、システムの停止の行
+		a.db.QueryRow(`SELECT COUNT(*) FROM t_operation_log WHERE target_id = 9
+			AND ((target_table = 't_guardian_child' AND target_child_id = 'C004' AND after_value = '終了')
+			  OR (target_table = 'm_account' AND operator_type = '2'))`).Scan(&st.logs)
+		return st
+	}
+	before := read()
+	if before.link != "1" || before.endedAt != "" || before.account != "1" || before.left != nil {
+		t.Fatalf("解除の前: %+v（有効・アカウント有効・参加中、のはず）", before)
+	}
+	expectStatus(t, request(t, h, murata, "GET", "/api/me", ""), http.StatusOK)
+
+	// 最後の書き込み（チャットから外す）で失敗させる
+	mustExec(t, a, `CREATE TRIGGER test_fail_leave BEFORE UPDATE OF left_at ON t_chat_member WHEN NEW.account_id = 9
+		BEGIN SELECT RAISE(ABORT, 'テストで止める'); END`)
+	if e := errorOf(t, request(t, h, admin, "POST", "/api/admin/guardian-links/end", body), http.StatusInternalServerError); e.Message != "解除に失敗しました" {
+		t.Errorf("message = %q", e.Message)
+	}
+	if got := read(); got.link != "1" || got.endedAt != "" || got.account != "1" || got.left != nil || got.logs != before.logs {
+		t.Errorf("解除の途中で失敗したのに書き込みが残った: %+v（解除の前 %+v のまま、のはず）", got, before)
+	}
+	expectStatus(t, request(t, h, murata, "GET", "/api/me", ""), http.StatusOK) // セッションも切らない
+
+	// 止めるのをやめれば解除できる。操作ログは管理者の解除の行とシステムの停止の行の2行
+	mustExec(t, a, `DROP TRIGGER test_fail_leave`)
+	call(t, h, admin, "POST", "/api/admin/guardian-links/end", body)
+	if got := read(); got.link != "2" || got.endedAt == "" || got.account != "2" || got.left == nil || got.logs != before.logs+2 {
+		t.Fatalf("やり直し: %+v", got)
+	}
+	expectStatus(t, request(t, h, murata, "GET", "/api/me", ""), http.StatusUnauthorized)
+}
+
+/*
 保護者アカウント管理の細部（GitHub Issue #272 の 1・2、#312 の 3）
 典拠：基本設計書「アカウントの停止と再開」(4-3)・「保護者と園児の紐づけを戻す」(4-3)・「操作ログの記録」(4-2)・
 「操作ログ（t_operation_log）」(5-9)、図/画面詳細図「保護者アカウント管理画面」(7-8) 項目5

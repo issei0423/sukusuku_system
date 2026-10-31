@@ -950,6 +950,10 @@ handleEndGuardianLink は紐づけを終了する。
 
 紐づけ単位で終了させる。
 アカウントの停止は有効な紐づけがゼロになった時点（基本設計書 5-3）。
+
+書き込み（紐づけの終了・アカウントの停止・チャットから外す）は1つの処理（endGuardianLinkTx）。どれかに失敗したら全部を戻し、
+500「解除に失敗しました」（「紐づけを戻す」の restoreGuardianLinkTx と同じ作り）。ログイン中のセッションを切ること・
+操作ログは、書き込みが確定したあとに行う。
 */
 func (a *app) handleEndGuardianLink(w http.ResponseWriter, r *http.Request) {
 	u, ok := a.requireAdmin(w, r)
@@ -963,64 +967,125 @@ func (a *app) handleEndGuardianLink(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	res, err := a.db.Exec(`UPDATE t_guardian_child SET link_status = '2', ended_at = ?
-		WHERE guardian_id = ? AND child_id = ? AND link_status = '1'`, now(), req.GuardianID, req.ChildID)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "解除に失敗しました")
-		return
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
+	res, err := a.endGuardianLinkTx(req.GuardianID, req.ChildID)
+	if errors.Is(err, errActiveLinkNotFound) {
 		writeErr(w, http.StatusNotFound, "有効な紐づけが見つかりません")
 		return
 	}
-
-	var remaining int
-	a.db.QueryRow(`SELECT COUNT(*) FROM t_guardian_child
-		WHERE guardian_id = ? AND link_status = '1'`, req.GuardianID).Scan(&remaining)
-
-	stopped := false
-	if remaining == 0 {
-		res, _ := a.db.Exec(`UPDATE m_account SET status = '2', updated_at = ?
-			WHERE status = '1' AND account_id = (SELECT account_id FROM m_guardian WHERE guardian_id = ?)`,
-			now(), req.GuardianID)
-		if n, _ := res.RowsAffected(); n > 0 {
-			stopped = true
-		}
+	if err != nil {
+		log.Printf("紐づけを解除できませんでした（%s・%s）: %v", req.GuardianID, req.ChildID, err)
+		writeErr(w, http.StatusInternalServerError, "解除に失敗しました")
+		return
 	}
 
-	/*
-	 * 解除するとその園児の記録を参照できなくなる（画面詳細図 7-8 項目6）。保護者は left_at が入った時点で
-	 * 参照できなくなる（基本設計書「チャット」(5-5)）。その園児の個人チャットと、ほかに有効な紐づけのある園児が
-	 * 在籍していないクラスのクラスグループに left_at を入れる。ログイン中のセッションも切る（GitHub Issue #159）。
-	 * きょうだいの紐づけが残る保護者は、ログインし直せば残る園児の範囲で使える
-	 */
-	accountID := a.guardianAccountID(req.GuardianID)
-	if accountID != nil {
-		a.leaveRoomsOfChild(*accountID, req.GuardianID, req.ChildID)
-		a.sessions.destroyAccount(*accountID, "")
+	// ログイン中のセッションも切る（GitHub Issue #159）。きょうだいの紐づけが残る保護者は、ログインし直せば残る園児の範囲で使える
+	if res.accountID != nil {
+		a.sessions.destroyAccount(*res.accountID, "")
 	}
 
 	// 紐づけの表は数値の主キーを持たない。相手が分かるよう、保護者のアカウントを対象として残す
-	a.log(u.AccountID, fnAccount, opUpdate, "t_guardian_child", accountID,
+	a.log(u.AccountID, fnAccount, opUpdate, "t_guardian_child", res.accountID,
 		s(req.ChildID), s("有効"), s("終了"))
 	// 有効な紐づけが無くなったことによる停止は、システムが行った変更として、操作者を「システム」で別の行に残す
 	// （基本設計書「操作ログの記録」(4-2)。解除は管理者の操作、停止はその結果としてシステムが行う）。
 	// 【仮置き】行の分け方と文言は設計に無い（web/仮置き値.md）
-	if stopped {
-		a.logSystem(fnAccount, opUpdate, "m_account", accountID, s(req.ChildID),
+	if res.stopped {
+		a.logSystem(fnAccount, opUpdate, "m_account", res.accountID, s(req.ChildID),
 			s("有効"), s("停止（有効な紐づけがゼロになったため）"))
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+// errActiveLinkNotFound は、解除する相手の有効（1）な紐づけが無い（404「有効な紐づけが見つかりません」）
+var errActiveLinkNotFound = errors.New("有効な紐づけが見つかりません")
+
+// endLinkResult は、紐づけの解除で書いたもの。セッションを切ることと操作ログに使う
+type endLinkResult struct {
+	// 保護者のアカウント（無ければ nil）
+	accountID *int64
+	// 有効な紐づけがゼロになり、アカウントを停止したか
+	stopped bool
+}
+
+/*
+endGuardianLinkTx は、紐づけの解除の書き込みを1つの処理で行う（handleEndGuardianLink）。
+「紐づけを戻す」の restoreGuardianLinkTx と同じく、どこかで失敗したら全部を戻す（defer の Rollback）。
+取引の中では a.db へ問い合わせない（接続は1本。db.go）。
+
+ 1. 有効（1）な紐づけを終了（2）にし、解除した日時を入れる
+ 2. その保護者の有効な紐づけがゼロになったら、アカウントを停止する
+ 3. その園児の個人チャットと、ほかに有効な紐づけのある園児が在籍していないクラスのクラスグループから外す（leaveRoomsOfChild）。
+    解除するとその園児の記録を参照できなくなる（画面詳細図 7-8 項目6）。保護者は left_at が入った時点で
+    参照できなくなる（基本設計書「チャット」(5-5)）
+
+有効な紐づけが無ければ errActiveLinkNotFound を返す。
+*/
+func (a *app) endGuardianLinkTx(guardianID, childID string) (endLinkResult, error) {
+	var out endLinkResult
+	tx, err := a.db.Begin()
+	if err != nil {
+		return out, err
+	}
+	defer tx.Rollback()
+
+	// 1. 紐づけを終了する
+	res, err := tx.Exec(`UPDATE t_guardian_child SET link_status = '2', ended_at = ?
+		WHERE guardian_id = ? AND child_id = ? AND link_status = '1'`, now(), guardianID, childID)
+	if err != nil {
+		return out, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return out, errActiveLinkNotFound
+	}
+
+	// 2. 有効な紐づけがゼロになったら、アカウントを停止する
+	var remaining int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM t_guardian_child
+		WHERE guardian_id = ? AND link_status = '1'`, guardianID).Scan(&remaining); err != nil {
+		return out, err
+	}
+	if remaining == 0 {
+		res, err := tx.Exec(`UPDATE m_account SET status = '2', updated_at = ?
+			WHERE status = '1' AND account_id = (SELECT account_id FROM m_guardian WHERE guardian_id = ?)`,
+			now(), guardianID)
+		if err != nil {
+			return out, err
+		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			out.stopped = true
+		}
+	}
+
+	// 3. チャットから外す
+	var accountID sql.NullInt64
+	err = tx.QueryRow(`SELECT account_id FROM m_guardian WHERE guardian_id = ?`, guardianID).Scan(&accountID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return out, err
+	}
+	out.accountID = nullInt(accountID)
+	if out.accountID != nil {
+		if err := leaveRoomsOfChild(tx, *out.accountID, guardianID, childID); err != nil {
+			return out, err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
 // leaveRoomsOfChild は、紐づけを解除した保護者を、その園児の個人チャットと、ほかに有効な紐づけのある園児が
-// 在籍していないクラスのクラスグループから外す（left_at を入れる）。所属していた期間の記録は残す（基本設計書 5-5）
-func (a *app) leaveRoomsOfChild(accountID int64, guardianID, childID string) {
-	a.db.Exec(`UPDATE t_chat_member SET left_at = ?
+// 在籍していないクラスのクラスグループから外す（left_at を入れる）。所属していた期間の記録は残す（基本設計書 5-5）。
+// 解除の取引の中で呼ぶ（endGuardianLinkTx）。書き込みに失敗したら誤りを返し、呼ぶ側が全部を戻す
+func leaveRoomsOfChild(q dbtx, accountID int64, guardianID, childID string) error {
+	if _, err := q.Exec(`UPDATE t_chat_member SET left_at = ?
 		 WHERE account_id = ? AND left_at IS NULL
 		   AND chat_room_id IN (SELECT chat_room_id FROM m_chat_room WHERE room_type = '4' AND child_id = ?)`,
-		now(), accountID, childID)
-	a.db.Exec(`UPDATE t_chat_member SET left_at = ?
+		now(), accountID, childID); err != nil {
+		return err
+	}
+	_, err := q.Exec(`UPDATE t_chat_member SET left_at = ?
 		 WHERE account_id = ? AND left_at IS NULL
 		   AND chat_room_id IN (
 		     SELECT r.chat_room_id FROM m_chat_room r
@@ -1031,6 +1096,7 @@ func (a *app) leaveRoomsOfChild(accountID int64, guardianID, childID string) {
 		            JOIN t_guardian_child gc ON gc.child_id = cc.child_id
 		           WHERE cc.class_id = r.class_id AND gc.guardian_id = ? AND gc.link_status = '1'))`,
 		now(), accountID, childID, guardianID)
+	return err
 }
 
 // rejoinRoomsOfChild は、紐づけを戻した保護者を、その園児の個人チャット・いまのクラスのクラスグループ・園全体へ戻す。
@@ -1072,12 +1138,6 @@ func rejoinRoomsOfChild(q dbtx, accountID int64, guardianID, childID string) err
 		}
 	}
 	return nil
-}
-
-func (a *app) guardianAccountID(guardianID string) *int64 {
-	var id sql.NullInt64
-	a.db.QueryRow(`SELECT account_id FROM m_guardian WHERE guardian_id = ?`, guardianID).Scan(&id)
-	return nullInt(id)
 }
 
 // restoreLinkDays は、解除した紐づけを「紐づけを戻す」で、解除のあいだも読める形で戻せる日数。解除した日から数え、その日数あとの日まで。
