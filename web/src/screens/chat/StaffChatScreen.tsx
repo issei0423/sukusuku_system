@@ -74,13 +74,17 @@ export default function StaffChatScreen() {
    * 「このまま送る」で承諾を付けて送り直す（詳細設計書「チャット画面（職員・保護者）」(2-9 (5))、GitHub Issue #299）
    */
   const [nameCheck, setNameCheck] = useState<{ names: string[]; matches: NameMatch[]; text: string } | null>(null);
-  // ダッシュボードの「未対応の個人チャット」から来たときは、そのチャンネルを開いた状態で始める
+  // ダッシュボードの「未対応の個人チャット」から来たときは、そのチャンネルを開いた状態で始める（?room=）。
+  // 異常時記録画面の「この園児の個人チャット」から来たときは、その園児の個人チャットを開いた状態で始める
+  // （?child=。図/画面詳細図「異常時記録画面」(5-2) 項目16）。見つからなければ先頭のチャンネル
   const [searchParams] = useSearchParams();
 
   useEffect(() => {
     if (roomId !== null || !rooms.data || rooms.data.length === 0) return;
     const wanted = Number(searchParams.get('room'));
-    const hit = rooms.data.find((r) => r.room.chat_room_id === wanted);
+    const child = searchParams.get('child');
+    const ofChild = child ? rooms.data.filter((r) => r.room.room_type === '4' && r.room.child_id === child) : [];
+    const hit = rooms.data.find((r) => r.room.chat_room_id === wanted) ?? ofChild.find((r) => !r.left) ?? ofChild[0];
     setRoomId((hit ?? rooms.data[0]).room.chat_room_id);
   }, [rooms.data]);
 
