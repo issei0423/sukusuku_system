@@ -795,7 +795,9 @@ test.describe('同時編集のロック', () => {
     await openDiary(m, id);
     const main = mainOf(m);
     await expect(lockNotice(m), '編集中の警告が出る').toBeVisible();
-    await expect.soft(main.getByText('他の職員が編集しています。'), '設計書の文言「他の職員が編集しています。」').toBeVisible();
+    /* 誰が編集中かを名前で出す（要決定事項「日誌の編集ロックの職員の名前」の推し「出す」を正とした。共有端末で、誰に声をかければ
+       閉じてもらえるかが分かる）。設計書の「他の職員が編集しています。」（基本設計書 (4-12)・図/画面詳細図 (3-2) 項目3・詳細設計書 (2-13 (9))）は docs で直す */
+    await expect.soft(main.getByText(`${SUZUKI}さんが編集中です。`), '「（編集中の職員名）さんが編集中です。」').toBeVisible();
     await expect.soft(main.getByText(/ロックの解除は管理者へ依頼してください/), '「ロックの解除は管理者へ依頼してください」').toBeVisible();
     await expectReadOnly(m);
     await expect.soft(main.getByRole('button', { name: /強制解除/ }), '一般に「ロックを強制解除する」は出ない').toHaveCount(0);
@@ -841,7 +843,7 @@ test.describe('同時編集のロック', () => {
     expect.soft(diaryById(id)!.status, "status＝'2'").toBe('2');
     await openDiary(m, id);
     await expect.soft(mainOf(m).getByText('申請中のため編集できません。'), '窓2：申請中の読み取り専用').toBeVisible();
-    await expect.soft(lockNotice(m), '「他の職員が編集しています。」は出ない').toHaveCount(0);
+    await expect.soft(lockNotice(m), '編集中の警告は出ない').toHaveCount(0);
     expect.soft(lockOf(id), 'ロックの行はできない').toHaveLength(0);
     await evidence(m, '06-020');
   });
