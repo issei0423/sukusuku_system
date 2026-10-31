@@ -7,7 +7,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { api } from '../src/api/client';
-import { mockRestoreLinkFault } from '../src/api/mock';
+import { mockEndLinkFault, mockRestoreLinkFault } from '../src/api/mock';
 import * as db from '../src/api/mockDb';
 import type { SessionUser } from '../src/api/types';
 import { addDays, now, today } from '../src/api/util';
@@ -355,6 +355,43 @@ describe('保護者アカウントと紐づけ', () => {
     expect([link.link_status, account().status]).toEqual(['1', '1']);
     expect(members().find((m) => m.chat_room_id === 8)?.left_at).toBeNull();
     expect(restoreLogs()).toBe(ended.logs + 1);
+  });
+
+  /*
+   * 紐づけの解除の書き込み（紐づけの終了・アカウントの停止・チャットから外す）は1つの処理。途中で失敗したら全部を戻す。
+   * 紐づけは有効のまま、アカウントも有効のまま、参加も残り、操作ログ（管理者の解除の行・システムの停止の行）も残さない
+   * （server/api_guardian_link_test.go の TestEndGuardianLinkRollsBack と同じ確かめ。モックは外す書き込みを終えたところで止める）
+   */
+  it('紐づけの解除が途中で失敗すると、紐づけの終了・アカウントの停止・チャットから外すのどれも残さない。止めるのをやめれば解除できる', async () => {
+    // 村田 真一（G004・アカウント9）の紐づけは村田 美咲（C004）の1本だけで、解除するとアカウントが止まる。個人チャットは 8
+    const link = db.guardianChildren.find((g) => g.guardian_id === 'G004' && g.child_id === 'C004')!;
+    const account = () => db.accounts.find((a) => a.account_id === 9)!;
+    const members = () => structuredClone(db.chatMembers.filter((m) => m.account_id === 9));
+    const endLogs = () => db.operationLogs.filter((l) => l.target_id === 9
+      && ((l.target_table === 't_guardian_child' && l.target_child_id === 'C004' && l.after_value === '終了')
+        || (l.target_table === 'm_account' && l.operator_type === '2'))).length;
+
+    const before = { link: { ...link }, account: { ...account() }, members: members(), logs: endLogs() };
+    expect([before.link.link_status, before.account.status]).toEqual(['1', '1']);
+    expect(before.members.find((m) => m.chat_room_id === 8)?.left_at).toBeNull();
+
+    mockEndLinkFault.at = 'leave';
+    try {
+      await expect(api.endGuardianLink(admin, 'G004', 'C004')).rejects.toThrow('解除に失敗しました');
+      expect(link).toEqual(before.link);
+      expect(account()).toEqual(before.account);
+      expect(members()).toEqual(before.members);
+      expect(endLogs()).toBe(before.logs);
+    } finally {
+      mockEndLinkFault.at = null;
+    }
+
+    await api.endGuardianLink(admin, 'G004', 'C004');
+    expect([link.link_status, account().status]).toEqual(['2', '2']);
+    expect(members().find((m) => m.chat_room_id === 8)?.left_at).not.toBeNull();
+    expect(endLogs()).toBe(before.logs + 2);
+    // 後のテストのために戻す
+    await api.restoreGuardianLink(admin, 'G004', 'C004');
   });
 });
 

@@ -3749,30 +3749,48 @@ const adminApi2 = {
 
   /**
    * 紐づけの解除。紐づけ単位で終了させ、有効な紐づけがゼロになった時点でアカウントを停止する
-   * （基本設計書 5-3）
+   * （基本設計書 5-3）。
+   * 書き込み（紐づけの終了・アカウントの停止・チャットから外す）は1つの処理にし、途中で失敗したら書いたものを全部戻して
+   * 「解除に失敗しました」で断る（「紐づけを戻す」と同じ作り）。操作ログは書き終えたあと。
+   * server/api_admin.go の handleEndGuardianLink・endGuardianLinkTx と同じ
    */
   async endGuardianLink(user: SessionUser, guardianId: string, childId: string): Promise<void> {
     if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     const gc = db.guardianChildren.find((x) => x.guardian_id === guardianId && x.child_id === childId && x.link_status === '1');
     if (!gc) return fail('有効な紐づけが見つかりません');
-    gc.link_status = '2';
-    gc.ended_at = now();
-
-    const remaining = db.guardianChildren.filter((x) => x.guardian_id === guardianId && x.link_status === '1').length;
     const g = db.guardians.find((x) => x.guardian_id === guardianId);
+    const undo: (() => void)[] = [];
     let stopped = false;
-    if (remaining === 0 && g) {
-      const a = findAccount(g.account_id);
-      if (a && a.status === '1') { a.status = '2'; a.updated_at = now(); stopped = true; }
+    try {
+      // 1. 紐づけを終了する
+      const linkBefore = { ...gc };
+      undo.push(() => { Object.assign(gc, linkBefore); });
+      gc.link_status = '2';
+      gc.ended_at = now();
+
+      // 2. 有効な紐づけがゼロになったら、アカウントを停止する
+      const remaining = db.guardianChildren.filter((x) => x.guardian_id === guardianId && x.link_status === '1').length;
+      if (remaining === 0 && g) {
+        const a = findAccount(g.account_id);
+        if (a && a.status === '1') {
+          const accountBefore = { status: a.status, updated_at: a.updated_at };
+          undo.push(() => { Object.assign(a, accountBefore); });
+          a.status = '2'; a.updated_at = now(); stopped = true;
+        }
+      }
+      /*
+       * 3. 解除するとその園児の記録を参照できなくなる（画面詳細図 7-8 項目6）。保護者は left_at が入った時点で
+       * 参照できなくなる（基本設計書「チャット」(5-5)）。その園児の個人チャットと、ほかに有効な紐づけのある園児が
+       * 在籍していないクラスのクラスグループに left_at を入れる（GitHub Issue #159。server/api_admin.go の leaveRoomsOfChild）。
+       * サーバはあわせてログイン中のセッションを切る。モックはセッションを持たないため、有効な紐づけがゼロに
+       * なって停止したアカウントを、呼ばれるたびに断る（下の guardProcedure）
+       */
+      if (g) leaveRoomsOfChild(g.account_id, guardianId, childId, undo);
+      endLinkStep('leave');
+    } catch {
+      undo.reverse().forEach((f) => f());
+      return fail('解除に失敗しました');
     }
-    /*
-     * 解除するとその園児の記録を参照できなくなる（画面詳細図 7-8 項目6）。保護者は left_at が入った時点で
-     * 参照できなくなる（基本設計書「チャット」(5-5)）。その園児の個人チャットと、ほかに有効な紐づけのある園児が
-     * 在籍していないクラスのクラスグループに left_at を入れる（GitHub Issue #159。server/api_admin.go の leaveRoomsOfChild）。
-     * サーバはあわせてログイン中のセッションを切る。モックはセッションを持たないため、有効な紐づけがゼロに
-     * なって停止したアカウントを、呼ばれるたびに断る（下の guardProcedure）
-     */
-    if (g) leaveRoomsOfChild(g.account_id, guardianId, childId);
 
     // 紐づけの表は数値の主キーを持たない。相手が分かるよう、保護者のアカウントを対象として残す
     log(user.account_id, '7', '2', 't_guardian_child', g?.account_id ?? null, childId, '有効', '終了');
@@ -3864,9 +3882,10 @@ const classIdsOfChild = (childId: string) =>
 /**
  * 紐づけを解除した保護者を、その園児の個人チャットと、ほかに有効な紐づけのある園児が在籍していないクラスの
  * クラスグループから外す（left_at を入れる）。所属していた期間の記録は残す（基本設計書 5-5）。
- * サーバ側（server/api_admin.go の leaveRoomsOfChild）と同じ規則
+ * サーバ側（server/api_admin.go の leaveRoomsOfChild）と同じ規則。
+ * undo には、書いたものを戻す手順を積む（endGuardianLink が途中で失敗したときに戻す）
  */
-function leaveRoomsOfChild(accountId: number, guardianId: string, childId: string): void {
+function leaveRoomsOfChild(accountId: number, guardianId: string, childId: string, undo: (() => void)[]): void {
   const classes = classIdsOfChild(childId);
   const stillLinkedClasses = new Set(db.classChildren
     .filter((cc) => db.guardianChildren.some((gc) =>
@@ -3878,7 +3897,20 @@ function leaveRoomsOfChild(accountId: number, guardianId: string, childId: strin
     .map((r) => r.chat_room_id));
   db.chatMembers
     .filter((m) => m.account_id === accountId && m.left_at === null && leave.has(m.chat_room_id))
-    .forEach((m) => { m.left_at = now(); });
+    .forEach((m) => {
+      undo.push(() => { m.left_at = null; });
+      m.left_at = now();
+    });
+}
+
+/**
+ * 紐づけの解除を途中で失敗させる（テストだけが使う）。'leave' はチャットから外す書き込みを終えたところで止め、
+ * 紐づけの終了・アカウントの停止・参加のどれも残らないかを確かめる。サーバの同じテストは DB のトリガーで外す書き込みを止める
+ * （server/api_guardian_link_test.go の TestEndGuardianLinkRollsBack）。null のあいだは何もしない
+ */
+export const mockEndLinkFault: { at: null | 'leave' } = { at: null };
+function endLinkStep(step: 'leave'): void {
+  if (mockEndLinkFault.at === step) throw new Error(`テストで止める（${step}）`);
 }
 
 /**
@@ -5316,7 +5348,8 @@ const contactApi = {
     if (row.woke_at) return fail(MSG.wokeTwice);
     let at = now();
     if (at <= row.slept_at) at = plusSeconds(row.slept_at, 1);
-    row.woke_at = at; row.woke_staff_id = user.staff_id; row.updated_at = now();
+    // 版は書くたびに必ず進める（詳細設計書「足す表」(5-2)、決めたこと D-40。server/api_nap_sleep.go の handleWake と同じ）
+    row.woke_at = at; row.woke_staff_id = user.staff_id; row.updated_at = laterVersion(row.updated_at);
     log(user.account_id, '3', '2', 't_nap_sleep', row.nap_sleep_id, row.child_id, JSON.stringify({ woke_at: null }), JSON.stringify({ woke_at: at }));
     publishNapChild(target.session.class_id, row.child_id);
     publishContactChild(row.child_id, 'nap');
@@ -5943,7 +5976,7 @@ const contactEventsApi = {
 
   /**
    * ねた・おきたを直す（POST /api/nap/sleeps/{id}/correct）。実施の後も直せる。slept_at < woke_at ≦ 今、実施の日の中。
-   * 【仮置き】「今」と「実施の日の中」は、元の値から変えた時刻にだけ当てる。元の値と同じ時刻はそのまま通す（web/仮置き値.md）。
+   * 「今」と「実施の日の中」は、元の値から変えた時刻にだけ当てる。元の値と同じ時刻はそのまま通す（詳細設計書「午睡」(4-6) の (4)。第1.10版）。
    * 「ねた」と「おきた」が同じ秒に押されると、おきたは ねた＋1秒（wake）で今より先になり、変えていない時刻まで検査すると
    * 直後に直せない（受け入れテスト 04-017。server/api_nap_sleep_fix.go の handleCorrectSleep と同じ）。順（ねた < おきた）はいつも確かめる
    */
@@ -5967,7 +6000,8 @@ const contactEventsApi = {
     const at = now();
     // おきたを新しく入れたときは、入れた職員を残す
     if (sleep.woke_staff_id === null && wokeAt !== null) sleep.woke_staff_id = user.staff_id;
-    Object.assign(sleep, { slept_at: sleptAt, woke_at: wokeAt, corrected_at: at, updated_at: at });
+    // 版は書くたびに必ず進める（決めたこと D-40）。同じ秒に2回直しても版が変わり、1回目の版のままの訂正は上で断る
+    Object.assign(sleep, { slept_at: sleptAt, woke_at: wokeAt, corrected_at: at, updated_at: laterVersion(sleep.updated_at) });
     log(user.account_id, '3', '2', 't_nap_sleep', sleep.nap_sleep_id, sleep.child_id, before, after);
     publishNapChild(session.class_id, sleep.child_id);
     publishContactChild(sleep.child_id, 'nap');
@@ -5982,7 +6016,7 @@ const contactEventsApi = {
     const { sleep, session } = target;
     const { family_count } = readersOf([sleep.child_id], session.session_date, sleep.created_at);
     sleep.is_deleted = true;
-    sleep.updated_at = now();
+    sleep.updated_at = laterVersion(sleep.updated_at); // 版は書くたびに必ず進める（決めたこと D-40）
     log(user.account_id, '3', '4', 't_nap_sleep', sleep.nap_sleep_id, sleep.child_id,
       fieldsJSON([['slept_at', sleep.slept_at], ['woke_at', sleep.woke_at]]), null);
     publishNapChild(session.class_id, sleep.child_id);

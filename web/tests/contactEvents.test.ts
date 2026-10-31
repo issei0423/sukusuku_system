@@ -273,4 +273,34 @@ describe('ねた・おきたの訂正・取り消し（詳細設計書 (4-6 (4))
       await api.endSession(teacher, s.nap_session_id);
     }
   });
+
+  /*
+   * 「ねた・おきた」の版（updated_at）は、おきた・訂正・取り消しのたびに必ず進める（詳細設計書「足す表」(5-2)、決めたこと D-40）。
+   * テストの時計は止まっているので、ここでは全部が同じ秒になる。同じ秒に2回直しても版が変わり、1回目の版のままの訂正は断る
+   * （server/api_contact_events_test.go の TestNapSleepVersionAdvancesOnEveryWrite と同じ確かめ）
+   */
+  it('ねた・おきたの版は、おきた・訂正・取り消しのたびに進む。同じ秒に2回直しても版が変わり、古い版では直せない', async () => {
+    const active = await api.activeSession(1, today(), admin);
+    if (active) await api.endSession(admin, active.nap_session_id);
+    const s = await api.startSession(teacher, 1, today());
+    try {
+      const slept = await api.sleep(teacher, s.nap_session_id, 'C001');
+      const woke = await api.wake(teacher, slept.nap_sleep_id);
+      expect(woke.updated_at! > slept.updated_at!).toBe(true);
+
+      const first = await api.correctSleep(teacher, slept.nap_sleep_id, { slept_at: `${today()}T00:00:00`, updated_at: woke.updated_at! });
+      expect(first.updated_at! > woke.updated_at!).toBe(true);
+      const second = await api.correctSleep(teacher, slept.nap_sleep_id, { slept_at: `${today()}T00:00:01`, updated_at: first.updated_at! });
+      expect(second.updated_at! > first.updated_at!).toBe(true);
+      // 1回目の版のままの訂正は、ほかの人が直したあとなので断る
+      await expect(api.correctSleep(teacher, slept.nap_sleep_id, { slept_at: `${today()}T00:00:02`, updated_at: first.updated_at! }))
+        .rejects.toThrow(MSG.fixConflict);
+
+      // 取り消しも版を進める
+      await api.cancelSleep(teacher, slept.nap_sleep_id);
+      expect(db.napSleeps.find((x) => x.nap_sleep_id === slept.nap_sleep_id)!.updated_at > second.updated_at!).toBe(true);
+    } finally {
+      await api.endSession(teacher, s.nap_session_id);
+    }
+  });
 });
