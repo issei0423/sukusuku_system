@@ -154,15 +154,39 @@ it('保護者アカウント管理に「停止」「再開」のボタンは無�
 
 /*
  * 紐づけを戻すのは誤って解除したときに限り、戻すと解除していたあいだのやりとりも読める（基本設計書「保護者と園児の紐づけを戻す」(4-3)）。
- * 守りは運用だけなので、確認ダイアログでその縛りと読める範囲を示す。開くだけで、戻す操作はしない
+ * 守りは運用だけなので、確認ダイアログでその縛りと読める範囲を示す。親権の変更・家庭の事情で解除したあとは「結び直す」へ案内する
+ * （止まったアカウントの保護者は新しい招待コードを使えないため。頭役の決め）。開くだけで、戻す操作はしない
  */
 it('「紐づけを戻す」の確認ダイアログは、誤って解除したときだけ使うことと、解除していたあいだのやりとりも読めることを示す', async () => {
   openApp('/staff/admin/guardian-accounts', admin);
   fireEvent.click((await screen.findAllByRole('button', { name: '紐づけを戻す' }))[0]);
   const dialog = await screen.findByRole('dialog', { name: '紐づけを戻す' });
   expect(dialog.textContent).toContain('誤って解除したときだけ');
-  expect(dialog.textContent).toContain('戻さずに新しい招待コードで紐づけてください');
+  expect(dialog.textContent).toContain('戻さずに「結び直す」を使ってください');
+  expect(dialog.textContent).not.toContain('新しい招待コードで紐づけてください');
   expect(dialog.textContent).toContain('解除していたあいだのやりとりも読めるようになります');
+});
+
+/*
+ * 戻せる期間の内の紐づけ（デモの鈴木 浩之は解除から4日）には、「紐づけを戻す」と「結び直す」を並べる。
+ * 結び直すは、親権の変更・家庭の事情で解除したあとに改めて結ぶときに使い、relink を添えて呼ぶ（頭役の決め。【仮置き】web/仮置き値.md）
+ */
+it('戻せる期間の内の紐づけには「紐づけを戻す」と「結び直す」を並べ、結び直すは relink を添えて呼ぶ', async () => {
+  const restore = vi.spyOn(api, 'restoreGuardianLink').mockResolvedValue(undefined);
+  try {
+    openApp('/staff/admin/guardian-accounts', admin);
+    const row = (await screen.findByText('鈴木 浩之')).closest('tr')!;
+    expect(within(row).getByRole('button', { name: '紐づけを戻す' })).toBeTruthy();
+    fireEvent.click(within(row).getByRole('button', { name: '結び直す' }));
+    const dialog = await screen.findByRole('dialog', { name: '紐づけを結び直す' });
+    expect(dialog.textContent).toContain('親権の変更や家庭の事情で解除したあとに改めて結ぶときに使います');
+    expect(dialog.textContent).toContain('解除していたあいだのやりとりは読めません');
+    expect(dialog.textContent).not.toContain('「紐づけを戻す」は使えません');
+    fireEvent.click(within(dialog).getByRole('button', { name: '結び直す' }));
+    await waitFor(() => expect(restore).toHaveBeenCalledWith(expect.anything(), 'G003', 'C003', true));
+  } finally {
+    restore.mockRestore();
+  }
 });
 
 /*

@@ -727,8 +727,9 @@ const apiAdmin = {
   endGuardianLink: (_u: SessionUser, guardianId: string, childId: string) =>
     post<void>('/api/admin/guardian-links/end', { guardian_id: guardianId, child_id: childId }),
 
-  restoreGuardianLink: (_u: SessionUser, guardianId: string, childId: string) =>
-    post<void>('/api/admin/guardian-links/restore', { guardian_id: guardianId, child_id: childId }),
+  /** relink が true なら、解除からの日数に関わらず「結び直す」（server/api_admin.go の handleRestoreGuardianLink） */
+  restoreGuardianLink: (_u: SessionUser, guardianId: string, childId: string, relink = false) =>
+    post<void>('/api/admin/guardian-links/restore', { guardian_id: guardianId, child_id: childId, relink }),
 
   invitationCodes: (_u: SessionUser, f: { classId?: number | ''; status?: string } = {}) =>
     get<InvitationCodeRow[]>('/api/admin/invitations' + qs({

@@ -166,6 +166,68 @@ func TestRestoreGuardianLinkWithinDaysOrRelink(t *testing.T) {
 }
 
 /*
+解除から restoreLinkDays 日の内でも、要求に relink: true があれば「結び直す」。親権の変更・家庭の事情で解除したあと、
+アカウントが止まった保護者（ログインできず新しい招待コードを使えない）と、解除していたあいだを読ませずに結ぶため
+（頭役の決め。【仮置き】web/仮置き値.md）。今の時刻で参加し直し、解除の前のやりとりは読めず、アカウントは再開する。
+モックは web/tests/admin.test.ts
+*/
+func TestRestoreGuardianLinkRelinkWithinDays(t *testing.T) {
+	a, h := newTestApp(t)
+	admin := loginAs(a, 1, "staff")
+	// 村田 真一（G004・アカウント9）の紐づけは村田 美咲（C004）の1本だけ。個人チャットは 8
+	var before string
+	a.db.QueryRow(`SELECT joined_at FROM t_chat_member WHERE chat_room_id = 8 AND account_id = 9`).Scan(&before)
+	old := addDays(today(), -20) + "T10:00:00"
+	if before >= old {
+		t.Skipf("デモデータの前提が変わった（はじめの参加 %s が %s より後）", before, old)
+	}
+	res, err := a.db.Exec(`INSERT INTO t_chat_message (chat_room_id, sender_account_id, body, source_type, sent_at)
+		VALUES (8, 3, '解除の前のやりとり', '1', ?)`, old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldID, _ := res.LastInsertId()
+
+	// 解除した直後（期間の内）に、結び直すを選ぶ
+	call(t, h, admin, "POST", "/api/admin/guardian-links/end", `{"guardian_id":"G004","child_id":"C004"}`)
+	var status string
+	a.db.QueryRow(`SELECT status FROM m_account WHERE account_id = 9`).Scan(&status)
+	if status != "2" {
+		t.Fatalf("最後の紐づけを解除したのに、アカウントが止まっていない: %s", status)
+	}
+	start := now()
+	expectStatus(t, request(t, h, admin, "POST", "/api/admin/guardian-links/restore",
+		`{"guardian_id":"G004","child_id":"C004","relink":true}`), http.StatusOK)
+
+	var link, linkedAt string
+	a.db.QueryRow(`SELECT link_status, linked_at FROM t_guardian_child WHERE guardian_id = 'G004' AND child_id = 'C004'`).Scan(&link, &linkedAt)
+	a.db.QueryRow(`SELECT status FROM m_account WHERE account_id = 9`).Scan(&status)
+	if link != "1" || status != "1" {
+		t.Fatalf("結び直したあと: link_status = %s、アカウント = %s（どちらも 1 のはず）", link, status)
+	}
+	if linkedAt < start {
+		t.Errorf("結び直したのに linked_at = %q（今 %s 以後のはず）", linkedAt, start)
+	}
+	var joined string
+	var first, left *string
+	a.db.QueryRow(`SELECT joined_at, first_joined_at, left_at FROM t_chat_member WHERE chat_room_id = 8 AND account_id = 9`).
+		Scan(&joined, &first, &left)
+	if joined < start || left != nil || first == nil || *first != before {
+		t.Errorf("結び直したときの参加: joined_at %q（今 %s 以後）、first_joined_at %v（%q のはず）、left_at %v", joined, start, first, before, left)
+	}
+	if _, ok := chatMessagesOf(t, h, loginAs(a, 9, "guardian"), "8")[oldID]; ok {
+		t.Error("期間の内に結び直したのに、解除の前のやりとりが読める")
+	}
+	var after string
+	a.db.QueryRow(`SELECT after_value FROM t_operation_log
+		WHERE target_table = 't_guardian_child' AND target_child_id = 'C004' AND before_value = '終了'
+		ORDER BY operation_log_id DESC LIMIT 1`).Scan(&after)
+	if after != "有効（結び直し、アカウントを再開）" {
+		t.Errorf("結び直したときの操作ログの変更後 = %q", after)
+	}
+}
+
+/*
 保護者アカウント管理の細部（GitHub Issue #272 の 1・2、#312 の 3）
 典拠：基本設計書「アカウントの停止と再開」(4-3)・「保護者と園児の紐づけを戻す」(4-3)・「操作ログの記録」(4-2)・
 「操作ログ（t_operation_log）」(5-9)、図/画面詳細図「保護者アカウント管理画面」(7-8) 項目5

@@ -279,7 +279,51 @@ describe('保護者アカウントと紐づけ', () => {
     expect(link.link_status).toBe('1');
     expect(lastLogAfter()).toBe('有効（結び直し、アカウントを再開）');
   });
+
+  /*
+   * 解除から RESTORE_LINK_DAYS 日の内でも、relink を添えれば「結び直す」。親権の変更・家庭の事情で解除したあと、アカウントが
+   * 止まった保護者（ログインできず新しい招待コードを使えない）と、解除していたあいだを読ませずに結ぶため（頭役の決め。
+   * 【仮置き】web/仮置き値.md。server/api_guardian_link_test.go の TestRestoreGuardianLinkRelinkWithinDays と同じ確かめ）
+   */
+  it('解除から決まった日数の内でも、relink を添えれば結び直す', async () => {
+    // 久保田 和也（G005・アカウント10）の紐づけは久保田 陸（C005）の1本だけ。個人チャットは 9
+    const link = db.guardianChildren.find((g) => g.guardian_id === 'G005' && g.child_id === 'C005')!;
+    const member = () => db.chatMembers.find((m) => m.chat_room_id === 9 && m.account_id === 10)!;
+    const first = member().joined_at;
+    const old = `${addDays(today(), -20)}T10:00:00`;
+    expect(first < old).toBe(true);
+    const oldId = Math.max(...db.chatMessages.map((m) => m.chat_message_id)) + 1;
+    db.chatMessages.push({ chat_message_id: oldId, chat_room_id: 9, sender_account_id: 3, body: '解除の前のやりとり',
+      source_type: '1', source_id: null, sent_at: old, edited_at: null, is_deleted: false, deleted_at: null, deleted_account_id: null });
+    const kubota: SessionUser = {
+      account_id: 10, email: 'kubota.k@example.jp', role: '3', display_name: '久保田 和也',
+      staff_id: null, guardian_id: 'G005', class_id: null, class_name: null,
+      is_temp_password: false, terms_agreed: true,
+    };
+
+    // 解除した直後（期間の内）に、結び直すを選ぶ
+    await api.endGuardianLink(admin, 'G005', 'C005');
+    expect(db.accounts.find((a) => a.account_id === 10)?.status).toBe('2');
+    expect(restoreLinkUntilOf('G005', 'C005', await api.guardianAccounts(admin))).toBe(addDays(today(), RESTORE_LINK_DAYS));
+    await api.restoreGuardianLink(admin, 'G005', 'C005', true);
+
+    expect(link.link_status).toBe('1');
+    expect(link.linked_at).toBe(now());
+    expect(db.accounts.find((a) => a.account_id === 10)?.status).toBe('1');
+    expect(member().joined_at).toBe(now());
+    expect(member().first_joined_at).toBe(first);
+    expect(member().left_at).toBeNull();
+    expect((await api.messages(kubota, 9)).some((m) => m.chat_message_id === oldId)).toBe(false);
+    // 操作ログは新しいものが先頭（mock.ts の log は unshift）
+    expect(db.operationLogs.find((l) => l.target_table === 't_guardian_child' && l.target_child_id === 'C005' && l.before_value === '終了')
+      ?.after_value).toBe('有効（結び直し、アカウントを再開）');
+  });
 });
+
+/** 保護者アカウントの一覧から、その紐づけの restore_until を引く */
+function restoreLinkUntilOf(guardianId: string, childId: string, rows: Awaited<ReturnType<typeof api.guardianAccounts>>) {
+  return rows.find((r) => r.guardian.guardian_id === guardianId)?.links.find((l) => l.child_id === childId)?.restore_until;
+}
 
 describe('出力の記録', () => {
   it('操作ログの CSV 出力は、操作ログに「出力」として残る', async () => {

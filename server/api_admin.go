@@ -1118,8 +1118,11 @@ handleRestoreGuardianLink は、解除した紐づけを有効へ戻す。解除
   - 過ぎたら（解除した日時の無い古い行も）：「結び直す」。新しい招待コードで結んだときと同じ扱いにする。
     紐づけた日時（linked_at）を今にし、個人チャットといまのクラスのクラスグループへ今の時刻で参加し直す
     （お子さまの追加と同じ joinRoomsOfChildNow。決めたこと D-48）。解除していたあいだも、それより前のやりとりも読めない
+  - 要求に relink: true があれば、日数に関わらず「結び直す」。親権の変更・家庭の事情で解除したあとに改めて結ぶとき、
+    7日以内でも解除していたあいだを読ませずに結べるようにする。最後の紐づけを解除してアカウントが止まった保護者は
+    ログインできず、新しい招待コードを使えないため（頭役の決め。省略は false）
 
-【仮置き】日数と、過ぎたら結び直すこと（web/仮置き値.md）
+【仮置き】日数と、過ぎたら結び直すこと、relink で選べること（web/仮置き値.md）
 */
 func (a *app) handleRestoreGuardianLink(w http.ResponseWriter, r *http.Request) {
 	u, ok := a.requireAdmin(w, r)
@@ -1129,6 +1132,8 @@ func (a *app) handleRestoreGuardianLink(w http.ResponseWriter, r *http.Request) 
 	var req struct {
 		GuardianID string `json:"guardian_id"`
 		ChildID    string `json:"child_id"`
+		// 日数に関わらず結び直す（省略は false）
+		Relink bool `json:"relink"`
 	}
 	if !readJSON(w, r, &req) {
 		return
@@ -1141,7 +1146,7 @@ func (a *app) handleRestoreGuardianLink(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	until := restoreLinkUntil(endedAt)
-	relink := until == nil || today() > *until
+	relink := req.Relink || until == nil || today() > *until
 	at := now()
 	q := `UPDATE t_guardian_child SET link_status = '1', ended_at = NULL
 		WHERE guardian_id = ? AND child_id = ? AND link_status = '2'`

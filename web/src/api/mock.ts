@@ -3787,14 +3787,16 @@ const adminApi2 = {
    *   （rejoinRoomsOfChild。参加の時刻ははじめのまま。解除していたあいだのやりとりも読める）
    * - 過ぎたら（解除した日時の無い古い行も）：「結び直す」。新しい招待コードで結んだときと同じ扱い。紐づけた日時を今にし、
    *   個人チャットといまのクラスのクラスグループへ今の時刻で参加し直す（お子さまの追加と同じ joinRoomsOfChildNow。決めたこと D-48）
+   * - relinkRequested を true で呼べば、日数に関わらず「結び直す」（親権の変更・家庭の事情で解除したあとに改めて結ぶとき。
+   *   アカウントが止まった保護者は新しい招待コードを使えないため。頭役の決め。省略は false）
    * 【仮置き】web/仮置き値.md。server/api_admin.go の handleRestoreGuardianLink と同じ
    */
-  async restoreGuardianLink(user: SessionUser, guardianId: string, childId: string): Promise<void> {
+  async restoreGuardianLink(user: SessionUser, guardianId: string, childId: string, relinkRequested = false): Promise<void> {
     if (user.role !== '1') return fail(ADMIN_ONLY_MESSAGE);
     const gc = db.guardianChildren.find((x) => x.guardian_id === guardianId && x.child_id === childId && x.link_status === '2');
     if (!gc) return fail('終了した紐づけが見つかりません');
     const until = restoreLinkUntil(gc.ended_at);
-    const relink = until === null || today() > until;
+    const relink = relinkRequested || until === null || today() > until;
     const at = now();
     gc.link_status = '1';
     gc.ended_at = null;
