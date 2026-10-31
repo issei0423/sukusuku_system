@@ -21,6 +21,7 @@ import { formatHM, formatTemperature, today, napTimerBase, jstMs, isOneDecimal }
 import type { BodyPosition, Breathing, Complexion, NapRecord } from '../../api/types';
 import type { NapChildState } from '../../api/shapes';
 import SleepControls from './SleepControls';
+import { EXCLUSION_REASON_LABEL } from '../../api/napReport';
 import { focusAfter, focusableIn, focusedNow } from '../../focusAfter';
 import { useNapSound } from '../../napSound';
 import { StartIcon, EndIcon, CloseIcon } from '../../components/icons';
@@ -109,6 +110,18 @@ export default function NapCheckScreen() {
   const recorded = rows.filter((r) => r.latest).length;
   // 「ねた」のまま「おきた」が無い子（終了の前に確かめる。詳細設計書 (2-4 (2))）
   const stillSleeping = allRows.filter((r) => r.sleeps.some((x) => !x.woke_at)).map((r) => r.child.child_name);
+  /*
+   * クラス全体の状況：ねた・おきた・対象外（理由ごと）の人数（図/画面詳細図「午睡チェック画面」(5-1) 項目5）。
+   * 行の状態は詳細設計書「午睡の園児」(3-4)：ねた＝「おきた」の無い組がある（おひるね中）、おきた＝すべての組に「おきた」がある。
+   * 対象外の子は「ねた」を記録できない（3-4）ので、ねた・おきたと重ならない
+   */
+  const wokeCount = allRows.filter((r) => !r.exclusion && r.sleeps.length > 0 && r.sleeps.every((x) => x.woke_at)).length;
+  const excludedRows = allRows.filter((r) => r.exclusion);
+  // 【仮置き】対象外の理由は、人数のある理由だけを添える（設計の例は2つの理由がどちらも1以上。web/仮置き値.md）
+  const excludedReasons = (['1', '2'] as const)
+    .map((reason) => ({ reason, n: excludedRows.filter((r) => r.exclusion!.reason === reason).length }))
+    .filter((x) => x.n > 0)
+    .map((x) => `${EXCLUSION_REASON_LABEL[x.reason]} ${x.n}`);
   const intervalMinutes = api.intervalMinutesFor(classId);
 
   /*
@@ -206,7 +219,16 @@ export default function NapCheckScreen() {
                 </select>
               </Field>
             )}
-            {s && <span>記録済み {recorded} / {rows.length} 名</span>}
+            {/*
+              クラス全体の状況（図/画面詳細図「午睡チェック画面」(5-1) 項目5）。ねた・おきた・対象外（理由ごと）の人数と、
+              記録済み人数／対象人数。1つずつ折り返せるよう、まとまりごとに分ける（狭い幅では次の行へ送る）
+            */}
+            {s && (<>
+              <span>ねた {stillSleeping.length} 名</span>
+              <span>おきた {wokeCount} 名</span>
+              <span>対象外 {excludedRows.length} 名{excludedReasons.length > 0 && `（${excludedReasons.join('・')}）`}</span>
+              <span>記録済み {recorded} / {rows.length} 名</span>
+            </>)}
           </div>
           <span className="muted">記録者：{user!.display_name}</span>
         </div>
