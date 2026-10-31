@@ -214,10 +214,27 @@ func (a *app) handleStartNapSession(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, s)
 		return
 	}
+	/*
+	   同じクラス・同じ日に実施中は1つだけ（受け入れテスト 04-037。開始をすばやく2回押すと、上の確かめを2つの要求が
+	   どちらも通り、実施が2つできていた）。実施中が無いことの確かめと書き込みを1つの文（1つのトランザクション）で行い、
+	   あとから来た要求には、先にできた実施をそのまま返す（上の「すでに実施中なら」と同じ応答）。
+	   「ねた」と対象外の行き違いを止める handleSleep と同じ形。モック（web/src/api/mock.ts の startSession）は同期で動くので、
+	   確かめと書き込みのあいだに割り込まれない
+	*/
 	res, err := a.db.Exec(`INSERT INTO t_nap_session
 		(class_id, session_date, started_staff_id, started_at, is_auto_closed)
-		VALUES (?, ?, ?, ?, 0)`, req.ClassID, req.Date, u.staff(), now())
+		SELECT ?, ?, ?, ?, 0
+		WHERE NOT EXISTS (SELECT 1 FROM t_nap_session WHERE class_id = ? AND session_date = ? AND ended_at IS NULL)`,
+		req.ClassID, req.Date, u.staff(), now(), req.ClassID, req.Date)
 	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "午睡チェックを開始できませんでした")
+		return
+	}
+	if inserted, _ := res.RowsAffected(); inserted == 0 {
+		if s, err := a.napSession(req.ClassID, req.Date); err == nil {
+			writeJSON(w, http.StatusOK, s)
+			return
+		}
 		writeErr(w, http.StatusInternalServerError, "午睡チェックを開始できませんでした")
 		return
 	}

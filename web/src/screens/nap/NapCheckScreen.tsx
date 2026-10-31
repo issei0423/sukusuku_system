@@ -82,14 +82,31 @@ export default function NapCheckScreen() {
    * 押せる最初の部品へ移す（同じ並びの押せるもの。src/focusAfter.ts）。開始できなかったときはボタンもフォーカスも残る
    */
   const sessionHead = useRef<HTMLDivElement>(null);
+  /*
+   * 二重送信の防止（授業の雛形 1.5、詳細設計書「押したときの処理の型」(2-0 (2))「押したボタンを aria-busy にして二度押しを止め」）。
+   * 送っている間は「午睡チェックを開始する」を押せなくし、続けて押しても1回だけ送る（受け入れテスト 04-037。前は2つの実施ができることがあった）。
+   * 描き直しの前に届く2回目も止めるよう、押している間の印を ref にも持つ。サーバも同じクラス・同じ日の実施中を1つに止める（server/api_nap.go）
+   */
+  const [starting, setStarting] = useState(false);
+  const startingNow = useRef(false);
   const start = async () => {
+    if (startingNow.current) return;
+    startingNow.current = true;
+    setStarting(true);
     const pressed = focusedNow();
     setError(null);
     try {
       await api.startSession(user!, classId, today());
       setTick((n) => n + 1);
       focusAfter(pressed, () => focusableIn(sessionHead.current)[0] ?? null);
-    } catch (e) { setError((e as Error).message); }
+    } catch (e) {
+      setError((e as Error).message);
+      // 開始できなかったときはボタンが残る。送っている間に外れたフォーカスを戻す
+      focusAfter(pressed);
+    } finally {
+      startingNow.current = false;
+      setStarting(false);
+    }
   };
   /*
    * 終了すると、読み直しで「午睡チェックを終了」が消え、フォーカスが body に落ちていた（WCAG 2.4.3、GitHub Issue #213）。
@@ -273,7 +290,7 @@ export default function NapCheckScreen() {
             <div className="muted" style={{ marginTop: 12 }}>全クラスを閲覧のみで見られます。午睡チェックの開始・記録はできません。</div>
           ) : (<>
           <div className="row-end">
-            <button ref={startButton} className="btn-primary" onClick={start}><StartIcon />午睡チェックを開始する</button>
+            <button ref={startButton} className="btn-primary" onClick={start} disabled={starting} aria-busy={starting}><StartIcon />午睡チェックを開始する</button>
           </div>
           <div className="muted" style={{ marginTop: 12 }}>
             開始すると、この画面は開いたままの運用になります。実施中は自動ログアウトの対象外です。
