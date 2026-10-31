@@ -14,10 +14,22 @@ import { api } from '../../api/client';
 import { Loading, ErrorBox, Alert } from '../../components/ui';
 import { formatYMD, today } from '../../api/util';
 import { ACCOUNT_CHANGED_TEXT } from '../../messages';
-import { ContactBookIcon, NapIcon, DiaryIcon, MeasureIcon, DevCheckIcon } from '../../components/icons';
+import { ContactBookIcon, NapIcon, DiaryIcon, MeasureIcon, DevCheckIcon, ForwardIcon } from '../../components/icons';
 
 /** 項目に、数えている範囲を添える（「担当クラス」「全クラス」） */
 const scopeNote = (scope: string) => <span className="muted">（{scope}）</span>;
+
+/**
+ * 件数のセルの class。1 以上は目に入る太さ、0 と「ありません」は補足の色の細字にする（styles/screens.css の .dashboard-list。
+ * 見直し 2026-10-31 の r2a-07）
+ */
+const countClass = (n: number) => `num nowrap ${n > 0 ? 'dashboard-count' : 'dashboard-zero'}`;
+
+/**
+ * 行の「開く」。行ごとにくり返す操作なので、枠のないテキストボタンにして進む印を文字の後ろに添える（w4 の m3）。
+ * 印は読み上げないので、名前は「開く」のまま
+ */
+const OpenLink = ({ to }: { to: string }) => <Link className="btn btn-sm btn-quiet" to={to}>開く<ForwardIcon /></Link>;
 
 export default function StaffDashboard() {
   const { user } = useSession();
@@ -112,30 +124,30 @@ export default function StaffDashboard() {
         */}
         <section className="card col-12 dashboard-deliver" aria-labelledby="dashboard-deliver-title">
           <h2 id="dashboard-deliver-title">届けること</h2>
-          <table className="list">
+          <table className="list dashboard-list">
             <tbody>
               <tr>
                 <td>家庭からの連絡{scopeNote(scope)}</td>
-                <td className="nowrap">
+                <td className={countClass(data.homeUnconfirmed + data.homeRevised)}>
                   {data.homeUnconfirmed + data.homeRevised === 0 ? 'ありません' : (
                     <>
-                      <span className={data.homeUnconfirmed > 0 ? 'dashboard-count is-due' : 'dashboard-count'}>未確認 {data.homeUnconfirmed}</span>
+                      <span className={data.homeUnconfirmed > 0 ? 'dashboard-count is-due' : 'dashboard-zero'}>未確認 {data.homeUnconfirmed}</span>
                       {'　'}
-                      <span className={data.homeRevised > 0 ? 'dashboard-count is-due' : 'dashboard-count'}>更新 {data.homeRevised}</span>
+                      <span className={data.homeRevised > 0 ? 'dashboard-count is-due' : 'dashboard-zero'}>更新 {data.homeRevised}</span>
                     </>
                   )}
                 </td>
-                <td className="nowrap"><Link className="btn btn-sm" to="/staff/contact?sort=home">開く</Link></td>
+                <td className="nowrap"><OpenLink to="/staff/contact?sort=home" /></td>
               </tr>
               <tr>
                 <td>園からのひとことを送っていない園児{scopeNote(scope)}</td>
-                <td className="nowrap">{data.facilityUnsent === 0 ? 'ありません' : `${data.facilityUnsent} 名`}</td>
-                <td className="nowrap"><Link className="btn btn-sm" to="/staff/contact?sort=facility">開く</Link></td>
+                <td className={countClass(data.facilityUnsent)}>{data.facilityUnsent === 0 ? 'ありません' : `${data.facilityUnsent} 名`}</td>
+                <td className="nowrap"><OpenLink to="/staff/contact?sort=facility" /></td>
               </tr>
               <tr>
                 <td>午睡中の園児{scopeNote(scope)}</td>
-                <td className="nowrap">{data.napSleeping === 0 ? 'ありません' : `${data.napSleeping} 名`}</td>
-                <td className="nowrap"><Link className="btn btn-sm" to="/staff/nap">開く</Link></td>
+                <td className={countClass(data.napSleeping)}>{data.napSleeping === 0 ? 'ありません' : `${data.napSleeping} 名`}</td>
+                <td className="nowrap"><OpenLink to="/staff/nap" /></td>
               </tr>
             </tbody>
           </table>
@@ -144,7 +156,7 @@ export default function StaffDashboard() {
         {/* 園内のこと（日誌・発達チェック・異常時の記録） */}
         <section className="card col-7">
           <h2>園内のこと</h2>
-          <table className="list">
+          <table className="list dashboard-list">
             <tbody>
               {rows.map((r) => (
                 <tr key={r.label}>
@@ -152,8 +164,8 @@ export default function StaffDashboard() {
                     {r.label}{!r.noScope && scopeNote(scope)}
                     {r.note && <div className="muted">{r.note}</div>}
                   </td>
-                  <td className="num nowrap">{r.count} {r.unit}</td>
-                  <td className="nowrap"><Link className="btn btn-sm" to={r.to}>開く</Link></td>
+                  <td className={countClass(r.count)}>{r.count} {r.unit}</td>
+                  <td className="nowrap"><OpenLink to={r.to} /></td>
                 </tr>
               ))}
             </tbody>

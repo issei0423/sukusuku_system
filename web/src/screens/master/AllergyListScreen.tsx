@@ -41,13 +41,19 @@ export default function AllergyListScreen() {
       </div>
       {printError && <section className="card"><ErrorBox text={printError} /></section>}
 
-      <section className="card card-sub">
-        <div className="muted">
-          この一覧は<strong>全園児</strong>が対象です。担当するクラスに関係なく表示します。
-          誤食は担任以外が配膳する場面でも起こるためです。
-          <br />
-          アレルギー・既往歴は要配慮個人情報です。印刷したものの取り扱いにご注意ください。
-          印刷したことは操作ログに残ります。
+      {/*
+        表の上の注意は、補足の小さな灰の字でなく、知らせの帯（.alert-soft。16px）で出す（見直し 2026-10-31 の r2a-02）。
+        読み上げの領域（role）は付けない。開いたときからある文で、あとから出る知らせではないため
+      */}
+      <section className="card">
+        <div className="alert alert-soft">
+          <div>
+            この一覧は<strong>全園児</strong>が対象です。担当するクラスに関係なく表示します。
+            誤食は担任以外が配膳する場面でも起こるためです。
+            <br />
+            アレルギー・既往歴は要配慮個人情報です。印刷したものの取り扱いにご注意ください。
+            印刷したことは操作ログに残ります。
+          </div>
         </div>
       </section>
 

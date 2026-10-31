@@ -132,7 +132,7 @@ export default function NapSearchScreen() {
         {data?.rows.length === 0 && <Empty text="該当する記録はありません。" />}
         {data && data.rows.length > 0 && (
           <>
-            <table className="list">
+            <table className="list list-dense">
               <thead>
                 <tr>
                   <th scope="col">日付</th><th scope="col">チェック時刻</th><th scope="col">園児</th><th scope="col">クラス</th>
@@ -166,7 +166,7 @@ export default function NapSearchScreen() {
         {abnormals.error && <ErrorBox text={abnormals.error} />}
         {abnormals.data?.length === 0 && <Empty text="この期間の異常時の記録はありません。" />}
         {abnormals.data && abnormals.data.length > 0 && (
-          <table className="list">
+          <table className="list list-dense">
             <thead>
               <tr><th>発見時刻</th><th>園児</th><th>状況</th><th>対応</th><th>記録者</th><th>ヒヤリハット</th></tr>
             </thead>
