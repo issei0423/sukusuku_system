@@ -260,24 +260,27 @@ describe('編集できない日誌の部品（#175 の 4）', () => {
 });
 
 describe('配布物の掲載・取り下げの完了の表示（#175 の 5）', () => {
+  // 題は月の名前にしない。モックの配布物は「今月の献立表」を実行した月の名前で作るので、月の名前だと同じ題が2つになる（11月に落ちた）
+  const TITLE = '冬休み中の献立表（試し）';
+
   it('掲載したあと・取り下げたあとに、画面の下端に完了を出す', async () => {
     open('/staff/handouts', admin);
     await settled();
     fireEvent.click(button('配布物を掲載する'));
     const form = await screen.findByRole('dialog', { name: '配布物の掲載' });
     fireEvent.change(within(form).getByLabelText('種類'), { target: { value: '2' } });
-    fireEvent.change(within(form).getByPlaceholderText('例：10月の献立表'), { target: { value: '11月の献立表' } });
+    fireEvent.change(within(form).getByPlaceholderText('例：10月の献立表'), { target: { value: TITLE } });
     fireEvent.change(form.querySelector('input[type="file"]')!, {
-      target: { files: [new File(['%PDF'], 'kondate-11.pdf', { type: 'application/pdf' })] },
+      target: { files: [new File(['%PDF'], 'kondate-test.pdf', { type: 'application/pdf' })] },
     });
     fireEvent.click(within(form).getByRole('button', { name: '掲載する' }));
-    expect(await screen.findByText('「11月の献立表」を掲載しました', {}, { timeout: 3000 })).toBeTruthy();
+    expect(await screen.findByText(`「${TITLE}」を掲載しました`, {}, { timeout: 3000 })).toBeTruthy();
 
-    const row = (await screen.findByText('11月の献立表', { selector: 'td' })).closest('tr')!;
+    const row = (await screen.findByText(TITLE, { selector: 'td' })).closest('tr')!;
     fireEvent.click(within(row).getByRole('button', { name: '取り下げ' }));
     const confirm = await screen.findByRole('dialog', { name: '配布物の取り下げ' });
     fireEvent.click(within(confirm).getByRole('button', { name: '取り下げる' }));
-    expect(await screen.findByText('「11月の献立表」を取り下げました', {}, { timeout: 3000 })).toBeTruthy();
+    expect(await screen.findByText(`「${TITLE}」を取り下げました`, {}, { timeout: 3000 })).toBeTruthy();
   });
 });
 
