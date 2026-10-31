@@ -195,7 +195,14 @@ export async function soundCount(page: Page): Promise<number> {
 export const napMain = (page: Page) => page.getByRole('main');
 export const startButton = (page: Page) => page.getByRole('button', { name: '午睡チェックを開始する' });
 export const endButton = (page: Page) => page.getByRole('button', { name: '午睡チェックを終了' });
+/** クラスを選ぶ欄。実施していないときだけ出る（実施中は下の runningClassName の文字になる。#349） */
 export const classSelect = (page: Page) => napMain(page).getByRole('combobox', { name: 'クラス' });
+/**
+ * 実施中のクラス名。実施中はクラスを替えられないので、画面は選ぶ欄を出さず、
+ * 読み上げ用の「クラス：」に続けてクラス名を文字で出す（#349）
+ */
+export const runningClassName = (page: Page) =>
+  napMain(page).getByText('クラス：', { exact: true }).locator('xpath=following-sibling::*[1]');
 
 /** サイドナビの「午睡チェック」から午睡チェック画面を開き、開始か終了のボタンが出るまで待つ */
 export async function openNap(page: Page) {
@@ -204,8 +211,13 @@ export async function openNap(page: Page) {
   await expect(startButton(page).or(endButton(page))).toBeVisible();
 }
 
+/**
+ * いまのクラス。実施していなければ選ぶ欄の選択、実施中はクラス名の文字を読む。
+ * クラスを替えた直後は欄と文字が入れ替わることがあるので、どちらか出ているほうを読む
+ */
 export async function selectedClass(page: Page): Promise<string> {
-  return ((await classSelect(page).locator('option:checked').textContent()) ?? '').trim();
+  const shown = classSelect(page).locator('option:checked').or(runningClassName(page)).first();
+  return ((await shown.textContent({ timeout: 10_000 })) ?? '').trim();
 }
 
 /** 実施中なら終える（確かめが出たら「このまま終了する」）。開始のボタンが出るまで待つ */
@@ -220,10 +232,10 @@ export async function endIfRunning(page: Page) {
   await expect(startButton(page)).toBeVisible();
 }
 
-/** クラスを選ぶ。選べない（実施中で止まっている）ときは、その実施を終えてから選ぶ */
+/** クラスを選ぶ。選べない（実施中で、選ぶ欄が出ていない。#349）ときは、その実施を終えてから選ぶ */
 export async function chooseClass(page: Page, className: string) {
   if ((await selectedClass(page)) === className) return;
-  if (await classSelect(page).isDisabled()) await endIfRunning(page);
+  if (!(await classSelect(page).isVisible())) await endIfRunning(page);
   await classSelect(page).selectOption({ label: className });
   await expect.poll(() => selectedClass(page)).toBe(className);
   await expect(startButton(page).or(endButton(page))).toBeVisible();

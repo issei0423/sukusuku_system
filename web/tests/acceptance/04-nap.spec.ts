@@ -272,6 +272,9 @@ test.describe('午睡チェック画面：開始と出し分け', () => {
 
     const k = await loginIn(browser, 'staffHimawari');
     await openNap(k.page);
+    // 前提：デモの今日の実施（ひまわり組）は終えておく。実施中はクラスを選ぶ欄が出ず、クラス名の文字だけになる（#349）。
+    // デモの実施は午睡の時間帯の終わり（15:00）までは実施中のままなので、時刻によらず同じ前提にする
+    await endIfRunning(k.page);
     const kOptions = (await classSelect(k.page).locator('option').allTextContents()).map((s) => s.trim());
     expect.soft(kOptions, '一般K はひまわり組だけ').toEqual(['ひまわり組']);
     await evidence(page, '04-002');
