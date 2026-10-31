@@ -28,7 +28,7 @@ export default function TodayCard({ today: t, newCount }: {
           <span className="guardian-eyebrow">{t.class_name}・{dayLabel(t.contact_date)}</span>
           <h2 className="contact-today-name">{t.child_name}さんのきょう</h2>
         </div>
-        {newCount > 0 && <span className="guardian-unread">新しく {newCount} 件</span>}
+        {newCount > 0 && <span className="badge">新しく {newCount} 件</span>}
       </div>
       {t.grace_ends_on && <p className="muted">{formatMD(t.grace_ends_on)}まで読むことができます</p>}
 
@@ -42,7 +42,7 @@ export default function TodayCard({ today: t, newCount }: {
             </p>
           </>
         ) : t.can_write_home ? (
-          <Link className="btn-primary contact-wide-button" to={contactPath}><EditIcon />家庭からを書く</Link>
+          <Link className="btn btn-primary contact-wide-button" to={contactPath}><EditIcon />家庭からを書く</Link>
         ) : (
           <p className="muted">{TEXT.noHomeYet}</p>
         )}
@@ -87,7 +87,7 @@ export default function TodayCard({ today: t, newCount }: {
         <Link className="guardian-panel-link" to={contactPath}><span>連絡帳を開く</span><ForwardIcon /></Link>
         {/* 成長の記録（詳細設計書「保護者ホーム（「きょう」）」(2-5) の入口。きょう届いたものがあれば添える） */}
         <Link className="guardian-panel-link" to={`/guardian/growth/${encodeURIComponent(t.child_id)}`}>
-          <span>成長の記録{t.growth_new && <span className="guardian-unread growth-new">新しい記録があります</span>}</span>
+          <span>成長の記録{t.growth_new && <span className="badge growth-new">新しい記録があります</span>}</span>
           <ForwardIcon />
         </Link>
         {t.personal_room_id !== null && (
