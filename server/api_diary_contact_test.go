@@ -176,6 +176,89 @@ func TestDiaryHiddenContactItems(t *testing.T) {
 	}
 }
 
+/*
+本文の行は、記録ごとの変わらない頭（食事は「HH:MM 区分」、午睡は「HH:MM〜」か「HH:MM 午睡」）で照らす。
+取り込んだあとに「おきた」が付いた・食事を訂正したでは注意が消えず、保育士が行を消したら消える
+（照合 c5-05。【仮置き】web/仮置き値.md）。モックは web/tests/diaryContact.test.ts
+*/
+func TestDiaryHiddenContactItemsFollowHeads(t *testing.T) {
+	a, h := newTestApp(t)
+	teacher := loginAs(a, 3, "staff")
+	day := today()
+	// デモデータは起動日へずれ、時刻によって村田 美咲（C004）のきょうの給食・午睡が入っている（11:40 の給食など）。
+	// このテストで置く記録だけを照らすため、その日の C004 の食事と午睡を取り消しにしておく（本物の時計で動くため）
+	if _, err := a.db.Exec(`UPDATE t_contact_event SET is_deleted = 1 WHERE child_id = 'C004' AND contact_date = ? AND event_type = '1'`, day); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.db.Exec(`UPDATE t_nap_sleep SET is_deleted = 1 WHERE child_id = 'C004'
+		AND nap_session_id IN (SELECT nap_session_id FROM t_nap_session WHERE session_date = ?)`, day); err != nil {
+		t.Fatal(err)
+	}
+	addMeal(t, a, day, day+"T11:40:00", "1", "3", false, nil, day+"T11:40:00")
+	// 午睡のあいだに日誌を書く。おきたはまだ無い
+	addNap(t, a, day, day+"T13:05:00", "", false, nil, day+"T13:05:00")
+	// 午睡と食事を保護者へ出さない設定
+	if _, err := a.db.Exec(`UPDATE m_setting SET setting_value = 'toilet,temperature,comment,photo,class' WHERE setting_key = 'contact.show_items'`); err != nil {
+		t.Fatal(err)
+	}
+
+	// 画面の「きょうのようすから入れる」と同じに、見出しの下へ入れる行を並べた本文で作る
+	var got struct {
+		Lines []string `json:"lines"`
+	}
+	decode(t, call(t, h, teacher, "GET", "/api/contact/children/C004/diary-lines?date="+day, ""), &got)
+	if strings.Join(got.Lines, "\n") != "11:40 給食 少し\n13:05 午睡（おきたは記録されていません）" {
+		t.Fatalf("入れる行 = %q", got.Lines)
+	}
+	body := "【きょうのようす（連絡帳から）】\n" + strings.Join(got.Lines, "\n")
+	id := diaryIDFrom(t, call(t, h, teacher, "POST", "/api/diaries",
+		personalDiary(0, "C004", "1", day, strings.ReplaceAll(body, "\n", `\n`), "1")))
+	hidden := func() string {
+		t.Helper()
+		var d struct {
+			Hidden []string `json:"hidden_contact_items"`
+		}
+		decode(t, call(t, h, teacher, "GET", "/api/diaries/"+itoa(id), ""), &d)
+		return strings.Join(d.Hidden, ",")
+	}
+	if got := hidden(); got != "午睡,食事" {
+		t.Fatalf("取り込んだ直後の hidden_contact_items = %q", got)
+	}
+
+	// 取り込んだあとに「おきた」が付いた（午睡の行の文は「13:05〜14:40 午睡（1時間35分）」に変わる）
+	if _, err := a.db.Exec(`UPDATE t_nap_sleep SET woke_at = ? WHERE child_id = 'C004' AND slept_at = ? AND is_deleted = 0`, day+"T14:40:00", day+"T13:05:00"); err != nil {
+		t.Fatal(err)
+	}
+	if got := hidden(); got != "午睡,食事" {
+		t.Fatalf("おきたが付いたあとの hidden_contact_items = %q（午睡も残るはず）", got)
+	}
+	// 食事を訂正した（量が「少し」から「ぜんぶ」へ）
+	if _, err := a.db.Exec(`UPDATE t_contact_event SET meal_amount = '1', corrected_at = ? WHERE child_id = 'C004' AND recorded_at = ? AND is_deleted = 0`,
+		now(), day+"T11:40:00"); err != nil {
+		t.Fatal(err)
+	}
+	if got := hidden(); got != "午睡,食事" {
+		t.Fatalf("食事を訂正したあとの hidden_contact_items = %q（食事も残るはず）", got)
+	}
+
+	// 保育士が午睡の行を消した
+	setBody := func(b string) {
+		t.Helper()
+		if _, err := a.db.Exec(`UPDATE t_diary SET body = ? WHERE diary_id = ?`, b, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setBody("【きょうのようす（連絡帳から）】\n11:40 給食 少し")
+	if got := hidden(); got != "食事" {
+		t.Fatalf("午睡の行を消したあとの hidden_contact_items = %q（食事だけのはず）", got)
+	}
+	// 食事の行も消した
+	setBody("きょうは園庭で砂遊びをしました。")
+	if got := hidden(); got != "" {
+		t.Fatalf("行を全部消したあとの hidden_contact_items = %q", got)
+	}
+}
+
 // 取り込んだあとに連絡帳で訂正・取り消しされた記録は、日誌を作ったあとのものだけを返す
 func TestDiaryContactChangesOnlyAfterCreation(t *testing.T) {
 	a, h := newTestApp(t)

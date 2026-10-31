@@ -110,6 +110,47 @@ describe('午睡チェック画面の園児カード（GitHub Issue #142 の 3�
     expect(within(card).queryByRole('link', { name: '異常時の記録を残す' })).toBeNull();
   });
 
+  /*
+   * 前回の記録がうつ伏せなら、午睡記録検索と同じ「体位 うつ伏せ」の札を行に出す（見直し 2026-10-31 の c5-01）。
+   * 記録すると選んだ欄が空に戻り、うつ伏せの注意の文は消えるので、仰向けに直して記録し直したかを行で見られるようにする。
+   * 札は記録をそのまま示すだけで判定ではない。行の状態の文（「確認済み」）と前回の文字は変えない
+   */
+  it('前回の記録がうつ伏せなら「体位 うつ伏せ」の札を出し、前回の文字と行の状態の文はそのまま残す', async () => {
+    open('/staff/nap', teacher);
+    await settled();
+    // デモの中村 蓮は 13:22 にうつ伏せで記録されている
+    await waitFor(() => expect(cardOf('中村 蓮').textContent).toContain('前回 13:22 うつ伏せ'), { timeout: 3000 });
+    const card = cardOf('中村 蓮');
+    const tags = Array.from(card.querySelectorAll('.nap-row-head .tag-alert')).map((t) => t.textContent);
+    expect(tags).toContain('体位 うつ伏せ');
+    expect(card.querySelector('.nap-row-status')!.textContent).toBe('確認済み');
+    // 仰向けで記録された子には出さない
+    expect(cardOf('西田 太郎').textContent).toContain('前回 13:20 仰向け');
+    expect(cardOf('西田 太郎').textContent).not.toContain('体位 うつ伏せ');
+  });
+
+  it('うつ伏せで記録した子を、仰向けで記録し直すと札が消える', async () => {
+    // うつ伏せの記録は 13:29 に置く。記録し直す 13:30 と同じ時刻にすると、どちらが前回か決まらないため
+    vi.setSystemTime(new Date(`${today()}T13:29:00+09:00`));
+    await api.record(teacher, activeSakura().nap_session_id, {
+      child_id: 'C004', body_position: '2', breathing: '1', complexion: '1', temperature: null,
+    });
+    vi.setSystemTime(new Date(`${today()}T13:30:00+09:00`));
+    open('/staff/nap', teacher);
+    await settled();
+    await waitFor(() => expect(cardOf('村田 美咲').textContent).toContain('体位 うつ伏せ'), { timeout: 3000 });
+    const card = cardOf('村田 美咲');
+    const choose = (field: string, value: string) =>
+      fireEvent.click(card.querySelector<HTMLInputElement>(`input[name^="${field}-"][value="${value}"]`)!);
+    choose('position', '1');
+    choose('breathing', '1');
+    choose('complexion', '1');
+    fireEvent.click(within(card).getByRole('button', { name: 'この子を記録' }));
+    await waitFor(() => expect(cardOf('村田 美咲').textContent).toContain('前回 13:30 仰向け'), { timeout: 3000 });
+    expect(cardOf('村田 美咲').textContent).not.toContain('体位 うつ伏せ');
+    expect(cardOf('村田 美咲').querySelector('.nap-row-head .tag-alert')).toBeNull();
+  });
+
   it('この実施で異常時の記録がある園児は、カードで強調して示す（基本設計書「異常時の記録」(4-7) 処理内容 2）', async () => {
     await api.recordAbnormal(teacher, activeSakura().nap_session_id, {
       child_id: 'C012', found_at: `${today()}T13:25:00`, situation: '顔色がやや紅潮', response: '別室で休ませた',

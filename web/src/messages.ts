@@ -173,6 +173,13 @@ export const SETTINGS_TEXT = {
 export const hiddenContactItemsNote = (names: string[], approving: boolean) =>
   `保護者の連絡帳に出していない項目（${names.join('・')}）が、きょうのようすから本文に入っています。${approving ? '承認すると' : '共有すると'}、保護者がこの日誌で読みます。残すかどうかを確かめてください。`;
 
+/**
+ * 日誌承認画面で、開いているあいだにほかの職員が日誌を更新していて承認を断られた（409・kind が version_conflict）とき。
+ * 画面は日誌と写真をもう読み直しているので、読み直しを求めず、読み直したことと次にすることを伝える
+ * （サーバの文「他の職員が更新しています。内容を再読み込みしてください。」の代わりに出す）。【仮置き】照合 c5-10 の推し（web/仮置き値.md）
+ */
+export const DIARY_APPROVE_RELOADED = 'ほかの職員が日誌を更新したので、いまの内容を読み直しました。確かめてからもう一度押してください。';
+
 /** 他児の名前の注意（基本設計書「メッセージ一覧」(4-12)。server/namecheck.go の otherNamesMessage と同じ） */
 export const otherNamesMessage = (names: string[]) => `ほかのお子さんの名前（${names.join('・')}）が入っています。このまま送りますか。`;
 /**

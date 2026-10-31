@@ -98,17 +98,25 @@
 .nap-timer.over { background: var(--c-alert-soft); border-bottom: 2px solid var(--c-alert); }
 .nap-timer.over .big { color: var(--c-alert); }
 .nap-timer-over-text { color: var(--c-alert); font-size: var(--fs-body); font-weight: 700; line-height: 1.6; }
+/* 開始・経過・チェック間隔のまとまり。PC の幅では、前と同じく残り時間の右に 24px おきに並べる */
+.nap-timer-facts { display: flex; align-items: center; gap: var(--sp-5); flex-wrap: wrap; }
 /*
- * ブラウザの文字の大きさの設定を上げると、タイマーの帯の背が伸び、iPad 横向きでは画面の3割ほどを覆う。
- * そのときは、見出しと残り時間を横に並べ、開始・経過・チェック間隔も見出しと値を1行にして、帯を低くする。
- * メディアクエリの em はブラウザの設定の文字の大きさで決まる。「768px 以上で 48em 未満」「1024px 以上で 64em 未満」は
- * 文字を大きくしたときだけ当てはまるので、既定（16px）では効かない
+ * iPad の幅（1194px 以下）では、タイマーの帯を低くする。前は iPad 横（1024×768）で帯が 194px、縦で 221px あり、
+ * 「この端末では通知音を出せません…」の文で2段になったうえ、チェック間隔が次の行へ落ちて、本文に見える子が 1.3 人だった。
+ * - 状態の文（「チェックの時刻を過ぎています（未確認 n 名）」か「次のチェックまで」）と残り時間を横に並べる
+ * - 通知音の文は、その下の1行にする（入りきらなければ折り返す）。文の長さで残り時間のまとまりを広げない（contain: inline-size）
+ * - 開始・経過・チェック間隔は見出しと値を1行にし、まとめて残り時間の右へ置く。入りきらなければ、まとめて次の行へ送る
+ * 字の大きさ・太さ・色と、警告色の地・下の線は変えない。PC の幅（1195px 以上）は前のまま。
+ * ブラウザの文字の大きさの設定を上げたときも同じ形にする（前からの規則）。メディアクエリの em はブラウザの設定の文字の大きさで
+ * 決まる。「768px 以上で 48em 未満」「1024px 以上で 64em 未満」は文字を大きくしたときだけ当てはまるので、既定（16px）では効かない。
+ * 【仮置き】1194px の境（iPad Pro 11 インチの横の幅）と並べ方（web/仮置き値.md）
  */
-@media (min-width: 768px) and (max-width: 47.9375em), (min-width: 1024px) and (max-width: 63.9375em) {
-  .nap-timer { padding-top: var(--sp-2); padding-bottom: var(--sp-2); gap: var(--sp-1) var(--sp-4); }
-  .nap-timer > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 var(--sp-2); }
-  /* 1行目に見出しと残り時間、2行目に開始・経過・チェック間隔をそろえる */
-  .nap-timer > div:first-child { flex-basis: 100%; column-gap: var(--sp-3); }
+@media (max-width: 1194px), (min-width: 768px) and (max-width: 47.9375em), (min-width: 1024px) and (max-width: 63.9375em) {
+  .nap-timer { padding-top: var(--sp-2); padding-bottom: var(--sp-2); gap: var(--sp-1) var(--sp-4); align-items: baseline; }
+  .nap-timer-now { flex: 1 1 auto; display: flex; align-items: baseline; flex-wrap: wrap; column-gap: var(--sp-3); }
+  .nap-timer-now > .nap-sound-notice { flex-basis: 100%; contain: inline-size; }
+  .nap-timer-facts { align-items: baseline; gap: 0 var(--sp-4); }
+  .nap-timer-facts > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 var(--sp-2); }
 }
 
 /*
@@ -155,6 +163,11 @@
 .nap-row-body { container: nap-row-body / inline-size; display: flex; align-items: flex-end; flex-wrap: wrap; gap: var(--sp-3); }
 .nap-row-body > .nap-inline-fields { flex: 1 1 auto; }
 .nap-row-body > .nap-row-actions { margin-left: auto; }
+/*
+ * うつ伏せ・呼吸「確認できず」の注意の文は、選択肢のすぐ下に幅いっぱいで出し、体温・「この子を記録」をその下の段へ送る。
+ * 段が折れる幅（iPad 縦など）でも、保存のボタンより先に文が目に入るようにする（見直し 2026-10-31 の c5-06）
+ */
+.nap-row-body > .alert { flex-basis: 100%; }
 .nap-row-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); }
 .nap-row-head .name { font-size: 1.25rem; line-height: 1.5; }
 .nap-row-head .last { white-space: nowrap; }

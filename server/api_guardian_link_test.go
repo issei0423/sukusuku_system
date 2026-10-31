@@ -4,17 +4,20 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
-	"strings"
 	"testing"
 )
 
-// 紐づけを戻せるのは、解除した日から restoreLinkDays 日まで。過ぎたら 409 で断り、新しい招待コードへ案内する
-// （照合 c2b-3 の推し。【仮置き】web/仮置き値.md）。一覧には戻せる最後の日を載せる。モックは web/tests/admin.test.ts
-func TestRestoreGuardianLinkOnlyWithinDays(t *testing.T) {
+/*
+解除した日から restoreLinkDays 日までは「紐づけを戻す」：参加の時刻ははじめのままで、解除の前のやりとりも読める。
+過ぎたら（解除した日時の無い古い行も）断らずに「結び直す」：新しい招待コードで結んだときと同じく今の時刻で参加し直し、
+止まっていたアカウントは再開する。解除の前のやりとりは読めない（照合 c2b-3・c5-04 の推し。【仮置き】web/仮置き値.md）。
+一覧には、解除のあいだも読める形で戻せる最後の日を載せる。モックは web/tests/admin.test.ts
+*/
+func TestRestoreGuardianLinkWithinDaysOrRelink(t *testing.T) {
 	a, h := newTestApp(t)
 	admin := loginAs(a, 1, "staff")
+	// 村田 真一（G004・アカウント9）の紐づけは村田 美咲（C004）の1本だけで、解除するとアカウントが止まる。個人チャットは 8
 	const body = `{"guardian_id":"G004","child_id":"C004"}`
-	call(t, h, admin, "POST", "/api/admin/guardian-links/end", body)
 	endedDaysAgo := func(days int) {
 		t.Helper()
 		if _, err := a.db.Exec(`UPDATE t_guardian_child SET ended_at = ? WHERE guardian_id = 'G004' AND child_id = 'C004'`,
@@ -27,8 +30,73 @@ func TestRestoreGuardianLinkOnlyWithinDays(t *testing.T) {
 		a.db.QueryRow(`SELECT link_status FROM t_guardian_child WHERE guardian_id = 'G004' AND child_id = 'C004'`).Scan(&s)
 		return s
 	}
+	accountStatus := func() string {
+		var s string
+		a.db.QueryRow(`SELECT status FROM m_account WHERE account_id = 9`).Scan(&s)
+		return s
+	}
+	type memberRow struct {
+		joined string
+		first  *string
+		left   *string
+	}
+	member := func() memberRow {
+		var m memberRow
+		a.db.QueryRow(`SELECT joined_at, first_joined_at, left_at FROM t_chat_member WHERE chat_room_id = 8 AND account_id = 9`).
+			Scan(&m.joined, &m.first, &m.left)
+		return m
+	}
+	lastLogAfter := func() string {
+		var v string
+		a.db.QueryRow(`SELECT after_value FROM t_operation_log
+			WHERE target_table = 't_guardian_child' AND target_child_id = 'C004' AND before_value = '終了'
+			ORDER BY operation_log_id DESC LIMIT 1`).Scan(&v)
+		return v
+	}
 
-	// 解除から restoreLinkDays + 1 日：戻せない。一覧の戻せる最後の日は昨日
+	// 解除の前（はじめの参加のあと）に園が送ったやりとり
+	before := member()
+	old := addDays(today(), -20) + "T10:00:00"
+	if before.joined >= old {
+		t.Skipf("デモデータの前提が変わった（はじめの参加 %s が %s より後）", before.joined, old)
+	}
+	res, err := a.db.Exec(`INSERT INTO t_chat_message (chat_room_id, sender_account_id, body, source_type, sent_at)
+		VALUES (8, 3, '解除の前のやりとり', '1', ?)`, old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldID, _ := res.LastInsertId()
+	readsOld := func() bool {
+		t.Helper()
+		_, ok := chatMessagesOf(t, h, loginAs(a, 9, "guardian"), "8")[oldID]
+		return ok
+	}
+
+	// 解除からちょうど restoreLinkDays 日：「紐づけを戻す」。参加の時刻は変わらず、解除の前のやりとりも読める
+	call(t, h, admin, "POST", "/api/admin/guardian-links/end", body)
+	if accountStatus() != "2" {
+		t.Fatalf("最後の紐づけを解除したのに、アカウントが止まっていない: %s", accountStatus())
+	}
+	endedDaysAgo(restoreLinkDays)
+	call(t, h, admin, "POST", "/api/admin/guardian-links/restore", body)
+	if s := linkStatus(); s != "1" {
+		t.Fatalf("期間の内なのに戻らない: link_status = %s", s)
+	}
+	if s := accountStatus(); s != "1" {
+		t.Errorf("戻したのにアカウントが再開しない: status = %s", s)
+	}
+	if m := member(); m.joined != before.joined || m.left != nil {
+		t.Errorf("戻したときの参加: joined_at %q→%q、left_at %v（はじめの参加のまま戻るはず）", before.joined, m.joined, m.left)
+	}
+	if !readsOld() {
+		t.Error("戻したのに、解除の前のやりとりが読めない")
+	}
+	if got := lastLogAfter(); got != "有効（アカウントを再開）" {
+		t.Errorf("戻したときの操作ログの変更後 = %q", got)
+	}
+
+	// 解除から restoreLinkDays + 1 日：断らずに「結び直す」。一覧の戻せる最後の日は昨日
+	call(t, h, admin, "POST", "/api/admin/guardian-links/end", body)
 	endedDaysAgo(restoreLinkDays + 1)
 	var rows []struct {
 		Guardian struct {
@@ -56,19 +124,167 @@ func TestRestoreGuardianLinkOnlyWithinDays(t *testing.T) {
 	if !found {
 		t.Fatal("一覧に G004・C004 の紐づけが無い")
 	}
-	res := expectStatus(t, request(t, h, admin, "POST", "/api/admin/guardian-links/restore", body), http.StatusConflict)
-	if !strings.Contains(res, msgRestoreLinkExpired()) || !strings.Contains(res, "新しい招待コードで紐づけてください") {
-		t.Errorf("断りの文 = %s", res)
+	start := now()
+	expectStatus(t, request(t, h, admin, "POST", "/api/admin/guardian-links/restore", body), http.StatusOK)
+	if s := linkStatus(); s != "1" {
+		t.Fatalf("期間を過ぎた紐づけを結び直せない: link_status = %s", s)
 	}
-	if s := linkStatus(); s != "2" {
-		t.Fatalf("期間を過ぎたのに戻った: link_status = %s", s)
+	if s := accountStatus(); s != "1" {
+		t.Errorf("結び直したのにアカウントが再開しない: status = %s", s)
+	}
+	m := member()
+	if m.joined < start || m.left != nil {
+		t.Errorf("結び直したときの参加: joined_at %q（今 %s 以後のはず）、left_at %v", m.joined, start, m.left)
+	}
+	if m.first == nil || *m.first != before.joined {
+		t.Errorf("first_joined_at = %v、はじめの参加 %q を残すはず", m.first, before.joined)
+	}
+	var linkedAt string
+	a.db.QueryRow(`SELECT linked_at FROM t_guardian_child WHERE guardian_id = 'G004' AND child_id = 'C004'`).Scan(&linkedAt)
+	if linkedAt < start {
+		t.Errorf("結び直したのに linked_at = %q（今 %s 以後のはず）", linkedAt, start)
+	}
+	if readsOld() {
+		t.Error("結び直したのに、解除の前のやりとりが読める（新しい招待コードと同じく読めないはず）")
+	}
+	if got := lastLogAfter(); got != "有効（結び直し、アカウントを再開）" {
+		t.Errorf("結び直したときの操作ログの変更後 = %q", got)
 	}
 
-	// 解除からちょうど restoreLinkDays 日：まだ戻せる
-	endedDaysAgo(restoreLinkDays)
-	call(t, h, admin, "POST", "/api/admin/guardian-links/restore", body)
+	// 解除した日時の無い古い終了の行も、断らずに結び直す
+	call(t, h, admin, "POST", "/api/admin/guardian-links/end", body)
+	if _, err := a.db.Exec(`UPDATE t_guardian_child SET ended_at = NULL WHERE guardian_id = 'G004' AND child_id = 'C004'`); err != nil {
+		t.Fatal(err)
+	}
+	expectStatus(t, request(t, h, admin, "POST", "/api/admin/guardian-links/restore", body), http.StatusOK)
 	if s := linkStatus(); s != "1" {
-		t.Fatalf("期間の内なのに戻らない: link_status = %s", s)
+		t.Fatalf("解除した日時の無い行を結び直せない: link_status = %s", s)
+	}
+	if got := lastLogAfter(); got != "有効（結び直し、アカウントを再開）" {
+		t.Errorf("解除した日時の無い行の操作ログの変更後 = %q", got)
+	}
+}
+
+/*
+解除から restoreLinkDays 日の内でも、要求に relink: true があれば「結び直す」。親権の変更・家庭の事情で解除したあと、
+アカウントが止まった保護者（ログインできず新しい招待コードを使えない）と、解除していたあいだを読ませずに結ぶため
+（頭役の決め。【仮置き】web/仮置き値.md）。今の時刻で参加し直し、解除の前のやりとりは読めず、アカウントは再開する。
+モックは web/tests/admin.test.ts
+*/
+func TestRestoreGuardianLinkRelinkWithinDays(t *testing.T) {
+	a, h := newTestApp(t)
+	admin := loginAs(a, 1, "staff")
+	// 村田 真一（G004・アカウント9）の紐づけは村田 美咲（C004）の1本だけ。個人チャットは 8
+	var before string
+	a.db.QueryRow(`SELECT joined_at FROM t_chat_member WHERE chat_room_id = 8 AND account_id = 9`).Scan(&before)
+	old := addDays(today(), -20) + "T10:00:00"
+	if before >= old {
+		t.Skipf("デモデータの前提が変わった（はじめの参加 %s が %s より後）", before, old)
+	}
+	res, err := a.db.Exec(`INSERT INTO t_chat_message (chat_room_id, sender_account_id, body, source_type, sent_at)
+		VALUES (8, 3, '解除の前のやりとり', '1', ?)`, old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldID, _ := res.LastInsertId()
+
+	// 解除した直後（期間の内）に、結び直すを選ぶ
+	call(t, h, admin, "POST", "/api/admin/guardian-links/end", `{"guardian_id":"G004","child_id":"C004"}`)
+	var status string
+	a.db.QueryRow(`SELECT status FROM m_account WHERE account_id = 9`).Scan(&status)
+	if status != "2" {
+		t.Fatalf("最後の紐づけを解除したのに、アカウントが止まっていない: %s", status)
+	}
+	start := now()
+	expectStatus(t, request(t, h, admin, "POST", "/api/admin/guardian-links/restore",
+		`{"guardian_id":"G004","child_id":"C004","relink":true}`), http.StatusOK)
+
+	var link, linkedAt string
+	a.db.QueryRow(`SELECT link_status, linked_at FROM t_guardian_child WHERE guardian_id = 'G004' AND child_id = 'C004'`).Scan(&link, &linkedAt)
+	a.db.QueryRow(`SELECT status FROM m_account WHERE account_id = 9`).Scan(&status)
+	if link != "1" || status != "1" {
+		t.Fatalf("結び直したあと: link_status = %s、アカウント = %s（どちらも 1 のはず）", link, status)
+	}
+	if linkedAt < start {
+		t.Errorf("結び直したのに linked_at = %q（今 %s 以後のはず）", linkedAt, start)
+	}
+	var joined string
+	var first, left *string
+	a.db.QueryRow(`SELECT joined_at, first_joined_at, left_at FROM t_chat_member WHERE chat_room_id = 8 AND account_id = 9`).
+		Scan(&joined, &first, &left)
+	if joined < start || left != nil || first == nil || *first != before {
+		t.Errorf("結び直したときの参加: joined_at %q（今 %s 以後）、first_joined_at %v（%q のはず）、left_at %v", joined, start, first, before, left)
+	}
+	if _, ok := chatMessagesOf(t, h, loginAs(a, 9, "guardian"), "8")[oldID]; ok {
+		t.Error("期間の内に結び直したのに、解除の前のやりとりが読める")
+	}
+	var after string
+	a.db.QueryRow(`SELECT after_value FROM t_operation_log
+		WHERE target_table = 't_guardian_child' AND target_child_id = 'C004' AND before_value = '終了'
+		ORDER BY operation_log_id DESC LIMIT 1`).Scan(&after)
+	if after != "有効（結び直し、アカウントを再開）" {
+		t.Errorf("結び直したときの操作ログの変更後 = %q", after)
+	}
+}
+
+/*
+「紐づけを戻す」「結び直す」の書き込み（紐づけ・アカウントの再開・チャットへの参加）は1つの処理。
+チャットへの参加で失敗したら全部を戻し、500 を返す。紐づけは終了のまま、アカウントは止まったまま、参加も抜けたまま、
+操作ログも残さない（お子さまの追加の TestAddChildRollsBack と同じ作り。PR #355 のレビューの指摘）。
+モックは web/tests/admin.test.ts の同じ観点の確かめ
+*/
+func TestRestoreGuardianLinkRollsBack(t *testing.T) {
+	a, h := newTestApp(t)
+	admin := loginAs(a, 1, "staff")
+	// 村田 真一（G004・アカウント9）の紐づけは村田 美咲（C004）の1本だけで、解除するとアカウントが止まる。個人チャットは 8
+	const body = `{"guardian_id":"G004","child_id":"C004"}`
+	type state struct {
+		link, endedAt, linkedAt, account string
+		left                             *string
+		logs                             int
+	}
+	read := func() state {
+		t.Helper()
+		var st state
+		if err := a.db.QueryRow(`SELECT link_status, IFNULL(ended_at, ''), linked_at FROM t_guardian_child
+			WHERE guardian_id = 'G004' AND child_id = 'C004'`).Scan(&st.link, &st.endedAt, &st.linkedAt); err != nil {
+			t.Fatal(err)
+		}
+		a.db.QueryRow(`SELECT status FROM m_account WHERE account_id = 9`).Scan(&st.account)
+		a.db.QueryRow(`SELECT left_at FROM t_chat_member WHERE chat_room_id = 8 AND account_id = 9`).Scan(&st.left)
+		a.db.QueryRow(`SELECT COUNT(*) FROM t_operation_log
+			WHERE target_table = 't_guardian_child' AND target_child_id = 'C004' AND before_value = '終了'`).Scan(&st.logs)
+		return st
+	}
+
+	call(t, h, admin, "POST", "/api/admin/guardian-links/end", body)
+	ended := read()
+	if ended.link != "2" || ended.account != "2" || ended.left == nil {
+		t.Fatalf("解除したあと: %+v（終了・アカウント停止・参加が抜けている、のはず）", ended)
+	}
+
+	// 最後の書き込み（チャットへの参加）で失敗させる
+	mustExec(t, a, `CREATE TRIGGER test_fail_rejoin BEFORE INSERT ON t_chat_member WHEN NEW.account_id = 9
+		BEGIN SELECT RAISE(ABORT, 'テストで止める'); END`)
+	for name, req := range map[string]string{
+		"紐づけを戻す": body,
+		"結び直す":   `{"guardian_id":"G004","child_id":"C004","relink":true}`,
+	} {
+		e := errorOf(t, request(t, h, admin, "POST", "/api/admin/guardian-links/restore", req), http.StatusInternalServerError)
+		if e.Message != "紐づけを戻せませんでした" {
+			t.Errorf("%s: message = %q", name, e.Message)
+		}
+		if got := read(); got.link != ended.link || got.endedAt != ended.endedAt || got.linkedAt != ended.linkedAt ||
+			got.account != "2" || got.left == nil || got.logs != ended.logs {
+			t.Errorf("%s の途中で失敗したのに書き込みが残った: %+v（解除したあと %+v のまま、のはず）", name, got, ended)
+		}
+	}
+
+	// 止めるのをやめれば戻せる
+	mustExec(t, a, `DROP TRIGGER test_fail_rejoin`)
+	call(t, h, admin, "POST", "/api/admin/guardian-links/restore", body)
+	if got := read(); got.link != "1" || got.account != "1" || got.left != nil || got.logs != ended.logs+1 {
+		t.Fatalf("やり直し: %+v", got)
 	}
 }
 
@@ -179,11 +395,13 @@ func TestEndLastGuardianLinkLogsSystemStop(t *testing.T) {
 	}
 
 	// 参照の画面は、操作者を「システム」と出す。account_id が空の行を読み飛ばさない
+	// （デモデータにも鈴木 浩之（アカウント8）の停止のシステムの行があるので、村田 真一（アカウント9）の行だけを数える）
 	var out struct {
 		Rows []struct {
 			AccountID   *int64 `json:"account_id"`
 			AccountName string `json:"account_name"`
 			TargetTable string `json:"target_table"`
+			TargetID    *int64 `json:"target_id"`
 		} `json:"rows"`
 	}
 	if err := json.Unmarshal(call(t, h, admin, "GET", "/api/admin/logs", "").Body.Bytes(), &out); err != nil {
@@ -191,6 +409,9 @@ func TestEndLastGuardianLinkLogsSystemStop(t *testing.T) {
 	}
 	var systemRows, adminEnd int
 	for _, r := range out.Rows {
+		if r.TargetID == nil || *r.TargetID != 9 {
+			continue
+		}
 		if r.AccountName == "システム" && r.AccountID == nil && r.TargetTable == "m_account" {
 			systemRows++
 		}
@@ -213,8 +434,49 @@ func TestEndGuardianLinkWithRemainingLinkLogsNoSystemRow(t *testing.T) {
 	}
 	call(t, h, admin, "POST", "/api/admin/guardian-links/end", `{"guardian_id":"G004","child_id":"C004"}`)
 	var n int
-	a.db.QueryRow(`SELECT COUNT(*) FROM t_operation_log WHERE operator_type = '2'`).Scan(&n)
+	// デモデータの鈴木 浩之（アカウント8）の停止の行は数えない
+	a.db.QueryRow(`SELECT COUNT(*) FROM t_operation_log WHERE operator_type = '2' AND target_id = 9`).Scan(&n)
 	if n != 0 {
 		t.Fatalf("システムの行が %d 件ある", n)
+	}
+}
+
+/*
+デモの鈴木 浩之（G003・アカウント8）は、誤って解除した例（紐づけを戻すの見本）。操作ログは、いまの解除が残す形と同じ2行：
+管理者の解除の行（t_guardian_child・有効→終了）と、有効な紐づけがゼロになったことによるシステムの停止の行（照合 c5-08）。
+モックは web/tests/admin.test.ts
+*/
+func TestDemoUnlinkLogMatchesEndGuardianLink(t *testing.T) {
+	a, _ := newTestApp(t)
+	type logRow struct {
+		account                     *int64
+		operator, before, after, at string
+	}
+	read := func(table string) logRow {
+		t.Helper()
+		var r logRow
+		if err := a.db.QueryRow(`SELECT account_id, operator_type, before_value, after_value, operated_at FROM t_operation_log
+			WHERE target_table = ? AND target_id = 8 AND target_child_id = 'C003'`, table).
+			Scan(&r.account, &r.operator, &r.before, &r.after, &r.at); err != nil {
+			t.Fatalf("%s の行が無い: %v", table, err)
+		}
+		return r
+	}
+	end, stop := read("t_guardian_child"), read("m_account")
+	if end.account == nil || *end.account != 1 || end.operator != "1" || end.before != "有効" || end.after != "終了" {
+		t.Errorf("解除の行 = %+v（管理者1・有効→終了のはず）", end)
+	}
+	if stop.account != nil || stop.operator != "2" || stop.before != "有効" || stop.after != "停止（有効な紐づけがゼロになったため）" {
+		t.Errorf("停止の行 = %+v（システム・有効→停止（有効な紐づけがゼロになったため）のはず）", stop)
+	}
+	var endedAt string
+	a.db.QueryRow(`SELECT ended_at FROM t_guardian_child WHERE guardian_id = 'G003' AND child_id = 'C003'`).Scan(&endedAt)
+	if end.at != endedAt || stop.at != endedAt {
+		t.Errorf("操作の日時 解除 %s・停止 %s、紐づけの解除 %s と同じはず", end.at, stop.at, endedAt)
+	}
+	var manual int
+	a.db.QueryRow(`SELECT COUNT(*) FROM t_operation_log WHERE target_table = 'm_account' AND target_id = 8 AND operator_type = '1'`).Scan(&manual)
+	if manual != 0 {
+		t.Errorf("管理者が鈴木 浩之のアカウントを止めた行が %d 件ある（保護者は手で止めない）", manual)
 	}
 }

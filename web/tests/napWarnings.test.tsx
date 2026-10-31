@@ -79,6 +79,26 @@ describe('午睡チェック画面：異常に気づいたときの文', () => {
     expect(row.textContent).not.toContain(PRONE_TEXT);
   });
 
+  /*
+   * 文は選んだ欄（体位・呼吸・顔色）のすぐ後ろ、体温・「この子を記録」より前に置く。iPad 縦のように段が折れる幅でも、
+   * 保存のボタンより先に文が目に入るようにするため（見直し 2026-10-31 の c5-06。#349 で「この子を記録」の後ろへ移っていた）
+   */
+  it('うつ伏せ・呼吸の文は、選んだ欄の後ろ、「この子を記録」より前に出す', async () => {
+    const row = await firstRow();
+    choose(row, 'position', '2');
+    choose(row, 'breathing', '2');
+    const alerts = Array.from(row.querySelectorAll('[role="alert"]'));
+    expect(alerts).toHaveLength(2);
+    const fields = row.querySelector('.nap-inline-fields')!;
+    const actions = row.querySelector('.nap-row-actions')!;
+    for (const alert of alerts) {
+      expect(fields.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(alert.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    // 文は選んだ欄と同じ段の並び（.nap-row-body）の中に置く
+    expect(alerts.every((a) => a.parentElement?.classList.contains('nap-row-body'))).toBe(true);
+  });
+
   it('どちらの文が出ていても記録は妨げない。記録すると選択が空に戻り、文も消える', async () => {
     const row = await firstRow();
     choose(row, 'position', '2');

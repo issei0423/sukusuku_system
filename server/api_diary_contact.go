@@ -27,11 +27,14 @@ type DiaryContactChange struct {
 	ChangedAt string `json:"changed_at"`
 }
 
-// diaryLine は、時刻の順に並べるための1行。item は保護者へ出す項目（contact.show_items）の名前（meal・nap）
+// diaryLine は、時刻の順に並べるための1行。item は保護者へ出す項目（contact.show_items）の名前（meal・nap）。
+// heads は、本文の行がこの記録から入れたものかを照らす、記録があとで変わっても変わらない頭（hiddenContactItems）。
+// 食事は「HH:MM 区分」（量は訂正で変わる）、午睡は「HH:MM〜」か「HH:MM 午睡」（おきたがあとから付く）
 type diaryLine struct {
-	at   string
-	text string
-	item string
+	at    string
+	text  string
+	item  string
+	heads []string
 }
 
 // parseLocal は 'YYYY-MM-DDTHH:MM:SS'（JST）を時刻にする。崩れていれば 0 時刻を返す
@@ -67,7 +70,8 @@ func (a *app) diaryLinesOf(childID, date string) ([]diaryLine, error) {
 	for rows.Next() {
 		var at, kind, amount string
 		if rows.Scan(&at, &kind, &amount) == nil {
-			lines = append(lines, diaryLine{at, hm(at) + " " + mealKindText[kind] + " " + mealAmountText[amount], "meal"})
+			head := hm(at) + " " + mealKindText[kind]
+			lines = append(lines, diaryLine{at, head + " " + mealAmountText[amount], "meal", []string{head}})
 		}
 	}
 	err = rows.Err()
@@ -88,12 +92,13 @@ func (a *app) diaryLinesOf(childID, date string) ([]diaryLine, error) {
 		if rows.Scan(&slept, &woke) != nil {
 			continue
 		}
+		heads := []string{hm(slept) + "〜", hm(slept) + " 午睡"}
 		if woke == nil {
-			lines = append(lines, diaryLine{slept, hm(slept) + " 午睡（おきたは記録されていません）", "nap"})
+			lines = append(lines, diaryLine{slept, hm(slept) + " 午睡（おきたは記録されていません）", "nap", heads})
 			continue
 		}
 		minutes := int((parseLocal(*woke).Sub(parseLocal(slept))).Minutes())
-		lines = append(lines, diaryLine{slept, hm(slept) + "〜" + hm(*woke) + " 午睡（" + napDurationText(minutes) + "）", "nap"})
+		lines = append(lines, diaryLine{slept, hm(slept) + "〜" + hm(*woke) + " 午睡（" + napDurationText(minutes) + "）", "nap", heads})
 	}
 	err = rows.Err()
 	rows.Close()
@@ -110,20 +115,28 @@ var diaryContactItemLabels = []struct{ item, label string }{{"nap", "午睡"}, {
 
 /*
 hiddenContactItems は、きょうのようすから入れる行のうち、保護者へ出さない設定（contact.show_items）の項目の名前を返す。
-body が nil でなければ、その本文に入っている行だけを数える（取り込んだあとに書き換えた・消した行は数えない）。
+body が nil でなければ、その本文に入っている行だけを数える。本文の行（前後の空白を除く）が、記録の変わらない頭
+（diaryLine.heads）で始まれば入っているとみなす。行の文字全体で照らすと、取り込んだあとに「おきた」が付いた・食事を訂正した
+だけで行の文が変わり、本文に残っているのに数えなくなる（照合 c5-05）。保育士が行を消せば数えない。
 
 共有を選んだ個人日誌は、承認すると保護者が読む。保護者の連絡帳に出していない項目が本文に入っていれば、
 日誌作成・編集画面と日誌承認画面に、その項目の名前を挙げた注意を出す。判定して消すことはしない（消すかは人が決める。
-基本設計書の設計原則1）。【仮置き】照合 c2b-2 の推し（web/仮置き値.md）。モックは web/src/api/mock.ts の hiddenContactItems
+基本設計書の設計原則1）。【仮置き】照合 c2b-2・c5-05 の推し（web/仮置き値.md）。モックは web/src/api/mock.ts の hiddenContactItems
 */
 func (a *app) hiddenContactItems(lines []diaryLine, body *string) []string {
+	var bodyLines []string
+	if body != nil {
+		for _, bl := range strings.Split(*body, "\n") {
+			bodyLines = append(bodyLines, strings.TrimSpace(bl))
+		}
+	}
 	out := []string{}
 	for _, it := range diaryContactItemLabels {
 		if a.guardianSeesItem(it.item) {
 			continue
 		}
 		for _, l := range lines {
-			if l.item == it.item && (body == nil || strings.Contains(*body, l.text)) {
+			if l.item == it.item && (body == nil || bodyHasHead(bodyLines, l.heads)) {
 				out = append(out, it.label)
 				break
 			}
@@ -132,8 +145,20 @@ func (a *app) hiddenContactItems(lines []diaryLine, body *string) []string {
 	return out
 }
 
+// bodyHasHead は、本文のどれかの行が、heads のどれかで始まるか
+func bodyHasHead(bodyLines, heads []string) bool {
+	for _, bl := range bodyLines {
+		for _, h := range heads {
+			if strings.HasPrefix(bl, h) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // hiddenContactItemsOfDiary は、個人日誌の本文に入っている、保護者へ出さない設定の項目の名前（日誌を1件読んだとき）。
-// 本文の行と、その園児・記録日のきょうのようすから入れる行とを、文字のまま照らす
+// 本文の行と、その園児・記録日のきょうのようすから入れる行とを、記録の変わらない頭で照らす
 func (a *app) hiddenContactItemsOfDiary(d Diary) []string {
 	if d.RecordType != "1" || d.ChildID == nil {
 		return nil
