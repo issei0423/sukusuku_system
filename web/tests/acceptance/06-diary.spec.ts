@@ -1728,11 +1728,15 @@ test.describe('一覧・タイムライン', () => {
       await typeFilter.selectOption({ label: 'すべて' });
       await main.getByRole('button', { name: '絞り込む' }).click();
     } else note(notIn121('クラス・種別の絞り込み'));
+    const style = async (id: number) => (await pendingRow(page, id).count()) === 0 ? `行が無い（${id}）` : pendingRow(page, id).first().evaluate((tr) => Array.from(tr.querySelectorAll('*')).concat(tr).map((e) => `${getComputedStyle(e).color}|${getComputedStyle(e).backgroundColor}`).join(';'));
     if (hasElapsed) {
-      const style = async (id: number) => (await pendingRow(page, id).count()) === 0 ? `行が無い（${id}）` : pendingRow(page, id).first().evaluate((tr) => Array.from(tr.querySelectorAll('*')).concat(tr).map((e) => `${getComputedStyle(e).color}|${getComputedStyle(e).backgroundColor}`).join(';'));
       expect.soft(await style(old), '4日前の行に警告色が付き、今日の行と違う').not.toBe(await style(him));
-      expect.soft(await style(inc), 'ヒヤリハットの行は他の種別と区別できる色').not.toBe(await style(him));
-    } else note(notIn121('経過とヒヤリハットの色分け'));
+    } else note(notIn121('経過（3-4 項目4）'));
+    /*
+     * ヒヤリハットの色分け（3-4 項目5）は「モックアップでは実装しないもの」(12-1) にある。経過の列（3-4 項目4。#302 で入った）とは
+     * 別の部品なので、経過の列があることに結び付けて確かめない。色分けが無いときは実装対象の外として備考へ回す
+     */
+    if ((await style(inc)) === (await style(him))) note(notIn121('ヒヤリハットの色分け（3-4 項目5）'));
     if (!hasPaging) note(notIn121('ページング'));
   });
 
