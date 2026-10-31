@@ -5001,23 +5001,29 @@ function napDurationText(minutes: number): string {
   return minutes % 60 === 0 ? `${minutes / 60}時間` : `${Math.floor(minutes / 60)}時間${minutes % 60}分`;
 }
 
-/** きょうのようすから入れる1行。item は保護者へ出す項目（contact.show_items）の名前 */
-type DiaryLineRow = { at: string; text: string; item: 'meal' | 'nap' };
+/**
+ * きょうのようすから入れる1行。item は保護者へ出す項目（contact.show_items）の名前。
+ * heads は、本文の行がこの記録から入れたものかを照らす、記録があとで変わっても変わらない頭（hiddenContactItems）。
+ * 食事は「HH:MM 区分」（量は訂正で変わる）、午睡は「HH:MM〜」か「HH:MM 午睡」（おきたがあとから付く）
+ */
+type DiaryLineRow = { at: string; text: string; item: 'meal' | 'nap'; heads: string[] };
 
 /** その園児・その日のきょうのようすから入れる行（時刻の順。server/api_diary_contact.go の diaryLinesOf と同じ） */
 function diaryLineRows(childId: string, d: string): DiaryLineRow[] {
   const lines: DiaryLineRow[] = [];
   for (const e of db.contactEvents) {
     if (e.child_id !== childId || e.contact_date !== d || e.event_type !== '1' || e.is_deleted) continue;
-    lines.push({ at: e.recorded_at, item: 'meal', text: `${e.recorded_at.slice(11, 16)} ${MEAL_KIND_TEXT[e.meal_kind ?? '1']} ${MEAL_AMOUNT_TEXT[e.meal_amount ?? '1']}` });
+    const head = `${e.recorded_at.slice(11, 16)} ${MEAL_KIND_TEXT[e.meal_kind ?? '1']}`;
+    lines.push({ at: e.recorded_at, item: 'meal', text: `${head} ${MEAL_AMOUNT_TEXT[e.meal_amount ?? '1']}`, heads: [head] });
   }
   for (const n of db.napSleeps) {
     if (n.child_id !== childId || n.is_deleted) continue;
     if (db.napSessions.find((x) => x.nap_session_id === n.nap_session_id)?.session_date !== d) continue;
     const from = n.slept_at.slice(11, 16);
+    const heads = [`${from}〜`, `${from} 午睡`];
     lines.push(n.woke_at
-      ? { at: n.slept_at, item: 'nap', text: `${from}〜${n.woke_at.slice(11, 16)} 午睡（${napDurationText(Math.floor((jstMs(n.woke_at) - jstMs(n.slept_at)) / 60000))}）` }
-      : { at: n.slept_at, item: 'nap', text: `${from} 午睡（おきたは記録されていません）` });
+      ? { at: n.slept_at, item: 'nap', heads, text: `${from}〜${n.woke_at.slice(11, 16)} 午睡（${napDurationText(Math.floor((jstMs(n.woke_at) - jstMs(n.slept_at)) / 60000))}）` }
+      : { at: n.slept_at, item: 'nap', heads, text: `${from} 午睡（おきたは記録されていません）` });
   }
   lines.sort((a, b) => a.at.localeCompare(b.at));
   return lines;
@@ -5028,14 +5034,17 @@ const DIARY_CONTACT_ITEM_LABELS: { item: DiaryLineRow['item']; label: string }[]
 
 /**
  * きょうのようすから入れる行のうち、保護者へ出さない設定（contact.show_items）の項目の名前。
- * body を渡せば、その本文に入っている行だけを数える（取り込んだあとに書き換えた・消した行は数えない）。
+ * body を渡せば、その本文に入っている行だけを数える。本文の行（前後の空白を除く）が、記録の変わらない頭（heads）で
+ * 始まれば入っているとみなす。行の文字全体で照らすと、取り込んだあとに「おきた」が付いた・食事を訂正しただけで
+ * 本文に残っているのに数えなくなる（照合 c5-05）。保育士が行を消せば数えない。
  * 共有を選んだ個人日誌の注意に使う。判定して消すことはしない（消すかは人が決める。基本設計書の設計原則1）。
- * 【仮置き】照合 c2b-2 の推し（web/仮置き値.md）。server/api_diary_contact.go の hiddenContactItems と同じ
+ * 【仮置き】照合 c2b-2・c5-05 の推し（web/仮置き値.md）。server/api_diary_contact.go の hiddenContactItems と同じ
  */
 function hiddenContactItems(lines: DiaryLineRow[], body?: string): string[] {
+  const bodyLines = body?.split('\n').map((b) => b.trim());
+  const inBody = (l: DiaryLineRow) => bodyLines === undefined || bodyLines.some((b) => l.heads.some((h) => b.startsWith(h)));
   return DIARY_CONTACT_ITEM_LABELS
-    .filter((it) => !guardianSeesItem(it.item)
-      && lines.some((l) => l.item === it.item && (body === undefined || body.includes(l.text))))
+    .filter((it) => !guardianSeesItem(it.item) && lines.some((l) => l.item === it.item && inBody(l)))
     .map((it) => it.label);
 }
 
