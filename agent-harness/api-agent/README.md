@@ -232,7 +232,7 @@ schtasks /Create /SC DAILY /ST 20:00 /TN "sukusuku-api-agent-review-pm" /TR "pow
 ## 手元の CI と鍵（`scripts/`）
 
 - `local-ci.sh <worktree> <ログの置き場>`：CI のジョブと同じ確かめ（go vet・go test・npm ci・build・responsive／security の型検査・lint・vitest・結合・security・a11y）。結合と security のサーバは空いているポートで立てる。最後まで回ったら `result.txt` に `done=yes`
-- `heavy.sh <コマンド…>`：重いコマンドを PC の中で1つずつ回す鍵。置き場は OS の一時フォルダの `sukusuku-heavy.lock`（環境変数 `SUKUSUKU_HEAVY_LOCK` で変えられる）。Claude Code の係・頭役も同じ鍵を使える。自分が取った鍵だけを外す
+- `heavy.sh <コマンド…>`：重いコマンドを PC の中で1つずつ回す鍵。置き場は OS の一時フォルダの `sukusuku-heavy.lock`（環境変数 `SUKUSUKU_HEAVY_LOCK` で変えられる）。Claude Code の係・頭役も同じ鍵を使える。自分が取った鍵だけを外す。ただし、持ち主のプロセスが居なくなった鍵（強制終了で trap が走らずに残ったもの）は、取ってから2分たっていれば、待つ側が外して取り直す。持ち主が生きている鍵は外さない（40分待って 99）
 
 ## 定時に回す（Windows のタスク スケジューラー）
 
