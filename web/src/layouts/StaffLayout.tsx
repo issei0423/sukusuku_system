@@ -8,11 +8,11 @@ import { useSession } from '../session';
 import { useAsync, AUTO_REFRESH_MS } from '../hooks';
 import { onLive } from '../live';
 import { api } from '../api/client';
-import { BellIcon, Alert } from '../components/ui';
+import { BellIcon, Alert, Modal } from '../components/ui';
 import {
   DashboardIcon, DiaryIcon, ChatIcon, NapIcon, ContactBookIcon, GrowthIcon, ChildrenIcon,
   ApprovalIcon, StaffAccountIcon, InvitationIcon, GuardianAccountIcon, FiscalYearIcon, LogIcon, MisdeliveryIcon, SettingsIcon,
-  PasswordIcon, TermsIcon, LogoutIcon,
+  PasswordIcon, TermsIcon, LogoutIcon, CloseIcon,
 } from '../components/icons';
 import LiveIndicator from '../components/LiveIndicator';
 import ConnectionBanner from '../components/ConnectionBanner';
@@ -66,6 +66,8 @@ export default function StaffLayout() {
    * 基本設計書「ログアウト」(4-3)）。保護者の共通レイアウトと同じ作り（GitHub Issue #170・#304）
    */
   const [confirmLogout, setConfirmLogout] = useState(false);
+  // 午睡チェックの実施中に押されたログアウト。ログアウトせずに、先に終了するよう示す（下の napRunning）
+  const [napLogout, setNapLogout] = useState(false);
   const unsaved = useUnsavedInputTracker();
   /*
    * どの画面を開いていても、保護者からのチャットなどがすぐに通知の件数に表れるよう、知らせ（live.ts）を受けて
@@ -91,8 +93,23 @@ export default function StaffLayout() {
     // ログアウトの遷移先はログインしていた系統のトップ（基本設計書「画面遷移」(3-4)）
     navigate('/staff-top');
   };
+  /*
+   * 自分が開始した午睡チェックが実施中なら、ログアウトせず、先に午睡チェックを終了するよう示して止める
+   * （基本設計書「ログアウト」(4-3)「午睡チェックの実施中は、先に午睡チェックを終了してからログアウトする」、
+   * 図/画面詳細図「全画面に共通する規定」(0-2) のログアウト・「職員（タブレット／PC）」(1-1) 項目4「示して止める」）。
+   * 実施中かは、自動ログアウトの対象外と同じ判定で見る（GET /api/session の nap_exempt。担当は開始した職員で、
+   * 担当の交代は「終了 → ログアウト → 次の職員がログイン → 開始」。server/session.go の napExemption）。
+   * 尋ねられないとき（届かないなど）は止めない。画面の出し分けで、権限の規則ではない（サーバのログアウトは止めない）
+   */
+  const napRunning = async () => {
+    try { return (await api.sessionStatus(user)).nap_exempt; } catch { return false; }
+  };
   // 保存していない入力（書きかけの日誌・メッセージなど）があれば、破棄される旨を表示して確認する（基本設計書「ログアウト」(4-3)）
-  const onLogout = () => {
+  const onLogout = async () => {
+    if (await napRunning()) {
+      setNapLogout(true);
+      return;
+    }
     if (unsaved.hasUnsavedInput()) {
       setConfirmLogout(true);
       return;
@@ -190,6 +207,24 @@ export default function StaffLayout() {
         */}
         <SessionTimeoutWarning />
       </div>
+
+      {/*
+        午睡チェックの実施中に押されたログアウト。ログアウトせずに止め、先に終了するよう示す（上の napRunning の典拠）。
+        午睡チェック画面の外で押したときは、終了のボタンのある午睡チェック画面へ移る口を添える。
+        【仮置き】題と文（設計に文言が無い。web/仮置き値.md）
+      */}
+      {napLogout && (
+        <Modal title="午睡チェックの実施中です" onClose={() => setNapLogout(false)}
+          footer={<>
+            <button onClick={() => setNapLogout(false)}><CloseIcon />閉じる</button>
+            {!pathname.startsWith('/staff/nap') && (
+              <button className="btn-primary" onClick={() => { setNapLogout(false); navigate('/staff/nap'); }}><NapIcon />午睡チェック画面へ</button>
+            )}
+          </>}>
+          <p>午睡チェックの実施中は、ログアウトできません。先に午睡チェックを終了してから、ログアウトしてください。</p>
+          <p className="muted">担当を交代するときは、午睡チェックを終了し、ログアウトしてから、次の職員がログインして開始します。</p>
+        </Modal>
+      )}
 
       {confirmLogout && (
         <ConfirmDialog title="保存していない入力があります" confirmLabel="破棄してログアウトする" confirmIcon={<LogoutIcon />} danger
