@@ -135,9 +135,9 @@
  * サーバに届かないときは警告色、保護者の「自動で読み直しています」は細い帯。午睡チェック画面では大きく出す
  */
 .connection-banner { margin: 0 0 var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: 8px; font-weight: 700; }
-.connection-banner.is-unreachable { background: var(--c-alert); color: var(--dads-white); }
+.connection-banner.is-unreachable { background: var(--c-alert); color: var(--c-on-alert); }
 .connection-banner.is-unreachable.is-large { min-height: 64px; display: flex; align-items: center; font-size: 1.25rem; }
-.connection-banner.is-fallback { padding: var(--sp-1) var(--sp-3); background: var(--c-alert-soft); color: var(--c-primary-ink); font-weight: 400; font-size: var(--fs-small); }
+.connection-banner.is-fallback { padding: var(--sp-1) var(--sp-3); background: var(--c-alert-soft); color: var(--c-alert-deep); font-weight: 400; font-size: var(--fs-small); }
 
 .staff-body { flex: 1; display: flex; min-height: 0; position: relative; }
 
@@ -302,7 +302,7 @@
 /* 件数の札。DADS のチップラベル（塗り）と同じ形 */
 .guardian-unread {
   flex: none; margin-top: 2px; padding: 3px 8px; border-radius: var(--radius);
-  background: var(--c-alert); color: var(--dads-white);
+  background: var(--c-alert); color: var(--c-on-alert);
   font-size: var(--fs-small); font-weight: 700; line-height: 1.3;
 }
 /* 主な導線は、DADS の塗りボタンと同じ見た目にする */
@@ -538,7 +538,7 @@ table.list th, table.list td {
 }
 table.list th {
   background: var(--c-surface-head);
-  border-bottom: 1px solid var(--dads-gray-536);
+  border-bottom: 1px solid var(--c-border);
   color: var(--c-text); font-weight: 700; white-space: nowrap;
 }
 table.list tbody tr:focus-within td { background: var(--c-primary-faint); }
@@ -566,9 +566,9 @@ table.list td > :is(button, .btn) + :is(button, .btn) { margin-left: var(--sp-2)
   font-size: var(--fs-small); font-weight: 400; line-height: 1.5; letter-spacing: .02em; white-space: nowrap;
 }
 .tag-draft    { color: var(--c-draft);    border-color: var(--c-draft);    background: var(--c-surface-sub); }
-.tag-applied  { color: var(--dads-blue-800); border-color: var(--c-applied); background: var(--dads-blue-50); }
-.tag-returned { color: var(--dads-white); border-color: var(--c-returned); background: var(--c-returned); font-weight: 700; }
-.tag-approved { color: var(--dads-green-900); border-color: var(--c-approved); background: var(--dads-green-50); }
+.tag-applied  { color: var(--c-on-applied-soft); border-color: var(--c-applied); background: var(--c-applied-soft); }
+.tag-returned { color: var(--c-on-returned); border-color: var(--c-returned); background: var(--c-returned); font-weight: 700; }
+.tag-approved { color: var(--c-on-approved-soft); border-color: var(--c-approved); background: var(--c-approved-soft); }
 .tag-plain    { color: var(--c-text-sub); border-color: var(--c-border); background: var(--c-surface); }
 /*
  * 安全にかかわる印（午睡の「異常時の記録あり」「呼吸 確認できず」「顔色」、午睡記録検索の「うつ伏せ」、アレルギーの食品）。
@@ -589,7 +589,7 @@ table.list td > :is(button, .btn) + :is(button, .btn) { margin-left: var(--sp-2)
 }
 .alert > span:first-child { flex: none; color: var(--c-alert); font-weight: 700; }
 /* 知らせるだけのもの（DADS のインフォメーション2：灰色） */
-.alert-soft { border-color: var(--dads-gray-536); }
+.alert-soft { border-color: var(--c-border); }
 .alert-soft > span:first-child { color: var(--c-text); }
 /*
  * 箱の中身が警告ひとつだけのときは、箱の枠を消して警告の枠だけを見せる。
@@ -606,7 +606,7 @@ table.list td > :is(button, .btn) + :is(button, .btn) { margin-left: var(--sp-2)
   position: sticky; bottom: 0; z-index: 5;
   display: flex; align-items: center; gap: var(--sp-2);
   margin-top: var(--sp-4); padding: var(--sp-2) var(--sp-4);
-  background: var(--c-surface-sub); border: 1px solid var(--dads-gray-536);
+  background: var(--c-surface-sub); border: 1px solid var(--c-border);
   border-radius: var(--radius); color: var(--c-text);
   /* 重ねて置く帯なので、DADS が場所の限られる所に許す 14px にして、重なる範囲を小さくする（GitHub Issue #154） */
   font-size: var(--fs-small); font-weight: 700; line-height: 1.5;

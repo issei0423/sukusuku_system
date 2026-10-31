@@ -2,42 +2,35 @@
  * デザイントークン
  * 典拠：基本設計書.md「画面基本構成」(3-5)／図/画面詳細図.md「全画面に共通する規定」(0-2)
  *
- * 色・文字・余白・角・影は、デジタル庁デザインシステム（DADS）の決まりに沿って置く。
- *   - 色・影の値：@digital-go-jp/design-tokens v2.0.1（MIT License）から写した
- *   - セレクトボックスの印の形・フォーカスの印：DADS の HTML 実装例（design-system-example-components-html、MIT License）に合わせた
+ * 【仮置き】本文の色・文字・角・部品の形は、Google の Material Design 3（M3）のトークンに寄せる（2026-10-31、w4 の m1）。
+ *   - 色の値：M3 の公式の道具 material-color-utilities で、種の色 #ffc700 から作って写した（下の「Material Design 3 の色」）
+ *   - 典拠にした M3 の値：Jetpack Compose の Material3 のトークン（TypeScaleTokens・ShapeTokens など）と https://m3.material.io/
+ * 次のものは、デジタル庁デザインシステム（DADS）の決まりのまま残す。
+ *   - 外枠（ヘッダ・左メニュー・保護者のメニュー・緊急連絡の帯）の色・字・形（下の --chrome-*。画素まで変えない）
+ *   - フォーカスの印、本文・ボタン・入力欄 16px（14px より小さい字を使わない）、押せる大きさ 44px・高さ 48px、
+ *     文中のリンクの下線、(hover: hover) の端末にだけ付ける指したときの見た目、forced-colors の手当て、必須の印
+ *   - DADS の値：@digital-go-jp/design-tokens v2.0.1（MIT License）・HTML 実装例（design-system-example-components-html、MIT License）
  *   - ライセンスの表示は web/THIRD_PARTY_NOTICES.md
- *   - 使い方の決まり：https://design.digital.go.jp/dads/ の「基本デザイン」「コンポーネント」
  *
- * 基本設計書は色の具体値を定めていない。DADS の色の段階のうち、どれをどの役割に当てるかは
+ * 基本設計書は色の具体値を定めていない。M3 の役割の色をどの画面の役割に当てるか、M3 から外した所は
  * 仮置きである（web/仮置き値.md「1 画面の見た目」）。
  */
 
 :root {
   /*
-   * ---- DADS の色（プリミティブカラー）。画面からは直接使わず、下の「役割の色」へ割り当てる ----
+   * ---- DADS の色（プリミティブカラー）。外枠（下の --chrome-*）とフォーカスの印にだけ使う ----
    * 値は @digital-go-jp/design-tokens v2.0.1 の --color-primitive-*・--color-neutral-white/black・
-   * --color-neutral-solid-gray-* と同じ（v2.0.1 の dist/tokens.css と突き合わせて確かめた）
+   * --color-neutral-solid-gray-* と同じ（v2.0.1 の dist/tokens.css と突き合わせて確かめた）。
+   * 本文の色は下の Material Design 3 の色に移したので、使わなくなった段は消した
    */
-  --dads-yellow-50:   #fbf5e0;
   --dads-yellow-100:  #fff0b3;
   --dads-yellow-200:  #ffe380;
   --dads-yellow-300:  #ffd43d;
-  --dads-yellow-400:  #ffc700;
-  --dads-yellow-500:  #ebb700;
-  --dads-yellow-600:  #d2a400;
   --dads-yellow-700:  #b78f00;
-  --dads-red-50:      #fdeeee;
   --dads-red-900:     #ce0000;
-  --dads-red-1000:    #a90000;
-  --dads-blue-50:     #e8f1fe;
-  --dads-blue-700:    #264af4;
-  --dads-blue-800:    #0031d8;
   --dads-blue-900:    #0017c1;
   --dads-blue-1000:   #00118f;
-  --dads-magenta-800: #aa00aa;
-  --dads-green-50:    #e6f5ec;
   --dads-green-800:   #197a4b;
-  --dads-green-900:   #115a36;
   --dads-orange-800:  #c74700;
   --dads-white:       #ffffff;
   --dads-black:       #000000;
@@ -46,64 +39,119 @@
   --dads-gray-200:    #cccccc;
   --dads-gray-300:    #b3b3b3;
   --dads-gray-420:    #949494;
-  --dads-gray-536:    #767676;
   --dads-gray-600:    #666666;
   --dads-gray-700:    #4d4d4d;
   --dads-gray-900:    #1a1a1a;
 
   /*
-   * ---- 役割の色 ----
-   * テーマカラー：優しい黄色（基本設計書 3-5）。DADS の「キーカラー」の考え方に沿って、
-   * 黄色の色相の段階から選ぶ。黄色は白地の文字に使えない（コントラスト 4.5:1 に届かない）ため、
-   * 塗り・地・枠にだけ使い、文字はすべて黒に近い灰色にする
+   * ---- Material Design 3 の色（役割の色。--md-sys-color-*） ----
+   * 【仮置き】種の色 #ffc700（テーマカラーの優しい黄色。基本設計書「画面基本構成」(3-5)）から、
+   * Google の公式の道具 material-color-utilities（@material/material-color-utilities 0.3.0、Apache License 2.0）で1回だけ作って写した。
+   * 作り方：SchemeTonalSpot・明るい側（isDark false）・コントラスト 0（標準）。道具は作業場所の外で動かし、npm の依存には入れていない
+   * （web/仮置き値.md「1 画面の見た目」、web/THIRD_PARTY_NOTICES.md）。
+   * 名前は M3 の役割の名前（https://material-web.dev/theming/color/）。画面からは直接使わず、下の「画面の役割の色」へ割り当てる
    */
-  --c-primary:        var(--dads-yellow-400); /* 主ボタン・選んだ選択肢の塗り */
-  --c-primary-hover:  var(--dads-yellow-500);
-  --c-primary-active: var(--dads-yellow-600);
-  --c-primary-band:   var(--dads-yellow-200); /* ヘッダの帯 */
-  --c-primary-soft:   var(--dads-yellow-100); /* 現在地・選んでいる行の地 */
-  --c-primary-faint:  var(--dads-yellow-50);  /* 表の行を指したときの地 */
-  --c-primary-deep:   var(--dads-yellow-700); /* 黄色の塗りの枠・現在地の印・成長グラフの帯。白地に対して 3:1 */
-  --c-primary-ink:    var(--dads-gray-900);   /* 黄色の上の文字 */
+  --md-sys-color-primary:                   #755b0b;
+  --md-sys-color-on-primary:                #ffffff;
+  --md-sys-color-primary-container:         #ffdf94;
+  --md-sys-color-on-primary-container:      #594400;
+  --md-sys-color-secondary:                 #6a5d3f;
+  --md-sys-color-on-secondary:              #ffffff;
+  --md-sys-color-secondary-container:       #f3e1bb;
+  --md-sys-color-on-secondary-container:    #51452a;
+  --md-sys-color-error:                     #ba1a1a;
+  --md-sys-color-on-error:                  #ffffff;
+  --md-sys-color-error-container:           #ffdad6;
+  --md-sys-color-on-error-container:        #93000a;
+  --md-sys-color-surface:                   #fff8f1;
+  --md-sys-color-surface-container-lowest:  #ffffff;
+  --md-sys-color-surface-container-low:     #fcf2e5;
+  --md-sys-color-surface-container:         #f6eddf;
+  --md-sys-color-surface-container-high:    #f0e7d9;
+  --md-sys-color-surface-container-highest: #eae1d4;
+  --md-sys-color-on-surface:                #1f1b13;
+  --md-sys-color-on-surface-variant:        #4c4639;
+  --md-sys-color-outline:                   #7e7667;
+  --md-sys-color-outline-variant:           #cfc5b4;
+  --md-sys-color-inverse-surface:           #343027;
+  --md-sys-color-inverse-on-surface:        #f9f0e2;
+  --md-sys-color-inverse-primary:           #e5c36c;
+  /*
+   * カスタム色（M3 の「custom color」）。日誌の状態の札の色。もとの DADS の色（申請中 #0031d8・承認済 #197a4b・差し戻し #aa00aa）を
+   * 種の色に寄せて（harmonize）から、トーン 40（色）・100（上の字）・90（淡い地）・10（淡い地の上の字）を取った。同じ道具で作った
+   */
+  --md-custom-color-info:                   #5f3ce3;
+  --md-custom-color-on-info:                #ffffff;
+  --md-custom-color-info-container:         #e6deff;
+  --md-custom-color-on-info-container:      #1b0062;
+  --md-custom-color-success:                #2c6b28;
+  --md-custom-color-on-success:             #ffffff;
+  --md-custom-color-success-container:      #aef4a0;
+  --md-custom-color-on-success-container:   #002202;
+  --md-custom-color-returned:               #b40080;
+  --md-custom-color-on-returned:            #ffffff;
+  --md-custom-color-returned-container:     #ffd8e9;
+  --md-custom-color-on-returned-container:  #3c0028;
 
-  /* フォーカスの印。DADS は「黒の線＋黄色の縁」の2重にし、変えないことを求めている */
+  /*
+   * ---- 画面の役割の色 ----
+   * 画面の CSS はこの --c-* を使う。M3 の役割へ割り当てる（【仮置き】web/仮置き値.md「1 画面の見た目」）。
+   * テーマカラーの濃い段（primary、白の字と 6.45:1）を塗りボタンに、淡い段（secondary-container）を選んだものの地に使う
+   */
+  --c-primary:        var(--md-sys-color-secondary-container);    /* 選んだ選択肢の塗り（淡い地。上の字は --c-primary-ink） */
+  --c-primary-hover:  color-mix(in srgb, var(--md-sys-color-secondary-container), var(--md-sys-color-on-secondary-container) 8%);
+  --c-primary-active: color-mix(in srgb, var(--md-sys-color-secondary-container), var(--md-sys-color-on-secondary-container) 10%);
+  --c-primary-soft:   var(--md-sys-color-secondary-container);    /* 現在地・選んでいる行の地 */
+  --c-primary-faint:  var(--md-sys-color-surface-container);      /* 表の行を指したときの地 */
+  --c-primary-deep:   var(--md-sys-color-primary);                /* 選んだものの枠・現在地の印・成長グラフの帯 */
+  --c-primary-ink:    var(--md-sys-color-on-secondary-container); /* 淡い地の上の文字 */
+  /* 塗りボタン（M3 の Filled button）。指したときと押したときは、上の字の色を 8%・10% 重ねる（M3 の状態の層） */
+  --c-filled:         var(--md-sys-color-primary);
+  --c-on-filled:      var(--md-sys-color-on-primary);
+  --c-filled-hover:   color-mix(in srgb, var(--md-sys-color-primary), var(--md-sys-color-on-primary) 8%);
+  --c-filled-active:  color-mix(in srgb, var(--md-sys-color-primary), var(--md-sys-color-on-primary) 10%);
+
+  /* フォーカスの印。DADS は「黒の線＋黄色の縁」の2重にし、変えないことを求めている（M3 に合わせず、DADS のまま残す） */
   --c-focus:          var(--dads-black);
   --c-focus-ring:     var(--dads-yellow-300);
 
-  /* 警告色：黄色と対比の付く色（基本設計書 3-5）。DADS のエラーの色（赤）。午睡チェックの異常・範囲外の入力値に使う */
-  --c-alert:          var(--dads-red-900);
-  --c-alert-deep:     var(--dads-red-1000);
-  --c-alert-soft:     var(--dads-red-50);
+  /* 警告色：黄色と対比の付く色（基本設計書 3-5）。M3 の error。午睡チェックの異常・範囲外の入力値に使う */
+  --c-alert:          var(--md-sys-color-error);
+  --c-on-alert:       var(--md-sys-color-on-error);
+  --c-alert-deep:     var(--md-sys-color-on-error-container);
+  --c-alert-soft:     var(--md-sys-color-error-container);
 
-  /* 日誌の状態色。差し戻しは他と区別できる色にする（画面詳細図 3-1）。DADS のチップラベルの色の組を使う */
-  --c-draft:          var(--dads-gray-700);
-  --c-applied:        var(--dads-blue-700);
-  --c-returned:       var(--dads-magenta-800);
-  --c-approved:       var(--dads-green-800);
+  /* 日誌の状態色。差し戻しは他と区別できる色にする（画面詳細図 3-1）。上のカスタム色を使う */
+  --c-draft:          var(--md-sys-color-on-surface-variant);
+  --c-applied:        var(--md-custom-color-info);
+  --c-applied-soft:   var(--md-custom-color-info-container);
+  --c-on-applied-soft: var(--md-custom-color-on-info-container);
+  --c-returned:       var(--md-custom-color-returned);
+  --c-on-returned:    var(--md-custom-color-on-returned);
+  --c-approved:       var(--md-custom-color-success);
+  --c-approved-soft:  var(--md-custom-color-success-container);
+  --c-on-approved-soft: var(--md-custom-color-on-success-container);
 
-  /* 相手の操作がすぐに出る状態か（職員のヘッダ。components/LiveIndicator.tsx）。つながっている／切れて読み直している */
-  --c-live-on:        var(--dads-green-800);
-  --c-live-off:       var(--dads-orange-800);
+  /* 地の色。本文の地（surface-container-low）に、箱と入力欄の白（surface-container-lowest）を置く */
+  --c-bg:             var(--md-sys-color-surface-container-low);
+  --c-surface:        var(--md-sys-color-surface-container-lowest);
+  --c-surface-sub:    var(--md-sys-color-surface-container);
+  --c-surface-head:   var(--md-sys-color-surface-container-high);
 
-  /* 地の色。何もない地は白。帯や小見出しの地にだけ薄い灰色を敷く */
-  --c-bg:             var(--dads-white);
-  --c-surface:        var(--dads-white);
-  --c-surface-sub:    var(--dads-gray-50);
-  --c-surface-head:   var(--dads-gray-100);   /* 表の見出し行 */
+  /* 線。押せる部品の枠と境目は outline（白地に 4.49:1。WCAG 1.4.11 の 3:1 以上）、飾りの区切りだけ outline-variant */
+  --c-border:         var(--md-sys-color-outline);
+  --c-border-weak:    var(--md-sys-color-outline-variant);
+  --c-border-strong:  var(--md-sys-color-outline);
 
-  /* 線。部品の境目は白地に対して 3:1 の灰色（DADS のディバイダー・カードと同じ）、入力欄とボタンは一段濃く */
-  --c-border:         var(--dads-gray-420);
-  --c-border-weak:    var(--dads-gray-200);   /* 同じまとまりの中の区切り */
-  --c-border-strong:  var(--dads-gray-600);
-
-  /* 文字 */
-  --c-text:           var(--dads-gray-900);
-  --c-text-sub:       var(--dads-gray-700);
-  --c-text-weak:      var(--dads-gray-600);
-  --c-disabled:       var(--dads-gray-300);
-  --c-link:           var(--dads-blue-1000);
-  --c-link-hover:     var(--dads-blue-900);
-  --c-link-active:    var(--dads-orange-800);
+  /* 文字。リンクは primary で、下線を残す（DADS の決まり） */
+  --c-text:           var(--md-sys-color-on-surface);
+  --c-text-sub:       var(--md-sys-color-on-surface-variant);
+  --c-text-weak:      var(--md-sys-color-on-surface-variant);
+  /* 押せない部品の字と枠。M3 の on-surface の 38% を白地に重ねた色 */
+  --c-disabled:       color-mix(in srgb, var(--md-sys-color-on-surface) 38%, var(--md-sys-color-surface-container-lowest));
+  --c-link:           var(--md-sys-color-primary);
+  --c-link-hover:     var(--md-sys-color-primary);
+  --c-link-active:    var(--md-sys-color-on-primary-container);
 
   /*
    * ---- 外枠の色・字・形 ----
@@ -271,20 +319,20 @@ select:focus-visible, textarea:focus-visible, summary:focus-visible {
 }
 
 .btn-primary {
-  background: var(--c-primary);
-  border-color: var(--c-primary-deep);
-  color: var(--c-primary-ink);
+  background: var(--c-filled);
+  border-color: var(--c-filled);
+  color: var(--c-on-filled);
 }
 @media (hover: hover) {
-  .btn-primary:hover:not(:disabled) { background: var(--c-primary-hover); border-color: var(--c-primary-ink); }
+  .btn-primary:hover:not(:disabled) { background: var(--c-filled-hover); border-color: var(--c-filled-hover); }
 }
-.btn-primary:active:not(:disabled) { background: var(--c-primary-active); }
+.btn-primary:active:not(:disabled) { background: var(--c-filled-active); border-color: var(--c-filled-active); }
 .btn-primary:disabled { background: var(--c-disabled); border-color: var(--c-disabled); color: var(--c-surface-sub); }
 
 .btn-danger {
   background: var(--c-alert);
   border-color: var(--c-alert);
-  color: var(--dads-white);
+  color: var(--c-on-alert);
 }
 @media (hover: hover) {
   .btn-danger:hover:not(:disabled) { background: var(--c-alert-deep); border-color: var(--c-alert-deep); }
@@ -350,7 +398,7 @@ select, textarea {
 }
 input[readonly], textarea[readonly] { border-style: dashed; }
 input:disabled, select:disabled, textarea:disabled {
-  border-color: var(--c-disabled); background-color: var(--c-surface-sub); color: var(--dads-gray-536);
+  border-color: var(--c-disabled); background-color: var(--c-surface-sub); color: var(--c-border);
 }
 input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--c-alert); }
 /*
@@ -410,4 +458,4 @@ a:active { color: var(--c-link-active); }
 a.btn, a.btn:hover, a.btn:active { color: var(--c-text); text-decoration-thickness: 1px; }
 a.btn-quiet, a.btn-quiet:hover { color: var(--c-link); }
 a.btn-quiet:hover { color: var(--c-link-hover); text-decoration-thickness: 3px; }
-a.btn-primary, a.btn-primary:hover { color: var(--c-primary-ink); }
+a.btn-primary, a.btn-primary:hover { color: var(--c-on-filled); }
