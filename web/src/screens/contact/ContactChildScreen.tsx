@@ -33,7 +33,7 @@ import { MEAL_AMOUNT_STAFF_TEXT, MEAL_KIND_TEXT, TEXT } from '../../messages';
 import TodayTimeline from './TodayTimeline';
 import type { TimelineFix } from './TodayTimeline';
 import { dayLabel, eventText, homeLines } from './contactText';
-import FixDialog, { cancelAction, timeOptions, toiletChoices } from './FixDialog';
+import FixDialog, { cancelAction, timeOptions, toiletChoices, toiletLabel } from './FixDialog';
 import Composer from './Composer';
 import type { FixTarget } from './FixDialog';
 import PhotoSendDialog from './PhotoSendDialog';
@@ -276,7 +276,7 @@ export default function ContactChildScreen() {
                 <div className="contact-picks is-toilet" role="group" aria-label="排せつ">
                   {toiletChoices().map((choice) => (
                     <button key={choice} type="button" className="contact-pick" disabled={busy !== null}
-                      onClick={() => record('toilet', { child_id: childId, event_type: '2', toilet_label: choice })}>{choice}</button>
+                      onClick={() => record('toilet', { child_id: childId, event_type: '2', toilet_label: choice })}>{toiletLabel(choice)}</button>
                   ))}
                 </div>
               </div>
