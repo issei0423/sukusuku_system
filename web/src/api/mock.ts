@@ -2329,7 +2329,8 @@ export const napApi = {
     if (!db.classChildren.some((cc) => cc.class_id === session.class_id && cc.child_id === input.child_id)) {
       return fail('この園児のクラスの午睡チェックではありません。園児のクラスの午睡チェックへ記録してください');
     }
-    if (session.ended_at !== null) return fail('この午睡チェックは終了しています。画面を読み込み直してください');
+    // 文は基本設計書「メッセージ一覧」(4-12)（server/api_nap.go と同じ。ねた・おきたの napSleepTarget とも同じ）
+    if (session.ended_at !== null) return fail(MSG.sessionEnded);
     const r: NapRecord = {
       nap_record_id: nextId(), nap_session_id: sessionId, child_id: input.child_id,
       checked_at: now(), saved_at: now(),
@@ -2373,7 +2374,8 @@ export const napApi = {
     if (!db.classChildren.some((cc) => cc.class_id === session.class_id && cc.child_id === input.child_id)) {
       return fail('この園児のクラスの午睡チェックではありません。園児のクラスの午睡チェックへ記録してください');
     }
-    if (session.ended_at !== null) return fail('この午睡チェックは終了しています。画面を読み込み直してください');
+    // 文は基本設計書「メッセージ一覧」(4-12)（server/api_nap.go と同じ。ねた・おきたの napSleepTarget とも同じ）
+    if (session.ended_at !== null) return fail(MSG.sessionEnded);
     const a: NapAbnormal = {
       nap_abnormal_id: nextId(), nap_session_id: sessionId, staff_id: user.staff_id!,
       diary_id: null, child_id: input.child_id, found_at: foundAt, recorded_at: now(),

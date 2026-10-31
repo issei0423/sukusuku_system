@@ -394,8 +394,10 @@ func (a *app) handleNapRecord(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "この園児のクラスの午睡チェックではありません。園児のクラスの午睡チェックへ記録してください")
 		return
 	}
+	// 終わった実施への記録は 409 session_ended（基本設計書「メッセージ一覧」(4-12)、詳細設計書「誤りの種類」の session_ended。
+	// ねた・おきたの api_nap_sleep.go の napSleepTarget と同じ応答）
 	if endedAt.Valid {
-		writeErr(w, http.StatusConflict, "この午睡チェックは終了しています。画面を読み込み直してください")
+		writeJSON(w, http.StatusConflict, apiError{Message: msgSessionEnded, Kind: kindSessionEnded})
 		return
 	}
 	res, err := a.db.Exec(`INSERT INTO t_nap_record
@@ -694,8 +696,10 @@ func (a *app) handleRecordNapAbnormal(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "この園児のクラスの午睡チェックではありません。園児のクラスの午睡チェックへ記録してください")
 		return
 	}
+	// 終わった実施への記録は 409 session_ended（基本設計書「メッセージ一覧」(4-12)、詳細設計書「誤りの種類」の session_ended。
+	// ねた・おきたの api_nap_sleep.go の napSleepTarget と同じ応答）
 	if endedAt.Valid {
-		writeErr(w, http.StatusConflict, "この午睡チェックは終了しています。画面を読み込み直してください")
+		writeJSON(w, http.StatusConflict, apiError{Message: msgSessionEnded, Kind: kindSessionEnded})
 		return
 	}
 	notice, noticedAt, method, who := req.guardianNotice.columns()
