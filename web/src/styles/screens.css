@@ -155,7 +155,7 @@
  */
 .nap-record-row.has-abnormal { border-color: var(--c-alert); }
 /*
- * 1人の箱：1段目に名前の行と「ねた・おきた」、2段目に体位・呼吸・顔色と、右端に体温・「この子を記録」。
+ * 1人の箱：1段目に名前の行と「ねた・おきた」、2段目に体位・呼吸・顔色と、右端に体温・「記録する」。
  * 幅が足りなければ、右の部品から次の段へ送る（折り返しで決めるので、ブラウザの文字の大きさの設定を上げても欄に押し込まれない）
  */
 .nap-row-top { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); }
@@ -164,7 +164,7 @@
 .nap-row-body > .nap-inline-fields { flex: 1 1 auto; }
 .nap-row-body > .nap-row-actions { margin-left: auto; }
 /*
- * うつ伏せ・呼吸「確認できず」の注意の文は、選択肢のすぐ下に幅いっぱいで出し、体温・「この子を記録」をその下の段へ送る。
+ * うつ伏せ・呼吸「確認できず」の注意の文は、選択肢のすぐ下に幅いっぱいで出し、体温・「記録する」をその下の段へ送る。
  * 段が折れる幅（iPad 縦など）でも、保存のボタンより先に文が目に入るようにする（見直し 2026-10-31 の c5-06）
  */
 .nap-row-body > .alert { flex-basis: 100%; }
@@ -243,13 +243,13 @@
 .nap-inline-fields .nap-choice input:checked + span { flex-direction: column; gap: 0; }
 .nap-choice input:focus-visible + span { outline: 4px solid var(--c-focus); outline-offset: 2px; box-shadow: 0 0 0 2px var(--c-focus-ring); }
 .nap-row-actions { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
-/* 「この子を記録」を押せない理由。ボタンの左に2行で置き、段の幅を取りすぎないようにする */
+/* 「記録する」を押せない理由。ボタンの左に2行で置き、段の幅を取りすぎないようにする */
 .nap-save-hint { max-width: 9.5em; font-size: var(--fs-small); line-height: 1.5; color: var(--c-text-sub); }
 /* 対象外の行は欄を不透明度 0.75 で薄くする（.is-excluded）。補足の灰色のままでは白地に 4.5:1 を下回るので、黒で書く */
 .nap-card.is-excluded .nap-save-hint { color: var(--c-text); }
 /*
- * 2段目に体位・呼吸・顔色と、体温・「この子を記録」が1行で並ぶ幅（PC）では、押せない理由をボタンの上（選択肢の名前と同じ高さ）に
- * 1行で置き、横の幅を取らない。そうしないと体温・「この子を記録」が次の段へ落ち、箱が1段高くなる。
+ * 2段目に体位・呼吸・顔色と、体温・「記録する」が1行で並ぶ幅（PC）では、押せない理由をボタンの上（選択肢の名前と同じ高さ）に
+ * 1行で置き、横の幅を取らない。そうしないと体温・「記録する」が次の段へ落ち、箱が1段高くなる。
  * contain: inline-size で、理由の文の幅を並びの幅の計算に入れない
  */
 @container nap-row-body (min-width: 59.5em) {

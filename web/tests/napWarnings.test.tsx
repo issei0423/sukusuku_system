@@ -72,7 +72,7 @@ describe('午睡チェック画面：異常に気づいたときの文', () => {
     choose(row, 'position', '2');
     const text = alertTexts(row).find((t) => t.includes('うつ伏せ'));
     expect(text).toContain(PRONE_TEXT);
-    // 言い切ると記録が済んだと受け取られ、「この子を記録」を押さずに離れるおそれがある（PR #223 の自動レビュー）
+    // 言い切ると記録が済んだと受け取られ、「記録する」を押さずに離れるおそれがある（PR #223 の自動レビュー）
     expect(text).not.toContain('記録します');
 
     choose(row, 'position', '1');
@@ -80,10 +80,10 @@ describe('午睡チェック画面：異常に気づいたときの文', () => {
   });
 
   /*
-   * 文は選んだ欄（体位・呼吸・顔色）のすぐ後ろ、体温・「この子を記録」より前に置く。iPad 縦のように段が折れる幅でも、
-   * 保存のボタンより先に文が目に入るようにするため（見直し 2026-10-31 の c5-06。#349 で「この子を記録」の後ろへ移っていた）
+   * 文は選んだ欄（体位・呼吸・顔色）のすぐ後ろ、体温・「記録する」より前に置く。iPad 縦のように段が折れる幅でも、
+   * 保存のボタンより先に文が目に入るようにするため（見直し 2026-10-31 の c5-06。#349 で「この子を記録」（いまの「記録する」）の後ろへ移っていた）
    */
-  it('うつ伏せ・呼吸の文は、選んだ欄の後ろ、「この子を記録」より前に出す', async () => {
+  it('うつ伏せ・呼吸の文は、選んだ欄の後ろ、「記録する」より前に出す', async () => {
     const row = await firstRow();
     choose(row, 'position', '2');
     choose(row, 'breathing', '2');
@@ -108,7 +108,10 @@ describe('午睡チェック画面：異常に気づいたときの文', () => {
     expect(row.textContent).toContain(BREATHING_TEXT);
 
     const save = row.querySelector<HTMLButtonElement>('.nap-row-actions .btn-primary')!;
-    expect(save.textContent).toBe('この子を記録');
+    // 表示名は「記録する」、読み上げの名前は「（氏名）を記録する」（図/画面詳細図「午睡チェック画面」(5-1) 項目15。受け入れテスト 04-001・04-007）
+    expect(save.textContent).toBe('記録する');
+    const name = row.querySelector('.nap-row-head .name')!.textContent;
+    expect(save.getAttribute('aria-label')).toBe(`${name}を記録する`);
     expect(save.disabled).toBe(false);
     fireEvent.click(save);
     await waitFor(() => expect(row.textContent).toContain('保存しました'));

@@ -243,7 +243,8 @@ test.describe('午睡チェック画面：開始と出し分け', () => {
     for (const g of ['体位', '呼吸', '顔色']) await expect.soft(row.getByRole('group', { name: g })).toBeVisible();
     await expect.soft(row.getByRole('button', { name: /体温/ })).toBeVisible();
     await expect.soft(row, 'チェックした時刻').toContainText('チェックした時刻');
-    await expect.soft(row.getByRole('button', { name: '記録する', exact: true }), '「記録する」').toBeVisible();
+    await expect.soft(recordButton(row), '「記録する」').toBeVisible();
+    await expect.soft(recordButton(row), '行のボタンの表示名「記録する」').toHaveText('記録する');
     await expect.soft(row.getByRole('button', { name: /きょうは対象外/ })).toBeVisible();
 
     await expect.soft(startButton(page)).toBeHidden();
@@ -322,7 +323,7 @@ test.describe('午睡チェック画面：開始と出し分け', () => {
     for (const name of ['午睡チェックを開始する', '午睡チェックを終了', '異常を記録する']) {
       await expect.soft(main.getByRole('button', { name }).or(main.getByRole('link', { name })), `「${name}」が出ない`).toHaveCount(0);
     }
-    await expect.soft(main.getByRole('button', { name: /ねた$|おきた$|対象外|^記録する$|この子を記録/ }), '行の記録のボタンが出ない').toHaveCount(0);
+    await expect.soft(main.getByRole('button', { name: /ねた$|おきた$|対象外|^(.+を)?記録する$|この子を記録/ }), '行の記録のボタンが出ない').toHaveCount(0);
     await evidence(f.page, '04-003');
     await f.context.close();
     await s.context.close();
@@ -456,7 +457,7 @@ test.describe('午睡チェック画面：5分ごとの確認', () => {
     expect.soft(head, '上部の「次の確認」は開始時刻＋5分').toMatch(new RegExp(`次の確認.*${anyHm([addMinutesHM(t0, 4), addMinutesHM(t0, 5), addMinutesHM(t0, 6)]).source}`));
     expect.soft(head, '上部の「次の確認」の名前から1人目が外れる').not.toContain(names[0]);
     expect.soft(head, '記録済みが 1').toMatch(/記録済み\s*1\s*\//);
-    await expect.soft(row.getByRole('button', { name: '記録する', exact: true }), 'ボタンの表示名「記録する」').toBeVisible();
+    await expect.soft(recordButton(row), 'ボタンの表示名「記録する」').toHaveText('記録する');
     const rec = recordsOf(names[0]).at(-1);
     expect(rec, '確認の行').toBeTruthy();
     expect.soft(hmNear(pressed)).toContain(dbHM(rec?.checked_at));

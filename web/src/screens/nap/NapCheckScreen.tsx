@@ -466,7 +466,7 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
   const [justSaved, setJustSaved] = useState(false);
   const id = row.child.child_id;
   const name = row.child.child_name;
-  // 体位・呼吸・顔色の3つがそろうまで「この子を記録」は押せない。押せない理由をボタンの近くに出す（下の .nap-save-hint。
+  // 体位・呼吸・顔色の3つがそろうまで「記録する」は押せない。押せない理由をボタンの近くに出す（下の .nap-save-hint。
   // PC の幅ではボタンの上、iPad の幅ではボタンの左。screens.css の @container）
   const complete = !!position && !!breathing && !!complexion;
   const saveHintId = useId();
@@ -483,7 +483,7 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
   const startInput = <T,>(set: (value: T) => void) => (value: T) => { setJustSaved(false); set(value); };
 
   /*
-   * 「この子を記録」は、記録すると選択が空に戻って無効になり、押したボタンからフォーカスが外れて body に落ちる。
+   * 「記録する」は、記録すると選択が空に戻って無効になり、押したボタンからフォーカスが外れて body に落ちる。
    * 押したときにボタンにフォーカスがあった（キーボードで押したときなど）ら、次の園児の行の最初の選択肢へ移す。
    * 巡回の順に次の子へ進めるようにするため。最後の行では、記録した行の最初の選択肢へ戻す
    * （WCAG 2.4.3 フォーカス順序、GitHub Issue #213。共通の決まり：フォーカスを残すか、決めた場所へ移す）
@@ -510,7 +510,7 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
     if (busy || !position || !breathing || !complexion) return;
     if (temperature !== null && (temperature < TEMP_MIN || temperature > TEMP_MAX) && confirmedTemp !== temperature) {
       setConfirmedTemp(temperature);
-      setError(`体温が ${TEMP_MIN.toFixed(1)}〜${TEMP_MAX.toFixed(1)}℃ の外です。入力に誤りがなければ、もう一度「この子を記録」を押してください。`);
+      setError(`体温が ${TEMP_MIN.toFixed(1)}〜${TEMP_MAX.toFixed(1)}℃ の外です。入力に誤りがなければ、もう一度「記録する」を押してください。`);
       return;
     }
     // 保存している間もボタンは無効になるので、押した時点で調べておく
@@ -547,7 +547,7 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
     <section ref={rowRef} className={`nap-card nap-record-row${!excluded && due ? ' is-due' : ''}${abnormal ? ' has-abnormal' : ''}${excluded ? ' is-excluded' : ''}`}
       aria-label={`${name}の午睡チェック`}>
       {/*
-        1人の箱は 2〜3 段にする：1段目に名前の行と「ねた・おきた」、2段目に体位・呼吸・顔色と、右端に体温・「この子を記録」。
+        1人の箱は 2〜3 段にする：1段目に名前の行と「ねた・おきた」、2段目に体位・呼吸・顔色と、右端に体温・「記録する」。
         幅が足りなければ、右の部品から次の段へ送る（見直し 2026-10-31 の r2b-07。styles/screens.css の .nap-row-top・.nap-row-body）
       */}
       <div className="nap-row-top">
@@ -598,9 +598,9 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
         救命の手順そのものは書かない（同 (5-1) の項目10「呼吸」、利用手引き.md「午睡チェック（最も重要な運用）」(2-5)、
         要件定義書.md「午睡チェック」(4-5)「救急要請…の要否はシステムが判断せず、園の手順に従う」）。
         【仮置き】呼吸の文の言い回しは設計が定めていない（web/仮置き値.md）
-        置き場所は、選んだ欄のすぐ後ろ、体温・「この子を記録」より前。2段目の並び（.nap-row-body）の中で幅いっぱいにし、
-        体温・「この子を記録」はその下の段へ送る。iPad 縦のように段が折れる幅でも、保存のボタンより先に文が目に入るようにするため
-        （見直し 2026-10-31 の c5-06。#349 では「この子を記録」の下に出ていた）。文が出ているときだけ箱が伸びる
+        置き場所は、選んだ欄のすぐ後ろ、体温・「記録する」より前。2段目の並び（.nap-row-body）の中で幅いっぱいにし、
+        体温・「記録する」はその下の段へ送る。iPad 縦のように段が折れる幅でも、保存のボタンより先に文が目に入るようにするため
+        （見直し 2026-10-31 の c5-06。#349 では「この子を記録」（いまの「記録する」）の下に出ていた）。文が出ているときだけ箱が伸びる
       */}
       {position === '2' && <Alert>うつ伏せです。このまま記録し、仰向けに直したら、直したあとの向きをもう一度記録してください。</Alert>}
       {breathing === '2' && <Alert>呼吸が確認できません。ただちに、子どもへの対応と応援の要請を行ってください。異常時の記録は、そのあとでかまいません。</Alert>}
@@ -623,9 +623,15 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
           詳細設計書の決めたこと D-32 の「押せない形と文言」と同じ考え方。見直し 2026-10-31 の r2c-05）。【仮置き】文言（web/仮置き値.md）
         */}
         {!complete && <span id={saveHintId} className="nap-save-hint">体位・呼吸・顔色を選ぶと記録できます</span>}
+        {/*
+          表示名は「記録する」（図/画面詳細図「午睡チェック画面」(5-1) 項目15・注記）。前は「この子を記録」。
+          読み上げの名前は「（氏名）を記録する」。どの子の行のボタンかを名前で分かるようにする（「ねた」「体温」と同じく氏名を前に添え、
+          見えている文字をそのまま含める。WCAG 2.5.3 ラベルの中の名前）。保存している間は見えている「保存中…」をそのまま名前にする
+        */}
         <button ref={saveRef} type="button" className="btn-primary" onClick={save}
-          disabled={busy || !complete} aria-describedby={complete ? undefined : saveHintId}>
-          {busy ? '保存中…' : 'この子を記録'}
+          disabled={busy || !complete} aria-describedby={complete ? undefined : saveHintId}
+          aria-label={busy ? undefined : `${name}を記録する`}>
+          {busy ? '保存中…' : '記録する'}
         </button>
       </div>
       </div>

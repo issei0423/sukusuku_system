@@ -145,7 +145,7 @@ describe('午睡チェック画面の園児カード（GitHub Issue #142 の 3�
     choose('position', '1');
     choose('breathing', '1');
     choose('complexion', '1');
-    fireEvent.click(within(card).getByRole('button', { name: 'この子を記録' }));
+    fireEvent.click(within(card).getByRole('button', { name: '村田 美咲を記録する' }));
     await waitFor(() => expect(cardOf('村田 美咲').textContent).toContain('前回 13:30 仰向け'), { timeout: 3000 });
     expect(cardOf('村田 美咲').textContent).not.toContain('体位 うつ伏せ');
     expect(cardOf('村田 美咲').querySelector('.nap-row-head .tag-alert')).toBeNull();
