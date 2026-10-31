@@ -19,16 +19,18 @@
 /* 写っている子を選ぶ：顔写真（無ければ名前の1文字目の丸）と名前の格子 */
 .subject-picker { display: grid; gap: var(--sp-3); }
 .subject-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: var(--sp-2); }
+/* 顔写真と名前の格子の1つは、ボタンでもカードの形（角 12px）にする（ボタンの全丸にすると、背の高い箱の端が膨らむ） */
 .subject-cell {
   display: grid; justify-items: center; gap: var(--sp-1); min-height: 96px; padding: var(--sp-2);
-  white-space: normal; text-align: center;
+  white-space: normal; text-align: center; border-radius: var(--radius-card);
 }
 .subject-cell[aria-pressed="true"] { background: var(--c-primary-soft); border: 2px solid var(--c-primary-deep); }
 .subject-cell-name { font-weight: 700; }
 .subject-consent { font-size: var(--fs-small); font-weight: 700; color: var(--c-alert); }
 
 /* 写真の表示。押すと画面いっぱいに出す */
-.contact-photo-button { padding: 0; border: 1px solid var(--c-border); background: var(--c-surface); line-height: 0; min-height: 44px; min-width: 44px; }
+/* 写真がボタンいっぱいに入るので、ボタンの全丸にせず角 8px のままにする（全丸では写真の角が枠の外に出る） */
+.contact-photo-button { padding: 0; border: 1px solid var(--c-border); border-radius: var(--radius); background: var(--c-surface); line-height: 0; min-height: 44px; min-width: 44px; }
 .contact-photo { display: block; object-fit: cover; }
 .contact-photo.is-timeline { width: 160px; height: 120px; }
 .contact-photo.is-thumb { width: 56px; height: 56px; }

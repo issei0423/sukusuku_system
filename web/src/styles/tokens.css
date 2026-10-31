@@ -198,9 +198,27 @@
   --sp-5: 24px;
   --sp-6: 32px;
 
-  /* 角。DADS の「角丸スモール」8px を基本にし、小さいボタンは 6px。丸く膨らませない */
-  --radius:    8px;
-  --radius-sm: 6px;
+  /*
+   * 角。M3 の形のトークン（Jetpack Compose の ShapeTokens：extra-small 4・small 8・medium 12・large 16・extra-large 28・全丸）。
+   * 【仮置き】入力欄は 4、チップと札は 8、カードは 12、ダイアログは 28、ボタンは全丸、件数の札（バッジ）は全丸
+   */
+  --md-sys-shape-corner-extra-small: 4px;
+  --md-sys-shape-corner-small:       8px;
+  --md-sys-shape-corner-medium:      12px;
+  --md-sys-shape-corner-large:       16px;
+  --md-sys-shape-corner-extra-large: 28px;
+  --md-sys-shape-corner-full:        9999px;
+  --radius:        var(--md-sys-shape-corner-small);       /* 既定（チップ・札・小さな箱） */
+  --radius-input:  var(--md-sys-shape-corner-extra-small); /* 入力欄 */
+  --radius-card:   var(--md-sys-shape-corner-medium);      /* カード・警告の帯 */
+  --radius-dialog: var(--md-sys-shape-corner-extra-large); /* ダイアログ */
+  --radius-full:   var(--md-sys-shape-corner-full);        /* 件数の札 */
+  /*
+   * ボタンは高さの半分の角にする。1行のボタン（48px・44px）は全丸になり、
+   * 文が2行に折れて背が伸びたボタン（定型文の一覧など）は、端が半円に膨らまず角の丸い四角に留まる
+   */
+  --radius-button:    calc(var(--control-h) / 2);
+  --radius-button-sm: calc(var(--tap-min) / 2);
 
   /* 影。DADS は置いてあるだけの要素には影を付けない（高さレベル0）。重ねて出すものにだけ使う */
   --elevation-2: 0 2px 12px 2px rgba(0, 0, 0, .1), 0 1px 6px 0 rgba(0, 0, 0, .3);
@@ -245,24 +263,33 @@
 
 html, body, #root { height: 100%; }
 
-/* 本文：DADS の Std-16N-170（16px・行間 1.7・字間 0.02em） */
+/*
+ * 本文：M3 の body-large（16px・行間 24px）。字間は日本語の読みやすさのため DADS の 0.02em を残す。
+ * 長い文（段落・改行を残す文・チャットの吹き出し・複数行の入力欄）だけ行間を 1.7 に広げる
+ */
 body {
   margin: 0;
   font-family: var(--font);
   font-size: var(--fs-body);
-  line-height: 1.7;
+  line-height: 1.5;
   letter-spacing: .02em;
   color: var(--c-text);
   background: var(--c-bg);
   -webkit-text-size-adjust: 100%;
 }
 
-/* 見出し：DADS の Std-24B-150／Std-18B-160／Std-17B-170。太字は見出し・ラベル・ボタンに限る */
-h1, h2, h3, h4 { margin: 0; font-weight: 700; }
-h1 { font-size: 1.5rem; line-height: 1.5; }
-h2 { font-size: 1.125rem; line-height: 1.6; }
-h3 { font-size: 1.0625rem; line-height: 1.7; }
+/*
+ * 見出し：M3 の字の段（Jetpack Compose の TypeScaleTokens）。
+ * h1＝headline-small（24/32・Regular）、h2＝title-large（22/28・Regular）、h3＝title-medium（16/24・Medium）。
+ * 【仮置き】M3 の Medium（500）は 600 にする。iPad・iPhone のヒラギノ角ゴシックに 500 の太さが無く、500 は細字（W3）で出るため（推測。実機で未確認）
+ */
+h1, h2, h3, h4 { margin: 0; font-weight: 400; }
+h1 { font-size: 1.5rem;   line-height: calc(32 / 24); }
+h2 { font-size: 1.375rem; line-height: calc(28 / 22); }
+h3 { font-size: 1rem;     line-height: 1.5; font-weight: 600; }
+h4 { font-weight: 600; }
 p  { margin: 0 0 var(--sp-3); }
+p, .pre-wrap, .msg .bubble, textarea { line-height: 1.7; }
 
 /*
  * ---- 押せるもの。タップ領域 44×44px 以上（基本設計書 3-5） ----
@@ -277,7 +304,7 @@ button, .btn {
   min-width: var(--tap-min);
   padding: var(--sp-2) var(--sp-4);
   border: 1px solid var(--c-border-strong);
-  border-radius: var(--radius);
+  border-radius: var(--radius-button);
   background: var(--c-surface);
   color: var(--c-text);
   font: inherit;
@@ -365,7 +392,7 @@ select:focus-visible, textarea:focus-visible, summary:focus-visible {
 .btn > span:first-of-type:not(:last-of-type) { text-align: left; }
 
 /* 小さいボタン（DADS のボタン S の見た目）。押せる大きさは 44px を保つ */
-.btn-sm    { min-height: var(--tap-min); padding: var(--sp-1) var(--sp-3); border-radius: var(--radius-sm); }
+.btn-sm    { min-height: var(--tap-min); padding: var(--sp-1) var(--sp-3); border-radius: var(--radius-button-sm); }
 /*
  * 幅いっぱいのボタン。文字は中央に置くため、左右の余白は 8px に詰め、字間は付けない。
  * iPad 横向き（1024px）の職員ダッシュボードで「午睡チェックが実施中です（開く）」を1行に収め、
@@ -382,7 +409,7 @@ select, textarea {
   min-height: var(--control-h);
   padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--c-border-strong);
-  border-radius: var(--radius);
+  border-radius: var(--radius-input);
   background: var(--c-surface);
   color: var(--c-text);
   font: inherit;
