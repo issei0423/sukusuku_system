@@ -68,6 +68,8 @@ var sqlCommentsNotShown = []struct{ file, name string }{
 	{"contact_ddl.go", "contactDDL"},
 }
 
+// SQL の行のコメント。SQL の文字列（'a--b'）の中の「--」も、そこから後ろを外してしまう。いまの contactDDL の値に
+// 「--」は無い。名指しした定数の値に「--」を入れるときは、ここを直す
 var sqlLineComment = regexp.MustCompile(`--[^\n]*`)
 
 type literalText struct {
