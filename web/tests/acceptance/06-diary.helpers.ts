@@ -480,8 +480,13 @@ export async function applyDiary(page: Page, id: number): Promise<void> {
   if (res.status !== 200) throw new Error(`下ごしらえ：日誌 ${id} を申請できません（${res.status} ${res.text}）`);
 }
 
+/**
+ * 申請中の日誌を承認する。承認画面と同じく、読んだ版（updated_at）を送る。版を送らない・違う版を送ると 409
+ * （承認の版の照合、#340。取り消しの revokeDiary と同じ形）。版は申請・作成の応答のあとに、データベースから読み直す
+ */
 export async function approveDiary(page: Page, id: number): Promise<void> {
-  const res = await api(page, 'POST', `/api/diaries/${id}/approve`, {});
+  const row = diaryById(id);
+  const res = await api(page, 'POST', `/api/diaries/${id}/approve`, { updated_at: row?.updated_at });
   if (res.status !== 200) throw new Error(`下ごしらえ：日誌 ${id} を承認できません（${res.status} ${res.text}）`);
 }
 
