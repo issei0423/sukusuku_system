@@ -22,6 +22,7 @@ import type { BodyPosition, Breathing, Complexion, NapRecord } from '../../api/t
 import type { NapChildState } from '../../api/shapes';
 import SleepControls from './SleepControls';
 import { EXCLUSION_REASON_LABEL } from '../../api/napReport';
+import { durationText } from '../contact/contactText';
 import { focusAfter, focusableIn, focusedNow } from '../../focusAfter';
 import { useNapSound } from '../../napSound';
 import { StartIcon, EndIcon, CloseIcon } from '../../components/icons';
@@ -48,16 +49,25 @@ export default function NapCheckScreen() {
    * 移したフォーカスが body に落ちる（WCAG 2.4.3、GitHub Issue #265）。読み終えたクラスは覚えておく
    */
   const loadedClass = useRef<number | null>(null);
+  /*
+   * 実施中の実施と、実施が無いときはその日に最後に終えた実施を読む。終えたあとも園児の行を状態の表示だけで出すため
+   * （詳細設計書「行の状態ごとの表示」(2-4 (2)) の「実施の後」、「午睡の園児」(3-4) の「ねた（おきた時刻なし）」）
+   */
   const session = useAsync(async () => {
     if (!hasClass) return null;
     const active = await api.activeSession(classId, today(), user!);
+    const ended = active ? null : await api.lastEndedSession(classId, today(), user!);
     loadedClass.current = classId;
-    return active;
+    return { active, ended };
   }, [classId, tick], { live: onNapClass(classId) });
   const sessionLoading = session.loading && loadedClass.current !== classId;
+  const s = session.data?.active ?? null;
+  const endedSession = session.data?.ended ?? null;
+  // 園児の行に出す実施。実施中ならそれ、無ければ最後に終えた実施、どちらも無ければ実施の前（行だけを出す）
+  const rowsSessionId = s?.nap_session_id ?? endedSession?.nap_session_id ?? null;
   const state = useAsync(
-    async () => (hasClass ? api.classState(user!, classId, session.data?.nap_session_id ?? null) : []),
-    [classId, session.data?.nap_session_id, tick],
+    async () => (hasClass ? api.classState(user!, classId, rowsSessionId) : []),
+    [classId, rowsSessionId, tick],
     { live: onNapClass(classId) },
   );
 
@@ -87,11 +97,11 @@ export default function NapCheckScreen() {
    */
   const startButton = useRef<HTMLButtonElement>(null);
   const end = async () => {
-    if (!session.data) return;
+    if (!s) return;
     const pressed = focusedNow();
     setEnding(false);
     setError(null);
-    try { endedByUser.current = true; await api.endSession(user!, session.data.nap_session_id); setTick((n) => n + 1); }
+    try { endedByUser.current = true; await api.endSession(user!, s.nap_session_id); setTick((n) => n + 1); }
     catch (e) {
       // 自動で解除された・ほかの職員が終了した実施は、もう終了できない（GitHub Issue #158）。読み直して今の状態を出す
       endedByUser.current = false;
@@ -103,7 +113,6 @@ export default function NapCheckScreen() {
 
   // 担当クラスの無い一般（フリー）は閲覧のみ。記録の操作は出さない（基本設計書「権限と利用可能機能」(6-1) ※1）
   const readOnly = user!.role === '2' && !user!.class_id;
-  const s = session.data;
   const allRows = state.data ?? [];
   // 「きょうは対象外」の子は、タイマーと未記録の数から外す（詳細設計書「タイマー」(2-4 (3))）
   const rows = allRows.filter((r) => !r.exclusion);
@@ -251,11 +260,14 @@ export default function NapCheckScreen() {
 
       {sessionLoading && <Loading />}
 
-      {!sessionLoading && !s && (
+      {!sessionLoading && !s && (<>
         <section className="card">
+          {/* 【仮置き】終えた実施があるときの文（「きょうの午睡チェックは HH:MM に終了しました。」）は設計に無い（web/仮置き値.md） */}
           {autoClosed
             ? <Alert>午睡の時間帯を過ぎたため、午睡チェックを自動で終了しました。続けるときは、もう一度開始してください。</Alert>
-            : <Empty text="午睡チェックはまだ開始していません。" />}
+            : <Empty text={endedSession?.ended_at
+              ? `きょうの午睡チェックは ${formatHM(endedSession.ended_at)} に終了しました。`
+              : '午睡チェックはまだ開始していません。'} />}
           {readOnly ? (
             <div className="muted" style={{ marginTop: 12 }}>全クラスを閲覧のみで見られます。午睡チェックの開始・記録はできません。</div>
           ) : (<>
@@ -268,7 +280,16 @@ export default function NapCheckScreen() {
           </div>
           </>)}
         </section>
-      )}
+
+        {/*
+          実施の前・実施の後も、園児の行を1人1行で出す（図/画面詳細図「午睡チェック画面」(5-1) 項目7、
+          詳細設計書「行の状態ごとの表示」(2-4 (2)) の「実施の前」「実施の後」）。押せるものは置かない
+        */}
+        {state.error && <ErrorBox text={state.error} />}
+        <div className="nap-grid">
+          {allRows.map((r) => <NapClosedRow key={r.child.child_id} row={r} canStart={!readOnly} />)}
+        </div>
+      </>)}
 
       {s && (
         <>
@@ -614,6 +635,39 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
       {temperatureOpen && <TemperaturePicker name={name} onClose={() => setTemperatureOpen(false)}
         onSelect={(value) => { setTemperature(value); setTemperatureOpen(false); }} />}
       </>)}
+    </section>
+  );
+}
+
+/**
+ * 実施が無いときの園児の行（詳細設計書「行の状態ごとの表示」(2-4 (2)) の「実施の前」「実施の後」）。押せるものは置かない。
+ * 実施の後は、その日に最後に終えた実施の状態だけを出す（「午睡の園児」(3-4)：おきたの無いまま終わった組は
+ * 「13:05 ねた（おきたが未記録）」。おきたは推測で入れない）。直すのは連絡帳（園児）画面（3-5）。
+ * 開始すれば押せるようになることを、各行に「午睡チェックを開始すると押せます」で示す（閲覧のみの職員には出さない）。
+ * 【仮置き】実施の後の行にも、新しく開始できることを同じ文で添える（設計は実施の前と後を別の行の状態にしている。web/仮置き値.md）
+ */
+function NapClosedRow({ row, canStart }: { row: NapChildState; canStart: boolean }) {
+  const name = row.child.child_name;
+  const open = row.sleeps.find((x) => !x.woke_at) ?? null;
+  const last = row.sleeps.at(-1) ?? null;
+  let sleepState = '';
+  if (row.exclusion) sleepState = `対象外（${EXCLUSION_REASON_LABEL[row.exclusion.reason]}）`;
+  else if (open) sleepState = `${formatHM(open.slept_at)} ねた（おきたが未記録）`;
+  else if (last?.woke_at) sleepState = `${formatHM(last.slept_at)}〜${formatHM(last.woke_at)}（${durationText(last.slept_at, last.woke_at)}）`;
+  return (
+    <section className="nap-card" aria-label={`${name}の午睡チェック`}>
+      <div className="nap-row-top">
+        <div className="nap-row-head">
+          <strong className="name">{name}</strong>
+          {row.latest && <span className="last">前回 {formatHM(row.latest.checked_at)} {BODY_POSITION[row.latest.body_position]}</span>}
+          {row.latest && <LatestObservation record={row.latest} />}
+          <span className="last">平熱 {formatTemperature(row.child.normal_temperature)}℃</span>
+        </div>
+        <div className="nap-sleep-controls">
+          {sleepState && <span className="nap-sleep-state">{sleepState}</span>}
+          {canStart && <span className="muted">午睡チェックを開始すると押せます</span>}
+        </div>
+      </div>
     </section>
   );
 }

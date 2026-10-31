@@ -58,12 +58,51 @@ func (a *app) handleActiveNapSession(w http.ResponseWriter, r *http.Request) {
 	if date == "" {
 		date = today()
 	}
+	/*
+	 * ended=1 のときは、その日に最後に終えた実施（自動で解除したものを含む）を返す。無ければ null。
+	 * 午睡チェック画面が、終えたあとも園児の行を状態の表示だけで出すため（詳細設計書「行の状態ごとの表示」(2-4 (2)) の「実施の後」、
+	 * 「午睡の園児」(3-4) の「ねた（おきた時刻なし）」）。
+	 * 【仮置き】設計の経路（図/インタフェース一覧「GET /api/nap/session」）に、終えた実施を引く口が無いので、同じ経路に
+	 * 問い合わせの値を足した（web/仮置き値.md）。参照の範囲は実施中のものと同じ（一般は自クラスに限る）。
+	 * 画面側のモック（web/src/api/mock.ts の lastEndedSession）と同じ規則
+	 */
+	if r.URL.Query().Get("ended") == "1" {
+		s, err := a.lastEndedNapSession(classID, date)
+		if err != nil {
+			writeJSON(w, http.StatusOK, nil)
+			return
+		}
+		writeJSON(w, http.StatusOK, s)
+		return
+	}
 	s, err := a.napSession(classID, date)
 	if err != nil {
 		writeJSON(w, http.StatusOK, nil)
 		return
 	}
 	writeJSON(w, http.StatusOK, s)
+}
+
+// lastEndedNapSession は、そのクラスのその日に最後に終えた実施を返す（終えた時刻が新しいもの、同じなら後に作ったもの）
+func (a *app) lastEndedNapSession(classID int64, date string) (*NapSession, error) {
+	a.autoCloseNapSessions()
+	var (
+		s        NapSession
+		endStaff sql.NullString
+		endAt    sql.NullString
+	)
+	err := a.db.QueryRow(`SELECT nap_session_id, class_id, session_date, started_staff_id, started_at,
+		ended_staff_id, ended_at, is_auto_closed
+		FROM t_nap_session WHERE class_id = ? AND session_date = ? AND ended_at IS NOT NULL
+		ORDER BY ended_at DESC, nap_session_id DESC LIMIT 1`, classID, date).
+		Scan(&s.NapSessionID, &s.ClassID, &s.SessionDate, &s.StartedStaffID, &s.StartedAt,
+			&endStaff, &endAt, &s.IsAutoClosed)
+	if err != nil {
+		return nil, err
+	}
+	s.EndedStaffID = nullStr(endStaff)
+	s.EndedAt = nullStr(endAt)
+	return &s, nil
 }
 
 func (a *app) napSession(classID int64, date string) (*NapSession, error) {

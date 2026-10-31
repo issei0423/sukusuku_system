@@ -2236,6 +2236,21 @@ export const napApi = {
     return ok(db.napSessions.find((s) => s.class_id === classId && s.session_date === date && s.ended_at === null) ?? null);
   },
 
+  /**
+   * その日に最後に終えた実施（自動で解除したものを含む）。無ければ null。午睡チェック画面が、終えたあとも園児の行を
+   * 状態の表示だけで出すため（詳細設計書「行の状態ごとの表示」(2-4 (2)) の「実施の後」）。参照の範囲は activeSession と同じ。
+   * 【仮置き】設計に経路が無いので、GET /api/nap/session に ended=1 を足した（web/仮置き値.md）。
+   * サーバ側は server/api_nap.go の lastEndedNapSession（終えた時刻が新しいもの、同じなら後に作ったもの）
+   */
+  async lastEndedSession(classId: number, date: string, user?: SessionUser): Promise<NapSession | null> {
+    if (user && !canReadClass(user, classId)) return fail('このクラスの午睡チェックを参照する権限がありません');
+    autoCloseNapSessions();
+    const ended = db.napSessions
+      .filter((s) => s.class_id === classId && s.session_date === date && s.ended_at !== null)
+      .sort((a, b) => b.ended_at!.localeCompare(a.ended_at!) || b.nap_session_id - a.nap_session_id);
+    return ok(ended[0] ?? null);
+  },
+
   async startSession(user: SessionUser, classId: number, date: string): Promise<NapSession> {
     if (user.role === '3') return fail('午睡チェックは職員のみが行えます');
     if (!canUseClass(user, classId)) return fail('このクラスの午睡チェックを開始する権限がありません');
