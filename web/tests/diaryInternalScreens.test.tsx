@@ -162,29 +162,39 @@ describe('承認待ち一覧画面と日誌承認画面（2-13 (1)）', () => {
     expect(statusOf(d.diary_id)).toBe('1');
   });
 
-  it('開いたあとに取り下げて本文と共有を変えて申請し直されたら、古い画面の承認は断って文を出し、読み直した本文で承認できる', async () => {
+  /*
+   * 断ったあとは、日誌と写真の両方を読み直し、読み直したことを伝える文を出す（照合 c5-10。文は【仮置き】web/仮置き値.md）。
+   * 申請し直しでは写真も差し替えられる（server/api_diary_write.go の replaceDiaryAttachments）
+   */
+  it('開いたあとに取り下げて本文と共有を変えて申請し直されたら、古い画面の承認は断って文を出し、読み直した本文と写真で承認できる', async () => {
     const d = await api.saveDiary(teacher, {
       record_type: '1', child_id: 'C001', class_id: 1, diary_date: today(), body: '管理者が読んだ本文',
     }, '2');
     open(`/staff/admin/approval/${d.diary_id}`, admin);
     await settled();
     expect(document.body.textContent).toContain('管理者が読んだ本文');
-    // 画面を開いたあとに、申請した本人が取り下げ、本文と「保護者へ共有する」を変えて申請し直した
+    const photos = () => document.querySelectorAll('.card .row .tag-plain').length;
+    expect(photos()).toBe(0);
+    // 画面を開いたあとに、申請した本人が取り下げ、本文と「保護者へ共有する」と写真を変えて申請し直した
     await api.withdrawDiary(teacher, d.diary_id, d.updated_at);
     const lock = await api.acquireLock(teacher, d.diary_id);
     if (!('token' in lock)) throw new Error(`ロックを取れませんでした（${lock.heldBy}さんが編集中）`);
     await api.saveDiary(teacher, {
       diary_id: d.diary_id, record_type: '1', child_id: 'C001', class_id: 1, diary_date: today(),
       body: '書き換えた本文', share_to_guardian: true, lock_token: lock.token,
+      attachments: [{ file_path: 'diary/a.jpg', file_type: 'image/jpeg' }, { file_path: 'diary/b.jpg', file_type: 'image/jpeg' }],
     }, '2');
 
-    // 古い画面のまま「承認する」を押すと断られ、文を出して読み直す
+    // 古い画面のまま「承認する」を押すと断られ、日誌と写真を読み直して、読み直したことを伝える
     fireEvent.click(button('承認する')!);
-    await waitFor(() => expect(document.body.textContent).toContain('他の職員が更新しています。内容を再読み込みしてください。'));
+    await waitFor(() => expect(document.body.textContent)
+      .toContain('ほかの職員が日誌を更新したので、いまの内容を読み直しました。確かめてからもう一度押してください。'));
+    expect(document.body.textContent).not.toContain('内容を再読み込みしてください');
     expect(statusOf(d.diary_id)).toBe('2');
     await waitFor(() => expect(document.body.textContent).toContain('書き換えた本文'));
     expect(document.body.textContent).not.toContain('管理者が読んだ本文');
     expect(document.body.textContent).toContain('保育士が保護者への共有を選んでいます。');
+    await waitFor(() => expect(photos()).toBe(2));
 
     // 読み直した本文を見てから押すと承認できる
     fireEvent.click(button('承認して保護者へ共有する')!);

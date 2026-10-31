@@ -20,7 +20,7 @@ import { DIARY_RECORD_TYPE, DIARY_STATUS } from '../../api/codes';
 import { formatYMD, formatMDHM } from '../../api/util';
 import { IncidentSummary } from './IncidentFields';
 import { ContactChangesBand } from './ContactChangesBand';
-import { hiddenContactItemsNote } from '../../messages';
+import { DIARY_APPROVE_RELOADED, hiddenContactItemsNote } from '../../messages';
 import { BackIcon, ReturnIcon, ApproveIcon } from '../../components/icons';
 
 export default function DiaryApproveScreen() {
@@ -55,9 +55,16 @@ export default function DiaryApproveScreen() {
   const shares = d.record_type === '1' && !!d.share_to_guardian;
 
   /*
+   * 断られたら、日誌と写真の両方を読み直す。申請し直しでは写真も差し替えられる（server/api_diary_write.go の
+   * replaceDiaryAttachments）ので、日誌だけを読み直すと、新しい本文と古い写真の枚数で承認してしまう（照合 c5-10）
+   */
+  const reloadAll = () => { diary.reload(); attachments.reload(); };
+
+  /*
    * 読んだ版を添えて承認する（取り下げ・承認の取り消しと同じ。詳細設計書「日誌の状態」(3-6)）。開いているあいだに
-   * 取り下げて本文・園児・共有を変えて申請し直されていたら、サーバが 409「他の職員が更新しています。…」で断る。
-   * そのときは文を出して読み直し、いまの本文を見てからもう一度押せるようにする
+   * 取り下げて本文・園児・共有を変えて申請し直されていたら、サーバが 409（kind が version_conflict）で断る。
+   * そのときは読み直し、読み直したことを伝える文を出して、いまの本文と写真を見てからもう一度押せるようにする
+   * （【仮置き】文は web/src/messages.ts の DIARY_APPROVE_RELOADED）
    */
   const approve = async () => {
     setBusy(true); setError(null);
@@ -65,7 +72,11 @@ export default function DiaryApproveScreen() {
       await api.approveDiary(user!, diaryId, d.updated_at);
       notify(`${target}の${DIARY_RECORD_TYPE[d.record_type]}を承認しました${shares ? '。保護者へ共有しました' : ''}`);
       navigate('/staff/admin/approval');
-    } catch (e) { setError((e as Error).message); diary.reload(); } finally { setBusy(false); }
+    } catch (e) {
+      const err = e as Error & { kind?: string };
+      setError(err.kind === 'version_conflict' ? DIARY_APPROVE_RELOADED : err.message);
+      reloadAll();
+    } finally { setBusy(false); }
   };
 
   const sendBack = async () => {
@@ -74,7 +85,7 @@ export default function DiaryApproveScreen() {
       await api.returnDiary(user!, diaryId, reason);
       notify(`${target}の${DIARY_RECORD_TYPE[d.record_type]}を差し戻しました`);
       navigate('/staff/admin/approval');
-    } catch (e) { setError((e as Error).message); diary.reload(); } finally { setBusy(false); }
+    } catch (e) { setError((e as Error).message); reloadAll(); } finally { setBusy(false); }
   };
 
   return (

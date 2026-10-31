@@ -1483,7 +1483,8 @@ const diaryApi2 = {
     // 自分が申請した日誌は承認できない。申請者の列（applied_staff_id）で判定し、作成者が管理者でも、ほかの職員が
     // 申請したものは承認できる（詳細設計書「日誌の状態」(3-6)。GitHub Issue #106・#174）
     if (d.applied_staff_id === user.staff_id) return fail(DIARY_MSG.ownApplication);
-    if (d.updated_at !== updatedAt) return fail(DIARY_MSG.versionConflict);
+    // 版の食い違いは kind を添える（server/api_diary_write.go の kindVersionConflict と同じ。画面は読み直したことを伝える文に替える）
+    if (d.updated_at !== updatedAt) return failKind(DIARY_MSG.versionConflict, 'version_conflict');
 
     d.status = '3';
     d.approved_staff_id = user.staff_id;
