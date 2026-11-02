@@ -66,6 +66,15 @@ describe('異常時記録画面の行から、この園児の連絡帳・個人�
     await waitFor(() => expect(document.querySelector('.channel.current')?.textContent).toContain('西田 太郎の園とのやりとり'), { timeout: 3000 });
   });
 
+  it('その園児の個人チャットが一覧に無いときは、別のチャンネルを黙って開かず、その旨を出す（ほかの家庭へ書き込まないように）', async () => {
+    // C999 の園児はいない（部屋も無い）
+    open('/staff/chat?child=C999', teacher);
+    await waitFor(() => expect(screen.getByText(/この園児の個人チャットは、チャンネルの一覧にありません。/)).toBeTruthy(), { timeout: 3000 });
+    expect(document.querySelector('.channel')).toBeTruthy();
+    expect(document.querySelector('.channel.current')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'チャンネルを選んでください' })).toBeTruthy();
+  });
+
   it('「この園児の連絡帳」を押すと、連絡帳（園児）画面でその園児のページを開く', async () => {
     open('/staff/nap/abnormal', teacher);
     const a = db.napAbnormals[0];
