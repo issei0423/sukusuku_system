@@ -70,8 +70,9 @@ export default function ChildListScreen() {
       <section className="card">
         <div className="filterbar">
           <Field label="クラス">
+            {/* 担任は自分のクラスだけ。変えられない値なので、灰の箱にせず文字で見せる（.select-fixed。r2c-05） */}
             <select value={classId} onChange={(e) => setClassId(e.target.value ? Number(e.target.value) : '')}
-              disabled={fixedClass}>
+              disabled={fixedClass} className={fixedClass ? 'select-fixed' : undefined}>
               {!fixedClass && <option value="">すべて</option>}
               {classesForUser.map((c) => <option key={c.class_id} value={c.class_id}>{c.class_name}</option>)}
             </select>
@@ -112,10 +113,12 @@ export default function ChildListScreen() {
                   <td className="nowrap"><ClassCell childId={c.child_id} /></td>
                   <td><AllergyCell childId={c.child_id} /></td>
                   <td className="nowrap">
-                    <Link className="btn btn-sm" to={`/staff/diary/timeline/${c.child_id}`}>記録</Link>
-                    {isAdmin && <Link className="btn btn-sm" to={`/staff/children/${c.child_id}/edit`}>編集</Link>}
+                    {/* 行ごとにくり返すので塗らない。開くだけの「記録」はテキスト、作業の「編集」はトーナル、「取消」はテキスト（r2c-03）。
+                        「記録」に進む印は添えない（列の多い表で、印のぶん iPad 横向きの「編集」が画面の外へ押し出されるため） */}
+                    <Link className="btn btn-sm btn-quiet" to={`/staff/diary/timeline/${c.child_id}`}>記録</Link>
+                    {isAdmin && <Link className="btn btn-sm btn-tonal" to={`/staff/children/${c.child_id}/edit`}>編集</Link>}
                     {isAdmin && removableIds.has(c.child_id) && (
-                      <button className="btn-sm" onClick={() => { setRemoveError(null); setRemoving(c); }}>取消</button>
+                      <button className="btn-sm btn-quiet" onClick={() => { setRemoveError(null); setRemoving(c); }}>取消</button>
                     )}
                   </td>
                 </tr>

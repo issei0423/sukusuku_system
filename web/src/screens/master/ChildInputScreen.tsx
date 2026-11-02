@@ -229,7 +229,7 @@ export default function ChildInputScreen() {
                 <input type="text" value={a.response} placeholder="除去食"
                   onChange={(e) => set('allergies', form.allergies.map((x, j) => j === i ? { ...x, response: e.target.value } : x))} />
               </Field>
-              <button className="btn-sm" onClick={() => set('allergies', form.allergies.filter((_, j) => j !== i))}>削除</button>
+              <button className="btn-sm btn-quiet" onClick={() => set('allergies', form.allergies.filter((_, j) => j !== i))}>削除</button>
             </div>
           ))}
           <button onClick={() => set('allergies', [...form.allergies, { target_food: '', symptom: '', response: '' }])}>
@@ -245,7 +245,7 @@ export default function ChildInputScreen() {
             <div className="row" key={i}>
               <input type="text" value={m} style={{ flex: 1 }}
                 onChange={(e) => set('medical_histories', form.medical_histories.map((x, j) => j === i ? e.target.value : x))} />
-              <button className="btn-sm" onClick={() => set('medical_histories', form.medical_histories.filter((_, j) => j !== i))}>削除</button>
+              <button className="btn-sm btn-quiet" onClick={() => set('medical_histories', form.medical_histories.filter((_, j) => j !== i))}>削除</button>
             </div>
           ))}
           <button onClick={() => set('medical_histories', [...form.medical_histories, ''])}><AddIcon />既往歴を追加</button>

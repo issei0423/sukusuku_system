@@ -194,17 +194,19 @@ export default function StaffAccountsScreen() {
                   <td className="nowrap">
                     <Tag label={ACCOUNT_STATUS[r.account.status]}
                       className={r.account.status === '1' ? 'tag-approved' : 'tag-draft'} />
-                    {r.locked && <> <Tag label="ロック中" className="tag-returned" /></>}
+                    {/* ロック中は警告色の札（.tag-alert）。差し戻しの色は日誌の差し戻しだけ（r2c-02） */}
+                    {r.locked && <> <Tag label="ロック中" className="tag-alert" /></>}
                     {r.account.is_temp_password && <> <Tag label="一時パスワード" className="tag-applied" /></>}
                   </td>
                   <td className="nowrap">
-                    {r.locked && <button className="btn-sm" onClick={() => unlock(r)}>ロック解除</button>}
-                    <button className="btn-sm" onClick={() => openEdit(r)}>変更</button>
-                    <button className="btn-sm" onClick={() => setPending({ kind: 'reissue', row: r })}>
+                    {/* 行でする作業（ロック解除・変更）はトーナル、ほかはテキストボタン（行ごとにくり返すので塗らない。r2c-03） */}
+                    {r.locked && <button className="btn-sm btn-tonal" onClick={() => unlock(r)}>ロック解除</button>}
+                    <button className="btn-sm btn-tonal" onClick={() => openEdit(r)}>変更</button>
+                    <button className="btn-sm btn-quiet" onClick={() => setPending({ kind: 'reissue', row: r })}>
                       一時パスワード再発行
                     </button>
                     {r.account.account_id !== user!.account_id && (
-                      <button className="btn-sm"
+                      <button className="btn-sm btn-quiet"
                         onClick={() => setPending({ kind: r.account.status === '1' ? 'stop' : 'resume', row: r })}>
                         {r.account.status === '1' ? '停止' : '再開'}
                       </button>

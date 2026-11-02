@@ -71,10 +71,10 @@ export default function GuardianAccountsScreen() {
 
       {error && <div style={{ marginBottom: 16 }}><Alert>{error}</Alert></div>}
 
-      {/* 未同意者の確認 */}
+      {/* 未同意者の確認。次のログインで同意画面が出るので、警告の帯でなく知らせの帯（札の「未同意」の青と同じ扱い。r2c-02） */}
       {notAgreed.length > 0 && (
         <div style={{ marginBottom: 16 }}>
-          <Alert>
+          <Alert soft>
             最新版の利用規約に同意していない保護者が {notAgreed.length} 名います：
             {notAgreed.map((r) => r.guardian.guardian_name).join('、')}
             。次回のログイン時に同意画面を表示します。
@@ -135,7 +135,7 @@ export default function GuardianAccountsScreen() {
                   <td className="nowrap">
                     {r.termsAgreed
                       ? <Tag label="同意済" className="tag-approved" />
-                      : <Tag label="未同意" className="tag-returned" />}
+                      : <Tag label="未同意" className="tag-applied" />}
                   </td>
                   <td className="nowrap">
                     <Tag label={ACCOUNT_STATUS[r.account.status]}
