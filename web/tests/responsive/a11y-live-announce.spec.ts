@@ -101,7 +101,7 @@ test.describe('[staff] 相手の操作で読み上げへ伝えるもの', () => 
     // 数が減ってもタイマーの欄は読み直さない
     const row = page.getByRole('region', { name: '伊藤 葵の午睡チェック' });
     for (const label of ['仰向け', 'あり', '通常']) await row.getByText(label, { exact: true }).click();
-    await row.getByRole('button', { name: 'この子を記録' }).click();
+    await row.getByRole('button', { name: '伊藤 葵を記録する' }).click();
     await expect(row.locator('[role="status"]')).toHaveText('保存しました');
     await ready(page);
     await expect(confirmed, '「確認済み」だった行が「チェック時刻を過ぎています」に変わった').toHaveCount(0);

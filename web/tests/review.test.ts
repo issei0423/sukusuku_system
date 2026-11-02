@@ -76,7 +76,7 @@ describe('午睡チェック（GitHub Issue #96・#97）', () => {
 
     await api.endSession(otherTeacher, s.nap_session_id);
     const count = db.napRecords.length;
-    await expect(api.record(otherTeacher, s.nap_session_id, input)).rejects.toThrow('この午睡チェックは終了しています');
+    await expect(api.record(otherTeacher, s.nap_session_id, input)).rejects.toThrow('午睡チェックは終了しています。画面を読み込み直してください。');
     expect(db.napRecords.length).toBe(count);
   });
 });

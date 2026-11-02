@@ -21,6 +21,8 @@ import { formatHM, formatTemperature, today, napTimerBase, jstMs, isOneDecimal }
 import type { BodyPosition, Breathing, Complexion, NapRecord } from '../../api/types';
 import type { NapChildState } from '../../api/shapes';
 import SleepControls from './SleepControls';
+import { EXCLUSION_REASON_LABEL } from '../../api/napReport';
+import { durationText } from '../contact/contactText';
 import { focusAfter, focusableIn, focusedNow } from '../../focusAfter';
 import { useNapSound } from '../../napSound';
 import { StartIcon, EndIcon, CloseIcon } from '../../components/icons';
@@ -47,16 +49,25 @@ export default function NapCheckScreen() {
    * 移したフォーカスが body に落ちる（WCAG 2.4.3、GitHub Issue #265）。読み終えたクラスは覚えておく
    */
   const loadedClass = useRef<number | null>(null);
+  /*
+   * 実施中の実施と、実施が無いときはその日に最後に終えた実施を読む。終えたあとも園児の行を状態の表示だけで出すため
+   * （詳細設計書「行の状態ごとの表示」(2-4 (2)) の「実施の後」、「午睡の園児」(3-4) の「ねた（おきた時刻なし）」）
+   */
   const session = useAsync(async () => {
     if (!hasClass) return null;
     const active = await api.activeSession(classId, today(), user!);
+    const ended = active ? null : await api.lastEndedSession(classId, today(), user!);
     loadedClass.current = classId;
-    return active;
+    return { active, ended };
   }, [classId, tick], { live: onNapClass(classId) });
   const sessionLoading = session.loading && loadedClass.current !== classId;
+  const s = session.data?.active ?? null;
+  const endedSession = session.data?.ended ?? null;
+  // 園児の行に出す実施。実施中ならそれ、無ければ最後に終えた実施、どちらも無ければ実施の前（行だけを出す）
+  const rowsSessionId = s?.nap_session_id ?? endedSession?.nap_session_id ?? null;
   const state = useAsync(
-    async () => (hasClass ? api.classState(user!, classId, session.data?.nap_session_id ?? null) : []),
-    [classId, session.data?.nap_session_id, tick],
+    async () => (hasClass ? api.classState(user!, classId, rowsSessionId) : []),
+    [classId, rowsSessionId, tick],
     { live: onNapClass(classId) },
   );
 
@@ -86,11 +97,11 @@ export default function NapCheckScreen() {
    */
   const startButton = useRef<HTMLButtonElement>(null);
   const end = async () => {
-    if (!session.data) return;
+    if (!s) return;
     const pressed = focusedNow();
     setEnding(false);
     setError(null);
-    try { endedByUser.current = true; await api.endSession(user!, session.data.nap_session_id); setTick((n) => n + 1); }
+    try { endedByUser.current = true; await api.endSession(user!, s.nap_session_id); setTick((n) => n + 1); }
     catch (e) {
       // 自動で解除された・ほかの職員が終了した実施は、もう終了できない（GitHub Issue #158）。読み直して今の状態を出す
       endedByUser.current = false;
@@ -102,13 +113,24 @@ export default function NapCheckScreen() {
 
   // 担当クラスの無い一般（フリー）は閲覧のみ。記録の操作は出さない（基本設計書「権限と利用可能機能」(6-1) ※1）
   const readOnly = user!.role === '2' && !user!.class_id;
-  const s = session.data;
   const allRows = state.data ?? [];
   // 「きょうは対象外」の子は、タイマーと未記録の数から外す（詳細設計書「タイマー」(2-4 (3))）
   const rows = allRows.filter((r) => !r.exclusion);
   const recorded = rows.filter((r) => r.latest).length;
   // 「ねた」のまま「おきた」が無い子（終了の前に確かめる。詳細設計書 (2-4 (2))）
   const stillSleeping = allRows.filter((r) => r.sleeps.some((x) => !x.woke_at)).map((r) => r.child.child_name);
+  /*
+   * クラス全体の状況：ねた・おきた・対象外（理由ごと）の人数（図/画面詳細図「午睡チェック画面」(5-1) 項目5）。
+   * 行の状態は詳細設計書「午睡の園児」(3-4)：ねた＝「おきた」の無い組がある（おひるね中）、おきた＝すべての組に「おきた」がある。
+   * 対象外の子は「ねた」を記録できない（3-4）ので、ねた・おきたと重ならない
+   */
+  const wokeCount = allRows.filter((r) => !r.exclusion && r.sleeps.length > 0 && r.sleeps.every((x) => x.woke_at)).length;
+  const excludedRows = allRows.filter((r) => r.exclusion);
+  // 【仮置き】対象外の理由は、人数のある理由だけを添える（設計の例は2つの理由がどちらも1以上。web/仮置き値.md）
+  const excludedReasons = (['1', '2'] as const)
+    .map((reason) => ({ reason, n: excludedRows.filter((r) => r.exclusion!.reason === reason).length }))
+    .filter((x) => x.n > 0)
+    .map((x) => `${EXCLUSION_REASON_LABEL[x.reason]} ${x.n}`);
   const intervalMinutes = api.intervalMinutesFor(classId);
 
   /*
@@ -206,7 +228,16 @@ export default function NapCheckScreen() {
                 </select>
               </Field>
             )}
-            {s && <span>記録済み {recorded} / {rows.length} 名</span>}
+            {/*
+              クラス全体の状況（図/画面詳細図「午睡チェック画面」(5-1) 項目5）。ねた・おきた・対象外（理由ごと）の人数と、
+              記録済み人数／対象人数。1つずつ折り返せるよう、まとまりごとに分ける（狭い幅では次の行へ送る）
+            */}
+            {s && (<>
+              <span>ねた {stillSleeping.length} 名</span>
+              <span>おきた {wokeCount} 名</span>
+              <span>対象外 {excludedRows.length} 名{excludedReasons.length > 0 && `（${excludedReasons.join('・')}）`}</span>
+              <span>記録済み {recorded} / {rows.length} 名</span>
+            </>)}
           </div>
           <span className="muted">記録者：{user!.display_name}</span>
         </div>
@@ -229,11 +260,14 @@ export default function NapCheckScreen() {
 
       {sessionLoading && <Loading />}
 
-      {!sessionLoading && !s && (
+      {!sessionLoading && !s && (<>
         <section className="card">
+          {/* 【仮置き】終えた実施があるときの文（「きょうの午睡チェックは HH:MM に終了しました。」）は設計に無い（web/仮置き値.md） */}
           {autoClosed
             ? <Alert>午睡の時間帯を過ぎたため、午睡チェックを自動で終了しました。続けるときは、もう一度開始してください。</Alert>
-            : <Empty text="午睡チェックはまだ開始していません。" />}
+            : <Empty text={endedSession?.ended_at
+              ? `きょうの午睡チェックは ${formatHM(endedSession.ended_at)} に終了しました。`
+              : '午睡チェックはまだ開始していません。'} />}
           {readOnly ? (
             <div className="muted" style={{ marginTop: 12 }}>全クラスを閲覧のみで見られます。午睡チェックの開始・記録はできません。</div>
           ) : (<>
@@ -246,7 +280,16 @@ export default function NapCheckScreen() {
           </div>
           </>)}
         </section>
-      )}
+
+        {/*
+          実施の前・実施の後も、園児の行を1人1行で出す（図/画面詳細図「午睡チェック画面」(5-1) 項目7、
+          詳細設計書「行の状態ごとの表示」(2-4 (2)) の「実施の前」「実施の後」）。押せるものは置かない
+        */}
+        {state.error && <ErrorBox text={state.error} />}
+        <div className="nap-grid">
+          {allRows.map((r) => <NapClosedRow key={r.child.child_id} row={r} canStart={!readOnly} />)}
+        </div>
+      </>)}
 
       {s && (
         <>
@@ -423,7 +466,7 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
   const [justSaved, setJustSaved] = useState(false);
   const id = row.child.child_id;
   const name = row.child.child_name;
-  // 体位・呼吸・顔色の3つがそろうまで「この子を記録」は押せない。押せない理由をボタンの近くに出す（下の .nap-save-hint。
+  // 体位・呼吸・顔色の3つがそろうまで「記録する」は押せない。押せない理由をボタンの近くに出す（下の .nap-save-hint。
   // PC の幅ではボタンの上、iPad の幅ではボタンの左。screens.css の @container）
   const complete = !!position && !!breathing && !!complexion;
   const saveHintId = useId();
@@ -440,7 +483,7 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
   const startInput = <T,>(set: (value: T) => void) => (value: T) => { setJustSaved(false); set(value); };
 
   /*
-   * 「この子を記録」は、記録すると選択が空に戻って無効になり、押したボタンからフォーカスが外れて body に落ちる。
+   * 「記録する」は、記録すると選択が空に戻って無効になり、押したボタンからフォーカスが外れて body に落ちる。
    * 押したときにボタンにフォーカスがあった（キーボードで押したときなど）ら、次の園児の行の最初の選択肢へ移す。
    * 巡回の順に次の子へ進めるようにするため。最後の行では、記録した行の最初の選択肢へ戻す
    * （WCAG 2.4.3 フォーカス順序、GitHub Issue #213。共通の決まり：フォーカスを残すか、決めた場所へ移す）
@@ -467,7 +510,7 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
     if (busy || !position || !breathing || !complexion) return;
     if (temperature !== null && (temperature < TEMP_MIN || temperature > TEMP_MAX) && confirmedTemp !== temperature) {
       setConfirmedTemp(temperature);
-      setError(`体温が ${TEMP_MIN.toFixed(1)}〜${TEMP_MAX.toFixed(1)}℃ の外です。入力に誤りがなければ、もう一度「この子を記録」を押してください。`);
+      setError(`体温が ${TEMP_MIN.toFixed(1)}〜${TEMP_MAX.toFixed(1)}℃ の外です。入力に誤りがなければ、もう一度「記録する」を押してください。`);
       return;
     }
     // 保存している間もボタンは無効になるので、押した時点で調べておく
@@ -504,7 +547,7 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
     <section ref={rowRef} className={`nap-card nap-record-row${!excluded && due ? ' is-due' : ''}${abnormal ? ' has-abnormal' : ''}${excluded ? ' is-excluded' : ''}`}
       aria-label={`${name}の午睡チェック`}>
       {/*
-        1人の箱は 2〜3 段にする：1段目に名前の行と「ねた・おきた」、2段目に体位・呼吸・顔色と、右端に体温・「この子を記録」。
+        1人の箱は 2〜3 段にする：1段目に名前の行と「ねた・おきた」、2段目に体位・呼吸・顔色と、右端に体温・「記録する」。
         幅が足りなければ、右の部品から次の段へ送る（見直し 2026-10-31 の r2b-07。styles/screens.css の .nap-row-top・.nap-row-body）
       */}
       <div className="nap-row-top">
@@ -555,9 +598,9 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
         救命の手順そのものは書かない（同 (5-1) の項目10「呼吸」、利用手引き.md「午睡チェック（最も重要な運用）」(2-5)、
         要件定義書.md「午睡チェック」(4-5)「救急要請…の要否はシステムが判断せず、園の手順に従う」）。
         【仮置き】呼吸の文の言い回しは設計が定めていない（web/仮置き値.md）
-        置き場所は、選んだ欄のすぐ後ろ、体温・「この子を記録」より前。2段目の並び（.nap-row-body）の中で幅いっぱいにし、
-        体温・「この子を記録」はその下の段へ送る。iPad 縦のように段が折れる幅でも、保存のボタンより先に文が目に入るようにするため
-        （見直し 2026-10-31 の c5-06。#349 では「この子を記録」の下に出ていた）。文が出ているときだけ箱が伸びる
+        置き場所は、選んだ欄のすぐ後ろ、体温・「記録する」より前。2段目の並び（.nap-row-body）の中で幅いっぱいにし、
+        体温・「記録する」はその下の段へ送る。iPad 縦のように段が折れる幅でも、保存のボタンより先に文が目に入るようにするため
+        （見直し 2026-10-31 の c5-06。#349 では「この子を記録」（いまの「記録する」）の下に出ていた）。文が出ているときだけ箱が伸びる
       */}
       {position === '2' && <Alert>うつ伏せです。このまま記録し、仰向けに直したら、直したあとの向きをもう一度記録してください。</Alert>}
       {breathing === '2' && <Alert>呼吸が確認できません。ただちに、子どもへの対応と応援の要請を行ってください。異常時の記録は、そのあとでかまいません。</Alert>}
@@ -580,9 +623,15 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
           詳細設計書の決めたこと D-32 の「押せない形と文言」と同じ考え方。見直し 2026-10-31 の r2c-05）。【仮置き】文言（web/仮置き値.md）
         */}
         {!complete && <span id={saveHintId} className="nap-save-hint">体位・呼吸・顔色を選ぶと記録できます</span>}
+        {/*
+          表示名は「記録する」（図/画面詳細図「午睡チェック画面」(5-1) 項目15・注記）。前は「この子を記録」。
+          読み上げの名前は「（氏名）を記録する」。どの子の行のボタンかを名前で分かるようにする（「ねた」「体温」と同じく氏名を前に添え、
+          見えている文字をそのまま含める。WCAG 2.5.3 ラベルの中の名前）。保存している間は見えている「保存中…」をそのまま名前にする
+        */}
         <button ref={saveRef} type="button" className="btn-primary" onClick={save}
-          disabled={busy || !complete} aria-describedby={complete ? undefined : saveHintId}>
-          {busy ? '保存中…' : 'この子を記録'}
+          disabled={busy || !complete} aria-describedby={complete ? undefined : saveHintId}
+          aria-label={busy ? undefined : `${name}を記録する`}>
+          {busy ? '保存中…' : '記録する'}
         </button>
       </div>
       </div>
@@ -592,6 +641,39 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
       {temperatureOpen && <TemperaturePicker name={name} onClose={() => setTemperatureOpen(false)}
         onSelect={(value) => { setTemperature(value); setTemperatureOpen(false); }} />}
       </>)}
+    </section>
+  );
+}
+
+/**
+ * 実施が無いときの園児の行（詳細設計書「行の状態ごとの表示」(2-4 (2)) の「実施の前」「実施の後」）。押せるものは置かない。
+ * 実施の後は、その日に最後に終えた実施の状態だけを出す（「午睡の園児」(3-4)：おきたの無いまま終わった組は
+ * 「13:05 ねた（おきたが未記録）」。おきたは推測で入れない）。直すのは連絡帳（園児）画面（3-5）。
+ * 開始すれば押せるようになることを、各行に「午睡チェックを開始すると押せます」で示す（閲覧のみの職員には出さない）。
+ * 【仮置き】実施の後の行にも、新しく開始できることを同じ文で添える（設計は実施の前と後を別の行の状態にしている。web/仮置き値.md）
+ */
+function NapClosedRow({ row, canStart }: { row: NapChildState; canStart: boolean }) {
+  const name = row.child.child_name;
+  const open = row.sleeps.find((x) => !x.woke_at) ?? null;
+  const last = row.sleeps.at(-1) ?? null;
+  let sleepState = '';
+  if (row.exclusion) sleepState = `対象外（${EXCLUSION_REASON_LABEL[row.exclusion.reason]}）`;
+  else if (open) sleepState = `${formatHM(open.slept_at)} ねた（おきたが未記録）`;
+  else if (last?.woke_at) sleepState = `${formatHM(last.slept_at)}〜${formatHM(last.woke_at)}（${durationText(last.slept_at, last.woke_at)}）`;
+  return (
+    <section className="nap-card" aria-label={`${name}の午睡チェック`}>
+      <div className="nap-row-top">
+        <div className="nap-row-head">
+          <strong className="name">{name}</strong>
+          {row.latest && <span className="last">前回 {formatHM(row.latest.checked_at)} {BODY_POSITION[row.latest.body_position]}</span>}
+          {row.latest && <LatestObservation record={row.latest} />}
+          <span className="last">平熱 {formatTemperature(row.child.normal_temperature)}℃</span>
+        </div>
+        <div className="nap-sleep-controls">
+          {sleepState && <span className="nap-sleep-state">{sleepState}</span>}
+          {canStart && <span className="muted">午睡チェックを開始すると押せます</span>}
+        </div>
+      </div>
     </section>
   );
 }

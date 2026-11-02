@@ -542,6 +542,9 @@ const apiChatNap = {
   // 第3引数はモック実装（mock.ts）が権限の判定に使う。サーバはセッションから利用者を引く
   activeSession: (classId: number, date: string, _u?: SessionUser) =>
     get<NapSession | null>('/api/nap/session' + qs({ class_id: classId, date })),
+  // その日に最後に終えた実施（server/api_nap.go の lastEndedNapSession。【仮置き】ended=1 は設計に無い口。web/仮置き値.md）
+  lastEndedSession: (classId: number, date: string, _u?: SessionUser) =>
+    get<NapSession | null>('/api/nap/session' + qs({ class_id: classId, date, ended: 1 })),
   startSession: (_u: SessionUser, classId: number, date: string) =>
     post<NapSession>('/api/nap/session', { class_id: classId, date }),
   endSession: (_u: SessionUser, sessionId: number) => post<void>(`/api/nap/session/${sessionId}/end`),

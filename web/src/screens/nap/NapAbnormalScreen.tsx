@@ -190,7 +190,7 @@ export default function NapAbnormalScreen() {
         {list.error && <ErrorBox text={list.error} />}
         {list.data?.length === 0 && <Empty text="異常時の記録はありません。" />}
         {list.data && list.data.length > 0 && (
-          <table className="list list-dense">
+          <table className="list list-dense nap-abnormal-list">
             <thead>
               <tr>
                 <th scope="col">発見時刻</th><th scope="col">園児</th><th scope="col">状況</th><th scope="col">対応</th>

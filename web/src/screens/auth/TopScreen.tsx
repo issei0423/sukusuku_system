@@ -55,7 +55,7 @@ export default function TopScreen({ entrance }: { entrance: 'staff' | 'guardian'
 
   return (
     <PublicLayout>
-      <h1 className="muted" style={{ textAlign: 'center', marginTop: -16, marginBottom: 16, fontSize: '1.25rem' }}>
+      <h1 className="public-title">
         {entrance === 'staff' ? '職員用の入口' : '保護者用の入口'}
       </h1>
 

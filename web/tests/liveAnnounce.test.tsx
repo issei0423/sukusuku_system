@@ -206,7 +206,7 @@ describe('③ 午睡チェック画面：確認の時刻を過ぎた子を、タ
     for (const [group, label] of [['体位', '仰向け'], ['呼吸', 'あり'], ['顔色', '通常']] as const) {
       fireEvent.click(within(within(row).getByRole('group', { name: group })).getByRole('radio', { name: label }));
     }
-    fireEvent.click(within(row).getByRole('button', { name: 'この子を記録' }));
+    fireEvent.click(within(row).getByRole('button', { name: '加藤 大和を記録する' }));
     await waitFor(() => expect(said.textContent).toBe('保存しました'), { timeout: 3000 });
     expect(rowSaid()).toEqual(['保存しました']);
     // 見えている「保存しました」は、読み上げでは二重に読まない

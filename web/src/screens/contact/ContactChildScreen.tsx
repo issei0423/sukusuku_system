@@ -180,7 +180,7 @@ export default function ContactChildScreen() {
     <div className="contact-child">
       <HomeArrivalStatus said={arrival} />
       <div className="page-head contact-child-head">
-        <Link className="contact-back" to={classPath}><BackIcon />クラスへ戻る</Link>
+        <Link className="btn btn-quiet btn-sm contact-back" to={classPath}><BackIcon />クラスへ戻る</Link>
         <div className="contact-child-name">
           <ChildAvatar name={name} size="lg" />
           <div>
@@ -215,10 +215,11 @@ export default function ContactChildScreen() {
                     </div>
                   ))}
                 </dl>
+                {/* 塗りは画面に1つ（園からの「送る」）。「確認しました」はトーナル（連絡帳（クラス）でも塗らない。r2c-03） */}
                 {h.confirmed_at
                   ? <p ref={confirmedRef} className="contact-confirmed" tabIndex={-1}>園が確認しました {formatHM(h.confirmed_at)} {h.confirmed_staff_name}</p>
                   : data.can_write && (
-                    <button type="button" className="btn-primary contact-confirm-button" onClick={confirmHome} disabled={busy !== null}
+                    <button type="button" className="btn-tonal contact-confirm-button" onClick={confirmHome} disabled={busy !== null}
                       aria-busy={busy === 'home'}><ConfirmIcon />{busy === 'home' ? TEXT.sending : '確認しました'}</button>
                   )}
               </div>
@@ -312,7 +313,7 @@ export default function ContactChildScreen() {
                 </div>
               )}
               <Composer label="活動のひとこと" max={200} scope="2" recipient={data.recipient} className={childClass}
-                submitLabel="ひとことを送る" onSend={sendComment}
+                submitLabel="ひとことを送る" tone="tonal" onSend={sendComment}
                 ai={{ childId, date, field: 'comment', allowDraft: false }} />
             </>
           )}

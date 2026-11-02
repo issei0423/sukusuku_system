@@ -57,9 +57,10 @@ function ChoiceList({ title, settingKey, values, set, error, busy, note }: Secti
             <input type="text" aria-label={`${title} ${i + 1}`} value={v} disabled={busy} maxLength={20}
               aria-invalid={error?.field === settingKey || undefined}
               onChange={(e) => write(list.map((x, j) => (j === i ? e.target.value.replace(/[,\r\n]/g, '') : x)))} />
-            <button type="button" disabled={busy || i === 0} aria-label={`${title} ${i + 1} を上へ`} onClick={() => move(i, -1)}>上へ</button>
-            <button type="button" disabled={busy || i === list.length - 1} aria-label={`${title} ${i + 1} を下へ`} onClick={() => move(i, 1)}>下へ</button>
-            <button type="button" disabled={busy || list.length === 1} aria-label={`${title} ${i + 1} を消す`} onClick={() => write(list.filter((_, j) => j !== i))}>×</button>
+            {/* 選択肢ごとにくり返す操作なので、枠のないテキストボタンにする（r2c-03） */}
+            <button type="button" className="btn-quiet" disabled={busy || i === 0} aria-label={`${title} ${i + 1} を上へ`} onClick={() => move(i, -1)}>上へ</button>
+            <button type="button" className="btn-quiet" disabled={busy || i === list.length - 1} aria-label={`${title} ${i + 1} を下へ`} onClick={() => move(i, 1)}>下へ</button>
+            <button type="button" className="btn-quiet" disabled={busy || list.length === 1} aria-label={`${title} ${i + 1} を消す`} onClick={() => write(list.filter((_, j) => j !== i))}>×</button>
           </li>
         ))}
       </ol>

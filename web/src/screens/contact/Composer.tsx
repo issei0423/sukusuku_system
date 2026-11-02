@@ -25,8 +25,10 @@ import { SendIcon, RefreshIcon, CloseIcon } from '../../components/icons';
 
 type SendError = Error & { kind?: string; names?: string[]; matches?: NameMatch[] };
 
-export default function Composer({ label, max, scope, recipient, className, initial = '', submitLabel, onSend, onCancel, ai, focusAfterSend }: {
+export default function Composer({ label, max, scope, recipient, className, initial = '', submitLabel, tone = 'primary', onSend, onCancel, ai, focusAfterSend }: {
   label: string;
+  /** 「送る」の段。画面でいちばん主な送る欄だけ塗る（primary）。ほかはトーナル（tonal。塗りは画面に1つ、r2c-03） */
+  tone?: 'primary' | 'tonal';
   max: number;
   scope: Phrase['phrase_scope'];
   recipient: ContactRecipient | undefined;
@@ -105,7 +107,7 @@ export default function Composer({ label, max, scope, recipient, className, init
       {recipient && <RecipientBadge recipient={recipient} className={className} />}
       {error && <p className="contact-error" role="alert">{error}</p>}
       <div className="contact-composer-actions">
-        <button ref={sendButton} type="button" className="btn-primary" onClick={() => send([])} disabled={busy || text.trim() === ''} aria-busy={busy}>
+        <button ref={sendButton} type="button" className={tone === 'tonal' ? 'btn-tonal' : 'btn-primary'} onClick={() => send([])} disabled={busy || text.trim() === ''} aria-busy={busy}>
           {failed && !reachable && !busy ? <RefreshIcon /> : <SendIcon />}
           {busy ? TEXT.sending : failed && !reachable ? TEXT.resend : submitLabel}
         </button>

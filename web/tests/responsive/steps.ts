@@ -39,7 +39,7 @@ export async function performAction(page: Page, scenario: Scenario, touch: boole
     await expect(row.getByRole('alert')).toHaveCount(2);
     return;
   }
-  const record = row.getByRole('button', { name: 'この子を記録' });
+  const record = row.getByRole('button', { name: /を記録する$/ });
   await expect(record).toBeDisabled();
   for (const name of ['仰向け', 'あり', '通常']) await press(row.getByText(name, { exact: true }));
   await expect(record).toBeEnabled();
