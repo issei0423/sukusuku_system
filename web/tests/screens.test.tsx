@@ -458,10 +458,18 @@ describe('午睡チェック（3画面）', () => {
 
   it('午睡チェック画面：園児の行で直接選び、体温は実測したときだけ設定できる', async () => {
     open('/staff/nap', teacher);
+    /*
+     * 実施の「ねた・おきた」まで読み終えてから、入眠時の体温を待っていない行で確かめる。
+     * 画面は実施を読む前の状態（ねた・おきたが空）で行を描いてから、実施の状態で描き直す。前はその描き直しの前に押しており、
+     * 負荷で描き直しが先に来ると、デモの「ねた」（体温なし）の子の行に当たった。その行の「体温」は、設定が「入眠時」なら
+     * 入眠時の体温として保存する（受け入れテスト 04-014。詳細設計書「行の状態ごとの表示」(2-4 (2))、NapCheckScreen.tsx）ので、
+     * 5分ごとの確認の体温はほかの行で確かめる
+     */
     await waitFor(() => {
-      expect(document.querySelectorAll('.nap-record-row').length).toBeGreaterThan(0);
+      expect(document.querySelectorAll('.nap-record-row.needs-temperature').length).toBeGreaterThan(0);
     }, { timeout: 3000 });
-    const first = document.querySelector<HTMLElement>('.nap-record-row')!;
+    const first = document.querySelector<HTMLElement>('.nap-record-row:not(.needs-temperature):not(.is-excluded)')!;
+    expect(first).toBeTruthy();
     const radios = Array.from(first.querySelectorAll<HTMLInputElement>('input[type="radio"]'));
     expect(radios.length).toBe(10);
     expect(radios.every((r) => !r.checked)).toBe(true);
