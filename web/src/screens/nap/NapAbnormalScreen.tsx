@@ -241,7 +241,25 @@ function AbnormalRow({ a, editing, onEdit, onRaise, onClose }: {
     <>
       <tr>
         <td className="nowrap">{formatMDHM(a.found_at)}</td>
-        <td className="nowrap">{a.child_name}</td>
+        <td className="nowrap">
+          {a.child_name}
+          {/*
+            この園児の連絡帳・個人チャット（画面詳細図「異常時記録画面」(5-2) 項目15・16）。保護者へ電話で伝えたあと、経過を職員の言葉で
+            書くための口（送るときは連絡帳・チャットの守りを通る）。連絡帳は発見した日のページを開く。行ごとにくり返すのでテキストボタンにし、
+            読み上げでは誰の記録の口かが分かるよう、表示名のあとに園児名を添える。
+            表示名は語の切れ目（「この園児の」「個人」のあと。wbr）でだけ折り返し、園児の列が状況・対応の列の幅を取らないようにする（styles/screens.css）
+          */}
+          <div className="row nap-abnormal-child-links">
+            <Link className="btn btn-sm btn-quiet" aria-label={`この園児の連絡帳（${a.child_name}）`}
+              to={`/staff/contact/${encodeURIComponent(a.child_id)}${a.found_at.slice(0, 10) === today() ? '' : `?date=${a.found_at.slice(0, 10)}`}`}>
+              この園児の<wbr />連絡帳
+            </Link>
+            <Link className="btn btn-sm btn-quiet" aria-label={`この園児の個人チャット（${a.child_name}）`}
+              to={`/staff/chat?child=${encodeURIComponent(a.child_id)}`}>
+              この園児の<wbr />個人<wbr />チャット
+            </Link>
+          </div>
+        </td>
         <td>{a.situation}</td>
         <td>
           {a.response}

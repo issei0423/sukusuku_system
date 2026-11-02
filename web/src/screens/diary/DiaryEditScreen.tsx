@@ -12,7 +12,7 @@
  * 「承認を取り消して差し戻す」で差し戻しに戻せる（詳細設計書「日誌の画面（作り直し）」(2-13 (2)・(3))）。
  */
 import { useEffect, useRef, useState } from 'react';
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api, selectableClasses, visibleChildren, settingNumber, staffName } from '../../api/client';
@@ -68,6 +68,12 @@ export default function DiaryEditScreen() {
   const navigate = useNavigate();
   const diaryId = id ? Number(id) : null;
   const maxPhotos = settingNumber('attachment.max_count_diary', 3);
+  /*
+   * 担当クラスの無い一般（フリー）は、全クラスの日誌を閲覧のみで見られる。ロックを取らず、内容を変える部品を動かさず、
+   * 保存・申請のボタンを出さない（基本設計書「権限と利用可能機能」(6-1) ※1、図/画面詳細図「職員（タブレット／PC）」(1-1) の注記
+   * 「記録の作成・編集のボタンは出さない」）。サーバも書き換え・ロックの取得を断る（server/api_diary.go の canWriteDiary）
+   */
+  const viewOnly = user!.role === '2' && !user!.class_id;
 
   const existing = useAsync(async () => (diaryId ? api.getDiary(user!, diaryId) : null), [diaryId]);
   const templates = useAsync(() => api.templates(), []);
@@ -144,7 +150,7 @@ export default function DiaryEditScreen() {
        * 書いたあとに園児のクラスが変わった、またはクラスの空いた（以前の版の）個人日誌は、直せるうちは
        * 園児のいまの在籍クラスを入れる。担当外のクラスのままでは保存を断られ、一般はクラスを選び直せない（GitHub Issue #174）
        */
-      if (d.child_id && d.status !== '2' && d.status !== '3'
+      if (!viewOnly && d.child_id && d.status !== '2' && d.status !== '3'
         && (d.class_id == null || !classesForUser.some((c) => c.class_id === d.class_id))) {
         api.classOf(user!, d.child_id).then((c) => { if (c != null) setClassId(c); }, () => {});
       }
@@ -157,9 +163,9 @@ export default function DiaryEditScreen() {
       api.attachmentsOf(user!, d.diary_id)
         .then((a) => setPhotos(a.map((x) => ({ file_path: x.file_path, file_type: x.file_type }))));
     }
-    // 申請中・承認済みは編集できない。読むだけの人にロックを取らせない（GitHub Issue #110）
+    // 申請中・承認済みは編集できない。読むだけの人（フリーの職員を含む）にロックを取らせない（GitHub Issue #110）
     // ロックは取らないが、ほかの職員が開いていればその旨は出す（画面詳細図 3-2）
-    if (d.status === '2' || d.status === '3') {
+    if (viewOnly || d.status === '2' || d.status === '3') {
       api.lockOf(user!, d.diary_id).then((l) => {
         const idle = settingNumber('ui.diary_lock_minutes', 15);
         if (l && l.locked_staff_id !== user!.staff_id && plusMinutes(l.last_active_at, idle) > now()) {
@@ -391,11 +397,14 @@ export default function DiaryEditScreen() {
   const canShare = recordType === '1';
   const contentReady = isIncident ? incidentReady(incident) : !!body.trim();
   const d = existing.data;
-  const readOnly = !!d && (d.status === '2' || d.status === '3');
+  // 申請中・承認済み。編集できない理由と承認の経緯を出す
+  const closed = !!d && (d.status === '2' || d.status === '3');
+  // 内容を書き換えられない（申請中・承認済み、またはフリーの職員）
+  const readOnly = viewOnly || closed;
   // 保存していない内容は、ログアウトの前にも確かめる（基本設計書「ログアウト」(4-3)。GitHub Issue #304）
   useUnsavedInput(dirty && !readOnly);
   // 申請を取り下げられるのは、申請中の日誌を申請した本人だけ。承認を取り消せるのは管理者だけ（サーバも拒む）
-  const canWithdraw = !!d && d.status === '2' && !!d.applied_staff_id && d.applied_staff_id === user!.staff_id;
+  const canWithdraw = !viewOnly && !!d && d.status === '2' && !!d.applied_staff_id && d.applied_staff_id === user!.staff_id;
   const canRevoke = !!d && d.status === '3' && user!.role === '1';
   // 内容を変えられない状態。申請中・承認済みの日誌と、ほかの職員が編集中の日誌（画面詳細図 3-2 項目17、
   // 基本設計書「編集ロックの解除」(4-5)）。本文の欄だけ止めても、ほかの部品で中身が変わっていた（GitHub Issue #175 の 4）
@@ -437,6 +446,8 @@ export default function DiaryEditScreen() {
     });
   };
 
+  // フリーの職員は新しく書けない。アドレスから開いたときは日誌一覧へ戻す（書けないことはヘッダの下の案内が示す。layouts/StaffLayout.tsx）
+  if (viewOnly && !diaryId) return <Navigate to="/staff/diary" replace />;
   if (existing.loading) return <Loading />;
   if (existing.error) return <ErrorBox text={existing.error} />;
 
@@ -471,7 +482,7 @@ export default function DiaryEditScreen() {
           <Alert>差し戻されています：{d.returned_reason}</Alert>
         </div>
       )}
-      {readOnly && (
+      {closed && (
         <div style={{ marginBottom: 16 }}>
           <Alert soft>
             <span>{d!.status === '2' ? '申請中のため編集できません。' : '承認済みのため編集できません。'}</span>
@@ -632,12 +643,17 @@ export default function DiaryEditScreen() {
               {canRevoke && (
                 <button className="btn-danger" onClick={() => setRevoking(true)} disabled={busy}><UndoIcon />承認を取り消して差し戻す</button>
               )}
-              {/* 既存の日誌は、ロックを取れるまで保存させない。ロックの無い保存はサーバが断る（GitHub Issue #166） */}
-              <button onClick={() => save('1')} disabled={busy || readOnly || !!heldBy || lockPending}><SaveIcon />下書き保存</button>
-              <button className="btn-primary" onClick={goConfirm}
-                disabled={busy || readOnly || !!heldBy || lockPending || !contentReady || (needsChild && !childId) || classId === ''}>
-                確認へ進む<ForwardIcon />
-              </button>
+              {/* 既存の日誌は、ロックを取れるまで保存させない。ロックの無い保存はサーバが断る（GitHub Issue #166）。
+                  フリーの職員には出さない（閲覧のみ） */}
+              {!viewOnly && (
+                <>
+                  <button onClick={() => save('1')} disabled={busy || readOnly || !!heldBy || lockPending}><SaveIcon />下書き保存</button>
+                  <button className="btn-primary" onClick={goConfirm}
+                    disabled={busy || readOnly || !!heldBy || lockPending || !contentReady || (needsChild && !childId) || classId === ''}>
+                    確認へ進む<ForwardIcon />
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </section>

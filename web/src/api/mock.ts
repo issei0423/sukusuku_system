@@ -422,12 +422,25 @@ export function selectableClasses(user: SessionUser): ClassRoom[] {
 }
 
 /**
- * その日誌を参照できるか。個人日誌・ヒヤリハットは対象園児で、クラス日誌・週案は対象クラスで判定する。
+ * その日誌を参照できるか（読める範囲）。個人日誌・ヒヤリハットは対象園児で、クラス日誌・週案は対象クラスで判定する。
  * 承認済みであっても参照範囲は広がらない。日誌は園内の記録で、保護者には見せない
  * （基本設計書「日誌システム（園内の記録）」(4-6)、詳細設計書「日誌」(4-13 (10))）。
- * サーバ側（server/api_diary.go の visibleDiaryCondition・canSeeDiary）と同じ規則
+ * 担当クラスの無い一般（フリー）は、全クラスの日誌を閲覧のみで読める（基本設計書「権限と利用可能機能」(6-1) ※1、
+ * 図/画面詳細図「職員（タブレット／PC）」(1-1) の注記）。読める園児・クラスは canReadChild・canReadClass と同じ範囲。
+ * 書く操作は canWriteDiary で止める。サーバ側（server/api_diary.go の visibleDiaryCondition・canSeeDiary）と同じ規則
  */
 function canSeeDiary(user: SessionUser, d: Diary): boolean {
+  if (d.is_deleted) return false;
+  if (isFreeStaff(user)) return d.child_id ? canReadChild(user, d.child_id) : d.class_id != null && canReadClass(user, d.class_id);
+  return canWriteDiary(user, d);
+}
+
+/**
+ * その日誌を書けるか（書き換え・申請の取り下げ・編集ロックの取得）。管理者は全部、一般（保育士）は自クラスの園児の日誌と
+ * 自クラスのクラス日誌・週案。フリーは書けない（基本設計書「権限と利用可能機能」(6-1) ※1「記録の作成・編集・確認はできない」）。
+ * サーバ側（server/api_diary.go の writableDiaryCondition・canWriteDiary）と同じ規則
+ */
+function canWriteDiary(user: SessionUser, d: Diary): boolean {
   if (d.is_deleted) return false;
   if (user.role === '1') return true;
   if (user.role === '2') {
@@ -483,6 +496,11 @@ function nextDiaryVersion(previous: string): string {
  * 「保護者が呼んだら 403『この日誌を参照する権限がありません』」）。サーバ側は server/api_diary.go の msgDiaryForbidden
  */
 const DIARY_FORBIDDEN_MESSAGE = 'この日誌を参照する権限がありません';
+/**
+ * 日誌を書けないときの文言（既存。書き換え・編集ロックの取得で使っていたもの）。読めても書けない人（フリーの職員）の
+ * 申請の取り下げにも使う。サーバ側は server/api_diary.go の msgDiaryWriteForbidden
+ */
+const DIARY_WRITE_FORBIDDEN_MESSAGE = 'この日誌を編集する権限がありません';
 
 /** 日誌の状態の遷移で返す文言（詳細設計書「日誌の状態」(3-6)・「日誌」(4-13)）。サーバ側（api_diary_write.go）と同じ */
 const DIARY_MSG = {
@@ -1201,7 +1219,8 @@ export const diaryApi = {
    */
   async pastDiariesOf(user: SessionUser, childId: string, excludeDiaryId?: number): Promise<Diary[]> {
     if (user.role === '3') return fail(DIARY_FORBIDDEN_MESSAGE);
-    if (!canSeeChild(user, childId)) return fail('この園児を参照する権限がありません');
+    // 読むだけの経路なので、フリーの職員の閲覧も通す（canReadChild。日誌の参照範囲 canSeeDiary と同じ園児の範囲）
+    if (!canReadChild(user, childId)) return fail('この園児を参照する権限がありません');
     return ok(db.diaries
       .filter((d) => !d.is_deleted && d.child_id === childId && d.diary_id !== excludeDiaryId)
       .sort((a, b) => b.diary_date.localeCompare(a.diary_date)));
@@ -1212,9 +1231,10 @@ export const diaryApi = {
    * すでに他者が保持していれば、その職員名を返して画面に出す
    */
   async acquireLock(user: SessionUser, diaryId: number): Promise<{ token: string } | { heldBy: string }> {
-    // ロックを取れるのは、その日誌を参照できる職員に限る（サーバ側は server/api_diary_write.go の handleAcquireLock）
+    // ロックを取れるのは、その日誌を書ける職員に限る。読むだけの人（フリーの職員）にも取らせない
+    // （サーバ側は server/api_diary_write.go の handleAcquireLock）
     const d = db.diaries.find((x) => x.diary_id === diaryId);
-    if (!d || !canSeeDiary(user, d)) return fail('この日誌を編集する権限がありません');
+    if (!d || !canWriteDiary(user, d)) return fail(DIARY_WRITE_FORBIDDEN_MESSAGE);
     // 基本設計書「編集ロックの解除」(4-5)：申請中・承認済みは編集しない。
     if (d.status === '2' || d.status === '3') return fail('この日誌は編集できません');
     const idle = settingNumber('ui.diary_lock_minutes', 15);
@@ -1376,8 +1396,9 @@ const diaryApi2 = {
     if (input.diary_id) {
       const d = db.diaries.find((x) => x.diary_id === input.diary_id);
       if (!d) return fail('日誌が見つかりません');
-      // 書き換える日誌そのものも参照範囲の内に限る。他クラスの日誌を日誌IDで指定して書き換えさせない
-      if (!canSeeDiary(user, d)) return fail('この日誌を編集する権限がありません');
+      // 書き換える日誌そのものも書ける範囲の内に限る。他クラスの日誌を日誌IDで指定して書き換えさせない。
+      // 読めても書けない人（フリーの職員）がいるため、canSeeDiary でなく canWriteDiary で見る（サーバ側の updateDiary と同じ）
+      if (!canWriteDiary(user, d)) return fail(DIARY_WRITE_FORBIDDEN_MESSAGE);
       // 申請中・承認済みは編集できない（サーバ側の updateDiary と同じ。GitHub Issue #174 の「確かめていないこと」）
       if (d.status === '2' || d.status === '3') return fail('申請中または承認済みの日誌は編集できません');
       /*
@@ -1525,6 +1546,9 @@ const diaryApi2 = {
   async withdrawDiary(user: SessionUser, diaryId: number, updatedAt: string): Promise<Diary> {
     const d = db.diaries.find((x) => x.diary_id === diaryId && !x.is_deleted);
     if (user.role === '3' || !d || !canSeeDiary(user, d)) return fail(DIARY_FORBIDDEN_MESSAGE);
+    // 取り下げは書く操作。読めても書けない人（フリーの職員）は断る（基本設計書「権限と利用可能機能」(6-1) ※1。
+    // サーバ側は server/api_diary_write.go の handleWithdrawDiary）
+    if (!canWriteDiary(user, d)) return fail(DIARY_WRITE_FORBIDDEN_MESSAGE);
     // 承認・差し戻しのあとも申請者の列は残るため、本人なら次の状態の検査で断る
     if (!d.applied_staff_id || d.applied_staff_id !== user.staff_id) return fail(DIARY_MSG.withdrawOwnOnly);
     if (d.status !== '2') return fail(DIARY_MSG.withdrawTooLate);
