@@ -7,7 +7,8 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useSession } from '../session';
 import { useAsync, AUTO_REFRESH_MS } from '../hooks';
 import { onLive } from '../live';
-import { api } from '../api/client';
+import { api, selectableClasses } from '../api/client';
+import { today } from '../api/util';
 import { BellIcon, Alert, Modal } from '../components/ui';
 import {
   DashboardIcon, DiaryIcon, ChatIcon, NapIcon, ContactBookIcon, GrowthIcon, ChildrenIcon,
@@ -103,6 +104,22 @@ export default function StaffLayout() {
    */
   const napRunning = async () => {
     try { return (await api.sessionStatus(user)).nap_exempt; } catch { return false; }
+  };
+  /*
+   * 窓の「午睡チェック画面へ」。自分が開始した実施中のクラスを、午睡チェック画面へ渡す（NapCheckScreen.tsx が state.classId で開く）。
+   * 管理者は全クラスを扱え、午睡チェック画面は既定で最初のクラスを開くため、開始したクラスと違う画面が出て終了のボタンが見つからなかった。
+   * 見つからないとき（尋ねられないなど）は渡さず、既定のクラスで開く
+   */
+  const openOwnNap = async () => {
+    setNapLogout(false);
+    let classId: number | null = null;
+    for (const c of selectableClasses(user)) {
+      try {
+        const s = await api.activeSession(c.class_id, today(), user);
+        if (s && s.started_staff_id === user.staff_id) { classId = c.class_id; break; }
+      } catch { /* 読めないクラスは飛ばす */ }
+    }
+    navigate('/staff/nap', classId !== null ? { state: { classId } } : undefined);
   };
   // 保存していない入力（書きかけの日誌・メッセージなど）があれば、破棄される旨を表示して確認する（基本設計書「ログアウト」(4-3)）
   const onLogout = async () => {
@@ -218,7 +235,7 @@ export default function StaffLayout() {
           footer={<>
             <button onClick={() => setNapLogout(false)}><CloseIcon />閉じる</button>
             {!pathname.startsWith('/staff/nap') && (
-              <button className="btn-primary" onClick={() => { setNapLogout(false); navigate('/staff/nap'); }}><NapIcon />午睡チェック画面へ</button>
+              <button className="btn-primary" onClick={() => void openOwnNap()}><NapIcon />午睡チェック画面へ</button>
             )}
           </>}>
           <p>午睡チェックの実施中は、ログアウトできません。先に午睡チェックを終了してから、ログアウトしてください。</p>

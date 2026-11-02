@@ -848,6 +848,9 @@ const contactApi = {
   sleep: (_u: SessionUser, sessionId: number, childId: string) =>
     post<NapSleep>(`/api/nap/session/${sessionId}/sleeps`, { child_id: childId }),
   wake: (_u: SessionUser, sleepId: number) => post<NapSleep>(`/api/nap/sleeps/${sleepId}/wake`),
+  // 入眠時の体温（server/api_nap_sleep.go の handleSleepTemperature。詳細設計書 (4-6) の (2)）
+  sleepTemperature: (_u: SessionUser, sleepId: number, temperature: number) =>
+    post<NapSleep>(`/api/nap/sleeps/${sleepId}/temperature`, { sleep_temperature: temperature }),
   exclude: (_u: SessionUser, sessionId: number, childId: string, reason: '1' | '2') =>
     post<NapExclusion>(`/api/nap/session/${sessionId}/exclusions`, { child_id: childId, reason }),
   cancelExclusion: (_u: SessionUser, exclusionId: number) => post<{ ok: true }>(`/api/nap/exclusions/${exclusionId}/cancel`),

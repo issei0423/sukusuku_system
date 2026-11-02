@@ -77,11 +77,16 @@ for (const { tag, scene, email, home } of [
 
 test('[staff] keyboard-nap-temperature — 体温パネルを Enter で開き、Esc で閉じるとフォーカスが元へ戻る', async ({ page }) => {
   await open(page, 'nap');
-  const row = page.getByRole('region', { name: '伊藤 葵の午睡チェック' });
+  /*
+   * 5分ごとの確認の体温を入れる行は、デモで「ねた」の無い 小林 結衣。デモの「ねた」（体温なし）の子（伊藤 葵など）の行では、
+   * 設定が「入眠時」なら「体温」で選んだ値を入眠時の体温として保存し、ボタンの文字は変わらない（受け入れテスト 04-014。
+   * 詳細設計書「行の状態ごとの表示」(2-4 (2))、src/screens/nap/NapCheckScreen.tsx）
+   */
+  const row = page.getByRole('region', { name: '小林 結衣の午睡チェック' });
   // 名前は、見えている文字「体温 未測定」に氏名を添えたもの。値を選ぶと名前も変わるので、頭で探す（Issue #207）
-  const button = row.getByRole('button', { name: /^伊藤 葵の体温/ });
-  const dialog = page.getByRole('dialog', { name: '伊藤 葵の体温' });
-  await expect(button).toHaveAccessibleName('伊藤 葵の体温 未測定');
+  const button = row.getByRole('button', { name: /^小林 結衣の体温/ });
+  const dialog = page.getByRole('dialog', { name: '小林 結衣の体温' });
+  await expect(button).toHaveAccessibleName('小林 結衣の体温 未測定');
   await tabTo(page, button);
 
   await page.keyboard.press('Enter');
@@ -106,7 +111,7 @@ test('[staff] keyboard-nap-temperature — 体温パネルを Enter で開き、
   await expect(dialog).toHaveCount(0);
   await expect(button).toBeFocused();
   await expect(button).toContainText('36.5℃');
-  await expect(button).toHaveAccessibleName('伊藤 葵の体温 36.5℃');
+  await expect(button).toHaveAccessibleName('小林 結衣の体温 36.5℃');
 });
 
 test('[staff] keyboard-nap-timer — Shift+Tab で上へ戻っても、フォーカスした部品が上に止めたタイマーの下に隠れない', async ({ page }) => {

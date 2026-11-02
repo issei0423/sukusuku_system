@@ -4,10 +4,59 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
+
+/*
+開始をほぼ同時に何度も押しても、同じクラス・同じ日の実施中は1つ（受け入れテスト 04-037、授業の雛形 1.5 の二重送信の防止）。
+どの要求にも同じ実施を返す（すでに実施中のときと同じ応答）。もも組はデモの実施が無いクラス。
+画面の二度押しの止めは web/tests/napStartTwice.test.tsx、モックの同じ観点も同じファイル
+*/
+func TestStartNapSessionTwiceAtOnce(t *testing.T) {
+	a, h := newTestApp(t)
+	admin := loginAs(a, 1, "staff")
+	for round := 0; round < 10; round++ {
+		a.db.Exec(`DELETE FROM t_nap_session WHERE class_id = 3`)
+		const n = 8
+		recs := make([]*httptest.ResponseRecorder, n)
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		for i := 0; i < n; i++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				<-start
+				recs[i] = request(t, h, admin, "POST", "/api/nap/session", `{"class_id":3}`)
+			}(i)
+		}
+		close(start)
+		wg.Wait()
+
+		var open int
+		a.db.QueryRow(`SELECT COUNT(*) FROM t_nap_session WHERE class_id = 3 AND ended_at IS NULL`).Scan(&open)
+		if open != 1 {
+			t.Fatalf("%d 回目：もも組の実施中が %d 件（1件のはず）", round+1, open)
+		}
+		ids := map[int64]bool{}
+		for i, rec := range recs {
+			if rec.Code != http.StatusOK {
+				t.Fatalf("%d 回目の %d 本目：%d %s", round+1, i+1, rec.Code, rec.Body.String())
+			}
+			var s NapSession
+			if err := json.Unmarshal(rec.Body.Bytes(), &s); err != nil {
+				t.Fatalf("%d 回目の %d 本目：%s", round+1, i+1, rec.Body.String())
+			}
+			ids[s.NapSessionID] = true
+		}
+		if len(ids) != 1 {
+			t.Fatalf("%d 回目：返した実施が %d 種類（同じ実施を返すはず）: %v", round+1, len(ids), ids)
+		}
+	}
+}
 
 func TestAbnormalKeepsDiscoveryAndRecordingTimesSeparately(t *testing.T) {
 	a, h := newTestApp(t)

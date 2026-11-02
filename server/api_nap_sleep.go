@@ -157,6 +157,72 @@ func (a *app) handleWake(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, v)
 }
 
+/*
+POST /api/nap/sleeps/{id}/temperature（入眠時の体温）。要求 { sleep_temperature }
+
+「ねた」を先に保存し、入眠時の体温はあとから入れる（詳細設計書「午睡（ねた・おきた・対象外）」(4-6) の (2)、決めたこと D-7、
+基本設計書「ねた・おきた」(4-8)「体温が入るまで行に『体温を入れてください』を出す」）。
+  - 小数第1位まで。範囲（30.0〜43.0℃）の外も保存し、確かめは画面がする（基本設計書「入力項目の制約値とメッセージ一覧」(4-12)）
+  - 入眠時の体温は監査の層の値で保護者へ返さない。訂正の印（corrected_at）は付けず、知らせは nap だけ（contact は送らない）
+  - 入れられるのは「おひるね中」（おきたの前）の組だけ（詳細設計書「午睡の園児」(3-4) の状態の移り変わり）。
+    【仮置き】おきたのあとの文言は設計に無い（msgSleepTempAfterWake。web/仮置き値.md）
+  - 共通の確かめ（職員・クラス・在籍・書けるか・実施が終わっていないか）は napSleepTarget
+
+モックは web/src/api/mock.ts の sleepTemperature が同じ規則を持つ
+*/
+func (a *app) handleSleepTemperature(w http.ResponseWriter, r *http.Request) {
+	u, ok := a.requireStaff(w, r)
+	if !ok {
+		return
+	}
+	id, valid := pathInt64(r, "id")
+	var sleep *napSleepOut
+	var err error
+	if valid {
+		sleep, err = a.loadNapSleep(id)
+	}
+	if !valid || err != nil || sleep.IsDeleted {
+		writeForbidden(w, msgContactForbidden)
+		return
+	}
+	var in struct {
+		SleepTemperature *float64 `json:"sleep_temperature"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	classID, ok := a.napSleepTarget(w, u, sleep.NapSessionID, sleep.ChildID)
+	if !ok {
+		return
+	}
+	if in.SleepTemperature == nil || !oneDecimal(*in.SleepTemperature) {
+		writeErr(w, http.StatusBadRequest, msgTemperatureFormat)
+		return
+	}
+	if sleep.WokeAt != nil {
+		writeJSON(w, http.StatusConflict, apiError{Message: msgSleepTempAfterWake, Kind: kindAlreadyExists})
+		return
+	}
+	// 版（updated_at）は書くたびに進める（決めたこと D-40）。corrected_at は書き換えない
+	res, err := a.db.Exec(`UPDATE t_nap_sleep SET sleep_temperature = ?, updated_at = ?
+		WHERE nap_sleep_id = ? AND woke_at IS NULL AND is_deleted = 0`, *in.SleepTemperature, nextVersion(sleep.UpdatedAt), id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, msgContactSaveFailed)
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		// 確かめたあとに「おきた」か取り消しが入った
+		writeJSON(w, http.StatusConflict, apiError{Message: msgSleepTempAfterWake, Kind: kindAlreadyExists})
+		return
+	}
+	a.log(u.AccountID, fnNap, opUpdate, "t_nap_sleep", i64(id), &sleep.ChildID,
+		s(jsonText(map[string]any{"sleep_temperature": sleep.SleepTemperature})),
+		s(jsonText(map[string]any{"sleep_temperature": *in.SleepTemperature})))
+	a.notifyNapChild(classID, sleep.ChildID)
+	v, _ := a.loadNapSleep(id)
+	writeJSON(w, http.StatusOK, v)
+}
+
 // napSessionSleeps は、その実施の園児の、取り消していない「ねた・おきた」（入眠時の体温を含む。職員だけ）
 func (a *app) napSessionSleeps(sessionID int64, childID string) []napSleepOut {
 	rows, err := a.db.Query(`SELECT s.nap_sleep_id, s.child_id, s.slept_at, s.woke_at, s.sleep_temperature, s.nap_session_id,

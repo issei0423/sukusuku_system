@@ -14,7 +14,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import type { NapChildState } from '../../api/shapes';
-import { api } from '../../api/client';
+import { api, settingText } from '../../api/client';
 import { useSession } from '../../session';
 import { notify } from '../../components/feedback';
 import { formatHM } from '../../api/util';
@@ -59,7 +59,12 @@ export default function SleepControls({ row, sessionId, onSaved }: {
           cancelAction(user!, { kind: 'sleep', sleep: s, childName: name, date: today() }));
       } else {
         const s = await api.sleep(user!, sessionId, row.child.child_id);
-        notify(`${name}さんの「ねた」（${formatHM(s.slept_at)}）を記録しました。保護者が見られる状態です。`,
+        /*
+         * 入眠時の体温が要る設定なら、結果の表示に「体温を入れてください。」を添える。行の文は読み上げへ伝えないので
+         * （GitHub Issue #209）、押した人にはここで伝える（基本設計書「ねた・おきた」(4-8)、メッセージ一覧 (4-12)）
+         */
+        const askTemperature = settingText('nap.temperature_required', '入眠時') === '入眠時' ? TEXT.sleepTemperatureNeeded : '';
+        notify(`${name}さんの「ねた」（${formatHM(s.slept_at)}）を記録しました。保護者が見られる状態です。${askTemperature}`,
           cancelAction(user!, { kind: 'sleep', sleep: s, childName: name, date: today() }));
       }
     } catch (e) {

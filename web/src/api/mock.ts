@@ -5397,6 +5397,28 @@ const contactApi = {
     return ok(sleepView(row, true));
   },
 
+  /**
+   * 入眠時の体温（POST /api/nap/sleeps/{id}/temperature。詳細設計書「午睡（ねた・おきた・対象外）」(4-6) の (2)、決めたこと D-7）。
+   * 小数第1位まで。範囲の外も保存する（確かめは画面）。監査の層の値で保護者へ返さない。訂正の印は付けず、知らせは nap だけ。
+   * 入れられるのは「おひるね中」（おきたの前）の組だけ（同「午睡の園児」(3-4)）。サーバ側は server/api_nap_sleep.go の handleSleepTemperature
+   */
+  async sleepTemperature(user: SessionUser, sleepId: number, temperature: number): Promise<NapSleep> {
+    if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
+    const row = db.napSleeps.find((s) => s.nap_sleep_id === sleepId && !s.is_deleted);
+    if (!row) return fail(MSG.contactForbidden);
+    const target = napSleepTarget(user, row.nap_session_id, row.child_id);
+    if (!target.session) return fail(target.error ?? MSG.contactForbidden);
+    if (!Number.isFinite(temperature) || !isOneDecimal(temperature)) return fail(MSG.temperatureFormat);
+    // 【仮置き】おきたのあとの文言（web/仮置き値.md）
+    if (row.woke_at) return fail(MSG.sleepTempAfterWake);
+    const before = row.sleep_temperature;
+    row.sleep_temperature = temperature; row.updated_at = laterVersion(row.updated_at);
+    log(user.account_id, '3', '2', 't_nap_sleep', row.nap_sleep_id, row.child_id,
+      JSON.stringify({ sleep_temperature: before }), JSON.stringify({ sleep_temperature: temperature }));
+    publishNapChild(target.session.class_id, row.child_id);
+    return ok(sleepView(row, true));
+  },
+
   /** きょうは対象外（POST /api/nap/session/{id}/exclusions）。監査の層で、知らせは nap だけ（保護者へは送らない） */
   async exclude(user: SessionUser, sessionId: number, childId: string, reason: '1' | '2'): Promise<NapExclusion> {
     if (!isStaffUser(user)) return fail(STAFF_ONLY_MESSAGE);
