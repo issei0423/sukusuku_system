@@ -15,7 +15,7 @@ import App from '../src/App';
 import { SessionProvider } from '../src/session';
 import { api } from '../src/api/client';
 import * as db from '../src/api/mockDb';
-import { MSG } from '../src/messages';
+import { MSG, TEXT } from '../src/messages';
 import type { SessionUser } from '../src/api/types';
 import { today } from '../src/api/util';
 
@@ -117,6 +117,83 @@ describe('午睡チェック画面：入眠時の体温（04-014）', () => {
     expect(sleep.sleep_temperature).toBe(36.8);
     // 5分ごとの確認の体温には入れていない
     expect(within(row).getByRole('button', { name: `${name}の体温 未測定` })).toBeTruthy();
+    await api.endSession(teacher, sessionId);
+  });
+});
+
+/*
+ * 範囲（30.0〜43.0℃）の外の体温は、窓を開いたまま1度だけ確かめを促し、止めない（基本設計書「入力項目の制約値」(4-12)・
+ * 「メッセージ一覧」(4-12) の範囲外の文。共通の部品 components/TemperaturePicker.tsx の outsideAck と同じ形）。
+ * 前は窓が閉じてから行に「もう一度同じ値を入れてください」と出し、開き直して打ち直すことになった（PR #374 の自動レビュー）
+ */
+describe('午睡チェック画面：範囲の外の体温は、窓を開いたまま確かめる', () => {
+  const renderNap = () => render(
+    <MemoryRouter initialEntries={['/staff/nap']}>
+      <SessionProvider initialUser={teacher}>
+        <App />
+      </SessionProvider>
+    </MemoryRouter>,
+  );
+  /** 窓の「範囲外の値を入力」から値を入れて「設定」を押す */
+  const typeOutside = (picker: HTMLElement, value: string) => {
+    fireEvent.click(within(picker).getByRole('button', { name: '範囲外の値を入力' }));
+    fireEvent.change(within(picker).getByLabelText('範囲外の体温'), { target: { value } });
+    fireEvent.click(within(picker).getByRole('button', { name: '設定' }));
+  };
+
+  it('入眠時の体温：1回目は窓が開いたまま「このまま記録する」と範囲外の文、押すと記録する', async () => {
+    const sessionId = await freshSession();
+    const name = childName('C001');
+    renderNap();
+    const row = await screen.findByRole('region', { name: `${name}の午睡チェック` }, { timeout: 3000 });
+    fireEvent.click(within(row).getByRole('button', { name: `${name}のねた` }));
+    await waitFor(() => expect(row.classList.contains('needs-temperature')).toBe(true), { timeout: 3000 });
+
+    fireEvent.click(within(row).getByRole('button', { name: `${name}の体温 未測定` }));
+    const picker = await screen.findByRole('dialog', { name: `${name}の体温` });
+    typeOutside(picker, '43.5');
+    // 窓は開いたまま。範囲外の文を窓の中に出し、ボタンを「このまま記録する」に替える。まだ記録しない
+    expect(screen.getByRole('dialog', { name: `${name}の体温` })).toBe(picker);
+    expect(within(picker).getByRole('alert').textContent).toBe(TEXT.temperatureOutOfRange);
+    const sleepOf = () => db.napSleeps.find((s) => s.nap_session_id === sessionId && s.child_id === 'C001' && !s.is_deleted)!;
+    expect(sleepOf().sleep_temperature).toBeNull();
+    // 行に「もう一度同じ値を入れてください」は出さない
+    expect(row.textContent).not.toContain('もう一度同じ値');
+
+    fireEvent.click(within(picker).getByRole('button', { name: 'このまま記録する' }));
+    await waitFor(() => expect(row.textContent).toContain('入眠時の体温 43.5℃'), { timeout: 3000 });
+    expect(screen.queryByRole('dialog', { name: `${name}の体温` })).toBeNull();
+    expect(sleepOf().sleep_temperature).toBe(43.5);
+    expect(row.classList.contains('needs-temperature')).toBe(false);
+    await api.endSession(teacher, sessionId);
+  });
+
+  it('5分ごとの確認の体温：窓の中で1度だけ確かめ（「このまま設定する」）、「記録する」ではもう確かめない', async () => {
+    const sessionId = await freshSession();
+    const name = childName('C001');
+    renderNap();
+    const row = await screen.findByRole('region', { name: `${name}の午睡チェック` }, { timeout: 3000 });
+
+    fireEvent.click(within(row).getByRole('button', { name: `${name}の体温 未測定` }));
+    const picker = await screen.findByRole('dialog', { name: `${name}の体温` });
+    typeOutside(picker, '29.5');
+    expect(within(picker).getByRole('alert').textContent).toBe(TEXT.temperatureOutOfRange);
+    // 値を打ち直すと、確かめは最初から（ボタンは「設定」に戻る）
+    fireEvent.change(within(picker).getByLabelText('範囲外の体温'), { target: { value: '29.4' } });
+    expect(within(picker).getByRole('button', { name: '設定' })).toBeTruthy();
+    expect(within(picker).queryByRole('alert')).toBeNull();
+    fireEvent.click(within(picker).getByRole('button', { name: '設定' }));
+    fireEvent.click(within(picker).getByRole('button', { name: 'このまま設定する' }));
+    expect(screen.queryByRole('dialog', { name: `${name}の体温` })).toBeNull();
+    expect(within(row).getByRole('button', { name: `${name}の体温 29.4℃` })).toBeTruthy();
+
+    // 体位・呼吸・顔色を選んで「記録する」を1回押せば記録する（行でもう一度確かめない）
+    for (const field of ['position', 'breathing', 'complexion']) {
+      fireEvent.click(row.querySelector<HTMLInputElement>(`input[name^="${field}-"][value="1"]`)!);
+    }
+    fireEvent.click(within(row).getByRole('button', { name: `${name}を記録する` }));
+    await waitFor(() => expect(db.napRecords.some((r) => r.nap_session_id === sessionId && r.child_id === 'C001' && r.temperature === 29.4)).toBe(true), { timeout: 3000 });
+    expect(row.textContent).not.toContain('の外です');
     await api.endSession(teacher, sessionId);
   });
 });

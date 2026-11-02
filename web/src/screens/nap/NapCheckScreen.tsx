@@ -479,8 +479,6 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
   readOnly?: boolean;
 }) {
   const { user } = useSession();
-  const TEMP_MIN = 30.0;
-  const TEMP_MAX = 43.0;
   const [position, setPosition] = useState<BodyPosition | null>(null);
   const [breathing, setBreathing] = useState<Breathing | null>(null);
   const [complexion, setComplexion] = useState<Complexion | null>(null);
@@ -529,15 +527,13 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
     target.querySelector<HTMLInputElement>('input[type="radio"]')?.focus();
   }, [busy]);
 
-  // 体温が範囲の外のときは、1度確かめてから記録する。記録は妨げない（園児の平熱と同じ範囲）
-  const [confirmedTemp, setConfirmedTemp] = useState<number | null>(null);
+  /*
+   * 体温が範囲（30.0〜43.0℃）の外のときの確かめは、体温の窓の中で1度だけする（下の TemperaturePicker の outsideAck。
+   * 共通の部品 components/TemperaturePicker.tsx と同じ形）。範囲の外の値は窓の手で入れる欄からしか入らないので、
+   * ここでもう一度は確かめない（前は窓で設定したあと「記録する」でもう一度押させていた。PR #374 の自動レビュー）
+   */
   const save = async () => {
     if (busy || !position || !breathing || !complexion) return;
-    if (temperature !== null && (temperature < TEMP_MIN || temperature > TEMP_MAX) && confirmedTemp !== temperature) {
-      setConfirmedTemp(temperature);
-      setError(`体温が ${TEMP_MIN.toFixed(1)}〜${TEMP_MAX.toFixed(1)}℃ の外です。入力に誤りがなければ、もう一度「記録する」を押してください。`);
-      return;
-    }
     // 保存している間もボタンは無効になるので、押した時点で調べておく
     const pressedWithFocus = document.activeElement === saveRef.current;
     setBusy(true); setError(null); setJustSaved(false);
@@ -545,7 +541,7 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
       await api.record(user!, sessionId, {
         child_id: id, body_position: position, breathing, complexion, temperature,
       });
-      setPosition(null); setBreathing(null); setComplexion(null); setTemperature(null); setConfirmedTemp(null);
+      setPosition(null); setBreathing(null); setComplexion(null); setTemperature(null);
       setJustSaved(true);
       onSaved();
       if (pressedWithFocus) focusAfterSave.current = 'next-row';
@@ -564,7 +560,8 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
    * 行を目立たせて「体温を入れてください。」を出す。「ねた」は先に保存してある（押した時刻を遅らせないため。決めたこと D-7）。
    * 体温は行に1つの「体温」のボタン（項目12）で入れ、選んだらすぐ入眠時の体温として保存する（5分ごとの確認の体温には入れない）。
    * 入ると文は消える。入眠時の体温は監査の層の値で、保護者の連絡帳の体温（きょうのようすの体温の記録）とは別の記録
-   * （基本設計書 (4-8)・「ねた・おきた（t_nap_sleep）」(5-7)）。範囲の外は1度確かめてから保存する（記録は妨げない。4-12）
+   * （基本設計書 (4-8)・「ねた・おきた（t_nap_sleep）」(5-7)）。範囲の外は体温の窓の中で1度確かめてから保存する
+   * （「このまま記録する」。記録は妨げない。4-12。TemperaturePicker の outsideAck）
    */
   const openSleep = row.sleeps.find((x) => !x.woke_at) ?? null;
   const needsSleepTemp = settingText('nap.temperature_required', '入眠時') === '入眠時'
@@ -572,18 +569,11 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
   const sleepTemp = (openSleep ?? row.sleeps.at(-1))?.sleep_temperature ?? null;
   const sleepTempHintId = useId();
   const [sleepTempBusy, setSleepTempBusy] = useState(false);
-  const [confirmedSleepTemp, setConfirmedSleepTemp] = useState<number | null>(null);
   const saveSleepTemp = async (value: number) => {
     if (!openSleep || sleepTempBusy) return;
-    if ((value < TEMP_MIN || value > TEMP_MAX) && confirmedSleepTemp !== value) {
-      setConfirmedSleepTemp(value);
-      setError(`体温が ${TEMP_MIN.toFixed(1)}〜${TEMP_MAX.toFixed(1)}℃ の外です。入力に誤りがなければ、もう一度同じ値を入れてください。`);
-      return;
-    }
     setSleepTempBusy(true); setError(null);
     try {
       await api.sleepTemperature(user!, openSleep.nap_sleep_id, value);
-      setConfirmedSleepTemp(null);
       onSaved();
     } catch (e) { setError((e as Error).message); }
     finally { setSleepTempBusy(false); }
@@ -704,7 +694,7 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
       {error && <Alert>{error}</Alert>}
 
       {temperatureOpen && <TemperaturePicker name={name} onClose={() => setTemperatureOpen(false)}
-        note={needsSleepTemp ? '入眠時の体温として、選んだらすぐに記録します。' : undefined}
+        note={needsSleepTemp ? '入眠時の体温として、選んだらすぐに記録します。' : undefined} recordsNow={needsSleepTemp}
         onSelect={(value) => {
           setTemperatureOpen(false);
           if (needsSleepTemp) void saveSleepTemp(value);
@@ -795,16 +785,23 @@ function NapChoices<T extends string>({ label, name, options, value, onChange }:
   );
 }
 
+/** 体温の通常の範囲（基本設計書「入力項目の制約値」(4-12)。外でも記録は妨げず、確かめを促すだけ） */
+const TEMP_MIN = 30.0;
+const TEMP_MAX = 43.0;
+
 /** 実測したときだけ開く体温パネル。よく使う範囲はキーボードなしで2タップ。 */
-function TemperaturePicker({ name, note, onClose, onSelect }: {
+function TemperaturePicker({ name, note, recordsNow, onClose, onSelect }: {
   name: string;
   /** 何として記録するか（入眠時の体温のとき）。【仮置き】文言（web/仮置き値.md） */
   note?: string;
+  /** 選んだらすぐ記録する（入眠時の体温）。範囲の外の確かめのボタンの名前を「このまま記録する」にする */
+  recordsNow?: boolean;
   onClose: () => void; onSelect: (value: number) => void;
 }) {
   const [whole, setWhole] = useState<number | null>(null);
   const [manual, setManual] = useState('');
   const [manualOpen, setManualOpen] = useState(false);
+  const [outsideAck, setOutsideAck] = useState(false);
   /*
    * 手で入れる体温は小数第1位まで（基本設計書「入力項目の制約値」(4-9)、図/画面詳細図.md「午睡チェック画面」(5-1) 項目12）。
    * 表示だけを丸めて、記録には入れたままの桁が残るのを防ぐ（GitHub Issue #165）
@@ -813,6 +810,19 @@ function TemperaturePicker({ name, note, onClose, onSelect }: {
   const manualProblem = !manual ? null
     : !Number.isFinite(manualValue) ? '数値で入力してください'
       : !isOneDecimal(manualValue) ? '体温は小数第1位まで（例：34.9）で入力してください' : null;
+  /*
+   * 範囲（30.0〜43.0℃）の外は、窓を開いたまま確かめを促し、止めない。1回目はボタンを「このまま記録する」
+   * （5分ごとの確認では「このまま設定する」）に替えて範囲の外の文を出し、2回目で渡す。共通の部品
+   * components/TemperaturePicker.tsx の outsideAck と同じ形（基本設計書「メッセージ一覧」(4-12) の範囲外の文）。
+   * 前は窓が閉じてから行に「もう一度同じ値を入れてください」と出し、開き直して打ち直すことになった（PR #374 の自動レビュー）。
+   * 一覧（35〜40℃台）から選ぶ値はいつも範囲の中なので、確かめるのは手で入れたときだけ
+   */
+  const outside = !manualProblem && manual !== '' && (manualValue < TEMP_MIN || manualValue > TEMP_MAX);
+  const submitManual = () => {
+    if (!manual || manualProblem) return;
+    if (outside && !outsideAck) { setOutsideAck(true); return; }
+    onSelect(Math.round(manualValue * 10) / 10);
+  };
   return (
     <Modal title={`${name}の体温`} onClose={onClose} footer={<button onClick={onClose}><CloseIcon />閉じる</button>}>
       <div className="nap-temperature-picker">
@@ -829,10 +839,13 @@ function TemperaturePicker({ name, note, onClose, onSelect }: {
           {manualOpen ? <>
             <label htmlFor={`temperature-manual-${name}`}>範囲外の体温</label>
             <input id={`temperature-manual-${name}`} type="number" inputMode="decimal" step="0.1" value={manual}
-              onChange={(e) => setManual(e.target.value)} placeholder="例：34.9" />
-            <button onClick={() => { if (manual && !manualProblem) onSelect(Math.round(manualValue * 10) / 10); }}
-              disabled={!manual || !!manualProblem}>設定</button>
+              onChange={(e) => { setManual(e.target.value); setOutsideAck(false); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submitManual(); } }} placeholder="例：34.9" />
+            <button onClick={submitManual} disabled={!manual || !!manualProblem}>
+              {outsideAck ? (recordsNow ? 'このまま記録する' : 'このまま設定する') : '設定'}
+            </button>
             {manualProblem && <div className="muted" role="alert">{manualProblem}</div>}
+            {outside && outsideAck && <p className="contact-error" role="alert">{TEXT.temperatureOutOfRange}</p>}
           </> : <button className="btn-quiet btn-sm" onClick={() => setManualOpen(true)}>範囲外の値を入力</button>}
         </div>
       </div>

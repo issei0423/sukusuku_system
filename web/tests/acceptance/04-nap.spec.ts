@@ -1644,6 +1644,8 @@ test.describe('午睡チェック画面：入力チェック', () => {
       await picker.getByRole('button', { name: '設定' }).click();
       await page.waitForTimeout(500);
       const shownAfterSet = await page.getByText(promptRe).filter({ visible: true }).count();
+      // 範囲の外は、窓を開いたまま確かめを促す（ボタンが「このまま設定する」に替わる）。それに従ってもう一度押す（妨げないこと）
+      if (await picker.isVisible()) await picker.getByRole('button', { name: /^このまま/ }).click();
       // 「記録する」を押す。確認を促す表示が出たら、それに従ってもう一度押す（妨げないこと）
       await clickAndWaitNap(page, recordButton(row)).catch(() => null);
       await page.waitForTimeout(500);
