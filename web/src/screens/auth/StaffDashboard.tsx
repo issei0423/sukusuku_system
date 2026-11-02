@@ -55,6 +55,12 @@ export default function StaffDashboard() {
   const firstUnhandled = data.unhandledChatRoom;
   // 数えている範囲。一般は自クラス、管理者は全クラス（同「数える範囲」。GitHub Issue #268 の 7）
   const scope = user.role === '1' ? '全クラス' : '担当クラス';
+  /*
+   * 担当クラスの無い一般（フリー）は全クラスを閲覧のみ。日誌を書けないので「日誌を書く」を出さない
+   * （図/画面詳細図「職員（タブレット／PC）」(1-1) の注記「記録の作成・編集のボタンは出さない」、
+   * 基本設計書「権限と利用可能機能」(6-1) ※1。サーバも作成を断る：server/api_diary_write.go）
+   */
+  const freeStaff = user.role === '2' && !user.class_id;
   const unhandledNote = firstUnhandled
     ? `${firstUnhandled.room_name}${data.unhandledChat > 1 ? ` ほか${data.unhandledChat - 1}件` : ''}`
     : undefined;
@@ -188,7 +194,7 @@ export default function StaffDashboard() {
               </Link>
             )}
             {!data.activeNap && <Link className="btn btn-block" to="/staff/nap"><NapIcon />午睡チェックを開始</Link>}
-            <Link className="btn btn-block" to="/staff/diary/new"><DiaryIcon />日誌を書く</Link>
+            {!freeStaff && <Link className="btn btn-block" to="/staff/diary/new"><DiaryIcon />日誌を書く</Link>}
             <Link className="btn btn-block" to="/staff/growth/physical"><MeasureIcon />身体測定を入力</Link>
             <Link className="btn btn-block" to="/staff/growth"><DevCheckIcon />発達チェックを入力</Link>
           </div>

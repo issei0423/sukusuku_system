@@ -50,7 +50,9 @@ function listRow(childName: string, text: string): HTMLElement {
 }
 
 const sessionDateOf = (id: number) => db.napSessions.find((s) => s.nap_session_id === id)!.session_date;
-const md = (date: string) => `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
+// 画面の日付（src/api/util.ts の formatMD。'11/01(日)' の形）と同じく、月と日を2桁にする。
+// 前は '11/1' と作り、日が1〜9の日（前の日の実施の日付が 11/01 など）にだけ落ちていた
+const md = (date: string) => `${date.slice(5, 7)}/${date.slice(8, 10)}`;
 
 let saved: { records: typeof db.napRecords; abnormals: typeof db.napAbnormals; logs: typeof db.operationLogs };
 beforeEach(() => {

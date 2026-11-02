@@ -273,10 +273,11 @@ func (a *app) updateDiary(w http.ResponseWriter, u *SessionUser, in diaryInput) 
 		writeErr(w, http.StatusNotFound, "日誌が見つかりません")
 		return
 	}
-	// 書き換える日誌そのものも、参照範囲の内にあるものに限る。入力の園児・クラスを確かめるだけでは、
-	// 他クラスの日誌を日誌IDで指定して自クラスへ書き換えられてしまう（GitHub Issue #153）
-	if !a.canSeeDiary(u, *in.DiaryID) {
-		writeForbidden(w, "この日誌を編集する権限がありません")
+	// 書き換える日誌そのものも、書ける範囲の内にあるものに限る。入力の園児・クラスを確かめるだけでは、
+	// 他クラスの日誌を日誌IDで指定して自クラスへ書き換えられてしまう（GitHub Issue #153）。
+	// 読めても書けない人（フリーの職員）がいるため、参照範囲（canSeeDiary）でなく書ける範囲で見る
+	if !a.canWriteDiary(u, *in.DiaryID) {
+		writeForbidden(w, msgDiaryWriteForbidden)
 		return
 	}
 	if status == "2" || status == "3" {
@@ -706,6 +707,11 @@ func (a *app) handleWithdrawDiary(w http.ResponseWriter, r *http.Request) {
 		writeForbidden(w, msgDiaryForbidden)
 		return
 	}
+	// 取り下げは書く操作。読めても書けない人（フリーの職員）は断る（基本設計書「権限と利用可能機能」(6-1) ※1）
+	if !a.canWriteDiary(u, id) {
+		writeForbidden(w, msgDiaryWriteForbidden)
+		return
+	}
 	d, err := a.scanDiary(a.db.QueryRow(`SELECT `+diaryColumns+` FROM t_diary WHERE diary_id = ? AND is_deleted = 0`, id))
 	if err != nil {
 		writeForbidden(w, msgDiaryForbidden)
@@ -843,10 +849,10 @@ func (a *app) handleAcquireLock(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "日誌の指定が正しくありません")
 		return
 	}
-	// ロックを取れるのは、その日誌を参照できる職員に限る。担当外の日誌のロックを取られると、
-	// 担任が無操作の経過まで保存できなくなる（GitHub Issue #153）
-	if !a.canSeeDiary(u, id) {
-		writeForbidden(w, "この日誌を編集する権限がありません")
+	// ロックを取れるのは、その日誌を書ける職員に限る。担当外の日誌のロックを取られると、
+	// 担任が無操作の経過まで保存できなくなる（GitHub Issue #153）。読むだけの人（フリーの職員）にも取らせない
+	if !a.canWriteDiary(u, id) {
+		writeForbidden(w, msgDiaryWriteForbidden)
 		return
 	}
 	// 基本設計書「編集ロックの解除」(4-5)：申請中・承認済みの日誌にはロックを取得しない。

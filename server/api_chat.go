@@ -20,6 +20,10 @@ type ChatRoom struct {
 	RoomName     string  `json:"room_name"`
 	IsArchived   bool    `json:"is_archived"`
 	ThreadStatus *string `json:"thread_status"`
+	// 個人チャットの園児（m_chat_room.child_id）。個人チャットは園児単位で作る（GitHub Issue #163）。
+	// 画面が園児から個人チャットを開くために返す（図/画面詳細図「異常時記録画面」(5-2) 項目16「この園児の個人チャット」）。
+	// 個人チャットでない部屋は持たない。モック（web/src/api/mockDb.ts の chatRooms）も同じ形で返す
+	ChildID *string `json:"child_id,omitempty"`
 }
 
 // ChatRoomView は画面が扱うチャンネル。未読件数と投稿可否を添える
@@ -85,6 +89,9 @@ func (a *app) handleChatRooms(w http.ResponseWriter, r *http.Request) {
 			thread.String = "1"
 		}
 		room.ThreadStatus = nullStr(thread)
+		if room.RoomType == "4" && childID != "" {
+			room.ChildID = s(childID)
+		}
 
 		canPost := true
 		if room.RoomType == "1" {

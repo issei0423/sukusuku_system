@@ -26,10 +26,17 @@ export default function DiaryListScreen() {
   const { user } = useSession();
   const [params] = useSearchParams();
   const classesForUser = selectableClasses(user!);
+  /*
+   * 担任（担当クラスのある一般）はクラスを自クラスに固定する。担当クラスの無い一般（フリー）は全クラスを閲覧のみで見られるので、
+   * 管理者と同じく「すべて」から選べ、日誌を書けないので「＋ 新しく書く」を出さない
+   * （基本設計書「権限と利用可能機能」(6-1) ※1、図/画面詳細図「職員（タブレット／PC）」(1-1) の注記。サーバも作成を断る）
+   */
+  const fixedClass = user!.role === '2' && user!.class_id != null;
+  const freeStaff = user!.role === '2' && user!.class_id == null;
 
   const [recordType, setRecordType] = useState<DiaryRecordType | ''>('');
-  // 一般の既定は自クラス。管理者は「すべて」から始める
-  const [classId, setClassId] = useState<number | ''>(user!.role === '2' ? (user!.class_id ?? '') : '');
+  // 担任の既定は自クラス。管理者とフリーは「すべて」から始める
+  const [classId, setClassId] = useState<number | ''>(fixedClass ? user!.class_id! : '');
   const [status, setStatus] = useState<DiaryStatus | ''>((params.get('status') as DiaryStatus) ?? '');
   /*
    * 【仮置き】職員ダッシュボードの「差し戻された日誌」から開いたとき（?mine=1）は、自分が書いた日誌に絞り、
@@ -96,7 +103,7 @@ export default function DiaryListScreen() {
       <div className="page-head">
         <h1>日誌</h1>
         <div className="spacer" />
-        <Link className="btn btn-primary" to="/staff/diary/new"><AddIcon />新しく書く</Link>
+        {!freeStaff && <Link className="btn btn-primary" to="/staff/diary/new"><AddIcon />新しく書く</Link>}
       </div>
 
       <section className="card">
@@ -110,8 +117,8 @@ export default function DiaryListScreen() {
           <Field label="クラス">
             {/* 担任は自分のクラスだけ。変えられない値なので、押せない入力欄の灰の箱にせず文字で見せる（.select-fixed。r2c-05） */}
             <select value={classId} onChange={(e) => setClassId(e.target.value ? Number(e.target.value) : '')}
-              disabled={user!.role === '2'} className={user!.role === '2' ? 'select-fixed' : undefined}>
-              {user!.role !== '2' && <option value="">すべて</option>}
+              disabled={fixedClass} className={fixedClass ? 'select-fixed' : undefined}>
+              {!fixedClass && <option value="">すべて</option>}
               {classesForUser.map((c) => <option key={c.class_id} value={c.class_id}>{c.class_name}</option>)}
             </select>
           </Field>
@@ -137,7 +144,8 @@ export default function DiaryListScreen() {
           <button onClick={search}><SearchIcon />絞り込む</button>
         </div>
         {rangeError && <ErrorBox text={rangeError} />}
-        {user!.role === '2' && (
+        {/* フリーには出さない（全クラスを閲覧のみで見られることは、ヘッダの下の案内が示す。layouts/StaffLayout.tsx） */}
+        {fixedClass && (
           <div className="muted" style={{ marginTop: 8 }}>
             担当するクラスの日誌のみ表示しています。
           </div>

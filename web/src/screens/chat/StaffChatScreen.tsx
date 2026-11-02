@@ -74,13 +74,27 @@ export default function StaffChatScreen() {
    * 「このまま送る」で承諾を付けて送り直す（詳細設計書「チャット画面（職員・保護者）」(2-9 (5))、GitHub Issue #299）
    */
   const [nameCheck, setNameCheck] = useState<{ names: string[]; matches: NameMatch[]; text: string } | null>(null);
-  // ダッシュボードの「未対応の個人チャット」から来たときは、そのチャンネルを開いた状態で始める
+  // ダッシュボードの「未対応の個人チャット」から来たときは、そのチャンネルを開いた状態で始める（?room=）。
+  // 異常時記録画面の「この園児の個人チャット」から来たときは、その園児の個人チャットを開いた状態で始める
+  // （?child=。図/画面詳細図「異常時記録画面」(5-2) 項目16）。どちらも無ければ先頭のチャンネル
   const [searchParams] = useSearchParams();
+  /*
+   * 園児を指定して来たのに、その園児の個人チャットが一覧に無い（参加していない・部屋が無い）ときは、別のチャンネルを黙って開かない。
+   * 先頭の別の家庭のチャンネルが開くと、気づかずにほかの園児のことを書いて送るおそれがある（基本設計書「誤送信への対応」(4-6)）。
+   * チャンネルを選ばない形で始め、その旨を出す。【仮置き】文は設計に無い（web/仮置き値.md）
+   */
+  const [childRoomMissing, setChildRoomMissing] = useState(false);
 
   useEffect(() => {
     if (roomId !== null || !rooms.data || rooms.data.length === 0) return;
     const wanted = Number(searchParams.get('room'));
-    const hit = rooms.data.find((r) => r.room.chat_room_id === wanted);
+    const child = searchParams.get('child');
+    const ofChild = child ? rooms.data.filter((r) => r.room.room_type === '4' && r.room.child_id === child) : [];
+    const hit = rooms.data.find((r) => r.room.chat_room_id === wanted) ?? ofChild.find((r) => !r.left) ?? ofChild[0];
+    if (!hit && child) {
+      setChildRoomMissing(true);
+      return;
+    }
     setRoomId((hit ?? rooms.data[0]).room.chat_room_id);
   }, [rooms.data]);
 
@@ -284,7 +298,11 @@ export default function StaffChatScreen() {
           <div className="chat-scroll" ref={scrollRef}>
             {messages.loading && <Loading />}
             {messages.error && <ErrorBox text={messages.error} />}
-            {messages.data?.length === 0 && <Empty text="まだメッセージはありません。" />}
+            {childRoomMissing && roomId === null ? (
+              <div className="alert alert-soft" role="status">
+                この園児の個人チャットは、チャンネルの一覧にありません。左の一覧からチャンネルを選んでください。
+              </div>
+            ) : messages.data?.length === 0 && <Empty text="まだメッセージはありません。" />}
             {/* 右クリックと長押しは、見ただけでは気づけない。先頭で知らせる（GitHub Issue #103） */}
             {(messages.data?.length ?? 0) > 0 && !current?.left && (
               <p id="staff-message-hint" className="message-hint">

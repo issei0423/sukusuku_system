@@ -212,3 +212,35 @@ func TestGuardianChildrenOmitNickname(t *testing.T) {
 		t.Fatal("管理者の一覧に呼び名が入っていない")
 	}
 }
+
+// 部屋の一覧は、個人チャットに園児（child_id）を添える。異常時記録画面の「この園児の個人チャット」が、園児から部屋を開くため
+// （図/画面詳細図「異常時記録画面」(5-2) 項目16）。グループには添えない。モック（web/src/api/mockDb.ts の chatRooms）と同じ形
+func TestChatRoomsCarryPersonalRoomChild(t *testing.T) {
+	a, h := newTestApp(t)
+	for _, tc := range []struct {
+		accountID int64
+		entrance  string
+	}{{accTeacher, "staff"}, {accGuardian, "guardian"}} {
+		var views []ChatRoomView
+		if err := json.Unmarshal(call(t, h, loginAs(a, tc.accountID, tc.entrance), "GET", "/api/chat/rooms", "").Body.Bytes(), &views); err != nil {
+			t.Fatal(err)
+		}
+		personal := 0
+		for _, v := range views {
+			var want string
+			a.db.QueryRow(`SELECT IFNULL(child_id, '') FROM m_chat_room WHERE chat_room_id = ?`, v.Room.ChatRoomID).Scan(&want)
+			switch {
+			case v.Room.RoomType == "4":
+				personal++
+				if v.Room.ChildID == nil || *v.Room.ChildID != want {
+					t.Errorf("アカウント %d：個人チャット %d の child_id = %v, want %s", tc.accountID, v.Room.ChatRoomID, v.Room.ChildID, want)
+				}
+			case v.Room.ChildID != nil:
+				t.Errorf("アカウント %d：グループ %d に child_id が付いている（%s）", tc.accountID, v.Room.ChatRoomID, *v.Room.ChildID)
+			}
+		}
+		if personal == 0 {
+			t.Fatalf("アカウント %d：個人チャットが一覧に無い", tc.accountID)
+		}
+	}
+}

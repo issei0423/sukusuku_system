@@ -326,6 +326,11 @@ export interface ChatRoom {
   is_archived: boolean;
   /** 個人チャットのみ。'1' 未対応 / '2' 対応済み（要件定義書「チャットツール」(4-3)） */
   thread_status: string | null;
+  /**
+   * 個人チャットのみ。その園児（m_chat_room.child_id）。園児から個人チャットを開くために使う
+   * （図/画面詳細図「異常時記録画面」(5-2) 項目16「この園児の個人チャット」。server/api_chat.go の ChatRoom.ChildID）
+   */
+  child_id?: string | null;
 }
 
 /** 参加者（t_chat_member）。left_at で過去の所属期間を保持する（5-5） */
