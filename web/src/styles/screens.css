@@ -843,6 +843,7 @@ table.list.contact-class-table :is(th, td) { vertical-align: top; padding: var(-
  * 園児の欄の「この園児の連絡帳」「この園児の個人チャット」（図/画面詳細図「異常時記録画面」(5-2) 項目15・16）は、どの幅でも
  * 語の切れ目（「この園児の」「個人」のあと。wbr）でだけ折り返し、左右の余白を付けずに園児名と左をそろえる。1行のまま余白を付けると
  * 園児の列が 222px になり、iPad 横向き（1024px）で状況・対応の列が 64〜70px（1行に2〜3字）まで縮み、縦向き（768px）では表が
- * 横にはみ出した（上の縦向きの直しと同じ読みにくさ）。語の途中では割らない（keep-all）。押せる高さは .btn-sm の 44px のまま
+ * 横にはみ出した（上の縦向きの直しと同じ読みにくさ）。語の途中では割らない（keep-all）。押せる高さは .btn-sm の 44px のまま。
+ * 【仮置き】折り返す位置と余白を外すことは設計が決めていない（web/仮置き値.md「異常時の記録の一覧（縦向き）」）
  */
 .nap-abnormal-list .nap-abnormal-child-links .btn { padding-inline: 0; white-space: normal; word-break: keep-all; text-align: left; }
