@@ -637,6 +637,28 @@ table.list td[rowspan] { vertical-align: top; }
  * 詳細設計書「全画面に共通する部品と決まり」(2-0) の「タッチの条件」(4)：隣り合うボタンの間は 8px 以上（GitHub Issue #215）
  */
 table.list td > :is(button, .btn) + :is(button, .btn) { margin-left: var(--sp-2); }
+/*
+ * 【仮置き】列の多い表が箱の幅に収まらないときに、折ってよい所（見直し m7a-06。w4 の m9-D1）。
+ *   - .list-actions：行の操作の並び。列を広げず、ボタンを次の行へ折る（ボタンの間は上下左右とも 8px。ボタンの字は折らない）。
+ *     職員アカウントの desktop・持ち主の PC の幅で「停止」が箱の外に出ていた
+ *   - td.list-wrap：名前（園児名と括弧の中）・日時と名前・日付と曜日・札の並び・ログインID。空白と括弧と「@」の前でだけ折り、語の途中では割らない
+ *   - td.list-title：題名など長い文の列。8em より細くしない（配布物管理の題名が1〜2字ずつ折れた）
+ */
+table.list .list-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); white-space: nowrap; }
+table.list td.list-wrap { white-space: normal; word-break: keep-all; }
+table.list td.list-title { min-width: 8em; }
+/*
+ * .list-actions.is-one-line-pc：PC の幅（1200px 以上）では行の操作を1行のままにし、ほかの折ってよい列（ログインID・札）を先に折る。
+ * 職員アカウントは、どの行にも操作が3つあり、操作を折るとどの行も2段になるため（スケジュール設定は「提案に戻す」がある行だけ折れる）
+ */
+@media (min-width: 1200px) {
+  table.list .list-actions.is-one-line-pc { flex-wrap: nowrap; }
+}
+/* 縦向き（900px 未満）では、折っても表が箱に収まらず行が高くなるだけなので、前と同じく1行のまま横に送る */
+@media (max-width: 899px) {
+  table.list .list-actions { flex-wrap: nowrap; }
+  table.list td.list-wrap { white-space: nowrap; }
+}
 
 .pager { display: flex; align-items: center; gap: var(--sp-3); justify-content: flex-end; margin-top: var(--sp-3); font-size: var(--fs-small); color: var(--c-text-sub); }
 

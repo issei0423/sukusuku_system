@@ -96,7 +96,7 @@ export default function ChildListScreen() {
         {error && <ErrorBox text={error} />}
         {data?.length === 0 && <Empty text="該当する園児はいません。" />}
         {data && data.length > 0 && (
-          <table className="list">
+          <table className="list list-dense">
             <thead>
               <tr><th scope="col">氏名</th><th scope="col">よみ</th><th scope="col">生年月日</th><th scope="col">月齢</th><th scope="col">クラス</th><th scope="col">アレルギー</th><th scope="col">操作</th></tr>
             </thead>
@@ -112,14 +112,16 @@ export default function ChildListScreen() {
                   <td className="nowrap">{formatAge(c.birth_date, today())}</td>
                   <td className="nowrap"><ClassCell childId={c.child_id} /></td>
                   <td><AllergyCell childId={c.child_id} /></td>
-                  <td className="nowrap">
+                  <td>
                     {/* 行ごとにくり返すので塗らない。開くだけの「記録」はテキスト、作業の「編集」はトーナル、「取消」はテキスト（r2c-03）。
                         「記録」に進む印は添えない（列の多い表で、印のぶん iPad 横向きの「編集」が画面の外へ押し出されるため） */}
-                    <Link className="btn btn-sm btn-quiet" to={`/staff/diary/timeline/${c.child_id}`}>記録</Link>
-                    {isAdmin && <Link className="btn btn-sm btn-tonal" to={`/staff/children/${c.child_id}/edit`}>編集</Link>}
-                    {isAdmin && removableIds.has(c.child_id) && (
-                      <button className="btn-sm btn-quiet btn-danger" onClick={() => { setRemoveError(null); setRemoving(c); }}>取消</button>
-                    )}
+                    <div className="list-actions">
+                      <Link className="btn btn-sm btn-quiet" to={`/staff/diary/timeline/${c.child_id}`}>記録</Link>
+                      {isAdmin && <Link className="btn btn-sm btn-tonal" to={`/staff/children/${c.child_id}/edit`}>編集</Link>}
+                      {isAdmin && removableIds.has(c.child_id) && (
+                        <button className="btn-sm btn-quiet btn-danger" onClick={() => { setRemoveError(null); setRemoving(c); }}>取消</button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -12,7 +12,7 @@ import "strings"
 | 利用者 | Read | Write |
 | 管理者 | 全園児 | 全園児 |
 | 一般（今年度の担任クラスがある） | そのクラスに在籍する園児 | 同じ範囲 |
-| 一般（今年度の担任クラスが無い。フリー） | 全園児 | なし |
+| 一般（今年度の担任クラスが無い。フリー） | 在籍中で取り消していない園児（canReadChild・日誌と同じ範囲。卒園・退園した園児は、保護者の猶予期間中でも読めない） | なし |
 | 保護者 | 紐づけが 1:有効 か 3:猶予中 の自児（linked_at で切らない） | 1:有効 のときだけ（家庭からだけに使う） |
 
 権限の外も、園児が無いのも、同じ 403 と同じ文言（msgContactForbidden）にする。
@@ -40,8 +40,8 @@ func (a *app) staffClassIDs(u *SessionUser) []int64 {
 }
 
 func (a *app) contactAccess(u *SessionUser, childID string) access {
-	var n int
-	if a.db.QueryRow(`SELECT COUNT(*) FROM m_child WHERE child_id = ? AND is_deleted = 0`, childID).Scan(&n) != nil || n == 0 {
+	var enrollment string
+	if a.db.QueryRow(`SELECT enrollment_status FROM m_child WHERE child_id = ? AND is_deleted = 0`, childID).Scan(&enrollment) != nil {
 		return access{}
 	}
 	switch {
@@ -50,7 +50,8 @@ func (a *app) contactAccess(u *SessionUser, childID string) access {
 	case u.isGeneralStaff():
 		classes := a.staffClassIDs(u)
 		if len(classes) == 0 {
-			return access{Read: true}
+			// フリーが読めるのは在籍中（1:在籍）の園児だけ（詳細設計書「判定の関数」(4-1 (2)) 第1.12版。scope.go の canReadChild と同じ条件）
+			return access{Read: enrollment == "1"}
 		}
 		args := []any{childID}
 		for _, id := range classes {
