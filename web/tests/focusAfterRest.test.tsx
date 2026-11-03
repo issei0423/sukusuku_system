@@ -374,7 +374,8 @@ describe('窓を閉じたあとの読み直しで開いた元が消えるとき�
     expect(document.activeElement).toBe(document.querySelector('main'));
   });
 
-  it('連絡帳（園児）：きょうのようすの記録を取り消すと行が消えるので、同じ欄の押せるものへ移す', async () => {
+  /** 連絡帳（園児）を開き、きょうのようすの最後の記録の「直す・取り消す」から、取り消しの確認の「取り消す」を押す */
+  async function pressCancelOfLastToday() {
     open('/staff/contact/C001', teacher);
     await screen.findByRole('heading', { name: '西田 太郎' }, { timeout: 3000 });
     const todaySection = document.querySelector<HTMLElement>('section[aria-labelledby="child-today-title"]')!;
@@ -390,7 +391,38 @@ describe('窓を閉じたあとの読み直しで開いた元が消えるとき�
     const confirm = within(dialog).getByRole('button', { name: '取り消す' }) as HTMLButtonElement;
     await waitFor(() => expect(confirm.disabled).toBe(false), { timeout: 3000 });
     press(confirm);
+    return { opener, todaySection };
+  }
+  const cancelDialog = () => screen.queryByRole('dialog', { name: 'この記録を取り消しますか' });
+
+  /*
+   * 取り消すと、書き込みの知らせ（live）で読み直した行が消え、取り消しの応答で窓が閉じる。どちらが先かは応答の順で決まる。
+   * フォーカスを移すのは窓が閉じたとき（窓の部品 Modal の returnWithin）。jsdom は押せなくなった「取り消す」からフォーカスを
+   * 外さないので、窓が閉じる前は、フォーカスはまだ窓の中の「取り消す」にある（ブラウザでは body）。
+   * そこで窓が閉じるのを待ってから確かめる。前は待たず、行が先に消える順（負荷のある GitHub の CI）のときに、
+   * 窓の中の「取り消す」を見て落ちていた。その順は下の2件目で毎回作る
+   */
+  it('連絡帳（園児）：きょうのようすの記録を取り消すと行が消えるので、同じ欄の押せるものへ移す', async () => {
+    const { opener, todaySection } = await pressCancelOfLastToday();
+    await waitFor(() => expect(cancelDialog()).toBeNull(), { timeout: 3000 });
     await waitFor(() => expect(opener.isConnected).toBe(false), { timeout: 3000 });
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+    expect(todaySection.contains(document.activeElement)).toBe(true);
+  });
+
+  it('連絡帳（園児）：取り消しの応答より先に読み直しで行が消えても（窓は開いたまま）、窓が閉じたら同じ欄の押せるものへ移す', async () => {
+    const cancelEvent = api.cancelEvent.bind(api);
+    vi.spyOn(api, 'cancelEvent').mockImplementation(async (...args: Parameters<typeof cancelEvent>) => {
+      const result = await cancelEvent(...args);
+      // 書き込みの知らせで読み直した行が消えてから、取り消しの応答が届く順にする
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      return result;
+    });
+    const { opener, todaySection } = await pressCancelOfLastToday();
+    await waitFor(() => expect(opener.isConnected).toBe(false), { timeout: 3000 });
+    // 行が先に消えた。窓はまだ開いている
+    expect(cancelDialog()).not.toBeNull();
+    await waitFor(() => expect(cancelDialog()).toBeNull(), { timeout: 3000 });
     await waitFor(() => expect(document.activeElement).not.toBe(document.body));
     expect(todaySection.contains(document.activeElement)).toBe(true);
   });
