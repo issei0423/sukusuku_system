@@ -202,11 +202,12 @@ export default function StaffAccountsScreen() {
                     {/* 行でする作業（ロック解除・変更）はトーナル、ほかはテキストボタン（行ごとにくり返すので塗らない。r2c-03） */}
                     {r.locked && <button className="btn-sm btn-tonal" onClick={() => unlock(r)}>ロック解除</button>}
                     <button className="btn-sm btn-tonal" onClick={() => openEdit(r)}>変更</button>
-                    <button className="btn-sm btn-quiet" onClick={() => setPending({ kind: 'reissue', row: r })}>
+                    {/* 一時パスワード再発行・停止は、確認の窓を挟む危ない操作なので警告のテキストボタン（.btn-quiet.btn-danger。見直し m7a-17）。再開はふつうのテキストボタン */}
+                    <button className="btn-sm btn-quiet btn-danger" onClick={() => setPending({ kind: 'reissue', row: r })}>
                       一時パスワード再発行
                     </button>
                     {r.account.account_id !== user!.account_id && (
-                      <button className="btn-sm btn-quiet"
+                      <button className={r.account.status === '1' ? 'btn-sm btn-quiet btn-danger' : 'btn-sm btn-quiet'}
                         onClick={() => setPending({ kind: r.account.status === '1' ? 'stop' : 'resume', row: r })}>
                         {r.account.status === '1' ? '停止' : '再開'}
                       </button>

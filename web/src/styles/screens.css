@@ -763,7 +763,8 @@ table.list.contact-class-table :is(th, td) { vertical-align: top; padding: var(-
 .recipient-to { font-weight: 700; }
 .recipient-badge.is-unregistered .recipient-to { font-weight: 400; }
 .name-check-message { font-weight: 700; }
-.name-check-text { padding: var(--sp-2) var(--sp-3); border: 1px solid var(--c-border); border-radius: var(--radius); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* 当たった語の印（地と 2px の線・太字）が見えるよう、文の地を白にする。窓の地（surface-container-high）の上では印の地が 1.05:1 で消えていた（見直し m7c-04） */
+.name-check-text { padding: var(--sp-2) var(--sp-3); border: 1px solid var(--c-border); border-radius: var(--radius); background: var(--c-surface); white-space: pre-wrap; overflow-wrap: anywhere; }
 .name-check-text mark { background: var(--c-primary); color: var(--c-primary-ink); font-weight: 700; outline: 2px solid var(--c-primary-ink); }
 .phrase-list { display: grid; gap: var(--sp-2); }
 .phrase-list button { min-height: 48px; text-align: left; justify-content: flex-start; white-space: normal; }
@@ -826,6 +827,13 @@ table.list.contact-class-table :is(th, td) { vertical-align: top; padding: var(-
 /* 職員：ひとこと・写真の行の「成長の記録に残す」（詳細設計書 (2-12 (1))）。指で押せる高さにする */
 .contact-keep-growth { display: inline-flex; align-items: center; gap: var(--sp-1); min-height: 44px; margin-left: var(--sp-2); }
 .contact-keep-growth input { width: 20px; height: 20px; }
+
+/*
+ * 保護者アカウントの紐づく園児の行（screens/master/GuardianAccountsScreen.tsx）。並んだボタンの間は 8px（「タッチの条件」(2-0 (4))。前は 6px）。
+ * 「紐づけを戻す」の違いの文は、行の幅いっぱいの次の段に置く（見直し m7c-05）
+ */
+.guardian-link-row { gap: var(--sp-2); }
+.guardian-link-hint { flex-basis: 100%; margin: 0; }
 
 /*
  * 招待コードの配布用の出力（screens/master/InvitationCodesScreen.tsx）。前は札の見出しと登録の手順が 13px だった（見直し 2026-10-31 の r2a-11）。

@@ -193,7 +193,8 @@ export default function StaffHandoutsScreen() {
         <Modal title="配布物の取り下げ" onClose={() => setWithdrawing(null)} returnWithin={['tr', 'section']}
           footer={<>
             <button onClick={() => setWithdrawing(null)}><CloseIcon />やめる</button>
-            <button className="btn-primary" onClick={withdraw}><UndoIcon />取り下げる</button>
+            {/* 取り下げは保護者から見えなくする危ない操作なので、ほかの確認の窓と同じく警告の塗り（見直し m7a-17） */}
+            <button className="btn-danger" onClick={withdraw}><UndoIcon />取り下げる</button>
           </>}>
           <div className="stack">
             <div>「{withdrawing.title}」を取り下げます。</div>

@@ -36,8 +36,10 @@ export default function NameCheckDialog({ names, matches, text, busy, onFix, onS
   return (
     <Modal title="ほかのお子さんの名前の注意" onClose={onFix}
       footer={<>
-        <button type="button" onClick={onFix} disabled={busy}><EditIcon />直す</button>
-        <button type="button" className="btn-primary" onClick={onSend} disabled={busy} aria-busy={busy}><SendIcon />{busy ? TEXT.sending : 'このまま送る'}</button>
+        {/* 【仮置き】塗りは「直す」。この窓は、ほかの家庭へよその子の名前を送ってしまう誤送信の守りなので、送らずに戻るほうをいちばん主な操作にする。
+            「このまま送る」はアウトライン（見直し m7c-04。画面詳細図 1-3 (3) はボタンの並びだけを定める。web/仮置き値.md） */}
+        <button type="button" className="btn-primary" onClick={onFix} disabled={busy}><EditIcon />直す</button>
+        <button type="button" onClick={onSend} disabled={busy} aria-busy={busy}><SendIcon />{busy ? TEXT.sending : 'このまま送る'}</button>
       </>}>
       <p className="name-check-message" role="alert">{otherNamesMessage(names)}</p>
       <p className="name-check-text">
