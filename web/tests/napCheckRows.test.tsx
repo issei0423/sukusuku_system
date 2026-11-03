@@ -198,4 +198,20 @@ describe('午睡チェック画面：開いたときの行は、出している�
     const [text] = await firstSeen([await nameOf('C001')]);
     expect(text).toContain('13:30 ねた（おきたが未記録）');
   });
+
+  /*
+   * 実施を読めなかったときは、どの実施の行か決まらないので行は読まない。前は「実施なし」の行が出ていたが、
+   * 読めなかったことはどこにも出していなかった。読めなかった理由を出し、読み込み中のままにもしない（PR #387 の自動レビュー）
+   */
+  it('実施を読めなかったときは、その理由を出す（読み込み中のままにしない）', async () => {
+    const failed = vi.spyOn(api, 'activeSession').mockRejectedValue(new Error('サーバにつながりません（テスト）'));
+    try {
+      renderNap();
+      await waitFor(() => expect(document.querySelector('main')!.textContent).toContain('サーバにつながりません（テスト）'), { timeout: 3000 });
+      expect(document.querySelector('main')!.textContent).not.toContain('読み込んでいます');
+      expect(rowsOnScreen()).toEqual([]);
+    } finally {
+      failed.mockRestore();
+    }
+  });
 });

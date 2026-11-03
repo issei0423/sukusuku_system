@@ -294,6 +294,8 @@ export default function NapCheckScreen() {
       </div>
 
       {error && <div style={{ marginBottom: 16 }}><Alert>{error}</Alert></div>}
+      {/* 実施を読めなかったとき。どの実施の行か決まらないので行は読まない（上の rowsSessionId）。読めなかった理由はここに出す（PR #387 の自動レビュー） */}
+      {session.error && <div style={{ marginBottom: 16 }}><ErrorBox text={session.error} /></div>}
 
       {sessionLoading && <Loading />}
 
