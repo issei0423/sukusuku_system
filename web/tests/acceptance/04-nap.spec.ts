@@ -837,6 +837,8 @@ test.describe('午睡チェック画面：ねた・おきた・対象外', () =>
   test('04-019 行き違い ねたと対象外', async ({ page, browser }) => {
     await login(page, 'staffSakura');
     await freshSession(page);
+    // ねたの行は、この実施の組だけを数える。デモの今日の実施（seed.sql の実施1。freshSession が終える）にも陸の「ねた」があるため
+    const sid = openSession('さくら組')!.nap_session_id;
     const a = await loginIn(browser, 'admin');
     await openNap(a.page);
     await stopEvents(page);
@@ -861,7 +863,7 @@ test.describe('午睡チェック画面：ねた・おきた・対象外', () =>
     const bodyB = await rb.text().catch(() => '');
     const shownB = await page.getByText(/対象外になっています/).filter({ visible: true }).allInnerTexts();
     await expect.soft(page.getByText('この園児は対象外になっています。戻してから押してください。').first(), `(b) 画面に文言が出る（応答 ${rb.status()} ${bodyB.slice(0, 160)}。画面に出た近い文：${JSON.stringify(shownB)}）`).toBeVisible();
-    expect.soft(sleepsOf('久保田 陸').filter((r) => !r.is_deleted).length, '陸のねたは記録されない').toBe(0);
+    expect.soft(sleepsOf('久保田 陸').filter((r) => !r.is_deleted && r.nap_session_id === sid).length, '陸のねたは記録されない').toBe(0);
     await page.unroute('**/api/events**');
     await page.reload();
     await expect.soft(napRow(page, '遠藤 花子')).toContainText('ねた');
@@ -874,10 +876,12 @@ test.describe('午睡チェック画面：ねた・おきた・対象外', () =>
   test('04-020 二重のねた', async ({ page, browser }) => {
     await login(page, 'staffSakura');
     await freshSession(page);
+    // ねたの行は、この実施の組だけを数える。デモの今日の実施（seed.sql の実施1。freshSession が終える）にも陸・花子の「ねた」があるため
+    const sid = openSession('さくら組')!.nap_session_id;
     // (a) すばやく2回押す
     await page.getByRole('button', { name: '久保田 陸のねた', exact: true }).dblclick();
     await page.waitForTimeout(1500);
-    expect.soft(sleepsOf('久保田 陸').filter((r) => !r.is_deleted && !r.woke_at).length, '陸の「ねた」は1つだけ').toBe(1);
+    expect.soft(sleepsOf('久保田 陸').filter((r) => !r.is_deleted && !r.woke_at && r.nap_session_id === sid).length, '陸の「ねた」は1つだけ').toBe(1);
     // (b) 2つの窓でほぼ同時に
     const a = await loginIn(browser, 'admin');
     await stopEvents(page);
@@ -889,7 +893,7 @@ test.describe('午睡チェック画面：ねた・おきた・対象外', () =>
     await Promise.all([b1.click(), b2.click()]);
     const msg = 'すでに「ねた」が記録されています。画面を読み込み直してください。';
     await expect.poll(async () => (await page.getByText(msg).count()) + (await a.page.getByText(msg).count()), { message: 'もう片方に文言が出る' }).toBeGreaterThan(0);
-    expect.soft(sleepsOf('遠藤 花子').filter((r) => !r.is_deleted && !r.woke_at).length, '花子の「ねた」は1つだけ').toBe(1);
+    expect.soft(sleepsOf('遠藤 花子').filter((r) => !r.is_deleted && !r.woke_at && r.nap_session_id === sid).length, '花子の「ねた」は1つだけ').toBe(1);
     await evidence(page, '04-020');
     await a.context.close();
   });
@@ -1074,6 +1078,8 @@ test.describe('午睡チェック画面：つながり・時刻', () => {
   test('04-027 サーバに届かないとき', async ({ page }) => {
     await login(page, 'staffSakura');
     await freshSession(page);
+    // ねたの行は、この実施の組だけを数える。デモの今日の実施（seed.sql の実施1。freshSession が終える）にも陸の「ねた」があるため
+    const sid = openSession('さくら組')!.nap_session_id;
     const timerBefore = await headerText(page);
     await page.context().setOffline(true);
     await page.getByRole('button', { name: '久保田 陸のねた', exact: true }).click();
@@ -1088,7 +1094,7 @@ test.describe('午睡チェック画面：つながり・時刻', () => {
     await evidence(page, '04-027');
     await page.context().setOffline(false);
     if (await again.count()) await again.first().click();
-    await expect.poll(() => sleepsOf('久保田 陸').filter((r) => !r.is_deleted).length, { message: '戻して「もう一度送る」で1件だけ記録される' }).toBe(1);
+    await expect.poll(() => sleepsOf('久保田 陸').filter((r) => !r.is_deleted && r.nap_session_id === sid).length, { message: '戻して「もう一度送る」で1件だけ記録される' }).toBe(1);
     await expect.soft(page.getByText('サーバにつながりません。記録は保存されていません')).toHaveCount(0);
   });
 

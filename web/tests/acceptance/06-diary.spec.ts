@@ -34,6 +34,7 @@ import {
   dateBox,
   diariesLike,
   diaryById,
+  endOwnNapSessions,
   eventsSeen,
   gotoList,
   gotoPending,
@@ -925,6 +926,9 @@ test.describe('同時編集のロック', () => {
   test('06-023 画面を離れる・タブを閉じる・ログアウトで解除', async ({ page, browser }) => {
     const today = jstToday();
     await login(page, 'staffSakura');
+    // 下ごしらえ：鈴木が開始した午睡チェック（デモの今日の実施）を終えておく。実施中だと③のログアウトが止まり、ロックの解除を確かめられない。
+    // デモの実施は午睡の時間帯の終わりまで実施中に当たるので、回す時刻によらず終える
+    await endOwnNapSessions(page, SUZUKI);
     const id = await createDiary(page, { type: '2', className: 'さくら組', body: '受入テスト 06-023' }, today);
     const suzukiId = staffIdOf(SUZUKI);
     const muraId = staffIdOf('村田 真一');
@@ -974,7 +978,8 @@ test.describe('同時編集のロック', () => {
     await page.getByRole('banner').getByRole('button', { name: 'ログアウト', exact: true }).click();
     const ask2 = page.getByRole('dialog').or(page.getByRole('alertdialog'));
     let domLogout = false;
-    if (await ask2.isVisible({ timeout: 3000 }).catch(() => false)) {
+    // ログアウトの確かめは、押したあとサーバへ尋ねてから出ることがある。isVisible は待たない（timeout は効かない）ので、出るまで待つ
+    if (await ask2.first().waitFor({ state: 'visible', timeout: 3000 }).then(() => true, () => false)) {
       domLogout = true;
       await ask2.getByRole('button', { name: /ログアウト|破棄|進む|はい/ }).last().click();
     }
@@ -1610,7 +1615,8 @@ test.describe('一覧・タイムライン', () => {
         await apply();
         await expectShown(`園児名「${name}」`, { 太郎の個人日誌: true, 美咲の個人日誌: false, クラス日誌: false });
       }
-      await expect.soft(main.getByText(/1\s*\/\s*\d+/), '1ページ目から出る').toBeVisible();
+      // ページの表示「1 / n」だけに当てる。記録日の「11/03(火)」「01/05(月)」などにも当たらないよう、文字の全体で比べる
+      await expect.soft(main.getByText(/^1\s*\/\s*\d+$/), '1ページ目から出る').toBeVisible();
     }
     await evidence(page, '06-036');
   });
