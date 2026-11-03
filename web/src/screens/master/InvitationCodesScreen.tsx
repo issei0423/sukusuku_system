@@ -187,7 +187,7 @@ export default function InvitationCodesScreen() {
         {loadError && <ErrorBox text={loadError} />}
         {data?.length === 0 && <Empty text="該当する招待コードはありません。" />}
         {data && data.length > 0 && (
-          <table className="list">
+          <table className="list list-dense">
             <thead>
               <tr><th scope="col">園児</th><th scope="col">コード</th><th scope="col">発行日</th><th scope="col">有効期限</th><th scope="col">状態</th><th scope="col">操作</th></tr>
             </thead>
@@ -196,7 +196,7 @@ export default function InvitationCodesScreen() {
                 rows.map((r, i) => (
                   <tr key={r.invitation_code_id}>
                     {/* 同じ園児に複数枚が並ぶため、園児 ID ごとにまとめて見せる */}
-                    {i === 0 && <td className="nowrap" rowSpan={rows.length}><strong>{childLabel(childId, r.child_name, r.class_id)}</strong></td>}
+                    {i === 0 && <td className="list-wrap" rowSpan={rows.length}><strong>{childLabel(childId, r.child_name, r.class_id)}</strong></td>}
                     <td className="nowrap" style={{ fontFamily: 'monospace' }}>{r.code}</td>
                     <td className="nowrap">{r.created_at.slice(0, 10).replace(/-/g, '/')}</td>
                     <td className="nowrap">{formatYMD(r.expires_on)}</td>

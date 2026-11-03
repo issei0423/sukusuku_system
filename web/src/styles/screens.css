@@ -648,7 +648,7 @@ table.list.contact-class-table :is(th, td) { vertical-align: top; padding: var(-
 .contact-picks.is-toilet .contact-pick { word-break: keep-all; overflow-wrap: anywhere; letter-spacing: 0; }
 /*
  * 食事の量・排せつのボタンは、左右の余白 4px・字間 0 にして、列を詰めても名前を1行に収める
- * （給食の列 192px で「食べない」、排せつの列 280px で「トイレでできた」が1行に入る。前は余白 8px）
+ * （給食の列 12rem（既定の文字で 192px）で「食べない」、排せつの列 280px で「トイレでできた」が1行に入る。前は余白 8px）
  */
 .contact-picks:is(.is-meal, .is-toilet) .contact-pick { padding-inline: var(--sp-1); letter-spacing: 0; }
 /* 仮に入れた量（保存していない）は、白の地に濃い点線の枠（「食事の列の画面の中の状態」(3-2)）。チェックの印は付く */
@@ -672,7 +672,8 @@ table.list.contact-class-table :is(th, td) { vertical-align: top; padding: var(-
 }
 .contact-pick-note { flex-basis: 100%; font-size: var(--fs-small); }
 .contact-picks.is-meal .contact-pick, .contact-picks.is-toilet .contact-pick { flex: 1 1 calc(50% - var(--sp-2)); }
-.contact-class-table .contact-col-meal { width: 192px; min-width: 192px; }
+/* 給食の列は rem で決め、ブラウザの文字を大きくしても「食べない」がチップの外に出ないようにする（見直し m7b-15。字は #368 で折り返さない） */
+.contact-class-table .contact-col-meal { width: 12rem; min-width: 12rem; }
 /* ボタン1つに「トイレでできた」が1行で入る幅（セルの左右 12px を引いて、2つ並べて 1つ 124px） */
 .contact-class-table .contact-col-toilet { width: 280px; min-width: 280px; }
 .contact-class-table .contact-col-temp { width: 120px; min-width: 120px; }

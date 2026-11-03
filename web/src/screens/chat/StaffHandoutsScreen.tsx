@@ -107,7 +107,7 @@ export default function StaffHandoutsScreen() {
         {loadError && <ErrorBox text={loadError} />}
         {data?.length === 0 && <Empty text="掲載中の配布物はありません。" />}
         {data && data.length > 0 && (
-          <table className="list">
+          <table className="list list-dense">
             <thead>
               <tr><th scope="col">対象の月</th><th scope="col">種類</th><th scope="col">題名</th><th scope="col">対象</th><th scope="col">ファイル</th><th scope="col">掲載</th><th scope="col">操作</th></tr>
             </thead>
@@ -117,15 +117,17 @@ export default function StaffHandoutsScreen() {
                   <td className="nowrap">{formatMonth(h.target_month)}</td>
                   {/* 配布物の種類は状態でないので plain（まだ済んでいないものの青にしない。見直し m7a-08） */}
                   <td className="nowrap"><Tag label={HANDOUT_TYPE[h.handout_type] ?? 'その他'} /></td>
-                  <td>{h.title}</td>
+                  <td className="list-title">{h.title}</td>
                   <td className="nowrap">{h.class_name ?? '園全体'}</td>
                   <td className="nowrap">
                     {h.file_type === 'application/pdf' ? 'PDF' : '画像'}・{formatFileSize(h.file_size)}
                   </td>
-                  <td className="nowrap">{formatMDHM(h.posted_at)} {h.posted_staff_name}</td>
-                  <td className="nowrap">
-                    <button className="btn-sm" onClick={() => setOpened(h)}>開く</button>
-                    {isAdmin && <> <button className="btn-sm" onClick={() => setWithdrawing(h)}>取り下げ</button></>}
+                  <td className="list-wrap"><span className="nowrap">{formatMDHM(h.posted_at)}</span> <span className="nowrap">{h.posted_staff_name}</span></td>
+                  <td>
+                    <div className="list-actions">
+                      <button className="btn-sm" onClick={() => setOpened(h)}>開く</button>
+                      {isAdmin && <button className="btn-sm" onClick={() => setWithdrawing(h)}>取り下げ</button>}
+                    </div>
                   </td>
                 </tr>
               ))}
