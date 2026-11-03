@@ -110,13 +110,13 @@ export default function DevListScreen() {
                   <td className="nowrap">{r.scheduledOn ? formatYMD(r.scheduledOn) : '―'}</td>
                   <td className="nowrap">
                     {r.overdue
-                      ? <Tag label="未実施" className="tag-alert" />
+                      ? <Tag label="未実施" className="tag-warn" />
                       : r.near
                         ? <Tag label="予定日が近い" className="tag-applied" />
                         : <Tag label="予定どおり" className="tag-plain" />}
                     {/* 未入力はチェック漏れの対象。未確認は含めない（基本設計書 5-7） */}
-                    {/* 未実施・未入力（チェック漏れ）は警告色の札（.tag-alert）。差し戻しの色は日誌の差し戻しだけ（r2c-02） */}
-                    {r.unfilled > 0 && <> <Tag label={`未入力 ${r.unfilled} 件`} className="tag-alert" /></>}
+                    {/* 未実施・未入力（チェック漏れ）は期限・漏れ・誤りの札（.tag-warn）。安全の印（.tag-alert）とは分ける（見直し m7c-09） */}
+                    {r.unfilled > 0 && <> <Tag label={`未入力 ${r.unfilled} 件`} className="tag-warn" /></>}
                   </td>
                   <td className="nowrap">
                     {/* 行ごとにくり返す操作なので塗らず、トーナルにする（r2c-03） */}

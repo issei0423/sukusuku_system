@@ -610,6 +610,13 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
           {justSaved ? '保存しました' : excluded ? 'きょうは対象外' : !row.latest ? (due ? '未記録（チェック時刻を過ぎています）' : '未記録') : due ? 'チェック時刻を過ぎています' : '確認済み'}
         </span>
         <span className="sr-only" role="status">{justSaved ? '保存しました' : ''}</span>
+        {/*
+          入眠時の体温の入力待ち。状態の文のすぐ後ろ（名前の行）に、まだ済んでいないものの札（tag-applied）で出し、体温のボタンの説明（aria-describedby）にもする
+          （基本設計書「メッセージ一覧」(4-12) の体温の入力待ち、画面詳細図「午睡チェック画面」(5-1) のワイヤーフレームは名前の列の下）。
+          警告色は時刻を過ぎた行と異常の印だけに使う（基本設計書「画面基本構成」(3-5) の警告色の用途。見直し m7c-01・m7c-06）。
+          行の状態の文と同じく role="status" にはしない（GitHub Issue #209）。「ねた」を押したときの結果の表示で読み上げる（SleepControls.tsx）
+        */}
+        {needsSleepTemp && <span id={sleepTempHintId} className="tag tag-applied">{TEXT.sleepTemperatureNeeded}</span>}
         <span className="last">{row.latest ? `前回 ${formatHM(row.latest.checked_at)} ${BODY_POSITION[row.latest.body_position]}` : '前回の記録なし'}</span>
         {latest && <LatestObservation record={latest} />}
         <span className="last">平熱 {formatTemperature(row.child.normal_temperature)}℃</span>
@@ -661,12 +668,7 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
           氏名を .sr-only の要素で添えると、Chromium は要素の境目に空白を足し「（氏名）の 体温」になるため、
           見えている文字と同じ文字列から aria-label を作る
         */}
-        {/*
-          入眠時の体温が要るときは、ボタンのそばに「体温を入れてください。」を出し、ボタンの説明（aria-describedby）にもする
-          （基本設計書「メッセージ一覧」(4-12) の体温の入力待ち）。行の状態の文と同じく role="status" にはしない（GitHub Issue #209）。
-          「ねた」を押したときの結果の表示で読み上げる（SleepControls.tsx）
-        */}
-        {needsSleepTemp && <span id={sleepTempHintId} className="tag tag-alert">{TEXT.sleepTemperatureNeeded}</span>}
+        {/* 入眠時の体温の入力待ちの札は名前の行に置く（上）。このボタンの説明（aria-describedby）はその札を指す */}
         <button type="button" className="nap-temperature-button" onClick={() => setTemperatureOpen(true)}
           aria-label={`${name}の${temperatureText}`} disabled={sleepTempBusy} aria-busy={sleepTempBusy || undefined}
           aria-describedby={needsSleepTemp ? sleepTempHintId : undefined}>
@@ -682,6 +684,10 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
           表示名は「記録する」（図/画面詳細図「午睡チェック画面」(5-1) 項目15・注記）。前は「この子を記録」。
           読み上げの名前は「（氏名）を記録する」。どの子の行のボタンかを名前で分かるようにする（「ねた」「体温」と同じく氏名を前に添え、
           見えている文字をそのまま含める。WCAG 2.5.3 ラベルの中の名前）。保存している間は見えている「保存中…」をそのまま名前にする
+        */}
+        {/*
+          【仮置き】「記録する」は行ごとにくり返す操作だが、塗りのまま残す（職員の画面の行ごとの操作の例外。web/仮置き値.md）。
+          巡回でいちばん押す保存で、体位・呼吸・顔色を選ぶまで押せないので、塗りが並ぶのは選び途中の行が重なるときだけ（見直し m7a-19）
         */}
         <button ref={saveRef} type="button" className="btn-primary" onClick={save}
           disabled={busy || !complete} aria-describedby={complete ? undefined : saveHintId}

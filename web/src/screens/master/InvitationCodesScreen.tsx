@@ -202,9 +202,9 @@ export default function InvitationCodesScreen() {
                     <td className="nowrap">{formatYMD(r.expires_on)}</td>
                     <td className="nowrap">
                       <Tag label={INVITATION_STATUS[r.status]}
-                        className={r.status === '2' ? 'tag-approved' : r.status === '3' ? 'tag-draft' : 'tag-applied'} />
-                      {/* 期限を過ぎたものは警告色の札（.tag-alert）。差し戻しの色は日誌の差し戻しだけ（r2c-02） */}
-                      {r.expired && <> <Tag label="期限切れ" className="tag-alert" /></>}
+                        className={r.status === '2' ? 'tag-plain' : r.status === '3' ? 'tag-draft' : 'tag-applied'} />
+                      {/* 札の役割（web/仮置き値.md「職員の画面の札の色」）：使用済はふつう（plain）、未使用はまだ済んでいない（applied）、期限切れは期限・誤りの札（.tag-warn） */}
+                      {r.expired && <> <Tag label="期限切れ" className="tag-warn" /></>}
                     </td>
                     <td className="nowrap">
                       {r.status === '1' && (

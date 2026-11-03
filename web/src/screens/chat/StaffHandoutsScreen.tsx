@@ -115,7 +115,8 @@ export default function StaffHandoutsScreen() {
               {data.map((h) => (
                 <tr key={h.handout_id}>
                   <td className="nowrap">{formatMonth(h.target_month)}</td>
-                  <td className="nowrap"><Tag label={HANDOUT_TYPE[h.handout_type] ?? 'その他'} className="tag-applied" /></td>
+                  {/* 配布物の種類は状態でないので plain（まだ済んでいないものの青にしない。見直し m7a-08） */}
+                  <td className="nowrap"><Tag label={HANDOUT_TYPE[h.handout_type] ?? 'その他'} /></td>
                   <td>{h.title}</td>
                   <td className="nowrap">{h.class_name ?? '園全体'}</td>
                   <td className="nowrap">

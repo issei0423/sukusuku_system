@@ -133,9 +133,10 @@
 .nap-head-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); margin-left: auto; }
 .nap-session-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); }
 .nap-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); }
+/* 1人の箱。カードと同じ角 12px と飾りの線（outline-variant）。時刻を過ぎた行・異常のある行は警告色の枠が上書きする（見直し m7a-09） */
 .nap-card {
-  background: var(--c-surface); border: 1px solid var(--c-border);
-  border-radius: var(--radius); padding: var(--sp-3);
+  background: var(--c-surface); border: 1px solid var(--c-border-weak);
+  border-radius: var(--radius-card); padding: var(--sp-3);
   display: flex; flex-direction: column; gap: var(--sp-1);
 }
 .nap-card.is-due { border-color: var(--c-alert); background: var(--c-alert-soft); }
@@ -156,10 +157,11 @@
  */
 .nap-record-row.has-abnormal { border-color: var(--c-alert); }
 /*
- * 入眠時の体温が入るまで、行の枠を警告色にする（図/画面詳細図「午睡チェック画面」(5-1) 項目24、詳細設計書「行の状態ごとの表示」(2-4 (2))
- * 「行を目立たせて」）。【仮置き】形（枠の色だけ。左の太い線は時刻を過ぎた行の印なので付けない。設計に【仮置き】で入った。docs の詳細設計書 第1.11版。web/仮置き値.md）
+ * 入眠時の体温が入るまでの行（.needs-temperature）は、枠を変えない。目立たせるのは名前の行の「体温を入れてください。」の札（tag-applied）だけにする。
+ * 前は枠を警告色にしたので、入眠の直後は寝ている子の行がほぼ全部赤い枠になり、時刻を過ぎた行が目立たなくなった（見直し m7c-01）。
+ * 警告色は時刻を過ぎた行・異常のある行と安全の印だけに使う（基本設計書「画面基本構成」(3-5) の警告色の用途）。
+ * 【仮置き】docs の詳細設計書「行の状態ごとの表示」(2-4 (2)) 第1.11版の「枠を警告色」は、別に docs 用のブランチで直す（web/仮置き値.md）
  */
-.nap-record-row.needs-temperature { border-color: var(--c-alert); }
 /*
  * 1人の箱：1段目に名前の行と「ねた・おきた」、2段目に体位・呼吸・顔色と、右端に体温・「記録する」。
  * 幅が足りなければ、右の部品から次の段へ送る（折り返しで決めるので、ブラウザの文字の大きさの設定を上げても欄に押し込まれない）

@@ -61,7 +61,7 @@ export default function GuardianHandoutsScreen() {
               <button key={h.handout_id} className="guardian-record-link handout-row"
                 onClick={() => setOpened(h)}>
                 <span className="handout-title">
-                  <Tag label={HANDOUT_TYPE[h.handout_type] ?? 'その他'} className="tag-applied" />
+                  <Tag label={HANDOUT_TYPE[h.handout_type] ?? 'その他'} />
                   <span>{h.title}</span>
                 </span>
                 <ForwardIcon />
