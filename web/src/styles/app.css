@@ -646,10 +646,11 @@ table.list td > :is(button, .btn) + :is(button, .btn) { margin-left: var(--sp-2)
 /*
  * 期限・漏れ・誤りの札（事務の印）。発達チェックの「未実施」「未入力 n 件」、招待コードの「期限切れ」、職員の「ロック中」、園児 CSV の「エラー n 行」、誤送信の「既読あり」。
  * 安全の印と同じ赤い枠にすると「赤い枠の札＝子どもの安全」の読みが崩れるので分ける（見直し m7c-09。w4 の m9）。
- * 橙の淡い地（カスタム色 warning の container）に濃い字・600。枠の線は付けない：安全の印（白地に赤い枠）と形でも分け、色だけに頼らない（字でも示す）。
+ * 橙の淡い地（カスタム色 warning の container）に濃い字・600、橙の 1px の線。安全の印（白地に赤い枠）とは地のあるなし、まだ済んでいないものの札（tag-applied。線なし）とは線のあるなしで、
+ * グレースケールでも分ける（#379 のあとの見直し：線が無いと、灰にしたとき「予定日が近い」と同じ形に見えた）。色だけに頼らない（字でも示す）。
  * 【仮置き】色と形（web/仮置き値.md「職員の画面の札の色」）
  */
-.tag-warn     { color: var(--c-on-warn-soft); background: var(--c-warn-soft); font-weight: 600; }
+.tag-warn     { color: var(--c-on-warn-soft); background: var(--c-warn-soft); border-color: var(--c-warn); font-weight: 600; }
 /*
  * 件数・新着の札（M3 の Badge。BadgeTokens：error の地・全丸）。「新しく n 件」「未読」などに付ける。
  * 【仮置き】字は 14px（M3 の 11sp より大きく。14px より小さい字を使わない）。付ける画面は画面ごとの点で直す

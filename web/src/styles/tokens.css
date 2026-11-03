@@ -147,6 +147,7 @@
   --c-on-approved-soft: var(--md-custom-color-on-success-container);
   --c-warn-soft:      var(--md-custom-color-warning-container);   /* 期限・漏れ・誤りの札の地（.tag-warn） */
   --c-on-warn-soft:   var(--md-custom-color-on-warning-container);
+  --c-warn:           var(--md-custom-color-warning);             /* 期限・漏れ・誤りの札の線（淡い地に 5.03:1） */
 
   /* 地の色。本文の地（surface-container-low）に、箱と入力欄の白（surface-container-lowest）を置く */
   --c-bg:             var(--md-sys-color-surface-container-low);
@@ -413,6 +414,16 @@ select:focus-visible, textarea:focus-visible, summary:focus-visible {
 }
 .btn-quiet:active:not(:disabled), .btn.btn-quiet:active { background: var(--c-state-press); }
 .btn-quiet:disabled { border-color: transparent; background: transparent; }
+/*
+ * 警告のテキストボタン（.btn-quiet.btn-danger）。行の危ない操作（停止・取消・失効・解除・一時パスワード再発行・紐づけを戻す）と、記録を直す窓の「この記録を取り消す」。
+ * 地と線は透明のまま、字を警告色（error。白地に 6.46:1）にする。指した・押したときは error を 8%・10% 重ねる。
+ * 前は .btn-danger と .btn-quiet が同じ詳細度で、後ろの .btn-quiet が勝ち、ふつうのテキストボタンと同じ字の色だった（見直し m7a-17。w4 の m9）
+ */
+.btn-quiet.btn-danger { color: var(--c-alert); }
+@media (hover: hover) {
+  .btn-quiet.btn-danger:hover:not(:disabled) { border-color: transparent; background: color-mix(in srgb, var(--c-alert) 8%, var(--md-sys-color-surface-container-lowest)); }
+}
+.btn-quiet.btn-danger:active:not(:disabled) { border-color: transparent; background: color-mix(in srgb, var(--c-alert) 10%, var(--md-sys-color-surface-container-lowest)); }
 
 /*
  * 「日付と種別｜開く」のように2つに分けて書いたボタンは、後ろの短い語を1行に保ち、前の語の側で折り返す。

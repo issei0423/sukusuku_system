@@ -171,7 +171,8 @@ export default function DiaryApproveScreen() {
       </section>
 
       <div className="row-end">
-        <button className="btn-danger" onClick={sendBack} disabled={busy || !pending || !reason.trim()}><ReturnIcon />差し戻す</button>
+        {/* 差し戻しはトーナル。理由を書くと警告の塗りと承認の塗りが2つ並んでいた（塗りは画面に1つ。見直し m7a-18）。差し戻しの区別の色は札（.tag-returned）で示す */}
+        <button className="btn-tonal" onClick={sendBack} disabled={busy || !pending || !reason.trim()}><ReturnIcon />差し戻す</button>
         <button className="btn-primary" onClick={approve} disabled={busy || !pending || own}>
           <ApproveIcon />{shares ? '承認して保護者へ共有する' : '承認する'}
         </button>

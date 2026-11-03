@@ -118,7 +118,7 @@ export default function ChildListScreen() {
                     <Link className="btn btn-sm btn-quiet" to={`/staff/diary/timeline/${c.child_id}`}>記録</Link>
                     {isAdmin && <Link className="btn btn-sm btn-tonal" to={`/staff/children/${c.child_id}/edit`}>編集</Link>}
                     {isAdmin && removableIds.has(c.child_id) && (
-                      <button className="btn-sm btn-quiet" onClick={() => { setRemoveError(null); setRemoving(c); }}>取消</button>
+                      <button className="btn-sm btn-quiet btn-danger" onClick={() => { setRemoveError(null); setRemoving(c); }}>取消</button>
                     )}
                   </td>
                 </tr>

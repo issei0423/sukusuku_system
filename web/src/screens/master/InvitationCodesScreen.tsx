@@ -208,7 +208,7 @@ export default function InvitationCodesScreen() {
                     </td>
                     <td className="nowrap">
                       {r.status === '1' && (
-                        <button className="btn-sm btn-quiet"
+                        <button className="btn-sm btn-quiet btn-danger"
                           onClick={() => setRevoking({ id: r.invitation_code_id, code: r.code, childName: r.child_name })}>
                           失効
                         </button>

@@ -669,7 +669,8 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
           見えている文字と同じ文字列から aria-label を作る
         */}
         {/* 入眠時の体温の入力待ちの札は名前の行に置く（上）。このボタンの説明（aria-describedby）はその札を指す */}
-        <button type="button" className="nap-temperature-button" onClick={() => setTemperatureOpen(true)}
+        {/* 入眠時の体温の入力待ちの間は、押すものが分かるよう「体温」をトーナルにする。札は名前の行にあり、iPad 縦のように段が折れる幅では離れるため（#379 のあとの見直し） */}
+        <button type="button" className={needsSleepTemp ? 'nap-temperature-button btn-tonal' : 'nap-temperature-button'} onClick={() => setTemperatureOpen(true)}
           aria-label={`${name}の${temperatureText}`} disabled={sleepTempBusy} aria-busy={sleepTempBusy || undefined}
           aria-describedby={needsSleepTemp ? sleepTempHintId : undefined}>
           {temperatureText}
