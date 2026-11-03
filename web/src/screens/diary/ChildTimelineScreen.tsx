@@ -104,7 +104,7 @@ export default function ChildTimelineScreen() {
         )}
       </section>
 
-      <section className="card card-sub">
+      <section className="note">
         <div className="muted">
           この画面は記録を時系列に並べて示すものであり、発達の遅速や健康状態の判定を行うものではありません
           （{childName(c.child_id)}の評価・判断は保育士と園が行います）。

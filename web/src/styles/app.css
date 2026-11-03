@@ -663,19 +663,52 @@ table.list td > :is(button, .btn) + :is(button, .btn) { margin-left: var(--sp-2)
 }
 
 /*
- * 警告・注意喚起。判定ではない。
- * 【仮置き】M3 の error-container の地（枠の線なし、角 12px）に、on-error-container の字（7.24:1）で書く。印は太字
+ * 警告・知らせの帯。判定ではない。帯は意味ごとに4つ（【仮置き】web/仮置き値.md「警告・知らせの帯」。見直し m7c-02・m7a-02・m7a-13・m7b-14。w4 の m9-B）
+ *   - .alert（既定）：誤り・安全だけ。M3 の error-container の地に on-error-container の字（7.24:1）、error の 1px の線（淡い地に 5.00:1）。印は warning
+ *   - .alert-warn：期限切れ・漏れ（発達チェックの未実施）。札の .tag-warn と同じ色で、warning-container の地に on-warning-container の字（13.29:1）、
+ *     warning の 1px の線（5.03:1）。印は error（丸に「!」）
+ *   - .alert-soft：お願い・知らせ。surface-container-high の地に on-surface の字（14.00:1）、outline の 1px の線（地に 3.67:1）。印は info。
+ *     ダイアログの中では白の地にする（ダイアログと同じ地で 1.00:1 になり、帯が見えなかった）
+ *   - .alert-reach：保護者に届くこと（送る・掲載する・承認する前に、誰に届くかを示す）。宛先の札（.recipient-badge）と同じ、
+ *     secondary-container の地に primary の 2px の線（地に 5.00:1）。印は保護者（family_restroom。メニューの「保護者アカウント」と同じ絵）
+ * どの帯も線を持つので、地の差が小さい所（白の箱・ダイアログ）でも帯の形が分かり、forced-colors（Windows のハイコントラスト）でも外形が残る。
+ * 線のぶん内側の余白を減らし、帯の大きさは線を付ける前と同じにする。
+ * 印は「(!)」の字（読み上げない）を Material Symbols の絵に置き換える。字の大きさを 0 にし、絵は mask で描く（午睡の行の中の警告と同じ形）
  */
 .alert {
+  --alert-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='m40-120 440-760 440 760H40Zm138-80h604L480-720 178-200Zm302-40q17 0 28.5-11.5T520-280q0-17-11.5-28.5T480-320q-17 0-28.5 11.5T440-280q0 17 11.5 28.5T480-240Zm-40-120h80v-200h-80v200Zm40-100Z'/%3E%3C/svg%3E");
+  --alert-mark-ink: var(--c-alert);
+  --alert-line: 1px;
   display: flex; align-items: flex-start; gap: var(--sp-2);
-  padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-card);
-  background: var(--c-alert-soft); border: 0;
+  padding: calc(var(--sp-3) - var(--alert-line)) calc(var(--sp-4) - var(--alert-line)); border-radius: var(--radius-card);
+  background: var(--c-alert-soft); border: var(--alert-line) solid var(--c-alert);
   color: var(--c-alert-deep); font-size: var(--fs-body); font-weight: 400; line-height: 1.7;
 }
-.alert > span:first-child { flex: none; color: var(--c-alert-deep); font-weight: 700; }
-/* 知らせるだけのもの。surface-container-high の地に on-surface の字 */
-.alert-soft { background: var(--c-surface-head); color: var(--c-text); }
-.alert-soft > span:first-child { color: var(--c-text); }
+/* 印は 24px。1行目の字の高さ（行間 1.7）の真ん中にそろえる */
+.alert > span:first-child, .disclaimer > span:first-child {
+  flex: none; width: 24px; height: 24px; margin-top: calc((1.7 * var(--fs-body) - 24px) / 2);
+  overflow: hidden; font-size: 0; color: transparent;
+  background-color: var(--alert-mark-ink);
+  -webkit-mask: var(--alert-mark) center / 100% 100% no-repeat;
+  mask: var(--alert-mark) center / 100% 100% no-repeat;
+}
+.alert-warn {
+  --alert-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M480-280q17 0 28.5-11.5T520-320q0-17-11.5-28.5T480-360q-17 0-28.5 11.5T440-320q0 17 11.5 28.5T480-280Zm-40-160h80v-240h-80v240Zm40 360q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z'/%3E%3C/svg%3E");
+  --alert-mark-ink: var(--c-warn);
+  background: var(--c-warn-soft); border-color: var(--c-warn); color: var(--c-on-warn-soft);
+}
+.alert-soft {
+  --alert-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M440-280h80v-240h-80v240Zm40-320q17 0 28.5-11.5T520-640q0-17-11.5-28.5T480-680q-17 0-28.5 11.5T440-640q0 17 11.5 28.5T480-600Zm0 520q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z'/%3E%3C/svg%3E");
+  --alert-mark-ink: var(--c-text-sub);
+  background: var(--c-surface-head); border-color: var(--c-border); color: var(--c-text);
+}
+.modal .alert-soft { background: var(--c-surface); }
+.alert-reach {
+  --alert-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M720-720q-33 0-56.5-23.5T640-800q0-33 23.5-56.5T720-880q33 0 56.5 23.5T800-800q0 33-23.5 56.5T720-720ZM680-80v-320q0-40-20.5-72T607-522l35-103q8-25 29.5-40t48.5-15q27 0 48.5 15t29.5 40l102 305H800v240H680ZM500-500q-25 0-42.5-17.5T440-560q0-25 17.5-42.5T500-620q25 0 42.5 17.5T560-560q0 25-17.5 42.5T500-500ZM220-720q-33 0-56.5-23.5T140-800q0-33 23.5-56.5T220-880q33 0 56.5 23.5T300-800q0 33-23.5 56.5T220-720ZM140-80v-280H80v-240q0-33 23.5-56.5T160-680h120q33 0 56.5 23.5T360-600v240h-60v280H140Zm300 0v-160h-40v-160q0-25 17.5-42.5T460-460h80q25 0 42.5 17.5T600-400v160h-40v160H440Z'/%3E%3C/svg%3E");
+  --alert-mark-ink: var(--c-primary-deep);
+  --alert-line: 2px;
+  background: var(--c-primary-soft); border-color: var(--c-primary-deep); color: var(--c-text);
+}
 /*
  * 箱の中身が警告ひとつだけのときは、箱の枠を消して警告の枠だけを見せる。
  * 赤い枠が二重になると、強さが増すのではなく、どちらが本体か分かりにくくなるため（発達チェック一覧など）
@@ -685,7 +718,8 @@ table.list td > :is(button, .btn) + :is(button, .btn) { margin-left: var(--sp-2)
 /*
  * 免責表示。成長グラフ・発達チェックの比較に常時表示し、スクロールしても視界から外さない
  * （基本設計書 3-5／画面詳細図 6-1・6-2）。
- * 誤りではないため警告色を使わず、surface-container-highest の地にする（枠の線なし）
+ * 誤りではないため警告色を使わず、surface-container-highest の地にする（枠の線なし。forced-colors では線を出す）。
+ * 印は知らせの帯と同じ info（字の 14px に合わせて 20px。見直し m7a-13）
  */
 .disclaimer {
   position: sticky; bottom: 0; z-index: 5;
@@ -696,7 +730,16 @@ table.list td > :is(button, .btn) + :is(button, .btn) { margin-left: var(--sp-2)
   /* 重ねて置く帯なので、DADS が場所の限られる所に許す 14px にして、重なる範囲を小さくする（GitHub Issue #154） */
   font-size: var(--fs-small); font-weight: 700; line-height: 1.5;
 }
-.disclaimer > span:first-child { flex: none; }
+.disclaimer { --alert-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M440-280h80v-240h-80v240Zm40-320q17 0 28.5-11.5T520-640q0-17-11.5-28.5T480-680q-17 0-28.5 11.5T440-640q0 17 11.5 28.5T480-600Zm0 520q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z'/%3E%3C/svg%3E"); --alert-mark-ink: var(--c-text); }
+.disclaimer > span:first-child { width: 20px; height: 20px; margin-top: 0; }
+/*
+ * forced-colors（Windows のハイコントラスト）では地の色が消えるので、印は字の色で描き、線の無い免責の帯にも線を出す。
+ * 警告・知らせの帯は、ふだんから線を持つ（線の色はシステムの色に置き換わる）
+ */
+@media (forced-colors: active) {
+  .alert > span:first-child, .disclaimer > span:first-child { forced-color-adjust: none; background-color: CanvasText; }
+  .disclaimer { border: 1px solid CanvasText; }
+}
 
 /*
  * 発達チェック入力では、免責表示を保存操作の直上に固定する（画面詳細図 6-1）。
@@ -720,6 +763,11 @@ table.list td > :is(button, .btn) + :is(button, .btn) { margin-left: var(--sp-2)
 }
 
 .muted { color: var(--c-text-sub); font-size: var(--fs-small); line-height: calc(20 / 14); }
+/*
+ * 補足の文。箱に入れず、補足の灰の字（.muted）を本文の流れに置く（M3 の supporting text。見直し m7a-12）。
+ * 結果や注意を告げる文は、補足にせず知らせの帯（.alert-soft）で出す。振り分けは web/仮置き値.md「説明の文の置き方」
+ */
+.note { max-width: 40em; margin-bottom: var(--sp-5); }
 .weak  { color: var(--c-text-weak); }
 .row   { display: flex; gap: var(--sp-3); align-items: center; flex-wrap: wrap; }
 .row-end { display: flex; gap: var(--sp-3); align-items: center; justify-content: flex-end; flex-wrap: wrap; }
@@ -747,6 +795,10 @@ summary { min-height: var(--tap-min); padding: 10px 0; cursor: pointer; }
 .modal-foot { padding: var(--sp-4) var(--sp-5); border-top: 1px solid var(--c-border-weak); display: flex; justify-content: flex-end; gap: var(--sp-3); }
 /* ダイアログの中で起きた誤りは、ダイアログの中に出す。後ろに出すと隠れて読めない */
 .modal-body .alert { margin-bottom: var(--sp-3); }
+/* forced-colors では影と地の差が消えるので、ダイアログとスナックバーの外形を線で出す（見直し m7b-14） */
+@media (forced-colors: active) {
+  .modal, .toast { border: 1px solid CanvasText; }
+}
 
 /*
  * 操作が完了したことの表示。画面の下端に重ねて出し、並びを押し広げない。

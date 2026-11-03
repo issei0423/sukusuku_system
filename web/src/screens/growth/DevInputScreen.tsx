@@ -221,16 +221,18 @@ export default function DevInputScreen() {
         )}
       </section>
 
-      <section className="card card-sub">
-        <div className="muted">{TEXT.guardianMessageGuide}</div>
+      {/* 確定したときに保護者に届くものを示す文なので、保護者に届く知らせの帯で出す（見直し m7a-12・m7c-02）。読み上げの領域は付けない */}
+      <section className="card">
+        <Alert reach role={null}>{TEXT.guardianMessageGuide}</Alert>
       </section>
 
-      <section className="card card-sub">
-        <div className="muted">
+      {/* 残すと漏れになることを告げる文なので、補足の灰の字でなく知らせの帯で出す（見直し m7a-12）。読み上げの領域は付けない */}
+      <section className="card">
+        <Alert soft role={null}>
           {/* 「未確認」は結果として残す状態で、チェック漏れの対象にしない（基本設計書「発達チェック・身体測定」(5-7)） */}
           未入力の項目：{unfilled} 件。未入力のままにするとチェック漏れの対象になります。
           確認できなかった項目は「未確認」を選んで残してください。
-        </div>
+        </Alert>
       </section>
 
       {/* 免責表示を保存操作の直上に固定する（画面詳細図 6-1） */}

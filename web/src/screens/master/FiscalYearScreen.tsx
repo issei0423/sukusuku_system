@@ -47,7 +47,8 @@ export default function FiscalYearScreen() {
           </section>
 
           <section className="card">
-            <Alert>{data.note}</Alert>
+            {/* モックの注記。誤りではないので知らせの帯（見直し m7a-02） */}
+            <Alert soft>{data.note}</Alert>
             <div className="muted" style={{ marginTop: 12 }}>
               {/* 実行の流れは基本設計書「年度更新」(4-4) による */}
               実行の流れは、更新内容の一覧の確認 → 個別の修正 → 確定 の順です。

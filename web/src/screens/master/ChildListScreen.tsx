@@ -140,7 +140,7 @@ export default function ChildListScreen() {
       )}
 
       {!isAdmin && (
-        <section className="card card-sub">
+        <section className="note">
           <div className="muted">園児情報の登録・編集は管理者が行います。</div>
         </section>
       )}

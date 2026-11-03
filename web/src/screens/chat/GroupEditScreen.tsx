@@ -108,7 +108,7 @@ export default function GroupEditScreen() {
         )}
       </section>
 
-      <section className="card card-sub">
+      <section className="note">
         <div className="muted">
           {/* クラスのグループはクラスと年度から自動で構成する（基本設計書「チャット」(5-5)） */}
           クラスのグループはクラスと年度から自動で構成されるため、ここには表示されません。

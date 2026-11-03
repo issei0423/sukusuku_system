@@ -57,7 +57,7 @@ export default function ShareSettingScreen() {
 
       {error && <div style={{ marginBottom: 16 }}><Alert>{error}</Alert></div>}
 
-      <section className="card card-sub">
+      <section className="note">
         <div className="muted">
           チェックを外した項目は、保護者へ渡す記録に含めません。園内の記録としては残ります。
           <br />

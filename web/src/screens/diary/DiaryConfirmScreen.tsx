@@ -159,12 +159,16 @@ export default function DiaryConfirmScreen() {
         )}
       </section>
 
-      <section className="card card-sub">
-        <div className="muted">
+      {/*
+        申請したあとに起きることを告げる文なので、補足の灰の字でなく知らせの帯で出す。共有を選んだ個人日誌は、保護者に届く知らせの帯にする
+        （見直し m7a-12・m7c-02）。読み上げの領域（role）は付けない。開いたときからある文のため
+      */}
+      <section className="card">
+        <Alert soft reach={state.recordType === '1' && !!state.share} role={null}>
           申請すると管理者の承認待ちになります。
           {/* 保護者へ届くのは、共有を選んだ個人日誌を管理者が承認したときだけ（server/api_diary_share.go） */}
           {state.recordType === '1' && state.share && '承認されると、この園児の保護者へ共有します。'}
-        </div>
+        </Alert>
       </section>
 
       <div className="row-end">

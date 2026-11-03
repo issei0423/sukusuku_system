@@ -59,8 +59,8 @@ export default function TermsAgreeScreen({ readOnly }: { readOnly?: boolean }) {
   return (
     <PublicLayout wide>
       <h1 style={{ marginBottom: 12 }}>利用規約への同意</h1>
-      {/* 初めてログインした人にも出る画面である。「改定しました」とだけ書かない（GitHub Issue #126） */}
-      <Alert>
+      {/* 初めてログインした人にも出る画面である。「改定しました」とだけ書かない（GitHub Issue #126）。誤りではないので知らせの帯（見直し m7a-02） */}
+      <Alert soft>
         ご利用の前に、利用規約の内容をご確認のうえ、同意をお願いします。
         規約を改定したときも、この画面で改めて同意をお願いしています。
       </Alert>

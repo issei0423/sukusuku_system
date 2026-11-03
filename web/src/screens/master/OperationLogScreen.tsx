@@ -147,7 +147,7 @@ export default function OperationLogScreen() {
         )}
       </section>
 
-      <section className="card card-sub">
+      <section className="note">
         <div className="muted">
           {/* 追記のみ。更新・削除の手段を設けない（基本設計書「操作ログ（t_operation_log）」(5-8)） */}
           操作ログは追記のみで、更新・削除の手段を設けていません。

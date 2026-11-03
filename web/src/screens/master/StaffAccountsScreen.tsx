@@ -220,7 +220,7 @@ export default function StaffAccountsScreen() {
         )}
       </section>
 
-      <section className="card card-sub">
+      <section className="note">
         <div className="muted">
           {/* ログインIDはロールをまたいで園内で一意（基本設計書「アカウント（m_account）」(5-2)） */}
           ログインIDのメールアドレスは、ロールをまたいで園内で一意です。

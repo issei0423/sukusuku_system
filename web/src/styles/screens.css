@@ -178,19 +178,10 @@
 .nap-row-body > .alert { flex-basis: 100%; }
 /*
  * 【仮置き】午睡の行の中の警告（うつ伏せ・呼吸「確認できず」・前回の呼吸が確認できていない・保存の失敗）は、命にかかわる知らせなので、
- * M3 の淡い地（error-container）に加えて、error の 2px の枠と警告の印（Material Symbols の warning）で示す。
- * ほかの画面の .alert は淡い地だけ（M3 のまま）。「(!)」の字（読み上げない）を印に置き換える（w4 の m2。#363 の見直しで、枠を消して弱く見えた）
+ * error の線をほかの画面の警告（1px）より太い 2px にする。余白は線を付ける前のまま（w4 の m2。#363 の見直しで、枠を消して弱く見えた）。
+ * 地・字・警告の印（Material Symbols の warning）は、ほかの画面の .alert と同じ（app.css。w4 の m9-B で印を共通にした）
  */
-.nap-card .alert { border: 2px solid var(--c-alert); }
-.nap-card .alert > span:first-child {
-  width: 24px; height: 24px; overflow: hidden; font-size: 0; color: transparent;
-  background-color: var(--c-alert);
-  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='m40-120 440-760 440 760H40Zm138-80h604L480-720 178-200Zm302-40q17 0 28.5-11.5T520-280q0-17-11.5-28.5T480-320q-17 0-28.5 11.5T440-280q0 17 11.5 28.5T480-240Zm-40-120h80v-200h-80v200Zm40-100Z'/%3E%3C/svg%3E") center / 24px 24px no-repeat;
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='m40-120 440-760 440 760H40Zm138-80h604L480-720 178-200Zm302-40q17 0 28.5-11.5T520-280q0-17-11.5-28.5T480-320q-17 0-28.5 11.5T440-280q0 17 11.5 28.5T480-240Zm-40-120h80v-200h-80v200Zm40-100Z'/%3E%3C/svg%3E") center / 24px 24px no-repeat;
-}
-@media (forced-colors: active) {
-  .nap-card .alert > span:first-child { forced-color-adjust: none; background-color: CanvasText; }
-}
+.nap-card .alert { border-width: 2px; padding: var(--sp-3) var(--sp-4); }
 .nap-row-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); }
 .nap-row-head .name { font-size: 1.25rem; line-height: 1.5; }
 .nap-row-head .last { white-space: nowrap; }

@@ -77,8 +77,9 @@ export default function PasswordChangeScreen({ forced }: { forced?: boolean }) {
 
   const body = (
     <form className="stack" onSubmit={submit}>
+      {/* 誤りではないので知らせの帯にする。変えるまでほかの機能が使えないことは、開いたときに読み上げる（alert のまま。見直し m7a-02） */}
       {forced && (
-        <Alert>
+        <Alert soft role="alert">
           一時パスワードでログインしています。パスワードを変更するまで、ほかの機能は利用できません。
         </Alert>
       )}

@@ -157,7 +157,7 @@ export default function GuardianAccountsScreen() {
         )}
       </section>
 
-      <section className="card card-sub">
+      <section className="note">
         <div className="muted">
           {/* 紐づけ単位で終了させ、有効な紐づけがゼロになった時点で停止する（基本設計書「クラスと紐づけ」(5-3)） */}
           紐づけは園児ごとに終了させます。有効な紐づけがゼロになった時点で、アカウントは自動的に停止されます。

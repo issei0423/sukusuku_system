@@ -78,7 +78,7 @@ export default function ApprovalListScreen() {
       </section>
 
       {data && data.length > 0 && (
-        <section className="card card-sub">
+        <section className="note">
           <div className="muted">
             経過は、申請した日からの日数です。{data[0].warn_days} 日を超えたものに「滞留」を付けています。
             期限ではなく、見落としに気づくための表示です。
