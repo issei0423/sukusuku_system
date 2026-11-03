@@ -528,7 +528,7 @@ export const applyButton = (page: Page) => mainOf(page).getByRole('button', { na
 export const childSelect = (page: Page) => mainOf(page).getByRole('combobox', { name: /^対象の園児/ });
 export const classSelectOf = (page: Page) => mainOf(page).getByRole('combobox', { name: /^対象のクラス/ });
 export const dateBox = (page: Page) => mainOf(page).getByRole('textbox', { name: /^記録日/ });
-/** 他の職員が編集中の表示（設計書の文言「他の職員が編集しています。」と、画面の「〇〇さんが編集中です。」のどちらでも見つける。文言そのものは 06-019 で見る） */
+/** 他の職員が編集中の表示（前の設計書の文言「他の職員が編集しています。」と、画面の「〇〇さんが編集中です。」のどちらでも見つける。設計書は docs の基本設計書 第3.9版で「〇〇さんが編集中です。」に直った。文言そのものは 06-019 で見る） */
 export const lockNotice = (page: Page) => mainOf(page).getByText(/他の職員が編集しています|さんが編集中です/).first();
 /** 画面の下端の完了・誤りの表示（role=status） */
 export const toast = (page: Page, text: string | RegExp) => page.getByRole('status').filter({ hasText: text }).first();

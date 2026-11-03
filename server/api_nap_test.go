@@ -317,7 +317,7 @@ func TestNapRecordFollowsChildClass(t *testing.T) {
 GET /api/nap/session の ended=1 は、その日に最後に終えた実施を返す。午睡チェック画面が、終えたあとも園児の行を
 状態の表示だけで出すため（詳細設計書「行の状態ごとの表示」(2-4 (2)) の「実施の後」。受け入れテスト 04-021）。
 参照の範囲は実施中のものと同じ（一般は自クラスに限る）。ended を付けないときは今までどおり実施中のものだけ。
-【仮置き】設計に無い口（web/仮置き値.md）。モックの同じ観点は web/tests/napCheckRows.test.tsx の lastEndedSession
+【仮置き】設計（図/インタフェース一覧）に【仮置き】で入った口（docs の第2.9版。web/仮置き値.md）。モックの同じ観点は web/tests/napCheckRows.test.tsx の lastEndedSession
 */
 func TestLastEndedNapSession(t *testing.T) {
 	a, h := newTestApp(t)

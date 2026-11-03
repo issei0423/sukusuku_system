@@ -287,7 +287,7 @@ export default function NapCheckScreen() {
 
       {!sessionLoading && !s && (<>
         <section className="card">
-          {/* 【仮置き】終えた実施があるときの文（「きょうの午睡チェックは HH:MM に終了しました。」）は設計に無い（web/仮置き値.md） */}
+          {/* 【仮置き】終えた実施があるときの文（「きょうの午睡チェックは HH:MM に終了しました。」）は設計に【仮置き】で入った（docs の詳細設計書 第1.11版 (2-4 (2))。web/仮置き値.md） */}
           {autoClosed
             ? <Alert>午睡の時間帯を過ぎたため、午睡チェックを自動で終了しました。続けるときは、もう一度開始してください。</Alert>
             : <Empty text={endedSession?.ended_at
@@ -613,7 +613,7 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
         <span className="last">{row.latest ? `前回 ${formatHM(row.latest.checked_at)} ${BODY_POSITION[row.latest.body_position]}` : '前回の記録なし'}</span>
         {latest && <LatestObservation record={latest} />}
         <span className="last">平熱 {formatTemperature(row.child.normal_temperature)}℃</span>
-        {/* 入れた入眠時の体温。値を並べるだけで判定しない（5分ごとの確認の体温とは別に出す）。【仮置き】出し方（web/仮置き値.md） */}
+        {/* 入れた入眠時の体温。値を並べるだけで判定しない（5分ごとの確認の体温とは別に出す）。【仮置き】出し方（設計に【仮置き】で入った。docs の詳細設計書 第1.11版 (2-4 (2))。web/仮置き値.md） */}
         {sleepTemp !== null && <span className="last">入眠時の体温 {formatTemperature(sleepTemp)}℃</span>}
         {abnormal && <span className="tag tag-alert">異常時の記録あり {formatHM(abnormal.found)}</span>}
       </div>
@@ -710,7 +710,7 @@ function NapRecordRow({ row, sessionId, due, abnormal, onSaved, readOnly }: {
  * 実施の後は、その日に最後に終えた実施の状態だけを出す（「午睡の園児」(3-4)：おきたの無いまま終わった組は
  * 「13:05 ねた（おきたが未記録）」。おきたは推測で入れない）。直すのは連絡帳（園児）画面（3-5）。
  * 開始すれば押せるようになることを、各行に「午睡チェックを開始すると押せます」で示す（閲覧のみの職員には出さない）。
- * 【仮置き】実施の後の行にも、新しく開始できることを同じ文で添える（設計は実施の前と後を別の行の状態にしている。web/仮置き値.md）
+ * 【仮置き】実施の後の行にも、新しく開始できることを同じ文で添える（設計に【仮置き】で入った。docs の詳細設計書 第1.11版 (2-4 (2))。web/仮置き値.md）
  */
 function NapClosedRow({ row, canStart }: { row: NapChildState; canStart: boolean }) {
   const name = row.child.child_name;
@@ -792,7 +792,7 @@ const TEMP_MAX = 43.0;
 /** 実測したときだけ開く体温パネル。よく使う範囲はキーボードなしで2タップ。 */
 function TemperaturePicker({ name, note, recordsNow, onClose, onSelect }: {
   name: string;
-  /** 何として記録するか（入眠時の体温のとき）。【仮置き】文言（web/仮置き値.md） */
+  /** 何として記録するか（入眠時の体温のとき）。【仮置き】文言（設計に【仮置き】で入った。docs の詳細設計書 第1.11版 (2-4 (2))。web/仮置き値.md） */
   note?: string;
   /** 選んだらすぐ記録する（入眠時の体温）。範囲の外の確かめのボタンの名前を「このまま記録する」にする */
   recordsNow?: boolean;

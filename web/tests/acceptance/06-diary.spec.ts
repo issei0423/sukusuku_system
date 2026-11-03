@@ -796,8 +796,8 @@ test.describe('同時編集のロック', () => {
     await openDiary(m, id);
     const main = mainOf(m);
     await expect(lockNotice(m), '編集中の警告が出る').toBeVisible();
-    /* 誰が編集中かを名前で出す（要決定事項「日誌の編集ロックの職員の名前」の推し「出す」を正とした。共有端末で、誰に声をかければ
-       閉じてもらえるかが分かる）。設計書の「他の職員が編集しています。」（基本設計書 (4-12)・図/画面詳細図 (3-2) 項目3・詳細設計書 (2-13 (9))）は docs で直す */
+    /* 誰が編集中かを名前で出す（要決定事項「日誌の編集ロックの職員の名前」で「出す」に決まった。docs の第2.19版。共有端末で、誰に声をかければ
+       閉じてもらえるかが分かる）。設計書（基本設計書 (4-12)・図/画面詳細図 (3-2) 項目3・詳細設計書 (2-13 (9))）の文も「（編集中の職員の氏名）さんが編集中です。」に直った（docs の第3.9版・第2.9版・第1.11版） */
     await expect.soft(main.getByText(`${SUZUKI}さんが編集中です。`), '「（編集中の職員名）さんが編集中です。」').toBeVisible();
     await expect.soft(main.getByText(/ロックの解除は管理者へ依頼してください/), '「ロックの解除は管理者へ依頼してください」').toBeVisible();
     await expectReadOnly(m);
@@ -945,7 +945,7 @@ test.describe('同時編集のロック', () => {
     await mainOf(page).getByRole('link', { name: /日誌一覧へ/ }).click();
     const ask = page.getByRole('dialog').or(page.getByRole('alertdialog'));
     let domAsked = false;
-    if (await ask.isVisible({ timeout: 3000 }).catch(() => false)) {
+    if (await ask.first().waitFor({ state: 'visible', timeout: 3000 }).then(() => true, () => false)) { // isVisible は待たない（③と同じ）
       domAsked = true;
       await ask.getByRole('button', { name: /やめる|キャンセル|戻る|とどまる/ }).first().click();
     }
@@ -1682,9 +1682,9 @@ test.describe('一覧・タイムライン', () => {
     const pdf = mainOf(page).getByRole('button', { name: /PDF/ });
     await evidence(page, '06-039');
     /*
-     * 日誌の PDF はモックアップでは作らない（要決定事項「web/仮置き値.md §7 を 12-1 に載せるか」の推し「載せる → 該当ケースは未実施」をとった。
+     * 日誌の PDF はモックアップでは作らない（要決定事項「web/仮置き値.md §7 を 12-1 に載せるか」の日誌の PDF の分は「載せる」に決まった。docs の第2.19版。
      * 午睡の帳票も PDF は演習で作らないと決めた前例：要決定事項「午睡チェックの帳票の形式」）。画面詳細図「モックアップでは実装しないもの」(12-1) に
-     * 「3-1 項目14：PDF 出力｜無い」を載せる直しは docs で行う。ボタンが無いときは実装対象の外として未実施にする
+     * 「3-1 項目14：PDF 出力｜無い」が載った（docs の第2.9版）。ボタンが無いときは実装対象の外として未実施にする
      */
     test.skip(!(await pdf.isVisible().catch(() => false)), notIn121('日誌一覧画面の PDF 出力（3-1 項目14）'));
     const logBefore = maxLogId();

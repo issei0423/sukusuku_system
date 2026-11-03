@@ -28,7 +28,7 @@ export const MSG = {
   sleepExcluded: 'この園児は対象外になっています。戻してから押してください。',
   /** 【仮置き】おきた済みの「おきた」。設計に文言が無い（web/仮置き値.md） */
   wokeTwice: 'すでに「おきた」が記録されています。画面を読み込み直してください。',
-  /** 【仮置き】「おきた」のあとに入眠時の体温を入れようとしたとき。設計に文言が無い（server/messages.go の msgSleepTempAfterWake と同じ。web/仮置き値.md） */
+  /** 【仮置き】「おきた」のあとに入眠時の体温を入れようとしたとき。文は設計に【仮置き】で入った（docs の基本設計書 第3.9版 (4-12)。server/messages.go の msgSleepTempAfterWake と同じ。web/仮置き値.md） */
   sleepTempAfterWake: '「おきた」を記録したあとは、入眠時の体温を入れられません。画面を読み込み直してください。',
   /** 基本設計書「メッセージ一覧」(4-12) の午睡チェックのとおり（server/messages.go の msgExcludeAfterSleep と同じ） */
   excludeAfterSleep: '「ねた」を記録した園児は対象外にできません。',
