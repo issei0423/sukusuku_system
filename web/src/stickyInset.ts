@@ -5,8 +5,41 @@
  * 枠はその値を scroll-padding に取り、キーボードで移ったフォーカスが、止めた見出し・列・帯の下に隠れないようにする
  * （値を使う CSS は styles/screens.css）。止めた部品は幅や中身で大きさが変わるので、決めた値でなく測った値を使う。
  * 午睡チェックのタイマー（screens/nap/NapCheckScreen.tsx の NapTimer が --nap-timer-h を測る）と同じ形。
+ * フォーカスが入ったときに、その余白の内側まで送るのは useRevealFocus（文書に1つ）。
  */
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
+
+/**
+ * キーボードで移ったフォーカスを、スクロールする枠の scroll-padding の内側まで送る（WCAG 2.4.11 フォーカスの非隠蔽、GitHub Issue #212）。
+ * 文書に1つだけ置く（App が呼ぶ）。
+ *
+ * ブラウザは、フォーカスした部品が枠の中に少しでも見えていると、止めた見出し・列・帯の下に入っていても送らない
+ * （Chromium・WebKit。文字の欄は入力位置の1行だけを見る）。そのため scroll-padding を置いても、
+ * 連絡事項の欄の下が送る帯の下に入り、表の選択肢が左に止めた園児名の列の下に隠れ、箱の右端で切れた操作が送られなかった
+ * （見直し m7b-04・m7b-06・m7b-07）。フォーカスが入るたびに、近いほうの端まで送り直す（block・inline とも nearest。
+ * 部品がすでに枠の余白の内側にあれば動かない）。押したあとにフォーカスを移す決まり（src/focusAfter.ts）と同じ送り方。
+ * 指やマウスで押したとき（:focus-visible が当たらない）は動かさない
+ */
+export function useRevealFocus() {
+  useEffect(() => {
+    const reveal = (event: FocusEvent) => {
+      const el = event.target;
+      if (!(el instanceof HTMLElement) || !focusVisible(el)) return;
+      el.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+    };
+    document.addEventListener('focusin', reveal);
+    return () => document.removeEventListener('focusin', reveal);
+  }, []);
+}
+
+/** :focus-visible が当たっているか（そのセレクタを読めない環境では、当たっていない扱い） */
+function focusVisible(el: HTMLElement): boolean {
+  try {
+    return el.matches(':focus-visible');
+  } catch {
+    return false;
+  }
+}
 
 /**
  * 止めた部品に付ける ref を返す。部品が出ている間、その高さ（side が 'width' なら幅）を測り、

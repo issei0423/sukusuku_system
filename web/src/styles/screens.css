@@ -463,11 +463,16 @@ button.guardian-record-link {
 }
 /*
  * 上に止めた見出しと下に止めた「家庭からを送る」の帯の下に、フォーカスが隠れないよう、スクロールする枠の上下に余白を取る（GitHub Issue #212）。
- * 高さは GuardianContactScreen・HomeForm が測って --contact-head-h・--contact-actions-h に入れる（src/stickyInset.ts）。
- * フォーカスの枠（outline 4px・outline-offset 2px）も見えるよう、その幅を足す
+ * 高さは GuardianContactScreen・HomeForm が測って --contact-head-h・--contact-actions-h に入れる（src/stickyInset.ts。文書の根に入れ、列も受け継ぐ）。
+ * フォーカスの枠（outline 4px・outline-offset 2px）も見えるよう、その幅を足す。
+ * ページ全体を送る PC の幅（1024px 以上）は、送る枠が文書（html）なので html に取る。上はヘッダの高さも足す（見直し m7b-05）
  */
 .guardian-main:has(.contact-page-head) { scroll-padding-top: calc(var(--contact-head-h, 0px) + 6px); }
 .guardian-main:has(.contact-form-actions) { scroll-padding-bottom: calc(var(--contact-actions-h, 0px) + 6px); }
+@media (min-width: 1024px) {
+  html:has(.guardian-shell .contact-page-head) { scroll-padding-top: calc(var(--chrome-guardian-header-h) + var(--contact-head-h, 0px) + 6px); }
+  html:has(.guardian-shell .contact-form-actions) { scroll-padding-bottom: calc(var(--contact-actions-h, 0px) + 6px); }
+}
 /* 見出しは h1 の字の段のまま（M3 の headline-small。前は 22px に上書きしていた。r2a-12） */
 .contact-page-head h1 { margin: 0; }
 /* 「‹ ホームへ」（テキストボタン）も押せるものとして高さ 44px 以上にする（詳細設計書「全画面に共通する部品と決まり」(2-0) の「タッチの条件」(4)、GitHub Issue #215） */
@@ -558,9 +563,11 @@ button.guardian-record-link {
 .contact-class-error { margin: var(--sp-2) 0; }
 /*
  * 表を横に送ったとき、フォーカスした部品が左に止めた園児名の列の下に隠れないよう、送る先を列の幅ぶんずらす（GitHub Issue #212）。
- * 列の幅は ContactClassScreen が測って --contact-col-child-w に入れる。フォーカスの枠の幅（6px）を足す
+ * 列の幅は ContactClassScreen が測って --contact-col-child-w に入れる。フォーカスの枠の幅（6px）を足す。
+ * 部品がすでに枠の中（列の下や右端）にあるときも送るのは useRevealFocus（src/stickyInset.ts。見直し m7b-07）。
+ * 右端まで送ったときに枠が切れないよう、右も 6px 内側にする
  */
-.contact-table-wrap { overflow-x: auto; scroll-padding-left: calc(var(--contact-col-child-w, 0px) + 6px); }
+.contact-table-wrap { overflow-x: auto; scroll-padding-left: calc(var(--contact-col-child-w, 0px) + 6px); scroll-padding-right: 6px; }
 /*
  * 【仮置き】右に送れるあいだは右端に内側の影を出し、表を送っているあいだは左に止めた園児名の列の右端に影を出す
  * （ContactClassScreen が data-more・data-scrolled を付ける。どのブラウザでも出す。地の画像にしないのは .card:has(> table.list) と同じ理由）。

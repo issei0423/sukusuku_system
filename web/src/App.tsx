@@ -12,6 +12,7 @@ import { useSession } from './session';
 import { api, backend, connectLive, onAccountChanged, onProcedureRequired, onSessionEnded } from './api/client';
 import StaffLayout from './layouts/StaffLayout';
 import GuardianLayout from './layouts/GuardianLayout';
+import { useRevealFocus } from './stickyInset';
 
 // 共通・認証
 import TopScreen from './screens/auth/TopScreen';
@@ -173,6 +174,9 @@ export default function App() {
   const { user, setUser } = useSession();
   // モックはメモリ上にしか状態を持たないため、復元するものが無い
   const [ready, setReady] = useState(backend === 'mock');
+
+  // キーボードで移ったフォーカスを、止めた見出し・列・帯の下や枠の外に残さない（全画面に共通。WCAG 2.4.11、GitHub Issue #212）
+  useRevealFocus();
 
   /*
    * 手続きの途中と分かったら、その画面へ案内する。
