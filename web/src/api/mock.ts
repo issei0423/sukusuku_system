@@ -4773,15 +4773,17 @@ function staffClassIds(user: SessionUser): number[] {
 
 /**
  * その利用者がその園児の連絡帳を読めるか・書けるか（詳細設計書「判定の関数」(4-1 (2))、決めたこと D-18）。
- * 管理者は全園児。一般は今年度の担任クラスの園児（担任クラスが無いフリーは全園児を読むだけ）。
+ * 管理者は全園児。一般は今年度の担任クラスの園児（担任クラスが無いフリーは、在籍中で取り消していない園児を読むだけ。
+ * canReadChild・日誌と同じ範囲で、卒園・退園した園児は保護者の猶予期間中でも読めない。第1.12版）。
  * 保護者は紐づけが 1:有効 か 3:猶予中 の自児を読め、書けるのは 1:有効 のときだけ。linked_at で切らない
  */
 export function contactAccess(user: SessionUser, childId: string): Access {
-  if (!db.children.some((c) => c.child_id === childId && !c.is_deleted)) return { read: false, write: false };
+  const child = db.children.find((c) => c.child_id === childId && !c.is_deleted);
+  if (!child) return { read: false, write: false };
   if (user.role === '1') return { read: true, write: true };
   if (user.role === '2') {
     const classes = staffClassIds(user);
-    if (classes.length === 0) return { read: true, write: false };
+    if (classes.length === 0) return { read: child.enrollment_status === '1', write: false };
     const hit = db.classChildren.some((cc) => cc.child_id === childId && classes.includes(cc.class_id));
     return { read: hit, write: hit };
   }
