@@ -14,8 +14,11 @@
  * キー操作の既定の動き（ラジオの矢印・select の矢印）はブラウザで違うため、chromium（desktop）だけで回す。
  *
  * 止めた見出し・列・帯の下に、Tab で止まった部品がすっかり隠れないこと（WCAG 2.4.11、GitHub Issue #212）は、各キーのあとの確かめに加えて、
- * 表が横に送られる幅（iPad の横向き 1024×768）の連絡帳（クラス）画面と、保護者の幅（390×844）の連絡帳画面を、
- * Tab で最後まで進み Shift+Tab で戻って確かめる。
+ * 表が横に送られる幅（iPad の横向き 1024×768・縦 768×1024）の連絡帳（クラス）画面と、保護者の幅（390×844）・iPad の縦（768×1024）・
+ * PC（1440×900。ページ全体を送る）の連絡帳画面を、Tab で最後まで進み Shift+Tab で戻って確かめる。
+ * 768×1024 と 1440×900 は、部品が一部でも隠れていないこと（枠の内側に、止めた部品に重ならずに出ている）まで見る
+ * （直す前は、連絡事項の欄の下 6 割が送る帯の下に、1440 のお迎えの選択肢と 768 の給食の選択肢がすっかり隠れていた。見直し m7b-04・05・07）。
+ * この道は Tab・Shift+Tab だけで進むので、WebKit（iPad の Safari）でも回せる（@webkit を付けた検査。CI は Chromium だけで回す）。
  *
  * 送る・記録するボタンは、送っている間に押せなくなる（disabled）・送ったあとに消えるため、押したボタンからフォーカスが外れる。
  * 応答のあとに、押したボタンが残っていればそこへ、消えていれば決めた場所へフォーカスが移ることを確かめる
@@ -25,7 +28,8 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { REVIEW_TIME } from './scenarios';
 
-test.skip(({ browserName }) => browserName !== 'chromium', 'キーボードの道は chromium（desktop）で確かめる');
+test.skip(({ browserName }) => browserName !== 'chromium' && !test.info().tags.includes('@webkit'),
+  'キーボードの道は chromium（desktop）で確かめる（Tab・Shift+Tab だけで進む @webkit の検査は WebKit でも回せる）');
 
 /** review.spec.ts と同じ待ち方（API の読み込みが静まり、字形がそろうまで） */
 async function ready(page: Page) {
@@ -53,12 +57,13 @@ async function open(page: Page, scene: string) {
 
 /**
  * いまフォーカスのある要素と、その見える印。隠したラジオは、隣の見えている枠（.nap-choice span）で見る。
- * covered は、要素の中央と四隅のどこにも要素自身が出ていない（固定の帯や結果の表示にすっかり隠れている。WCAG 2.4.11）
+ * covered は、要素の中央と四隅のどこにも要素自身が出ていない（固定の帯や結果の表示にすっかり隠れている。WCAG 2.4.11）。
+ * hidden は、要素の上に縦横 3 つずつ置いた点のうち、要素自身が出ていない点（止めた部品に重なる・枠の端で切れる。一部でも隠れている）
  */
 async function focusState(page: Page) {
   return page.evaluate(() => {
     const el = document.activeElement as HTMLElement | null;
-    if (!el || el === document.body || el === document.documentElement) return { where: 'body', visible: false, focusVisible: false, covered: false };
+    if (!el || el === document.body || el === document.documentElement) return { where: 'body', visible: false, focusVisible: false, covered: false, hidden: [] as string[] };
     const shown = el.matches('.nap-choice input') && el.nextElementSibling instanceof HTMLElement ? el.nextElementSibling : el;
     const style = getComputedStyle(shown);
     const outline = style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) >= 2;
@@ -66,33 +71,49 @@ async function focusState(page: Page) {
     const box = shown.getBoundingClientRect();
     const points = [[box.left + box.width / 2, box.top + box.height / 2], [box.left + 2, box.top + 2], [box.right - 2, box.top + 2],
       [box.left + 2, box.bottom - 2], [box.right - 2, box.bottom - 2]];
-    const covered = !points.some(([x, y]) => {
+    const shows = (x: number, y: number) => {
       const hit = document.elementFromPoint(x, y);
       return !!hit && (shown.contains(hit) || hit.contains(shown));
-    });
+    };
+    const covered = !points.some(([x, y]) => shows(x, y));
+    const hidden: string[] = [];
+    for (const fx of [0, 0.5, 1]) {
+      for (const fy of [0, 0.5, 1]) {
+        const x = Math.round(box.left + 2 + (box.width - 4) * fx);
+        const y = Math.round(box.top + 2 + (box.height - 4) * fy);
+        if (shows(x, y)) continue;
+        const hit = document.elementFromPoint(x, y);
+        hidden.push(`(${x},${y}) ${hit ? `${hit.tagName.toLowerCase()}${hit.className && typeof hit.className === 'string' ? `.${hit.className.trim().split(/\s+/).join('.')}` : ''}` : '画面の外'}`);
+      }
+    }
     const label = el.getAttribute('aria-label') ?? (el.textContent ?? '').trim().slice(0, 30);
     return {
       where: `${el.tagName.toLowerCase()}${el.getAttribute('type') ? `[type=${el.getAttribute('type')}]` : ''} 「${label}」`,
       visible: outline || ring,
       focusVisible: el.matches(':focus-visible'),
       covered,
+      hidden,
     };
   });
 }
 
-/** フォーカスが見えていること（:focus-visible が当たり、outline か輪が描かれ、ほかの要素にすっかり隠れていない） */
-async function expectFocusVisible(page: Page) {
+/**
+ * フォーカスが見えていること（:focus-visible が当たり、outline か輪が描かれ、ほかの要素にすっかり隠れていない）。
+ * whole なら、一部も隠れていないことまで見る（止めた見出し・列・帯に重ならず、枠の端で切れていない）
+ */
+async function expectFocusVisible(page: Page, { whole = false }: { whole?: boolean } = {}) {
   const state = await focusState(page);
   expect(state.where, 'フォーカスが行き先を失っている').not.toBe('body');
   expect(state.focusVisible, `${state.where} に :focus-visible が当たっていない`).toBe(true);
   expect(state.visible, `${state.where} のフォーカスの印が見えない`).toBe(true);
   expect(state.covered, `${state.where} がほかの要素に隠れている`).toBe(false);
+  if (whole) expect(state.hidden, `${state.where} の一部が、止めた見出し・列・帯か枠の端に隠れている`).toEqual([]);
 }
 
 /** キーを押し、押したあとのフォーカスが見えることを確かめる */
-async function key(page: Page, name: string) {
+async function key(page: Page, name: string, { whole = false }: { whole?: boolean } = {}) {
   await page.keyboard.press(name);
-  await expectFocusVisible(page);
+  await expectFocusVisible(page, { whole });
 }
 
 /**
@@ -109,33 +130,47 @@ async function pressAndExpectFocus(page: Page, name: string, moved: Locator) {
 const isFocused = (target: Locator) => target.evaluate((el) => el === document.activeElement);
 
 /** Tab（shift なら Shift+Tab）を押して target まで進む。途中の1歩ごとにフォーカスが見えることを確かめる */
-async function tabTo(page: Page, target: Locator, { shift = false, max = 120 }: { shift?: boolean; max?: number } = {}) {
+async function tabTo(page: Page, target: Locator, { shift = false, max = 120, whole = false }: { shift?: boolean; max?: number; whole?: boolean } = {}) {
   await expect(target).toBeVisible();
   for (let i = 0; i < max; i++) {
     if (await isFocused(target)) return;
-    await key(page, shift ? 'Shift+Tab' : 'Tab');
+    await key(page, shift ? 'Shift+Tab' : 'Tab', { whole });
   }
   if (await isFocused(target)) return;
   throw new Error(`${max} 回の${shift ? ' Shift+Tab' : ' Tab'} で届かない：${await target.evaluate((el) => el.outerHTML.slice(0, 120))}`);
 }
 
 /**
- * first から Tab で within（CSS のセレクタ）の外へ出るまで進み、Shift+Tab で first まで戻る。1歩ごとに key と同じ確かめをする
- * （止めた見出し・列・帯の下にすっかり隠れる部品が無いこと。WCAG 2.4.11、GitHub Issue #212）。Tab で止まった部品を順に返す
+ * Tab で within（CSS のセレクタ）の中の最初の部品まで進み、そこから within の外へ出るまで進み、Shift+Tab で最初の部品まで戻る。
+ * 1歩ごとに key と同じ確かめをする（止めた見出し・列・帯の下にすっかり隠れる部品が無いこと。WCAG 2.4.11、GitHub Issue #212）。
+ * 最初の部品の次から、Tab で止まった部品を順に返す。
+ * whole なら、within の中では一部も隠れていないことまで見る（within までの道は、すっかり隠れないことだけを見る）。
+ * 最初の部品はブラウザで違う（WebKit は、Safari の既定と同じく Tab でリンクに止まらない。Chromium は「ホームへ」・園児名のリンク）
  */
-async function walkThrough(page: Page, first: Locator, within: string) {
+async function walkThrough(page: Page, within: string, { whole = false }: { whole?: boolean } = {}) {
   const inside = () => page.evaluate((sel) => !!document.activeElement?.closest(sel), within);
-  await tabTo(page, first);
+  await expect(page.locator(within)).toBeVisible();
+  for (let i = 0; i < 120 && !(await inside()); i++) await key(page, 'Tab');
+  expect(await inside(), `120 回の Tab で ${within} の中へ届かない`).toBe(true);
+  await expectFocusVisible(page, { whole });
+  await page.evaluate(() => document.activeElement?.setAttribute('data-walk-first', ''));
+  const first = page.locator('[data-walk-first]');
   const visited: string[] = [];
   while (visited.length < 300) {
     await page.keyboard.press('Tab');
     if (!(await inside())) break;
-    await expectFocusVisible(page);
+    await expectFocusVisible(page, { whole });
     visited.push((await focusState(page)).where);
   }
-  await tabTo(page, first, { shift: true, max: visited.length + 2 });
+  await tabTo(page, first, { shift: true, max: visited.length + 2, whole });
   return visited;
 }
+
+/**
+ * 連絡帳（クラス）画面の表で、Tab で最後に止まる部品の名前。Chromium は最後の行の右端の列のリンク（園から）。
+ * WebKit は Tab でリンクに止まらないので、最後の行の最後のボタン（園から・写真の列はリンクだけ）
+ */
+const lastInTable = (browserName: string) => (browserName === 'webkit' ? '吉田 心春の' : '吉田 心春の園から');
 
 /**
  * Tab で結果の表示（トースト。本文の後ろに置く）の中まで進む。1歩ごとに key と同じ確かめをする。
@@ -246,10 +281,10 @@ test.describe('[guardian] contact キーボードだけで通す', () => {
 test.describe('[guardian] contact 保護者の幅（390×844）', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test('連絡帳画面を Tab で最後まで進み、Shift+Tab で戻っても、上に止めた見出し・下に止めた送る帯の下に隠れない', async ({ page }) => {
+  test('連絡帳画面を Tab で最後まで進み、Shift+Tab で戻っても、上に止めた見出し・下に止めた送る帯の下に隠れない', { tag: '@webkit' }, async ({ page }) => {
     // WCAG 2.4.11 フォーカスの非隠蔽（最低限）。GitHub Issue #212
     const errors = await open(page, 'guardian-contact');
-    const visited = await walkThrough(page, page.getByRole('link', { name: 'ホームへ', exact: true }), '.contact-page');
+    const visited = await walkThrough(page, '.contact-page');
     expect(visited.at(-1), '家庭からの書く欄を通って、下に止めた「家庭からを送る」まで進んだ').toContain('家庭からを送る');
     expect(errors, 'ブラウザ実行エラー').toEqual([]);
   });
@@ -260,6 +295,26 @@ test.describe('[guardian] contact 保護者の幅（390×844）', () => {
     expect(await touchProblems(page, '.contact-page')).toEqual({ small: [], close: [] });
   });
 });
+
+/*
+ * 保護者の連絡帳画面を、iPad の縦（768×1024。列の内側を送る）と PC（1440×900。ページ全体を送る）で、Tab で最後まで進み Shift+Tab で戻る。
+ * 止めた見出し・送る帯（PC はヘッダも）に、部品が一部でも隠れないこと（WCAG 2.4.11、GitHub Issue #212）。
+ * 直す前は、768 で連絡事項の欄の下 6 割が「家庭からを送る」の帯の下に入り（見直し m7b-04）、
+ * 1440 でお迎えの選択肢が帯の下にすっかり隠れた（ページを送る幅では、列の scroll-padding が効かなかった。m7b-05）
+ */
+for (const size of [{ name: 'iPad の縦', width: 768, height: 1024 }, { name: 'PC', width: 1440, height: 900 }]) {
+  test.describe(`[guardian] contact ${size.name}（${size.width}×${size.height}）`, () => {
+    test.use({ viewport: { width: size.width, height: size.height } });
+
+    test('連絡帳画面を Tab で最後まで進み、Shift+Tab で戻っても、上に止めた見出し・下に止めた送る帯の下に一部も隠れない', { tag: '@webkit' }, async ({ page }) => {
+      const errors = await open(page, 'guardian-contact');
+      const visited = await walkThrough(page, '.contact-page', { whole: true });
+      expect(visited, '連絡事項の欄を通った').toContainEqual(expect.stringMatching(/^textarea /));
+      expect(visited.at(-1), '家庭からの書く欄を通って、下に止めた「家庭からを送る」まで進んだ').toContain('家庭からを送る');
+      expect(errors, 'ブラウザ実行エラー').toEqual([]);
+    });
+  });
+}
 
 test.describe('[staff] contact キーボードだけで通す', () => {
   test('① 職員が連絡帳（クラス）画面で家庭からを読み、確認しました を押す', async ({ page }) => {
@@ -364,15 +419,15 @@ test.describe('[staff] contact キーボードだけで通す', () => {
   test.describe('表が横に送られる幅（iPad の横向き 1024×768）', () => {
     test.use({ viewport: { width: 1024, height: 768 } });
 
-    test('連絡帳（クラス）画面の表を Tab で最後まで進み、Shift+Tab で戻っても、左に止めた園児名の列の下に隠れない', async ({ page }) => {
+    test('連絡帳（クラス）画面の表を Tab で最後まで進み、Shift+Tab で戻っても、左に止めた園児名の列の下に隠れない', { tag: '@webkit' }, async ({ page, browserName }) => {
       // WCAG 2.4.11 フォーカスの非隠蔽（最低限）。GitHub Issue #212（直す前は Tab で 20 か所、Shift+Tab で 22 か所がすっかり隠れた）
       // 表の押せるものを全部たどるので、CI では通るときでも 25 秒ほどかかる。上限を 60 秒にする（設定の既定は 30 秒）
       test.setTimeout(60_000);
       const errors = await open(page, 'contact-class');
       const wrap = page.locator('.contact-table-wrap');
       expect(await wrap.evaluate((el) => el.scrollWidth > el.clientWidth), 'この幅では表が横に送られる').toBe(true);
-      const visited = await walkThrough(page, page.getByRole('rowheader').first().getByRole('link'), '.contact-table-wrap');
-      expect(visited.at(-1), '表の最後の行の、右端の列（園から）まで進んだ').toContain('吉田 心春の園から');
+      const visited = await walkThrough(page, '.contact-table-wrap');
+      expect(visited.at(-1), '表の最後の行の、右端の列まで進んだ').toContain(lastInTable(browserName));
       expect(errors, 'ブラウザ実行エラー').toEqual([]);
     });
 
@@ -418,6 +473,23 @@ test.describe('[staff] contact キーボードだけで通す', () => {
       }));
       expect(problems).toEqual([]);
       await expect(page.locator('.contact-class-table a').filter({ hasText: /^(―|未送信)$/ }), '「―」「未送信」のリンクは残らない').toHaveCount(0);
+      expect(errors, 'ブラウザ実行エラー').toEqual([]);
+    });
+  });
+
+  test.describe('表が横に送られる幅（iPad の縦 768×1024）', () => {
+    test.use({ viewport: { width: 768, height: 1024 } });
+
+    test('連絡帳（クラス）画面の表を Tab で最後まで進み、Shift+Tab で戻っても、左に止めた園児名の列の下に一部も隠れない', { tag: '@webkit' }, async ({ page, browserName }) => {
+      // WCAG 2.4.11、GitHub Issue #212。直す前は、前の行の右の列から次の行へ進むと、給食の「ぜんぶ」「少し」が
+      // 園児名の列の下にすっかり隠れた（部品がすでに枠の中にあるので、scroll-padding-left があっても送られなかった。見直し m7b-07）。
+      // 表の押せるものを全部たどるので、上限を 1024×768 の検査と同じ 60 秒にする
+      test.setTimeout(60_000);
+      const errors = await open(page, 'contact-class');
+      const wrap = page.locator('.contact-table-wrap');
+      expect(await wrap.evaluate((el) => el.scrollWidth > el.clientWidth), 'この幅では表が横に送られる').toBe(true);
+      const visited = await walkThrough(page, '.contact-table-wrap', { whole: true });
+      expect(visited.at(-1), '表の最後の行の、右端の列まで進んだ').toContain(lastInTable(browserName));
       expect(errors, 'ブラウザ実行エラー').toEqual([]);
     });
   });

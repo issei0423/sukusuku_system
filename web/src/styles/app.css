@@ -177,6 +177,12 @@
 .main { flex: 1; min-width: 0; overflow-y: auto; padding: var(--main-pad); background: var(--c-bg); }
 /* 【仮置き】職員の本文の段落は 40 字で折り返す（保護者の PC の幅と同じ。長い1行を読ませない。見直し 2026-10-31 の r2a-14） */
 .main p { max-width: 40em; }
+/*
+ * キーボードで移ったフォーカスを枠の端まで送ったときも、フォーカスの枠（outline 4px・outline-offset 2px）が枠の端で切れないよう、
+ * 送る先を 6px 内側にする（GitHub Issue #212。送るのは src/stickyInset.ts の useRevealFocus。見直し m7b-08）。
+ * 止めた見出し・帯のある画面は、その高さを足した値で上書きする（styles/screens.css。こちらを弱く書く）
+ */
+.main, .guardian-main { scroll-padding: 6px; }
 
 /*
  * 想定する端末と向き（基本設計書 3-5）。職員画面はタブレット横向きを基準に組む
@@ -210,8 +216,12 @@
   }
 }
 
-/* 列の多い一覧は、画面全体ではなくカードの中だけを横に送る */
-.card:has(> table.list) { overflow-x: auto; }
+/*
+ * 列の多い一覧は、画面全体ではなくカードの中だけを横に送る。
+ * 右端で切れた操作（職員アカウントの「停止」など）へキーボードで移ったときは、カードの中を送って出す（useRevealFocus）。
+ * そのときフォーカスの枠が左右の端で切れないよう、送る先を 6px 内側にする（見直し m7b-06）
+ */
+.card:has(> table.list) { overflow-x: auto; scroll-padding-inline: 6px; }
 /*
  * 【仮置き】横に送れる向きにだけ、端に内側の影（rgba(0,0,0,.1)）を出す。送った量（scroll-driven animation）で左右の影を出し分ける。
  * 地の画像（background-image）で作ると、axe が表の中の字の地の色を決められず、色のコントラストを検査しなくなる（約 990 か所）ので、
@@ -413,6 +423,12 @@
     border: 0; background: var(--c-bg);
   }
   .guardian-header { position: sticky; top: 0; z-index: 30; padding: 0 var(--sp-5); }
+  /*
+   * ページ全体を送る幅では、送る枠は文書（html）。上に止めたヘッダの下にフォーカスが隠れないよう、送る先をヘッダの高さぶんずらす
+   * （列の .guardian-main は送らないので、その scroll-padding は効かない。WCAG 2.4.11、GitHub Issue #212、見直し m7b-05）。
+   * フォーカスの枠の幅（6px）を足す。止めた見出し・帯のある画面（保護者の連絡帳）は styles/screens.css で上書きする
+   */
+  html:has(.guardian-shell) { scroll-padding-top: calc(var(--chrome-guardian-header-h) + 6px); scroll-padding-bottom: 6px; }
   .guardian-menu-button, .guardian-shell .drawer, .guardian-shell .drawer-backdrop { display: none; }
   .guardian-header-phone {
     display: flex; align-items: center; gap: var(--sp-2); margin-right: var(--sp-3);

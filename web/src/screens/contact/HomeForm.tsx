@@ -90,10 +90,11 @@ export default function HomeForm({ home, busy, error, onSubmit, onCancel }: {
   const reachable = useReachable();
   const touch = <T,>(set: (v: T) => void) => (v: T) => { set(v); setDirty(true); };
   /*
-   * 下に止めた「家庭からを送る」の帯の高さを、スクロールする枠（.guardian-main）へ --contact-actions-h として渡す。
-   * 枠はその高さぶんを scroll-padding-bottom に取り、Tab で下へ進んだときに選択肢が帯の下に隠れないようにする（GitHub Issue #212）
+   * 下に止めた「家庭からを送る」の帯の高さを、--contact-actions-h として文書の根（html）へ渡す（列の .guardian-main も受け継ぐ）。
+   * スクロールする枠（1023px までは .guardian-main、ページ全体を送る 1024px 以上は html）がその高さぶんを scroll-padding-bottom に取り、
+   * Tab で下へ進んだときに選択肢が帯の下に隠れないようにする（GitHub Issue #212。1024px 以上は見直し m7b-05 で html にも取った）
    */
-  const actions = useStickyInset('.guardian-main', '--contact-actions-h');
+  const actions = useStickyInset(':root', '--contact-actions-h');
 
   const submit = () => {
     onSubmit({

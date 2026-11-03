@@ -43,11 +43,12 @@ export default function GuardianContactScreen() {
   const data = page.data;
   useEffect(() => { if (data) setClassId(data.class_id); }, [data]);
   /*
-   * 上に止めた見出し（園児名と日付）の高さを、スクロールする枠（.guardian-main）へ --contact-head-h として渡す。
-   * 枠はその高さぶんを scroll-padding-top に取り、キーボードで上へ戻ったとき・送ったあとの「直す」へ移ったときに、
-   * フォーカスした部品が見出しの下に隠れないようにする（WCAG 2.4.11 フォーカスの非隠蔽、GitHub Issue #212）
+   * 上に止めた見出し（園児名と日付）の高さを、--contact-head-h として文書の根（html）へ渡す（列の .guardian-main も受け継ぐ）。
+   * スクロールする枠（1023px までは .guardian-main、ページ全体を送る 1024px 以上は html）がその高さぶんを scroll-padding-top に取り、
+   * キーボードで上へ戻ったとき・送ったあとの「直す」へ移ったときに、フォーカスした部品が見出しの下に隠れないようにする
+   * （WCAG 2.4.11 フォーカスの非隠蔽、GitHub Issue #212。1024px 以上は見直し m7b-05 で html にも取った。styles/screens.css）
    */
-  const head = useStickyInset('.guardian-main', '--contact-head-h');
+  const head = useStickyInset(':root', '--contact-head-h');
   const fixButton = useRef<HTMLButtonElement>(null);
 
   /*
