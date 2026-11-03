@@ -326,6 +326,23 @@ export async function api(page: Page, method: string, url: string, body?: unknow
   );
 }
 
+/**
+ * その職員が開始した午睡チェックのうち、終わっていないものを終える（POST /api/nap/session/{id}/end。画面の「午睡チェックを終了」と同じ経路）。
+ * 自分が開始した実施が実施中だと、ログアウトは止まる（基本設計書「ログアウト」(4-3)、図/画面詳細図「職員（タブレット／PC）」(1-1) 項目4）。
+ * デモの今日の実施（さくら組、鈴木が開始）は、午睡の時間帯の終わり（既定 15:00）までは実施中に当たるので、ログアウトを確かめるケースは先に終える。
+ * 終えたあと、自動ログアウトの対象外（GET /api/session の nap_exempt）でなくなったかを確かめる
+ */
+export async function endOwnNapSessions(page: Page, staffName: string): Promise<void> {
+  const open = sqlAll<{ nap_session_id: number }>('SELECT nap_session_id FROM t_nap_session WHERE started_staff_id = ? AND ended_at IS NULL', staffIdOf(staffName));
+  for (const s of open) {
+    const res = await api(page, 'POST', `/api/nap/session/${s.nap_session_id}/end`);
+    // 409 は、時間帯の終わりで自動で解除されていた（すでに終了している）
+    if (res.status !== 200 && res.status !== 409) throw new Error(`下ごしらえ：午睡チェックを終了できません（${res.status} ${res.text}）`);
+  }
+  const st = await api(page, 'GET', '/api/session');
+  if ((st.json as { nap_exempt?: boolean } | null)?.nap_exempt !== false) throw new Error(`下ごしらえ：午睡チェックの実施中のままです（${st.status} ${st.text}）`);
+}
+
 // ---- 初回ログイン（【村田】【フリー】） ----
 
 /** 一時パスワードの職員がパスワードを変え、規約の同意まで済ませる */
