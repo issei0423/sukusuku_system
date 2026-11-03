@@ -211,8 +211,9 @@
   .staff-shell {
     max-width: max(var(--staff-base-w), calc(100vh * var(--staff-ratio)));
     margin: 0 auto;
-    border-left: 1px solid var(--c-border);
-    border-right: 1px solid var(--c-border);
+    /* 外枠の両わきの線は外枠の色（DADS gray-420 #949494）。M3 の outline に付け替えたときに一緒に変わっていた（見直し m7b-01） */
+    border-left: 1px solid var(--chrome-border);
+    border-right: 1px solid var(--chrome-border);
   }
 }
 
@@ -262,8 +263,9 @@
   display: flex; flex-direction: column; height: 100%;
   max-width: 480px; margin: 0 auto;
   background: var(--c-surface);
-  border-left: 1px solid var(--c-border-weak);
-  border-right: 1px solid var(--c-border-weak);
+  /* 保護者の列の左右の線は外枠の色（DADS gray-200 #cccccc。見直し m7b-02） */
+  border-left: 1px solid var(--chrome-border-weak);
+  border-right: 1px solid var(--chrome-border-weak);
 }
 .guardian-header {
   min-height: var(--chrome-guardian-header-h); flex: 0 0 var(--chrome-guardian-header-h); display: flex; align-items: center; gap: var(--sp-2);
@@ -906,7 +908,12 @@ summary { min-height: var(--tap-min); padding: 10px 0; cursor: pointer; }
 .step .step-title { font-size: 1rem; line-height: 1.5; font-weight: 600; margin-bottom: var(--sp-3); }
 
 .terms-box { max-height: 220px; overflow-y: auto; border: 1px solid var(--c-border-weak); border-radius: var(--radius-card); padding: var(--sp-3) var(--sp-4); background: var(--c-surface-sub); white-space: pre-wrap; }
-.skip-link { position: absolute; left: 8px; top: -100px; z-index: 100; background: var(--c-surface); padding: 8px 16px; }
+/* 「本文へ移動」は外枠の一部。地と字は外枠の色（DADS の白と blue-1000。指したときは blue-900、押したときは orange-800）、行間は外枠を固定する前の本文と同じ 1.7（見直し m7b-03） */
+.skip-link { position: absolute; left: 8px; top: -100px; z-index: 100; background: var(--chrome-surface); color: var(--chrome-link); padding: 8px 16px; line-height: 1.7; }
+@media (hover: hover) {
+  .skip-link:hover { color: var(--chrome-link-hover); }
+}
+.skip-link:active { color: var(--chrome-link-active); }
 .skip-link:focus { top: 8px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
