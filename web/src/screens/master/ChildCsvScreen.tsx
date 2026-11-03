@@ -127,7 +127,7 @@ export default function ChildCsvScreen() {
                     <td className="num">{r.line}</td>
                     {parsed.header.map((_, i) => <td key={i}>{r.values[i] ?? ''}</td>)}
                     <td>
-                      {r.error ? <span style={{ color: 'var(--c-alert)', fontWeight: 700 }}>{r.error}</span> : 'OK'}
+                      {r.error ? <span className="csv-error">{r.error}</span> : 'OK'}
                       {/* 取り込みは妨げないが、確かめてほしいこと（範囲の外の平熱など） */}
                       {!r.error && r.warning && <div className="muted">確認：{r.warning}</div>}
                     </td>

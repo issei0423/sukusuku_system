@@ -16,7 +16,7 @@ import { Loading, ErrorBox, Empty, Field, Alert, Disclaimer, Modal, Radios } fro
 import { ConfirmDialog, notify } from '../../components/feedback';
 import GrowthChart from '../../components/GrowthChart';
 import { formatAge, formatYM, formatYMD, today } from '../../api/util';
-import { SaveIcon, SelectedIcon, AddIcon, CloseIcon, PrintIcon } from '../../components/icons';
+import { SaveIcon, SelectedIcon, AddIcon, CloseIcon, PrintIcon, ConfirmIcon } from '../../components/icons';
 
 const DISCLAIMER = '本グラフは発育の判定・診断を行うものではありません。';
 
@@ -146,7 +146,7 @@ export default function PhysicalRecordScreen() {
 
   return (
     <div>
-      <div className="page-head">
+      <div className="page-head page-head-fields">
         <h1>身体記録</h1>
         <Field label="クラス">
           <select value={classId} onChange={(e) => setClassId(Number(e.target.value))}>
@@ -182,7 +182,11 @@ export default function PhysicalRecordScreen() {
             return (
               <button key={c.child_id} className={c.child_id === childId ? 'current' : ''}
                 onClick={() => setChildId(c.child_id)}>
-                <span>{done ? '[x]' : '[ ]'}</span>
+                {/*
+                  * 「[x]」「[ ]」の字は読み上げの名前にだけ残し（受け入れテストが、名前の始まりの「[x]」「[ ]」で園児のボタンを探すため）、見た目はチェックの印と「済」にする（見直し m7a-14）
+                  */}
+                <span className="sr-only">{done ? '[x]' : '[ ]'}</span>
+                <span className="picker-mark" aria-hidden="true">{done && <ConfirmIcon />}</span>
                 <span>{c.child_name}</span>
                 {done && <span className="done">済</span>}
               </button>

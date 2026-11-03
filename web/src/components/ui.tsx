@@ -5,6 +5,7 @@
 import { Children, cloneElement, isValidElement, useEffect, useId, useRef } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { around, focusAfter, focusableIn } from '../focusAfter';
+import { PrevIcon, ForwardIcon } from './icons';
 
 export function Field({ label, required, children, style }: {
   label: string; required?: boolean; children: ReactNode; style?: React.CSSProperties;
@@ -178,9 +179,10 @@ export function Pager({ page, perPage, total, onChange }: {
   if (total === 0) return null;
   return (
     <div className="pager">
-      <button className="btn-sm" disabled={page <= 1} onClick={() => onChange(page - 1)}>&lt; 前へ</button>
+      {/* 前へ・次への記号（< >）は絵にし、読み上げの名前から外す（web/仮置き値.md「アイコン」の記号の決まり） */}
+      <button className="btn-sm" disabled={page <= 1} onClick={() => onChange(page - 1)}><PrevIcon />前へ</button>
       <span>{page} / {last}</span>
-      <button className="btn-sm" disabled={page >= last} onClick={() => onChange(page + 1)}>次へ &gt;</button>
+      <button className="btn-sm" disabled={page >= last} onClick={() => onChange(page + 1)}>次へ<ForwardIcon /></button>
       <span>全 {total} 件</span>
     </div>
   );

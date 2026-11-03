@@ -377,15 +377,19 @@ select:focus-visible, textarea:focus-visible, summary:focus-visible {
 .btn-primary:active:not(:disabled), .btn.btn-primary:active { background: var(--c-filled-active); border-color: var(--c-filled-active); }
 
 /* トーナルボタン（M3 の Filled tonal button）。塗りの次に強い操作・くり返す操作 */
+/*
+ * 【仮置き】枠は outline の 1px（白地に 4.49:1）。M3 のトーナルは枠を持たないが、地の secondary-container が白地に 1.29:1 で、
+ * 押せる部品の枠と境目は 3:1 とする決まり（上の「線」）に合わせる（見直し m7b-09。頭役が推しで決めた。web/仮置き値.md「M3 から外した所」）
+ */
 .btn-tonal {
   background: var(--c-primary);
-  border-color: var(--c-primary);
+  border-color: var(--c-border);
   color: var(--c-primary-ink);
 }
 @media (hover: hover) {
-  .btn-tonal:hover:not(:disabled), .btn.btn-tonal:hover { background: var(--c-primary-hover); border-color: var(--c-primary-hover); }
+  .btn-tonal:hover:not(:disabled), .btn.btn-tonal:hover { background: var(--c-primary-hover); border-color: var(--c-border); }
 }
-.btn-tonal:active:not(:disabled), .btn.btn-tonal:active { background: var(--c-primary-active); border-color: var(--c-primary-active); }
+.btn-tonal:active:not(:disabled), .btn.btn-tonal:active { background: var(--c-primary-active); border-color: var(--c-border); }
 
 /* 警告の操作（取り消し・停止など） */
 .btn-danger {
@@ -469,11 +473,12 @@ select, textarea {
 }
 input[readonly], textarea[readonly] { border-style: dashed; }
 /*
- * 押せない入力欄。線は on-surface の 12%。【仮置き】中の字は M3 の 38% にせず outline の色（白地に 4.49:1）で読めるまま残す
+ * 押せない入力欄。線は on-surface の 12%。【仮置き】中の字は M3 の 38% にせず on-surface-variant（押せない欄の地 surface-container に 8.07:1）で読めるまま残す。
+ * 前は outline の色で、注の「白地に 4.49:1」と違い、実際の地では 3.87:1 だった（見直し m7b-11）
  * （押せないクラスの選ぶ欄が、いま見ているクラスを示しているため。文字にする直しは別の点）
  */
 input:disabled, select:disabled, textarea:disabled {
-  border-color: var(--c-disabled-container); background-color: var(--c-surface-sub); color: var(--c-border);
+  border-color: var(--c-disabled-container); background-color: var(--c-surface-sub); color: var(--c-text-sub);
 }
 input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--c-alert); }
 /*
