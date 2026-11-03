@@ -165,7 +165,7 @@ POST /api/nap/sleeps/{id}/temperature（入眠時の体温）。要求 { sleep_t
   - 小数第1位まで。範囲（30.0〜43.0℃）の外も保存し、確かめは画面がする（基本設計書「入力項目の制約値とメッセージ一覧」(4-12)）
   - 入眠時の体温は監査の層の値で保護者へ返さない。訂正の印（corrected_at）は付けず、知らせは nap だけ（contact は送らない）
   - 入れられるのは「おひるね中」（おきたの前）の組だけ（詳細設計書「午睡の園児」(3-4) の状態の移り変わり）。
-    【仮置き】おきたのあとの文言は設計に無い（msgSleepTempAfterWake。web/仮置き値.md）
+    【仮置き】おきたのあとの文言は設計に【仮置き】で入った（docs の基本設計書 第3.9版 (4-12)。msgSleepTempAfterWake。web/仮置き値.md）
   - 共通の確かめ（職員・クラス・在籍・書けるか・実施が終わっていないか）は napSleepTarget
 
 モックは web/src/api/mock.ts の sleepTemperature が同じ規則を持つ

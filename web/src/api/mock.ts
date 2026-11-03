@@ -2263,7 +2263,7 @@ export const napApi = {
   /**
    * その日に最後に終えた実施（自動で解除したものを含む）。無ければ null。午睡チェック画面が、終えたあとも園児の行を
    * 状態の表示だけで出すため（詳細設計書「行の状態ごとの表示」(2-4 (2)) の「実施の後」）。参照の範囲は activeSession と同じ。
-   * 【仮置き】設計に経路が無いので、GET /api/nap/session に ended=1 を足した（web/仮置き値.md）。
+   * 【仮置き】GET /api/nap/session に ended=1 を足した。設計に【仮置き】で入った（docs の図/インタフェース一覧 第2.9版。web/仮置き値.md）。
    * サーバ側は server/api_nap.go の lastEndedNapSession（終えた時刻が新しいもの、同じなら後に作ったもの）
    */
   async lastEndedSession(classId: number, date: string, user?: SessionUser): Promise<NapSession | null> {
@@ -5409,7 +5409,7 @@ const contactApi = {
     const target = napSleepTarget(user, row.nap_session_id, row.child_id);
     if (!target.session) return fail(target.error ?? MSG.contactForbidden);
     if (!Number.isFinite(temperature) || !isOneDecimal(temperature)) return fail(MSG.temperatureFormat);
-    // 【仮置き】おきたのあとの文言（web/仮置き値.md）
+    // 【仮置き】おきたのあとの文言。設計に【仮置き】で入った（docs の基本設計書 第3.9版 (4-12)。web/仮置き値.md）
     if (row.woke_at) return fail(MSG.sleepTempAfterWake);
     const before = row.sleep_temperature;
     row.sleep_temperature = temperature; row.updated_at = laterVersion(row.updated_at);
