@@ -619,7 +619,7 @@ export default function DiaryEditScreen() {
                 保護者へ共有する（管理者が承認すると、この園児の保護者が読めます）
               </label>
             )}
-            {canShare && share && hiddenItems.length > 0 && <Alert soft>{hiddenContactItemsNote(hiddenItems, false)}</Alert>}
+            {canShare && share && hiddenItems.length > 0 && <Alert reach>{hiddenContactItemsNote(hiddenItems, false)}</Alert>}
 
             {/* 個人日誌・ヒヤリハットは園児を対象にした記録。選ぶまで先へ進めない */}
             {needsChild && !childId && !readOnly && (

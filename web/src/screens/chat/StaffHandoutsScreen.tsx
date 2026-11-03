@@ -134,7 +134,7 @@ export default function StaffHandoutsScreen() {
         )}
       </section>
 
-      <section className="card card-sub">
+      <section className="note">
         <div className="muted">
           園だより・献立表など、保護者があとから見返すものを掲載します。保護者は「チャット・お知らせ」の「園からの配布物」から、月ごとに見られます。
           <br />
@@ -178,8 +178,8 @@ export default function StaffHandoutsScreen() {
                 }} />
               <div className="muted">PDF・JPEG・PNG、{maxMB}MB まで</div>
             </Field>
-            {/* 誰に届くかを、掲載する前に示す */}
-            <Alert soft>
+            {/* 誰に届くかを、掲載する前に示す（保護者に届く知らせの帯。見直し m7c-02） */}
+            <Alert reach>
               {fClass === ''
                 ? 'すべての保護者に表示され、園チャットへ掲載の知らせが流れます。'
                 : `${classesForUser.find((c) => c.class_id === fClass)?.class_name} の保護者に表示され、クラスグループへ掲載の知らせが流れます。`}

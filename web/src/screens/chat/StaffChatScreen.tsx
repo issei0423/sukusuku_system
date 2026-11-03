@@ -299,9 +299,9 @@ export default function StaffChatScreen() {
             {messages.loading && <Loading />}
             {messages.error && <ErrorBox text={messages.error} />}
             {childRoomMissing && roomId === null ? (
-              <div className="alert alert-soft" role="status">
+              <Alert soft>
                 この園児の個人チャットは、チャンネルの一覧にありません。左の一覧からチャンネルを選んでください。
-              </div>
+              </Alert>
             ) : messages.data?.length === 0 && <Empty text="まだメッセージはありません。" />}
             {/* 右クリックと長押しは、見ただけでは気づけない。先頭で知らせる（GitHub Issue #103） */}
             {(messages.data?.length ?? 0) > 0 && !current?.left && (
@@ -333,7 +333,7 @@ export default function StaffChatScreen() {
               保護者が読むチャンネルだと送る前に気づけるようにする
             */}
             {current?.canPost && current.guardianCount > 0 && (
-              <Alert soft>この投稿は、保護者 {current.guardianCount} 名にも届きます。</Alert>
+              <Alert reach>この投稿は、保護者 {current.guardianCount} 名にも届きます。</Alert>
             )}
             {/* 【仮置き】停止中の保護者は再開後に過去の投稿を読める。web/仮置き値.md */}
             {current?.canPost && current.guardianRegisteredCount === 0 && current.room.room_type === '4' && (

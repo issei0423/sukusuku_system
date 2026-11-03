@@ -150,7 +150,7 @@ export default function DevScheduleScreen() {
         </ConfirmDialog>
       )}
 
-      <section className="card card-sub">
+      <section className="note">
         <div className="muted">
           推奨間隔は設定マスタ（m_development_frequency）から読んでいます。園の運用に合わせて変更できます。
           園児ごとの事情で予定をずらす場合は、この画面で手動上書きしてください。

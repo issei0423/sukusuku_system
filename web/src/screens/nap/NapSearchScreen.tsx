@@ -188,7 +188,7 @@ export default function NapSearchScreen() {
         )}
       </section>
 
-      <section className="card card-sub">
+      <section className="note">
         <div className="muted">
           {/*
             【仮置き】帳票の範囲・並び・起票したものの出し方の説明（web/仮置き値.md「午睡の帳票」）。一般には出さない。

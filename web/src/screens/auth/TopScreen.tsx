@@ -157,8 +157,9 @@ function LoginErrorView({ error, entrance, onLogout }: {
    * 上のログイン中の案内と同じく、ログイン中の氏名・ロールは出さない
    */
   if (error.kind === 'already_logged_in') {
+    // 誤りではないので知らせの帯にする。押したログインの答えなので、ほかの答えと同じく alert で読み上げる（見直し m7a-02）
     return (
-      <Alert>
+      <Alert soft role="alert">
         すでにログインしています。別のアカウントでログインするには、先にログアウトしてください。
         {' '}
         <button type="button" className="btn-sm" onClick={onLogout}>ログアウトする</button>

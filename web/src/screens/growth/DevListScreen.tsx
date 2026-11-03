@@ -12,7 +12,7 @@ import { useAsync } from '../../hooks';
 import { onLive } from '../../live';
 import { useSession } from '../../session';
 import { api, selectableClasses } from '../../api/client';
-import { Loading, ErrorBox, Empty, Field, Tag } from '../../components/ui';
+import { Loading, ErrorBox, Empty, Field, Tag, Alert } from '../../components/ui';
 import { formatYMD, formatAge, today } from '../../api/util';
 
 export default function DevListScreen() {
@@ -58,16 +58,16 @@ export default function DevListScreen() {
         {user!.role === '1' && <Link className="btn btn-sm" to="/staff/growth/share">共有範囲の設定</Link>}
       </div>
 
-      {/* チェック漏れを強調する */}
+      {/*
+        チェック漏れを強調する。漏れは誤り・安全ではないので、赤でなく期限切れ・漏れの帯（札の「未実施」の .tag-warn と同じ色。見直し m7a-13）。
+        読み上げの領域（role）は付けない。開いたときからある文で、あとから出る知らせではないため
+      */}
       {overdue.length > 0 && (
-        <section className="card" style={{ borderColor: 'var(--c-alert)' }}>
-          <div className="alert">
-            <span>(!)</span>
-            <span>
-              予定日を過ぎて未実施の園児が {overdue.length} 名います：
-              {overdue.map((r) => r.child.child_name).join('、')}
-            </span>
-          </div>
+        <section className="card">
+          <Alert warn role={null}>
+            予定日を過ぎて未実施の園児が {overdue.length} 名います：
+            {overdue.map((r) => r.child.child_name).join('、')}
+          </Alert>
         </section>
       )}
 
@@ -75,13 +75,10 @@ export default function DevListScreen() {
           近いだけで、まだ漏れではないので、警告の帯でなく知らせの帯（.alert-soft。札の「予定日が近い」の青と同じ扱い。r2c-02） */}
       {near.length > 0 && (
         <section className="card">
-          <div className="alert alert-soft">
-            <span>(!)</span>
-            <span>
-              予定日が近い園児が {near.length} 名います：
-              {near.map((r) => r.child.child_name).join('、')}
-            </span>
-          </div>
+          <Alert soft role={null}>
+            予定日が近い園児が {near.length} 名います：
+            {near.map((r) => r.child.child_name).join('、')}
+          </Alert>
         </section>
       )}
 
@@ -129,7 +126,7 @@ export default function DevListScreen() {
         )}
       </section>
 
-      <section className="card card-sub">
+      <section className="note">
         <div className="muted">
           「未実施」は、予定日を過ぎても記録が1件も入っていない状態を指します。
           記録の中の「未確認」は入力済みの結果であり、未実施には含みません。

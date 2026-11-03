@@ -11,7 +11,7 @@ import { useState } from 'react';
 import { useAsync } from '../../hooks';
 import { useSession } from '../../session';
 import { api } from '../../api/client';
-import { Loading, ErrorBox, Empty } from '../../components/ui';
+import { Loading, ErrorBox, Empty, Alert } from '../../components/ui';
 import { PrintIcon } from '../../components/icons';
 
 export default function AllergyListScreen() {
@@ -46,15 +46,13 @@ export default function AllergyListScreen() {
         読み上げの領域（role）は付けない。開いたときからある文で、あとから出る知らせではないため
       */}
       <section className="card">
-        <div className="alert alert-soft">
-          <div>
-            この一覧は<strong>全園児</strong>が対象です。担当するクラスに関係なく表示します。
-            誤食は担任以外が配膳する場面でも起こるためです。
-            <br />
-            アレルギー・既往歴は要配慮個人情報です。印刷したものの取り扱いにご注意ください。
-            印刷したことは操作ログに残ります。
-          </div>
-        </div>
+        <Alert soft role={null}>
+          この一覧は<strong>全園児</strong>が対象です。担当するクラスに関係なく表示します。
+          誤食は担任以外が配膳する場面でも起こるためです。
+          <br />
+          アレルギー・既往歴は要配慮個人情報です。印刷したものの取り扱いにご注意ください。
+          印刷したことは操作ログに残ります。
+        </Alert>
       </section>
 
       <section className="card">

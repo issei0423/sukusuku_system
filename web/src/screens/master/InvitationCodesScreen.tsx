@@ -222,7 +222,7 @@ export default function InvitationCodesScreen() {
         )}
       </section>
 
-      <section className="card card-sub">
+      <section className="note">
         <div className="muted">
           {/* 1枚＝1アカウント。園児ごとに必要枚数を発行する（要件定義書「招待コードの発行」(4-1-2)） */}
           1枚のコードは1つのアカウントの登録にのみ使えます。両親それぞれに配る場合は、

@@ -421,9 +421,9 @@ select:focus-visible, textarea:focus-visible, summary:focus-visible {
  */
 .btn-quiet.btn-danger { color: var(--c-alert); }
 @media (hover: hover) {
-  .btn-quiet.btn-danger:hover:not(:disabled) { border-color: transparent; background: color-mix(in srgb, var(--c-alert) 8%, var(--md-sys-color-surface-container-lowest)); }
+  .btn-quiet.btn-danger:hover:not(:disabled) { border-color: transparent; background: color-mix(in srgb, var(--c-alert) 8%, var(--c-surface)); }
 }
-.btn-quiet.btn-danger:active:not(:disabled) { border-color: transparent; background: color-mix(in srgb, var(--c-alert) 10%, var(--md-sys-color-surface-container-lowest)); }
+.btn-quiet.btn-danger:active:not(:disabled) { border-color: transparent; background: color-mix(in srgb, var(--c-alert) 10%, var(--c-surface)); }
 
 /*
  * 「日付と種別｜開く」のように2つに分けて書いたボタンは、後ろの短い語を1行に保ち、前の語の側で折り返す。

@@ -29,9 +29,21 @@ export function Field({ label, required, children, style }: {
   );
 }
 
-/** 警告・注意喚起。判定ではないことを明確にするため、文言は呼び出し側が持つ */
-export function Alert({ children, soft }: { children: ReactNode; soft?: boolean }) {
-  return <div className={`alert${soft ? ' alert-soft' : ''}`} role={soft ? 'status' : 'alert'}><span aria-hidden="true">(!)</span><span>{children}</span></div>;
+/**
+ * 警告・知らせの帯。判定ではないことを明確にするため、文言は呼び出し側が持つ。
+ * 帯の種類（【仮置き】web/仮置き値.md「警告・知らせの帯」。見直し m7c-02・m7a-02）
+ *   - 既定：誤り・安全（赤）。読み上げの領域は alert
+ *   - warn：期限切れ・漏れ（札の .tag-warn と同じ色）。status
+ *   - soft：お願い・知らせ。status
+ *   - reach：保護者に届くこと（送る・掲載する・承認する前に、誰に届くかを示す）。status。soft と並べて書いたときは reach が勝つ
+ * role は、開いたときからある文で読み上げの領域を付けないとき（null）と、知らせの形でも alert で読ませるときだけ渡す
+ */
+export function Alert({ children, soft, warn, reach, role }: {
+  children: ReactNode; soft?: boolean; warn?: boolean; reach?: boolean; role?: 'alert' | 'status' | null;
+}) {
+  const kind = reach ? ' alert-reach' : warn ? ' alert-warn' : soft ? ' alert-soft' : '';
+  const live = role !== undefined ? role : kind ? 'status' : 'alert';
+  return <div className={`alert${kind}`} role={live ?? undefined}><span aria-hidden="true">(!)</span><span>{children}</span></div>;
 }
 
 /**
@@ -40,7 +52,7 @@ export function Alert({ children, soft }: { children: ReactNode; soft?: boolean 
  * （基本設計書 3-5）
  */
 export function Disclaimer({ text }: { text: string }) {
-  return <div className="disclaimer"><span>(!)</span><span>{text}</span></div>;
+  return <div className="disclaimer"><span aria-hidden="true">(!)</span><span>{text}</span></div>;
 }
 
 /**
