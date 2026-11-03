@@ -250,13 +250,20 @@ function SearchRow({ r, editing, onEdit, onClose }: {
       {r.kind === 'check' ? (
         <>
           <td className="nowrap">
-            {/* うつ伏せは目を引く色で示す。判定ではなく、見落とさないための表示 */}
+            {/*
+              うつ伏せ・呼吸「確認できず」・顔色の「通常」以外は、安全の印の札（.tag-alert）で示す。午睡チェック画面の直近の記録（LatestObservation）と同じ条件。
+              判定ではなく、見落とさないための表示（見直し m7c-10。前はうつ伏せだけだった）
+            */}
             <span className={r.body_position === '2' ? 'tag tag-alert' : ''}>
               {r.body_position ? BODY_POSITION[r.body_position] : '―'}
             </span>
           </td>
-          <td className="nowrap">{r.breathing ? BREATHING[r.breathing] : '―'}</td>
-          <td className="nowrap">{r.complexion ? COMPLEXION[r.complexion] : '―'}</td>
+          <td className="nowrap">
+            <span className={r.breathing === '2' ? 'tag tag-alert' : ''}>{r.breathing ? BREATHING[r.breathing] : '―'}</span>
+          </td>
+          <td className="nowrap">
+            <span className={r.complexion && r.complexion !== '1' ? 'tag tag-alert' : ''}>{r.complexion ? COMPLEXION[r.complexion] : '―'}</span>
+          </td>
         </>
       ) : (
         <td className="nowrap" colSpan={3}>{rowLabel(r)}</td>

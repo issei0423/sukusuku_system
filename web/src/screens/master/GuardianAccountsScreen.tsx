@@ -110,7 +110,7 @@ export default function GuardianAccountsScreen() {
                         <div key={l.child_id} className="row" style={{ gap: 6 }}>
                           <span>{l.child_name}（{l.relationship}）</span>
                           <Tag label={LINK_STATUS[l.link_status]}
-                            className={l.link_status === '1' ? 'tag-approved' : 'tag-draft'} />
+                            className={l.link_status === '1' ? 'tag-plain' : 'tag-draft'} />
                           {l.link_status === '1' && (
                             <button className="btn-sm btn-quiet" onClick={() => setPending({ kind: 'end', ...base })}>
                               解除
@@ -134,12 +134,13 @@ export default function GuardianAccountsScreen() {
                   </td>
                   <td className="nowrap">
                     {r.termsAgreed
-                      ? <Tag label="同意済" className="tag-approved" />
+                      ? <Tag label="同意済" />
                       : <Tag label="未同意" className="tag-applied" />}
                   </td>
                   <td className="nowrap">
+                    {/* ふつうの状態（有効・同意済・紐づけの有効）は plain。緑は済んだことを知らせる所だけ（見直し m7a-03） */}
                     <Tag label={ACCOUNT_STATUS[r.account.status]}
-                      className={r.account.status === '1' ? 'tag-approved' : 'tag-draft'} />
+                      className={r.account.status === '1' ? 'tag-plain' : 'tag-draft'} />
                   </td>
                 </tr>
               ))}

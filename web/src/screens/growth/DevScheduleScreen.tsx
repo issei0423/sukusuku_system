@@ -104,7 +104,7 @@ export default function DevScheduleScreen() {
                     <td className="nowrap muted">{formatYMD(r.suggested)}</td>
                     <td className="nowrap">
                       {r.scheduledOn ? formatYMD(r.scheduledOn) : '―'}
-                      {r.isManualOverride && <> <Tag label="手動上書き" className="tag-applied" /></>}
+                      {r.isManualOverride && <> <Tag label="手動上書き" /></>}
                     </td>
                     <td className="nowrap">
                       <input type="date" value={value} min={today()} style={{ minWidth: 160 }}
