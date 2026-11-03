@@ -105,11 +105,12 @@ export default function GuardianHome() {
                 <span className="guardian-eyebrow">園とのやりとり</span>
                 <h2>チャット・お知らせ</h2>
               </div>
-              {h.unread > 0 && <span className="badge">未読 {h.unread}</span>}
+              {/* バッジは数だけ。何の数かは「チャットを開く」の行の字で示す（見直し m7a-16） */}
+              {h.unread > 0 && <span className="badge" aria-hidden="true">{h.unread}</span>}
             </div>
             <p>園からのお知らせや配布物、担任の先生とのやりとりはこちらから。</p>
             <Link className="guardian-panel-link" to="/guardian/chat">
-              <span>チャットを開く</span><ForwardIcon />
+              <span>チャットを開く{h.unread > 0 && <>{' '}<span className="guardian-link-note">未読 {h.unread}</span></>}</span><ForwardIcon />
             </Link>
             {/* 園だより・献立表など、あとから見返すもの */}
             <Link className="guardian-panel-link" to="/guardian/handouts">

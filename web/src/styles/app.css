@@ -355,6 +355,16 @@
   .guardian-panel-link:hover { background: var(--c-surface-sub); color: var(--c-text); text-decoration: underline; text-decoration-thickness: 1px; }
 }
 .guardian-panel-link:active { background: var(--c-surface-head); color: var(--c-text); }
+/*
+ * 導線の行に添える字（「新しく n 件」「未読 n」「新しい記録があります」）。補足の色の字で、行の名前のあとに置く（見直し m7a-16）。
+ * 読み上げで行の名前と続かないよう、間に空白を入れる（そのぶん左の余白は 4px）。
+ * 数の無い新着には、文の前に小さい点（M3 の small badge：6dp の error の点。ここでは 8px）を付ける
+ */
+.guardian-link-note { display: inline-flex; align-items: center; gap: var(--sp-1); margin-left: var(--sp-1); color: var(--c-text-sub); font-size: var(--fs-small); }
+.badge-dot { display: inline-block; flex: none; width: 8px; height: 8px; border-radius: var(--radius-full); background: var(--c-alert); }
+@media (forced-colors: active) {
+  .badge-dot { forced-color-adjust: none; background: CanvasText; }
+}
 /* 記録・配布物の並び。DADS のメニューリスト（ボックス型）と同じく、行の全体を押せるようにする。線は M3 の区切り（outline-variant） */
 .guardian-record-list { margin-top: var(--sp-2); border-top: 1px solid var(--c-border-weak); }
 .guardian-record-link {
@@ -366,6 +376,21 @@
 @media (hover: hover) {
   .guardian-record-link:hover { color: var(--c-text); text-decoration: underline; text-decoration-thickness: 1px; background: var(--c-surface-sub); }
 }
+/*
+ * 職員の画面の、開くだけの行の並び（日誌の作成・編集の「この園児の過去の記録」）。保護者の記録の並び（.guardian-record-list）と同じく、
+ * 行の全体を押せるリンクにし、outline-variant の線で区切る。右に「開く」と進む印を、テキストボタンと同じ primary の字で置く（見直し m7a-05）
+ */
+.record-list { border-top: 1px solid var(--c-border-weak); }
+.record-link {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
+  min-height: var(--control-h); padding: var(--sp-1) var(--sp-2); border-bottom: 1px solid var(--c-border-weak);
+  color: var(--c-text); text-decoration: none;
+}
+.record-link > span:last-child { display: inline-flex; align-items: center; gap: var(--sp-1); flex: none; color: var(--c-outlined-ink); font-weight: 600; }
+@media (hover: hover) {
+  .record-link:hover { color: var(--c-text); background: var(--c-state-hover); }
+}
+.record-link:active { color: var(--c-text); background: var(--c-state-press); }
 .guardian-contact-note { padding: 0; color: var(--c-text-sub); font-size: var(--fs-small); line-height: 1.7; }
 .guardian-drawer { background: var(--chrome-surface); }
 .guardian-room-list { overflow: hidden; background: var(--c-surface); border: 1px solid var(--c-border-weak); border-radius: var(--radius-card); }
@@ -690,7 +715,8 @@ table.list td.list-title { min-width: 8em; }
  */
 .tag-warn     { color: var(--c-on-warn-soft); background: var(--c-warn-soft); border-color: var(--c-warn); font-weight: 600; }
 /*
- * 件数・新着の札（M3 の Badge。BadgeTokens：error の地・全丸）。「新しく n 件」「未読」などに付ける。
+ * 件数・新着の札（M3 の Badge。BadgeTokens：error の地・全丸）。中は数だけ（M3 のバッジは 1〜4 字の数）。
+ * 何の数か（「新しく n 件」「未読 n」）は、行の字（.guardian-link-note）で書く（見直し m7a-16）。
  * 【仮置き】字は 14px（M3 の 11sp より大きく。14px より小さい字を使わない）。付ける画面は画面ごとの点で直す
  */
 .badge {

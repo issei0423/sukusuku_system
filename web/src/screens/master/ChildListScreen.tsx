@@ -17,7 +17,7 @@ import { ENROLLMENT_STATUS } from '../../api/codes';
 import type { Child } from '../../api/types';
 import { Loading, ErrorBox, Empty, Field, Tag } from '../../components/ui';
 import { formatYMD, formatAge, today } from '../../api/util';
-import { SearchIcon, UndoIcon } from '../../components/icons';
+import { SearchIcon, UndoIcon, AddIcon } from '../../components/icons';
 
 export default function ChildListScreen() {
   const { user } = useSession();
@@ -62,8 +62,8 @@ export default function ChildListScreen() {
         <h1>園児</h1>
         <div className="spacer" />
         <Link className="btn btn-sm" to="/staff/children/allergies">アレルギー一覧</Link>
-        {/* 登録・編集・一括登録は管理者のみ */}
-        {isAdmin && <Link className="btn btn-sm" to="/staff/children/new">新規登録</Link>}
+        {/* 登録・編集・一括登録は管理者のみ。新しく作る操作（新規登録）はページの頭の塗り（web/仮置き値.md「ページの頭の操作」。見直し m7a-04） */}
+        {isAdmin && <Link className="btn btn-primary" to="/staff/children/new"><AddIcon />新規登録</Link>}
         {isAdmin && <Link className="btn btn-sm" to="/staff/children/csv">CSV一括登録</Link>}
       </div>
 

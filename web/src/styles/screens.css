@@ -648,7 +648,7 @@ table.list.contact-class-table :is(th, td) { vertical-align: top; padding: var(-
 .contact-picks.is-toilet .contact-pick { word-break: keep-all; overflow-wrap: anywhere; letter-spacing: 0; }
 /*
  * 食事の量・排せつのボタンは、左右の余白 4px・字間 0 にして、列を詰めても名前を1行に収める
- * （給食の列 12rem（既定の文字で 192px）で「食べない」、排せつの列 280px で「トイレでできた」が1行に入る。前は余白 8px）
+ * （給食の列 12rem（既定の文字で 192px）で「食べない」、排せつの列 17.5rem（280px）で「トイレでできた」が1行に入る。前は余白 8px）
  */
 .contact-picks:is(.is-meal, .is-toilet) .contact-pick { padding-inline: var(--sp-1); letter-spacing: 0; }
 /* 仮に入れた量（保存していない）は、白の地に濃い点線の枠（「食事の列の画面の中の状態」(3-2)）。チェックの印は付く */
@@ -675,8 +675,9 @@ table.list.contact-class-table :is(th, td) { vertical-align: top; padding: var(-
 /* 給食の列は rem で決め、ブラウザの文字を大きくしても「食べない」がチップの外に出ないようにする（見直し m7b-15。字は #368 で折り返さない） */
 .contact-class-table .contact-col-meal { width: 12rem; min-width: 12rem; }
 /* ボタン1つに「トイレでできた」が1行で入る幅（セルの左右 12px を引いて、2つ並べて 1つ 124px） */
-.contact-class-table .contact-col-toilet { width: 280px; min-width: 280px; }
-.contact-class-table .contact-col-temp { width: 120px; min-width: 120px; }
+/* 排せつ・体温の列も rem で決め、ブラウザの文字の大きさに合わせて広げる（給食の列と同じ。w4 の m9-F） */
+.contact-class-table .contact-col-toilet { width: 17.5rem; min-width: 17.5rem; }
+.contact-class-table .contact-col-temp { width: 7.5rem; min-width: 7.5rem; }
 /* 記録のボタンと、その下の「（時刻）を直す」・「＋体温」との間は 8px（「タッチの条件」(2-0 (4))、GitHub Issue #215。直す前は 4px） */
 .contact-last { min-height: 44px; margin-top: var(--sp-2); text-align: left; white-space: normal; }
 .contact-temp-add { margin-top: var(--sp-2); }
@@ -819,7 +820,6 @@ table.list.contact-class-table :is(th, td) { vertical-align: top; padding: var(-
   vertical-align: middle; background: var(--c-surface-sub); border: 1px solid var(--c-border); border-radius: var(--radius);
   font-size: var(--fs-small);
 }
-.guardian-panel-link .growth-new { margin-left: var(--sp-2); }
 /* 「ホームへ」も指で押せる高さにする（44px。基本設計書「画面基本構成」(3-5) のタップ領域） */
 .growth-page .contact-page-head > a { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: 44px; justify-self: start; }
 .growth-page .contact-page-head > p { margin: 0; }
