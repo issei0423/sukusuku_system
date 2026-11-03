@@ -18,17 +18,28 @@ import { useCallback, useEffect } from 'react';
  * 連絡事項の欄の下が送る帯の下に入り、表の選択肢が左に止めた園児名の列の下に隠れ、箱の右端で切れた操作が送られなかった
  * （見直し m7b-04・m7b-06・m7b-07）。フォーカスが入るたびに、近いほうの端まで送り直す（block・inline とも nearest。
  * 部品がすでに枠の余白の内側にあれば動かない）。押したあとにフォーカスを移す決まり（src/focusAfter.ts）と同じ送り方。
- * 指やマウスで押したとき（:focus-visible が当たらない）は動かさない
+ * 指やマウスで押してフォーカスが入ったときは動かさない。:focus-visible が当たらないときに加え、最後の操作が押す操作だったときも送らない
+ * （文字の欄は押しても :focus-visible が当たり、スマートフォンではソフトキーボードが出て画面が縮む動きと重なる。PR #380 のレビュー）。
+ * キーを押したら、またキーボードの操作として扱う
  */
 export function useRevealFocus() {
   useEffect(() => {
+    let byPointer = false;
+    const onPointer = () => { byPointer = true; };
+    const onKey = () => { byPointer = false; };
     const reveal = (event: FocusEvent) => {
       const el = event.target;
-      if (!(el instanceof HTMLElement) || !focusVisible(el)) return;
+      if (byPointer || !(el instanceof HTMLElement) || !focusVisible(el)) return;
       el.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
     };
+    document.addEventListener('pointerdown', onPointer, true);
+    document.addEventListener('keydown', onKey, true);
     document.addEventListener('focusin', reveal);
-    return () => document.removeEventListener('focusin', reveal);
+    return () => {
+      document.removeEventListener('pointerdown', onPointer, true);
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('focusin', reveal);
+    };
   }, []);
 }
 
