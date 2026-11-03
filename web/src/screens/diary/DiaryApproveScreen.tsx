@@ -149,7 +149,7 @@ export default function DiaryApproveScreen() {
           * 保護者へ伝えたこと（と今後の対策）を示す（図/画面詳細図.md「日誌承認画面（管理者）」(3-5) 項目3）
           */}
         {d.incident ? <IncidentSummary incident={d.incident} /> : (
-          <div style={{ whiteSpace: 'pre-wrap', border: '1px solid var(--c-border)', borderRadius: 6, padding: 12, background: 'var(--c-surface-sub)' }}>
+          <div className="diary-body-box is-sub">
             {d.body}
           </div>
         )}

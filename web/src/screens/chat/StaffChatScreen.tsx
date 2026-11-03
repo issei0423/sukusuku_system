@@ -269,7 +269,8 @@ export default function StaffChatScreen() {
                         {r.room.room_type !== '4' && r.guardianCount > 0 && <span className="mark">保護者も参加</span>}
                         {r.room.room_type === '4' && r.room.thread_status === '1' && <span className="mark">未対応</span>}
                       </span>
-                      {r.unread > 0 && <span className="unread">{r.unread}</span>}
+                      {/* 未読の数は件数の札（.badge）と同じ形。読み上げは「未読 n」（見直し m7a-15・m7b-13） */}
+                      {r.unread > 0 && <span className="badge channel-unread"><span className="sr-only">未読 </span>{r.unread}</span>}
                     </button>
                   ))}
                 </div>

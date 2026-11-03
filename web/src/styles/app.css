@@ -313,7 +313,7 @@
 }
 
 .guardian-child-section { display: flex; flex-direction: column; gap: var(--sp-4); }
-.guardian-child-section + .guardian-child-section { padding-top: var(--sp-5); border-top: 1px solid var(--c-border); }
+.guardian-child-section + .guardian-child-section { padding-top: var(--sp-5); border-top: 1px solid var(--c-border-weak); }
 /* お子さまの箱。名前は h2（M3 の title-large）。上下の余白と絵を詰める（r2b-15） */
 .guardian-child-card {
   display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
@@ -590,8 +590,12 @@ button:where(.phrase-list button, .contact-month-days button, .handout-row, .tem
   border-radius: var(--radius);
 }
 
+/* 職員の画面の h1 は M3 の headline-medium（28/36）。カードの題（h2 22px）と強さを分ける（見直し m7a-07。頭役が推しで決めた。保護者の PC と同じ値） */
+.main h1 { font-size: 1.75rem; line-height: calc(36 / 28); }
 .page-head { display: flex; align-items: center; gap: var(--sp-3) var(--sp-4); flex-wrap: wrap; margin-bottom: var(--sp-5); }
 .page-head .spacer { flex: 1; }
+/* 見出しの行に項目名つきの欄を置く画面（身体記録・スケジュール設定・発達チェック入力・発達チェック一覧）は、欄の名前の分だけ h1 が浮かないよう下端でそろえる（見直し m7a-22） */
+.page-head.page-head-fields { align-items: flex-end; }
 
 /*
  * 区切りの箱。M3 の Outlined card（Jetpack Compose の OutlinedCardTokens）：白（surface-container-lowest）の地、
@@ -615,6 +619,8 @@ button:where(.phrase-list button, .contact-month-days button, .handout-row, .tem
 .field { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
 .field > .lbl { font-size: var(--fs-body); color: var(--c-text); font-weight: 600; line-height: 1.5; }
 .field > label.lbl { display: block; min-height: 0; }
+/* 欄の組（.field）の外に置いた欄の名前。項目の名前と同じ 600（前はインラインの 700。見直し m7a-11） */
+.field-title { font-weight: 600; }
 /*
  * 必須の印。DADS の必須ラベルと同じく、赤の細字で項目名の後ろに置く。
  * 欄の幅が狭いときは「必」と「須」のあいだで割らず、印ごと次の行へ送る
@@ -651,6 +657,8 @@ table.list tbody tr:focus-within td { background: var(--c-primary-faint); }
 table.list tr > :first-child { padding-left: var(--sp-3); }
 /* 最後の行は下の線を引かない。行の見出し（th scope="row"）にも効かせる（前は園児名にだけ線が残っていた） */
 table.list tbody tr:last-child > * { border-bottom: 0; }
+/* 最後の組の行をまたぐセル（アレルギー一覧のクラス・氏名、招待コードの園児）も、表の下端なので線を消す（見直し m7a-20） */
+table.list tbody tr:not(:has(~ tr > td[rowspan])) > td[rowspan] { border-bottom: 0; }
 table.list td.num { text-align: right; font-variant-numeric: tabular-nums; }
 /*
  * 行をまたぐセル（アレルギー一覧・招待コードの園児名など）は、最初の行にそろえて上に寄せる。どの行の見出しかを最初の行と並べて示す。
@@ -819,7 +827,7 @@ table.list td.list-title { min-width: 8em; }
 }
 .disclaimer:has(+ .row-end) {
   bottom: var(--save-bar-h); height: var(--save-note-h);
-  border: 0; border-top: 1px solid var(--c-border); border-radius: 0;
+  border: 0; border-top: 1px solid var(--c-border-weak); border-radius: 0;
 }
 .disclaimer + .row-end {
   bottom: 0; height: var(--save-bar-h);
@@ -897,7 +905,7 @@ summary { min-height: var(--tap-min); padding: 10px 0; cursor: pointer; }
 .step.locked fieldset:disabled { cursor: not-allowed; }
 .step .step-title { font-size: 1rem; line-height: 1.5; font-weight: 600; margin-bottom: var(--sp-3); }
 
-.terms-box { max-height: 220px; overflow-y: auto; border: 1px solid var(--c-border); border-radius: var(--radius); padding: var(--sp-3) var(--sp-4); background: var(--c-surface-sub); white-space: pre-wrap; }
+.terms-box { max-height: 220px; overflow-y: auto; border: 1px solid var(--c-border-weak); border-radius: var(--radius-card); padding: var(--sp-3) var(--sp-4); background: var(--c-surface-sub); white-space: pre-wrap; }
 .skip-link { position: absolute; left: 8px; top: -100px; z-index: 100; background: var(--c-surface); padding: 8px 16px; }
 .skip-link:focus { top: 8px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }

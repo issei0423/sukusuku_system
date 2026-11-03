@@ -119,7 +119,7 @@ export default function DevInputScreen() {
 
   return (
     <div style={{ maxWidth: 860 }}>
-      <div className="page-head">
+      <div className="page-head page-head-fields">
         <Link className="btn btn-quiet btn-sm" to="/staff/growth"><BackIcon />発達チェック一覧へ</Link>
         <h1>{c.child_name}（{formatAge(c.birth_date, checkedOn)}）</h1>
         <div className="spacer" />
@@ -210,7 +210,7 @@ export default function DevInputScreen() {
         定型文（PhraseMenu）と宛先の表示（RecipientBadge）は PR #201 の部品と合わせるときに置く
       */}
       <section className="card">
-        <label htmlFor={messageId} style={{ fontWeight: 700 }}>{TEXT.guardianMessageLabel}</label>
+        <label htmlFor={messageId} className="field-title">{TEXT.guardianMessageLabel}</label>
         <textarea id={messageId} value={guardianMessage} onChange={(e) => setGuardianMessage(e.target.value)} maxLength={500}
           readOnly={messageLocked} aria-describedby={confirmed ? `${messageId}-rest ${messageId}-fix` : `${messageId}-rest`} />
         <div className="muted" id={`${messageId}-rest`} style={{ marginTop: 4 }}>残り {500 - [...guardianMessage].length} 文字</div>

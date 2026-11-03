@@ -152,7 +152,7 @@ export default function DiaryConfirmScreen() {
         ) : (
           <>
             <h3 style={{ marginTop: 16 }}>本文</h3>
-            <div style={{ whiteSpace: 'pre-wrap', border: '1px solid var(--c-border)', borderRadius: 6, padding: 12 }}>
+            <div className="diary-body-box">
               {state.body}
             </div>
           </>

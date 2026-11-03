@@ -256,7 +256,8 @@ export default function GuardianChatScreen() {
               onClick={() => setRoomId(r.room.chat_room_id)}>
               <span>{labelFor(r.room.room_type, r.room.room_name)}</span>
               <span className="guardian-room-trailing">
-                {r.unread > 0 && <span className="badge">{r.unread}</span>}
+                {/* 読み上げは「未読 n」（見直し m7b-13） */}
+                {r.unread > 0 && <span className="badge"><span className="sr-only">未読 </span>{r.unread}</span>}
                 <ForwardIcon />
               </span>
             </button>

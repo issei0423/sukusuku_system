@@ -61,10 +61,10 @@ export default function ChildListScreen() {
       <div className="page-head">
         <h1>園児</h1>
         <div className="spacer" />
-        <Link className="btn btn-sm" to="/staff/children/allergies">アレルギー一覧</Link>
+        <Link className="btn" to="/staff/children/allergies">アレルギー一覧</Link>
         {/* 登録・編集・一括登録は管理者のみ。新しく作る操作（新規登録）はページの頭の塗り（web/仮置き値.md「ページの頭の操作」。見直し m7a-04） */}
         {isAdmin && <Link className="btn btn-primary" to="/staff/children/new"><AddIcon />新規登録</Link>}
-        {isAdmin && <Link className="btn btn-sm" to="/staff/children/csv">CSV一括登録</Link>}
+        {isAdmin && <Link className="btn" to="/staff/children/csv">CSV一括登録</Link>}
       </div>
 
       <section className="card">

@@ -39,7 +39,7 @@ export default function DevListScreen() {
 
   return (
     <div>
-      <div className="page-head">
+      <div className="page-head page-head-fields">
         <h1>発達チェック</h1>
         <Field label="クラス">
           <select value={classId} disabled={fixedClass} className={fixedClass ? 'select-fixed' : undefined}
