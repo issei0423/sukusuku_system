@@ -35,6 +35,12 @@ function nextStaffId(rows: Row[]): string {
   return `S${String(max + 1).padStart(3, '0')}`;
 }
 
+/** メールアドレスを「@」の前で折れるようにする。表が箱に収まらないときだけ折れる（見直し m7a-06） */
+function breakAtSign(email: string) {
+  const at = email.indexOf('@');
+  return at < 0 ? email : <>{email.slice(0, at)}<wbr />{email.slice(at)}</>;
+}
+
 export default function StaffAccountsScreen() {
   const { user } = useSession();
   const [tick, setTick] = useState(0);
@@ -179,7 +185,7 @@ export default function StaffAccountsScreen() {
         {loading && <Loading />}
         {loadError && <ErrorBox text={loadError} />}
         {data && (
-          <table className="list">
+          <table className="list list-dense">
             <thead>
               <tr><th scope="col">職員ID</th><th scope="col">氏名</th><th scope="col">ログインID</th><th scope="col">ロール</th><th scope="col">担当クラス</th><th scope="col">状態</th><th scope="col">操作</th></tr>
             </thead>
@@ -188,30 +194,33 @@ export default function StaffAccountsScreen() {
                 <tr key={r.staff.staff_id}>
                   <td className="nowrap">{r.staff.staff_id}</td>
                   <td className="nowrap">{r.staff.staff_name}</td>
-                  <td className="nowrap muted">{r.account.email}</td>
+                  {/* ログインID（メールアドレス）は、表が箱に収まらないときだけ「@」の前で折る（見直し m7a-06） */}
+                  <td className="list-wrap muted">{breakAtSign(r.account.email)}</td>
                   <td className="nowrap">{ROLE[r.account.role]}</td>
                   <td className="nowrap">{r.className}</td>
-                  <td className="nowrap">
+                  <td className="list-wrap">
                     <Tag label={ACCOUNT_STATUS[r.account.status]}
                       className={r.account.status === '1' ? 'tag-plain' : 'tag-draft'} />
                     {/* 札の役割（web/仮置き値.md「職員の画面の札の色」）：ふつうの「有効」は plain、止まっている「停止」は draft、ロック中は期限・誤りの札（.tag-warn）、一時パスワードは状態でない属性なので plain */}
                     {r.locked && <> <Tag label="ロック中" className="tag-warn" /></>}
                     {r.account.is_temp_password && <> <Tag label="一時パスワード" /></>}
                   </td>
-                  <td className="nowrap">
+                  <td>
                     {/* 行でする作業（ロック解除・変更）はトーナル、ほかはテキストボタン（行ごとにくり返すので塗らない。r2c-03） */}
-                    {r.locked && <button className="btn-sm btn-tonal" onClick={() => unlock(r)}>ロック解除</button>}
-                    <button className="btn-sm btn-tonal" onClick={() => openEdit(r)}>変更</button>
-                    {/* 一時パスワード再発行・停止は、確認の窓を挟む危ない操作なので警告のテキストボタン（.btn-quiet.btn-danger。見直し m7a-17）。再開はふつうのテキストボタン */}
-                    <button className="btn-sm btn-quiet btn-danger" onClick={() => setPending({ kind: 'reissue', row: r })}>
-                      一時パスワード再発行
-                    </button>
-                    {r.account.account_id !== user!.account_id && (
-                      <button className={r.account.status === '1' ? 'btn-sm btn-quiet btn-danger' : 'btn-sm btn-quiet'}
-                        onClick={() => setPending({ kind: r.account.status === '1' ? 'stop' : 'resume', row: r })}>
-                        {r.account.status === '1' ? '停止' : '再開'}
+                    <div className="list-actions is-one-line-pc">
+                      {r.locked && <button className="btn-sm btn-tonal" onClick={() => unlock(r)}>ロック解除</button>}
+                      <button className="btn-sm btn-tonal" onClick={() => openEdit(r)}>変更</button>
+                      {/* 一時パスワード再発行・停止は、確認の窓を挟む危ない操作なので警告のテキストボタン（.btn-quiet.btn-danger。見直し m7a-17）。再開はふつうのテキストボタン */}
+                      <button className="btn-sm btn-quiet btn-danger" onClick={() => setPending({ kind: 'reissue', row: r })}>
+                        一時パスワード再発行
                       </button>
-                    )}
+                      {r.account.account_id !== user!.account_id && (
+                        <button className={r.account.status === '1' ? 'btn-sm btn-quiet btn-danger' : 'btn-sm btn-quiet'}
+                          onClick={() => setPending({ kind: r.account.status === '1' ? 'stop' : 'resume', row: r })}>
+                          {r.account.status === '1' ? '停止' : '再開'}
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

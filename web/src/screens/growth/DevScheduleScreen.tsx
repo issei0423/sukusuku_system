@@ -17,6 +17,15 @@ import { ConfirmDialog, notify } from '../../components/feedback';
 import { formatYMD, formatAge, today } from '../../api/util';
 import { BackIcon } from '../../components/icons';
 
+/**
+ * 日付は曜日の括弧の前でだけ折れるようにする（表が箱に収まらないときだけ折れる。見直し m7a-06）。
+ * 日付と括弧の中では割らない（iPad の Safari は keep-all でも「（」のあとで割った）
+ */
+function dateCell(s: string) {
+  const i = s.indexOf('（');
+  return i < 0 ? s : <><span className="nowrap">{s.slice(0, i)}</span><wbr /><span className="nowrap">{s.slice(i)}</span></>;
+}
+
 export default function DevScheduleScreen() {
   const { user } = useSession();
   const classesForUser = selectableClasses(user!);
@@ -78,11 +87,11 @@ export default function DevScheduleScreen() {
         {loadError && <ErrorBox text={loadError} />}
         {data?.length === 0 && <Empty text="対象の園児がいません。" />}
         {data && data.length > 0 && (
-          <table className="list">
+          <table className="list list-dense">
             <thead>
               <tr>
                 {/* 何の時点の月齢かを書く（GitHub Issue #124） */}
-                <th scope="col">園児</th><th scope="col">月齢<span className="weak">（提案日の時点）</span></th><th scope="col">推奨間隔</th>
+                <th scope="col">園児</th><th scope="col">月齢<br /><span className="weak">（提案日の時点）</span></th><th scope="col">推奨間隔</th>
                 <th scope="col">システムの提案</th><th scope="col">設定中の予定日</th><th scope="col">次回の予定日</th><th scope="col">操作</th>
               </tr>
             </thead>
@@ -101,9 +110,9 @@ export default function DevScheduleScreen() {
                     <td className="nowrap">{r.child.child_name}</td>
                     <td className="nowrap">{formatAge(r.child.birth_date, r.suggested)}</td>
                     <td className="nowrap">{r.intervalDays ? `${r.intervalDays} 日` : '―'}</td>
-                    <td className="nowrap muted">{formatYMD(r.suggested)}</td>
-                    <td className="nowrap">
-                      {r.scheduledOn ? formatYMD(r.scheduledOn) : '―'}
+                    <td className="list-wrap muted">{dateCell(formatYMD(r.suggested))}</td>
+                    <td className="list-wrap">
+                      {r.scheduledOn ? dateCell(formatYMD(r.scheduledOn)) : '―'}
                       {r.isManualOverride && <> <Tag label="手動上書き" /></>}
                     </td>
                     <td className="nowrap">
@@ -111,17 +120,19 @@ export default function DevScheduleScreen() {
                         aria-label={`${r.child.child_name}の次回の予定日`}
                         onChange={(e) => setEdits({ ...edits, [r.child.child_id]: e.target.value })} />
                     </td>
-                    <td className="nowrap">
-                      <button className="btn-sm btn-tonal" disabled={!changed}
-                        onClick={() => apply(r.child.child_id, value, true)}>
-                        上書きする
-                      </button>
-                      {r.isManualOverride && (
-                        <button className="btn-sm btn-quiet"
-                          onClick={() => apply(r.child.child_id, r.suggested, false)}>
-                          提案に戻す
+                    <td>
+                      <div className="list-actions">
+                        <button className="btn-sm btn-tonal" disabled={!changed}
+                          onClick={() => apply(r.child.child_id, value, true)}>
+                          上書きする
                         </button>
-                      )}
+                        {r.isManualOverride && (
+                          <button className="btn-sm btn-quiet"
+                            onClick={() => apply(r.child.child_id, r.suggested, false)}>
+                            提案に戻す
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
