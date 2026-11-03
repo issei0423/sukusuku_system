@@ -73,6 +73,35 @@ describe('判定の関数（詳細設計書「判定の関数」(4-1 (2))）', (
       db.classStaff.push(...staff);
     }
   });
+
+  it('フリーの職員は、退園・卒園した園児を保護者の猶予期間中でも読めない。管理者と猶予中の保護者は今のまま', async () => {
+    // canReadChild・日誌と同じ範囲（詳細設計書「判定の関数」(4-1 (2)) 第1.12版。Go は server/api_contact_test.go）
+    const link = db.guardianChildren.find((g) => g.guardian_id === 'G005' && g.child_id === 'C005')!;
+    const left = ['C005', 'C013'].map((id) => db.children.find((c) => c.child_id === id)!);
+    const staff = db.classStaff.splice(db.classStaff.findIndex((s) => s.staff_id === 'S005'), 1);
+    const free = user(5, '2', { staff_id: 'S005', class_id: null });
+    try {
+      for (const c of left) expect(contactAccess(free, c.child_id)).toEqual({ read: true, write: false });
+      left[0].enrollment_status = '2'; // 退園。保護者は猶予中
+      left[1].enrollment_status = '3'; // 卒園
+      link.link_status = '3';
+      for (const c of left) {
+        expect(contactAccess(free, c.child_id)).toEqual({ read: false, write: false });
+        expect(contactAccess(admin, c.child_id)).toEqual({ read: true, write: true });
+      }
+      expect(contactAccess(user(10, '3', { guardian_id: 'G005' }), 'C005')).toEqual({ read: true, write: false });
+      // 開いたときは、ほかの範囲外・無い園児と同じ文言で拒む
+      await expect(api.contactPage(free, 'C013')).rejects.toThrow(MSG.contactForbidden);
+      await expect(api.contactMonth(free, 'C013')).rejects.toThrow(MSG.contactForbidden);
+      await expect(api.contactPage(free, 'C999')).rejects.toThrow(MSG.contactForbidden);
+      // 在籍中の園児は今までどおり読める
+      expect(contactAccess(free, 'C001')).toEqual({ read: true, write: false });
+    } finally {
+      for (const c of left) c.enrollment_status = '1';
+      link.link_status = '1';
+      db.classStaff.push(...staff);
+    }
+  });
 });
 
 describe('デモデータ（詳細設計書「デモデータ」(5-5)）', () => {

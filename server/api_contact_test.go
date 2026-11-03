@@ -50,7 +50,7 @@ func TestContactAccessTable(t *testing.T) {
 	if got := a.contactAccess(a.sessionUserByAccount(t, accGuardian), "C001"); !got.Read || got.Write {
 		t.Errorf("猶予中: %+v, want read only", got)
 	}
-	// フリー（今年度の担任クラスが無い一般）は全園児を読めるが書けない
+	// フリー（今年度の担任クラスが無い一般）は、在籍中で取り消していない園児を読めるが書けない
 	a.db.Exec(`DELETE FROM t_class_staff WHERE staff_id = 'S005'`)
 	u := a.sessionUserByAccount(t, accOtherTeacher)
 	for _, child := range []string{"C001", "C013"} {
@@ -60,6 +60,40 @@ func TestContactAccessTable(t *testing.T) {
 	}
 	if got := a.classContactAccess(u, classSakura); !got.Read || got.Write {
 		t.Errorf("フリーのクラス: %+v, want read only", got)
+	}
+	// 退園（2）・卒園（3）した園児は、保護者の猶予期間中でもフリーは読めない（canReadChild・日誌と同じ範囲。
+	// 詳細設計書「判定の関数」(4-1 (2)) 第1.12版）。管理者と猶予中の保護者の範囲は変えない。モックは web/tests/contact.test.ts
+	a.db.Exec(`UPDATE m_child SET enrollment_status = '2', withdrawn_on = ? WHERE child_id = 'C001'`, today())
+	a.db.Exec(`UPDATE m_child SET enrollment_status = '3' WHERE child_id = 'C013'`)
+	for _, child := range []string{"C001", "C013"} {
+		if got := a.contactAccess(u, child); got.Read || got.Write {
+			t.Errorf("フリー %s（退園・卒園）: %+v, want neither", child, got)
+		}
+		if got := a.contactAccess(a.sessionUserByAccount(t, accAdmin), child); !got.Read || !got.Write {
+			t.Errorf("管理者 %s（退園・卒園）: %+v, want read and write", child, got)
+		}
+	}
+	if got := a.contactAccess(a.sessionUserByAccount(t, accGuardian), "C001"); !got.Read || got.Write {
+		t.Errorf("猶予中の保護者（退園した自児）: %+v, want read only", got)
+	}
+}
+
+// フリーの職員が退園・卒園した子の連絡帳を開いたときは、ほかの範囲外・無い園児と同じ 403 と同じ文言にする
+// （詳細設計書「判定の関数」(4-1 (2))「権限の外も、園児が無いのも、同じ 403 と同じ文言」）
+func TestContactFreeStaffLeftChild(t *testing.T) {
+	a, h, free := freeStaffApp(t)
+	month := "/api/contact/children/C013/month?month=" + today()[:7]
+	call(t, h, free, "GET", "/api/contact/children/C013", "")
+	call(t, h, free, "GET", month, "")
+	a.db.Exec(`UPDATE m_child SET enrollment_status = '3' WHERE child_id = 'C013'`)
+	missing := expectStatus(t, request(t, h, free, "GET", "/api/contact/children/C999", ""), http.StatusForbidden)
+	if !strings.Contains(missing, msgContactForbidden) {
+		t.Errorf("無い園児の文言が連絡帳の範囲外のものでない: %s", missing)
+	}
+	for _, path := range []string{"/api/contact/children/C013", month} {
+		if got := expectStatus(t, request(t, h, free, "GET", path, ""), http.StatusForbidden); got != missing {
+			t.Errorf("%s: 無い園児と応答が違う: %s / %s", path, got, missing)
+		}
 	}
 }
 
