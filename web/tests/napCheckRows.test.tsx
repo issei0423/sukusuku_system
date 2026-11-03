@@ -144,3 +144,58 @@ describe('午睡チェック画面：実施の前と実施の後の行（詳細�
     }
   });
 });
+
+/*
+ * 開いたときの園児の行は、そのクラスの実施を読み終えてから読む（NapCheckScreen の rowsSessionId）。
+ * 前は、実施（activeSession）と園児の行（classState）を同時に読み始め、実施を読み終える前に「実施なし」の行
+ * （前回の確認・ねた・対象外が空）を読んでいた。実施中・終えたあとでも、その行を一度出し、実施の行を読み直すまでの間
+ * （問い合わせ1回ぶん）、おひるね中の子に「ねた」を出し、「体温を入れてください。」も前回の確認も出していなかった。
+ * その間に「体温」を押すと、入眠時の体温でなく5分ごとの確認の体温になった（GitHub の CI で時々落ちた
+ * napPhysicalScreens.test.tsx の「体温は小数第1位まで」は、その間に押せたときだけ通っていた）。
+ * ここでは実施の応答を遅らせて、前に一度出ていた並びを毎回作り、行が初めて DOM に出たその場の文を見る
+ */
+describe('午睡チェック画面：開いたときの行は、出している実施について読んだもの', () => {
+  /** 実施の応答を遅らせて開き、names の行がそろって初めて DOM に出たその場の文を返す（読み直しのあとではなく） */
+  async function firstSeen(names: string[]): Promise<string[]> {
+    const original = api.activeSession.bind(api);
+    // HTTP で実施の応答が遅れたときと同じ。前は、そのあいだに読み終えた「実施なし」の行を、実施を読んだときに出していた
+    const slow = vi.spyOn(api, 'activeSession').mockImplementation(async (...args) => {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      return original(...args);
+    });
+    try {
+      const seen = new Promise<string[]>((resolve) => {
+        const observer = new MutationObserver(() => {
+          const rows = names.map((n) => document.querySelector<HTMLElement>(`section[aria-label="${n}の午睡チェック"]`));
+          if (rows.every((r) => r !== null)) {
+            observer.disconnect();
+            resolve(rows.map((r) => r!.textContent ?? ''));
+          }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+      });
+      renderNap();
+      return await seen;
+    } finally {
+      slow.mockRestore();
+    }
+  }
+
+  it('実施中なら、行が出たときから、おひるね中の子に「体温を入れてください。」、確認した子に前回の時刻を出している', async () => {
+    const sessionId = await freshSession();
+    await api.sleep(teacher, sessionId, 'C001');
+    await api.record(teacher, sessionId, { child_id: 'C002', body_position: '1', breathing: '1', complexion: '1', temperature: null });
+    const [sleeper, checked] = [await nameOf('C001'), await nameOf('C002')];
+    const [sleeperText, checkedText] = await firstSeen([sleeper, checked]);
+    expect(sleeperText).toContain('体温を入れてください。');
+    expect(checkedText).toContain('前回 13:30 仰向け');
+  });
+
+  it('終えたあとなら、行が出たときから、終えた実施の状態（「ねた（おきたが未記録）」）を出している', async () => {
+    const sessionId = await freshSession();
+    await api.sleep(teacher, sessionId, 'C001');
+    await api.endSession(teacher, sessionId);
+    const [text] = await firstSeen([await nameOf('C001')]);
+    expect(text).toContain('13:30 ねた（おきたが未記録）');
+  });
+});

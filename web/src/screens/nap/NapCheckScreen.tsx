@@ -66,18 +66,29 @@ export default function NapCheckScreen() {
     const active = await api.activeSession(classId, today(), user!);
     const ended = active ? null : await api.lastEndedSession(classId, today(), user!);
     loadedClass.current = classId;
-    return { active, ended };
+    return { classId, active, ended };
   }, [classId, tick], { live: onNapClass(classId) });
   const sessionLoading = session.loading && loadedClass.current !== classId;
   const s = session.data?.active ?? null;
   const endedSession = session.data?.ended ?? null;
-  // 園児の行に出す実施。実施中ならそれ、無ければ最後に終えた実施、どちらも無ければ実施の前（行だけを出す）
-  const rowsSessionId = s?.nap_session_id ?? endedSession?.nap_session_id ?? null;
+  /*
+   * 園児の行に出す実施。実施中ならそれ、無ければ最後に終えた実施、どちらも無ければ実施の前（行だけを出す）。
+   * このクラスの実施を読み終えるまでは決めず（undefined）、行も読まない。前は実施と行を同時に読み始め、実施を読む前の
+   * 「実施なし」の行（前回の確認・ねた・対象外が空）を、開いた直後に実施中・実施の後の行として一度出していた。
+   * 実施の行を読み直すまでの間（問い合わせ1回ぶん）、おひるね中の子に「ねた」を出し、「体温」が入眠時の体温でなく
+   * 5分ごとの確認の体温になっていた（GitHub の CI で時々落ちた napPhysicalScreens.test.tsx。web/tests/napCheckRows.test.tsx）。
+   * 開始・終了のあとの読み直しでは、前に読んだ行を出したまま読み直す（今までどおり）
+   */
+  const rowsSessionId = session.data?.classId === classId
+    ? s?.nap_session_id ?? endedSession?.nap_session_id ?? null
+    : undefined;
   const state = useAsync(
-    async () => (hasClass ? api.classState(user!, classId, rowsSessionId) : []),
+    async () => (!hasClass ? [] : rowsSessionId === undefined ? null : api.classState(user!, classId, rowsSessionId)),
     [classId, rowsSessionId, tick],
     { live: onNapClass(classId) },
   );
+  // 園児の行を読んだか。開いた直後（実施を読み終えて、行を読んでいる間）は、まだ読んでいない
+  const rowsRead = !!state.data;
 
   const [error, setError] = useState<string | null>(null);
   // 未記録の園児が残っているときに、終了の前に確かめる（画面詳細図「午睡チェック画面」(5-1)）
@@ -275,7 +286,8 @@ export default function NapCheckScreen() {
           {s && !readOnly && (
             <div ref={sessionHead} className="nap-session-actions">
               <Link className="btn" to="/staff/nap/abnormal">異常を記録する</Link>
-              <button onClick={() => (recorded < rows.length || stillSleeping.length > 0 ? setEnding(true) : end())}><EndIcon />午睡チェックを終了</button>
+              {/* 園児の行をまだ読んでいない（開いた直後）ときは、記録の残りが分からないので、確かめの窓を出してから終える */}
+              <button onClick={() => (!rowsRead || recorded < rows.length || stillSleeping.length > 0 ? setEnding(true) : end())}><EndIcon />午睡チェックを終了</button>
             </div>
           )}
         </div>
@@ -328,7 +340,8 @@ export default function NapCheckScreen() {
             </ConfirmDialog>
           )}
 
-          {state.loading && <Loading />}
+          {/* 実施を読み終えて、行をまだ読んでいない間も読み込み中と出す（行を読むのは実施を読んだあと。上の rowsSessionId） */}
+          {(state.loading || (!rowsRead && !state.error)) && <Loading />}
           {state.error && <ErrorBox text={state.error} />}
 
           <div className="nap-grid">

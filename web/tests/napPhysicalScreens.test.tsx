@@ -161,11 +161,19 @@ describe('午睡チェック画面の園児カード（GitHub Issue #142 の 3�
     expect(cardOf('西田 太郎').textContent).not.toContain('異常時の記録あり');
   });
 
+  /*
+   * 5分ごとの確認の体温（行の「体温」で設定し、「記録する」で送る）を確かめる。相手は「ねた」の無い 小林 結衣。
+   * 前は 久保田 陸 で確かめていたが、デモの 久保田 陸 は 13:10 から「おひるね中」で入眠時の体温が無い。その行の「体温」は
+   * 入眠時の体温としてすぐ記録し、ボタンの文字は「体温 未測定」のまま変わらない（受け入れテスト 04-014。napSleepTemperature.test.tsx）。
+   * 画面が実施の行を読む前の空の行（ねたが無い）を一度出していたので、その間に押せたときだけ通り、
+   * 負荷で行を読み終えるのが先になると落ちていた（GitHub の CI。NapCheckScreen の rowsSessionId で直した）
+   */
   it('体温は小数第1位までしか設定できない（基本設計書「入力項目の制約値」(4-9)）', async () => {
     open('/staff/nap', teacher);
     await settled();
-    await waitFor(() => expect(cardOf('久保田 陸')).toBeTruthy(), { timeout: 3000 });
-    fireEvent.click(within(cardOf('久保田 陸')).getByRole('button', { name: /^久保田 陸の体温/ }));
+    await waitFor(() => expect(cardOf('小林 結衣')).toBeTruthy(), { timeout: 3000 });
+    expect(cardOf('小林 結衣').classList.contains('needs-temperature')).toBe(false);
+    fireEvent.click(within(cardOf('小林 結衣')).getByRole('button', { name: /^小林 結衣の体温/ }));
     fireEvent.click(screen.getByText('範囲外の値を入力'));
     const input = screen.getByLabelText('範囲外の体温');
     const setButton = screen.getByRole('button', { name: '設定' }) as HTMLButtonElement;
@@ -177,7 +185,7 @@ describe('午睡チェック画面の園児カード（GitHub Issue #142 の 3�
     fireEvent.change(input, { target: { value: '34.9' } });
     expect(setButton.disabled).toBe(false);
     fireEvent.click(setButton);
-    expect(within(cardOf('久保田 陸')).getByRole('button', { name: /^久保田 陸の体温/ }).textContent).toContain('34.9℃');
+    expect(within(cardOf('小林 結衣')).getByRole('button', { name: /^小林 結衣の体温/ }).textContent).toContain('34.9℃');
   });
 });
 
