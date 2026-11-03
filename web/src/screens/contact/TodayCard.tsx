@@ -28,7 +28,8 @@ export default function TodayCard({ today: t, newCount }: {
           <span className="guardian-eyebrow">{t.class_name}・{dayLabel(t.contact_date)}</span>
           <h2 className="contact-today-name">{t.child_name}さんのきょう</h2>
         </div>
-        {newCount > 0 && <span className="badge">新しく {newCount} 件</span>}
+        {/* 区画の頭のバッジは数だけ（M3 のバッジは 1〜4 字の数）。何の数かは「連絡帳を開く」の行の字で示し、読み上げもそちらで読む（見直し m7a-16） */}
+        {newCount > 0 && <span className="badge" aria-hidden="true">{newCount}</span>}
       </div>
       {t.grace_ends_on && <p className="muted">{formatMD(t.grace_ends_on)}まで読むことができます</p>}
 
@@ -84,10 +85,13 @@ export default function TodayCard({ today: t, newCount }: {
       )}
 
       <div className="contact-today-links">
-        <Link className="guardian-panel-link" to={contactPath}><span>連絡帳を開く</span><ForwardIcon /></Link>
+        <Link className="guardian-panel-link" to={contactPath}>
+          <span>連絡帳を開く{newCount > 0 && <span className="guardian-link-note">新しく {newCount} 件</span>}</span><ForwardIcon />
+        </Link>
         {/* 成長の記録（詳細設計書「保護者ホーム（「きょう」）」(2-5) の入口。きょう届いたものがあれば添える） */}
         <Link className="guardian-panel-link" to={`/guardian/growth/${encodeURIComponent(t.child_id)}`}>
-          <span>成長の記録{t.growth_new && <span className="badge growth-new">新しい記録があります</span>}</span>
+          {/* 数の無い新着は、行の字と小さい点（文は赤の丸に入れない。見直し m7a-16） */}
+          <span>成長の記録{t.growth_new && <span className="guardian-link-note"><span className="badge-dot" aria-hidden="true" />新しい記録があります</span>}</span>
           <ForwardIcon />
         </Link>
         {t.personal_room_id !== null && (

@@ -86,8 +86,9 @@ export default function TodayTimeline({ page, viewer, lastReadAt, onFix, keepInG
               )}
             </span>
             {isNew(it) && <span className="tag tag-applied contact-new">新</span>}
+            {/* 行の副次の操作なのでテキストボタン（午睡チェックの「直す・取り消す」と同じ。見直し m7a-05） */}
             {onFix && it.fix && (
-              <button type="button" className="btn-sm contact-fix-button" onClick={() => onFix(it.fix!)}
+              <button type="button" className="btn-sm btn-quiet contact-fix-button" onClick={() => onFix(it.fix!)}
                 aria-label={`${formatHM(it.at)} ${it.text} を直す・取り消す`}>直す・取り消す</button>
             )}
           </li>

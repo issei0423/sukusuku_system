@@ -18,7 +18,7 @@ import { notify } from '../../components/feedback';
 import { HANDOUT_TYPE } from '../../api/codes';
 import { formatFileSize, formatMonth, formatMDHM, today } from '../../api/util';
 import type { Handout } from '../../api/types';
-import { BackIcon, AddIcon, CloseIcon, UndoIcon } from '../../components/icons';
+import { BackIcon, AddIcon, CloseIcon, UndoIcon, ForwardIcon } from '../../components/icons';
 
 export default function StaffHandoutsScreen() {
   const { user } = useSession();
@@ -124,9 +124,10 @@ export default function StaffHandoutsScreen() {
                   </td>
                   <td className="list-wrap"><span className="nowrap">{formatMDHM(h.posted_at)}</span> <span className="nowrap">{h.posted_staff_name}</span></td>
                   <td>
+                    {/* 行から開くだけの「開く」はテキストと進む印、取り下げは確かめの窓を挟む危ない操作なので警告のテキスト（見直し m7a-05・m7a-17） */}
                     <div className="list-actions">
-                      <button className="btn-sm" onClick={() => setOpened(h)}>開く</button>
-                      {isAdmin && <button className="btn-sm" onClick={() => setWithdrawing(h)}>取り下げ</button>}
+                      <button className="btn-sm btn-quiet" onClick={() => setOpened(h)}>開く<ForwardIcon /></button>
+                      {isAdmin && <button className="btn-sm btn-quiet btn-danger" onClick={() => setWithdrawing(h)}>取り下げ</button>}
                     </div>
                   </td>
                 </tr>

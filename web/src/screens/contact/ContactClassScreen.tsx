@@ -89,7 +89,8 @@ function HomeCell({ row, canConfirm, busy, onConfirm }: {
         // 「確認しました」を押したあとのフォーカスの移し先（tabIndex -1。Tab では止まらない。GitHub Issue #213）
         ? <p className="contact-confirmed" tabIndex={-1} data-confirmed-home={h.contact_home_id}>園が確認しました {formatHM(h.confirmed_at)} {h.confirmed_staff_name}</p>
         : canConfirm && (
-          <button type="button" className="contact-confirm-button" onClick={onConfirm} disabled={busy} aria-busy={busy}
+          // 行でする作業なのでトーナル（連絡帳（園児）と同じ。塗りは使わない。見直し m7c-08）
+          <button type="button" className="btn-tonal contact-confirm-button" onClick={onConfirm} disabled={busy} aria-busy={busy}
             aria-label={`${row.child.child_name}の家庭からを確認しました`}>
             {busy ? TEXT.sending : '確認しました'}
           </button>

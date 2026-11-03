@@ -704,12 +704,12 @@ export default function DiaryEditScreen() {
           <h2>この園児の過去の記録</h2>
           {!childId && <div className="muted">対象の園児を選ぶと表示します。</div>}
           {childId && past.data?.length === 0 && <div className="muted">過去の記録はありません。</div>}
-          <div className="stack">
+          {/* 開くだけの行の並び。線で区切り、行の全体を押せるリンクにして、右に「開く」と進む印（見直し m7a-05。前は全丸の枠のボタンを縦に並べていた） */}
+          <div className="record-list">
             {past.data?.slice(0, 8).map((p) => (
-              <Link key={p.diary_id} className="btn btn-block" to={`/staff/diary/${p.diary_id}`}
-                style={{ justifyContent: 'space-between' }}>
+              <Link key={p.diary_id} className="record-link" to={`/staff/diary/${p.diary_id}`}>
                 <span>{formatMD(p.diary_date)} {DIARY_RECORD_TYPE[p.record_type]}</span>
-                <span>開く</span>
+                <span>開く<ForwardIcon /></span>
               </Link>
             ))}
           </div>
