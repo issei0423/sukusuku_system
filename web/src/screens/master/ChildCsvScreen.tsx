@@ -109,8 +109,8 @@ export default function ChildCsvScreen() {
           <div className="page-head">
             <h2>取込内容</h2>
             <div className="spacer" />
-            {/* エラーのある行は警告色の札（.tag-alert）。差し戻しの色（赤紫の塗り）は日誌の差し戻しだけ（見直し 2026-10-31 の r2c-02） */}
-            <span className={errorCount > 0 ? 'tag tag-alert' : 'tag tag-approved'}>
+            {/* エラーのある行は期限・漏れ・誤りの札（.tag-warn）。安全の印（.tag-alert）とは分ける（見直し m7c-09） */}
+            <span className={errorCount > 0 ? 'tag tag-warn' : 'tag tag-approved'}>
               {errorCount > 0 ? `エラー ${errorCount} 行` : 'エラーなし'}
             </span>
           </div>

@@ -78,6 +78,7 @@
   --md-sys-color-inverse-primary:           #e5c36c;
   /*
    * カスタム色（M3 の「custom color」）。日誌の状態の札の色。もとの DADS の色（申請中 #0031d8・承認済 #197a4b・差し戻し #aa00aa）を
+   * （期限・漏れ・誤りの札 .tag-warn の warning は DADS の orange-800 #c74700 から。w4 の m9。M3 の tertiary はこの種で緑になり、承認済と紛れるので使わない）
    * 種の色に寄せて（harmonize）から、トーン 40（色）・100（上の字）・90（淡い地）・10（淡い地の上の字）を取った。同じ道具で作った
    */
   --md-custom-color-info:                   #5f3ce3;
@@ -92,6 +93,10 @@
   --md-custom-color-on-returned:            #ffffff;
   --md-custom-color-returned-container:     #ffd8e9;
   --md-custom-color-on-returned-container:  #3c0028;
+  --md-custom-color-warning:                #944a00;
+  --md-custom-color-on-warning:             #ffffff;
+  --md-custom-color-warning-container:      #ffdcc5;
+  --md-custom-color-on-warning-container:   #301400;
 
   /*
    * ---- 画面の役割の色 ----
@@ -140,6 +145,8 @@
   --c-approved:       var(--md-custom-color-success);
   --c-approved-soft:  var(--md-custom-color-success-container);
   --c-on-approved-soft: var(--md-custom-color-on-success-container);
+  --c-warn-soft:      var(--md-custom-color-warning-container);   /* 期限・漏れ・誤りの札の地（.tag-warn） */
+  --c-on-warn-soft:   var(--md-custom-color-on-warning-container);
 
   /* 地の色。本文の地（surface-container-low）に、箱と入力欄の白（surface-container-lowest）を置く */
   --c-bg:             var(--md-sys-color-surface-container-low);

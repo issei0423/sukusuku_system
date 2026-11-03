@@ -18,7 +18,7 @@ export default function HandoutViewer({ handout, onClose }: { handout: Handout; 
       footer={<button className="btn-primary" onClick={onClose}><CloseIcon />閉じる</button>}>
       <div className="stack">
         <div>
-          <Tag label={HANDOUT_TYPE[handout.handout_type] ?? 'その他'} className="tag-applied" />
+          <Tag label={HANDOUT_TYPE[handout.handout_type] ?? 'その他'} />
           {' '}{formatMonth(handout.target_month)}　／　{handout.class_name ?? '園全体'}
         </div>
         <div className="handout-preview">

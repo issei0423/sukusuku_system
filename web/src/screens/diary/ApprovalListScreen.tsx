@@ -61,7 +61,7 @@ export default function ApprovalListScreen() {
                   </td>
                   <td className="nowrap">
                     {d.elapsed_days} 日
-                    {/* 滞留は警告色の札（.tag-alert）。差し戻しの色（赤紫の塗り）は日誌の差し戻しだけに使う（見直し 2026-10-31 の r2c-02） */}
+                    {/* 滞留は警告色の札（.tag-alert）。画面詳細図「承認待ち一覧画面」(3-4) 項目5 が警告色と定めるので、期限・漏れの札（.tag-warn）にしない（見直し m7c-09） */}
                     {d.stale && <> <Tag label="滞留" className="tag-alert" /></>}
                   </td>
                   <td className="nowrap">

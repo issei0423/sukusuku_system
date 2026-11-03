@@ -193,10 +193,10 @@ export default function StaffAccountsScreen() {
                   <td className="nowrap">{r.className}</td>
                   <td className="nowrap">
                     <Tag label={ACCOUNT_STATUS[r.account.status]}
-                      className={r.account.status === '1' ? 'tag-approved' : 'tag-draft'} />
-                    {/* ロック中は警告色の札（.tag-alert）。差し戻しの色は日誌の差し戻しだけ（r2c-02） */}
-                    {r.locked && <> <Tag label="ロック中" className="tag-alert" /></>}
-                    {r.account.is_temp_password && <> <Tag label="一時パスワード" className="tag-applied" /></>}
+                      className={r.account.status === '1' ? 'tag-plain' : 'tag-draft'} />
+                    {/* 札の役割（web/仮置き値.md「職員の画面の札の色」）：ふつうの「有効」は plain、止まっている「停止」は draft、ロック中は期限・誤りの札（.tag-warn）、一時パスワードは状態でない属性なので plain */}
+                    {r.locked && <> <Tag label="ロック中" className="tag-warn" /></>}
+                    {r.account.is_temp_password && <> <Tag label="一時パスワード" /></>}
                   </td>
                   <td className="nowrap">
                     {/* 行でする作業（ロック解除・変更）はトーナル、ほかはテキストボタン（行ごとにくり返すので塗らない。r2c-03） */}
