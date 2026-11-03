@@ -184,7 +184,8 @@
 .nap-row-head .name { font-size: 1.25rem; line-height: 1.5; }
 .nap-row-head .last { white-space: nowrap; }
 .nap-row-status { color: var(--c-approved); font-size: var(--fs-body); font-weight: 600; }
-.nap-row-status.due { color: var(--c-alert); }
+/* 時刻を過ぎた知らせは、ほかの状態の字（600）より強い 700 のまま（見直し m7a-11 の例外。#389 の自動レビュー） */
+.nap-row-status.due { color: var(--c-alert); font-weight: 700; }
 .nap-inline-fields { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
 .nap-inline-fields > .nap-choice-field { flex: 1 1 auto; }
 .nap-choice-field { min-width: 0; margin: 0; padding: 0; border: 0; }
