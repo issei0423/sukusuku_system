@@ -357,9 +357,10 @@
 .guardian-panel-link:active { background: var(--c-surface-head); color: var(--c-text); }
 /*
  * 導線の行に添える字（「新しく n 件」「未読 n」「新しい記録があります」）。補足の色の字で、行の名前のあとに置く（見直し m7a-16）。
+ * 読み上げで行の名前と続かないよう、間に空白を入れる（そのぶん左の余白は 4px）。
  * 数の無い新着には、文の前に小さい点（M3 の small badge：6dp の error の点。ここでは 8px）を付ける
  */
-.guardian-link-note { display: inline-flex; align-items: center; gap: var(--sp-1); margin-left: var(--sp-2); color: var(--c-text-sub); font-size: var(--fs-small); }
+.guardian-link-note { display: inline-flex; align-items: center; gap: var(--sp-1); margin-left: var(--sp-1); color: var(--c-text-sub); font-size: var(--fs-small); }
 .badge-dot { display: inline-block; flex: none; width: 8px; height: 8px; border-radius: var(--radius-full); background: var(--c-alert); }
 @media (forced-colors: active) {
   .badge-dot { forced-color-adjust: none; background: CanvasText; }

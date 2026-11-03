@@ -110,7 +110,7 @@ export default function GuardianHome() {
             </div>
             <p>園からのお知らせや配布物、担任の先生とのやりとりはこちらから。</p>
             <Link className="guardian-panel-link" to="/guardian/chat">
-              <span>チャットを開く{h.unread > 0 && <span className="guardian-link-note">未読 {h.unread}</span>}</span><ForwardIcon />
+              <span>チャットを開く{h.unread > 0 && <>{' '}<span className="guardian-link-note">未読 {h.unread}</span></>}</span><ForwardIcon />
             </Link>
             {/* 園だより・献立表など、あとから見返すもの */}
             <Link className="guardian-panel-link" to="/guardian/handouts">

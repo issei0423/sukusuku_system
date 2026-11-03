@@ -86,17 +86,17 @@ export default function TodayCard({ today: t, newCount }: {
 
       <div className="contact-today-links">
         <Link className="guardian-panel-link" to={contactPath}>
-          <span>連絡帳を開く{newCount > 0 && <span className="guardian-link-note">新しく {newCount} 件</span>}</span><ForwardIcon />
+          <span>連絡帳を開く{newCount > 0 && <>{' '}<span className="guardian-link-note">新しく {newCount} 件</span></>}</span><ForwardIcon />
         </Link>
         {/* 成長の記録（詳細設計書「保護者ホーム（「きょう」）」(2-5) の入口。きょう届いたものがあれば添える） */}
         <Link className="guardian-panel-link" to={`/guardian/growth/${encodeURIComponent(t.child_id)}`}>
           {/* 数の無い新着は、行の字と小さい点（文は赤の丸に入れない。見直し m7a-16） */}
-          <span>成長の記録{t.growth_new && <span className="guardian-link-note"><span className="badge-dot" aria-hidden="true" />新しい記録があります</span>}</span>
+          <span>成長の記録{t.growth_new && <>{' '}<span className="guardian-link-note"><span className="badge-dot" aria-hidden="true" />新しい記録があります</span></>}</span>
           <ForwardIcon />
         </Link>
         {t.personal_room_id !== null && (
           <Link className="guardian-panel-link" to="/guardian/chat">
-            <span>{t.child_name}の園とのやりとり{t.unread_chat > 0 ? `（未読 ${t.unread_chat}）` : ''}</span><ForwardIcon />
+            <span>{t.child_name}の園とのやりとり{t.unread_chat > 0 && <>{' '}<span className="guardian-link-note">未読 {t.unread_chat}</span></>}</span><ForwardIcon />
           </Link>
         )}
       </div>
