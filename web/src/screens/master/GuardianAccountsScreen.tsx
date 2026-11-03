@@ -107,26 +107,34 @@ export default function GuardianAccountsScreen() {
                         restorable: canRestore(l.restore_until),
                       };
                       return (
-                        <div key={l.child_id} className="row" style={{ gap: 6 }}>
+                        <div key={l.child_id} className="row guardian-link-row">
                           <span>{l.child_name}（{l.relationship}）</span>
                           <Tag label={LINK_STATUS[l.link_status]}
                             className={l.link_status === '1' ? 'tag-plain' : 'tag-draft'} />
                           {l.link_status === '1' && (
-                            <button className="btn-sm btn-quiet" onClick={() => setPending({ kind: 'end', ...base })}>
+                            <button className="btn-sm btn-quiet btn-danger" onClick={() => setPending({ kind: 'end', ...base })}>
                               解除
                             </button>
                           )}
                           {l.ended_at && <span className="weak">（{formatYMD(l.ended_at.slice(0, 10))} 終了）</span>}
-                          {l.link_status === '2' && canRestore(l.restore_until) && (
-                            <button className="btn-sm btn-quiet" onClick={() => setPending({ kind: 'restore', ...base })}>
-                              紐づけを戻す
-                            </button>
-                          )}
-                          {/* 終了した紐づけには「結び直す」を出す。期間の内は「紐づけを戻す」と並べる（解除していたあいだのやりとりは読めない。【仮置き】web/仮置き値.md） */}
+                          {/* 終了した紐づけには「結び直す」を出す（解除していたあいだのやりとりは読めない。【仮置き】web/仮置き値.md）。
+                              期間の内は「紐づけを戻す」を後ろに並べる。戻すのは誤って解除したときだけで、解除のあいだのやりとりも読ませるので、
+                              警告のテキストボタン（.btn-quiet.btn-danger）にし、違いを下の文で添える（ボタンの説明にもする。見直し m7c-05） */}
                           {l.link_status === '2' && (
                             <button className="btn-sm btn-quiet" onClick={() => setPending({ kind: 'relink', ...base })}>
                               結び直す
                             </button>
+                          )}
+                          {l.link_status === '2' && canRestore(l.restore_until) && (
+                            <>
+                              <button className="btn-sm btn-quiet btn-danger" aria-describedby={`restore-hint-${r.guardian.guardian_id}-${l.child_id}`}
+                                onClick={() => setPending({ kind: 'restore', ...base })}>
+                                紐づけを戻す
+                              </button>
+                              <p id={`restore-hint-${r.guardian.guardian_id}-${l.child_id}`} className="guardian-link-hint muted">
+                                誤って解除したときだけ。戻すと解除中のやりとりも読めます
+                              </p>
+                            </>
                           )}
                         </div>
                       );
@@ -180,7 +188,7 @@ export default function GuardianAccountsScreen() {
         </ConfirmDialog>
       )}
       {pending?.kind === 'restore' && (
-        <ConfirmDialog title="紐づけを戻す" confirmLabel="戻す" busy={busy}
+        <ConfirmDialog title="紐づけを戻す" confirmLabel="戻す" danger busy={busy}
           onConfirm={run} onCancel={() => setPending(null)}>
           <p>{pending.guardianName} さんと {pending.childName} の紐づけを、有効に戻します。</p>
           {/* 戻すとチャットの参加の left_at を消すので、解除していたあいだのやりとりも読める（server/api_admin.go の rejoinRoomsOfChild）。
