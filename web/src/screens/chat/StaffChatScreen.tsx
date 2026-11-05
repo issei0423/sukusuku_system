@@ -6,7 +6,7 @@
  * 未読はチャンネル一覧に件数で示す。既読はメッセージ側に人数で示す。
  * 園全体は一般には投稿欄を表示しない（閲覧のみ）。
  */
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAsync, useFollowLatest, AUTO_REFRESH_MS } from '../../hooks';
 import { onLive, onRoom } from '../../live';
@@ -24,6 +24,7 @@ import type { NameMatch } from '../../api/shapes';
 import NameCheckDialog from '../../components/NameCheckDialog';
 import IncomingLog from './IncomingLog';
 import { useIncomingMessages } from './useIncomingMessages';
+import { matchesRoomQuery } from './roomSearch';
 import { focusAfter, focusedNow } from '../../focusAfter';
 import { useUnsavedInput } from '../../unsavedInput';
 import { AttachIcon, SendIcon, UndoIcon, DeleteIcon } from '../../components/icons';
@@ -84,6 +85,14 @@ export default function StaffChatScreen() {
    * チャンネルを選ばない形で始め、その旨を出す。【仮置き】文は設計に無い（web/仮置き値.md）
    */
   const [childRoomMissing, setChildRoomMissing] = useState(false);
+  /*
+   * 「保護者との個人チャット」の欄を、園児の名前で絞り込む文字（図/画面詳細図「チャット画面（職員・タブレット／PC）」(4-1) 項目24）。
+   * 管理者は全クラスの家庭の個人チャットが並び、一覧があふれるため。画面の中だけで絞り、開いているチャンネルは閉じない。
+   * 【仮置き】欄の置き方・文言・件数の読み上げ・消し方（web/仮置き値.md「個人チャットの絞り込み」）。一致のしかたは roomSearch.ts
+   */
+  const [roomQuery, setRoomQuery] = useState('');
+  const roomSearchId = useId();
+  const roomSearchInput = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (roomId !== null || !rooms.data || rooms.data.length === 0) return;
@@ -229,12 +238,24 @@ export default function StaffChatScreen() {
   const guardianMembers = members.data?.filter((m) => m.role === '3') ?? [];
 
   // 外れたチャンネルは最後にまとめる。担任を付け替えたあとの前のクラスなどが、いまのチャンネルに混ざらないようにする
+  // 名前で絞り込めるのは「保護者との個人チャット」の欄だけ（search）。ほかの欄はいつもすべて並べる
   const grouped = [
-    { label: '園・職員', types: ['1', '5'], left: false },
-    { label: 'クラス・グループ', types: ['2', '3'], left: false },
-    { label: '保護者との個人チャット', types: ['4'], left: false },
-    { label: '外れたチャンネル（閲覧のみ）', types: ['1', '2', '3', '4', '5'], left: true },
+    { label: '園・職員', types: ['1', '5'], left: false, search: false },
+    { label: 'クラス・グループ', types: ['2', '3'], left: false, search: false },
+    { label: '保護者との個人チャット', types: ['4'], left: false, search: true },
+    { label: '外れたチャンネル（閲覧のみ）', types: ['1', '2', '3', '4', '5'], left: true, search: false },
   ];
+  // Esc で入れた文字を消す。変換の途中の Esc は変換の取り消しなので、消さない
+  const onRoomSearchKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Escape' || e.nativeEvent.isComposing || roomQuery === '') return;
+    e.preventDefault();
+    setRoomQuery('');
+  };
+  // 「消す」を押すとボタンが消え、フォーカスが body に落ちる。入力欄へ戻す（src/focusAfter.ts と同じ考え。WCAG 2.4.3）
+  const clearRoomSearch = () => {
+    roomSearchInput.current?.focus();
+    setRoomQuery('');
+  };
 
   return (
     <div>
@@ -256,10 +277,31 @@ export default function StaffChatScreen() {
             {grouped.map((g) => {
               const list = rooms.data!.filter((r) => g.types.includes(r.room.room_type) && r.left === g.left);
               if (list.length === 0) return null;
+              // 絞り込みで当たらなくなった行は並べないだけ。開いているチャンネル（roomId）は変えない
+              const searching = g.search && roomQuery.trim() !== '';
+              const shown = searching ? list.filter((r) => matchesRoomQuery(r.room, roomQuery)) : list;
               return (
                 <div key={g.label}>
                   <div className="channel-group">{g.label}</div>
-                  {list.map((r) => (
+                  {g.search && (
+                    <div className="channel-search">
+                      <label htmlFor={roomSearchId}>園児の名前で探す</label>
+                      <div className="channel-search-box">
+                        <input ref={roomSearchInput} id={roomSearchId} type="search" autoComplete="off"
+                          value={roomQuery} onChange={(e) => setRoomQuery(e.target.value)} onKeyDown={onRoomSearchKey} />
+                        {/* 絵だけのボタンは作らない（components/icons.tsx の決まり）。読み上げの名前は見える字「消す」を含める */}
+                        {roomQuery !== '' && (
+                          <button type="button" className="btn-sm btn-quiet channel-search-clear"
+                            aria-label="入れた文字を消す" onClick={clearRoomSearch}>消す</button>
+                        )}
+                      </div>
+                      {/* 当たった件数を読み上げへ伝える。0 件のときだけ、見える文にもする */}
+                      <p role="status" className={searching && shown.length === 0 ? 'channel-search-empty' : 'sr-only'}>
+                        {searching ? (shown.length > 0 ? `${shown.length} 件` : '見つかりません') : ''}
+                      </p>
+                    </div>
+                  )}
+                  {shown.map((r) => (
                     <button key={r.room.chat_room_id}
                       className={`channel${r.room.chat_room_id === roomId ? ' current' : ''}`}
                       onClick={() => selectRoom(r.room.chat_room_id)}>
