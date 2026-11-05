@@ -45,6 +45,21 @@
 /* 未読の数は件数の札（app.css の .badge）を使い、ここでは右へ寄せるだけ（見直し m7a-15） */
 .channel .channel-unread { margin-left: auto; }
 .channel-group { padding: var(--sp-3) var(--sp-3) var(--sp-1); font-size: var(--fs-small); font-weight: 600; color: var(--c-text-sub); }
+/*
+ * 「保護者との個人チャット」の絞り込み（画面詳細図 4-1 項目24）。欄の見出しのすぐ下に置く。
+ * 入力欄は tokens.css の M3 の Outlined text field のまま。項目の名前は欄の外の上に置く（tokens.css の決まり）。
+ * 「消す」は欄の中の右端に重ねる（M3 の trailing の位置）。字が「消す」に隠れないよう、右の余白をそのぶん空ける。
+ * ブラウザが type="search" に足す消すボタンは 44px に届かず、「消す」と二重になるので出さない。
+ * 【仮置き】置き方・文言（web/仮置き値.md「個人チャットの絞り込み」）
+ */
+.channel-search { padding: 0 var(--sp-3) var(--sp-2); }
+/* 名前の行は 44px の高さにしない（tokens.css の label の 44px は、チェックボックス・ラジオを押す所のため。.field > label.lbl と同じ） */
+.channel-search > label { display: block; min-height: 0; margin-bottom: var(--sp-1); font-size: var(--fs-small); color: var(--c-text-sub); }
+.channel-search-box { position: relative; }
+.channel-search-box input[type="search"] { padding-right: 64px; }
+.channel-search-box input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; display: none; }
+.channel-search-clear { position: absolute; top: 2px; right: 2px; padding-left: var(--sp-2); padding-right: var(--sp-2); }
+.channel-search-empty { margin: 0; padding-top: var(--sp-2); font-size: var(--fs-small); color: var(--c-text-sub); }
 
 .msg { margin-bottom: var(--sp-4); }
 .msg .meta { font-size: var(--fs-small); color: var(--c-text-sub); margin-bottom: 2px; }
@@ -315,6 +330,8 @@
   .channel { padding: var(--sp-1) var(--sp-2); }
   /* 「保護者との個人チャット」の見出しが「ト」だけ次の行に落ちないよう、余白と字間だけを詰める（文字の大きさは変えない） */
   .channel-group { padding-left: var(--sp-2); padding-right: var(--sp-1); letter-spacing: 0; }
+  /* 一覧が 172px に狭まるので、絞り込みの左右の余白もチャンネルの行と同じ 8px に詰める */
+  .channel-search { padding-left: var(--sp-2); padding-right: var(--sp-2); }
   .msg .bubble { max-width: 92%; }
 }
 
