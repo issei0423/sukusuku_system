@@ -366,12 +366,15 @@
 /*
  * 職員のチャット：メッセージを右クリック（タブレットでは長押し）して開く操作の一覧（GitHub Issue #103）。
  * PC では本文を選んでコピーできるよう、文字の選択は止めない。指で操作する端末でだけ、
- * 長押しの間に文字の選択や既定のメニューが出ないようにする
+ * 長押しの間に文字の選択や既定のメニューが出ないようにする。
+ * 保護者の吹き出し（.pressable）も同じにする。「操作」ボタンを外してから（PR #240）、指で一覧を開けるのは長押しだけで、
+ * 文字の選択や既定のメニューが先に始まると一覧が開かないため（上の保護者のチャットの注記のとおり）
  */
 .message-hint { margin: 0 0 var(--sp-3); font-size: var(--fs-small); color: var(--c-text-sub); }
 .chat3 .msg { position: relative; }
 @media (pointer: coarse) {
-  .msg .bubble.has-menu { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  .msg .bubble.has-menu,
+  .msg .bubble.pressable { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 }
 
 /* チャンネル一覧の印 */
