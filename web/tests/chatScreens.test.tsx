@@ -287,6 +287,76 @@ describe('操作の一覧を閉じたら、開いた吹き出しへ戻る（GitH
   });
 });
 
+/*
+ * 保護者の操作の一覧は、フォーカスが一覧の外の部品へ移ると閉じる。
+ * Safari（iPhone・iPad・Mac）は押したボタンへフォーカスを移さず、一覧を含む枠（.guardian-main）か body へ落とす。
+ * それを「外へ移った」と取ると、押したボタンが指・マウスを離す前に消え、リアクション・編集・取消のどれも効かなかった
+ */
+describe('保護者：Safari で一覧のボタンを押しても、一覧が先に閉じない', () => {
+  const menu = () => screen.queryByRole('group', { name: 'メッセージの操作' });
+  /** Safari がボタンを押したときのフォーカスの動き。一覧を含む枠へ落ちる（枠が無ければ body。そのときは移り先が無い） */
+  const pressLikeSafari = (to: 'frame' | 'body') => act(() => {
+    if (to === 'frame') document.querySelector<HTMLElement>('.guardian-main')!.focus();
+    else (document.activeElement as HTMLElement).blur();
+  });
+
+  it('フォーカスが枠や body へ落ちても閉じず、リアクション・編集・取消が効く', async () => {
+    const sent = await api.send(murata, 8, 'S1 Safari の確かめ');
+    open('/guardian/chat', murata);
+    await settled();
+    fireEvent.click(screen.getByText('担任の先生とのやりとり').closest('button')!);
+    const row = await findRow('S1 Safari の確かめ');
+
+    openMenu(row);
+    await waitFor(() => expect(document.activeElement?.getAttribute('aria-label')).toBe('了解'));
+    pressLikeSafari('frame');
+    expect(menu()).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '了解' }));
+    await waitFor(() => expect(db.chatReactions.some((r) => r.chat_message_id === sent.chat_message_id && r.account_id === murata.account_id)).toBe(true));
+
+    openMenu(rowOf('S1 Safari の確かめ')!);
+    await waitFor(() => expect(menu()).toBeTruthy());
+    pressLikeSafari('body');
+    expect(menu()).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '編集' }));
+    expect(screen.getByRole('textbox', { name: 'メッセージの編集' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'やめる' }));
+
+    openMenu(rowOf('S1 Safari の確かめ')!);
+    await waitFor(() => expect(menu()).toBeTruthy());
+    pressLikeSafari('frame');
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getByRole('button', { name: '取り消す' }));
+    await waitFor(() => expect(isRetracted(sent.chat_message_id)).toBe(true));
+  });
+
+  it('長押しで開いたあと指を離して、吹き出しへフォーカスが移っても閉じない', async () => {
+    await api.send(murata, 8, 'S2 指を離したとき');
+    open('/guardian/chat', murata);
+    await settled();
+    fireEvent.click(screen.getByText('担任の先生とのやりとり').closest('button')!);
+    const row = await findRow('S2 指を離したとき');
+    openMenu(row);
+    await waitFor(() => expect(menu()).toBeTruthy());
+    act(() => bubbleOf(row).focus());
+    expect(menu()).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '編集' }));
+    expect(screen.getByRole('textbox', { name: 'メッセージの編集' })).toBeTruthy();
+  });
+
+  it('Tab などで一覧の外の部品へ移ったときは、これまでどおり閉じる', async () => {
+    await api.send(murata, 8, 'S3 外へ移ったとき');
+    open('/guardian/chat', murata);
+    await settled();
+    fireEvent.click(screen.getByText('担任の先生とのやりとり').closest('button')!);
+    openMenu(await findRow('S3 外へ移ったとき'));
+    await waitFor(() => expect(menu()).toBeTruthy());
+    act(() => screen.getByRole('textbox', { name: 'メッセージを入力' }).focus());
+    expect(menu()).toBeNull();
+  });
+});
+
 describe('取り消されたメッセージの表示（GitHub Issue #171 の 6・#141 の 5）', () => {
   it('保護者：誰の・いつのものかを出し、自分のものは自分の側に寄せる', async () => {
     const byStaff = await api.send(teacher, 8, 'R1 職員が取り消す');

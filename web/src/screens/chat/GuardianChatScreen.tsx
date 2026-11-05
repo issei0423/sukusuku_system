@@ -360,7 +360,7 @@ export default function GuardianChatScreen() {
                   style={menuPlace.at ? { left: menuPlace.at.x, top: menuPlace.at.y }
                     : menuPlace.above ? { bottom: menuPlace.offset } : { top: menuPlace.offset }}>
                   <div ref={menuRef} id={`message-actions-${m.chat_message_id}`} className="msg-menu" role="group" aria-label="メッセージの操作"
-                    onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setMenuId(null); }}>
+                    onBlur={(e) => { if (focusLeftMenu(e.currentTarget, e.relatedTarget, m.chat_message_id)) setMenuId(null); }}>
                     <div className="msg-menu-row">
                       {Object.entries(REACTION).map(([type, def]) => (
                         <button key={type} type="button" className="reaction pick"
@@ -440,6 +440,19 @@ function noPostNotice(type: string): string {
   // 図/画面詳細図.md「チャット画面（保護者）」(4-2)、詳細設計書「チャット画面（職員・保護者）」(2-9 (6))。GitHub Issue #308）
   if (type === '4') return '卒園・退園したお子さまのやりとりは、読むことだけができます。';
   return 'このチャンネルには投稿できません。';
+}
+
+/*
+ * 操作の一覧から、フォーカスが一覧の外の部品へ移ったか。Tab などで外の部品へ移ったときだけ一覧を閉じる。
+ * 次の2つは外へ移ったのではないので閉じない。閉じると、押したボタンが指・マウスを離す前に消え、
+ * リアクション・編集・取消のどれも効かなかった（Safari。iPhone・iPad・Mac）。
+ *   - Safari は、押したボタンへフォーカスを移さず、一覧を含む枠（.guardian-main）か body へ落とす。
+ *     移り先は一覧の祖先か、無い（null）になる
+ *   - 長押しで開いたあと指を離すと、長押しした吹き出しへフォーカスが移ることがある（Chromium のタッチ）
+ */
+function focusLeftMenu(menu: HTMLElement, to: EventTarget | null, messageId: number): boolean {
+  if (!(to instanceof Node) || menu.contains(to) || to.contains(menu)) return false;
+  return !(to instanceof HTMLElement && to.dataset.messageBubble === String(messageId));
 }
 
 function labelFor(type: string, name: string): string {
