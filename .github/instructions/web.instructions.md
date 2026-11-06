@@ -22,7 +22,7 @@ applyTo: "web/**/*.ts,web/**/*.tsx"
 
 ## 画面
 
-- 画面は `src/screens/<機能>/`（auth・chat・diary・growth・master・nap）、共通の部品は `src/components/`、外枠は `src/layouts/`。
+- 画面は `src/screens/<機能>/`（admin・auth・chat・contact・diary・growth・master・nap）、共通の部品は `src/components/`、外枠は `src/layouts/`。
 - 画面は名前で呼ぶ（「園児一覧画面」）。画面 ID を新しく振らない。
 - 色と寸法は `src/styles/tokens.css` の変数を使う。
 - 利用者に見せる文言に、設計書の章番号を出さない（#144）。

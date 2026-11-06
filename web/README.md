@@ -1,14 +1,14 @@
 # web — すくすくシステム モックアップ（React + TypeScript）
 
-基本設計書 第1.3版の全33画面。動かし方・デモアカウント・構成は、リポジトリ直下の
-[`MOCKUP.md`](../MOCKUP.md) を参照。
+画面の一覧は基本設計書「画面の一覧」(3-2) が正。使い方（本番の公開先）・動かし方・デモアカウント・構成は、リポジトリ直下の
+[`MOCKUP.md`](../MOCKUP.md) を参照。下のコマンドは開発とテストのためのもの。
 
 | コマンド | 内容 |
 | :-- | :-- |
 | `npm run dev` | 開発サーバ。`/api` は Go サーバ（8080）へ中継する |
 | `npm run dev:mock` | Go サーバを立てずに、ブラウザ内のデモデータで動かす |
-| `npm test` | テスト87件（モックに対して回すため、サーバは不要） |
-| `npm run test:integration` | Go サーバとの結合テスト11件。`SUKUSUKU_API` の指定が要る |
+| `npm test` | テスト（モックに対して回すため、サーバは不要） |
+| `npm run test:integration` | Go サーバとの結合テスト。`SUKUSUKU_API` の指定が要る |
 | `npm run build` | 本番ビルド。成果物は Go サーバが配信する |
 | `npm run review:responsive` | iPad縦横・PC・保護者向けスマホの画面画像とレイアウト指摘を収集する |
 

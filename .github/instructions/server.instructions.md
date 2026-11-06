@@ -36,7 +36,7 @@ applyTo: "server/**"
 
 - `a, h := newTestApp(t)`：デモデータ入りの DB を一時フォルダに作る。作業ツリーの `sukusuku.db` には触らない。
 - `loginAs(a, accountID, "staff")` / `loginAs(a, accountID, "guardian")`：セッションの Cookie を作る。ログインの手順は通らない。
-  デモのアカウント：1＝管理者、3＝さくら組の担任、4＝一時パスワードのままの職員、5＝ひまわり組の担任、6＝保護者（野原 太郎）、7＝規約の再同意がまだの保護者、8＝停止中の保護者。
+  デモのアカウント：1＝管理者、3＝さくら組の担任、4＝一時パスワードのままの職員、5＝ひまわり組の担任、6＝保護者（西田 太郎の父）、7＝規約の再同意がまだの保護者、8＝停止中の保護者。
 - `call(t, h, cookie, method, path, body)`：200 以外なら落とす。403 などを確かめるときは `httptest` で直接呼ぶ（`TestStaffSummaryFailsInsteadOfZeroUnhandled`）。
 - `newTestApp` は `checkOrigin`（`csrf.go`）を通さない。送信元の確かめを試すときは `checkOrigin(h)` で包む。
 - 権限は「通ること」と「拒否されること」の両方を書く。拒否は、他クラスの担任（3 と 5 を入れ替える）や、関係のない保護者で確かめる。

@@ -82,7 +82,7 @@ merge・queue（と merge を含む all）は、始めに `gh api user --jq .log
 
 ### queue（マージ係の代わり）
 
-**GitHub の runner の Actions が課金で動かないあいだの、マージ係（`.github/workflows/merge.yml` ＋ `.github/scripts/merge-queue.sh`）の代わり。** 持ち主の操作は今までと同じで、入れたい PR にラベル「マージ」を付けるだけ。それを持ち主の PC で、定時か手で `agent.ps1 queue` を回して拾う。止める理由・コメントの文面・ラベルの扱いは merge-queue.sh に合わせた（`src/queue.ts`）。
+**GitHub の runner の Actions が課金で動かなかったあいだ（2026-10-21〜10-30）に作った、マージ係（`.github/workflows/merge.yml` ＋ `.github/scripts/merge-queue.sh`）の代わり。** Actions は 2026-10-30 にリポジトリを public にしてから、また動いている（`AGENTS.md`「GitHub Actions と本番の VM」）。 持ち主の操作は今までと同じで、入れたい PR にラベル「マージ」を付けるだけ。それを持ち主の PC で、定時か手で `agent.ps1 queue` を回して拾う。止める理由・コメントの文面・ラベルの扱いは merge-queue.sh に合わせた（`src/queue.ts`）。
 
 1. **持ち主の確かめ**：いまの gh のアカウントが持ち主でなければ止まる（上の「持ち主だけが動かせるもの」）
 2. **本線の先頭を見る**（PR を見る前）：本線の先頭の commit の status「手元の CI（持ち主の PC）」を読む
@@ -165,7 +165,7 @@ npm run agent -- task --prompt-file D:\qa\chat.md --cwd C:\Users\me\sukusuku-wor
 
 ### review（PR のレビュー）
 
-**GitHub Actions が止まっている間の、PR を開いたときの自動のレビュー（`.github/workflows/claude-review.yml`）の代わり。** 開いている PR を読んで、API の Sonnet 5.5 にレビューさせ、コードが PR にコメントする。`all` には入らない（別に呼ぶ）。
+**GitHub Actions が止まっていた間（2026-10-21〜10-30）に作った、PR を開いたときの自動のレビュー（`.github/workflows/claude-review.yml`）の代わり。** いまは `claude-review.yml` がまた動いている。 開いている PR を読んで、API の Sonnet 5.5 にレビューさせ、コードが PR にコメントする。`all` には入らない（別に呼ぶ）。
 
 ```powershell
 npm run agent -- review --dry-run                 # まずこれ。選んだ PR と、飛ばしたわけを出す（API も gh の書き込みもしない）
@@ -190,7 +190,7 @@ npm run agent -- review --pr 275 --force          # 同じ先頭の commit で�
 
 - **エージェントは読むだけ**：`allowPush` は false。頼みの文で PR・Issue への書き込み（`gh pr comment`・`gh pr review`）も禁じている。守りのフック（`src/safety.ts`）も `allowGhWrite: false` では読むだけの gh の許可リストしか通さない（頼みの文と二重に止める。下の「守り・止まるとき」）。コメントの印はコードだけが付ける
 - 費用の目安（**推測**。まだ本物のキーで回していない）：1件 $0.3〜2。差分が大きい PR や、`.github/` を変える PR は上の方。既定の上限は1件 $3・1回 $10。PR が多いときは `--max-usd` で止まり、残りは次の実行で拾う（印の無いものだけ見るので、同じ PR を二重に払わない）
-- 定時に回す例（毎朝 8:00 と夜 20:00。Actions が止まっている間だけ）：
+- 定時に回す例（毎朝 8:00 と夜 20:00。Actions が止まっている間だけ。2026-10-30 から Actions は動いているので、置いていれば下のとおり止める）：
 
 ```powershell
 schtasks /Create /SC DAILY /ST 08:00 /TN "sukusuku-api-agent-review-am" /TR "powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\calif\sukusuku_system\agent-harness\api-agent\scripts\agent.ps1 review --max-usd 5"

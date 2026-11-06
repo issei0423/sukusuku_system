@@ -1,35 +1,30 @@
 # AGENTS.md — すくすくシステム モックアップ（Go ＋ React）
 
 このリポジトリで作業する人と AI（Claude Code・Codex・Copilot など）のための決まり。
-全体の説明は `MOCKUP.md`、手元で動かす準備は `セットアップ手順.md` にある。
+使う・見る・デモする・確かめるのは、Oracle Cloud に公開している本番の Web アプリだけ。本線へ入ると自動で反映される（URL と反映の仕組みは `deploy/oci-free/README.md`）。手元でサーバを立てるのは、開発とテストのためだけ。
+全体の説明は `MOCKUP.md`、開発に参加する人の準備は `セットアップ手順.md` にある。
 返事・コードのコメント・commit・PR・Issue は日本語で書く。
 
 ## ブランチと PR
 
 - 開発の本線は **`mockup-go-react`**。作業ブランチはここから切り、PR もここへ出す。
-- `mockup` は旧 Flask 版で、参考として残しているだけ。`docs` は設計書だけのブランチ（下の「設計書」）。
+- GitHub の既定のブランチも `mockup-go-react`。`mockup` は古いブランチで、使わない（旧 Flask 版は 2026-11-06 に消した）。`docs` は設計書だけのブランチ（下の「設計書」）。
 - `mockup`・`mockup-go-react` へ直接 push しない。
 - マージするかどうかは持ち主（`issei0423`）が決める。持ち主は、決めたマージを次のどちらかで任せる（2026-10-19 に持ち主が決めた）。
-  - **マージ係**（`.github/workflows/merge.yml`）：PR に「マージ」のラベルを付けると、付けた順に 1 本ずつ、本線と合わせた形で CI を回し、ジョブが全部緑なら merge commit で入れる。受け付けるのは持ち主が付けたラベルだけ。GitHub Actions が止まっているあいだは、持ち主の PC のマージ係が代わりにする（下の「GitHub Actions が止まっているあいだ」）。
+  - **マージ係**（`.github/workflows/merge.yml`）：PR に「マージ」のラベルを付けると、付けた順に 1 本ずつ、本線と合わせた形で CI を回し、ジョブが全部緑なら merge commit で入れる。受け付けるのは持ち主が付けたラベルだけ。
   - 持ち主が任せた AI：マージの順の Issue に従って「マージ」のラベルを付けるか、merge commit で押す。
 - AI は、持ち主に任されていなければ「マージ」のラベルを付けない・マージしない。ラベルを付けることはマージと同じに扱う。
 - マージは merge commit で入れる（Squash・Rebase にしない）。マージしたブランチは消さない。上に積んだ PR は、土台が入ったら base を `mockup-go-react` へ向け直す（マージ係は自分で向け直す）。
 - マージ係は、下書き・ぶつかりのある PR・CI が赤の PR・`.github/` を変える PR を入れずに止め、「マージ止め」のラベルとコメントで理由を書く。直したら「マージ止め」を外し、「マージ」を付け直す。手でマージや向け直しをしたあとは `gh workflow run merge.yml` で続きを回す。
-- PR を出すと CI（`.github/workflows/ci.yml`）がジョブ（server・web・結合 ほか）を並べて回す。ジョブが 1 つでも赤なら、マージしない。ジョブを足すときは、checkout に `ref: ${{ inputs.ref }}` を付ける（マージ係が本線と合わせた形を回すため）。GitHub Actions が止まっているあいだは CI が走らないので、下の節のとおり手元で回す。
+- PR を出すと CI（`.github/workflows/ci.yml`）がジョブ（server・web・結合 ほか）を並べて回す。ジョブが 1 つでも赤なら、マージしない。ジョブを足すときは、checkout に `ref: ${{ inputs.ref }}` を付ける（マージ係が本線と合わせた形を回すため）。
 
-## GitHub Actions が止まっているあいだ（2026-10-21〜）
+## GitHub Actions と本番の VM
 
-GitHub の runner で動く Actions が、課金の都合で起動しない。CI（`ci.yml`）・マージ係（`merge.yml`）・`claude*.yml`・`daily-news.yml`・`copilot-setup-steps.yml` は止まっている。動いているのは、本番の VM の self-hosted runner で本線への push ごとに本番へ反映する `deploy-oci.yml` だけ（go vet・go test は回すが、web・結合・a11y・security は回さない）。
-
-- **数秒で赤になるのは「走っていない」。** PR の「CI（テスト）」のジョブが数秒で赤になり、注釈が「The job was not started because recent account payments have failed or your spending limit needs to be increased」なら、テストは走っていない。テストが落ちたのと取り違えない。通そうとしてワークフローを書き換えない。
-- **テストは手元で回し、結果を PR に書く。** PR を出す人（とそのエージェント）は、変えたところに合わせて上の「コマンド」のテストを回す。全部回すなら `bash agent-harness/api-agent/scripts/local-ci.sh <worktree> <ログの置き場>`（CI のジョブと同じ確かめ。結果は `<ログの置き場>/result.txt` に 1 行ずつ出て、最後まで回ったら `done=yes`）。通った件数と落ちたものを、PR 本文の「確かめたこと」に書く。回せなかったら「回していない」と書く。
-- **マージは持ち主の PC のマージ係がする。** 持ち主の操作は今までと同じで、PR に「マージ」のラベルを付ける。持ち主の PC の `npm run agent -- queue`（`agent-harness/api-agent`）が、持ち主が付けた「マージ」だけを付けた順に、本線と合わせた形で手元の CI を回し、緑なら merge commit で入れる。
-  - 本線に保護が無い（無料の private では branch protection が使えない）ので、マージのボタンは押せてしまう。**持ち主と、持ち主が任せた AI（上の「持ち主が任せた AI」）のほかは、押せても押さない。** 本線へ push しない。CI が走らないまま入った PR で、本線の結合テストが 11 件落ちていたことがある（#285 で直した）。
-- **PR のチェック「手元の CI（持ち主の PC）」の読み方。** マージ係が結果を commit status で出す。緑は、本線と合わせた形で手元の CI が通った。赤は、手元の CI が落ちた（わけは「マージ止め」のコメント）。無いのは、まだ回っていない（落ちたのではない）。
-- **「マージ止め」が付いたら**、コメントにある理由を直して push し、「マージ止め」を外す。「マージ」を付け直すのは持ち主。赤・ぶつかり・`.github/` を変える PR には「マージ止め」が付く。
+- 2026-10-21〜10-30 は、GitHub の runner の Actions が課金の都合で起動しなかった（そのあいだは、テストを手元で回し、マージを持ち主の PC で回していた）。2026-10-30 にリポジトリを public にしてから、また動いている。PR の CI（`ci.yml`）・自動のレビュー（`claude-review.yml`）・毎朝のニュース（`daily-news.yml`）は GitHub の runner で走る。外の人の fork からの PR のワークフローは、承認してから走る。
+- 本番への反映（`deploy-oci.yml`）は、本番の VM の self-hosted runner で、本線への push ごとに動く。go vet と Go・React のビルドだけを回し、テストは回さない（`deploy/oci-free/README.md`）。テストは、マージの前に PR の CI で確かめる。
+- **本線に保護は無い**（2026-11-06 に、branch protection も rulesets も置いていないことを確かめた）。マージのボタンは押せてしまう。**持ち主と、持ち主が任せた AI（上の「持ち主が任せた AI」）のほかは、押せても押さない。** 本線へ push しない。CI が走らないまま入った PR で、本線の結合テストが 11 件落ちていたことがある（#285 で直した）。
 - **self-hosted のジョブを足さない・変えない。** `.github/workflows/` で、`runs-on` に self-hosted を書いたジョブを足さない・変えない。ワークフローはブランチに置いただけで（本線に入っていなくても）push で動き、そのジョブは本番の VM の上で走る。`.github/` を変える PR は、マージ係が止め、持ち主が見てから手で入れる。
-- **止まっているあいだ動かないもの**：@claude、claude ラベルの自動実装（`claude-implement.yml`）、PR の自動レビュー、毎朝のニュース、Copilot のエージェント。PR のレビューは、持ち主が PC で api-agent の review を回す。自分のエージェントで作業するのは、今までどおりでよい。
-- Actions が戻ったら、この節と、ここを指す文（上の「ブランチと PR」、`agent-harness/light.md`・`agent-harness/README.md`）を外す。
+- CI と同じ確かめを手元で全部回すなら `bash agent-harness/api-agent/scripts/local-ci.sh <worktree> <ログの置き場>`（結果は `<ログの置き場>/result.txt` に 1 行ずつ出て、最後まで回ったら `done=yes`）。
 
 ## 構成
 
@@ -42,6 +37,8 @@ GitHub の runner で動く Actions が、課金の都合で起動しない。CI
 | `web/仮置き値.md` | 設計で決まっていない値を、どこにどう置いたか |
 
 ## コマンド
+
+開発とテストのためのコマンド。手元のサーバ（:8080・:5173）は開発用で、使う・デモするのは本番（`deploy/oci-free/README.md`）。
 
 ```
 cd server && go vet ./... && go test -count=1 ./...   # Go のテスト。DB は一時フォルダに作る
