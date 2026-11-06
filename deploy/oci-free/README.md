@@ -1,6 +1,6 @@
 # 既存 OCI VM への自動デプロイ
 
-公開先は大阪リージョンの既存 VM `sukusuku`（Ubuntu 24.04、`VM.Standard.E2.1.Micro`）の <https://217.142.235.206>。Go サーバは `127.0.0.1:8080` だけで待ち受け、Caddy が 80/443 を公開する。OCI Bastion 経由の SSH だけを使い、22 番をインターネットには公開しない。
+公開先は大阪リージョンの既存 VM `sukusuku`（Ubuntu 24.04、`VM.Standard.E2.1.Micro`）の <https://217.142.235.206>。**使う・見る・デモする・確かめるのはこの公開先だけ**で、手元でサーバを立てるのは開発とテストのため（`MOCKUP.md`「使うとき」）。URL はこの文書だけに書き、ほかの文書からはここを指す。Go サーバは `127.0.0.1:8080` だけで待ち受け、Caddy が 80/443 を公開する。OCI Bastion 経由の SSH だけを使い、22 番をインターネットには公開しない。
 
 ## 更新の流れ
 
@@ -10,7 +10,7 @@
 
 GitHub 提供 runner の実行分数と artifact 保存枠は使わない。VM への SSH 鍵や OCI API キーを GitHub Secrets に登録する必要もなく、22 番は開けない。約 1 GB の VM でのビルド用に swap を用意し、同時に一つのデプロイだけを走らせる。runner が止まっている間のデプロイは待機する。
 
-既存の `CI（テスト）` は GitHub 提供 runner を使っており、現状は分数上限で開始できない。この自動デプロイはその CI の成功を条件にできない。テストは、マージの前に手元の CI（`agent-harness/api-agent/scripts/local-ci.sh`。Go のテスト・画面テスト・結合テスト・セキュリティ・アクセシビリティの5つ）で回し、通ったものだけをマージする。持ち主の PR レビューとローカルテストを省かない。
+`CI（テスト）`（`ci.yml`）は GitHub 提供 runner で、PR と本線への push ごとに Go のテスト・画面テスト・結合テスト・セキュリティ・アクセシビリティの5つを回す。2026-10-21〜10-30 は GitHub 提供 runner が課金の都合で起動せず、手元の CI（`agent-harness/api-agent/scripts/local-ci.sh`）で代わりに回していた。2026-10-30 にリポジトリを public にしてから、また動いている。この自動デプロイは、その CI の成功を条件にしていない（本線への push で CI と並んで動く）。テストは、マージの前に PR の CI で確かめ、緑のものだけをマージする。持ち主の PR レビューを省かない。
 
 VM 内では Go の静的検査と、Go・React のビルドだけを行う。2026-10-28 までは VM でも Go のテストを回していたが、1GB・1/8 OCPU の VM では go test だけで 22〜24 分かかり、1回の反映が約25分になっていた。その間に本線へ入った変更が公開先に届かず、公開先が古いままに見えたため、外した（2026-10-29）。
 
@@ -18,13 +18,13 @@ VM 内では Go の静的検査と、Go・React のビルドだけを行う。20
 
 既存 VM に Bastion の一時セッションで接続して作業する。VM を作り直さない。
 
-- GitHub の[公式手順](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/add-runners)で、**この非公開リポジトリ専用**の Linux x64 runner を作る。名前は `sukusuku-prod`、追加ラベルも `sukusuku-prod`。専用の一般ユーザー `sukusuku-runner` で systemd サービスとして動かす。登録トークンは短命なので、コマンドやログを公開しない。
+- GitHub の[公式手順](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/add-runners)で、**このリポジトリ専用**の Linux x64 runner を作る（作った 2026-10-23 はリポジトリが非公開だった）。名前は `sukusuku-prod`、追加ラベルも `sukusuku-prod`。専用の一般ユーザー `sukusuku-runner` で systemd サービスとして動かす。登録トークンは短命なので、コマンドやログを公開しない。
 - `sukusuku-deploy.sh` を root 所有・0755 で `/usr/local/sbin/sukusuku-deploy` に配置する。`sukusuku-runner` の sudo 権限はこのコマンドだけに限る。GitHub から来る任意のジョブを root で走らせない。
 - `sukusuku-runner-job-started.sh` を置き、runner がジョブの前に呼ぶようにする（下の「ジョブの出どころを確かめるフック」）。
 - 最初のデプロイの前に、既存の `/opt/sukusuku/sukusuku` と `/opt/sukusuku/web` を `/opt/sukusuku/releases/initial/` へコピーする。`/opt/sukusuku/current` を `releases/initial` へのリンクにし、従来の 2 パスもそれぞれ `current/sukusuku` と `current/web` へのリンクにする。`sukusuku.service` のパスはそのままでよい。サービス再起動と `http://127.0.0.1:8080/` の確認を終えてから自動デプロイを有効にする。
 - `Caddyfile.ip` は現在の VM の Caddy 設定。自動デプロイでは Caddy とファイアウォールは変更しない。
 
-runner は、届いたジョブのコマンドを `sukusuku-runner` として VM 上で実行する。届くのは本線のジョブだけではない。ワークフローは本線に入っていなくても、そのブランチへの push で動き、`runs-on` がこの runner に合えば VM に届く。このリポジトリは無料プランの非公開リポジトリで、本線を保護できない。ワークフローごとに runner を絞れる runner グループは organization と enterprise の機能で、個人のアカウントのリポジトリにはない。そこで、ジョブの前に動くフックで、本線への push で動いた `deploy-oci.yml` のジョブだけを通す。
+runner は、届いたジョブのコマンドを `sukusuku-runner` として VM 上で実行する。届くのは本線のジョブだけではない。ワークフローは本線に入っていなくても、そのブランチへの push で動き、`runs-on` がこの runner に合えば VM に届く。本線に保護は無い（2026-10-30 に public にしたので branch protection・rulesets は使えるようになったが、2026-11-06 の時点で置いていない）。外の人の fork からの PR のワークフローは、承認してから走る（`approval_policy=all_external_contributors`）。ワークフローごとに runner を絞れる runner グループは organization と enterprise の機能で、個人のアカウントのリポジトリにはない。そこで、ジョブの前に動くフックで、本線への push で動いた `deploy-oci.yml` のジョブだけを通す。
 
 `sukusuku-deploy` は、成果物の形と commit SHA の形だけを見る。その SHA が本線の先頭かは見ない。SHA は呼ぶ側が渡す名前で、成果物の中身とは結びつかないため、ここで本線と照らしても守りにならない。守りは、本線以外のジョブを走らせないフックに置く。
 
@@ -84,7 +84,7 @@ runner は、届いたジョブのコマンドを `sukusuku-runner` として VM
 
 ### このフックで守れないこと
 
-- 本線そのもの。本線は保護できないので、write の権限がある人は本線へ直接 push できる。本線へ入った変更はフックを通り、VM で動く。
+- 本線そのもの。本線に保護を置いていないので、write の権限がある人は本線へ直接 push できる。本線へ入った変更はフックを通り、VM で動く。
 - 走ったジョブ。runner のフォルダと runner の本体は `sukusuku-runner` のものなので、`.env` を root 所有にしても、フォルダの中でファイルを入れ替えることはできる。フックは本線以外のジョブを走る前に止めるもので、走ったジョブから runner を守るものではない。
 - フックの前に、runner はジョブが使うアクションを VM へ取得して展開する。アクションの中身は動かさない（runner 2.338.1 の実装。コンテナの準備はフックのあと）。
 

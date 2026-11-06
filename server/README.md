@@ -2,8 +2,10 @@
 
 Go 1.27 + SQLite。API と、React のビルド成果物の配信を行う。
 
+本番（Oracle Cloud の公開先）での起動の引数は `deploy/oci-free/sukusuku.service`（`-addr 127.0.0.1:8080`・`-secure` ほか）、反映の仕組みは `deploy/oci-free/README.md`。下は開発とテストのために手元で立てるときのもの。
+
 ```
-go run .                      # http://localhost:8080
+go run .                      # http://localhost:8080（開発用）
 go run . -addr :9000          # 待ち受けアドレスを変える
 go run . -db /path/to.db      # データベースの位置を変える
 go run . -web ../web/dist     # 配信する静的ファイルの場所
@@ -17,7 +19,7 @@ go run . -web ../web/dist     # 配信する静的ファイルの場所
 
 | ファイル | 内容 |
 | :-- | :-- |
-| `schema.sql` | 基本設計書「データベース設計」(5) の全37テーブルの DDL |
+| `schema.sql` | 表の DDL。表の正は基本設計書「データベース設計」(5) |
 | `seed.sql` | デモデータ。氏名・メールアドレス・招待コード・測定値はすべて架空 |
 | `db.go` | データベースの初期化と、成長曲線基準値の生成 |
 | `session.go` | ログイン状態の保持。**方式は仮置き**（`web/仮置き値.md`） |
