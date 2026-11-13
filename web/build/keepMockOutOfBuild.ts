@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { normalizePath, type Plugin } from 'vite';
+import { QUICK_LOGIN_ACCOUNTS } from '../src/screens/auth/quickLoginAccounts.ts';
 
 /*
  * 本番のビルドへモック（src/api/mock.ts と、デモデータの mockDb.ts）を入れない
@@ -15,6 +16,9 @@ import { normalizePath, type Plugin } from 'vite';
  *   mockDb.ts のアカウントのパスワードかログインIDがあったら、ビルドを落とす。
  *   印は mockDb.ts からその場で取り出す（パスワードの文字を別の source に増やさないため。デモデータを変えても追いつく）
  *
+ * デモ用のビルド（npm run build:demo。VITE_DEMO_QUICK_LOGIN=1）では、隠しログインの西田 拓也のログインIDと
+ * パスワード（src/screens/auth/quickLoginAccounts.ts）だけを見張りから外す。ほかのアカウントの値とモックは、デモ用でも落とす。
+ *
  * VITE_API の値は、Vite が import.meta.env に入れるのと同じもの（config.env。.env.mock や環境変数から読む）で見る。
  * npm run dev:mock（--mode mock）と VITE_API=mock でのビルドには効かない。
  * vitest は vitest.config.ts だけを読むので、テストにも効かない（相手はモックのまま）。
@@ -27,6 +31,7 @@ export function keepMockOutOfBuild(): Plugin {
   let mockDbFile = '';
   let stubFile = '';
   let outDir = '';
+  let allowed = new Set<string>();
   return {
     name: 'sukusuku:keep-mock-out-of-build',
     apply: 'build',
@@ -37,6 +42,9 @@ export function keepMockOutOfBuild(): Plugin {
       mockDbFile = normalizePath(path.resolve(config.root, 'src/api/mockDb.ts'));
       stubFile = normalizePath(path.resolve(config.root, 'src/api/noMock.ts'));
       outDir = path.resolve(config.root, config.build.outDir);
+      allowed = config.env.VITE_DEMO_QUICK_LOGIN === '1'
+        ? new Set(Object.values(QUICK_LOGIN_ACCOUNTS).flatMap((a) => [a.email, a.password]))
+        : new Set();
     },
     async resolveId(source, importer, options) {
       if (!active || !importer || !/(^|\/)mock(\.ts)?$/.test(source)) return null;
@@ -56,7 +64,7 @@ export function keepMockOutOfBuild(): Plugin {
     },
     writeBundle() {
       if (!active) return;
-      const marks = demoMarks(mockDbFile);
+      const marks = demoMarks(mockDbFile).filter((m) => !allowed.has(m.text));
       const hits: string[] = [];
       for (const file of filesUnder(outDir)) {
         const body = readFileSync(file);
