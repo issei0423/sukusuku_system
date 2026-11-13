@@ -21,6 +21,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { build, normalizePath, type Plugin } from 'vite';
 import { demoMarks, keepMockOutOfBuild } from '../build/keepMockOutOfBuild';
 import { accounts } from '../src/api/mockDb';
+import { QUICK_LOGIN_ACCOUNTS } from '../src/screens/auth/quickLoginAccounts';
 
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const mockFile = path.join(webRoot, 'src', 'api', 'mock.ts');
@@ -48,9 +49,10 @@ function hookOf(plugin: Plugin, name: HookName): AnyHook {
  * プラグインを作り、Vite が渡す設定の代わりを渡す（プラグインが読むのは env・root・build.outDir だけ）。
  * viteApi を省くと、VITE_API を置かない本番のビルド（npm run build）と同じになる。
  */
-function setUp(opts: { viteApi?: string; root?: string; outDir?: string } = {}) {
+function setUp(opts: { viteApi?: string; quickLogin?: boolean; root?: string; outDir?: string } = {}) {
   const plugin = keepMockOutOfBuild();
   const env: Record<string, string> = opts.viteApi === undefined ? {} : { VITE_API: opts.viteApi };
+  if (opts.quickLogin) env.VITE_DEMO_QUICK_LOGIN = '1';
   hookOf(plugin, 'configResolved').call(undefined, { env, root: opts.root ?? webRoot, build: { outDir: opts.outDir ?? 'dist' } });
   return plugin;
 }
@@ -235,6 +237,27 @@ describe('見張り：出力先のファイルにデモのパスワードかロ�
     const ctx = errorContext();
     expect(() => hookOf(setUp({ viteApi: 'mock', outDir: out }), 'writeBundle').call(ctx)).not.toThrow();
     expect(ctx.errors).toHaveLength(0);
+  });
+
+  it('デモ用のビルド（VITE_DEMO_QUICK_LOGIN=1）では、隠しログインの西田 拓也の値だけを通す', () => {
+    const quick = Object.values(QUICK_LOGIN_ACCOUNTS);
+    const out = cleanOutDir();
+    writeUnder(out, 'assets/index.js', `const q = ${JSON.stringify(quick)};`);
+    const ctx = errorContext();
+    expect(() => hookOf(setUp({ quickLogin: true, outDir: out }), 'writeBundle').call(ctx)).not.toThrow();
+    // 本番のビルドでは同じ値で落ちる
+    expect(() => hookOf(setUp({ outDir: out }), 'writeBundle').call(errorContext())).toThrow();
+  });
+
+  it('デモ用のビルドでも、ほかのアカウントのログインIDがあると落ちる', () => {
+    const allowed = new Set(Object.values(QUICK_LOGIN_ACCOUNTS).map((a) => a.email));
+    const others = demoLoginIds.filter((id) => !allowed.has(id));
+    expect(others.length).toBeGreaterThan(0);
+    for (const loginId of others) {
+      const out = cleanOutDir();
+      writeUnder(out, 'assets/notes.txt', `連絡先：${loginId}`);
+      expect(() => hookOf(setUp({ quickLogin: true, outDir: out }), 'writeBundle').call(errorContext()), loginId).toThrow();
+    }
   });
 
   it('mockDb.ts から印が取れないときは、黙って通さずに落ちる', () => {

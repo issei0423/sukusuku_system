@@ -13,6 +13,7 @@ import { useSession } from '../../session';
 import { api } from '../../api/client';
 import type { LoginError } from '../../api/client';
 import DemoAccounts from './DemoAccounts';
+import QuickLogin from './QuickLogin';
 import { LoginIcon, SignUpIcon, LogoutIcon, BackIcon } from '../../components/icons';
 
 export default function TopScreen({ entrance }: { entrance: 'staff' | 'guardian' }) {
@@ -35,10 +36,14 @@ export default function TopScreen({ entrance }: { entrance: 'staff' | 'guardian'
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    await login(email, password);
+  };
+
+  const login = async (loginId: string, pass: string) => {
     setBusy(true);
     setError(null);
     try {
-      const u = await api.login(email, password, entrance);
+      const u = await api.login(loginId, pass, entrance);
       setEntrance(entrance);
       setUser(u);
       // 一時パスワード中と規約の再同意が必要なときは、完了するまで他の画面へ進めない（基本設計書 3-4）
@@ -96,6 +101,11 @@ export default function TopScreen({ entrance }: { entrance: 'staff' | 'guardian'
           {entrance === 'staff' ? '保護者の方はこちら' : '職員の方はこちら'}
         </Link>
       </div>
+
+      {/* デモ用のビルド（npm run build:demo）でだけ置く。本番のビルドには入れない（QuickLogin.tsx） */}
+      {import.meta.env.VITE_DEMO_QUICK_LOGIN === '1' && (
+        <QuickLogin entrance={entrance} onLogin={(m, p) => { void login(m, p); }} />
+      )}
 
       {/* 手元の開発サーバでだけ出す。本番のビルドには入れない（DemoAccounts.tsx） */}
       {import.meta.env.DEV && (
