@@ -33,6 +33,8 @@ export default function QuickLogin({ entrance, onLogin }: {
   const base: React.CSSProperties = {
     position: 'fixed', top: 0, width: 64, height: 64, zIndex: 1000,
     background: 'transparent', touchAction: 'manipulation',
+    // iOS の Safari は、ボタンでない要素の click を cursor: pointer が無いと送らないことがある
+    cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
   };
   return (
     <>
