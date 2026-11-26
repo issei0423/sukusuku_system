@@ -1,11 +1,11 @@
 /*
  * 共通レイアウトと共通部品
  * 典拠：図/画面詳細図.md「共通レイアウト」(1)
- * 部品の形は、Material Design 3 の同じ役割のコンポーネントに合わせる。外枠（ヘッダ・左メニューなど）は DADS のまま止める（tokens.css の冒頭を参照）
+ * 見た目は紙の連絡帳に寄せる（色・書体・角は tokens.css）。箱で囲まず、罫線と余白で分ける。影は使わない。角を丸くするのは押せるものだけ。
  */
 
 /*
- * ============ 外枠（職員のヘッダと左メニュー、保護者のヘッダ・PC の左の欄・ドロワー、緊急連絡の帯） ============
+ * ============ 外枠（職員のヘッダと左メニュー、保護者のヘッダ・PC の左の欄・ドロワー・下のタブ） ============
  * 外枠は本文の見た目と切り離し、tokens.css の --chrome-* と、ここで明示した字の大きさ・行間・字間・太さ・角・枠だけで描く。
  * 本文の部品（button・a・body の字の調子）の決まりを変えても、外枠の画素が変わらないようにするため。
  * :where() で包んで、詳細度を tokens.css の button・a の決まりと同じにする（後ろに書いたこちらが勝ち、
@@ -68,7 +68,16 @@
 /* ============ 職員レイアウト（画面詳細図 1-1） ============ */
 .staff-shell { display: flex; flex-direction: column; height: 100%; }
 
-/* ヘッダ。テーマカラーの帯にする（基本設計書 3-5） */
+/*
+ * ヘッダ：白の地、上にひよこ黄の帯（4px）、下に罫線（基本設計書 3-5。テーマカラーは「優しい黄色」）。保護者のヘッダも同じ作り。
+ * 左はクレヨンのロゴ（左メニューと同じ幅で、右に罫線）、右に つながっているかの表示・通知・利用者名とクラス・ログアウト。
+ * 押せるもののうち通知は枠の無い文字だけ（指したときだけ地が付く）。ログアウトは共有端末での担当交代に使うので、枠を残す
+ */
+.app-header, .guardian-header {
+  background: var(--chrome-band);
+  border-top: 4px solid var(--yellow);
+  border-bottom: 1px solid var(--chrome-border-weak);
+}
 .app-header {
   height: var(--header-h);
   flex: 0 0 var(--header-h);
@@ -76,8 +85,6 @@
   align-items: center;
   gap: var(--sp-4);
   padding: 0 var(--sp-4) 0 0;
-  background: var(--chrome-band);
-  border-bottom: 1px solid var(--chrome-deep);
   color: var(--chrome-ink);
 }
 .app-header .header-brand {
@@ -88,24 +95,30 @@
   gap: 0;
   padding: 0 12px;
   background: var(--chrome-surface);
-  border-right: 1px solid var(--chrome-border);
+  border-right: 1px solid var(--chrome-border-weak);
 }
 .app-header .header-mark { width: 48px; height: 40px; object-fit: contain; }
 .app-header .header-wordmark { width: 108px; height: auto; }
 .app-header .spacer { flex: 1; }
 
-/* ログイン中の利用者名を常時表示する。職員は所属クラスも（基本設計書 3-5） */
+/* ログイン中の利用者名を常時表示する。職員は所属クラスも（基本設計書 3-5）。クラスは補助の字、名前は太字 */
 .app-header .who { font-size: var(--chrome-fs-body); font-weight: 700; white-space: nowrap; }
-.app-header .who .cls { font-weight: 400; margin-right: var(--sp-2); }
+.app-header .who .cls { font-weight: 400; margin-right: var(--sp-2); color: var(--chrome-text-sub); }
 .app-header button { min-height: var(--chrome-tap-min); background: var(--chrome-surface); }
 
 /* 通知と未対応件数 */
 /* 件数の札がベルの絵に重ならないよう、右側を空けておく。札と空きは文字の大きさに合わせて rem で決める */
 .notify-btn { position: relative; padding: var(--sp-2) 1.625rem var(--sp-2) var(--sp-3); }
+.app-header .notify-btn { border-color: transparent; background: transparent; }
+@media (hover: hover) {
+  .app-header .notify-btn:hover:not(:disabled) { border-color: transparent; background: var(--chrome-surface-sub); }
+}
+.app-header .notify-btn:active:not(:disabled) { background: var(--chrome-surface-head); }
+/* 件数の札は藍の地に白の字（赤ペンは警告・誤りだけ。未対応の総件数は警告ではない）。何の件数かはボタンの名前（「通知 n件」）で読み上げる */
 .notify-badge {
   position: absolute; top: 2px; right: 2px;
   min-width: 1.375rem; height: 1.375rem; padding: 0 6px;
-  border-radius: 0.6875rem; background: var(--chrome-alert); color: var(--dads-white);
+  border-radius: 0.6875rem; background: var(--chrome-deep); color: var(--paper);
   font-size: var(--chrome-fs-small); font-weight: 700; line-height: 1.375rem; letter-spacing: 0; text-align: center;
 }
 
@@ -134,7 +147,7 @@
  * 画面の上端の帯（components/ConnectionBanner.tsx。詳細設計書「つながっているかの表示」(2-8)）。
  * サーバに届かないときは警告色、保護者の「自動で読み直しています」は細い帯。午睡チェック画面では大きく出す
  */
-.connection-banner { margin: 0 0 var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: 8px; font-weight: 700; }
+.connection-banner { margin: 0 0 var(--sp-3); padding: var(--sp-2) var(--sp-3); font-weight: 700; }
 .connection-banner.is-unreachable { background: var(--c-alert); color: var(--c-on-alert); }
 .connection-banner.is-unreachable.is-large { min-height: 64px; display: flex; align-items: center; font-size: 1.25rem; }
 .connection-banner.is-fallback { padding: var(--sp-1) var(--sp-3); background: var(--c-alert-soft); color: var(--c-alert-deep); font-weight: 400; font-size: var(--fs-small); }
@@ -143,13 +156,14 @@
 
 /*
  * サイドナビ。保護者向け画面は持たない（基本設計書 3-5）。
- * 形は DADS のメニューリスト。現在地は地の色と太字に加え、左の線でも示す（色だけに頼らない）
+ * 罫線で区切った行（高さ 48px）。現在地は、藍の太い線（左 4px）・淡い青の地・太字の3つと aria-current で示す（色だけに頼らない）。
+ * 管理者の「管理」の段は、藍の線（上 2px）と段の名前で、上の項目と分ける
  */
 .sidenav {
   flex: 0 0 var(--sidenav-w);
   background: var(--chrome-surface);
-  border-right: 1px solid var(--chrome-border);
-  padding: var(--sp-2) 0;
+  border-right: 1px solid var(--chrome-border-weak);
+  padding: 0;
   overflow-y: auto;
 }
 .sidenav a {
@@ -158,20 +172,26 @@
   padding: 0 var(--sp-4);
   color: var(--chrome-text); text-decoration: none; font-size: var(--chrome-fs-body); line-height: 1.3;
   border-left: 4px solid transparent;
+  border-bottom: 1px solid var(--chrome-border-weak);
 }
 @media (hover: hover) {
   .sidenav a:hover { background: var(--chrome-surface-sub); color: var(--chrome-text); text-decoration: underline; text-decoration-thickness: 1px; }
 }
-.sidenav a.current {
+.sidenav a.current, .sidenav a[aria-current="page"] {
   background: var(--chrome-current);
   border-left-color: var(--chrome-deep);
+  color: var(--chrome-link-active);
   font-weight: 700;
 }
-.sidenav hr { margin: var(--sp-3) var(--sp-4); border: 0; border-top: 1px solid var(--chrome-border); }
-.sidenav .group-label { padding: var(--sp-1) var(--sp-4); font-size: var(--chrome-fs-small); font-weight: 700; color: var(--chrome-text-sub); }
+.sidenav hr { height: var(--sp-3); margin: 0; border: 0; }
+.sidenav hr + a { border-top: 1px solid var(--chrome-border-weak); }
+.sidenav .group-label {
+  padding: var(--sp-3) var(--sp-4) var(--sp-2); border-top: 2px solid var(--chrome-deep);
+  font-family: var(--font-display); font-size: var(--chrome-fs-small); font-weight: 700; color: var(--chrome-link-active);
+}
 .sidenav-hint { display: none; }
 @media (max-height: 900px) {
-  .sidenav-hint { display: block; position: sticky; bottom: 0; padding: 6px 10px; background: var(--chrome-surface); border-top: 1px solid var(--chrome-border); color: var(--chrome-text-sub); font-size: var(--chrome-fs-small); text-align: center; }
+  .sidenav-hint { display: block; position: sticky; bottom: 0; padding: 6px 10px; background: var(--chrome-surface); border-top: 1px solid var(--chrome-border-weak); color: var(--chrome-text-sub); font-size: var(--chrome-fs-small); text-align: center; }
 }
 
 .main { flex: 1; min-width: 0; overflow-y: auto; padding: var(--main-pad); background: var(--c-bg); }
@@ -202,18 +222,17 @@
    * 項目名は文字で読めるので、絵を外しても意味は変わらない
    */
   .sidenav a .icon { display: none; }
-  .sidenav .group-label { padding: var(--sp-1) var(--sp-3); }
-  .sidenav hr { margin: var(--sp-3); }
+  .sidenav .group-label { padding: var(--sp-3) var(--sp-3) var(--sp-2); }
 }
 @media (min-width: 1400px) {
-  /* 【仮置き】PC の幅で、真ん中に置いた職員の画面の外を surface-container の地にする（外も白だった。見直し 2026-10-31 の r2b-13） */
+  /* 【仮置き】PC の幅で、真ん中に置いた職員の画面の外を淡い青の地（wash）にする */
   body { background: var(--c-surface-sub); }
   .staff-shell {
     max-width: max(var(--staff-base-w), calc(100vh * var(--staff-ratio)));
     margin: 0 auto;
-    /* 外枠の両わきの線は外枠の色（DADS gray-420 #949494）。M3 の outline に付け替えたときに一緒に変わっていた（見直し m7b-01） */
-    border-left: 1px solid var(--chrome-border);
-    border-right: 1px solid var(--chrome-border);
+    /* 外枠の両わきの線は罫線の色 */
+    border-left: 1px solid var(--chrome-border-weak);
+    border-right: 1px solid var(--chrome-border-weak);
   }
 }
 
@@ -263,16 +282,18 @@
   display: flex; flex-direction: column; height: 100%;
   max-width: 480px; margin: 0 auto;
   background: var(--c-surface);
-  /* 保護者の列の左右の線は外枠の色（DADS gray-200 #cccccc。見直し m7b-02） */
-  border-left: 1px solid var(--chrome-border-weak);
-  border-right: 1px solid var(--chrome-border-weak);
 }
+/* ヘッダの帯・罫線は職員と同じ（上の「ヘッダ」）。メニューと通知は、枠の無い文字だけのボタンにする。指したときだけ地が付く */
 .guardian-header {
   min-height: var(--chrome-guardian-header-h); flex: 0 0 var(--chrome-guardian-header-h); display: flex; align-items: center; gap: var(--sp-2);
-  padding: 0 var(--sp-3); background: var(--chrome-band); border-bottom: 1px solid var(--chrome-deep);
+  padding: 0 var(--sp-3);
 }
 .guardian-header .spacer { flex: 1; }
-.guardian-header button { background: var(--chrome-surface); }
+.guardian-header button { background: transparent; border-color: transparent; }
+@media (hover: hover) {
+  .guardian-header button:hover:not(:disabled) { background: var(--chrome-surface-sub); border-color: transparent; text-decoration: none; }
+}
+.guardian-header button:active:not(:disabled) { background: var(--chrome-surface-head); }
 /* DADS のハンバーガーメニューボタン（ラベル付き）と同じく、印の下に「メニュー」と書く */
 .guardian-menu-button {
   display: flex; flex-direction: column; gap: 0;
@@ -296,7 +317,7 @@
  */
 .guardian-home { display: flex; flex-direction: column; gap: var(--sp-4); }
 .guardian-page-intro { padding: 0 0 var(--sp-4); }
-/* 小見出しは M3 の label-large（14px・行間 20px・Medium。Medium は 600 で書く。tokens.css の見出しの注） */
+/* 小見出し（14px・行間 20px・600） */
 .guardian-eyebrow { display: block; color: var(--c-text-sub); font-size: var(--fs-small); font-weight: 600; line-height: calc(20 / 14); }
 .guardian-page-intro h1 { margin: 0 0 var(--sp-2); }
 .guardian-page-intro p { margin: 0; color: var(--c-text-sub); font-size: var(--fs-body); }
@@ -324,7 +345,7 @@
 .guardian-panel-heading h2 { grid-column: 1 / -1; }
 .guardian-panel-heading > .badge { grid-row: 1; grid-column: 2; }
 .guardian-home-panel p { margin: var(--sp-2) 0 var(--sp-4); color: var(--c-text-sub); }
-/* 記録・配布物の並び。DADS のメニューリスト（ボックス型）と同じく、行の全体を押せるようにする。線は M3 の区切り（outline-variant） */
+/* 記録・配布物の並び。DADS のメニューリスト（ボックス型）と同じく、行の全体を押せるようにする。線は罫線 */
 .guardian-record-list { margin-top: var(--sp-2); border-top: 1px solid var(--c-border-weak); }
 .guardian-record-link {
   display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
@@ -351,7 +372,7 @@
 }
 .record-link:active { color: var(--c-text); background: var(--c-state-press); }
 .guardian-contact-note { padding: 0; color: var(--c-text-sub); font-size: var(--fs-small); line-height: 1.7; }
-.guardian-drawer { background: var(--chrome-surface); }
+.guardian-drawer { background: var(--chrome-surface); border-right: 1px solid var(--chrome-border-weak); }
 .guardian-room-list { overflow: hidden; background: var(--c-surface); border: 1px solid var(--c-border-weak); border-radius: var(--radius-card); }
 .guardian-room-link {
   width: 100%; min-height: 56px; display: flex; justify-content: space-between; gap: var(--sp-3);
@@ -421,18 +442,19 @@
     display: grid; grid-template-columns: 16rem minmax(0, 1fr); gap: var(--sp-6);
     width: 100%; max-width: 1200px; margin: 0 auto; padding: var(--sp-6) var(--sp-5);
   }
+  /* 左の欄は箱で囲まず、右に罫線を1本だけ引く */
   .guardian-sidebar {
     display: flex; flex-direction: column; position: sticky; top: calc(var(--chrome-guardian-header-h) + var(--sp-5)); align-self: start;
-    padding: var(--sp-4); background: var(--chrome-surface); border: 1px solid var(--chrome-border); border-radius: var(--chrome-radius);
+    padding: 0 var(--sp-4) 0 0; background: transparent; border: 0; border-right: 1px solid var(--chrome-border-weak); border-radius: 0;
   }
-  .guardian-sidebar .who { font-weight: 700; padding-bottom: var(--sp-3); border-bottom: 1px solid var(--chrome-border); margin-bottom: var(--sp-2); }
+  .guardian-sidebar .who { font-family: var(--font-display); font-weight: 700; padding-bottom: var(--sp-3); border-bottom: 1px solid var(--chrome-border-weak); margin-bottom: var(--sp-2); }
   .guardian-sidebar a {
     display: flex; align-items: center; gap: var(--sp-2); min-height: var(--chrome-control-h);
     padding: 0 var(--sp-3); color: var(--chrome-text); text-decoration: none;
     border-bottom: 1px solid var(--chrome-border-weak);
   }
   /* いまの画面を、色だけでなく太さと左の線でも示す */
-  .guardian-sidebar a[aria-current="page"] { font-weight: 700; box-shadow: inset 4px 0 0 var(--chrome-deep); background: var(--chrome-surface-sub); }
+  .guardian-sidebar a[aria-current="page"] { font-weight: 700; box-shadow: inset 4px 0 0 var(--chrome-deep); background: var(--chrome-current); color: var(--chrome-link-active); }
   .guardian-sidebar .spacer { height: var(--sp-5); }
   /* ダイアログを開く項目も、となりのリンクと同じ左の余白にそろえる */
   .guardian-body .guardian-sidebar button.drawer-item { padding: 0 var(--sp-3); }
@@ -454,15 +476,15 @@
   .guardian-sidebar a:hover { background: var(--chrome-surface-sub); color: var(--chrome-text); text-decoration: underline; text-decoration-thickness: 1px; }
 }
 
-.drawer-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .5); z-index: 40; }
+.drawer-backdrop { position: fixed; inset: 0; background: color-mix(in srgb, var(--ink) 50%, transparent); z-index: 40; }
 /* DADS のドロワー。幅 288px */
 .drawer {
   position: fixed; top: 0; left: 0; bottom: 0; width: min(288px, 85vw); z-index: 41;
-  background: var(--chrome-surface); border-right: 1px solid var(--chrome-border);
+  background: var(--chrome-surface); border-right: 1px solid var(--chrome-border-weak);
   padding: var(--sp-4); display: flex; flex-direction: column; gap: 0;
 }
-.drawer .who { font-weight: 700; padding-bottom: var(--sp-3); border-bottom: 1px solid var(--chrome-border); margin-bottom: var(--sp-2); }
-.drawer-head { display: flex; align-items: flex-start; gap: var(--sp-2); border-bottom: 1px solid var(--chrome-border); margin-bottom: var(--sp-2); padding-bottom: var(--sp-2); }
+.drawer .who { font-family: var(--font-display); font-weight: 700; padding-bottom: var(--sp-3); border-bottom: 1px solid var(--chrome-border-weak); margin-bottom: var(--sp-2); }
+.drawer-head { display: flex; align-items: flex-start; gap: var(--sp-2); border-bottom: 1px solid var(--chrome-border-weak); margin-bottom: var(--sp-2); padding-bottom: var(--sp-2); }
 .drawer-head .who { flex: 1; min-width: 0; margin: 0; padding-top: 10px; border: 0; }
 .drawer-close { flex: none; padding: 0 var(--sp-3); white-space: nowrap; }
 .drawer a {
@@ -485,19 +507,19 @@
 /* 移る先の並びと、ログアウトのあいだを空ける。並びの続きに見えないようにする */
 .drawer .spacer { flex: none; height: var(--sp-5); }
 
-/* ============ 未ログインの入口 ============ */
+/*
+ * ============ 未ログインの入口 ============
+ * 白の地に、上にひよこ黄の帯（ヘッダと同じ 4px）。箱で囲まず、クレヨンの「すくすく」の下に罫線を1本引いて、入口の見出しとフォームを置く
+ */
 .public-shell {
   min-height: 100%; display: flex; align-items: center; justify-content: center;
   padding: var(--sp-5) var(--sp-4);
-  background: var(--c-surface-sub);
+  background: var(--c-bg);
+  border-top: 4px solid var(--yellow);
 }
-.public-card {
-  width: 100%; max-width: 440px; background: var(--c-surface);
-  border: 1px solid var(--c-border-weak); border-radius: var(--radius-card);
-  padding: var(--sp-6) var(--sp-5);
-}
+.public-card { width: 100%; max-width: 440px; }
 .public-card.wide { max-width: 560px; }
-.public-card .brand { text-align: center; margin-bottom: var(--sp-5); }
+.public-card .brand { text-align: center; margin-bottom: var(--sp-5); padding-bottom: var(--sp-4); border-bottom: 1px solid var(--c-border-weak); }
 .public-card .brand .name img {
   display: block;
   width: 200px;
@@ -506,10 +528,13 @@
   margin: -8px auto 0;
 }
 .public-card .brand .sub  { font-size: var(--fs-small); color: var(--c-text-sub); }
-/* 入口の見出し（「保護者用の入口」「職員用の入口」）。h1 の字の段（24px）のまま、ロゴの下に中央でそろえる。前は 20px の灰の字に上書きしていた（見直し 2026-10-31 の r2a-12） */
-.public-card .public-title { margin: calc(var(--sp-4) * -1) 0 var(--sp-4); text-align: center; }
+/* 入口の見出し（「保護者用の入口」「職員用の入口」）。h1 の字の段（24px）のまま、中央でそろえる */
+.public-card .public-title { margin: 0 0 var(--sp-4); text-align: center; }
+/* 新規登録の導線（保護者用だけ）と、もう一方の入口への行き来。罫線で区切る */
+.public-signup { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2) var(--sp-3); margin-top: var(--sp-5); padding-top: var(--sp-4); border-top: 1px solid var(--c-border-weak); }
+.public-switch { margin-top: var(--sp-4); text-align: center; }
 @media (max-width: 480px) {
-  .public-card { padding: var(--sp-5) var(--sp-4); }
+  .public-shell { align-items: flex-start; }
 }
 
 /* ============ 共通部品 ============ */
@@ -540,7 +565,7 @@ button:where(.phrase-list button, .contact-month-days button, .handout-row, .tem
   border-radius: var(--radius);
 }
 
-/* 職員の画面の h1 は M3 の headline-medium（28/36）。カードの題（h2 22px）と強さを分ける（見直し m7a-07。頭役が推しで決めた。保護者の PC と同じ値） */
+/* 職員の画面の h1 は 28px（行間 36px）。区切りの題（h2 20px）と強さを分ける（見直し m7a-07。頭役が推しで決めた。保護者の PC と同じ値） */
 .main h1 { font-size: 1.75rem; line-height: calc(36 / 28); }
 .page-head { display: flex; align-items: center; gap: var(--sp-3) var(--sp-4); flex-wrap: wrap; margin-bottom: var(--sp-5); }
 .page-head .spacer { flex: 1; }
@@ -548,20 +573,21 @@ button:where(.phrase-list button, .contact-month-days button, .handout-row, .tem
 .page-head.page-head-fields { align-items: flex-end; }
 
 /*
- * 区切りの箱。M3 の Outlined card（Jetpack Compose の OutlinedCardTokens）：白（surface-container-lowest）の地、
- * outline-variant の 1px の線、角 12px、影なし。本文の地（surface-container-low）との差でも箱が分かる。
- * 地を変えた箱（.card-sub）は surface-container
+ * 区切り（Card）。箱で囲まず、上に罫線を1本引き、余白で分ける（角丸なし・影なし）。左右 8px の余白は、表を横に送る枠（overflow）の端で
+ * フォーカスの枠が切れないためと、見出しと表の字をそろえるため。
+ * 地を変えた区切り（.card-sub）は、値や操作を持つもの（発達チェック入力の発達過程区分など）に使う。淡い青の地と、左の太い罫線で示す
  */
 .card {
-  background: var(--c-surface); border: 1px solid var(--c-border-weak);
-  border-radius: var(--radius-card); padding: var(--sp-4); margin-bottom: var(--sp-5);
+  background: transparent; border: 0; border-top: 1px solid var(--c-border-weak);
+  border-radius: var(--radius-card); padding: var(--sp-4) var(--sp-2) 0; margin-bottom: var(--sp-5);
 }
 .card > h2, .card > h3 { margin-bottom: var(--sp-3); }
 .card .page-head { margin-bottom: var(--sp-3); }
-.card-sub { background: var(--c-surface-sub); }
-/* 幅に余裕のある PC では、箱の内側も広げる。タブレットでは中身の幅を優先する */
+.card-sub { background: var(--c-surface-sub); border-top: 0; border-left: 4px solid var(--c-border-weak); padding: var(--sp-3) var(--sp-4); }
+/* 幅に余裕のある PC では、区切りの上の余白を広げる。タブレットでは中身の幅を優先する */
 @media (min-width: 1200px) {
-  .card { padding: var(--sp-5); }
+  .card { padding-top: var(--sp-5); }
+  .card-sub { padding: var(--sp-4) var(--sp-5); }
 }
 
 .filterbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-4); }
@@ -581,11 +607,10 @@ button:where(.phrase-list button, .contact-month-days button, .handout-row, .tem
 }
 
 /*
- * 表：見出し行に地を敷かず、600 の on-surface-variant の字で示す。行は outline-variant の線で区切る。縞模様は付けない。
- * 行の上下の余白は 12px。
+ * 表：箱で囲まず、罫線の行（高さ 48px 以上）で並べる。見出し行は地を敷かず、600 の補助の字と下の太い罫線（2px）で示す。縞模様は付けない。
+ * 行の上下の余白は 12px（行間 24px と足して 48px）。
  * 【仮置き】字は本文と同じ 16px（行間 24px）を既定にする。列の多い表（午睡記録検索・操作ログ・日誌一覧・連絡帳（クラス）など）だけ、
- * 表に .list-dense を付けて 14px（行間 20px）にする。前は全部の表を 14px にしていたが、その理由（iPad 縦で列が収まらない）は
- * 列の多い表にしか当たらなかった（見直し 2026-10-31 の r2a-09）
+ * 表に .list-dense を付けて 14px（行間 20px）にし、行の上下の余白を 14px にして、高さを 48px に保つ
  */
 table.list { width: 100%; border-collapse: collapse; font-size: var(--fs-body); line-height: 1.5; letter-spacing: 0; font-variant-numeric: tabular-nums; }
 table.list.list-dense { font-size: var(--fs-small); line-height: calc(20 / 14); }
@@ -594,21 +619,19 @@ table.list th, table.list td {
   border-bottom: 1px solid var(--c-border-weak);
   text-align: left; vertical-align: middle;
 }
-/* 見出し行の地は表の箱と同じ白（見た目は地なし）。透かすと、横に送って端が隠れた見出しの字の地を axe が決めきれない */
+table.list.list-dense th, table.list.list-dense td { padding-block: 14px; }
+/* 見出し行の地は表と同じ白（見た目は地なし）。透かすと、横に送って端が隠れた見出しの字の地を axe が決めきれない */
 table.list th {
   background: var(--c-surface);
-  border-bottom: 1px solid var(--c-border-weak);
+  border-bottom: 2px solid var(--c-border-weak);
   color: var(--c-text-sub); font-weight: 600; white-space: nowrap;
 }
 table.list tbody tr:focus-within td { background: var(--c-primary-faint); }
 @media (hover: hover) {
   table.list tbody tr:hover td { background: var(--c-primary-faint); }
 }
-table.list tr > :first-child { padding-left: var(--sp-3); }
-/* 最後の行は下の線を引かない。行の見出し（th scope="row"）にも効かせる（前は園児名にだけ線が残っていた） */
-table.list tbody tr:last-child > * { border-bottom: 0; }
-/* 最後の組の行をまたぐセル（アレルギー一覧のクラス・氏名、招待コードの園児）も、表の下端なので線を消す（見直し m7a-20） */
-table.list tbody tr:not(:has(~ tr > td[rowspan])) > td[rowspan] { border-bottom: 0; }
+/* 区切り（.card）の中の表は、区切りの左右の余白（8px）が字の頭になる。字は見出しとそろえる */
+.card > table.list tr > :first-child { padding-left: 0; }
 table.list td.num { text-align: right; font-variant-numeric: tabular-nums; }
 /*
  * 行をまたぐセル（アレルギー一覧・招待コードの園児名など）は、最初の行にそろえて上に寄せる。どの行の見出しかを最初の行と並べて示す。
@@ -643,17 +666,18 @@ table.list td.list-title { min-width: 8em; }
   table.list td.list-wrap { white-space: nowrap; }
 }
 
-.pager { display: flex; align-items: center; gap: var(--sp-3); justify-content: flex-end; margin-top: var(--sp-3); font-size: var(--fs-small); color: var(--c-text-sub); }
+/* ページング：表の下に罫線を引いて置く。補足の字（14px） */
+.pager { display: flex; align-items: center; gap: var(--sp-3); justify-content: flex-end; margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--c-border-weak); font-size: var(--fs-small); color: var(--c-text-sub); }
 
 /*
- * 状態の札。M3 のチップの形（角 8px）。
- * 【仮置き】下書き・申請中・承認済は淡い地に濃い字（トーナル。枠の線なし）、差し戻しだけを塗りつぶす（画面詳細図 3-1）
+ * 状態の札。箱ではなく字の印なので、角は丸めない（2px）。色だけに頼らず、必ず字で示す。
+ * 【仮置き】下書き・申請中・承認済は淡い地に濃い字（枠の線なし）、差し戻しだけを塗りつぶす（画面詳細図 3-1）
  */
 .tag {
-  display: inline-block; padding: 2px 7px; border: 1px solid transparent; border-radius: var(--radius);
+  display: inline-block; padding: 2px 7px; border: 1px solid transparent; border-radius: 2px;
   font-size: var(--fs-small); font-weight: 400; line-height: 1.5; letter-spacing: .02em; white-space: nowrap;
 }
-.tag-draft    { color: var(--c-draft);            background: var(--c-surface-head); }
+.tag-draft    { color: var(--c-draft);            background: var(--c-draft-soft); }
 .tag-applied  { color: var(--c-on-applied-soft);  background: var(--c-applied-soft); }
 .tag-returned { color: var(--c-on-returned);      background: var(--c-returned); font-weight: 600; }
 .tag-approved { color: var(--c-on-approved-soft); background: var(--c-approved-soft); }
@@ -661,21 +685,20 @@ table.list td.list-title { min-width: 8em; }
 /*
  * 警告色の札（安全の印）。午睡の「異常時の記録あり」「体位 うつ伏せ」「呼吸 確認できず」「顔色」、午睡記録検索の体位・呼吸・顔色、アレルギーの食品と、
  * 画面詳細図が警告色と定めた承認待ちの「滞留」（3-4 項目5）。基本設計書「画面基本構成」(3-5) の警告色の用途（午睡チェックの異常・範囲外の入力値など）。
- * 塗るのは差し戻しだけ（画面詳細図 3-1）なので、白地に警告色（M3 の error）の枠と字、太字で示す。【仮置き】設計は安全の印の札の形を定めていない（web/仮置き値.md）
+ * 塗るのは差し戻しだけ（画面詳細図 3-1）なので、白地に赤ペンの枠と字、太字で示す。【仮置き】設計は安全の印の札の形を定めていない（web/仮置き値.md）
  */
 .tag-alert    { color: var(--c-alert); border-color: var(--c-alert); background: var(--c-surface); font-weight: 700; }
 /*
  * 期限・漏れ・誤りの札（事務の印）。発達チェックの「未実施」「未入力 n 件」、招待コードの「期限切れ」、職員の「ロック中」、園児 CSV の「エラー n 行」、誤送信の「既読あり」。
  * 安全の印と同じ赤い枠にすると「赤い枠の札＝子どもの安全」の読みが崩れるので分ける（見直し m7c-09。w4 の m9）。
- * 橙の淡い地（カスタム色 warning の container）に濃い字・600、橙の 1px の線。安全の印（白地に赤い枠）とは地のあるなし、まだ済んでいないものの札（tag-applied。線なし）とは線のあるなしで、
- * グレースケールでも分ける（#379 のあとの見直し：線が無いと、灰にしたとき「予定日が近い」と同じ形に見えた）。色だけに頼らない（字でも示す）。
- * 【仮置き】色と形（web/仮置き値.md「職員の画面の札の色」）
+ * 橙の淡い地に濃い字・600、橙の 1px の線。安全の印（白地に赤い枠）とは地のあるなし、まだ済んでいないものの札（tag-applied。線なし）とは線のあるなしで、
+ * グレースケールでも分ける。色だけに頼らない（字でも示す）。【仮置き】色と形（web/仮置き値.md「職員の画面の札の色」）
  */
 .tag-warn     { color: var(--c-on-warn-soft); background: var(--c-warn-soft); border-color: var(--c-warn); font-weight: 600; }
 /*
- * 件数・新着の札（M3 の Badge。BadgeTokens：error の地・全丸）。中は数だけ（M3 のバッジは 1〜4 字の数）。
+ * 件数・新着の札（バッジ。赤ペンの地・全丸）。中は数だけ（1〜4 字の数）。
  * 何の数か（「新しく n 件」「未読 n」）は、行の字（.guardian-link-note）で書く（見直し m7a-16）。
- * 【仮置き】字は 14px（M3 の 11sp より大きく。14px より小さい字を使わない）。付ける画面は画面ごとの点で直す
+ * 【仮置き】字は 14px（14px より小さい字を使わない）。付ける画面は画面ごとの点で直す
  */
 .badge {
   display: inline-flex; align-items: center; justify-content: center; flex: none;
@@ -685,15 +708,14 @@ table.list td.list-title { min-width: 8em; }
 }
 
 /*
- * 警告・知らせの帯。判定ではない。帯は意味ごとに4つ（【仮置き】web/仮置き値.md「警告・知らせの帯」。見直し m7c-02・m7a-02・m7a-13・m7b-14。w4 の m9-B）
- *   - .alert（既定）：誤り・安全だけ。M3 の error-container の地に on-error-container の字（7.24:1）、error の 1px の線（淡い地に 5.00:1）。印は warning
- *   - .alert-warn：期限切れ・漏れ（発達チェックの未実施）。札の .tag-warn と同じ色で、warning-container の地に on-warning-container の字（13.29:1）、
- *     warning の 1px の線（5.03:1）。印は error（丸に「!」）
- *   - .alert-soft：お願い・知らせ。surface-container-high の地に on-surface の字（14.00:1）、outline の 1px の線（地に 3.67:1）。印は info。
- *     ダイアログの中では白の地にする（ダイアログと同じ地で 1.00:1 になり、帯が見えなかった）
+ * 警告・知らせの帯。判定ではない。帯は意味ごとに4つ（【仮置き】web/仮置き値.md「警告・知らせの帯」。見直し m7c-02・m7a-02・m7a-13・m7b-14。w4 の m9-B）。
+ * 角は丸めず、左に太い線（6px）を引く。印（絵）と字で示し、色だけに頼らない
+ *   - .alert（既定）：誤り・安全だけ。淡い赤の地に濃い赤の字（約 7:1）、赤ペンの線。印は warning
+ *   - .alert-warn：期限切れ・漏れ（発達チェックの未実施）。札の .tag-warn と同じ色で、橙の淡い地に濃い字、橙の線（5.03:1）。印は error（丸に「!」）
+ *   - .alert-soft：お願い・知らせ。淡い青（wash）の地に鉛筆の字、edge の線（4.5:1）。印は info。ダイアログの中では白の地にする
  *   - .alert-reach：保護者に届くこと（送る・掲載する・承認する前に、誰に届くかを示す）。宛先の札（.recipient-badge）と同じ、
- *     secondary-container の地に primary の 2px の線（地に 5.00:1）。印は保護者（family_restroom。メニューの「保護者アカウント」と同じ絵）
- * どの帯も線を持つので、地の差が小さい所（白の箱・ダイアログ）でも帯の形が分かり、forced-colors（Windows のハイコントラスト）でも外形が残る。
+ *     淡い青（wash-strong）の地に藍の 2px の線。印は保護者（family_restroom。メニューの「保護者アカウント」と同じ絵）
+ * どの帯も線を持つので、地の差が小さい所（白の面・ダイアログ）でも帯の形が分かり、forced-colors（Windows のハイコントラスト）でも外形が残る。
  * 線のぶん内側の余白を減らし、帯の大きさは線を付ける前と同じにする。
  * 印は「(!)」の字（読み上げない）を Material Symbols の絵に置き換える。字の大きさを 0 にし、絵は mask で描く（午睡の行の中の警告と同じ形）
  */
@@ -702,8 +724,9 @@ table.list td.list-title { min-width: 8em; }
   --alert-mark-ink: var(--c-alert);
   --alert-line: 1px;
   display: flex; align-items: flex-start; gap: var(--sp-2);
-  padding: calc(var(--sp-3) - var(--alert-line)) calc(var(--sp-4) - var(--alert-line)); border-radius: var(--radius-card);
-  background: var(--c-alert-soft); border: var(--alert-line) solid var(--c-alert);
+  padding: calc(var(--sp-3) - var(--alert-line)) calc(var(--sp-4) - var(--alert-line)) calc(var(--sp-3) - var(--alert-line)) calc(var(--sp-4) - 6px);
+  border-radius: var(--radius-card);
+  background: var(--c-alert-soft); border: var(--alert-line) solid var(--c-alert); border-left-width: 6px;
   color: var(--c-alert-deep); font-size: var(--fs-body); font-weight: 400; line-height: 1.7;
 }
 /* 印は 24px。1行目の字の高さ（行間 1.7）の真ん中にそろえる */
@@ -722,7 +745,7 @@ table.list td.list-title { min-width: 8em; }
 .alert-soft {
   --alert-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M440-280h80v-240h-80v240Zm40-320q17 0 28.5-11.5T520-640q0-17-11.5-28.5T480-680q-17 0-28.5 11.5T440-640q0 17 11.5 28.5T480-600Zm0 520q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z'/%3E%3C/svg%3E");
   --alert-mark-ink: var(--c-text-sub);
-  background: var(--c-surface-head); border-color: var(--c-border); color: var(--c-text);
+  background: var(--c-surface-sub); border-color: var(--c-border); color: var(--c-text);
 }
 .modal .alert-soft { background: var(--c-surface); }
 .alert-reach {
@@ -740,15 +763,15 @@ table.list td.list-title { min-width: 8em; }
 /*
  * 免責表示。成長グラフ・発達チェックの比較に常時表示し、スクロールしても視界から外さない
  * （基本設計書 3-5／画面詳細図 6-1・6-2）。
- * 誤りではないため警告色を使わず、surface-container-highest の地にする（枠の線なし。forced-colors では線を出す）。
+ * 誤りではないため警告色を使わず、淡い青（wash-strong）の地に、上の罫線で示す（forced-colors では枠を出す）。
  * 印は知らせの帯と同じ info（字の 14px に合わせて 20px。見直し m7a-13）
  */
 .disclaimer {
   position: sticky; bottom: 0; z-index: 5;
   display: flex; align-items: center; gap: var(--sp-2);
   margin-top: var(--sp-4); padding: var(--sp-2) var(--sp-4);
-  background: var(--md-sys-color-surface-container-highest); border: 0;
-  border-radius: var(--radius); color: var(--c-text);
+  background: var(--c-surface-head); border: 0; border-top: 2px solid var(--c-border-weak);
+  border-radius: 0; color: var(--c-text);
   /* 重ねて置く帯なので、DADS が場所の限られる所に許す 14px にして、重なる範囲を小さくする（GitHub Issue #154） */
   font-size: var(--fs-small); font-weight: 700; line-height: 1.5;
 }
@@ -795,7 +818,8 @@ table.list td.list-title { min-width: 8em; }
 .row-end { display: flex; gap: var(--sp-3); align-items: center; justify-content: flex-end; flex-wrap: wrap; }
 .stack { display: flex; flex-direction: column; gap: var(--sp-3); }
 .nowrap { white-space: nowrap; }
-.empty { padding: var(--sp-6); text-align: center; color: var(--c-text-weak); }
+/* 空・読み込み中の表示。箱にも中央寄せにもせず、本文の左にそろえる */
+.empty { padding: var(--sp-5) 0; text-align: left; color: var(--c-text-weak); }
 .choices { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); }
 
 /* 開閉するまとまり。押せる大きさを 44px にする */
@@ -803,13 +827,12 @@ summary { min-height: var(--tap-min); padding: 10px 0; cursor: pointer; }
 
 /*
  * ダイアログ。画面として起こさないもの（基本設計書 3-1 基準3）。
- * M3 の Dialog：surface-container-high の地、角 28px、枠の線なし。後ろは scrim（黒の 32%）で暗くする。
- * 【仮置き】中身が長くて送るときに区切りが分かるよう、題と操作の段の境に outline-variant の線を残す
+ * 白の地に、鉛筆の 2px の枠（角丸なし・影なし）。後ろは鉛筆の 45% で暗くする。
+ * 中身が長くて送るときに区切りが分かるよう、題と操作の段の境に罫線を引く
  */
-.modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .32); display: flex; align-items: center; justify-content: center; z-index: 50; padding: var(--sp-4); }
+.modal-backdrop { position: fixed; inset: 0; background: color-mix(in srgb, var(--ink) 45%, transparent); display: flex; align-items: center; justify-content: center; z-index: 50; padding: var(--sp-4); }
 .modal {
-  background: var(--c-surface-head); border: 0; border-radius: var(--radius-dialog);
-  box-shadow: var(--elevation-3);
+  background: var(--c-surface); border: 2px solid var(--c-text); border-radius: var(--radius-dialog);
   width: 100%; max-width: 560px; max-height: 90vh; overflow-y: auto;
 }
 .modal-head { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--c-border-weak); }
@@ -817,22 +840,22 @@ summary { min-height: var(--tap-min); padding: 10px 0; cursor: pointer; }
 .modal-foot { padding: var(--sp-4) var(--sp-5); border-top: 1px solid var(--c-border-weak); display: flex; justify-content: flex-end; gap: var(--sp-3); }
 /* ダイアログの中で起きた誤りは、ダイアログの中に出す。後ろに出すと隠れて読めない */
 .modal-body .alert { margin-bottom: var(--sp-3); }
-/* forced-colors では影と地の差が消えるので、ダイアログとスナックバーの外形を線で出す（見直し m7b-14） */
+/* forced-colors では地の差が消えるので、ダイアログとスナックバーの外形を線で出す（見直し m7b-14） */
 @media (forced-colors: active) {
   .modal, .toast { border: 1px solid CanvasText; }
 }
 
 /*
  * 操作が完了したことの表示。画面の下端に重ねて出し、並びを押し広げない。
- * M3 の Snackbar：inverse-surface の地に inverse-on-surface の字、角 4px。中の操作は inverse-primary の字のテキストボタン
+ * 鉛筆の地に紙の字（角丸なし・影なし）。中の操作は、ひよこ黄の字のテキストボタン（鉛筆の上で約 11:1）
  */
 .toast {
   position: fixed; left: 50%; bottom: var(--sp-4); transform: translateX(-50%); z-index: 60;
   display: flex; align-items: center; gap: var(--sp-3);
   max-width: min(640px, calc(100vw - 2 * var(--sp-4)));
   padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4);
-  background: var(--md-sys-color-inverse-surface); color: var(--md-sys-color-inverse-on-surface);
-  border-radius: var(--radius-input); box-shadow: var(--elevation-2);
+  background: var(--ink); color: var(--paper);
+  border-radius: 0;
 }
 /*
  * 表示が出ている間、スクロールする枠の下端のうち表示が覆う高さ（ToastHost が測って --toast-cover に入れる。src/stickyInset.ts）を
@@ -843,10 +866,11 @@ summary { min-height: var(--tap-min); padding: 10px 0; cursor: pointer; }
 .guardian-shell:has(> .toast) > .guardian-main {
   scroll-padding-bottom: calc(max(var(--toast-cover, 0px), var(--contact-actions-h, 0px)) + 6px);
 }
-.toast .btn-sm { color: var(--md-sys-color-inverse-primary); border-color: transparent; background: transparent; }
+.toast .btn-sm { color: var(--yellow); border-color: transparent; background: transparent; }
 @media (hover: hover) {
-  .toast .btn-sm:hover:not(:disabled) { color: var(--md-sys-color-inverse-primary); border-color: transparent; background: color-mix(in srgb, var(--md-sys-color-inverse-primary) 8%, transparent); }
+  .toast .btn-sm:hover:not(:disabled) { color: var(--yellow); border-color: transparent; background: color-mix(in srgb, var(--yellow) 12%, transparent); }
 }
+.toast .btn-sm:active:not(:disabled) { background: color-mix(in srgb, var(--yellow) 18%, transparent); }
 
 /* 段階を上から順に踏ませる（画面詳細図 2-3 新規登録画面） */
 .step { border: 1px solid var(--c-border-weak); border-radius: var(--radius-card); padding: var(--sp-4); margin-bottom: var(--sp-4); }
@@ -866,3 +890,34 @@ summary { min-height: var(--tap-min); padding: 10px 0; cursor: pointer; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
 /* 保護者向けの緊急連絡の案内は、ヘッダの「園に電話」（styles/guardian.css の .guardian-call）に移した。下端は下のタブが使う */
+
+/*
+ * ============ 職員ダッシュボード（StaffDashboard.tsx） ============
+ * 未対応を、1行に1件の罫線の一覧で並べる。画面でいちばん目立たせるのは、日付の蛍光ペンの線だけ。
+ * 残りのある行は項目名を太字に、0 件の行は補足の色の細字にして、強さを分ける（色の札や箱は使わない。赤ペンは警告・誤りだけ）。
+ * 名前の列を広げ、件数と「開く」の列を詰めて、「届けること」と「園内のこと」で件数の位置をそろえる（見直し 2026-10-31 の r2a-07）。
+ * 件数は右にそろえ（.num）、「開く」は枠のないテキストボタン（OpenLink）
+ */
+.dashboard-date { margin: 0; font-family: var(--font-display); font-size: 1.25rem; font-weight: 700; line-height: 1.5; }
+.dashboard-date > span {
+  padding: 0 .12em;
+  background: linear-gradient(transparent 60%, var(--yellow) 60%, var(--yellow) 90%, transparent 90%);
+}
+.dashboard-list td:first-child { width: 100%; }
+.dashboard-list td:not(:first-child) { width: 1%; white-space: nowrap; }
+.dashboard-list tbody tr:has(td.dashboard-count) > td:first-child { font-weight: 700; }
+.dashboard-list span.muted { white-space: nowrap; }
+/* screens.css の前の規則（件数 600・未確認と更新を警告色）に勝たせる。screens.css の規則は機能の係の分なので消さない */
+.dashboard-list .dashboard-count { font-weight: 700; }
+.dashboard-list .dashboard-count.is-due { color: inherit; }
+.dashboard-list .dashboard-zero { color: var(--c-text-sub); font-weight: 400; }
+/* 縦向き（900px 未満）では、段を並べず縦に積む（項目名が長く、並べると3行に折れる） */
+@media (max-width: 900px) {
+  .dashboard-grid > [class*="col-"] { grid-column: 1 / -1; }
+}
+
+/* 動きは、押したときの返事（行・ボタンの地）だけ。動きを減らす設定のときは、その変化も一瞬にする。表を横に送ったときの端の影（スクロールに連動）は動きではないので残す */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; }
+  *:not(.card), *::before, *::after { animation: none !important; }
+}
