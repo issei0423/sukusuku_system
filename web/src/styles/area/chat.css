@@ -1,0 +1,270 @@
+/*
+ * チャット・お知らせ・配布物の画面（職員・保護者）の見た目
+ * 典拠：図/画面詳細図.md「チャット画面（職員）」(4-1)・「チャット画面（保護者・スマートフォン）」(4-2)・
+ *      「配布物一覧画面（保護者）」・「配布物管理画面」。見た目の元は、2026-11-26 に持ち主が頼んだ UI の作り直し
+ *      （紙の連絡帳：白い紙・ひよこ黄の主ボタン・淡い青の罫線・藍・赤ペンは警告だけ。見本は styles/guardian.css）。
+ *
+ * 色・角・間隔は --c-*・--sp-* の変数だけを使う。保護者の側は .guardian-shell が紙の色を当て、職員の側は :root の値のまま。
+ * 箱で囲まず、罫線と余白で分ける。角丸は押せるもの（吹き出し・リアクション・ボタン）にだけ付ける。影は使わない。
+ * 守るもの：押せる大きさ 44px・フォーカスの印・forced-colors・指したときの見た目は (hover: hover) だけ・
+ * 職員の3つの領域は、縦向き（900px 未満）でも横に並べたまま（積み直さない）。右クリック／長押しの操作の一覧は変えない。
+ *
+ * 【仮置き】罫線の引き方・吹き出しの角・欄の幅などは設計の決定ではない（web/仮置き値.md「チャット・配布物の見た目」）。
+ */
+
+/* ============ 職員のチャット：チャンネル／メッセージ／メンバーの3つの領域 ============ */
+.chat3 {
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr) 176px;
+  gap: 0;
+  /* 上の見出しの行（約 72px）も引いて、入力欄が画面の中に収まるようにする。ページを送らなくても書き始められる */
+  height: calc(100vh - var(--header-h) - var(--main-pad) * 2 - 72px);
+  min-height: 420px;
+  /* 3つの領域は、1枚の紙を縦の罫線で分ける。上下に罫線を1本ずつ引く */
+  background: var(--c-surface);
+  border-top: 1px solid var(--c-border-weak);
+  border-bottom: 1px solid var(--c-border-weak);
+}
+.chat-pane { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.chat-pane + .chat-pane { border-left: 1px solid var(--c-border-weak); }
+/* 領域の題：地は付けず、下に罫線。3つの領域で高さをそろえ、罫線が横に通るようにする */
+.chat-pane > h2 {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1) var(--sp-2);
+  min-height: 56px; margin: 0; padding: var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid var(--c-border-weak);
+  font-size: 1rem; line-height: 1.4; font-weight: 700;
+}
+.chat-pane > h2 .muted { font-size: var(--fs-small); font-weight: 400; }
+/* 個人チャットの「未対応」の札と切り替えのボタンは、題の右に寄せる */
+.chat-room-actions { flex: none; display: inline-flex; align-items: center; gap: var(--sp-2); margin-left: auto; }
+.chat-scroll { flex: 1; overflow-y: auto; padding: var(--sp-4); }
+.chat-compose { border-top: 1px solid var(--c-border-weak); padding: var(--sp-3) var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-2); }
+
+/* チャンネルの並び：罫線で区切った行。現在地は左の太い線・淡い地・太字の3つで示す（色だけに頼らない） */
+.channel {
+  display: flex; align-items: center; gap: var(--sp-2);
+  width: 100%; min-height: var(--control-h);
+  padding: var(--sp-1) var(--sp-3);
+  border: 0; border-left: 4px solid transparent; border-bottom: 1px solid var(--c-border-weak); background: transparent;
+  text-align: left; cursor: pointer; font-weight: 400; line-height: 1.4;
+  border-radius: 0;
+  justify-content: flex-start;
+}
+@media (hover: hover) {
+  .channel:hover:not(:disabled) { background: var(--c-surface-sub); border-color: transparent; border-bottom-color: var(--c-border-weak); }
+}
+.channel.current { background: var(--c-primary-soft); border-left-color: var(--c-primary-deep); font-weight: 700; }
+@media (hover: hover) {
+  .channel.current:hover:not(:disabled) { background: var(--c-primary-soft); border-left-color: var(--c-primary-deep); }
+}
+.channel .mark { display: inline-block; font-size: var(--fs-small); font-weight: 400; color: var(--c-text-sub); margin-left: var(--sp-1); white-space: nowrap; }
+/* 未読の数：赤は警告だけに使うので、現在地と同じ濃い色の札にする。読み上げは「未読 n」 */
+.channel .channel-unread {
+  margin-left: auto; flex: none; min-width: 1.5rem; padding: 0 var(--sp-1);
+  background: var(--c-primary-deep); color: var(--c-surface); font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.channel-group {
+  padding: var(--sp-4) var(--sp-3) var(--sp-1); font-size: var(--fs-small); font-weight: 700; color: var(--c-text);
+  border-bottom: 1px solid var(--c-border);
+}
+/*
+ * 「保護者との個人チャット」の絞り込み（画面詳細図 4-1 項目24）。欄の見出しのすぐ下に置く。
+ * 入力欄は tokens.css の Outlined text field のまま。項目の名前は欄の外の上に置く（tokens.css の決まり）。
+ * 「消す」は欄の中の右端に重ねる。字が「消す」に隠れないよう、右の余白をそのぶん空ける。
+ * ブラウザが type="search" に足す消すボタンは 44px に届かず、「消す」と二重になるので出さない。
+ * 【仮置き】置き方・文言（web/仮置き値.md「個人チャットの絞り込み」）
+ */
+.channel-search { padding: var(--sp-2) var(--sp-3) var(--sp-2); }
+/* 名前の行は 44px の高さにしない（tokens.css の label の 44px は、チェックボックス・ラジオを押す所のため） */
+.channel-search > label { display: block; min-height: 0; margin-bottom: var(--sp-1); font-size: var(--fs-small); color: var(--c-text-sub); }
+.channel-search-box { position: relative; }
+.channel-search-box input[type="search"] { padding-right: 64px; }
+.channel-search-box input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; display: none; }
+.channel-search-clear { position: absolute; top: 2px; right: 2px; padding-left: var(--sp-2); padding-right: var(--sp-2); }
+.channel-search-empty { margin: 0; padding-top: var(--sp-2); font-size: var(--fs-small); color: var(--c-text-sub); }
+
+/* メンバー：名前を並べるだけ。職員と保護者の間は見出しの罫線で分ける */
+.member-group {
+  margin: var(--sp-4) 0 var(--sp-2); padding-bottom: var(--sp-1);
+  border-bottom: 1px solid var(--c-border); font-size: var(--fs-small); font-weight: 700; color: var(--c-text);
+}
+.member-group:first-child { margin-top: 0; }
+.chat-member { padding: var(--sp-1) 0; line-height: 1.5; overflow-wrap: anywhere; }
+
+/* ============ メッセージ（職員・保護者で共通） ============ */
+.msg { margin-bottom: var(--sp-4); }
+.msg .meta { margin-bottom: var(--sp-1); font-size: var(--fs-small); color: var(--c-text-sub); font-variant-numeric: tabular-nums; }
+/* 送信者が職員か保護者か。同じ氏名の職員と保護者を見分ける（GitHub Issue #141）。字で示し、角は付けない */
+.msg .meta .sender-role {
+  display: inline-block; margin: 0 var(--sp-1); padding: 0 6px;
+  border: 1px solid var(--c-border-weak); border-radius: 0; background: transparent; color: var(--c-text);
+}
+/*
+ * 吹き出し：押せるもの（長押し・右クリックで操作の一覧が開く）なので、角を丸める。話し手の側の角だけ小さくして向きを示す。
+ * 相手のものは白の地、自分のものは淡い地。位置（自分は右）と名前（「私」）でも見分けられる
+ */
+.msg .bubble {
+  display: inline-block; max-width: min(80%, 36rem);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border-weak);
+  border-radius: 16px 16px 16px 4px;
+  white-space: pre-wrap; word-break: break-word;
+  line-height: 1.6; text-align: left;
+}
+.msg.mine { text-align: right; }
+.msg.mine .bubble { background: var(--c-primary-soft); border-radius: 16px 16px 4px 16px; }
+.msg .read { margin-top: var(--sp-1); font-size: var(--fs-small); color: var(--c-text-weak); font-variant-numeric: tabular-nums; }
+/* 取り消したメッセージ。日本語の斜体は読みにくいため、色と点線の枠で示す */
+.msg .bubble.retracted { color: var(--c-text-weak); font-style: normal; background: transparent; border-style: dashed; border-color: var(--c-border); }
+/* 配布物の掲載の知らせの「園からの配布物を開く」：吹き出しの中に、罫線で区切ったリンクの行として置く */
+.msg .shared-card {
+  display: flex; align-items: center; min-height: var(--tap-min); margin-top: var(--sp-2); padding: var(--sp-1) 0 0;
+  border: 0; border-top: 1px solid var(--c-border-weak); border-radius: 0; background: transparent;
+  color: var(--c-link); font-weight: 700; text-decoration: underline; text-underline-offset: .2em;
+}
+
+/* 操作の案内（右クリック・長押し）。見ただけでは気づけないので、先頭で知らせる（GitHub Issue #103）。罫線の下に静かに置く */
+.message-hint, .guardian-message-hint {
+  margin: 0 0 var(--sp-4); padding-bottom: var(--sp-2); border-bottom: 1px solid var(--c-border-weak);
+  font-size: var(--fs-small); line-height: 1.6; color: var(--c-text-sub);
+}
+.chat3 .msg { position: relative; }
+.guardian-message-list .msg { position: relative; }
+.msg .bubble.pressable { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.msg .bubble.pressable:active { background: var(--c-surface-head); }
+.msg.mine .bubble.pressable:active { background: var(--c-primary); }
+.msg .bubble.pressable:focus-visible,
+.msg .bubble.has-menu:focus-visible { outline: 4px solid var(--c-focus); outline-offset: 2px; box-shadow: 0 0 0 2px var(--c-focus-ring); }
+/* 指で操作する端末では、長押しの間に文字の選択や既定のメニューが出ないようにする（右クリック・長押しの決め 2026-10-29） */
+@media (pointer: coarse) {
+  .msg .bubble.has-menu,
+  .msg .bubble.pressable { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+}
+
+/* リアクション：押せる大きさ（44px）と、隣との間 8px（タッチの条件 (2-0 (4))、GitHub Issue #215）を保つ。押せるチップなので角を丸める */
+.reactions { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-1); }
+.msg.mine .reactions { justify-content: flex-end; }
+.reaction {
+  min-height: 44px; min-width: 44px; padding: 0 var(--sp-3);
+  border: 1px solid var(--c-border); border-radius: 22px; background: var(--c-surface);
+  font-weight: 400; font-variant-numeric: tabular-nums;
+}
+.reaction.mine { border-color: var(--c-primary-deep); border-width: 2px; background: var(--c-primary-soft); font-weight: 700; }
+.reaction.add { color: var(--c-text-sub); font-size: var(--fs-small); }
+
+/*
+ * 操作の一覧（リアクション・編集・取消）：吹き出しの上に重ねて出す。重ねて出すものなので、影ではなく太い枠で境目を示す。
+ * 上下の位置は画面側が決める（GuardianChatScreen.tsx）。PC の右クリックでは、右クリックした位置に出す（secondaryAction.ts の keepInViewport）
+ */
+.msg-menu-wrap { position: absolute; left: 0; z-index: 5; max-width: 100%; }
+.msg.mine .msg-menu-wrap { left: auto; right: 0; }
+.msg .msg-menu-wrap.at-cursor { position: fixed; right: auto; bottom: auto; z-index: 50; width: max-content; max-width: calc(100vw - 16px); }
+.msg-menu {
+  display: inline-flex; flex-direction: column; gap: var(--sp-2);
+  max-width: 100%; padding: var(--sp-2);
+  background: var(--c-surface); border: 2px solid var(--c-border-strong); border-radius: 12px;
+  box-shadow: none;
+  text-align: left;
+}
+/* 一覧の中のボタンどうしの間も 8px（タッチの条件 (2-0 (4))、GitHub Issue #215） */
+.msg-menu-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.msg-menu-row .btn-sm { min-height: 44px; flex: 1; white-space: nowrap; }
+
+/* ============ 保護者のチャット：連絡先の一覧と1つの部屋（スマートフォン・1列） ============ */
+.guardian-chat-list, .guardian-chat-thread { max-width: 44rem; }
+.chat-title { margin: 0 0 var(--sp-3); font-size: 1.75rem; line-height: 1.35; letter-spacing: 0; }
+
+/* 連絡先の行：箱で囲まず、罫線で区切る。行の全体を押せる。右に「未読 n」の字と進む印 */
+.guardian-room-list { overflow: visible; background: transparent; border: 0; border-top: 1px solid var(--c-border); border-radius: 0; }
+.guardian-room-list + .guardian-room-list { margin-top: var(--sp-5); }
+.guardian-room-link {
+  box-sizing: border-box; width: 100%; min-height: 60px; display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-1); border: 0; border-bottom: 1px solid var(--c-border-weak); border-radius: 0;
+  background: transparent; color: var(--c-text); text-align: left; font-size: 1.125rem; font-weight: 700; line-height: 1.4; text-decoration: none;
+}
+.guardian-room-link:last-child { border-bottom: 1px solid var(--c-border-weak); }
+@media (hover: hover) {
+  .guardian-room-link:hover:not(:disabled) { border-color: var(--c-border-weak); background: var(--c-surface-sub); color: var(--c-text); text-decoration: none; }
+}
+.guardian-room-link:active:not(:disabled) { background: var(--c-surface-head); }
+.guardian-room-trailing { display: inline-flex; align-items: center; gap: var(--sp-2); flex: none; color: var(--c-text); }
+.guardian-room-trailing > .icon { color: var(--c-text-sub); }
+/* 未読は、何の数かを字で書く（札だけにしない）。藍の太字 */
+.chat-unread { color: var(--c-primary-ink); font-size: 1rem; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.guardian-chat-list .guardian-contact-note { padding-top: var(--sp-5); max-width: 40em; }
+
+/* 部屋：戻るボタンと部屋の名前を罫線の上に置き、下にメッセージ、いちばん下に入力欄 */
+.guardian-thread-heading { padding: 0 0 var(--sp-3); border-bottom: 1px solid var(--c-border); margin-bottom: 0; gap: var(--sp-2); }
+.guardian-thread-heading h1 { margin: 0; font-size: 1.375rem; line-height: 1.4; letter-spacing: 0; }
+.guardian-message-list { flex: 1; padding-top: var(--sp-4); }
+.guardian-message-compose { background: var(--c-surface); border-top: 1px solid var(--c-border); }
+.guardian-message-compose .muted { line-height: 1.6; }
+
+/* ============ 配布物（保護者・職員） ============ */
+.handout-row { justify-content: space-between; text-align: left; gap: var(--sp-2); }
+.handout-title { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; flex: 1; flex-wrap: wrap; }
+/* 題名が長くて折り返しても、「開く」は1行のまま右に置く */
+.handout-row > .muted { flex: none; white-space: nowrap; }
+
+/* 保護者：月ごとに、見出しの罫線と行の罫線で分ける。箱で囲まない */
+.chat-handouts { gap: var(--sp-4); max-width: 44rem; }
+.chat-handouts .chat-back { align-self: flex-start; margin-left: calc(var(--sp-3) * -1); }
+.chat-handouts .chat-filter { max-width: 20rem; }
+.chat-month > h2 { margin: 0; padding-bottom: var(--sp-2); border-bottom: 1px solid var(--c-border); font-size: 1.25rem; line-height: 1.4; }
+.chat-month .guardian-record-list { margin-top: 0; border-top: 0; }
+button.guardian-record-link {
+  box-sizing: border-box; width: 100%; min-height: 60px; padding: var(--sp-2) var(--sp-1);
+  background: none; border: 0; border-bottom: 1px solid var(--c-border-weak); border-radius: 0;
+  font: inherit; font-weight: 400; cursor: pointer; text-align: left;
+}
+@media (hover: hover) {
+  button.guardian-record-link:hover:not(:disabled) { border-color: var(--c-border-weak); background: var(--c-surface-sub); text-decoration: none; }
+}
+.guardian-record-link .handout-title { padding: var(--sp-1) 0; }
+.guardian-record-link .icon { color: var(--c-text-sub); }
+
+/* 配布物を開いたときの表示：ファイルの代わりの紙。点線の枠で「実物ではない」ことを示す。押せるものではないので角は付けない */
+.handout-preview {
+  border: 1px dashed var(--c-border); border-radius: 0;
+  padding: var(--sp-4); text-align: center; background: var(--c-surface);
+}
+.handout-preview .name { font-weight: 700; word-break: break-all; }
+
+/* 職員の配布物・グループ編成・誤送信対応：カードで囲まず、上の罫線と余白で区切る。表は横にはみ出すときだけ枠の中で送る */
+.chat-sheet { margin-bottom: var(--sp-5); padding-top: var(--sp-3); border-top: 1px solid var(--c-border); }
+.chat-sheet:has(> table.list) { overflow-x: auto; scroll-padding-inline: 6px; }
+.chat-sheet > h2, .chat-sheet > h3 { margin-bottom: var(--sp-3); }
+
+/* ============ タブレット縦向き：横向きと同じ構成のまま、各領域の幅だけを詰める（積み直さない） ============ */
+@media (max-width: 900px) {
+  .chat3 { grid-template-columns: 172px minmax(0, 1fr) 128px; }
+  .chat-pane > h2 { padding-left: var(--sp-3); padding-right: var(--sp-3); }
+  .chat-scroll { padding: var(--sp-3); }
+  .chat-compose { padding-left: var(--sp-3); padding-right: var(--sp-3); }
+  .channel { padding: var(--sp-1) var(--sp-2); }
+  /* 「保護者との個人チャット」の見出しが「ト」だけ次の行に落ちないよう、余白と字間だけを詰める（文字の大きさは変えない） */
+  .channel-group { padding-left: var(--sp-2); padding-right: var(--sp-1); letter-spacing: 0; }
+  /* 一覧が 172px に狭まるので、絞り込みの左右の余白もチャンネルの行と同じ 8px に詰める */
+  .channel-search { padding-left: var(--sp-2); padding-right: var(--sp-2); }
+  .msg .bubble { max-width: 92%; }
+}
+
+/* スマートフォンの幅では、吹き出しを幅いっぱいに近づける */
+@media (max-width: 479px) {
+  .guardian-message-list .msg .bubble { max-width: 90%; }
+  .chat-title { font-size: 1.5rem; }
+}
+
+/* 動きは使っていない。押したときの地の変化は、動きを減らす設定のときも一瞬のまま */
+@media (prefers-reduced-motion: reduce) {
+  .channel, .guardian-room-link, .msg .bubble, .reaction { transition: none; }
+}
+
+/* 強制色：塗りで示している「現在地」「自分の吹き出し」「選んだリアクション」を、枠の色でも示す */
+@media (forced-colors: active) {
+  .channel.current { border-left-color: Highlight; }
+  .msg.mine .bubble { border-color: Highlight; }
+  .reaction.mine { border-color: Highlight; }
+  .msg-menu { border-color: CanvasText; }
+}

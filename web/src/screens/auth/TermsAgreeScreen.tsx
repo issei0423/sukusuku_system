@@ -44,7 +44,7 @@ export default function TermsAgreeScreen({ readOnly }: { readOnly?: boolean }) {
   // メニューから開いたとき（同意済みの規約を読み返すだけ）
   if (readOnly) {
     return (
-      <div>
+      <div className="adm adm-narrow">
         <div className="page-head"><h1>利用規約</h1></div>
         <section className="card">
           <div className="terms-box" tabIndex={0} aria-label="利用規約の本文" style={{ maxHeight: 480 }}>{terms.data?.body ?? '読み込んでいます…'}</div>
@@ -58,6 +58,7 @@ export default function TermsAgreeScreen({ readOnly }: { readOnly?: boolean }) {
 
   return (
     <PublicLayout wide>
+      <div className="adm-public">
       <h1 style={{ marginBottom: 12 }}>利用規約への同意</h1>
       {/* 初めてログインした人にも出る画面である。「改定しました」とだけ書かない（GitHub Issue #126）。誤りではないので知らせの帯（見直し m7a-02） */}
       <Alert soft>
@@ -80,6 +81,7 @@ export default function TermsAgreeScreen({ readOnly }: { readOnly?: boolean }) {
             const top = user && user.role !== '3' ? '/staff-top' : '/';
             await logout(); navigate(top);
           }}><LogoutIcon />同意せずログアウトする</button>
+      </div>
       </div>
     </PublicLayout>
   );

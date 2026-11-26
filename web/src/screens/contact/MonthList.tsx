@@ -32,7 +32,7 @@ export default function MonthList({ childId, initialMonth, onPick, onClose }: {
   const { data, error, loading } = useAsync(() => api.contactMonth(user!, childId, month), [user?.account_id, childId, month]);
 
   return (
-    <section className="card contact-section contact-month" aria-labelledby="contact-month-title">
+    <section className="contact-section contact-month" aria-labelledby="contact-month-title">
       <div className="row">
         <h2 id="contact-month-title">月の一覧</h2>
         <div className="spacer" />

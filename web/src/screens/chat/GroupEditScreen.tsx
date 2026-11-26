@@ -86,7 +86,7 @@ export default function GroupEditScreen() {
       {error && <div style={{ marginBottom: 16 }}><Alert>{error}</Alert></div>}
       {accounts.error && <div style={{ marginBottom: 16 }}><ErrorBox text={accounts.error} /></div>}
 
-      <section className="card">
+      <section className="chat-sheet">
         {groups.loading && <Loading />}
         {groups.error && <ErrorBox text={groups.error} />}
         {groups.data?.length === 0 && <Empty text="目的別グループはまだありません。" />}

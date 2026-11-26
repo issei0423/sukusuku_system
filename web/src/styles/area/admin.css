@@ -1,0 +1,242 @@
+/*
+ * UI 一新（2026-11-26）：管理の画面の見た目（紙の連絡帳に寄せる）
+ * 対象：園児（一覧・登録・確認・CSV）・アレルギー一覧・年度更新・職員／保護者アカウント・招待コード・操作ログ・設定・
+ *       行事カレンダー（職員・保護者）・新規登録・パスワード変更・利用規約・保護者メニューのダイアログ（園児の追加・AI のオプトアウト）
+ * 典拠：基本設計書「画面基本構成」(3-5) の「優しい黄色」のテーマ。見た目の元は、2026-11-26 に持ち主が頼んだ作り直しの計画（保護者ホームを見本にする）。
+ *
+ * 決まり：箱で囲まず、罫線と余白で分ける。角は押せるものにだけ付ける。影は使わない。見出しの上の小さなラベルは置かない。
+ *   管理の画面は一覧と入力が主なので、表は罫線の行で詰め、入力は1列で迷わない並びにする。
+ * 色・間隔は tokens.css の --c-* と --sp-* だけを使う（値は決めない。トークンが紙の連絡帳の色に変わればそのまま従う）。
+ * 守るもの：押せる大きさ 44px・ボタンと入力欄の高さ 48px・字 16px 以上・フォーカスの印・forced-colors の手当て・
+ *   指したときの見た目は (hover: hover) だけ・状態を色だけで示さない。
+ *
+ * 【仮置き】線の太さ・余白・列の幅など、ここの値はどれも設計の決定ではない（web/仮置き値.md「管理の画面の見た目」）。
+ * 範囲の目印：職員の画面の根は .adm、未ログインの入口の画面の中身は .adm-public。ほかの画面の規則は上書きしない。
+ */
+
+/* ============ 職員の管理の画面（.adm）============ */
+
+/* 見出しの行：下に罫線を1本。h1 の下に、塗りの色（ひよこ黄）の太い線を引く。字には色を付けない */
+.adm .page-head { margin-bottom: var(--sp-4); padding-bottom: var(--sp-3); border-bottom: 1px solid var(--c-border-weak); }
+.adm h1, .adm h2, .adm h3 { font-family: var(--font-display, var(--font)); }
+.adm .page-head > h1 { padding-bottom: 2px; border-bottom: 4px solid var(--c-filled); }
+.adm h2 { margin: 0 0 var(--sp-3); font-size: 1.25rem; line-height: 1.5; }
+/* 表の上の見出しの行（CSV の取込内容）は、h1 の行ではないので罫線も黄の線も引かない */
+.adm .card .page-head { padding-bottom: 0; border-bottom: 0; }
+.adm .card .page-head > h2 { margin: 0; }
+
+/* 区画：箱で囲まず、上に罫線を1本引く。最初の区画は線なし */
+.adm .card {
+  background: transparent; border: 0; border-top: 1px solid var(--c-border-weak); border-radius: 0;
+  padding: var(--sp-4) 0; margin: 0;
+}
+.adm .page-head + .card, .adm .card:first-child { border-top: 0; padding-top: 0; }
+.adm .card > h2:first-child { margin-top: 0; }
+.adm .card:has(> .alert:only-child) { border-top: 0; }
+/* 画面の終わりの注意書き（.note）：罫線の下に、少し小さく置く */
+.adm .note { margin: var(--sp-4) 0 0; padding-top: var(--sp-3); border-top: 1px solid var(--c-border-weak); }
+.adm .note > .muted { max-width: 40em; }
+.adm-count { margin-top: var(--sp-2); }
+
+/* 絞り込みの行：枠で囲まず、欄を並べるだけ */
+.adm .filterbar { gap: var(--sp-3) var(--sp-4); }
+
+/* ---- 表：罫線の行で詰める ---- */
+/*
+ * 見出し行は、字を補助の色の太字にして、下に太い線（2px）を引く。行は細い罫線で区切る。縞模様は付けない。
+ * 見出しの地は、本文の地と同じ色で塗りつぶす（透かすと、横に送って端が隠れた見出しの字の地を axe が決めきれない。app.css の決まり）。
+ * 左端は区画の左にそろえる（字の余白を足さない）。行の上下は 8px に詰める（ボタンのある行は、ボタンの 44px で高さが決まる）
+ */
+.adm table.list thead th {
+  padding: var(--sp-2) var(--sp-2); background: var(--c-bg);
+  border-bottom: 2px solid var(--c-border); color: var(--c-text-sub); font-weight: 700;
+}
+.adm table.list td, .adm table.list tbody th { padding: var(--sp-2); }
+.adm table.list tr > :first-child { padding-left: 0; }
+/* 行をまたぐセルのある表（アレルギー一覧・招待コード）は、2行目からの先頭のセル（コードなど）の左をほかの行の同じ列にそろえる */
+.adm table.list:has(td[rowspan]) tr > :first-child:not([rowspan], th) { padding-left: var(--sp-2); }
+.adm table.list tbody tr:last-child > * { border-bottom: 1px solid var(--c-border-weak); }
+.adm table.list tbody tr:not(:has(~ tr > td[rowspan])) > td[rowspan] { border-bottom: 1px solid var(--c-border-weak); }
+/* 行をまたぐセルの園児名は、太字で目立たせる */
+.adm table.list td[rowspan] { font-weight: 700; }
+
+/* 確認の表（園児情報の確認）：見出し行のない「項目 ／ 値」の2列。左を項目名にする */
+.adm table.adm-confirm th {
+  width: 9em; background: transparent; border-bottom: 1px solid var(--c-border-weak);
+  color: var(--c-text-sub); font-weight: 600; white-space: nowrap;
+}
+.adm table.adm-confirm td { border-bottom: 1px solid var(--c-border-weak); }
+
+/* ---- 入力：1列で、上から順に ---- */
+.adm-narrow { max-width: 46rem; }
+.adm-form.adm-narrow { max-width: 40rem; }
+.adm-pw.adm-narrow { max-width: 30rem; }
+.adm-form .stack { gap: var(--sp-4); }
+.adm-form .card > h2 { margin-bottom: var(--sp-2); }
+/* 1件ぶん（アレルギーの対象・症状・対応）：左に太い罫線（ノートの余白の線）を引き、欄を縦に並べる。削除は件の最後 */
+.adm-entry {
+  display: grid; align-items: start; gap: var(--sp-3);
+  padding: var(--sp-2) 0 var(--sp-2) var(--sp-3); border-left: 4px solid var(--c-border-weak);
+}
+.adm-entry > button { justify-self: start; }
+/* 1行ぶん（既往歴）：欄と削除を1行に */
+.adm-entry-line { flex-wrap: nowrap; }
+.adm-entry-line > input { flex: 1 1 auto; min-width: 0; }
+.adm-entry-line > button { flex: none; }
+/* 画面の終わりの操作：罫線の下に、右へ寄せて並べる */
+.adm-form-actions { margin-top: var(--sp-4); padding-top: var(--sp-4); border-top: 1px solid var(--c-border-weak); }
+
+/* ---- CSV の誤り ---- */
+/* 誤りの字は 700（前は screens.css） */
+.csv-error { color: var(--c-alert); font-weight: 700; }
+
+/* ============ 設定（screens/admin/settings。詳細設計書「設定画面（管理者）」(2-14)）============ */
+.settings-screen { max-width: 60rem; }
+.settings-section { display: grid; gap: var(--sp-4); }
+.settings-field { display: grid; gap: var(--sp-2); margin: 0; padding: 0; border: 0; }
+.settings-field > label, .settings-field > legend { padding: 0; font-weight: 600; }
+.settings-field input[type="number"] { max-width: 12em; min-height: var(--tap-min); }
+.settings-field p { margin: 0; }
+.settings-choices { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+/* 選ぶ項目：押せるものなので角（8px）と枠を付ける。選んでいるものは、ラジオの印に加えて、枠の色と地の色を変える */
+.settings-choice {
+  display: inline-flex; align-items: center; gap: var(--sp-1); min-height: var(--tap-min); min-width: var(--tap-min); padding: 0 var(--sp-3);
+  border: 2px solid var(--c-border); border-radius: 8px; background: var(--c-surface); cursor: pointer;
+}
+.settings-choice:has(input:checked) { border-color: var(--c-link); background: var(--c-primary-soft); }
+.settings-diff { margin: 0 0 var(--sp-2); padding-left: 1.2em; }
+.settings-save { margin-top: var(--sp-3); padding-top: var(--sp-4); border-top: 1px solid var(--c-border-weak); }
+/* 保存したことの知らせ：左に太い線。字で「保存しました」と書くので、色だけには頼らない */
+.settings-saved { margin: 0 0 var(--sp-4); padding-left: var(--sp-3); border-left: 4px solid var(--c-link); font-weight: 700; }
+.settings-choice-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; border-top: 1px solid var(--c-border-weak); }
+.settings-choice-list li { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; padding: var(--sp-2) 0; border-bottom: 1px solid var(--c-border-weak); }
+.settings-choice-list input, .settings-table input { min-height: var(--tap-min); }
+/* 欄は残りの幅をとり、上へ・下へ・消すは同じ行の右に並べる */
+.settings-choice-list li > input { flex: 1 1 14rem; width: auto; min-width: 0; }
+.settings-choice-list button { min-height: var(--tap-min); min-width: var(--tap-min); }
+.settings-table { table-layout: auto; }
+.settings-table td, .settings-table th { vertical-align: top; }
+.settings-table input[type="text"], .settings-table input[type="number"] { max-width: 16em; }
+.settings-table p { margin: var(--sp-1) 0 0; }
+.settings-key { display: block; }
+/* 長い既定値・説明は語の途中でも折り返し、表を箱の幅に収める。説明の列は 10rem より細くしない（前は 72px になり、1字ずつ折れて行が 200px の高さになった） */
+.settings-table td { overflow-wrap: anywhere; }
+.settings-table td:nth-child(4) { min-width: 10rem; }
+
+/* ============ 保護者アカウントの紐づく園児の行（screens/master/GuardianAccountsScreen.tsx）============ */
+/* 並んだボタンの間は 8px（「タッチの条件」(2-0 (4))）。「紐づけを戻す」の違いの文は、行の幅いっぱいの次の段に置く */
+.guardian-link-row { gap: var(--sp-2); }
+.guardian-link-hint { flex-basis: 100%; margin: 0; }
+
+/* ============ 招待コードの配布用の出力（screens/master/InvitationCodesScreen.tsx）============ */
+/* 見出し（お子さまのお名前・招待コード・登録の手順）は 14px の太字、手順は本文（16px・行間 1.7）。1枚ずつ切り分けるので、切り取り線（破線）で囲む */
+.adm .card.invite-sheet { padding: var(--sp-4); border: 2px dashed var(--c-border); border-radius: 0; }
+.adm .card.invite-sheet:first-child { padding-top: var(--sp-4); border-top: 2px dashed var(--c-border); }
+.invite-sheet-label { color: var(--c-text-sub); font-size: var(--fs-small); font-weight: 600; line-height: calc(20 / 14); }
+.invite-sheet-name { margin-bottom: var(--sp-2); font-size: 1.125rem; font-weight: 700; }
+.invite-sheet-code { font-family: monospace; font-size: 1.375rem; letter-spacing: .08em; }
+.invite-sheet-steps { margin-top: var(--sp-2); }
+.invite-sheet-steps ol { margin: var(--sp-1) 0 0; padding-left: 1.4em; line-height: 1.7; }
+
+/* ============ 月のカレンダー（components/MonthCalendar.tsx。行事カレンダー）============ */
+/*
+ * 【仮置き】設計に定めが無い（web/仮置き値.md「行事カレンダーの動き」）。
+ * 日のボタンは 44px 以上、7列は table-layout: fixed で幅を等分し、375px でも横にはみ出さない（min-width: 0 で縮める）。
+ * 格子は罫線の行で分け、日のボタンは枠を持たない。今日：藍の枠＋太字＋下線。選んだ日：塗りボタンの色（aria-pressed）。予定のある日：数の印
+ */
+.cal { display: grid; gap: var(--sp-3); }
+.cal .contact-date { flex-wrap: nowrap; }
+.cal-title { font-family: var(--font-display, var(--font)); font-size: 1.375rem; line-height: 1.5; }
+.cal-today-row { display: flex; justify-content: flex-start; }
+.cal-grid { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.cal-grid th {
+  padding: var(--sp-2) 0; border-bottom: 2px solid var(--c-border);
+  font-weight: 700; font-size: var(--fs-small); color: var(--c-text-sub); text-align: center;
+}
+.cal-grid td { padding: var(--sp-1) 0; border-bottom: 1px solid var(--c-border-weak); }
+.cal-day {
+  width: 100%; min-width: 0; min-height: 56px; padding: var(--sp-1) 0;
+  flex-direction: column; gap: 2px; justify-content: flex-start;
+  border: 2px solid transparent; border-radius: 8px; background: transparent;
+  color: var(--c-text); font-weight: 400;
+}
+.cal-day.is-today { border-color: var(--c-link); font-weight: 700; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.cal-day[aria-pressed="true"] { background: var(--c-filled); border-color: var(--c-filled); color: var(--c-on-filled); font-weight: 700; }
+.cal-day.is-today[aria-pressed="true"] { border-color: var(--c-on-filled); }
+@media (hover: hover) {
+  .cal-day:hover:not(:disabled):not([aria-pressed="true"]) { background: var(--c-state-hover); border-color: var(--c-border-weak); }
+  .cal-day[aria-pressed="true"]:hover:not(:disabled) { background: var(--c-filled-hover); }
+}
+.cal-num { line-height: 1.3; }
+.cal-count {
+  min-width: 20px; padding: 0 var(--sp-1); border-radius: 10px; background: var(--c-primary); color: var(--c-primary-ink);
+  font-size: var(--fs-small); font-weight: 600; line-height: 20px;
+}
+.cal-count::before { content: attr(data-count); }
+.cal-day[aria-pressed="true"] .cal-count { background: var(--c-on-filled); color: var(--c-filled); }
+
+/* 選んだ日の予定：箱にしない。罫線の行で、時刻・題名・対象を並べる */
+.cal-events { list-style: none; margin: 0; padding: 0; display: grid; border-top: 1px solid var(--c-border-weak); }
+.cal-event { display: grid; gap: var(--sp-1); padding: var(--sp-3) 0; border-bottom: 1px solid var(--c-border-weak); }
+.cal-event-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-3); }
+.cal-event-time { font-weight: 700; font-variant-numeric: tabular-nums; }
+.cal-event-title { font-weight: 700; overflow-wrap: anywhere; }
+.cal-event-note { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--c-text-sub); }
+.cal-event-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.cal-time-row { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
+
+/* 職員：左に月の格子、右に選んだ日の予定。900px 未満の縦向きでも並びは変えず、幅だけを詰める。狭すぎるとき（720px 未満）だけ縦に重ねる */
+.cal-split { display: grid; grid-template-columns: minmax(20rem, 28rem) minmax(0, 1fr); gap: 0 var(--sp-6); align-items: start; }
+.cal-split > .card { border-top: 0; padding-top: 0; }
+.cal-day-panel > h2 { margin-bottom: var(--sp-3); }
+.cal-day-panel .empty { padding: var(--sp-3) 0; text-align: left; }
+@media (max-width: 719px) {
+  .cal-split { grid-template-columns: minmax(0, 1fr); }
+  .cal-split > .cal-day-panel { border-top: 1px solid var(--c-border-weak); padding-top: var(--sp-4); }
+}
+
+/* 保護者（390px・1列）：見出し・月の格子・選んだ日の予定を、罫線で区切って縦に並べる */
+.cal-guardian-head { display: grid; gap: var(--sp-2); padding-bottom: var(--sp-3); }
+.cal-guardian-head > .btn-quiet:first-child { justify-self: start; margin-left: calc(var(--sp-3) * -1); }
+.cal-guardian-head h1 { margin: 0; font-size: 1.75rem; line-height: 1.4; }
+.cal-guardian-head p { margin: 0; color: var(--c-text-sub); }
+.cal-page-guardian .cal-month { padding: var(--sp-3) 0 var(--sp-4); border-top: 1px solid var(--c-border-weak); }
+.cal-page-guardian .cal-day-panel { padding: var(--sp-4) 0; border-top: 1px solid var(--c-border-weak); }
+.cal-page-guardian .cal-day-panel > h2 { margin: 0 0 var(--sp-3); font-size: 1.25rem; line-height: 1.5; }
+
+/* ============ 未ログインの入口の画面（新規登録・パスワード変更（一時パスワード）・利用規約への同意）============ */
+/* 入口の枠（app.css の .public-card）は、この3画面のときだけ枠と地をなくし、紙の上に罫線で書く */
+.public-shell:has(.adm-public) { background: var(--c-surface); }
+.public-card:has(.adm-public) { border: 0; border-radius: 0; background: transparent; padding-inline: 0; }
+.adm-public h1 { font-family: var(--font-display, var(--font)); }
+.adm-public .page-head { padding-bottom: 0; margin-bottom: var(--sp-3); }
+/* 手順の区切り：箱にせず、上に罫線。まだ進めない手順は補助の色にし、字（「(2)」など）で順を示す */
+.adm-public .step { margin: 0; padding: var(--sp-4) 0; border: 0; border-top: 1px solid var(--c-border-weak); border-radius: 0; }
+.adm-public .step.locked { background: transparent; color: var(--c-text-sub); }
+.adm-public .step .step-title { font-family: var(--font-display, var(--font)); font-size: 1.125rem; font-weight: 700; }
+/* 規約の本文：箱にせず、上下に罫線。長いときは中だけ送る（キーボードでも送れるよう tabindex は TSX にある） */
+.adm .terms-box, .adm-public .terms-box {
+  padding: var(--sp-3) 0; background: transparent; border: 0; border-block: 1px solid var(--c-border-weak); border-radius: 0;
+}
+.adm-public .stack { gap: var(--sp-4); }
+
+/* ============ 保護者のメニューのダイアログ（components/AddChildDialog.tsx・AiOptOutDialog.tsx）============ */
+.adm-dialog-form { gap: var(--sp-4); }
+/* 「確かめた」あとの段：上に罫線。確かめた園児の名前は、左に太い線を引いて目立たせる（字で「〜さんですね」と書く） */
+.adm-dialog-step { margin-top: var(--sp-4); padding-top: var(--sp-4); border-top: 1px solid var(--c-border-weak); }
+.adm-verified { margin: 0; padding-left: var(--sp-3); border-left: 4px solid var(--c-link); font-size: 1.125rem; line-height: 1.6; }
+/* AI のオプトアウト：園児ごとに1行。罫線の行で、行ぜんぶが押せる（label） */
+.adm-optout-list { display: grid; border-top: 1px solid var(--c-border-weak); }
+.adm-optout-row { min-height: 56px; padding: var(--sp-2) 0; border-bottom: 1px solid var(--c-border-weak); }
+
+/* ============ forced-colors ============ */
+/* 地が使えない色指定の画面で、選んだ日・選んだ項目が分からなくなるので、枠で示す */
+@media (forced-colors: active) {
+  .cal-day[aria-pressed="true"] { border: 3px solid Highlight; }
+  .cal-day.is-today { border-color: LinkText; }
+  .settings-choice:has(input:checked) { border-color: Highlight; border-width: 3px; }
+  .adm .page-head > h1 { border-bottom-color: CanvasText; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .adm *, .adm-public *, .cal-page-guardian * { transition: none !important; animation: none !important; }
+}

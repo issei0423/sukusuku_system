@@ -53,7 +53,7 @@ export default function ChildConfirmScreen() {
   };
 
   return (
-    <div style={{ maxWidth: 620 }}>
+    <div className="adm adm-narrow adm-form">
       <div className="page-head"><h1>この内容で{mode === 'create' ? '登録' : '更新'}します</h1></div>
 
       {error && <div style={{ marginBottom: 16 }}><Alert>{error}</Alert></div>}
@@ -88,7 +88,7 @@ export default function ChildConfirmScreen() {
       )}
 
       <section className="card">
-        <table className="list">
+        <table className="list adm-confirm">
           <tbody>
             <tr><th scope="col" style={{ width: 150 }}>園児ID</th><td>{form.child_id}</td></tr>
             <tr><th scope="col">氏名</th><td>{form.child_name}</td></tr>
@@ -128,7 +128,7 @@ export default function ChildConfirmScreen() {
         </table>
       </section>
 
-      <div className="row-end">
+      <div className="row-end adm-form-actions">
         {/* 入力していた内容を持って戻る。戻るたびに打ち直させない（GitHub Issue #120） */}
         <button disabled={busy}
           onClick={() => navigate(

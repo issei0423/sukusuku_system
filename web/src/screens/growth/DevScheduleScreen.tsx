@@ -69,7 +69,7 @@ export default function DevScheduleScreen() {
   };
 
   return (
-    <div style={{ maxWidth: 940 }}>
+    <div className="care-page" style={{ maxWidth: 940 }}>
       <div className="page-head page-head-fields">
         <Link className="btn btn-quiet btn-sm" to="/staff/growth"><BackIcon />発達チェック一覧へ</Link>
         <h1>スケジュール設定</h1>

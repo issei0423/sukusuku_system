@@ -244,25 +244,26 @@ export default function GuardianChatScreen() {
   if (!current) {
     return (
       <div className="guardian-chat-list">
-        <div className="guardian-page-intro">
-          <span className="guardian-eyebrow">園とのやりとり</span>
-          <h1>チャット・お知らせ</h1>
-          <p>連絡先を選んで、メッセージを確認できます。</p>
-          {/* 園だより・献立表など、あとから見返すもの。職員のチャット画面の「園からの配布物」と同じ置き方 */}
-          <Link className="btn btn-sm guardian-handout-button" to="/guardian/handouts">園からの配布物</Link>
-        </div>
+        <h1 className="chat-title">チャット・お知らせ</h1>
         <div className="guardian-room-list">
           {rooms.data?.map((r) => (
             <button key={r.room.chat_room_id} className="guardian-room-link"
               onClick={() => setRoomId(r.room.chat_room_id)}>
               <span>{labelFor(r.room.room_type, r.room.room_name, personalCount)}</span>
               <span className="guardian-room-trailing">
-                {/* 読み上げは「未読 n」（見直し m7b-13） */}
-                {r.unread > 0 && <span className="badge"><span className="sr-only">未読 </span>{r.unread}</span>}
+                {/* 何の数かを字で書く。読み上げも同じ「未読 n」（見直し m7b-13） */}
+                {r.unread > 0 && <span className="chat-unread">未読 {r.unread}</span>}
                 <ForwardIcon />
               </span>
             </button>
           ))}
+        </div>
+        {/* 園だより・献立表など、あとから見返すもの。連絡先の行と同じ置き方で、少し離して並べる（職員のチャット画面の「園からの配布物」と同じ行き先） */}
+        <div className="guardian-room-list">
+          <Link className="guardian-room-link" to="/guardian/handouts">
+            <span>園からの配布物</span>
+            <span className="guardian-room-trailing"><ForwardIcon /></span>
+          </Link>
         </div>
         <div className="guardian-contact-note">
           急なご連絡はお電話でお願いします。通知が届かない場合があります。

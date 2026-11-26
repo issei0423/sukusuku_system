@@ -123,7 +123,7 @@ export default function ChildInputScreen() {
   if (existing.error) return <ErrorBox text={existing.error} />;
 
   return (
-    <div style={{ maxWidth: 620 }}>
+    <div className="adm adm-narrow adm-form">
       <div className="page-head">
         <Link className="btn btn-quiet btn-sm" to="/staff/children"><BackIcon />園児一覧へ</Link>
         <h1>園児情報の{mode === 'create' ? '登録' : '編集'}</h1>
@@ -216,7 +216,7 @@ export default function ChildInputScreen() {
         </div>
         <div className="stack">
           {form.allergies.map((a, i) => (
-            <div className="row" key={i}>
+            <div className="row adm-entry" key={i}>
               <Field label="対象" style={{ flex: 1 }}>
                 <input type="text" value={a.target_food} placeholder="卵"
                   onChange={(e) => set('allergies', form.allergies.map((x, j) => j === i ? { ...x, target_food: e.target.value } : x))} />
@@ -242,7 +242,7 @@ export default function ChildInputScreen() {
         <h2>既往歴</h2>
         <div className="stack">
           {form.medical_histories.map((m, i) => (
-            <div className="row" key={i}>
+            <div className="row adm-entry-line" key={i}>
               <input type="text" value={m} style={{ flex: 1 }}
                 onChange={(e) => set('medical_histories', form.medical_histories.map((x, j) => j === i ? e.target.value : x))} />
               <button className="btn-sm btn-quiet" onClick={() => set('medical_histories', form.medical_histories.filter((_, j) => j !== i))}>削除</button>
@@ -252,7 +252,7 @@ export default function ChildInputScreen() {
         </div>
       </section>
 
-      <div className="row-end">
+      <div className="row-end adm-form-actions">
         <button onClick={() => navigate('/staff/children')}><CloseIcon />やめる</button>
         <button className="btn-primary" onClick={next} disabled={busy}>確認へ進む<ForwardIcon /></button>
       </div>

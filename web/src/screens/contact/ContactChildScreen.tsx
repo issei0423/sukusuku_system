@@ -199,7 +199,7 @@ export default function ContactChildScreen() {
 
       <div className="contact-child-body">
         <div className="contact-child-page">
-          <section className="card contact-section" aria-labelledby="child-home-title">
+          <section className="contact-section" aria-labelledby="child-home-title">
             <h2 id="child-home-title">家庭から</h2>
             {!h ? <p className="empty">{TEXT.noHomeYet}</p> : (
               <div className={`contact-home-cell is-${homeState}`}>
@@ -226,13 +226,13 @@ export default function ContactChildScreen() {
             )}
           </section>
 
-          <section className="card contact-section" aria-labelledby="child-today-title">
+          <section className="contact-section" aria-labelledby="child-today-title">
             <h2 id="child-today-title">{isToday ? 'きょうのようす' : 'この日のようす'}（朝から）</h2>
             <TodayTimeline page={data} viewer="staff" onFix={canFix ? openFix : undefined} keepInGrowth={{ canFix, onChanged: page.refresh }} />
             {!canFix && data.can_write && <p className="muted">{TEXT.fixAskAdmin}</p>}
           </section>
 
-          <section className="card contact-section" id="facility" aria-labelledby="child-facility-title">
+          <section className="contact-section" id="facility" aria-labelledby="child-facility-title">
             <h2 id="child-facility-title">園から</h2>
             {data.facility && !editingFacility && (
               <>
@@ -257,7 +257,7 @@ export default function ContactChildScreen() {
           </section>
         </div>
 
-        <aside className="card contact-child-record" aria-labelledby="child-record-title">
+        <aside className="contact-child-record" aria-labelledby="child-record-title">
           <h2 id="child-record-title">記録する</h2>
           {!canRecord ? (
             <p className="muted">

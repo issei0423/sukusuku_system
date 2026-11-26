@@ -14,6 +14,11 @@ import '../../src/styles/tokens.css';
 import '../../src/styles/app.css';
 import '../../src/styles/screens.css';
 import '../../src/styles/guardian.css';
+import '../../src/styles/area/contact.css';
+import '../../src/styles/area/chat.css';
+import '../../src/styles/area/care.css';
+import '../../src/styles/area/admin.css';
+import '../../src/styles/area/diary.css';
 
 if (!import.meta.env.DEV || backend !== 'mock') throw new Error('レビューは dev + mock 専用です');
 const scenario = scenarios.find((s) => s.id === new URLSearchParams(location.search).get('scene'));

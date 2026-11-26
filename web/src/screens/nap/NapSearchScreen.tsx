@@ -97,7 +97,7 @@ export default function NapSearchScreen() {
   };
 
   return (
-    <div>
+    <div className="care-page">
       <div className="page-head">
         <Link className="btn btn-quiet btn-sm" to="/staff/nap"><BackIcon />午睡チェックへ</Link>
         <h1>午睡記録の検索</h1>

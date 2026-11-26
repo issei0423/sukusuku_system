@@ -75,7 +75,9 @@ describe('共通部品の読み上げとキーボード操作', () => {
 
 describe('押せるものどうしの間は 8px 以上（詳細設計書「全画面に共通する部品と決まり」(2-0 (4)) の「タッチの条件」、GitHub Issue #215）', () => {
   // jsdom は画面の CSS を読まず並べ方を測れないため、規則の文で見る（画面で測るのは tests/responsive/a11y-keyboard-contact.spec.ts の touchProblems）
-  const screensCss = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../src/styles/screens.css'), 'utf8');
+  const stylesDir = resolve(dirname(fileURLToPath(import.meta.url)), '../src/styles');
+  // チャットの規則は area/chat.css へ移した（2026-11-26 の UI 作り直し）。画面ごとの規則は両方のファイルで探す
+  const screensCss = ['screens.css', 'area/chat.css'].map((f) => readFileSync(resolve(stylesDir, f), 'utf8')).join('\n');
   const gapOf = (selector: string) => {
     const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     return screensCss.match(new RegExp(`(?:^|\\n)${escaped}\\s*\\{[^}]*\\bgap:\\s*([^;]+);`))?.[1].trim() ?? null;
