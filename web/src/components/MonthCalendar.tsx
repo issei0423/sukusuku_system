@@ -4,7 +4,7 @@
  *
  * 前の月・次の月・今月へ移れる。予定のある日には件数の印を出し、今日と選んだ日は形でも分ける（色だけにしない）。
  * 月の移動の形は、連絡帳の月の一覧（screens/contact/MonthList.tsx）に合わせた。
- * 日のボタンは 44px 以上。スマートフォン（375px）でも横にはみ出さない（styles/screens.css の .cal-*）。
+ * 日のボタンは 44px 以上。スマートフォン（375px）でも横にはみ出さない（styles/area/admin.css の .cal-*）。
  */
 import { PrevIcon, ForwardIcon } from './icons';
 import { lastDayOfMonth } from '../api/util';
@@ -79,7 +79,8 @@ export default function MonthCalendar({ month, selected, today, counts, onMonthC
                       aria-label={label} aria-pressed={isSelected} aria-current={isToday ? 'date' : undefined}
                       onClick={() => onSelect(date)}>
                       <span className="cal-num">{Number(date.slice(8))}</span>
-                      {n > 0 && <span className="cal-count" aria-hidden="true">{n}</span>}
+                      {/* 件数の字は DOM に置かず、CSS（data-count）で描く。ボタンの名前（aria-label）に、見えている字（日付の数）だけが含まれるようにするため（WCAG 2.5.3。axe の label-content-name-mismatch） */}
+                      {n > 0 && <span className="cal-count" aria-hidden="true" data-count={n} />}
                     </button>
                   </td>
                 );

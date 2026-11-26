@@ -107,7 +107,7 @@ export default function StaffCalendarScreen() {
   const set = (patch: Partial<Form>) => setForm((f) => (f ? { ...f, ...patch } : f));
 
   return (
-    <div style={{ maxWidth: 1000 }}>
+    <div className="adm cal-page">
       <div className="page-head">
         <Link className="btn btn-quiet btn-sm" to="/staff"><BackIcon />ダッシュボードへ</Link>
         <h1>行事カレンダー</h1>
@@ -118,13 +118,15 @@ export default function StaffCalendarScreen() {
       {error && <div style={{ marginBottom: 16 }}><Alert>{error}</Alert></div>}
       {loadError && <ErrorBox text={loadError} />}
 
-      <section className="card">
+      {/* 左に月の格子、右に選んだ日の予定。幅が足りないとき（900px 未満）は縦に重ねる */}
+      <div className="cal-split">
+      <section className="card cal-month">
         {loading && !data && <Loading />}
         <MonthCalendar month={month} selected={selected} today={today()}
           counts={countByDate(data?.events ?? [])} onMonthChange={changeMonth} onSelect={setSelected} />
       </section>
 
-      <section className="card" aria-labelledby="cal-day-title">
+      <section className="card cal-day-panel" aria-labelledby="cal-day-title">
         <h2 id="cal-day-title">{selected ? `${dayLabel(selected)}の予定` : '予定'}</h2>
         {!selected && <Empty text="日を選ぶと、その日の予定が出ます。" />}
         {selected && data && dayEvents.length === 0 && <Empty text="この日の予定はありません。" />}
@@ -149,6 +151,7 @@ export default function StaffCalendarScreen() {
           </ul>
         )}
       </section>
+      </div>
 
       <section className="note">
         <div className="muted">

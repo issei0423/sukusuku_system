@@ -45,7 +45,7 @@ export default function SettingsScreen() {
   };
 
   return (
-    <div className="settings-screen">
+    <div className="adm settings-screen">
       <div className="page-head">
         <h1>設定</h1>
       </div>

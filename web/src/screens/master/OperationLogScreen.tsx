@@ -72,7 +72,7 @@ export default function OperationLogScreen() {
   };
 
   return (
-    <div>
+    <div className="adm">
       <div className="page-head">
         <h1>操作ログ</h1>
         <div className="spacer" />

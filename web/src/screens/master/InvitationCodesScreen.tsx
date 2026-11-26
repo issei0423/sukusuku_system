@@ -140,7 +140,7 @@ export default function InvitationCodesScreen() {
   });
 
   return (
-    <div style={{ maxWidth: 1000 }}>
+    <div className="adm">
       <div className="page-head">
         <h1>招待コード</h1>
         <div className="spacer" />
@@ -331,8 +331,8 @@ export default function InvitationCodesScreen() {
           </div>
           <div className="stack">
             {printable.map((r) => (
-              <div key={r.invitation_code_id} className="card" style={{ margin: 0 }}>
-                {/* 字の大きさは screens.css の .invite-sheet-*（13px をやめて 14px 以上に。見直し 2026-10-31 の r2a-11） */}
+              <div key={r.invitation_code_id} className="card invite-sheet">
+                {/* 字の大きさは area/admin.css の .invite-sheet-*（13px をやめて 14px 以上に。見直し 2026-10-31 の r2a-11） */}
                 <div className="invite-sheet-label">お子さまのお名前</div>
                 <div className="invite-sheet-name">{childLabel(r.child_id, r.child_name, r.class_id)}</div>
                 <div className="invite-sheet-label">招待コード</div>

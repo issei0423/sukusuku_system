@@ -110,6 +110,7 @@ export default function SignUpScreen() {
 
   return (
     <PublicLayout wide>
+      <div className="adm-public">
       <div className="page-head">
         <Link className="btn btn-quiet btn-sm" to="/"><BackIcon />戻る</Link>
         <h1>新規登録</h1>
@@ -177,6 +178,7 @@ export default function SignUpScreen() {
           </button>
         </fieldset>
       </form>
+      </div>
     </PublicLayout>
   );
 }

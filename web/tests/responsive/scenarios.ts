@@ -1,5 +1,5 @@
 export type ReviewRole = 'public' | 'teacher' | 'admin' | 'guardian';
-export type ReviewAction = 'temperature' | 'temperature-decimal' | 'nap-warning' | 'nap-save' | 'guardian-menu';
+export type ReviewAction = 'temperature' | 'temperature-decimal' | 'nap-warning' | 'nap-save' | 'guardian-menu' | 'guardian-add-child';
 export interface Scenario {
   id: string;
   name: string;
@@ -68,10 +68,14 @@ export const scenarios: Scenario[] = [
   { id: 'invitations', name: '招待コード', path: '/staff/admin/invitations', role: 'admin' },
   { id: 'guardian-accounts', name: '保護者アカウント', path: '/staff/admin/guardian-accounts', role: 'admin' },
   { id: 'logs', name: '操作ログ', path: '/staff/admin/logs', role: 'admin' },
+  { id: 'settings', name: '設定', path: '/staff/admin/settings', role: 'admin' },
+  { id: 'calendar-staff', name: '行事カレンダー（職員）', path: '/staff/calendar', role: 'teacher' },
   { id: 'guardian-home', name: '保護者ホーム', path: '/guardian', role: 'guardian' },
   { id: 'guardian-menu', name: '保護者メニュー', path: '/guardian', role: 'guardian', action: 'guardian-menu' },
   { id: 'guardian-chat', name: '保護者チャット一覧', path: '/guardian/chat', role: 'guardian' },
   { id: 'guardian-handouts', name: '保護者配布物', path: '/guardian/handouts', role: 'guardian' },
   { id: 'guardian-growth', name: '保護者の成長の記録', path: '/guardian/growth/C001', role: 'guardian' },
+  { id: 'guardian-add-child', name: '保護者のお子さまの追加', path: '/guardian', role: 'guardian', action: 'guardian-add-child' },
+  { id: 'guardian-calendar', name: '保護者の行事カレンダー', path: '/guardian/calendar', role: 'guardian' },
   { id: 'guardian-password', name: '保護者パスワード変更', path: '/guardian/password', role: 'guardian' },
 ];
