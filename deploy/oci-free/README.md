@@ -2,6 +2,8 @@
 
 公開先は大阪リージョンの既存 VM `sukusuku`（Ubuntu 24.04、`VM.Standard.E2.1.Micro`）の <https://217.142.235.206>。**使う・見る・デモする・確かめるのはこの公開先だけ**で、手元でサーバを立てるのは開発とテストのため（`MOCKUP.md`「使うとき」）。URL はこの文書だけに書き、ほかの文書からはここを指す。Go サーバは `127.0.0.1:8080` だけで待ち受け、Caddy が 80/443 を公開する。OCI Bastion 経由の SSH だけを使い、22 番をインターネットには公開しない。
 
+AWS の VM への自動デプロイ（`deploy-aws.yml`）は `deploy/aws/README.md` にある。
+
 ## 更新の流れ
 
 1. `mockup-go-react` への push で [deploy-oci.yml](../../.github/workflows/deploy-oci.yml) が動く。PR とほかのブランチでは公開しない。
