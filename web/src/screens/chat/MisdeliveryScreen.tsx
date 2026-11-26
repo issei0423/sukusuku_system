@@ -64,7 +64,7 @@ export default function MisdeliveryScreen() {
       <div className="page-head"><h1>誤送信対応の記録</h1></div>
 
       {/* 未記録のもの */}
-      <section className="card">
+      <section className="chat-sheet">
         <h2>対応の記録がない取消メッセージ</h2>
         {pending.loading && <Loading />}
         {pending.data?.length === 0 && <Empty text="対応の記録がない取消メッセージはありません。" />}
@@ -95,7 +95,7 @@ export default function MisdeliveryScreen() {
       </section>
 
       {/* 記録済みのもの */}
-      <section className="card">
+      <section className="chat-sheet">
         <h2>記録済み</h2>
         {records.loading && <Loading />}
         {records.error && <ErrorBox text={records.error} />}

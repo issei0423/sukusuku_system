@@ -91,7 +91,7 @@ export default function StaffHandoutsScreen() {
 
       {error && <div style={{ marginBottom: 16 }}><Alert>{error}</Alert></div>}
 
-      <section className="card">
+      <section className="chat-sheet">
         <div className="filterbar">
           <Field label="種類">
             <select value={type} onChange={(e) => setType(e.target.value)}>
@@ -102,7 +102,7 @@ export default function StaffHandoutsScreen() {
         </div>
       </section>
 
-      <section className="card">
+      <section className="chat-sheet">
         {loading && <Loading />}
         {loadError && <ErrorBox text={loadError} />}
         {data?.length === 0 && <Empty text="掲載中の配布物はありません。" />}
