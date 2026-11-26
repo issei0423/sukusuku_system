@@ -53,200 +53,15 @@
 }
 
 /*
- * 連絡帳（screens/contact/）。午睡チェックの行の「ねた・おきた」は area/care.css へ移した
  * 典拠：詳細設計書「全画面に共通する部品と決まり」(2-0)（押せるものは 44×44px 以上、隣り合うボタンの間は 8px 以上、
  *      表の行の高さは 56px 以上）・「配置の基準」(2-0 (5))（職員 1180×820・保護者 幅 360px）、
  *      「連絡帳（クラス）画面」(2-2)・「保護者ホーム」(2-5)・「連絡帳画面（保護者）」(2-6)
  * 体温・午睡の長さに判定の色を付けない。
  */
 
-/* 保護者：連絡帳画面（幅 360px で1列） */
-/* 区画の間は grid の間（24px。ほかの画面のカードの間と同じ）だけにし、カードの下の余白は足さない（見直し m7a-21。前は約 40px） */
-.contact-page { max-width: 720px; margin: 0 auto; display: grid; gap: var(--sp-5); }
-.contact-page > .card, .contact-child-page > .card { margin-bottom: 0; }
-/*
- * 上に止めた見出し（園児名と日付）。M3 の上のバーの形：狭い幅（1023px まで）は「ホームへ」・見出し・日付の操作を段に重ね
- * （medium top app bar）、PC の幅（1024px 以上）は「ホームへ」と見出しを1行に並べる（small top app bar）。
- * 前は止めたとき、スクロールする枠の上の余白（24px。768px 以上は 32px）が透け、後ろの中身が見出しの上にのぞいていた
- * （見直し 2026-10-31 の r2b-05）。午睡チェックのタイマーと同じく、枠の上端（余白の外）で止め、見出しの地で覆う。
- * 画面の始めに置いたときは、余白の分だけ上へずらし、止める前と後で見出しが動かないようにする（知らせの帯が上にあるときはずらさない）。
- * 下に outline-variant の線を引き、後ろを流れる中身と分ける。見出しの高さは --contact-head-h に入る（#212 の scroll-padding-top）。
- * ページ全体を送る PC の幅は、上に止めたヘッダの下で止める（高さは外枠の --chrome-guardian-header-h。64px）
- */
-.contact-page-head {
-  --contact-head-bleed: var(--sp-5);
-  position: sticky; top: calc(var(--contact-head-bleed) * -1); z-index: 2;
-  display: grid; gap: var(--sp-2);
-  padding: var(--sp-2) 0;
-  background: var(--c-bg); border-bottom: 1px solid var(--c-border-weak);
-}
-.guardian-main > .contact-page:first-child > .contact-page-head { margin-top: calc(var(--contact-head-bleed) * -1); }
-@media (min-width: 768px) and (max-width: 1023px) {
-  .contact-page-head { --contact-head-bleed: var(--sp-6); }
-}
-@media (min-width: 1024px) {
-  .contact-page-head {
-    --contact-head-bleed: 0px; top: var(--chrome-guardian-header-h);
-    grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: var(--sp-3);
-    padding: var(--sp-4) 0;
-  }
-  .contact-page-head > :not(a, h1) { grid-column: 1 / -1; }
-}
-/*
- * 上に止めた見出しと下に止めた「家庭からを送る」の帯の下に、フォーカスが隠れないよう、スクロールする枠の上下に余白を取る（GitHub Issue #212）。
- * 高さは GuardianContactScreen・HomeForm が測って --contact-head-h・--contact-actions-h に入れる（src/stickyInset.ts。文書の根に入れ、列も受け継ぐ）。
- * フォーカスの枠（outline 4px・outline-offset 2px）も見えるよう、その幅を足す。
- * ページ全体を送る PC の幅（1024px 以上）は、送る枠が文書（html）なので html に取る。上はヘッダの高さも足す（見直し m7b-05）
- */
-.guardian-main:has(.contact-page-head) { scroll-padding-top: calc(var(--contact-head-h, 0px) + 6px); }
-.guardian-main:has(.contact-form-actions) { scroll-padding-bottom: calc(var(--contact-actions-h, 0px) + 6px); }
-@media (min-width: 1024px) {
-  html:has(.guardian-shell .contact-page-head) { scroll-padding-top: calc(var(--chrome-guardian-header-h) + var(--contact-head-h, 0px) + 6px); }
-  html:has(.guardian-shell .contact-form-actions) { scroll-padding-bottom: calc(var(--contact-actions-h, 0px) + 6px); }
-}
-/* 見出しは h1 の字の段のまま（M3 の headline-small。前は 22px に上書きしていた。r2a-12） */
-.contact-page-head h1 { margin: 0; }
-/* 「‹ ホームへ」（テキストボタン）も押せるものとして高さ 44px 以上にする（詳細設計書「全画面に共通する部品と決まり」(2-0) の「タッチの条件」(4)、GitHub Issue #215） */
-.contact-page-head > a { display: flex; align-items: center; gap: var(--sp-2); min-height: 44px; justify-self: start; }
-.contact-date { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
-.contact-date button { min-height: 44px; min-width: 44px; }
-/*
- * 前の日・次の日の ‹ › の絵（PrevIcon・ForwardIcon）は、形の左右に余白を持つ（24 の枠のうち中の 3 割ほど）。
- * 間を詰めても見た目の間は他のボタンの 8px と変わらないので、間を 0 に、左右の余白を 12px にする。
- * 保護者の 480px の列で「前の日・日付・次の日・月の一覧」を1行に保つため（【仮置き】web/仮置き値.md「アイコン」）
- */
-.contact-date button:has(> .icon) { gap: 0; padding-left: var(--sp-3); padding-right: var(--sp-3); }
-/* 月の一覧（MonthList.tsx）。1日1行。押す所は 44px 以上 */
-.contact-month-days { list-style: none; margin: var(--sp-2) 0 0; padding: 0; display: grid; gap: var(--sp-1); }
-.contact-month-days button { width: 100%; min-height: 44px; text-align: left; }
-.contact-section { display: grid; gap: var(--sp-3); }
-/* 区画の見出しは h2 の字の段のまま（M3 の title-large。保護者の画面は w4 の m4、職員の連絡帳（園児）画面は m5 で上書きを消した。r2a-12） */
-.contact-section h2 { margin: 0; }
-.contact-home-lines { display: grid; gap: var(--sp-1); margin: 0; }
-.contact-home-lines > div { display: grid; grid-template-columns: 6.5em 1fr; gap: var(--sp-2); }
-.contact-home-lines dt { font-weight: 600; color: var(--c-text-weak); }
-.contact-home-lines dd { margin: 0; overflow-wrap: anywhere; }
-/*
- * 印の行（お迎え 変更あり・連絡事項）は、名前も値も on-surface の字・700 にし、ほかの行（名前は on-surface-variant・600、値は細字）と太さで分ける。
- * 前は名前の色が on-secondary-container で、ほかの行の on-surface-variant と 1.00:1 になり、違いが「●」だけだった（見直し m7c-03。【仮置き】）
- */
-.contact-home-lines .is-marked :is(dt, dd) { color: var(--c-text); font-weight: 700; }
-.contact-confirmed { font-weight: 600; color: var(--c-approved); }
-.contact-call { font-weight: 600; }
-/*
- * 入力欄の近くに常に出す固定の文（職員の体温の一覧の「記録すると保護者に数字が出ます。…」、保護者の連絡事項の「お薬・食事の除去のご依頼は…」）。
- * 判定の色を付けず、太字だけで目に入るようにする【仮置き】（web/仮置き値.md）
- */
-.contact-note { margin: 0; font-weight: 600; }
-.contact-wide-button { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); width: 100%; min-height: 48px; }
-.contact-home-form { display: grid; gap: var(--sp-3); }
-/* 朝ごはん・きげん・お迎えの選択肢どうしの間は 8px（「タッチの条件」(2-0 (4))、GitHub Issue #215）。1行に2つ並べる */
-.contact-choice-options { flex-wrap: wrap; gap: var(--sp-2); }
-.contact-choice-options .nap-choice { flex: 1 1 calc(50% - var(--sp-2)); min-width: 7em; }
-.contact-field { display: grid; gap: var(--sp-1); }
-/* ボタンの並びを2段に重ねた欄（連絡帳（園児）画面の食事の区分と量）は、段の間を 8px にする（「タッチの条件」(2-0 (4))、GitHub Issue #215） */
-.contact-field:has(> .contact-picks + .contact-picks) { gap: var(--sp-2); }
-/* 欄の名前（排せつ・体温・食事など）も 16px の 600（r2a-04） */
-.contact-field > span:first-child { font-weight: 600; font-size: var(--fs-body); }
-.contact-field select, .contact-field input { min-height: 44px; }
-.contact-field textarea { display: block; width: 100%; min-height: 96px; }
-.contact-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); }
-.contact-count { justify-self: end; font-size: var(--fs-small); }
-.contact-pickup { display: grid; gap: var(--sp-2); padding-left: var(--sp-2); border-left: 3px solid var(--c-border-weak); }
-.contact-error { color: var(--c-alert); font-weight: 700; }
 /* CSV 一括登録の行の誤り。誤りの字は 700 のまま（前はインライン。見直し m7a-11） */
 .csv-error { color: var(--c-alert); font-weight: 700; }
-/* 送るボタンは画面の下端に止める（詳細設計書「配置（幅 360px）」(2-6 (2))） */
-.contact-form-actions {
-  position: sticky; bottom: 0; display: flex; gap: var(--sp-2); padding: var(--sp-2) 0;
-  background: var(--c-surface); border-top: 1px solid var(--c-border-weak);
-}
-/*
- * 前は帯が、スクロールする枠の下の余白（32px）の上で止まり、帯の下に後ろの選択肢がのぞいて、「家庭からを送る」のすぐ下に
- * 別の押せるものが見えていた（見直し 2026-10-31 の r2b-04）。家庭からの欄がある画面では枠の下の余白を 0 にし、帯を枠の下端に付ける。
- * 帯の高さはそのまま --contact-actions-h に入る（#212 の scroll-padding-bottom）。ページ全体を送る PC の幅（1024px 以上）は前から余白が 0
- */
-@media (max-width: 1023px) {
-  .guardian-main:has(.contact-form-actions) { padding-bottom: 0; }
-}
-.contact-form-actions button { min-height: 48px; }
-.contact-form-actions .btn-primary { flex: 1; }
-.contact-timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); }
-.contact-timeline li { display: flex; align-items: baseline; gap: var(--sp-2); }
-.contact-timeline time { flex: 0 0 3.2em; font-variant-numeric: tabular-nums; font-weight: 600; }
-.contact-timeline .is-nap { font-weight: 600; font-size: var(--fs-body); }
-.contact-timeline-heading { display: block; font-size: var(--fs-small); }
-.contact-timeline-text { flex: 1; overflow-wrap: anywhere; }
-.contact-new { flex: none; }
-.contact-nap { font-size: var(--fs-body); font-weight: 600; margin: 0; }
-.contact-nap-note { font-size: var(--fs-small); }
 
-/* 保護者ホームの「きょう」 */
-.contact-today-card { display: grid; gap: var(--sp-3); }
-.contact-today-block { display: grid; gap: var(--sp-1); }
-.contact-today-block h3 { margin: 0; }
-.contact-today-block p { margin: 0; }
-.contact-latest { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1); }
-.contact-latest time { font-weight: 600; margin-right: var(--sp-1); }
-/* 導線はリストの行（app.css の .guardian-panel-link）。行の間は線だけで分ける */
-.contact-today-links { display: grid; gap: 0; }
-
-/* 職員：連絡帳（クラス）画面。園児名の列を左に止め、表の中だけを横に送る（詳細設計書 (2-2 (2))） */
-.contact-class-head { flex-wrap: wrap; gap: var(--sp-3); }
-.contact-inline-field { display: inline-flex; align-items: center; gap: var(--sp-1); }
-.contact-inline-field > span { white-space: nowrap; }
-/* 並べ方の選ぶ欄は中身の幅にする（幅いっぱいに伸びると「写真を送る」が次の段へ落ちた。見直し 2026-10-31 の r2b-12） */
-.contact-inline-field select { min-height: 44px; width: auto; }
-.contact-class-error { margin: var(--sp-2) 0; }
-/*
- * 表を横に送ったとき、フォーカスした部品が左に止めた園児名の列の下に隠れないよう、送る先を列の幅ぶんずらす（GitHub Issue #212）。
- * 列の幅は ContactClassScreen が測って --contact-col-child-w に入れる。フォーカスの枠の幅（6px）を足す。
- * 部品がすでに枠の中（列の下や右端）にあるときも送るのは useRevealFocus（src/stickyInset.ts。見直し m7b-07）。
- * 右端まで送ったときに枠が切れないよう、右も 6px 内側にする
- */
-.contact-table-wrap { overflow-x: auto; scroll-padding-left: calc(var(--contact-col-child-w, 0px) + 6px); scroll-padding-right: 6px; }
-/*
- * 【仮置き】右に送れるあいだは右端に内側の影を出し、表を送っているあいだは左に止めた園児名の列の右端に影を出す
- * （ContactClassScreen が data-more・data-scrolled を付ける。どのブラウザでも出す。地の画像にしないのは .card:has(> table.list) と同じ理由）。
- * 見直し 2026-10-31 の r2b-01（web/仮置き値.md）
- */
-.contact-table-wrap[data-more="true"] { box-shadow: inset -12px 0 12px -12px rgba(0, 0, 0, .1); }
-.contact-table-wrap[data-scrolled="true"] .contact-col-child { box-shadow: 6px 0 6px -4px rgba(0, 0, 0, .1); }
-/* 【仮置き】列の幅は、園児・給食を詰め、排せつを広げて、表の幅を増やさない（見直し 2026-10-31 の r2b-01・r2b-03。web/仮置き値.md） */
-.contact-class-table { min-width: 1040px; }
-/*
- * セルは上寄せ・上下 8px／左右 12px（DADS「縦方向は上寄せ」）。table.list の真ん中寄せに負けないよう、table.list を付けて強くする
- * （前は詳細度が低く効いていなかった。見直し 2026-10-31 の r2b-02）。ほかの表の縦の寄せは変えない
- */
-table.list.contact-class-table :is(th, td) { vertical-align: top; padding: var(--sp-2) var(--sp-3); height: 56px; }
-.contact-class-table .contact-col-child {
-  position: sticky; left: 0; z-index: 1; min-width: 7em; background: var(--c-bg); text-align: left;
-}
-/* 見出しの行も、左に止めた「園児」の列も、本文の地にする（この表は箱に入れず本文の地に直に置くので、白の帯にしない。地は透かさない） */
-.contact-class-table thead th { background: var(--c-bg); }
-/* 行の見出しの園児名は、同じ行の選択肢より小さくしない（16px の太字。見直し 2026-10-31 の r2a-08） */
-.contact-class-table tbody .contact-col-child { font-size: var(--fs-body); }
-/*
- * 表の中のリンク（園児名・午睡・ひとこと・写真・園から）は、高さ 44px・幅 44px 以上の押す場所にする
- * （「タッチの条件」(2-0 (4)) の 44×44px、GitHub Issue #215。直す前は高さ 20px、「―」は 14×20px だった）。
- * 幅は文字に合わせる（セルいっぱいに広げると、左に止めた園児名の列のリンクへ移ったときに表の送り方が変わり、続く部品が列に半分隠れた）。
- * 件数の列（右寄せ）は、44px の中でも右に寄せる
- */
-.contact-class-table :is(th, td) > a { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; }
-.contact-class-table td.num > a { justify-content: flex-end; }
-/*
- * ひとこと・写真が無いセルと、園からを送っていないセルの文字のボタン「書く」は、セルいっぱい・高さ 44px にする
- * （GitHub Issue #215。直す前は「―」「未送信」の小さなリンクだった。2026-10-19 に決めた）。
- * 上の「幅は文字に合わせる」は左に止めた園児名の列のためで、「書く」は列を止めていない右のほうの列にだけある。
- * 幅の決まっていない列なので、折り返さない（「書」「く」の2行に割れていた）
- */
-.contact-class-table td > a.contact-write { display: flex; width: 100%; justify-content: center; min-height: 44px; white-space: nowrap; }
-.contact-class-table .contact-col-home { width: 240px; min-width: 240px; }
-.contact-home-cell { display: grid; gap: var(--sp-1); }
-.contact-home-cell p { margin: 0; }
-.contact-home-cell .contact-home-lines > div { grid-template-columns: 5.5em 1fr; }
-/* 「確認しました」は行ごとにくり返す操作なので塗らない（DADS のプライマリーボタンは1画面に原則1つ。見直し 2026-10-31 の r2c-03） */
-.contact-confirm-button { min-height: 44px; }
 /*
  * 職員・管理者ダッシュボードの表（見直し 2026-10-31 の r2a-07。w4 の m3）。名前の列を広げ、件数と「開く」の列を詰めて、
  * 「届けること」と「園内のこと」で件数の位置をそろえる。件数は右にそろえ（.num）、1 以上は 600、0 と「ありません」は補足の色の細字。
@@ -258,130 +73,28 @@ table.list.contact-class-table :is(th, td) { vertical-align: top; padding: var(-
 .dashboard-count.is-due { color: var(--c-alert); }
 .dashboard-zero { color: var(--c-text-sub); font-weight: 400; }
 
-/*
- * 連絡帳：きょうのようすの記録（食事・排せつ・体温）と、直す・取り消す、連絡帳（園児）画面
- * 典拠：詳細設計書「タッチの条件」(2-0 (4))（押せるものは 44×44px 以上、隣り合うボタンの間は 8px 以上）・
- *      「連絡帳（クラス）画面」(2-2)・「連絡帳（園児）画面」(2-3)・「食事の列の画面の中の状態」(3-2)（仮は点線の枠）
- * 選んだ状態を持つボタン（aria-pressed。食事の区分と量・直す窓の選び直し）は、午睡の選択肢と同じフィルターチップにする。
- * aria-pressed の無いもの（排せつ・連絡帳（園児）の食事の量・＋体温・定型文・写真・AI の下書き）は、押すと記録や操作が起きるので、
- * ふだんのボタン（全丸・primary の字）のまま。チップ（選ぶもの）とボタン（押すと何かが起きる）を形で見分けられるようにする（w4 の m2）。
- * 体温に判定の色を付けない。
- */
+/* 改行を残す文・結果の表示の中のボタン */
 .pre-wrap { white-space: pre-wrap; }
 .toast .btn-sm { white-space: nowrap; }
-.contact-picks { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
-.contact-pick { min-height: 44px; min-width: 44px; padding: 0 var(--sp-2); }
-/* 【仮置き】チップ（M3 のフィルターチップ）：角 8px・高さ 48px。選ぶ前は白の地・outline の線・on-surface-variant の細字 */
-.contact-pick[aria-pressed] {
-  min-height: 48px; gap: var(--sp-1);
-  border-color: var(--c-border); border-radius: var(--radius); background: var(--c-surface); color: var(--c-text-sub); font-weight: 400;
-}
-@media (hover: hover) {
-  .contact-pick[aria-pressed="false"]:hover:not(:disabled) { background: color-mix(in srgb, var(--c-text-sub) 8%, var(--c-surface)); }
-  .contact-pick[aria-pressed="true"]:hover:not(:disabled) { background: var(--c-primary-hover); border-color: var(--c-primary-hover); }
-  /* 仮に入れた量は、指しても保存済みの地にしない。白に濃い字の色を 8% 重ね、点線の枠を残す（#366 の見直し） */
-  .contact-pick.is-tentative[aria-pressed]:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--c-primary-ink) 8%, var(--c-surface)); border-color: var(--c-primary-ink);
-  }
-}
-/* 選んだもの：secondary-container の地・on-secondary-container の 600 の字とチェックの印 */
-.contact-pick[aria-pressed="true"] {
-  background: var(--c-primary); border-color: var(--c-primary); color: var(--c-primary-ink); font-weight: 600;
-}
-/* 排せつの選択肢は、語の途中で割らない（割れるのは「トイレで／できた」の <wbr> の所だけ。FixDialog.tsx の toiletLabel。r2b-03） */
-.contact-picks.is-toilet .contact-pick { word-break: keep-all; overflow-wrap: anywhere; letter-spacing: 0; }
 /*
- * 食事の量・排せつのボタンは、左右の余白 4px・字間 0 にして、列を詰めても名前を1行に収める
- * （給食の列 12rem（既定の文字で 192px）で「食べない」、排せつの列 17.5rem（280px）で「トイレでできた」が1行に入る。前は余白 8px）
+ * チェックの印（Material Symbols の check。icons.tsx と同じ形）。午睡の選択肢（.nap-choice）の選んだ字の前に置く（M3 の置き方）。
+ * 連絡帳の選んだチップの印は styles/area/contact.css
  */
-.contact-picks:is(.is-meal, .is-toilet) .contact-pick { padding-inline: var(--sp-1); letter-spacing: 0; }
-/* 仮に入れた量（保存していない）は、白の地に濃い点線の枠（「食事の列の画面の中の状態」(3-2)）。チェックの印は付く */
-.contact-pick.is-tentative { border: 2px dashed var(--c-primary-ink); background: var(--c-surface); }
-/*
- * チェックの印（Material Symbols の check。icons.tsx と同じ形）。選んだチップの字の前に置く（M3 の置き方）。
- * 【仮置き】連絡帳（クラス）の表の食事の量は、列の幅（2つ並べて 80px）に印と「食べない」が並ばないので、午睡と同じく字の上に置く
- */
-.nap-choice input:checked + span::before, .contact-pick[aria-pressed="true"]::before {
+.nap-choice input:checked + span::before {
   content: ""; flex: none; width: 18px; height: 18px;
   background-color: currentColor;
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z'/%3E%3C/svg%3E") center / 18px 18px no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z'/%3E%3C/svg%3E") center / 18px 18px no-repeat;
 }
-.contact-class-table .contact-picks.is-meal .contact-pick[aria-pressed="true"] { flex-direction: column; gap: 0; }
-/* 午睡の行と同じく、字の上の印のぶんの高さを選ぶ前から取っておき、字は折り返さない（#366 の見直し） */
-.contact-class-table .contact-picks.is-meal .contact-pick[aria-pressed] { min-height: max(48px, calc(1.3em + 18px + 2px)); white-space: nowrap; }
 @media (forced-colors: active) {
-  .nap-choice input:checked + span::before, .contact-pick[aria-pressed="true"]::before { forced-color-adjust: none; background-color: CanvasText; }
-  .nap-choice input:checked + span, .contact-pick[aria-pressed="true"] { outline: 2px solid CanvasText; outline-offset: -4px; }
+  .nap-choice input:checked + span::before { forced-color-adjust: none; background-color: CanvasText; }
+  .nap-choice input:checked + span { outline: 2px solid CanvasText; outline-offset: -4px; }
 }
-.contact-pick-note { flex-basis: 100%; font-size: var(--fs-small); }
-.contact-picks.is-meal .contact-pick, .contact-picks.is-toilet .contact-pick { flex: 1 1 calc(50% - var(--sp-2)); }
-/* 給食の列は rem で決め、ブラウザの文字を大きくしても「食べない」がチップの外に出ないようにする（見直し m7b-15。字は #368 で折り返さない） */
-.contact-class-table .contact-col-meal { width: 12rem; min-width: 12rem; }
-/* ボタン1つに「トイレでできた」が1行で入る幅（セルの左右 12px を引いて、2つ並べて 1つ 124px） */
-/* 排せつ・体温の列も rem で決め、ブラウザの文字の大きさに合わせて広げる（給食の列と同じ。w4 の m9-F） */
-.contact-class-table .contact-col-toilet { width: 17.5rem; min-width: 17.5rem; }
-.contact-class-table .contact-col-temp { width: 7.5rem; min-width: 7.5rem; }
-/* 記録のボタンと、その下の「（時刻）を直す」・「＋体温」との間は 8px（「タッチの条件」(2-0 (4))、GitHub Issue #215。直す前は 4px） */
-.contact-last { min-height: 44px; margin-top: var(--sp-2); text-align: left; white-space: normal; }
-.contact-temp-add { margin-top: var(--sp-2); }
-/* 食事の区分と「全員ぜんぶ」の段。枠で囲まず、ただの段にする（箱を重ねない。見直し 2026-10-31） */
-.contact-meal-bar {
-  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3);
-  margin: var(--sp-2) 0 var(--sp-3);
-}
-.contact-meal-bar > button { min-height: 44px; }
-.contact-meal-tentative { margin: 0; font-weight: 600; flex: 1 1 320px; }
-.contact-meal-confirm {
-  flex-basis: 100%; display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center;
-  padding: var(--sp-2); background: var(--c-alert-soft); border-radius: var(--radius);
-}
-.contact-meal-confirm button { min-height: 44px; }
-.temperature-picker { display: grid; gap: var(--sp-3); }
-.temperature-grid {
-  display: grid; grid-template-columns: repeat(5, minmax(56px, 1fr)); gap: var(--sp-2);
-  max-height: 50vh; overflow-y: auto; padding: 2px;
-}
-.temperature-grid button { min-height: 48px; font-variant-numeric: tabular-nums; font-weight: 600; }
-.temperature-grid button.is-origin { outline: 2px dashed var(--c-border-strong); outline-offset: -4px; }
-.temperature-manual { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
-.temperature-manual input { min-height: 44px; width: 8em; }
-.temperature-manual button { min-height: 44px; }
-.fix-dialog { display: grid; gap: var(--sp-3); }
-.contact-fix-button { min-height: 44px; flex: none; }
-.contact-hidden { margin-left: var(--sp-2); }
 .child-avatar {
   display: inline-flex; align-items: center; justify-content: center; flex: none; width: 40px; height: 40px; border-radius: 50%;
   background: var(--c-primary-soft); border: 2px solid var(--c-primary-deep); font-weight: 600; color: var(--c-primary-ink);
 }
 .child-avatar.is-lg { width: 56px; height: 56px; font-size: 1.5rem; }
-.contact-temp-row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
-.contact-temp-value { font-size: var(--fs-body); font-weight: 600; }
-/* 連絡帳（園児）画面：左に1日のページ（約 60%）、右に書く欄（約 40%）。縦向きでも並びを変えず幅だけを詰める */
-.contact-child-head { flex-wrap: wrap; gap: var(--sp-3); align-items: center; }
-.contact-back { min-height: 44px; display: inline-flex; align-items: center; gap: var(--sp-2); }
-.contact-child-name { display: flex; align-items: center; gap: var(--sp-2); }
-.contact-child-name h1 { margin: 0; }
-.contact-child-body { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--sp-4); align-items: start; }
-.contact-child-page { display: grid; gap: var(--sp-5); min-width: 0; }
-.contact-child-record { display: grid; gap: var(--sp-3); position: sticky; top: var(--sp-2); }
-.contact-child-record h2 { margin: 0; }
-@media (max-width: 760px) {
-  .contact-child-body { grid-template-columns: 1fr; }
-  .contact-child-record { position: static; }
-}
-
-/*
- * 段2を送る欄（宛先・他児の名前の注意・定型文）
- * 典拠：図/画面詳細図「宛先の表示」(1-3 (1))（宛先は「送る」のすぐ上に大きく）・「他児の名前の注意」(1-3 (3))（当たった語を強調）
- */
-.contact-composer { display: grid; gap: var(--sp-2); }
-.contact-composer textarea { display: block; width: 100%; min-height: 96px; }
-.contact-composer-tools { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
-.contact-composer-tools .contact-count { margin-left: auto; }
-.contact-composer-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
-.contact-composer-actions button { min-height: 48px; }
-.contact-composer-actions .btn-primary { flex: 1; }
 /* AI の下書き（components/AiDraftPanel.tsx。詳細設計書「画面」(8-9)）。押せる大きさは 44px 以上 */
 .ai-draft { display: grid; gap: var(--sp-2); }
 .ai-draft-buttons { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
