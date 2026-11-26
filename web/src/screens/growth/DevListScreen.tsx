@@ -38,7 +38,7 @@ export default function DevListScreen() {
   const near = data?.filter((r) => r.near) ?? [];
 
   return (
-    <div>
+    <div className="care-page">
       <div className="page-head page-head-fields">
         <h1>発達チェック</h1>
         <Field label="クラス">

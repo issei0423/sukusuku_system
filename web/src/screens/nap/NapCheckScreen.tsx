@@ -228,7 +228,7 @@ export default function NapCheckScreen() {
   // 担当クラスの無い一般（フリー）は全クラスを選べ、閲覧のみ（GitHub Issue #127・#279）
   if (classesForUser.length === 0) {
     return (
-      <div>
+      <div className="care-page nap-page">
         <div className="page-head"><h1>午睡チェック</h1></div>
         <section className="card">
           <div className="empty">担当クラスが割り当てられていないため、午睡チェックを行えません。</div>
@@ -238,7 +238,7 @@ export default function NapCheckScreen() {
   }
 
   return (
-    <div>
+    <div className="care-page nap-page">
       {s && <NapTimer startedAt={s.started_at} intervalMinutes={intervalMinutes} rows={rows} nowMs={nowMs}
         ready={!!state.data && !state.loading} />}
 
@@ -269,10 +269,10 @@ export default function NapCheckScreen() {
               記録済み人数／対象人数。1つずつ折り返せるよう、まとまりごとに分ける（狭い幅では次の行へ送る）
             */}
             {s && (<>
-              <span>ねた {stillSleeping.length} 名</span>
-              <span>おきた {wokeCount} 名</span>
-              <span>対象外 {excludedRows.length} 名{excludedReasons.length > 0 && `（${excludedReasons.join('・')}）`}</span>
-              <span>記録済み {recorded} / {rows.length} 名</span>
+              <span className="nap-count">ねた {stillSleeping.length} 名</span>
+              <span className="nap-count">おきた {wokeCount} 名</span>
+              <span className="nap-count">対象外 {excludedRows.length} 名{excludedReasons.length > 0 && `（${excludedReasons.join('・')}）`}</span>
+              <span className="nap-count">記録済み {recorded} / {rows.length} 名</span>
             </>)}
           </div>
           <span className="muted">記録者：{user!.display_name}</span>
@@ -300,7 +300,7 @@ export default function NapCheckScreen() {
       {sessionLoading && <Loading />}
 
       {!sessionLoading && !s && (<>
-        <section className="card">
+        <section className="card nap-start">
           {/* 【仮置き】終えた実施があるときの文（「きょうの午睡チェックは HH:MM に終了しました。」）は設計に【仮置き】で入った（docs の詳細設計書 第1.11版 (2-4 (2))。web/仮置き値.md） */}
           {autoClosed
             ? <Alert>午睡の時間帯を過ぎたため、午睡チェックを自動で終了しました。続けるときは、もう一度開始してください。</Alert>

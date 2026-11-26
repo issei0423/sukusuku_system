@@ -72,5 +72,6 @@ export const scenarios: Scenario[] = [
   { id: 'guardian-menu', name: '保護者メニュー', path: '/guardian', role: 'guardian', action: 'guardian-menu' },
   { id: 'guardian-chat', name: '保護者チャット一覧', path: '/guardian/chat', role: 'guardian' },
   { id: 'guardian-handouts', name: '保護者配布物', path: '/guardian/handouts', role: 'guardian' },
+  { id: 'guardian-growth', name: '保護者の成長の記録', path: '/guardian/growth/C001', role: 'guardian' },
   { id: 'guardian-password', name: '保護者パスワード変更', path: '/guardian/password', role: 'guardian' },
 ];
