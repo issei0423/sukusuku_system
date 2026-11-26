@@ -9,6 +9,10 @@
  * 設計は保護者の画面をスマートフォン・縦向き・シングルカラムとだけ定め、PC で開いたときの見せ方を
  * 決めていない（基本設計書「想定する端末と向き」(3-5)）。PC で開くと 480px の列が中央に出るだけで、
  * メニューも隠れたままになるための提案（web/仮置き値.md）。幅の切り替えは CSS（app.css）で行う。
+ *
+ * 【仮置き】見た目（白の地・ひよこ黄の細い帯・罫線と藍・丸ゴシックの見出し）は styles/guardian.css が、
+ * .guardian-shell の中の色と書体を当て直して決める（web/仮置き値.md「保護者の画面の見た目」）。
+ * ここの部品の並びと、テストの探すクラス名（.guardian-footer・.drawer など）は変えていない。
  */
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';

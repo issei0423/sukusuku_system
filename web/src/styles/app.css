@@ -295,12 +295,11 @@
  * 768px 以上は前のとおり 24px
  */
 .guardian-home { display: flex; flex-direction: column; gap: var(--sp-4); }
-.guardian-home-intro, .guardian-page-intro { padding: 0; }
-.guardian-page-intro { padding-bottom: var(--sp-4); }
+.guardian-page-intro { padding: 0 0 var(--sp-4); }
 /* 小見出しは M3 の label-large（14px・行間 20px・Medium。Medium は 600 で書く。tokens.css の見出しの注） */
 .guardian-eyebrow { display: block; color: var(--c-text-sub); font-size: var(--fs-small); font-weight: 600; line-height: calc(20 / 14); }
-.guardian-home-intro h1, .guardian-page-intro h1 { margin: 0 0 var(--sp-2); }
-.guardian-home-intro p, .guardian-page-intro p { margin: 0; color: var(--c-text-sub); font-size: var(--fs-body); }
+.guardian-page-intro h1 { margin: 0 0 var(--sp-2); }
+.guardian-page-intro p { margin: 0; color: var(--c-text-sub); font-size: var(--fs-body); }
 /*
  * 前の画面へ戻るテキストボタン（「ホームへ」「チャット・お知らせへ」「もどる」）は、矢印を本文の左端にそろえる。
  * ボタンの左の余白（12px）の分だけ左へ出す（押せる範囲と指したときの地は、本文の外の余白にかかる）
@@ -308,23 +307,7 @@
 .contact-page-head > a.btn-quiet,
 .guardian-page-intro > .btn-quiet:first-child,
 .guardian-thread-heading > .btn-quiet:first-child { margin-left: calc(var(--sp-3) * -1); }
-/* ホームの説明文は、スマートフォンでは出さない（見出し「こんにちは」とメニューで足りる。r2b-15） */
-@media (max-width: 767px) {
-  .guardian-home-intro p { display: none; }
-  .guardian-home-intro h1 { margin-bottom: 0; }
-}
-
-.guardian-child-section { display: flex; flex-direction: column; gap: var(--sp-4); }
-.guardian-child-section + .guardian-child-section { padding-top: var(--sp-5); border-top: 1px solid var(--c-border-weak); }
-/* お子さまの箱。名前は h2（M3 の title-large）。上下の余白と絵を詰める（r2b-15） */
-.guardian-child-card {
-  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
-  padding: var(--sp-3) var(--sp-4);
-  background: var(--c-surface); border: 1px solid var(--c-border-weak); border-radius: var(--radius-card);
-}
-.guardian-child-card h2 { margin: 0; }
-.guardian-child-card p { margin: 0; color: var(--c-text-sub); }
-.guardian-child-card img { flex: none; width: 48px; height: 42px; object-fit: contain; }
+/* 保護者ホームの並び（日付・園児名・きょうのようす・入口の行）は styles/guardian.css */
 
 .guardian-home-panel {
   padding: var(--sp-4);
@@ -434,9 +417,6 @@
   .guardian-shell { max-width: 960px; }
   .guardian-main { padding: var(--sp-6) var(--sp-5); }
   .guardian-home { gap: var(--sp-5); }
-  /* お子さまの情報は横いっぱい、その下にチャットと記録を並べる */
-  .guardian-child-section { display: grid; grid-template-columns: 1fr 1fr; align-items: start; gap: var(--sp-5); }
-  .guardian-child-section > .guardian-child-card { grid-column: 1 / -1; }
 }
 
 @media (min-width: 1024px) {

@@ -193,19 +193,21 @@ describe('保護者のログアウト：保存していない入力（#170 の 5
 describe('園からの配布物はチャット・お知らせから開く（職員のチャット画面と同じ形）', () => {
   it('保護者のメニューには「園からの配布物」を置かない', async () => {
     open('/guardian', guardian);
-    await screen.findByRole('heading', { name: 'こんにちは' }, { timeout: 3000 });
+    // 保護者ホームの見出し（h1）は、きょうの日付（「11月26日（水）」）
+    await screen.findByRole('heading', { level: 1, name: /^\d+月\d+日（.）$/ }, { timeout: 3000 });
     const menuLinks = Array.from(document.querySelectorAll('.guardian-sidebar a, .drawer a'))
       .map((a) => a.textContent ?? '');
     expect(menuLinks.some((t) => t.includes('チャット・お知らせ'))).toBe(true);
     expect(menuLinks.some((t) => t.includes('園からの配布物'))).toBe(false);
   });
 
-  it('保護者ホーム：配布物の区画は置かず、「チャット・お知らせ」の区画から配布物の一覧へ行ける', async () => {
+  it('保護者ホーム：配布物の区画は置かず、「チャット・お知らせ」の行の続きの行から配布物の一覧へ行ける', async () => {
     open('/guardian', guardian);
-    const panel = (await screen.findAllByRole('heading', { name: 'チャット・お知らせ' }, { timeout: 3000 }))[0]
-      .closest('section')!;
-    const link = within(panel).getByRole('link', { name: /園からの配布物を見る/ });
+    const link = await screen.findByRole('link', { name: '園からの配布物' }, { timeout: 3000 });
     expect(link.getAttribute('href')).toBe('/guardian/handouts');
+    // 「チャット・お知らせ」の行と同じ入口の行の並びにある
+    const rows = link.closest('.contact-today-links')!;
+    expect(within(rows as HTMLElement).getByRole('link', { name: /チャット・お知らせ/ }).getAttribute('href')).toBe('/guardian/chat');
     expect(screen.queryByRole('heading', { name: '園からの配布物' })).toBeNull();
   });
 

@@ -1,0 +1,273 @@
+/*
+ * 保護者の画面の見た目（紙の連絡帳に寄せる）
+ * 典拠：基本設計書「画面基本構成」(3-5) の「優しい黄色」のテーマ。見た目の元は、2026-11-26 に持ち主が頼んだ作り直しの計画
+ * （保護者ホームを見本にする。外枠も含める）。10-31 の「外枠は画素まで変えない」は、この依頼で持ち主が取り消した。
+ *
+ * 範囲は保護者の側だけ。トークンは .guardian-shell の中に閉じ、職員の画面（:root の値）の見た目は変えない。
+ * 職員の画面へ広げるのは、見本を持ち主が良しとしてから。
+ *
+ * 【仮置き】色・書体・角・固定ボタンなど、ここの値はどれも設計の決定ではない（web/仮置き値.md「保護者の画面の見た目」）。
+ * 守るもの：押せる大きさ 44px・ボタンと入力欄の高さ 48px・字 16px 以上・フォーカスの印（黒 4px と黄 2px）・
+ * forced-colors の手当て・指したときの見た目は (hover: hover) だけ・緊急連絡の帯を常に出すこと。
+ */
+
+/* ============ 色・書体・角のトークン ============ */
+.guardian-shell {
+  /*
+   * 6色。名前は紙の連絡帳から取った。
+   *   紙＝地（クリームにしない） / ひよこ黄＝主ボタンの地・「きょう」の印・ヘッダの細い帯（字には使わない） /
+   *   鉛筆＝本文の字（紙の上で約 14:1。主ボタンの字も同じで、黄の上で約 11:1） / 罫線＝区切りの線（ノートの淡い青） /
+   *   藍＝リンク・「園から」の印・現在地（紙の上で約 9:1） / 赤ペン＝警告・誤りだけ
+   */
+  --g-paper:   #ffffff;
+  --g-yellow:  #ffd23f;
+  --g-ink:     #2e2c28;
+  --g-rule:    #c5d5e6;
+  --g-indigo:  #2c4a78;
+  --g-red:     #b3261e;
+  /* 上の6色から導いた補助の色。補助の字（紙の上で約 7:1）、押せるものの枠（紙の上で約 4.5:1。WCAG 1.4.11 の 3:1 以上）、指したときの地・現在地の地 */
+  --g-ink-sub:      #5c5850;
+  --g-edge:         #66788f;
+  --g-indigo-deep:  #1f3658;
+  --g-wash:         #f3f6fa;
+  --g-wash-strong:  #e6edf7;
+
+  --c-bg:            var(--g-paper);
+  --c-surface:       var(--g-paper);
+  --c-surface-sub:   var(--g-wash);
+  --c-surface-head:  var(--g-wash-strong);
+  --c-border:        var(--g-edge);
+  --c-border-strong: var(--g-edge);
+  --c-border-weak:   var(--g-rule);
+  --c-text:          var(--g-ink);
+  --c-text-sub:      var(--g-ink-sub);
+  --c-text-weak:     var(--g-ink-sub);
+  --c-link:          var(--g-indigo);
+  --c-link-hover:    var(--g-indigo);
+  --c-link-active:   var(--g-indigo-deep);
+
+  /* 主ボタン：ひよこ黄の地に鉛筆の字。指したとき・押したときは鉛筆を 8%・10% 重ねる */
+  --c-filled:        var(--g-yellow);
+  --c-on-filled:     var(--g-ink);
+  --c-filled-hover:  color-mix(in srgb, var(--g-yellow), var(--g-ink) 8%);
+  --c-filled-active: color-mix(in srgb, var(--g-yellow), var(--g-ink) 10%);
+  /* 弱いボタンと選んだもの：藍の字、淡い青の地 */
+  --c-outlined-ink:  var(--g-indigo);
+  --c-state-hover:   color-mix(in srgb, var(--g-indigo) 8%, var(--g-paper));
+  --c-state-press:   color-mix(in srgb, var(--g-indigo) 10%, var(--g-paper));
+  --c-primary:        var(--g-wash-strong);
+  --c-primary-hover:  color-mix(in srgb, var(--g-wash-strong), var(--g-indigo-deep) 8%);
+  --c-primary-active: color-mix(in srgb, var(--g-wash-strong), var(--g-indigo-deep) 10%);
+  --c-primary-soft:   var(--g-wash-strong);
+  --c-primary-faint:  var(--g-wash);
+  --c-primary-deep:   var(--g-indigo);
+  --c-primary-ink:    var(--g-indigo-deep);
+  --c-disabled-container: color-mix(in srgb, var(--g-ink) 12%, transparent);
+  --c-disabled-content:   color-mix(in srgb, var(--g-ink) 38%, transparent);
+
+  /* 警告・誤りは赤ペンだけ */
+  --c-alert:        var(--g-red);
+  --c-on-alert:     var(--g-paper);
+  --c-alert-deep:   #7f1a14;
+  --c-alert-soft:   #fce9e7;
+  --c-alert-hover:  color-mix(in srgb, var(--g-red), var(--g-paper) 8%);
+  --c-alert-active: color-mix(in srgb, var(--g-red), var(--g-paper) 10%);
+
+  /* 外枠（ヘッダ・ドロワー・PC の左の欄・緊急連絡の帯）。白の地に、罫線と藍で描く */
+  --chrome-band:          var(--g-paper);
+  --chrome-current:       var(--g-wash-strong);
+  --chrome-deep:          var(--g-indigo);
+  --chrome-ink:           var(--g-ink);
+  --chrome-surface:       var(--g-paper);
+  --chrome-surface-sub:   var(--g-wash);
+  --chrome-surface-head:  var(--g-wash-strong);
+  --chrome-border:        var(--g-edge);
+  --chrome-border-weak:   var(--g-rule);
+  --chrome-border-strong: var(--g-edge);
+  --chrome-text:          var(--g-ink);
+  --chrome-text-sub:      var(--g-ink-sub);
+  --chrome-link:          var(--g-indigo);
+  --chrome-link-hover:    var(--g-indigo);
+  --chrome-link-active:   var(--g-indigo-deep);
+  --chrome-alert:         var(--g-red);
+  --chrome-radius:        12px;
+
+  /* 角は押せるものにだけ付ける。ボタン 12px・入力欄 8px。箱は囲まない */
+  --radius-button:    12px;
+  --radius-button-sm: 12px;
+  --radius-input:     8px;
+
+  /*
+   * 書体。日付と見出しは丸ゴシック（Zen Maru Gothic・700）、本文は読みやすさのために作られた UD 書体（BIZ UDPGothic・400・700）。
+   * どちらも @fontsource で自前に置く（main.tsx）。外へ通信しない
+   */
+  --font: "BIZ UDPGothic", "Noto Sans JP", -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN",
+          "Yu Gothic UI", "Meiryo", sans-serif;
+  --font-display: "Zen Maru Gothic", "BIZ UDPGothic", "Hiragino Maru Gothic ProN", "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+
+  font-family: var(--font);
+  color: var(--c-text);
+  background: var(--c-bg);
+  /* 列の左右の線は引かない（罫線の色の細い線でも、白の地ではノイズになる） */
+  border-left: 0;
+  border-right: 0;
+}
+/* 列の外（幅が広いとき）の地も白にする。クリームの地にしない */
+html:has(.guardian-shell), body:has(.guardian-shell) { background: #ffffff; }
+
+/* 日付と見出しだけを丸ゴシックにする。数字（時刻）は幅をそろえる */
+.guardian-shell :is(h1, h2, h3) { font-family: var(--font-display); font-weight: 700; }
+.guardian-shell time { font-variant-numeric: tabular-nums; }
+
+/* ============ 外枠 ============ */
+/* ヘッダ：白の地、上にひよこ黄の細い帯（4px）、下に罫線 */
+.guardian-shell .guardian-header {
+  background: var(--g-paper);
+  border-top: 4px solid var(--g-yellow);
+  border-bottom: 1px solid var(--g-rule);
+}
+/* ヘッダの押せるもの（メニュー・通知）は枠を持たない文字だけのボタンにする。指したときだけ地が付く */
+.guardian-shell .guardian-header button { background: transparent; border-color: transparent; }
+@media (hover: hover) {
+  .guardian-shell .guardian-header button:hover:not(:disabled) { background: var(--g-wash); border-color: transparent; text-decoration: none; }
+}
+.guardian-shell .guardian-header button:active:not(:disabled) { background: var(--g-wash-strong); }
+.guardian-shell .guardian-header-phone a { color: var(--g-indigo); }
+
+/* ドロワー：罫線で区切る。現在地は PC の左の欄と同じ印で示す */
+.guardian-shell .guardian-drawer { background: var(--g-paper); border-right: 1px solid var(--g-rule); }
+.guardian-shell .drawer .who, .guardian-shell .guardian-sidebar .who { font-family: var(--font-display); }
+
+/* PC の左の欄：箱で囲まず、右に罫線を1本だけ引く */
+.guardian-shell .guardian-sidebar { background: transparent; border: 0; border-right: 1px solid var(--g-rule); border-radius: 0; padding: 0 var(--sp-4) 0 0; }
+.guardian-shell .guardian-sidebar a[aria-current="page"] {
+  box-shadow: inset 4px 0 0 var(--g-indigo); background: var(--g-wash-strong); color: var(--g-indigo-deep); font-weight: 700;
+}
+
+/* 緊急連絡の帯：常に出す。静かな地に、番号だけ藍で太く */
+.guardian-shell .guardian-footer { background: var(--g-wash); border-top: 1px solid var(--g-rule); }
+.guardian-shell .guardian-footer a { color: var(--g-indigo); }
+
+/* 本文の地は白 */
+.guardian-shell .guardian-main { background: var(--g-paper); padding-top: var(--sp-5); }
+@media (min-width: 1024px) {
+  .guardian-shell .guardian-main { background: transparent; padding-top: 0; }
+}
+
+/* ============ ホーム ============ */
+.guardian-shell .guardian-home { gap: var(--sp-4); }
+
+/* 日付と園児名。画面でいちばん目立たせるのは、日付と「きょうのようす」だけ */
+.guardian-day-head { padding-bottom: var(--sp-4); border-bottom: 1px solid var(--g-rule); }
+.guardian-shell .guardian-date { margin: 0 0 var(--sp-2); font-size: 2rem; line-height: 1.25; letter-spacing: 0; }
+/* 蛍光ペンで引いた線。字の色は鉛筆のまま（黄は字には使わない）。forced-colors では地が消え、字だけが残る */
+.guardian-date > span {
+  padding: 0 .12em;
+  background: linear-gradient(transparent 60%, var(--g-yellow) 60%, var(--g-yellow) 90%, transparent 90%);
+}
+.guardian-shell .guardian-child-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--sp-3); }
+.guardian-shell .guardian-child-line h2 { margin: 0; font-size: 1.375rem; line-height: 1.5; }
+.guardian-shell .guardian-child-line p { margin: 0; color: var(--c-text-sub); }
+.guardian-san { margin-left: .1em; font-size: 1rem; }
+.guardian-day-head > .muted { margin: var(--sp-2) 0 0; }
+
+/* お子さまの切り替え（2人以上のとき）。選んでいる子は黄の地と鉛筆の枠 */
+.guardian-shell .guardian-child-tabs { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-2) 0 var(--sp-3); }
+.guardian-shell .guardian-child-tabs button[aria-pressed="true"] {
+  background: var(--g-yellow); border-color: var(--g-ink); border-width: 2px; color: var(--g-ink); font-weight: 700;
+}
+@media (hover: hover) {
+  .guardian-shell .guardian-child-tabs button[aria-pressed="true"]:hover:not(:disabled) { background: var(--c-filled-hover); }
+}
+
+/* 区画の並び。箱で囲まず、罫線と余白で分ける。幅があれば左に「きょう」、右に入口の行 */
+.guardian-shell .contact-today-card { display: block; }
+.guardian-day-body { display: grid; gap: var(--sp-4); margin-top: var(--sp-4); }
+.guardian-day-main { display: grid; gap: var(--sp-4); align-content: start; min-width: 0; }
+.guardian-shell .contact-today-block { gap: var(--sp-2); }
+.guardian-shell .contact-today-block + .contact-today-block { padding-top: var(--sp-4); border-top: 1px solid var(--g-rule); }
+.guardian-shell .contact-today-block h3 { font-size: 1.125rem; line-height: 1.5; }
+.guardian-shell .contact-today-block .empty { padding: var(--sp-3) 0; text-align: left; }
+
+/* きょうのようす：時刻の並び（本当に順番がある）。時刻・印・文。いちばん新しい行の印だけ黄で塗る */
+.guardian-shell .guardian-timeline { --tl-time: 4rem; display: block; list-style: none; margin: 0; padding: 0; }
+.guardian-timeline li {
+  position: relative; display: grid; grid-template-columns: var(--tl-time) 1rem minmax(0, 1fr); column-gap: .5rem;
+  padding: .375rem 0; line-height: 1.7;
+}
+.guardian-shell .guardian-timeline li.contact-nap { font-size: inherit; font-weight: 400; }
+.guardian-shell .guardian-timeline time { grid-column: 1; grid-row: 1; text-align: right; font-weight: 700; margin: 0; }
+.guardian-timeline li::before {
+  content: ""; grid-column: 2; grid-row: 1; box-sizing: border-box;
+  width: .875rem; height: .875rem; margin-top: calc(.85em - .4375rem);
+  border: 2px solid var(--g-indigo); border-radius: 50%; background: var(--g-paper);
+}
+.guardian-timeline li:last-child::before { border-color: var(--g-ink); background: var(--g-yellow); }
+/* 印と印をつなぐ線（罫線の色） */
+.guardian-timeline li:not(:last-child)::after {
+  content: ""; position: absolute; width: 2px; background: var(--g-rule);
+  left: calc(var(--tl-time) + .5rem + .4375rem - 1px);
+  top: calc(.375rem + .85em + .4375rem);
+  bottom: calc(-1 * (.375rem + .85em - .4375rem));
+}
+.guardian-time-text { grid-column: 3; grid-row: 1; min-width: 0; overflow-wrap: anywhere; }
+.guardian-shell .contact-nap-note { margin: var(--sp-2) 0 0; }
+
+/* 園から：先生の文を、罫線の上に書く */
+.guardian-ruled {
+  margin: 0; line-height: 2; letter-spacing: .02em;
+  background: linear-gradient(to bottom, transparent calc(100% - 1px), var(--g-rule) 0) 0 0 / 100% 2em;
+}
+.guardian-shell .contact-today-block > a { align-self: start; display: inline-flex; align-items: center; min-height: var(--tap-min); }
+
+/* 家庭から：確認の印（藍のチェック）。色だけに頼らず、字も添える */
+.guardian-shell .contact-confirmed { display: flex; align-items: center; gap: var(--sp-1); color: var(--g-indigo); font-weight: 700; }
+.guardian-shell .contact-confirmed::before {
+  content: ""; flex: none; width: 1.25rem; height: 1.25rem; background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+}
+
+/* 入口の行：箱ではなく、罫線で区切った行。件数や新着は、行の右に補足の字で添える */
+.guardian-shell .contact-today-links { border-bottom: 1px solid var(--g-rule); align-self: start; }
+.guardian-shell .guardian-panel-link { border-top-color: var(--g-rule); }
+.guardian-shell .guardian-panel-link > span { display: flex; flex: 1; align-items: center; justify-content: space-between; gap: var(--sp-2); min-width: 0; }
+.guardian-shell .guardian-panel-link > .icon { color: var(--g-indigo); }
+.guardian-shell .guardian-link-note { margin-left: 0; text-align: right; }
+.guardian-shell .guardian-contact-note { margin: var(--sp-2) 0 0; max-width: 40em; }
+
+/* 下に固定した「家庭からを書く」：親指の届く下に止め、画面の塗りのボタンはこの1つだけ。幅いっぱい */
+.guardian-cta {
+  position: sticky; bottom: 0; z-index: 2; margin-top: var(--sp-4); padding: var(--sp-3) 0;
+  background: var(--g-paper); border-top: 1px solid var(--g-rule);
+}
+/*
+ * 固定のボタンのある画面では、スクロールする枠の下の余白を 0 にして、ボタンを下の緊急連絡の帯に付ける。
+ * Tab で下へ進んだとき、入口の行がボタンの下に隠れないよう、ボタンの高さ（TodayCard が測る --guardian-cta-h）を scroll-padding に取る
+ * （1023px までは枠の .guardian-main、ページ全体を送る 1024px 以上は html）
+ */
+@media (max-width: 1023px) {
+  .guardian-shell .guardian-main:has(.guardian-cta) { padding-bottom: 0; scroll-padding-bottom: calc(var(--guardian-cta-h, 0px) + 6px); }
+}
+@media (min-width: 1024px) {
+  html:has(.guardian-shell .guardian-cta) { scroll-padding-bottom: calc(var(--guardian-cta-h, 0px) + 6px); }
+}
+
+/* 主ボタンは、白の地の上で境目が 3:1 に届かない黄なので、鉛筆の 2px の枠を付ける（押せる部品の境目は 3:1 とする決まり） */
+.guardian-shell .btn-primary { border: 2px solid var(--g-ink); }
+
+/* ============ 幅ごとの並べ方 ============ */
+@media (min-width: 768px) {
+  .guardian-shell .guardian-date { font-size: 2.25rem; }
+  .guardian-day-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: var(--sp-6); align-items: start; }
+}
+@media (min-width: 1024px) {
+  .guardian-shell .guardian-child-line h2 { font-size: 1.5rem; }
+  /* 左の欄は、「〇〇の成長の記録」が1行に収まる幅にする（BIZ UDPGothic は前の書体より字幅が広い） */
+  .guardian-shell .guardian-body { grid-template-columns: 18rem minmax(0, 1fr); }
+}
+
+/* 動きは、押したときの返事（行・ボタンの地）だけ。動きを減らす設定のときは、その変化も一瞬にする */
+@media (prefers-reduced-motion: reduce) {
+  .guardian-shell *, .guardian-shell *::before, .guardian-shell *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+}

@@ -66,8 +66,9 @@ function verify(dialog: HTMLElement, code: string) {
 describe('保護者のメニュー：お子さまの追加', () => {
   it('メニューに常に置き、コードを確かめると園児名と続柄（最初に登録したときの続柄）を出す。追加すると保護者ホームに区画が増える', async () => {
     openHome();
-    expect(await screen.findByRole('region', { name: '西田 太郎さんの情報' })).toBeTruthy();
-    expect(screen.queryByRole('region', { name: '遠藤 花子さんの情報' })).toBeNull();
+    expect(await screen.findByRole('region', { name: '西田 太郎さんのきょう' })).toBeTruthy();
+    // お子さまが1人のあいだは、名前のタブを出さない
+    expect(screen.queryByRole('group', { name: 'お子さまの切り替え' })).toBeNull();
     const dialog = await openDialog();
 
     verify(dialog, 'qrst9012uvwx');
@@ -80,7 +81,14 @@ describe('保護者のメニュー：お子さまの追加', () => {
     expect(await screen.findByText(ADD_CHILD_TEXT.added('遠藤 花子'))).toBeTruthy();
     // ダイアログを閉じ、保護者ホームを読み直す（その園児の区画が増える）
     await waitFor(() => expect(screen.queryByRole('dialog', { name: ADD_CHILD_TEXT.title })).toBeNull());
-    expect(await screen.findByRole('region', { name: '遠藤 花子さんの情報' }, { timeout: 3000 })).toBeTruthy();
+    // 2人になると名前のタブが出る。開いているのは1人だけで、もう1人はタブで切り替えると区画が出る
+    const tabs = await screen.findByRole('group', { name: 'お子さまの切り替え' }, { timeout: 3000 });
+    const hanako = within(tabs).getByRole('button', { name: '遠藤 花子' });
+    if (hanako.getAttribute('aria-pressed') === 'true') fireEvent.click(within(tabs).getByRole('button', { name: '西田 太郎' }));
+    await waitFor(() => expect(within(tabs).getByRole('button', { name: '遠藤 花子' }).getAttribute('aria-pressed')).toBe('false'));
+    expect(screen.queryByRole('region', { name: '遠藤 花子さんのきょう' })).toBeNull();
+    fireEvent.click(within(tabs).getByRole('button', { name: '遠藤 花子' }));
+    expect(await screen.findByRole('region', { name: '遠藤 花子さんのきょう' }, { timeout: 3000 })).toBeTruthy();
     expect(link('G001', 'C002')).toMatchObject({ link_status: '1', relationship: '母' });
   });
 

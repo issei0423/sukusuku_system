@@ -45,7 +45,8 @@ describe('保護者ホームの「きょう」', () => {
     const card = await screen.findByRole('region', { name: '西田 太郎さんのきょう' }, { timeout: 3000 });
     expect(within(card).getByRole('link', { name: '家庭からを書く' })).toBeTruthy();
     expect(within(card).getByRole('link', { name: /連絡帳を開く/ })).toBeTruthy();
-    expect(card.querySelectorAll('.contact-latest li').length).toBeLessThanOrEqual(3);
+    // 新しい3件（午睡の行 .contact-nap は別に1行。時刻の順に並べる）
+    expect(card.querySelectorAll('.contact-latest li:not(.contact-nap)').length).toBeLessThanOrEqual(3);
     // 顔写真・判定の言葉を出さない（要件定義書「判断を行わないことの担保」(7-1 No.5)）
     expect(card.querySelector('img')).toBeNull();
     expect(card.textContent).not.toMatch(/元気|順調|異常|良好|発熱/);
@@ -53,6 +54,27 @@ describe('保護者ホームの「きょう」', () => {
     if (new Date(Date.now() + 9 * 3600_000).toISOString().slice(11, 16) < '09:40') {
       expect(card.textContent).toContain('まだきょうの記録はありません');
     }
+  });
+});
+
+describe('保護者ホームの見た目の骨組み（紙の連絡帳に寄せた作り直し）', () => {
+  it('見出しは日付と園児名。きょうのようすは時刻の順に並べ、「家庭からを書く」は区画の末尾に置く。小見出しの札と前置きは置かない', async () => {
+    open('/guardian', guardian);
+    const card = await screen.findByRole('region', { name: '西田 太郎さんのきょう' }, { timeout: 3000 });
+    expect(within(card).getByRole('heading', { level: 1 }).textContent).toMatch(/^\d+月\d+日（.）$/);
+    expect(within(card).getByRole('heading', { level: 2 }).textContent).toBe('西田 太郎さん');
+    expect(card.textContent).toContain('さくら組');
+    // 時刻の順（上が古く、下が新しい）
+    const times = Array.from(card.querySelectorAll('.guardian-timeline time')).map((t) => t.getAttribute('datetime')!);
+    expect(times).toEqual([...times].sort());
+    // 画面の塗りのボタンは「家庭からを書く」だけ。区画の末尾に置く
+    const cta = card.querySelector('.guardian-cta')!;
+    expect(card.lastElementChild).toBe(cta);
+    expect(within(cta as HTMLElement).getByRole('link', { name: '家庭からを書く' })).toBeTruthy();
+    expect(document.querySelectorAll('.btn-primary')).toHaveLength(1);
+    // 見出しの上の小さいラベルと「こんにちは」の前置きは消した
+    expect(document.querySelector('.guardian-eyebrow')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'こんにちは' })).toBeNull();
   });
 });
 
