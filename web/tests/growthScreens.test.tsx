@@ -10,7 +10,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, within, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import App from '../src/App';
 import { SessionProvider } from '../src/session';
@@ -147,16 +147,16 @@ describe('成長の記録画面（保護者）', () => {
 });
 
 describe('入口（保護者ホームの区画・メニュー）', () => {
-  it('区画に「成長の記録」、メニューに「〇〇の成長の記録」を出す。きょう測ったものがあれば「新しい記録があります」', async () => {
+  it('下のタブ「成長」から、いま見ているお子さまの成長の記録へ行く。きょう測ったものがあれば「新着」の字を添える。メニューには置かない', async () => {
     open('/guardian', guardian);
-    const card = await screen.findByRole('region', { name: '西田 太郎さんのきょう' }, { timeout: 3000 });
-    const link = within(card).getByRole('link', { name: /成長の記録/ });
-    expect(link.getAttribute('href')).toBe('/guardian/growth/C001');
+    await screen.findByRole('region', { name: '西田 太郎さんのきょう' }, { timeout: 3000 });
+    const tabs = screen.getByRole('navigation', { name: '主な画面' });
+    await waitFor(() => expect(within(tabs).getByRole('link', { name: /成長/ }).getAttribute('href')).toBe('/guardian/growth/C001'));
     // デモの今日の身体測定（西田 太郎）がある
-    expect(link.textContent).toContain('新しい記録があります');
+    expect(within(tabs).getByRole('link', { name: /成長/ }).textContent).toContain('新着');
     fireEvent.click(screen.getByRole('button', { name: 'メニューを開く' }));
     const menu = screen.getByRole('dialog', { name: 'メニュー' });
-    expect(within(menu).getByRole('link', { name: '西田 太郎の成長の記録' }).getAttribute('href')).toBe('/guardian/growth/C001');
+    expect(within(menu).queryByRole('link', { name: /成長/ })).toBeNull();
   });
 });
 

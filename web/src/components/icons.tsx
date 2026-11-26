@@ -89,6 +89,8 @@ const SYMBOL = {
   chevron_left: 'M560-240 320-480l240-240 56 56-184 184 184 184-56 56Z',
   login: 'M480-120v-80h280v-560H480v-80h280q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H480Zm-80-160-55-58 102-102H120v-80h327L345-622l55-58 200 200-200 200Z',
   attach_file: 'M720-330q0 104-73 177T470-80q-104 0-177-73t-73-177v-370q0-75 52.5-127.5T400-880q75 0 127.5 52.5T580-700v350q0 46-32 78t-78 32q-46 0-78-32t-32-78v-370h80v370q0 13 8.5 21.5T470-320q13 0 21.5-8.5T500-350v-350q-1-42-29.5-71T400-800q-42 0-71 29t-29 71v370q-1 71 49 120.5T470-160q70 0 119-49.5T640-330v-390h80v390Z',
+  call: 'M798-120q-125 0-247-54.5T329-329Q229-429 174.5-551T120-798q0-18 12-30t30-12h162q14 0 25 9.5t13 22.5l26 140q2 16-1 27t-11 19l-97 98q20 37 47.5 71.5T387-386q31 31 65 57.5t72 48.5l94-94q9-9 23.5-13.5T670-390l138 28q14 4 23 14.5t9 23.5v162q0 18-12 30t-30 12ZM241-600l66-66-17-94h-89q5 41 14 81t26 79Zm358 358q39 17 79.5 27t81.5 13v-88l-94-19-67 67ZM241-600Zm358 358Z',
+  today: 'M360-300q-42 0-71-29t-29-71q0-42 29-71t71-29q42 0 71 29t29 71q0 42-29 71t-71 29ZM200-80q-33 0-56.5-23.5T120-160v-560q0-33 23.5-56.5T200-800h40v-80h80v80h320v-80h80v80h40q33 0 56.5 23.5T840-720v560q0 33-23.5 56.5T760-80H200Zm0-80h560v-400H200v400Zm0-480h560v-80H200v80Zm0 0v-80 80Z',
 } as const;
 
 function MaterialSymbol({ name }: { name: keyof typeof SYMBOL }) {
@@ -104,6 +106,10 @@ function MaterialSymbol({ name }: { name: keyof typeof SYMBOL }) {
 export const DashboardIcon = () => <MaterialSymbol name="dashboard" />;
 /** ホーム（保護者ホーム） */
 export const HomeIcon = () => <MaterialSymbol name="home" />;
+/** きょう（保護者の下のタブ） */
+export const TodayIcon = () => <MaterialSymbol name="today" />;
+/** 電話（保護者のヘッダの「園に電話」） */
+export const CallIcon = () => <MaterialSymbol name="call" />;
 /** 日誌 */
 export const DiaryIcon = () => <MaterialSymbol name="edit_note" />;
 /** チャット・お知らせ */

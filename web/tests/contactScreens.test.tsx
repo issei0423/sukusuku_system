@@ -44,7 +44,8 @@ describe('保護者ホームの「きょう」', () => {
     open('/guardian', guardian);
     const card = await screen.findByRole('region', { name: '西田 太郎さんのきょう' }, { timeout: 3000 });
     expect(within(card).getByRole('link', { name: '家庭からを書く' })).toBeTruthy();
-    expect(within(card).getByRole('link', { name: /連絡帳を開く/ })).toBeTruthy();
+    // 連絡帳への入口は下のタブ（ホームには入口の行を置かない）
+    expect(within(card).queryByRole('link', { name: /連絡帳を開く/ })).toBeNull();
     // 新しい3件（午睡の行 .contact-nap は別に1行。時刻の順に並べる）
     expect(card.querySelectorAll('.contact-latest li:not(.contact-nap)').length).toBeLessThanOrEqual(3);
     // 顔写真・判定の言葉を出さない（要件定義書「判断を行わないことの担保」(7-1 No.5)）

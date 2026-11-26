@@ -7,7 +7,7 @@
  * データの読み込みは非同期のため、読み込み完了まで待ってから内容を検査する。
  */
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
-import { render, screen, cleanup, waitFor, fireEvent, act } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, fireEvent, act, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import App from '../src/App';
 import { SessionProvider } from '../src/session';
@@ -208,26 +208,33 @@ describe('チャットツール（3画面）', () => {
 });
 
 describe('保護者向けの緊急連絡の案内', () => {
-  it('保護者の画面には、案内と園の電話番号を常時出す', async () => {
+  it('保護者の画面には、ヘッダの「園に電話」（電話のリンク）を常時出す。ホームの下には、お電話でという注意の文を残す', async () => {
     open('/guardian', guardian);
     await settled();
-    const footer = document.querySelector('.guardian-footer')!;
-    expect(footer.textContent).toContain('緊急のご連絡はお電話でお願いします');
-    expect(footer.querySelector('a')!.getAttribute('href')).toBe('tel:0300000000');
+    const call = within(document.querySelector<HTMLElement>('.guardian-header')!).getByRole('link', { name: /園に電話/ });
+    expect(call.getAttribute('href')).toBe('tel:0300000000');
+    expect(document.querySelector('.guardian-footer')).toBeNull();
+    await waitFor(() => expect(document.querySelector('.guardian-contact-note')?.textContent).toContain('お電話でお願いします'), { timeout: 3000 });
+  });
+
+  it('ほかの保護者の画面（チャット・お知らせ）にも出す', async () => {
+    open('/guardian/chat', guardian);
+    await settled();
+    expect(within(screen.getByRole('banner')).getByRole('link', { name: /園に電話/ }).getAttribute('href')).toBe('tel:0300000000');
   });
 
   it('職員の画面には出さない', async () => {
     open('/staff', teacher);
     await settled();
-    expect(document.querySelector('.guardian-footer')).toBeNull();
+    expect(screen.queryByRole('link', { name: /園に電話/ })).toBeNull();
   });
 });
 
 describe('園からの配布物（2画面）', () => {
-  it('保護者ホーム：「チャット・お知らせ」の行の続きに、配布物の一覧への導線を出す', async () => {
-    open('/guardian', guardian);
+  it('チャット・お知らせ（下のタブ「チャット」の先）：配布物の一覧への導線を出す', async () => {
+    open('/guardian/chat', guardian);
     await settled();
-    await waitFor(() => { expect(screen.getAllByText('園からの配布物').length).toBeGreaterThan(0); }, { timeout: 3000 });
+    await waitFor(() => { expect(screen.getByRole('link', { name: '園からの配布物' }).getAttribute('href')).toBe('/guardian/handouts'); }, { timeout: 3000 });
   });
 
   it('配布物一覧画面（保護者）：月ごとにまとめて出し、開くと題名と形式が分かる', async () => {

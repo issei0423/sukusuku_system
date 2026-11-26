@@ -201,14 +201,14 @@ describe('園からの配布物はチャット・お知らせから開く（職�
     expect(menuLinks.some((t) => t.includes('園からの配布物'))).toBe(false);
   });
 
-  it('保護者ホーム：配布物の区画は置かず、「チャット・お知らせ」の行の続きの行から配布物の一覧へ行ける', async () => {
+  it('保護者ホームには入口の行を置かず、連絡帳・成長・チャットへは下のタブから行く（配布物はチャットのタブの先）', async () => {
     open('/guardian', guardian);
-    const link = await screen.findByRole('link', { name: '園からの配布物' }, { timeout: 3000 });
-    expect(link.getAttribute('href')).toBe('/guardian/handouts');
-    // 「チャット・お知らせ」の行と同じ入口の行の並びにある
-    const rows = link.closest('.contact-today-links')!;
-    expect(within(rows as HTMLElement).getByRole('link', { name: /チャット・お知らせ/ }).getAttribute('href')).toBe('/guardian/chat');
-    expect(screen.queryByRole('heading', { name: '園からの配布物' })).toBeNull();
+    await screen.findByRole('region', { name: '西田 太郎さんのきょう' }, { timeout: 3000 });
+    expect(document.querySelector('.contact-today-links, .guardian-panel-link')).toBeNull();
+    expect(screen.queryByRole('link', { name: '園からの配布物' })).toBeNull();
+    const tabs = screen.getByRole('navigation', { name: '主な画面' });
+    await waitFor(() => expect(within(tabs).getByRole('link', { name: /連絡帳/ }).getAttribute('href')).toBe('/guardian/contact/C001'));
+    expect(within(tabs).getByRole('link', { name: /チャット/ }).getAttribute('href')).toBe('/guardian/chat');
   });
 
   it('チャット・お知らせ画面に「園からの配布物」を置き、配布物の一覧の「戻る」はチャット・お知らせへ戻る', async () => {

@@ -90,6 +90,16 @@ describe('保護者のメニュー：お子さまの追加', () => {
     fireEvent.click(within(tabs).getByRole('button', { name: '遠藤 花子' }));
     expect(await screen.findByRole('region', { name: '遠藤 花子さんのきょう' }, { timeout: 3000 })).toBeTruthy();
     expect(link('G001', 'C002')).toMatchObject({ link_status: '1', relationship: '母' });
+
+    // 下のタブの「連絡帳」「成長」は、いま見ているお子さま（遠藤 花子）へ行く。画面を移って戻っても、選んだ子のまま
+    const nav = screen.getByRole('navigation', { name: '主な画面' });
+    expect(within(nav).getByRole('link', { name: /連絡帳/ }).getAttribute('href')).toBe('/guardian/contact/C002');
+    expect(within(nav).getByRole('link', { name: /成長/ }).getAttribute('href')).toBe('/guardian/growth/C002');
+    fireEvent.click(within(nav).getByRole('link', { name: /連絡帳/ }));
+    await screen.findByText('遠藤 花子の連絡帳', undefined, { timeout: 3000 });
+    expect(within(nav).getByRole('link', { name: /連絡帳/ }).getAttribute('aria-current')).toBe('page');
+    fireEvent.click(within(nav).getByRole('link', { name: /きょう/ }));
+    expect(await screen.findByRole('region', { name: '遠藤 花子さんのきょう' }, { timeout: 3000 })).toBeTruthy();
   });
 
   it('誤り（すでに追加した園児・使用済みのコード）はダイアログの中に出し、追加の操作を出さない', async () => {

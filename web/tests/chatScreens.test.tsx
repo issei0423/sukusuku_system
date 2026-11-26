@@ -94,13 +94,14 @@ describe('書きかけの本文は、書いていたチャンネルにだけ結�
     try {
       open('/guardian/chat', murata);
       await settled();
-      const rooms = () => screen.getAllByText('担任の先生とのやりとり');
+      // きょうだいで2つ以上あるときは、どの子のものか分かるよう園児名を添える
+      const rooms = () => screen.getAllByText(/^担任の先生とのやりとり（.+）$/);
       await waitFor(() => expect(rooms()).toHaveLength(2));
       fireEvent.click(rooms()[1].closest('button')!);
       const input = await screen.findByRole('textbox', { name: 'メッセージを入力' }) as HTMLInputElement;
       fireEvent.change(input, { target: { value: '美咲の熱のことです' } });
       fireEvent.click(screen.getByRole('button', { name: 'もどる' }));
-      fireEvent.click((await screen.findAllByText('担任の先生とのやりとり'))[0].closest('button')!);
+      fireEvent.click((await screen.findAllByText(/^担任の先生とのやりとり（.+）$/))[0].closest('button')!);
       const other = await screen.findByRole('textbox', { name: 'メッセージを入力' }) as HTMLInputElement;
       expect(other.value).toBe('');
     } finally {

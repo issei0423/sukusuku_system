@@ -116,9 +116,13 @@ describe('保護者の共通レイアウト', () => {
     fireEvent.click(menuButton);
     const drawer = await screen.findByRole('dialog', { name: 'メニュー' });
     expect(within(drawer).getByRole('button', { name: 'メニューを閉じる' })).toBeTruthy();
-    await waitFor(() => expect(within(drawer).getByRole('link', { name: /の成長の記録$/ })).toBeTruthy());
-    for (const name of ['ホーム', 'チャット・お知らせ', '園からの日誌', 'パスワードの変更', '利用規約']) {
+    // メニューは、たまに使うものだけ。毎日開く4つの行き先（きょう・連絡帳・成長・チャット）は下のタブへ移した
+    await waitFor(() => expect(within(drawer).getByRole('link', { name: '園からの日誌' })).toBeTruthy());
+    for (const name of ['園からの日誌', 'パスワードの変更', '利用規約']) {
       expect(within(drawer).getByRole('link', { name })).toBeTruthy();
+    }
+    for (const name of [/ホーム|きょう/, /成長/, /チャット/, /連絡帳/]) {
+      expect(within(drawer).queryByRole('link', { name })).toBeNull();
     }
     expect(within(drawer).getByRole('button', { name: 'お子さまの追加' })).toBeTruthy();
     expect(within(drawer).getByRole('button', { name: 'ログアウト' })).toBeTruthy();
@@ -126,10 +130,18 @@ describe('保護者の共通レイアウト', () => {
 
     // PC の幅で常に出すメニュー（jsdom では CSS で隠れないので、そのまま読める）
     const sidebar = screen.getByRole('navigation', { name: 'メニュー' });
-    for (const name of ['ホーム', 'チャット・お知らせ', '園からの日誌', 'パスワードの変更', '利用規約']) {
-      expect(within(sidebar).getByRole('link', { name })).toBeTruthy();
+    for (const name of ['きょう', '連絡帳', '成長の記録', 'チャット・お知らせ', '園からの日誌', 'パスワードの変更', '利用規約']) {
+      expect(within(sidebar).getByRole('link', { name: new RegExp(`^${name}`) })).toBeTruthy();
     }
     expect(within(sidebar).getByRole('button', { name: 'ログアウト' })).toBeTruthy();
     expectIconsHidden(sidebar);
+
+    // 画面の下のタブ（4つ）。字は必ず出し、絵は読み上げの名前に入れない。現在地は aria-current
+    const tabs = screen.getByRole('navigation', { name: '主な画面' });
+    expect(within(tabs).getAllByRole('link').map((a) => (a.querySelector('.guardian-tab-label')?.textContent))).toEqual(['きょう', '連絡帳', '成長', 'チャット']);
+    expect(within(tabs).getByRole('link', { name: /^きょう/ }).getAttribute('aria-current')).toBe('page');
+    expectIconsHidden(tabs);
+    // ヘッダの「園に電話」（字つきの電話のリンク）
+    expect(within(header).getByRole('link', { name: /園に電話/ }).getAttribute('href')).toBe('tel:0300000000');
   });
 });

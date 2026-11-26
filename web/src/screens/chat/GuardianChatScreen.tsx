@@ -40,6 +40,7 @@ export default function GuardianChatScreen() {
   const rooms = useAsync(() => api.rooms(user!), [user?.account_id],
     { refreshMs: AUTO_REFRESH_MS, live: onLive('chat') });
   const [roomId, setRoomId] = useState<number | null>(null);
+  const personalCount = rooms.data?.filter((x) => x.room.room_type === '4').length ?? 0;
   /*
    * 書きかけの本文は、チャンネルごとに持つ。きょうだいが在籍する保護者には個人チャットが園児の数だけ並ぶ
    * （基本設計書「チャット」(5-5)）。画面全体で1つだけ持つと、ある子のことを書きかけたまま別の子の
@@ -254,7 +255,7 @@ export default function GuardianChatScreen() {
           {rooms.data?.map((r) => (
             <button key={r.room.chat_room_id} className="guardian-room-link"
               onClick={() => setRoomId(r.room.chat_room_id)}>
-              <span>{labelFor(r.room.room_type, r.room.room_name)}</span>
+              <span>{labelFor(r.room.room_type, r.room.room_name, personalCount)}</span>
               <span className="guardian-room-trailing">
                 {/* 読み上げは「未読 n」（見直し m7b-13） */}
                 {r.unread > 0 && <span className="badge"><span className="sr-only">未読 </span>{r.unread}</span>}
@@ -275,7 +276,7 @@ export default function GuardianChatScreen() {
     <div className="guardian-chat-thread">
       <div className="page-head guardian-thread-heading">
         <button className="btn-quiet btn-sm" onClick={() => setRoomId(null)}><BackIcon />もどる</button>
-        <h1>{labelFor(current.room.room_type, current.room.room_name)}</h1>
+        <h1>{labelFor(current.room.room_type, current.room.room_name, personalCount)}</h1>
       </div>
 
       <div className="guardian-message-list" ref={listRef}>
@@ -455,8 +456,15 @@ function focusLeftMenu(menu: HTMLElement, to: EventTarget | null, messageId: num
   return !(to instanceof HTMLElement && to.dataset.messageBubble === String(messageId));
 }
 
-function labelFor(type: string, name: string): string {
+/**
+ * 連絡先の名前。個人チャット（園児ごと）は「担任の先生とのやりとり」とし、きょうだいで2つ以上あるときだけ、
+ * どの子のものか分かるよう園児名を添える（チャンネル名「〇〇の保護者」の〇〇。画面の下のタブ「チャット」から開く一覧）
+ */
+function labelFor(type: string, name: string, personalCount: number): string {
   if (type === '1') return '園からのお知らせ';
-  if (type === '4') return '担任の先生とのやりとり';
+  if (type === '4') {
+    const child = name.replace(/の保護者$/, '');
+    return personalCount > 1 && child ? `担任の先生とのやりとり（${child}）` : '担任の先生とのやりとり';
+  }
   return name;
 }
