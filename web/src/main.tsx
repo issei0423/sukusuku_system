@@ -11,6 +11,11 @@ import './styles/tokens.css';
 import './styles/app.css';
 import './styles/screens.css';
 import './styles/guardian.css';
+import './styles/area/contact.css';
+import './styles/area/chat.css';
+import './styles/area/care.css';
+import './styles/area/admin.css';
+import './styles/area/diary.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
