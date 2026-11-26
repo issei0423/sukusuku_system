@@ -17,6 +17,7 @@ import { useRevealFocus } from './stickyInset';
 // 共通・認証
 import TopScreen from './screens/auth/TopScreen';
 import SignUpScreen from './screens/auth/SignUpScreen';
+import DemoLoginScreen from './screens/auth/DemoLoginScreen';
 import PasswordChangeScreen from './screens/auth/PasswordChangeScreen';
 import TermsAgreeScreen from './screens/auth/TermsAgreeScreen';
 import StaffDashboard from './screens/auth/StaffDashboard';
@@ -69,7 +70,7 @@ import OperationLogScreen from './screens/master/OperationLogScreen';
 import SettingsScreen from './screens/admin/settings/SettingsScreen';
 
 const pageNames: Record<string, string> = {
-  '/': '保護者用トップ', '/staff-top': '職員用トップ', '/signup': '新規登録',
+  '/': '保護者用トップ', '/staff-top': '職員用トップ', '/signup': '新規登録', '/demo-login': 'デモ用の入口',
   '/password-change': 'パスワードの変更', '/terms-agree': '利用規約への同意',
   '/staff': 'ダッシュボード', '/staff/password': 'パスワードの変更', '/staff/terms': '利用規約',
   '/staff/diary': '日誌', '/staff/diary/new': '日誌の作成', '/staff/diary/confirm': '日誌の確認',
@@ -302,6 +303,8 @@ export default function App() {
       <Route path="/" element={<TopScreen entrance="guardian" />} />
       <Route path="/staff-top" element={<TopScreen entrance="staff" />} />
       <Route path="/signup" element={<SignUpScreen />} />
+      {/* 演習用：合言葉つきの URL での入口（DemoLoginScreen。サーバに合言葉を置いたときだけ入れる） */}
+      <Route path="/demo-login" element={<DemoLoginScreen />} />
       {/* ---- 共通・認証（強制で通る経路。手続きが残っている利用者だけ） ---- */}
       <Route path="/password-change" element={<RequireProcedure step="password" />} />
       <Route path="/terms-agree" element={<RequireProcedure step="terms" />} />

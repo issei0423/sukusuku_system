@@ -75,6 +75,8 @@ export type {
 function ok<T>(value: T): Promise<T> {
   return new Promise((resolve) => setTimeout(() => resolve(value), 60));
 }
+/** 演習用の合言葉つきのログインがモックでは使えないこと（authApi の demoLogin） */
+const DEMO_LOGIN_UNAVAILABLE = 'この環境では使えません';
 function fail<T = never>(message: string): Promise<T> {
   return new Promise((_, reject) => setTimeout(() => reject(new Error(message)), 60));
 }
@@ -858,6 +860,16 @@ export const authApi = {
    */
   async bootstrap(): Promise<SessionUser | null> {
     return ok(null);
+  },
+
+  /**
+   * 演習用：合言葉つきの URL でのログイン。モックでは使えない。
+   * 合言葉の照合はサーバだけが行う。ブラウザに合言葉を持たせると、だれでも読めてしまうため、モックには持たせない。
+   * 業務の規則ではない（デモ・演習の入口）ので、Go サーバ（api_demo_login.go）と同じ規則をモックに作らない。
+   * 画面（DemoLoginScreen）は、モックのときはこれを呼ばずに「この環境では使えません」とだけ出す。型を合わせるための断りの返事
+   */
+  async demoLogin(_key: string, _as: 'staff' | 'guardian'): Promise<SessionUser> {
+    return fail(DEMO_LOGIN_UNAVAILABLE);
   },
 
   /**

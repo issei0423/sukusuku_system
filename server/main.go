@@ -49,6 +49,8 @@ type app struct {
 	// ログイン・招待コードの試行の見張り（attempts.go）。guard() で取り出す
 	guardOnce sync.Once
 	attempts  *attemptGuard
+	// 合言葉つきの URL でのログインの合言葉（api_demo_login.go）。空なら、その口は無い
+	demoLoginKey string
 }
 
 func main() {
@@ -71,6 +73,7 @@ func main() {
 
 	a := &app{db: db, sessions: newSessionStore(), filesDir: *filesDir}
 	a.sessions.secure = *secure
+	a.demoLoginKey = demoLoginKeyFromEnv()
 	if err := a.init(); err != nil {
 		log.Fatal(err)
 	}
