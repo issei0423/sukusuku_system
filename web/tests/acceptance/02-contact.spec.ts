@@ -653,7 +653,7 @@ test.describe('午睡（段1・段3）', () => {
     const gh = await g.context().newPage();
     await gh.goto('/guardian');
     await expect(gh.getByRole('main')).not.toContainText('段3確認用');
-    await gh.getByRole('link', { name: 'チャットを開く' }).click();
+    await gh.getByRole('link', { name: 'チャット・お知らせ' }).first().click();
     await expect(gh.getByRole('main')).not.toContainText('段3確認用');
     await evidence(g, '02-042');
   });
@@ -1392,7 +1392,7 @@ test.describe('園内に留めるもの（段3）', () => {
 
     const g = await openWindow(browser, testInfo, 'guardian');
     await expect(g.getByRole('main')).not.toContainText('段3確認用');
-    for (const link of ['連絡帳を開く', /成長の記録/, 'チャットを開く']) {
+    for (const link of ['連絡帳を開く', /成長の記録/, 'チャット・お知らせ']) {
       await g.goto('/guardian');
       await g.getByRole('link', { name: link }).first().click();
       await expect(g.getByRole('main')).not.toContainText('段3確認用');
@@ -1420,7 +1420,7 @@ test.describe('園内に留めるもの（段3）', () => {
 
     const g = await openWindow(browser, testInfo, 'guardian');
     await expect(g.getByRole('main')).not.toContainText('段3確認用');
-    for (const link of ['連絡帳を開く', 'チャットを開く']) {
+    for (const link of ['連絡帳を開く', 'チャット・お知らせ']) {
       await g.goto('/guardian');
       await g.getByRole('link', { name: link }).first().click();
       await expect(g.getByRole('main')).not.toContainText('段3確認用');

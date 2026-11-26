@@ -13,7 +13,7 @@ import { test, expect, type Page } from '@playwright/test';
 type Entrance = 'staff' | 'guardian';
 /** ログインのあとの着地 */
 type Landing =
-  | { path: string; heading: string }
+  | { path: string; heading: string | RegExp }
   | { stopped: string };
 
 interface DemoAccount {
@@ -25,7 +25,8 @@ interface DemoAccount {
 }
 
 const DASHBOARD = { path: '/staff', heading: 'ダッシュボード' };
-const GUARDIAN_HOME = { path: '/guardian', heading: 'こんにちは' };
+// 保護者ホームの h1 は、きょうの日付（「11月26日（水）」）
+const GUARDIAN_HOME = { path: '/guardian', heading: /^\d+月\d+日（.）$/ };
 
 const ACCOUNTS: DemoAccount[] = [
   { email: 'nishida@hoiku.example.jp', password: 'pass1234', entrance: 'staff', landing: DASHBOARD, note: '管理者' },

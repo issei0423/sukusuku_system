@@ -826,8 +826,8 @@ test.describe('サーバA（通常）：ホーム', () => {
       for (const name of ['連絡帳を開く', '成長の記録', `${g.childName}の園とのやりとり`]) {
         await expect.soft(region.getByRole('link', { name: new RegExp(name) }), `⑤ ${name}`).toBeVisible();
       }
-      await expect.soft(page.getByRole('heading', { name: 'チャット・お知らせ' }), '⑥').toBeVisible();
-      await expect.soft(page.getByRole('link', { name: '園からの配布物を見る' }), '⑥').toBeVisible();
+      await expect.soft(region.getByRole('link', { name: 'チャット・お知らせ' }), '⑥').toBeVisible();
+      await expect.soft(region.getByRole('link', { name: '園からの配布物' }), '⑥').toBeVisible();
       const footer = page.getByRole('contentinfo');
       await expect.soft(footer, '⑦').toContainText('緊急のご連絡はお電話でお願いします');
       await expect.soft(footer.getByRole('link', { name: '03-0000-1035' }), '⑦ 園の電話番号').toHaveAttribute('href', /^tel:/);
