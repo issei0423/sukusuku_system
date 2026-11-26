@@ -22,6 +22,7 @@
 
 - 2026-10-21〜10-30 は、GitHub の runner の Actions が課金の都合で起動しなかった（そのあいだは、テストを手元で回し、マージを持ち主の PC で回していた）。2026-10-30 にリポジトリを public にしてから、また動いている。PR の CI（`ci.yml`）・自動のレビュー（`claude-review.yml`）・毎朝のニュース（`daily-news.yml`）は GitHub の runner で走る。外の人の fork からの PR のワークフローは、承認してから走る。
 - 本番への反映（`deploy-oci.yml`）は、本番の VM の self-hosted runner で、本線への push ごとに動く。go vet と Go・React のビルドだけを回し、テストは回さない（`deploy/oci-free/README.md`）。テストは、マージの前に PR の CI で確かめる。
+- AWS の VM への反映（`deploy-aws.yml`）は、持ち主の頼みで足した（2026-11-26）。ビルドは GitHub の runner で行い、VM の self-hosted runner は成果物を受け取って反映するだけ（`deploy/aws/README.md`）。下の「self-hosted のジョブを足さない・変えない」は、この 1 本を除いて残る。
 - **本線に保護は無い**（2026-11-06 に、branch protection も rulesets も置いていないことを確かめた）。マージのボタンは押せてしまう。**持ち主と、持ち主が任せた AI（上の「持ち主が任せた AI」）のほかは、押せても押さない。** 本線へ push しない。CI が走らないまま入った PR で、本線の結合テストが 11 件落ちていたことがある（#285 で直した）。
 - **self-hosted のジョブを足さない・変えない。** `.github/workflows/` で、`runs-on` に self-hosted を書いたジョブを足さない・変えない。ワークフローはブランチに置いただけで（本線に入っていなくても）push で動き、そのジョブは本番の VM の上で走る。`.github/` を変える PR は、マージ係が止め、持ち主が見てから手で入れる。
 - CI と同じ確かめを手元で全部回すなら `bash agent-harness/api-agent/scripts/local-ci.sh <worktree> <ログの置き場>`（結果は `<ログの置き場>/result.txt` に 1 行ずつ出て、最後まで回ったら `done=yes`）。
