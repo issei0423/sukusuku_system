@@ -348,6 +348,16 @@ const apiAuth = {
     return u;
   },
 
+  /**
+   * 演習用：合言葉つきの URL でのログイン（server/api_demo_login.go）。合言葉の判定とアカウントの選び分けはサーバだけが行う。
+   * 失敗の理由は返ってこない（機能が無いときと同じ 404）。画面（DemoLoginScreen）は文を1つしか出さない
+   */
+  async demoLogin(key: string, as: 'staff' | 'guardian'): Promise<SessionUser> {
+    const u = await post<SessionUser>('/api/demo-login', { key, as });
+    await loadReferenceFor(u);
+    return u;
+  },
+
   async logout(): Promise<void> {
     await post('/api/logout');
     clearReference();

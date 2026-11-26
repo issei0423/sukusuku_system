@@ -2,6 +2,8 @@
 
 公開先は大阪リージョンの既存 VM `sukusuku`（Ubuntu 24.04、`VM.Standard.E2.1.Micro`）の <https://217.142.235.206>。**使う・見る・デモする・確かめるのはこの公開先だけ**で、手元でサーバを立てるのは開発とテストのため（`MOCKUP.md`「使うとき」）。URL はこの文書だけに書き、ほかの文書からはここを指す。Go サーバは `127.0.0.1:8080` だけで待ち受け、Caddy が 80/443 を公開する。OCI Bastion 経由の SSH だけを使い、22 番をインターネットには公開しない。
 
+AWS の VM への自動デプロイ（`deploy-aws.yml`）は `deploy/aws/README.md` にある。
+
 ## 更新の流れ
 
 1. `mockup-go-react` への push で [deploy-oci.yml](../../.github/workflows/deploy-oci.yml) が動く。PR とほかのブランチでは公開しない。
@@ -106,6 +108,16 @@ runner を登録し直す（`config.sh`）ときは、`.env` に行を足すこ�
 - Cookie・Set-Cookie・Authorization は Caddy が伏せて書く。送信元の IP と URL は残るので、ログを外へ出さない。残す期間は 30 日【仮置き】
 
 デモデータには既知の共通パスワード `pass1234` がある。現在の公開先はデモ専用とし、実データを入れない。Anthropic API キーは VM に置かず、AI は無効のままにする。
+
+## 合言葉つきの URL でのログイン（演習用・置かなければ無効）
+
+デモのたびにログインID・パスワードを打たずに済むよう、合言葉を知る人だけが西田 拓也として入れる口がある（`server/api_demo_login.go`、画面は `/demo-login`）。**環境変数 `SUKUSUKU_DEMO_LOGIN_KEY` を置かなければ、口ごと無い**（`POST /api/demo-login` は 404）。
+
+- 置き方（持ち主が VM で行う）：`/etc/sukusuku/sukusuku.env`（`sukusuku.service` の `EnvironmentFile`。root だけが読める権限にする）に `SUKUSUKU_DEMO_LOGIN_KEY=<32 文字以上の長い乱数>` を1行足し、`sudo systemctl restart sukusuku`。32 文字（文字数）より短い値は無効として扱い、起動のログ（`journalctl -u sukusuku`）に一言出る。値そのものはどこにも出さない。リポジトリ・PR・Issue・チャットに書かない
+- 使い方：`https://<公開先>/demo-login?k=<合言葉>` をブックマークする。開くと、画面は合言葉を URL から消し、「保育士として入る」「保護者として入る」を出す。押すと西田 拓也（保育士は `nishida@hoiku.example.jp`、保護者は `nishida.t@example.jp`）のセッションができる。通常のログインと同じ Cookie・自動ログアウトで、操作ログに「合言葉のURLでログイン」が残る
+- 守り：合言葉の判定はサーバだけ（JS に持たない）。違う合言葉は、送信元ごとの失敗の上限（15 分に 20 回。ログイン・招待コードの失敗と合算）に数え、超えたら正しい合言葉でも断る。失敗・上限・機能が無いときの応答はどれも同じ 404
+- **合言葉は、最初の1回の `GET /demo-login?k=…` の URL として Caddy のアクセスログ（上の「アクセスログ」）に残る**。ログを外へ出さない。合言葉を替えるときは、環境変数を書き換えて再起動する（古い合言葉はすぐ無効になる）。使うのをやめるときは、行を消して再起動する
+- 外す・戻す：環境変数の行を消して `sudo systemctl restart sukusuku`。コードを戻す必要は無い
 
 ## 毎晩のデモの作り直し
 

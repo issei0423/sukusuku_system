@@ -1,0 +1,137 @@
+name: AWS へ自動デプロイ
+
+# 本線（mockup-go-react）への push だけで動く。PR とほかのブランチは公開しない。
+# ビルドは GitHub 提供の runner（build）で行い、AWS の VM（t3.micro・1GB・CPU クレジット standard）ではビルドしない。
+# VM の専用 self-hosted runner（deploy）は、できた成果物を受け取って反映するだけ。
+# 置き方・止め方・戻し方は deploy/aws/README.md にある。
+on:
+  push:
+    branches: [mockup-go-react]
+
+permissions:
+  contents: read
+
+# 同時に反映するのは1本だけ。新しい push は、走っているものを取り消さずに待つ（deploy-oci.yml と同じ）
+concurrency:
+  group: sukusuku-aws-deploy
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ビルド（GitHub 提供の runner）
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: 本線の commit を取り出す
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Go を入れる（server/go.mod の版）
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: Node.js 24 を入れる
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # Go のテストはここでも回さない。テストはマージの前に PR の CI（ci.yml）で確かめる（deploy-oci.yml と同じ考え）。
+      # ここでは静的検査と、下のビルドが通ることだけを確かめる
+      - name: Go の静的検査
+        working-directory: server
+        run: go vet ./...
+
+      - name: Linux amd64 バイナリを作る
+        working-directory: server
+        env:
+          CGO_ENABLED: '0'
+          GOOS: linux
+          GOARCH: amd64
+        run: |
+          mkdir -p ../release/web
+          go build -trimpath -o ../release/sukusuku .
+          go version -m ../release/sukusuku | head -n 2
+
+      # 本番のビルド（build:demo ではない）
+      - name: React をビルド
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+          cp -a dist/. ../release/web/
+
+      - name: 成果物の形を確かめる
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$GITHUB_SHA" > release/commit
+          test -s release/sukusuku
+          test -f release/web/index.html
+          test "$(cat release/commit)" = "$GITHUB_SHA"
+
+      - name: 成果物を預ける
+        uses: actions/upload-artifact@v7
+        with:
+          name: sukusuku-release
+          path: release/
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 1
+
+  deploy:
+    name: 反映（AWS の VM）
+    needs: build
+    runs-on: [self-hosted, linux, x64, sukusuku-aws]
+    timeout-minutes: 15
+    steps:
+      # 反映する前に、この commit がまだ本線の先頭かを見る。進んでいたら、新しい実行に任せる
+      - name: 古い実行を反映しない
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          latest="$(curl -fsS --retry 3 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/mockup-go-react" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha"])')"
+          if [ "$latest" != "$GITHUB_SHA" ]; then
+            echo '新しい commit が本線にあるため、この実行は反映しません。'
+            echo 'deploy=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'deploy=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 成果物を受け取る
+        if: steps.latest.outputs.deploy == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: sukusuku-release
+          path: release
+
+      - name: 成果物を VM に反映
+        if: steps.latest.outputs.deploy == 'true'
+        run: sudo /usr/local/sbin/sukusuku-deploy "$GITHUB_WORKSPACE/release" "$GITHUB_SHA"
+
+      # 公開先の証明書の種類は VM 側の Caddy の設定で決まる。ここでは、外から届くこと（SG・Caddy・アプリ）だけを見るので、
+      # 証明書の検証は外す（-k）。証明書を正式なものにしたら -k を外してよい
+      - name: 外部 HTTPS を確認
+        if: steps.latest.outputs.deploy == 'true'
+        run: |
+          set -euo pipefail
+          curl -k --fail --show-error --silent --retry 5 --retry-delay 2 \
+            --output /dev/null https://54.65.117.115/
+          curl -k --fail --show-error --silent --retry 5 --retry-delay 2 \
+            --output /dev/null https://54.65.117.115/api/terms
+          code="$(curl -k --show-error --silent --output /dev/null --write-out '%{http_code}' \
+            https://54.65.117.115/api/me)"
+          test "$code" = 401
+          echo '外部 HTTPS、公開 API、未認証の保護を確認しました。'
+
+      # runner の作業場所は実行のあいだ残る。受け取った成果物を残さない
+      - name: 成果物を片付ける
+        if: always()
+        run: rm -rf -- "$GITHUB_WORKSPACE/release"
