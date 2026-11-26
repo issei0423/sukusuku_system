@@ -27,6 +27,8 @@
     "test:deployed:check": "tsc -p tests/deployed/tsconfig.json"
   },
   "dependencies": {
+    "@fontsource/biz-udpgothic": "^5.3.0",
+    "@fontsource/zen-maru-gothic": "^5.3.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.3"
