@@ -18,7 +18,7 @@ import type {
   Account, Staff, Guardian, InvitationCode, Terms,
   Child, ClassRoom, ClassChild, ClassStaff, GuardianChild, Allergy, MedicalHistory,
   Diary, DiaryLock, DiaryTemplate, DiaryAttachment,
-  ChatRoom, ChatMember, ChatMessage, ChatRead, ChatReaction, TermsAgreement, MisdeliveryRecord, Handout,
+  ChatRoom, ChatMember, ChatMessage, ChatRead, ChatReaction, TermsAgreement, MisdeliveryRecord, Handout, CalendarEvent,
   NapSession, NapRecord, NapAbnormal,
   ContactHomeRecord, ContactEventRecord, ContactClassRecord, ContactFacilityRecord, ContactReadRecord,
   NapSleepRecord, NapExclusionRecord, PhraseRecord,
@@ -1114,3 +1114,40 @@ function buildHandouts(): Handout[] {
   ];
 }
 export const handouts: Handout[] = buildHandouts();
+
+/* ============ 行事カレンダーの予定（t_event） ============
+ *
+ * 設計書に定め無し。配布物の形に合わせた【仮置き】（web/仮置き値.md）。
+ * 日付は起動した日から決める（今月と来月）。固定の月で持つと、日が経ったときに今月の予定が無くなるため。
+ * 日付ずらしの対象には含めない。クラスの予定は、今年度でクラス id がいちばん小さい・2番目に小さいクラスに置く。
+ * サーバ側（server/db.go の seedEvents）も同じ内容にしてある。
+ */
+/** 保存する予定（t_event）。class_name・can_edit は見る人ごとに導く */
+export type CalendarEventRow = Omit<CalendarEvent, 'class_name' | 'can_edit'> & {
+  is_deleted: boolean;
+  created_staff_id: string;
+};
+
+function buildEvents(): CalendarEventRow[] {
+  const [y, m] = today().split('-').map(Number);
+  const ym = (delta: number) => {
+    const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+  };
+  const day = (delta: number, d: number) => `${ym(delta)}-${String(d).padStart(2, '0')}`;
+  const [first, second] = classes.filter((c) => c.fiscal_year === FISCAL_YEAR).map((c) => c.class_id).sort((a, b) => a - b);
+  const row = (
+    id: number, date: string, start: string | null, end: string | null, title: string, note: string, classId: number | null,
+  ): CalendarEventRow => ({
+    event_id: id, event_date: date, start_time: start, end_time: end, title, note,
+    class_id: classId, is_deleted: false, created_staff_id: 'S001',
+  });
+  return [
+    row(1, day(0, 10), '09:30', '12:00', '運動会', '体操服・水筒を持ってきてください', null),
+    row(2, day(0, 20), '10:00', '10:45', '誕生会', '今月生まれのお友だちをお祝いします', null),
+    row(3, day(0, 15), null, null, '身体測定', '', first ?? null),
+    row(4, day(1, 5), '09:00', '14:00', '遠足', 'お弁当・レジャーシート', second ?? null),
+  ];
+}
+/** 行事カレンダーの予定。消したものは論理削除（is_deleted）で残す */
+export const calendarEvents: CalendarEventRow[] = buildEvents();

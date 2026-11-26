@@ -26,7 +26,7 @@ import { onLive } from '../live';
 import { api, settingText } from '../api/client';
 import { BellIcon } from '../components/ui';
 import {
-  TodayIcon, ChatIcon, ContactBookIcon, DiaryIcon, GrowthIcon, AddChildIcon, AiDraftIcon, PasswordIcon, TermsIcon, LogoutIcon, MenuIcon, CloseIcon, CallIcon,
+  TodayIcon, CalendarIcon, ChatIcon, ContactBookIcon, DiaryIcon, GrowthIcon, AddChildIcon, AiDraftIcon, PasswordIcon, TermsIcon, LogoutIcon, MenuIcon, CloseIcon, CallIcon,
 } from '../components/icons';
 import { ConfirmDialog, ToastHost } from '../components/feedback';
 import ConnectionBanner from '../components/ConnectionBanner';
@@ -43,6 +43,8 @@ import { GuardianChildContext, readSelectedChild, writeSelectedChild } from '../
  * 項目の絵（icon）は文字に添えるだけ（components/icons.tsx の【仮置き】の決まり）
  */
 const MENU_PAGES = [
+  // 【仮置き】行事カレンダーはメニューの先頭（web/仮置き値.md「行事カレンダーの動き」）
+  { to: '/guardian/calendar', label: '行事カレンダー', icon: <CalendarIcon /> },
   // 保護者が読める日誌は、保育士が共有を選び、園長が承認したものだけ（server/api_diary_share.go）
   { to: '/guardian/diaries', label: '園からの日誌', icon: <DiaryIcon /> },
 ];

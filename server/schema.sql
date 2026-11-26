@@ -345,6 +345,26 @@ CREATE TABLE t_handout (
 );
 CREATE INDEX ix_handout_month ON t_handout (target_month, posted_at);
 
+-- 行事カレンダーの予定（t_event）。設計書に定めが無く、配布物（t_handout）の形に合わせた【仮置き】。
+-- 消すときは論理削除とする。既存のデータベースには db.go の ensureEvents が同じ定義で作る
+CREATE TABLE t_event (
+  event_id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_date       TEXT    NOT NULL,                                               -- 日付 'YYYY-MM-DD'
+  start_time       TEXT,                                                           -- 開始 'HH:MM'。空なら終日
+  end_time         TEXT,                                                           -- 終了 'HH:MM'
+  title            TEXT    NOT NULL,
+  note             TEXT    NOT NULL DEFAULT '',
+  class_id         INTEGER REFERENCES m_class(class_id),                           -- 空なら園全体
+  created_staff_id TEXT    NOT NULL REFERENCES m_staff(staff_id),
+  created_at       TEXT    NOT NULL,
+  updated_staff_id TEXT    NOT NULL REFERENCES m_staff(staff_id),
+  updated_at       TEXT    NOT NULL,
+  is_deleted       INTEGER NOT NULL DEFAULT 0,
+  deleted_at       TEXT,
+  deleted_staff_id TEXT    REFERENCES m_staff(staff_id)
+);
+CREATE INDEX ix_event_date ON t_event (event_date);
+
 -- ============ 5-6 午睡チェック ============
 
 -- 開始・終了の操作を保持する。自動ログアウトの例外範囲と担当者の追跡に用いる

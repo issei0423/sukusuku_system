@@ -144,6 +144,11 @@ func (a *app) routeChat(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/handouts", a.handleHandouts)
 	mux.HandleFunc("POST /api/handouts", a.handlePostHandout)
 	mux.HandleFunc("POST /api/handouts/{id}/withdraw", a.handleWithdrawHandout)
+	// 行事カレンダー。GET /api/events は知らせの受け取り口（SSE）のため、別の接頭辞にする
+	mux.HandleFunc("GET /api/calendar/events", a.handleCalendarEvents)
+	mux.HandleFunc("POST /api/calendar/events", a.handleAddCalendarEvent)
+	mux.HandleFunc("POST /api/calendar/events/{id}", a.handleUpdateCalendarEvent)
+	mux.HandleFunc("POST /api/calendar/events/{id}/delete", a.handleDeleteCalendarEvent)
 	mux.HandleFunc("GET /api/chat/groups", a.handleChatGroups)
 	mux.HandleFunc("GET /api/chat/group-candidates", a.handleGroupCandidates)
 	mux.HandleFunc("POST /api/chat/groups", a.handleCreateGroup)

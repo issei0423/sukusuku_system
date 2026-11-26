@@ -380,6 +380,51 @@ run('Go サーバとの結合', () => {
   });
 
   /*
+   * 行事カレンダー（設計書に定め無し。配布物の形に合わせた【仮置き】）。職員が足す → 保護者が見る → 消す、の一往復。
+   * 道は /api/calendar/events（/api/events は開いている画面への知らせ）。規則はモックと同じ（web/tests/calendar.test.ts）
+   */
+  it('行事を職員が足すと保護者に見え、消すと見えなくなる', async () => {
+    const month = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 7);
+    const body = {
+      event_date: `${month}-26`, start_time: '10:00', end_time: '11:00', title: '結合テストの行事', note: '持ち物はありません',
+      class_id: 1,
+    };
+    // さくら組の担任（鈴木）。自クラスには足せるが、園全体には足せない
+    await switchTo('suzuki@hoiku.example.jp', 'pass1234', 'staff');
+    const before = await http.api.calendarEvents(dummy, month);
+    expect(before.can_write_all).toBe(false);
+    expect(before.writable_class_ids).toEqual([1]);
+    await expect(http.api.addCalendarEvent(dummy, { ...body, title: '園全体は足せない', class_id: null })).rejects.toThrow();
+    await expect(http.api.addCalendarEvent(dummy, { ...body, title: '', class_id: 1 })).rejects.toThrow();
+    const added = await http.api.addCalendarEvent(dummy, body);
+    expect(added).toMatchObject({ title: '結合テストの行事', class_id: 1, start_time: '10:00', can_edit: true });
+    let deleted = false;
+    try {
+      // 同じクラスの子の保護者には見える。書けない
+      await switchTo('nishida.t@example.jp', 'pass1234', 'guardian');
+      const seen = await http.api.calendarEvents(dummy, month);
+      expect(seen.events.find((e) => e.event_id === added.event_id)).toMatchObject({ title: '結合テストの行事', can_edit: false });
+      expect(seen).toMatchObject({ can_write_all: false, writable_class_ids: [] });
+      await expect(http.api.addCalendarEvent(dummy, { ...body, title: '保護者は足せない' })).rejects.toThrow();
+      await expect(http.api.deleteCalendarEvent(dummy, added.event_id)).rejects.toThrow();
+
+      // 担任が消す。二度目は見つからない
+      await switchTo('suzuki@hoiku.example.jp', 'pass1234', 'staff');
+      await http.api.deleteCalendarEvent(dummy, added.event_id);
+      deleted = true;
+      await expect(http.api.deleteCalendarEvent(dummy, added.event_id)).rejects.toThrow();
+      await switchTo('nishida.t@example.jp', 'pass1234', 'guardian');
+      expect((await http.api.calendarEvents(dummy, month)).events.some((e) => e.event_id === added.event_id)).toBe(false);
+      await expect(http.api.calendarEvents(dummy, '2026-13')).rejects.toThrow();
+    } finally {
+      if (!deleted) {
+        await switchTo('suzuki@hoiku.example.jp', 'pass1234', 'staff');
+        await http.api.deleteCalendarEvent(dummy, added.event_id);
+      }
+    }
+  });
+
+  /*
    * 日誌は園内の記録で、保護者には返さない（詳細設計書「日誌」(4-13)）。以前の版で保護者へ共有した
    * 自児の承認済みの日誌（日誌 5）も、本物のサーバが 403 で断る。職員には作成者・承認者の氏名が載る
    */

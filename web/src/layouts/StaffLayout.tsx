@@ -11,7 +11,7 @@ import { api, selectableClasses } from '../api/client';
 import { today } from '../api/util';
 import { BellIcon, Alert, Modal } from '../components/ui';
 import {
-  DashboardIcon, DiaryIcon, ChatIcon, NapIcon, ContactBookIcon, GrowthIcon, ChildrenIcon,
+  DashboardIcon, DiaryIcon, ChatIcon, NapIcon, ContactBookIcon, CalendarIcon, GrowthIcon, ChildrenIcon,
   ApprovalIcon, StaffAccountIcon, InvitationIcon, GuardianAccountIcon, FiscalYearIcon, LogIcon, MisdeliveryIcon, SettingsIcon,
   PasswordIcon, TermsIcon, LogoutIcon, CloseIcon,
 } from '../components/icons';
@@ -32,6 +32,8 @@ const NAV = [
   { to: '/staff/chat', label: 'チャット', icon: <ChatIcon />, end: false, adminOnly: false },
   { to: '/staff/nap', label: '午睡チェック', icon: <NapIcon />, end: false, adminOnly: false },
   { to: '/staff/contact', label: '連絡帳', icon: <ContactBookIcon />, end: false, adminOnly: false },
+  // 【仮置き】行事カレンダーは連絡帳の次（web/仮置き値.md「行事カレンダーの動き」）
+  { to: '/staff/calendar', label: '行事カレンダー', icon: <CalendarIcon />, end: false, adminOnly: false },
   { to: '/staff/growth', label: '発達・身体', icon: <GrowthIcon />, end: false, adminOnly: false },
   { to: '/staff/children', label: '園児', icon: <ChildrenIcon />, end: false, adminOnly: false },
 ];

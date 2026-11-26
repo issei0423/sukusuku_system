@@ -17,7 +17,7 @@ import { useSyncExternalStore } from 'react';
 import { useReachable, startReachabilityProbe } from './api/reachability';
 
 /** 知らせの種類。サーバ（server/events.go の ev*）と同じ並び */
-export type LiveEventType = 'chat' | 'diary' | 'handout' | 'nap' | 'development' | 'physical' | 'contact';
+export type LiveEventType = 'chat' | 'diary' | 'handout' | 'nap' | 'development' | 'physical' | 'contact' | 'calendar';
 
 export interface LiveEvent {
   type: LiveEventType;
@@ -27,6 +27,10 @@ export interface LiveEvent {
   diary_id?: number;
   /** handout：どの配布物が変わったか */
   handout_id?: number;
+  /** calendar：どの予定が変わったか（行事カレンダー。op は create・update・delete） */
+  event_id?: number;
+  event_date?: string;
+  op?: string;
   /** nap：どのクラスの午睡チェックか。contact：どのクラスのクラスのようすか */
   class_id?: number;
   /** nap・development・physical・contact：どの園児の記録か */
