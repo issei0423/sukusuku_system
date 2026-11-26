@@ -95,7 +95,7 @@ function homeCell(page: Page) {
 /** 保護者の窓で、園児の連絡帳画面（きょう）を開く */
 async function guardianContact(browser: import('@playwright/test').Browser, testInfo: import('@playwright/test').TestInfo, who: 'guardian' | 'guardianMurata' | 'guardianKubota' = 'guardian') {
   const g = await openWindow(browser, testInfo, who);
-  await g.getByRole('link', { name: '連絡帳を開く' }).first().click();
+  await g.getByRole('navigation', { name: '主な画面' }).getByRole('link', { name: /連絡帳/ }).click();
   await expect(g.getByRole('heading', { name: /の連絡帳$/, level: 1 })).toBeVisible();
   return g;
 }
@@ -653,7 +653,7 @@ test.describe('午睡（段1・段3）', () => {
     const gh = await g.context().newPage();
     await gh.goto('/guardian');
     await expect(gh.getByRole('main')).not.toContainText('段3確認用');
-    await gh.getByRole('link', { name: 'チャット・お知らせ' }).first().click();
+    await gh.getByRole('navigation', { name: '主な画面' }).getByRole('link', { name: /チャット/ }).click();
     await expect(gh.getByRole('main')).not.toContainText('段3確認用');
     await evidence(g, '02-042');
   });
@@ -805,7 +805,7 @@ test.describe('文を送る（段2）', () => {
     await expect(q.getByRole('region', { name: `${ACCOUNTS.guardianMurata.children[0].name}さんのきょう` })).toBeVisible();
     await expect(q.getByRole('region', { name: new RegExp(TARO) })).toHaveCount(0);
     await expect(q.getByRole('main')).not.toContainText(TARO);
-    await q.getByRole('link', { name: '連絡帳を開く' }).first().click();
+    await q.getByRole('navigation', { name: '主な画面' }).getByRole('link', { name: /連絡帳/ }).click();
     await expect(q.getByRole('heading', { name: /の連絡帳$/, level: 1 })).toBeVisible();
     for (const text of ['砂場でスコップを使って遊びました。', TARO, 'おひるね中']) await expect(q.getByRole('main')).not.toContainText(text);
     await evidence(q, '02-023');
@@ -1336,13 +1336,15 @@ test.describe('保護者の閲覧', () => {
     // 保護者が開いた時刻より後の記録にする（同じ秒に記録すると、開いた時刻と前後が付かない）
     await page.waitForTimeout(2_000);
     await page.getByRole('button', { name: `${TARO}の排せつ うんち` }).click();
-    await expect(today).toContainText(/(?:新着|新しく)\s*1(?:\s*件)?/);
-    await today.getByRole('link', { name: '連絡帳を開く' }).click();
+    // 新着の数は、画面の下のタブ「連絡帳」の字（「新着 n」）で見る
+    const tabs = g.getByRole('navigation', { name: '主な画面' });
+    await expect(tabs).toContainText(/(?:新着|新しく)\s*1(?:\s*件)?/);
+    await tabs.getByRole('link', { name: /連絡帳/ }).click();
     await expect(gToday(g).getByRole('listitem').filter({ hasText: 'うんち' })).toContainText('新');
     await evidence(g, '02-040');
     await g.getByRole('link', { name: /ホームへ/ }).click();
     await expect(today).toBeVisible();
-    await expect(today).not.toContainText(/(?:新着|新しく)\s*\d/);
+    await expect(g.getByRole('navigation', { name: '主な画面' })).not.toContainText(/(?:新着|新しく)\s*\d/);
   });
 
   /* 典拠：基本設計書「園にたずねる」(4-5)、図/画面詳細図「連絡帳画面（保護者）」(8-3) 項目18、図/画面遷移図「連絡帳」(3)、詳細設計書「連絡帳画面（保護者）」(2-6 (7)) */
@@ -1392,14 +1394,14 @@ test.describe('園内に留めるもの（段3）', () => {
 
     const g = await openWindow(browser, testInfo, 'guardian');
     await expect(g.getByRole('main')).not.toContainText('段3確認用');
-    for (const link of ['連絡帳を開く', /成長の記録/, 'チャット・お知らせ']) {
+    for (const link of [/連絡帳/, /成長/, /チャット/]) {
       await g.goto('/guardian');
-      await g.getByRole('link', { name: link }).first().click();
+      await g.getByRole('navigation', { name: '主な画面' }).getByRole('link', { name: link }).click();
       await expect(g.getByRole('main')).not.toContainText('段3確認用');
       await expect(g.getByRole('main')).not.toContainText(/申請|承認/);
     }
     await g.goto('/guardian');
-    await g.getByRole('link', { name: '連絡帳を開く' }).first().click();
+    await g.getByRole('navigation', { name: '主な画面' }).getByRole('link', { name: /連絡帳/ }).click();
     await evidence(g, '02-043');
   });
 
@@ -1420,9 +1422,9 @@ test.describe('園内に留めるもの（段3）', () => {
 
     const g = await openWindow(browser, testInfo, 'guardian');
     await expect(g.getByRole('main')).not.toContainText('段3確認用');
-    for (const link of ['連絡帳を開く', 'チャット・お知らせ']) {
+    for (const link of [/連絡帳/, /チャット/]) {
       await g.goto('/guardian');
-      await g.getByRole('link', { name: link }).first().click();
+      await g.getByRole('navigation', { name: '主な画面' }).getByRole('link', { name: link }).click();
       await expect(g.getByRole('main')).not.toContainText('段3確認用');
       await expect(g.getByRole('main')).not.toContainText('ヒヤリハット');
     }

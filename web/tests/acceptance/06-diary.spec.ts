@@ -1156,8 +1156,9 @@ async function guardianWindows(browser: Browser, who: 'guardian' | 'guardianMura
   await login(home, who);
   await expect(home.getByRole('heading', { name: `${child}さんのきょう` })).toBeVisible();
   const origin = new URL(home.url()).origin;
-  const contactHref = await home.getByRole('link', { name: '連絡帳を開く' }).first().getAttribute('href');
-  const chatHref = await home.getByRole('link', { name: `${child}の園とのやりとり` }).first().getAttribute('href');
+  const tabs = home.getByRole('navigation', { name: '主な画面' });
+  const contactHref = await tabs.getByRole('link', { name: /連絡帳/ }).getAttribute('href');
+  const chatHref = await tabs.getByRole('link', { name: /チャット/ }).getAttribute('href');
   const contact = await w.context.newPage();
   await contact.goto(origin + contactHref);
   const chat = await w.context.newPage();
@@ -1169,8 +1170,9 @@ async function guardianWindows(browser: Browser, who: 'guardian' | 'guardianMura
     contact,
     chat,
     async homeCounts() {
-      const t = (await home.getByRole('main').innerText()).replace(/\s+/g, ' ');
-      return { 新着: /新着\s*(\d+)/.exec(t)?.[1] ?? '0', やりとり: new RegExp(`${child}の園とのやりとり\\s*(\\d+)`).exec(t)?.[1] ?? '0' };
+      // 数は画面の下のタブの字（「連絡帳 新着 n」「チャット 未読 n」）で見る
+      const t = (await home.getByRole('navigation', { name: '主な画面' }).innerText()).replace(/\s+/g, ' ');
+      return { 新着: /新着\s*(\d+)/.exec(t)?.[1] ?? '0', やりとり: /未読\s*(\d+)/.exec(t)?.[1] ?? '0' };
     },
     async events() {
       return (await Promise.all(pages.map((p) => eventsSeen(p)))).flat();

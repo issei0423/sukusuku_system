@@ -709,12 +709,12 @@ export async function soonNotice(page: Page): Promise<string> {
 
 // 保護者の画面
 
-/** 保護者ホームの園児の区画の「成長の記録」を押し、成長の記録画面を開く */
+/** 保護者ホームを開き、画面の下のタブ「成長」を押して、成長の記録画面を開く（園児ごとの道。複数のお子さまのときは先にタブで園児を選ぶ） */
 export async function openGrowthFromHome(page: Page, child: string) {
   await page.goto('/guardian');
   const region = page.getByRole('region', { name: new RegExp(`${child}さんのきょう`) });
   await expect(region).toBeVisible();
-  await region.getByRole('link', { name: /成長の記録/ }).click();
+  await page.getByRole('navigation', { name: '主な画面' }).getByRole('link', { name: /成長/ }).click();
   await expect(page.getByRole('heading', { name: `${child}の成長の記録`, level: 1 })).toBeVisible();
 }
 export const homeRegion = (page: Page, child: string) => page.getByRole('region', { name: new RegExp(`${child}さんのきょう`) });
