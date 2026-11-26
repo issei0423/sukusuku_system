@@ -62,6 +62,16 @@ go run . -web ../web/dist     # 配信する静的ファイルの場所
 | ダッシュボード | `staffSummary` / `guardianHome` |
 | 開いている画面への知らせ | `connectLive`（`GET /api/events`。書き込みの API が送り先を決めて知らせる。`events.go`） |
 
+## 環境変数
+
+| 名前 | 意味 | 置かなかったとき |
+| :-- | :-- | :-- |
+| `ANTHROPIC_API_KEY` | AI の下書きに使う API キー（`ai_claude.go`） | AI を使わない。ほかはすべて動く |
+| `SUKUSUKU_AI_MODEL` | AI の下書きのモデル | 既定のモデル |
+| `SUKUSUKU_DEMO_LOGIN_KEY` | 演習用：合言葉つきの URL でのログインの合言葉（`api_demo_login.go`、画面は `/demo-login?k=…`）。32 文字以上の長い乱数にする。値はどこにも出さない | **この口ごと無い**（`POST /api/demo-login` は 404）。32 文字より短い値も無効（起動のログに一言出す） |
+
+公開先（OCI）では `/etc/sukusuku/sukusuku.env` に書く（`deploy/oci-free/README.md`）。
+
 ## Go 側で必ず担保すること
 
 **権限の判定はサーバ側の責任**（基本設計書「権限チェックの実装方針」(6-2)）。

@@ -73,6 +73,8 @@ func (a *app) routeContact(mux *http.ServeMux) {
 // 共通基盤：ログインとアカウント（基本設計書 4-3）
 func (a *app) routeAuth(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/login", a.handleLogin)
+	// 演習用：合言葉つきの URL でのログイン。環境変数を置かなければ 404（api_demo_login.go）
+	mux.HandleFunc("POST /api/demo-login", a.handleDemoLogin)
 	mux.HandleFunc("POST /api/logout", a.handleLogout)
 	mux.HandleFunc("GET /api/me", a.handleMe)
 	// 自動ログアウトの期限と、予告の「続ける」（api_session.go。GitHub Issue #210）
