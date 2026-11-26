@@ -118,7 +118,7 @@ export default function DevInputScreen() {
   const messageLocked = confirmed && user!.role !== '1' && finalizedDay !== today();
 
   return (
-    <div style={{ maxWidth: 860 }}>
+    <div className="care-page dev-input-page" style={{ maxWidth: 860 }}>
       <div className="page-head page-head-fields">
         <Link className="btn btn-quiet btn-sm" to="/staff/growth"><BackIcon />発達チェック一覧へ</Link>
         <h1>{c.child_name}（{formatAge(c.birth_date, checkedOn)}）</h1>
