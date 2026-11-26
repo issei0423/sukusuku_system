@@ -47,7 +47,7 @@ export default function ShareSettingScreen() {
   const hidden = data?.filter((r) => !r.isShareable).length ?? 0;
 
   return (
-    <div style={{ maxWidth: 820 }}>
+    <div className="care-page" style={{ maxWidth: 820 }}>
       <div className="page-head">
         <Link className="btn btn-quiet btn-sm" to="/staff/growth"><BackIcon />発達チェック一覧へ</Link>
         <h1>共有範囲の設定</h1>

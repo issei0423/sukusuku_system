@@ -107,12 +107,13 @@ export default function GuardianContactScreen() {
     <div className="contact-page">
       <div ref={head} className="contact-page-head">
         <Link className="btn btn-quiet btn-sm" to="/guardian"><BackIcon />ホームへ</Link>
+        {/* 月の一覧は、日付の移動の行から出して「ホームへ」の行の右に置く（390px の幅で日付の行が2段に割れないように） */}
+        <button type="button" className="contact-month-toggle" aria-expanded={showMonth} onClick={() => setShowMonth((v) => !v)}>月の一覧</button>
         <h1>{data.child_name}の連絡帳</h1>
         <nav className="contact-date" aria-label="連絡帳の日付">
           <button type="button" onClick={() => moveTo(addDays(date, -1))}><PrevIcon />前の日</button>
           <strong>{dayLabel(date)}</strong>
           <button type="button" onClick={() => moveTo(addDays(date, 1))} disabled={isToday}>次の日<ForwardIcon /></button>
-          <button type="button" aria-expanded={showMonth} onClick={() => setShowMonth((v) => !v)}>月の一覧</button>
         </nav>
       </div>
 
@@ -121,7 +122,7 @@ export default function GuardianContactScreen() {
           onPick={(d) => { setShowMonth(false); moveTo(d); }} />
       )}
 
-      <section className="card contact-section" aria-labelledby="contact-home-title">
+      <section className="contact-section" aria-labelledby="contact-home-title">
         <h2 id="contact-home-title">家庭から</h2>
         {h && !editing && (
           <div className="contact-home-summary">
@@ -147,16 +148,22 @@ export default function GuardianContactScreen() {
         {!isToday && <p className="muted">{TEXT.pastDayNoEdit}</p>}
       </section>
 
-      <section className="card contact-section" aria-labelledby="contact-today-title">
+      <section className="contact-section" aria-labelledby="contact-today-title">
         <h2 id="contact-today-title">{isToday ? 'きょうのようす' : 'この日のようす'}</h2>
         <TodayTimeline page={data} viewer="guardian" lastReadAt={firstRead.current?.at ?? null} />
       </section>
 
-      <section className="card contact-section" aria-labelledby="contact-facility-title">
+      <section className="contact-section" aria-labelledby="contact-facility-title">
         <h2 id="contact-facility-title">園から</h2>
         {data.facility
-          ? <p><time dateTime={data.facility.recorded_at}>{formatHM(data.facility.recorded_at)}</time>　{data.facility.body}
-            {data.facility.corrected_at && <span className="muted">　訂正しました（{formatHM(data.facility.corrected_at)}）</span>}</p>
+          ? (
+            <>
+              <p className="contact-facility-time"><time dateTime={data.facility.recorded_at}>{formatHM(data.facility.recorded_at)}</time></p>
+              {/* 先生の文は、保護者ホームと同じく罫線の上に書く */}
+              <p className="guardian-ruled">{data.facility.body}
+                {data.facility.corrected_at && <span className="muted">　訂正しました（{formatHM(data.facility.corrected_at)}）</span>}</p>
+            </>
+          )
           : <p className="empty">まだ届いていません</p>}
       </section>
     </div>

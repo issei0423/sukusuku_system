@@ -32,23 +32,22 @@ export default function GuardianCalendarScreen() {
   };
 
   return (
-    <div className="guardian-home">
-      <div className="guardian-page-intro">
+    <div className="guardian-home cal-page cal-page-guardian">
+      <div className="cal-guardian-head">
         <Link className="btn btn-quiet btn-sm" to="/guardian"><BackIcon />ホームへ</Link>
-        <span className="guardian-eyebrow" style={{ marginTop: 8 }}>園からのおしらせ</span>
         <h1>行事カレンダー</h1>
         <p>園の行事や予定を、月ごとに見られます。</p>
       </div>
 
-      <section className="guardian-home-panel">
+      <section className="cal-month">
         {loading && !data && <Loading />}
         {error && <ErrorBox text={error} />}
         <MonthCalendar month={month} selected={selected} today={today()}
           counts={countByDate(data?.events ?? [])} onMonthChange={changeMonth} onSelect={setSelected} />
       </section>
 
-      <section className="guardian-home-panel" aria-labelledby="cal-day-title">
-        <div className="guardian-panel-heading"><h2 id="cal-day-title">{selected ? `${dayLabel(selected)}の予定` : '予定'}</h2></div>
+      <section className="cal-day-panel" aria-labelledby="cal-day-title">
+        <h2 id="cal-day-title">{selected ? `${dayLabel(selected)}の予定` : '予定'}</h2>
         {!selected && <Empty text="日を選ぶと、その日の予定が出ます。" />}
         {selected && data && dayEvents.length === 0 && <Empty text="この日の予定はありません。" />}
         {dayEvents.length > 0 && (

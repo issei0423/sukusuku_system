@@ -164,7 +164,7 @@ export default function GrowthChart({ child, records, standards, measureType, no
         const v = yLo + ((yHi - yLo) * i) / yTicks;
         return (
           <g key={i}>
-            <line x1={PAD.left} x2={W - PAD.right} y1={y(v)} y2={y(v)} stroke="var(--c-border)" strokeWidth={scale} />
+            <line x1={PAD.left} x2={W - PAD.right} y1={y(v)} y2={y(v)} stroke="var(--c-border-weak)" strokeWidth={scale} />
             <text x={PAD.left - 6 * scale} y={y(v) + fontSize * 0.35} textAnchor="end" fontSize={fontSize} fill="var(--c-text-sub)">
               {v.toFixed(measureType === '1' ? 0 : 1)}
             </text>
@@ -203,7 +203,7 @@ export default function GrowthChart({ child, records, standards, measureType, no
       )}
       {points.map((p) => (
         <g key={p.on}>
-          <circle cx={x(p.m)} cy={y(p.v)} r={4} fill="var(--c-surface)" stroke="var(--c-text)" strokeWidth={2} />
+          <circle cx={x(p.m)} cy={y(p.v)} r={4} fill="var(--c-filled)" stroke="var(--c-text)" strokeWidth={2} />
           <title>{p.on}　{p.v} {unit}（{p.m} か月）</title>
         </g>
       ))}

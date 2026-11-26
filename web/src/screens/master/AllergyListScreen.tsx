@@ -33,7 +33,7 @@ export default function AllergyListScreen() {
   };
 
   return (
-    <div>
+    <div className="adm">
       <div className="page-head">
         <h1>アレルギー一覧（全園児）</h1>
         <div className="spacer" />
@@ -79,7 +79,7 @@ export default function AllergyListScreen() {
             </tbody>
           </table>
         )}
-        {data && <div className="muted" style={{ marginTop: 8 }}>対象 {data.length} 名</div>}
+        {data && <div className="muted adm-count">対象 {data.length} 名</div>}
       </section>
     </div>
   );

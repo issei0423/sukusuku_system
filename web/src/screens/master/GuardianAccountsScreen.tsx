@@ -66,7 +66,7 @@ export default function GuardianAccountsScreen() {
   const notAgreed = data?.filter((r) => !r.termsAgreed) ?? [];
 
   return (
-    <div style={{ maxWidth: 1000 }}>
+    <div className="adm">
       <div className="page-head"><h1>保護者アカウント</h1></div>
 
       {error && <div style={{ marginBottom: 16 }}><Alert>{error}</Alert></div>}

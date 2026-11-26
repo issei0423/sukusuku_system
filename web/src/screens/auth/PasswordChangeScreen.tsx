@@ -106,10 +106,10 @@ export default function PasswordChangeScreen({ forced }: { forced?: boolean }) {
   );
 
   // 強制変更のときは入口の様式で全画面に出す。他の画面へ進ませないため
-  if (forced) return <PublicLayout><h1 style={{ marginBottom: 16 }}>パスワードの変更</h1>{body}</PublicLayout>;
+  if (forced) return <PublicLayout><div className="adm-public"><h1 style={{ marginBottom: 16 }}>パスワードの変更</h1>{body}</div></PublicLayout>;
 
   return (
-    <div style={{ maxWidth: 480 }}>
+    <div className="adm adm-narrow adm-pw">
       <div className="page-head"><h1>パスワードの変更</h1></div>
       <section className="card">{body}</section>
     </div>

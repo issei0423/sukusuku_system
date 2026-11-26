@@ -145,7 +145,7 @@ export default function PhysicalRecordScreen() {
   const historyLimit = settingNumber('paging.physical_history_count', 12);
 
   return (
-    <div>
+    <div className="care-page physical-page">
       <div className="page-head page-head-fields">
         <h1>身体記録</h1>
         <Field label="クラス">
@@ -159,7 +159,7 @@ export default function PhysicalRecordScreen() {
       </div>
 
       {/* クラスの実施状況。未実施の園児名を出す */}
-      <section className="card card-sub">
+      <section className="card card-sub physical-status">
         {status.loading && <Loading />}
         {status.error && <ErrorBox text={status.error} />}
         {status.data && (

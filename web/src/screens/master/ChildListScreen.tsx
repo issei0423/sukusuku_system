@@ -57,7 +57,7 @@ export default function ChildListScreen() {
   };
 
   return (
-    <div>
+    <div className="adm">
       <div className="page-head">
         <h1>園児</h1>
         <div className="spacer" />
@@ -129,7 +129,7 @@ export default function ChildListScreen() {
           </table>
         )}
         {/* ページングなし。1クラス最大30名程度で、連続入力の作業性を優先する（基本設計書 3-7） */}
-        {data && data.length > 0 && <div className="muted" style={{ marginTop: 8 }}>全 {data.length} 名</div>}
+        {data && data.length > 0 && <div className="muted adm-count">全 {data.length} 名</div>}
       </section>
 
       {removing && (

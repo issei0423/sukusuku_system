@@ -94,7 +94,7 @@ export default function NapAbnormalScreen() {
   };
 
   return (
-    <div style={{ maxWidth: 900 }}>
+    <div className="care-page" style={{ maxWidth: 900 }}>
       <div className="page-head">
         <Link className="btn btn-quiet btn-sm" to="/staff/nap"><BackIcon />午睡チェックへ</Link>
         <h1>異常時の記録</h1>

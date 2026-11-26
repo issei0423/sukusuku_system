@@ -328,7 +328,7 @@ export default function StaffChatScreen() {
             {current && <span className="muted">（{CHAT_ROOM_TYPE[current.room.room_type]}）</span>}
             {/* 未対応スレッドの切り替えは個人チャットだけが持つ */}
             {current?.room.room_type === '4' && !current.left && (
-              <span style={{ float: 'right' }}>
+              <span className="chat-room-actions">
                 <Tag label={THREAD_STATUS[current.room.thread_status ?? '2'] ?? '対応済み'}
                   className={current.room.thread_status === '1' ? 'tag-applied' : 'tag-approved'} />
                 {' '}
@@ -422,13 +422,13 @@ export default function StaffChatScreen() {
             {current?.left && <div className="muted">外れたチャンネルの、いまのメンバーは表示しません。</div>}
             {/* 職員と保護者を分けて並べる。保護者が入っているかをひと目で分かるようにするため */}
             {!current?.left && <div className="member-group">職員 {staffMembers.length} 名</div>}
-            {staffMembers.map((m) => <div key={m.account_id}>{m.name}</div>)}
+            {staffMembers.map((m) => <div key={m.account_id} className="chat-member">{m.name}</div>)}
             {guardianMembers.length > 0 && (
               <>
                 <div className="member-group">保護者 {guardianMembers.length} 名</div>
                 {/* 続柄を添える。お迎えに来る人が誰なのかを職員が確かめられるようにするため */}
                 {guardianMembers.map((m) => (
-                  <div key={m.account_id}>{m.name}{m.relationship ? `（${m.relationship}）` : ''}</div>
+                  <div key={m.account_id} className="chat-member">{m.name}{m.relationship ? `（${m.relationship}）` : ''}</div>
                 ))}
               </>
             )}
