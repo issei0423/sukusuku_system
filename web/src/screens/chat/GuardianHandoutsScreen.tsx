@@ -32,30 +32,26 @@ export default function GuardianHandoutsScreen() {
   const months = Array.from(new Set((data ?? []).map((h) => h.target_month)));
 
   return (
-    <div className="guardian-home">
-      <div className="guardian-page-intro">
-        <Link className="btn btn-quiet btn-sm" to="/guardian/chat"><BackIcon />チャット・お知らせへ</Link>
-        <span className="guardian-eyebrow" style={{ marginTop: 8 }}>園からのおたより</span>
-        <h1>園からの配布物</h1>
-        <p>園だより・献立表などを、月ごとに見返せます。</p>
-      </div>
-
-      <section className="guardian-home-panel">
+    <div className="guardian-home chat-handouts">
+      <Link className="btn btn-quiet btn-sm chat-back" to="/guardian/chat"><BackIcon />チャット・お知らせへ</Link>
+      <h1 className="chat-title">園からの配布物</h1>
+      {/* 園だより・献立表などを、月ごとに見返せる */}
+      <div className="chat-filter">
         <Field label="種類">
           <select value={type} onChange={(e) => setType(e.target.value)}>
             <option value="">すべて</option>
             {Object.entries(HANDOUT_TYPE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
         </Field>
-      </section>
+      </div>
 
       {loading && <Loading />}
       {error && <ErrorBox text={error} />}
       {data?.length === 0 && <Empty text="配布物はまだありません。" />}
 
       {months.map((month) => (
-        <section className="guardian-home-panel" key={month}>
-          <div className="guardian-panel-heading"><h2>{formatMonth(month)}</h2></div>
+        <section className="chat-month" key={month}>
+          <h2>{formatMonth(month)}</h2>
           <div className="guardian-record-list">
             {data!.filter((h) => h.target_month === month).map((h) => (
               <button key={h.handout_id} className="guardian-record-link handout-row"
