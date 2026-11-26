@@ -413,6 +413,45 @@ export interface Handout {
   posted_staff_name?: string;
 }
 
+/**
+ * 行事カレンダーの予定（t_event）。設計書に定め無し。配布物の形に合わせた【仮置き】
+ * class_id が空なら園全体向け。消した予定は論理削除で、一覧には出ない
+ */
+export interface CalendarEvent {
+  event_id: number;
+  /** 日付 'YYYY-MM-DD' */
+  event_date: string;
+  /** 開始・終了の時刻 'HH:MM'。両方空なら終日 */
+  start_time: string | null;
+  end_time: string | null;
+  title: string;
+  note: string;
+  class_id: number | null;
+  class_name: string | null;
+  /** 見ている人が直す・消せる予定か */
+  can_edit: boolean;
+}
+
+/** 月ごとの予定の一覧と、見ている人が書ける範囲（GET /api/calendar/events?month=YYYY-MM） */
+export interface CalendarMonth {
+  month: string;
+  events: CalendarEvent[];
+  /** 園全体の予定を書ける（管理者） */
+  can_write_all: boolean;
+  /** 書けるクラス（管理者は全クラス、一般は自クラス、保護者・フリーは空） */
+  writable_class_ids: number[];
+}
+
+/** 予定の足す・直すの入力。時刻は 'HH:MM'、空は null */
+export interface CalendarEventInput {
+  event_date: string;
+  start_time: string | null;
+  end_time: string | null;
+  title: string;
+  note: string;
+  class_id: number | null;
+}
+
 /** 既読（t_chat_read）。保護者側には表示しない（5-5） */
 export interface ChatRead {
   chat_read_id: number;

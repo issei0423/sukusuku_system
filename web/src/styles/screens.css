@@ -892,3 +892,42 @@ table.list.contact-class-table :is(th, td) { vertical-align: top; padding: var(-
  * 【仮置き】折り返す位置と余白を外すことは設計が決めていない（web/仮置き値.md「異常時の記録の一覧（縦向き）」）
  */
 .nap-abnormal-list .nap-abnormal-child-links .btn { padding-inline: 0; white-space: normal; word-break: keep-all; text-align: left; }
+
+/*
+ * 月のカレンダー（components/MonthCalendar.tsx。行事カレンダー）
+ * 【仮置き】設計に定めが無い（web/仮置き値.md「行事カレンダーの動き」）。色は既存のトークンだけを使う。
+ * 日のボタンは 44px 以上、7列は table-layout: fixed で幅を等分し、375px でも横にはみ出さない（min-width: 0 で縮める）。
+ * 今日：primary の 2px の枠＋太字。選んだ日：塗りボタンの色（aria-pressed）。予定のある日：数の印（淡い地に濃い字）
+ */
+.cal { display: grid; gap: var(--sp-2); }
+.cal-title { font-size: 1.125rem; }
+.cal-today-row { display: flex; justify-content: flex-end; }
+.cal-grid { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 2px; }
+.cal-grid th { padding: var(--sp-1) 0; font-weight: 600; font-size: var(--fs-small); color: var(--c-text-weak); text-align: center; }
+.cal-grid td { padding: 0; }
+.cal-day {
+  width: 100%; min-width: 0; min-height: 56px; padding: var(--sp-1) 0;
+  flex-direction: column; gap: 2px; justify-content: flex-start;
+  border: 1px solid var(--c-border-weak); border-radius: var(--radius);
+  color: var(--c-text); font-weight: 400;
+}
+.cal-day.is-today { border: 2px solid var(--c-primary-deep); font-weight: 700; }
+.cal-day[aria-pressed="true"] { background: var(--c-filled); border-color: var(--c-filled); color: var(--c-on-filled); }
+@media (hover: hover) {
+  .cal-day[aria-pressed="true"]:hover:not(:disabled) { background: var(--c-filled-hover); }
+}
+.cal-num { line-height: 1.3; }
+.cal-count {
+  min-width: 20px; padding: 0 var(--sp-1); border-radius: 10px; background: var(--c-primary); color: var(--c-primary-ink);
+  font-size: var(--fs-small); font-weight: 600; line-height: 20px;
+}
+.cal-day[aria-pressed="true"] .cal-count { background: var(--c-on-filled); color: var(--c-filled); }
+/* 選んだ日の予定の一覧 */
+.cal-events { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-3); }
+.cal-event { display: grid; gap: var(--sp-1); padding: var(--sp-3); border: 1px solid var(--c-border-weak); border-radius: var(--radius); background: var(--c-surface); }
+.cal-event-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); }
+.cal-event-time { font-weight: 600; font-variant-numeric: tabular-nums; }
+.cal-event-title { font-weight: 600; overflow-wrap: anywhere; }
+.cal-event-note { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--c-text-weak); }
+.cal-event-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.cal-time-row { display: flex; flex-wrap: wrap; gap: var(--sp-3); }

@@ -12,6 +12,7 @@ import type {
   Child, ClassRoom, Diary, SessionUser, Role, NapRecord, NapSession,
   PhysicalRecord, GrowthStandard, DevelopmentCheck, DevelopmentResultRecord,
   DevelopmentItem, DevelopmentCategory, ChatRoom, ChatMessage, Allergy, Paged, Sex, Handout,
+  CalendarMonth, CalendarEvent, CalendarEventInput,
 } from './types';
 import type {
   LoginError, ChildInput, DiaryFilter, DiaryInput, DiaryTemplate, ChatRoomView,
@@ -343,6 +344,16 @@ const apiAuth = {
   /* ---- 認証 ---- */
   async login(email: string, password: string, entrance: 'staff' | 'guardian'): Promise<SessionUser> {
     const u = await post<SessionUser>('/api/login', { email, password, entrance });
+    await loadReferenceFor(u);
+    return u;
+  },
+
+  /**
+   * 演習用：合言葉つきの URL でのログイン（server/api_demo_login.go）。合言葉の判定とアカウントの選び分けはサーバだけが行う。
+   * 失敗の理由は返ってこない（機能が無いときと同じ 404）。画面（DemoLoginScreen）は文を1つしか出さない
+   */
+  async demoLogin(key: string, as: 'staff' | 'guardian'): Promise<SessionUser> {
+    const u = await post<SessionUser>('/api/demo-login', { key, as });
     await loadReferenceFor(u);
     return u;
   },
@@ -803,6 +814,20 @@ const apiHandout = {
   withdrawHandout: (_u: SessionUser, handoutId: number) => post<void>(`/api/handouts/${handoutId}/withdraw`),
 };
 
+/* ---- 行事カレンダー（server/api_event.go）。設計書に定め無し。配布物の形に合わせた【仮置き】。
+ * 道は /api/calendar/events。/api/events は開いている画面への知らせ（SSE）の受け口で、別物 ---- */
+const apiCalendar = {
+  calendarEvents: (_u: SessionUser, month: string) =>
+    get<CalendarMonth>('/api/calendar/events' + qs({ month })),
+  addCalendarEvent: async (_u: SessionUser, input: CalendarEventInput) =>
+    (await post<{ event: CalendarEvent }>('/api/calendar/events', input)).event,
+  updateCalendarEvent: async (_u: SessionUser, eventId: number, input: CalendarEventInput) =>
+    (await post<{ event: CalendarEvent }>(`/api/calendar/events/${eventId}`, input)).event,
+  deleteCalendarEvent: async (_u: SessionUser, eventId: number): Promise<void> => {
+    await post<{ ok: true }>(`/api/calendar/events/${eventId}/delete`);
+  },
+};
+
 /* ============ 画面が使う入口 ============ */
 /* 連絡帳の写真（詳細設計書「きょうのようす」(4-4 (2))・(4-4 (3))。名前はモック（api/mock.ts の contactPhotoApi）と同じ） */
 const contactPhotoApi = {
@@ -912,4 +937,4 @@ const guardianApi = {
     post<{ ok: true }>(`/api/guardian/children/${encodeURIComponent(childId)}/ai-opt-out`, { opt_out: optOut }),
 };
 
-export const api = { ...apiAuth, ...apiChatNap, ...apiGrowth, ...apiAdmin, ...apiHandout, ...contactApi, ...guardianApi };
+export const api = { ...apiAuth, ...apiChatNap, ...apiGrowth, ...apiAdmin, ...apiHandout, ...apiCalendar, ...contactApi, ...guardianApi };
