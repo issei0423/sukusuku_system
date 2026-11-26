@@ -90,13 +90,13 @@ export default function TopScreen({ entrance }: { entrance: 'staff' | 'guardian'
 
       {/* 新規登録の導線は保護者用トップにのみ置く（画面詳細図 2-1） */}
       {entrance === 'guardian' && (
-        <div className="row" style={{ marginTop: 20, justifyContent: 'space-between' }}>
+        <div className="public-signup">
           <span className="muted">はじめての方</span>
           <Link className="btn" to="/signup"><SignUpIcon />招待コードで新規登録</Link>
         </div>
       )}
 
-      <div style={{ marginTop: 24, textAlign: 'center' }}>
+      <div className="public-switch">
         <Link className="btn btn-quiet btn-sm" to={entrance === 'staff' ? '/' : '/staff-top'}>
           {entrance === 'staff' ? '保護者の方はこちら' : '職員の方はこちら'}
         </Link>

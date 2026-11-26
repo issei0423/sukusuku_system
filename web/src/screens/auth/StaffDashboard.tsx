@@ -4,6 +4,7 @@
  *
  * 「届けること」を上に、園内のこと（日誌・発達チェック・異常時の記録）をその下に置く。
  * 出勤直後に「何が残っているか」を1画面で把握させるため。各項目に、数えている範囲（担当クラス・全クラス）を添える。
+ * 見た目は、1行に1件の罫線の一覧。残りのある行は項目名を太字に、0 件の行は補足の色の細字にして、箱や色の札を使わずに強さを分ける。
  * 差し戻された日誌は一般にのみ、承認待ちの日誌は管理者にのみ表示する（同 項目2・8）。
  */
 import { Link, useLocation } from 'react-router-dom';
@@ -20,7 +21,7 @@ import { ContactBookIcon, NapIcon, DiaryIcon, MeasureIcon, DevCheckIcon, Forward
 const scopeNote = (scope: string) => <span className="muted">（{scope}）</span>;
 
 /**
- * 件数のセルの class。1 以上は目に入る太さ、0 と「ありません」は補足の色の細字にする（styles/screens.css の .dashboard-list。
+ * 件数のセルの class。1 以上は目に入る太さ、0 と「ありません」は補足の色の細字にする（styles/app.css の .dashboard-list。
  * 見直し 2026-10-31 の r2a-07）
  */
 const countClass = (n: number) => `num nowrap ${n > 0 ? 'dashboard-count' : 'dashboard-zero'}`;
@@ -105,10 +106,11 @@ export default function StaffDashboard() {
 
   return (
     <div>
-      <div className="page-head">
+      <div className="page-head dashboard-head">
         <h1>ダッシュボード</h1>
         <div className="spacer" />
-        <span className="muted">今日 {formatYMD(today())}</span>
+        {/* 画面でいちばん目立たせるのは、日付の蛍光ペンの線だけ（保護者の「きょう」と同じ印）。件数は太字と字で示す（styles/app.css の .dashboard-*） */}
+        <div className="dashboard-date"><span>今日 {formatYMD(today())}</span></div>
       </div>
 
       {accountChanged && (
@@ -122,7 +124,7 @@ export default function StaffDashboard() {
         </div>
       )}
 
-      <div className="grid12">
+      <div className="grid12 dashboard-grid">
         {/*
           届ける（詳細設計書「職員ダッシュボード（「届ける」の項目）」(2-1)）。デモの道に要る項目を先頭に置く。
           一般は自クラス、管理者は全クラスの数。0 のときも項目を消さず「ありません」と出す。
