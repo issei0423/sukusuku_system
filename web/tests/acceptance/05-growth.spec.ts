@@ -430,8 +430,9 @@ test.describe('シート05 発達チェック・身体測定・成長の記録',
     const g = await family(browser, playwright, c.B, 'B');
     const region = homeRegion(g.page, c.B.name);
     await expect(region).toBeVisible();
-    await expect.soft(region.getByRole('link', { name: /成長の記録/ })).toBeVisible();
-    await expect.soft(region, '「新しい記録があります」は出ない').not.toContainText('新しい記録があります');
+    const tabs = g.page.getByRole('navigation', { name: '主な画面' });
+    await expect.soft(tabs.getByRole('link', { name: /成長/ })).toBeVisible();
+    await expect.soft(tabs, '「新着」の字は出ない').not.toContainText('新着');
     await openGrowthFromHome(g.page, c.B.name);
     await expect.soft(growthBody(g.page), '身長・体重の区画').toContainText('まだ測った値はありません');
     await expect.soft(achievements(g.page)).toContainText('まだ成長の記録はありません。身体測定や発達チェックのあとに届きます');
@@ -962,8 +963,7 @@ test.describe('シート05 発達チェック・身体測定・成長の記録',
     await evidence(g.page, '05-029');
     await g.page.getByRole('link', { name: /ホームへ/ }).click();
     await expect.soft(homeRegion(g.page, c.A.name)).toBeVisible();
-    await g.page.getByRole('banner').getByRole('button', { name: /メニュー/ }).click();
-    await g.page.getByRole('link', { name: /成長の記録$/ }).first().click();
+    await g.page.getByRole('navigation', { name: '主な画面' }).getByRole('link', { name: /成長/ }).click();
     await expect.soft(g.page.getByRole('heading', { name: `${c.A.name}の成長の記録`, level: 1 })).toBeVisible();
     await g.context.close();
   });

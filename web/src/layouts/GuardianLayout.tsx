@@ -2,15 +2,23 @@
  * 保護者（スマートフォン）の共通レイアウト
  * 典拠：図/画面詳細図.md「保護者（スマートフォン）」(1-2)
  *
- * スマートフォンではサイドナビを持たず、ホームからの導線に絞る。片手操作を前提とするため。
- * ログアウトはメニュー内に置く（基本設計書「画面基本構成」(3-5)）。
+ * 片手操作を前提とする（基本設計書「画面基本構成」(3-5)）。毎日開く行き先（きょう・連絡帳・成長・チャット）は、
+ * 画面の下に常に出すタブ（4つ）に置く。メニュー（ドロワー）は、たまに使うものだけ（お子さまの追加・AI の下書きの利用・
+ * 園からの日誌・パスワードの変更・利用規約・ログアウト）。ログアウトはメニュー内に置く（基本設計書「画面基本構成」(3-5)）。
  *
- * 【仮置き】PC の幅（1024px 以上）では、メニューを左に常に出し、緊急連絡の番号をヘッダに置く。
+ * 【仮置き】PC の幅（1024px 以上）では、下のタブを出さず、左の欄に同じ4つの行き先とメニューの項目を並べる（常に出す）。
  * 設計は保護者の画面をスマートフォン・縦向き・シングルカラムとだけ定め、PC で開いたときの見せ方を
- * 決めていない（基本設計書「想定する端末と向き」(3-5)）。PC で開くと 480px の列が中央に出るだけで、
- * メニューも隠れたままになるための提案（web/仮置き値.md）。幅の切り替えは CSS（app.css）で行う。
+ * 決めていない（基本設計書「想定する端末と向き」(3-5)）ための提案（web/仮置き値.md）。幅の切り替えは CSS（app.css）で行う。
+ *
+ * 【仮置き】緊急連絡は、設計の「画面の下端に常時表示」（基本設計書「画面基本構成」(3-5)）をやめ、ヘッダの「園に電話」
+ * （電話のリンク）に置いた。下端は下のタブが使うため。どの画面でも常に見える点は変えていない。
+ * 「急なご連絡は、お電話で」の注意の文は、ホームとチャット・お知らせの下のほうに静かに残した（web/仮置き値.md）。
+ *
+ * 【仮置き】見た目（白の地・ひよこ黄の細い帯・罫線と藍・丸ゴシックの見出し）は styles/guardian.css が、
+ * .guardian-shell の中の色と書体を当て直して決める（web/仮置き値.md「保護者の画面の見た目」）。
  */
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useSession } from '../session';
 import { useAsync, AUTO_REFRESH_MS } from '../hooks';
@@ -18,7 +26,7 @@ import { onLive } from '../live';
 import { api, settingText } from '../api/client';
 import { BellIcon } from '../components/ui';
 import {
-  HomeIcon, ChatIcon, DiaryIcon, GrowthIcon, AddChildIcon, AiDraftIcon, PasswordIcon, TermsIcon, LogoutIcon, MenuIcon, CloseIcon,
+  TodayIcon, ChatIcon, ContactBookIcon, DiaryIcon, GrowthIcon, AddChildIcon, AiDraftIcon, PasswordIcon, TermsIcon, LogoutIcon, MenuIcon, CloseIcon, CallIcon,
 } from '../components/icons';
 import { ConfirmDialog, ToastHost } from '../components/feedback';
 import ConnectionBanner from '../components/ConnectionBanner';
@@ -27,17 +35,15 @@ import AddChildDialog from '../components/AddChildDialog';
 import ScreenErrorBoundary from '../components/ScreenErrorBoundary';
 import { AI_OPT_OUT_TEXT, ADD_CHILD_TEXT } from '../messages';
 import { UnsavedInputContext, useUnsavedInputTracker } from '../unsavedInput';
+import { GuardianChildContext, readSelectedChild, writeSelectedChild } from '../guardianChild';
 
 /**
- * メニューの行き先。スマートフォンのメニュー（ドロワー）と、PC の幅で常に出すメニューで同じものを並べる。
- * あいだに、ダイアログを開く項目（お子さまの追加・AI の下書きの利用）を挟む（dialogItems）。
+ * メニューの行き先（たまに使うもの）。スマートフォンのメニュー（ドロワー）と、PC の幅で常に出す左の欄で同じものを並べる。
+ * 先に、ダイアログを開く項目（お子さまの追加・AI の下書きの利用）を置く（dialogItems）。
  * 項目の絵（icon）は文字に添えるだけ（components/icons.tsx の【仮置き】の決まり）
  */
 const MENU_PAGES = [
-  { to: '/guardian', label: 'ホーム', icon: <HomeIcon /> },
-  // 園からの配布物はチャットの一部なので、メニューには置かず「チャット・お知らせ」の画面から開く（職員と同じ形）
-  { to: '/guardian/chat', label: 'チャット・お知らせ', icon: <ChatIcon /> },
-  // 保育士が共有を選び、園長が承認した日誌（server/api_diary_share.go）
+  // 保護者が読める日誌は、保育士が共有を選び、園長が承認したものだけ（server/api_diary_share.go）
   { to: '/guardian/diaries', label: '園からの日誌', icon: <DiaryIcon /> },
 ];
 const MENU_ACCOUNT = [
@@ -47,6 +53,29 @@ const MENU_ACCOUNT = [
 
 /** PC とみなす幅。app.css の保護者レイアウトと同じ値（【仮置き】web/仮置き値.md） */
 const PC_WIDTH = '(min-width: 1024px)';
+
+/** いま開いている画面が、下のタブ（4つ）のどれか。どれでもない画面（日誌・パスワードなど）は null */
+type Section = 'today' | 'contact' | 'growth' | 'chat';
+function sectionOf(pathname: string): Section | null {
+  if (pathname === '/guardian') return 'today';
+  if (pathname.startsWith('/guardian/contact')) return 'contact';
+  if (pathname.startsWith('/guardian/growth')) return 'growth';
+  // 園からの配布物はチャットの一部なので、チャットのタブを現在地にする
+  if (pathname.startsWith('/guardian/chat') || pathname.startsWith('/guardian/handouts')) return 'chat';
+  return null;
+}
+
+interface Destination {
+  key: Section;
+  to: string;
+  /** 下のタブの字（短く） */
+  label: string;
+  /** PC の左の欄の字 */
+  longLabel: string;
+  icon: ReactNode;
+  /** 行に添える字（「新着 2」「未読 3」）。数の札だけにせず、何の数かを字で書く */
+  note: string | null;
+}
 
 export default function GuardianLayout() {
   const { user, logout } = useSession();
@@ -64,10 +93,41 @@ export default function GuardianLayout() {
   const unsaved = useUnsavedInputTracker();
   const drawer = useRef<HTMLElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
-  // 園からの返信が、どの画面を開いていてもすぐに通知の件数に表れるよう、知らせ（live.ts）を受けて読み直す
-  // （知らせが切れている間は数秒ごとに読み直す）。ここで使うのは未読の件数だけ
+  // 園からの返信・連絡帳の新着が、どの画面を開いていてもすぐに下のタブと通知の件数に表れるよう、知らせ（live.ts）を受けて読み直す
+  // （知らせが切れている間は数秒ごとに読み直す）。ここで使うのは未読・新着の件数と園児の顔ぶれだけ
   const home = useAsync(() => api.guardianHome(user!), [user?.account_id],
-    { refreshMs: AUTO_REFRESH_MS, live: onLive('chat') });
+    { refreshMs: AUTO_REFRESH_MS, live: onLive('chat', 'contact') });
+
+  // いま見ているお子さま（下のタブの「連絡帳」「成長」の行き先）。画面をまたいで保つ
+  const accountId = user?.account_id;
+  const [selected, setSelected] = useState<string | null>(() => readSelectedChild(accountId));
+  const children = home.data;
+  const childId = children?.find((h) => h.child.child_id === selected)?.child.child_id ?? children?.[0]?.child.child_id ?? null;
+  const setChildId = setSelected;
+  // 選んだ園児を保存する
+  useEffect(() => {
+    if (selected) writeSelectedChild(accountId, selected);
+  }, [selected, accountId]);
+  // 連絡帳・成長の記録を園児の ID つきで開いたら、その園児を選んだことにする（描画のなかで値を合わせる。React の「前の値との比較」の形）
+  const urlChild = /^\/guardian\/(?:contact|growth)\/([^/]+)/.exec(pathname)?.[1];
+  const [seenUrlChild, setSeenUrlChild] = useState<string | undefined>(undefined);
+  if (urlChild !== seenUrlChild) {
+    setSeenUrlChild(urlChild);
+    if (urlChild) setSelected(decodeURIComponent(urlChild));
+  }
+  // 別の画面へ移ったら、下のタブの件数を読み直す（開いた画面で既読にしたものを反映する）
+  const firstPath = useRef(true);
+  const { refresh: refreshHome } = home;
+  useEffect(() => {
+    if (firstPath.current) { firstPath.current = false; return; }
+    refreshHome();
+  }, [pathname, refreshHome]);
+  // ホームが数えた「新しく n 件」（ホームを開いている間の連絡帳のタブに使う）
+  const [homeNew, setHomeNew] = useState<Record<string, number>>({});
+  const reportContactNew = useCallback((id: string, count: number) => {
+    setHomeNew((prev) => (prev[id] === count ? prev : { ...prev, [id]: count }));
+  }, []);
+  const childContext = useMemo(() => ({ childId, setChildId, reportContactNew }), [childId, setChildId, reportContactNew]);
 
   // PC の幅へ広げたら、開いていたメニューを閉じる。PC の幅ではメニューを左に常に出すため
   useEffect(() => {
@@ -108,20 +168,29 @@ export default function GuardianLayout() {
   };
   // 誰の保護者かを示す。「園児の氏名 保護者」と表す（図/画面詳細図.md の保護者の表し方）
   const who = `${home.data?.map((h) => h.child.child_name).join('・') || user.display_name} 保護者`;
-  // ホームの次に、園児ごとの成長の記録を置く（図/画面詳細図「保護者（スマートフォン）」(1-2) の項目14）
-  const pages = [
-    MENU_PAGES[0],
-    ...(home.data ?? []).map((h) => ({
-      to: `/guardian/growth/${encodeURIComponent(h.child.child_id)}`,
-      label: `${h.child.child_name}の成長の記録`,
-      icon: <GrowthIcon />,
-    })),
-    ...MENU_PAGES.slice(1),
+
+  // 下のタブ（PC の幅では左の欄の先頭）の4つの行き先。連絡帳・成長は、いま見ているお子さまへ行く
+  const section = sectionOf(pathname);
+  const now = children?.find((h) => h.child.child_id === childId);
+  const cid = childId ? encodeURIComponent(childId) : null;
+  const contactNote = (() => {
+    if (!now || section === 'contact') return null;
+    const n = section === 'today' ? homeNew[now.child.child_id] ?? now.today.unread_contact : now.today.unread_contact;
+    return n > 0 ? `新着 ${n}` : null;
+  })();
+  const destinations: Destination[] = [
+    { key: 'today', to: '/guardian', label: 'きょう', longLabel: 'きょう', icon: <TodayIcon />, note: null },
+    { key: 'contact', to: cid ? `/guardian/contact/${cid}` : '/guardian', label: '連絡帳', longLabel: '連絡帳', icon: <ContactBookIcon />, note: contactNote },
+    { key: 'growth', to: cid ? `/guardian/growth/${cid}` : '/guardian', label: '成長', longLabel: '成長の記録', icon: <GrowthIcon />,
+      note: now?.today.growth_new && section !== 'growth' ? '新着' : null },
+    { key: 'chat', to: '/guardian/chat', label: 'チャット', longLabel: 'チャット・お知らせ', icon: <ChatIcon />,
+      note: unread > 0 && section !== 'chat' ? `未読 ${unread}` : null },
   ];
+
   /*
    * ダイアログを開く項目。画面は移らない（図/画面詳細図「保護者（スマートフォン）」(1-2) の項目15・18）。
    * 並びは設計の「お子さまの追加・連絡先の変更・通知の設定・AI の下書きの利用」の位置（連絡先の変更は
-   * 実装の順番の 15 の残り、通知の設定は【要決定】Web Push を作るかどうか）。
+   * 実装の順番の 15 の残り、通知の設定は【要決定】Web Push を作るかどうか。どちらもまだ画面が無いので置かない）。
    * お子さまの追加は常に置く。AI の下書きの利用は、区画を読めるまでは押させない（ダイアログの園児と初期値は区画から作る）。
    * ドロワーでは、メニューを閉じてから開く（close）
    */
@@ -160,6 +229,8 @@ export default function GuardianLayout() {
     navigate('/guardian');
   };
 
+  const noteOf = (d: Destination) => d.note && <span className="guardian-nav-note">{d.note}</span>;
+
   return (
     <div className="guardian-shell">
       <header className="guardian-header">
@@ -171,11 +242,12 @@ export default function GuardianLayout() {
           <img className="guardian-brand-wordmark" src="/login-wordmark-crayon.png" alt="すくすく" />
         </Link>
         <div className="spacer" />
-        {/* PC の幅では、緊急連絡の番号をヘッダにも置く（下端の案内は PC の幅では出さない） */}
-        <div className="guardian-header-phone">
-          <span>緊急のご連絡</span>
-          {phone && <a href={`tel:${phone.replace(/[^0-9+]/g, '')}`}>{phone}</a>}
-        </div>
+        {/* 急なご連絡は電話で。どの画面でも常に見えるよう、ヘッダに置く（番号は設定マスタから引く。未設定のあいだは出さない） */}
+        {phone && (
+          <a className="guardian-call" href={`tel:${phone.replace(/[^0-9+]/g, '')}`}>
+            <CallIcon /><span>園に電話</span><span className="guardian-call-number">{phone}</span>
+          </a>
+        )}
         <button className="notify-btn" onClick={() => navigate('/guardian/chat')} title="通知" aria-label={`通知${unread > 0 ? ` ${unread}件` : ' 0件'}`}>
           <BellIcon />
           {unread > 0 && <span className="notify-badge">{unread}</span>}
@@ -196,8 +268,8 @@ export default function GuardianLayout() {
                 <CloseIcon />閉じる
               </button>
             </div>
-            {pages.map((m) => <Link key={m.to} to={m.to} onClick={() => setOpen(false)}>{m.icon}{m.label}</Link>)}
             {dialogItems(() => setOpen(false))}
+            {MENU_PAGES.map((m) => <Link key={m.to} to={m.to} onClick={() => setOpen(false)}>{m.icon}{m.label}</Link>)}
             {MENU_ACCOUNT.map((m) => <Link key={m.to} to={m.to} onClick={() => setOpen(false)}>{m.icon}{m.label}</Link>)}
             <div className="spacer" />
             {/* 保護者のログアウトはメニュー内（基本設計書 3-5） */}
@@ -223,11 +295,16 @@ export default function GuardianLayout() {
       )}
 
       <div className="guardian-body">
-        {/* PC の幅で常に出すメニュー。スマートフォン・タブレットの幅では CSS で隠し、上のメニューから開く */}
+        {/* PC の幅で常に出すメニュー（下のタブの4つの行き先と、メニューの項目）。スマートフォン・タブレットの幅では CSS で隠し、下のタブと上のメニューから開く */}
         <nav className="guardian-sidebar" aria-label="メニュー">
           <div className="who">{who}</div>
-          {pages.map((m) => <NavLink key={m.to} to={m.to} end>{m.icon}{m.label}</NavLink>)}
+          {destinations.map((d) => (
+            <Link key={d.key} to={d.to} className="guardian-side-main"
+              aria-current={section === d.key ? 'page' : undefined}>{d.icon}<span>{d.longLabel}</span>{noteOf(d)}</Link>
+          ))}
+          <div className="guardian-side-rule" role="separator" />
           {dialogItems(() => {})}
+          {MENU_PAGES.map((m) => <NavLink key={m.to} to={m.to} end>{m.icon}{m.label}</NavLink>)}
           {MENU_ACCOUNT.map((m) => <NavLink key={m.to} to={m.to} end>{m.icon}{m.label}</NavLink>)}
           <div className="spacer" />
           <button className="btn-block" onClick={onLogout}><LogoutIcon />ログアウト</button>
@@ -236,23 +313,27 @@ export default function GuardianLayout() {
           {/* 知らせが切れている・サーバに届かないときの帯（詳細設計書「つながっているかの表示」(2-8)） */}
           <ConnectionBanner audience="guardian" />
           <UnsavedInputContext.Provider value={unsaved.report}>
-            {/* 画面の例外で真っ白にしない。画面を移ったら受け皿を作り直す */}
-            <ScreenErrorBoundary key={pathname}>
-              <Outlet key={screenKey} />
-            </ScreenErrorBoundary>
+            <GuardianChildContext.Provider value={childContext}>
+              {/* 画面の例外で真っ白にしない。画面を移ったら受け皿を作り直す */}
+              <ScreenErrorBoundary key={pathname}>
+                <Outlet key={screenKey} />
+              </ScreenErrorBoundary>
+            </GuardianChildContext.Provider>
           </UnsavedInputContext.Provider>
         </main>
       </div>
 
       {/*
-        緊急連絡の案内は、保護者向けの全画面に常時置く（基本設計書「画面基本構成」(3-5)）。
-        その場で電話へ切り替えられるよう、園の電話番号を添える。番号は設定マスタから引く。
-        番号が未設定のあいだは文言だけを出す
+        毎日開く4つの行き先。画面の下に常に出す（片手で押せる。字は必ず出し、現在地は色だけでなく太字と上の線でも示す）。
+        連絡帳・成長は園児ごとの道なので、いま見ているお子さまへ行く。PC の幅では出さず、左の欄が同じ行き先を持つ
       */}
-      <footer className="guardian-footer">
-        <span>緊急のご連絡はお電話でお願いします</span>
-        {phone && <a href={`tel:${phone.replace(/[^0-9+]/g, '')}`}>{phone}</a>}
-      </footer>
+      <nav className="guardian-tabs" aria-label="主な画面">
+        {destinations.map((d) => (
+          <Link key={d.key} to={d.to} className="guardian-tab" aria-current={section === d.key ? 'page' : undefined}>
+            {d.icon}<span className="guardian-tab-label">{d.label}</span>{noteOf(d)}
+          </Link>
+        ))}
+      </nav>
       {/* 押した結果の表示。保護者のレイアウトにも置く（詳細設計書「共通の部品」(2-0 (1))、決めたこと D-21） */}
       <ToastHost />
     </div>

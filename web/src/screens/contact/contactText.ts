@@ -39,6 +39,16 @@ export function latestSleepText(s: NapSleep | null | undefined, isToday: boolean
   return `${formatHM(s.woke_at)} おきた（${durationText(s.slept_at, s.woke_at)}）`;
 }
 
+/**
+ * その日のいちばん新しい組を、時刻と言葉に分けた1行で（保護者ホームの時刻の並び）。latestSleepText と同じ内容で、時刻を別に持つ。
+ * 時刻はおきたがあればおきた、無ければねた。
+ */
+export function latestSleepRow(s: NapSleep | null | undefined, isToday: boolean): { at: string; text: string } | null {
+  if (!s) return null;
+  if (!s.woke_at) return { at: s.slept_at, text: isToday && !s.session_ended ? 'おひるね中' : 'ねた' };
+  return { at: s.woke_at, text: `おきた（${durationText(s.slept_at, s.woke_at)}）` };
+}
+
 /** きょうのようすの出来事を言葉にする（時刻は別に出す） */
 export function eventText(e: ContactEvent): string {
   switch (e.event_type) {

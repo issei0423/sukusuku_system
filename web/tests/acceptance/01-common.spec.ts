@@ -823,15 +823,23 @@ test.describe('サーバA（通常）：ホーム', () => {
       await expect.soft(region, '③ まだ書いていません').toContainText('まだ書いていません');
       await expect.soft(region.getByRole('link', { name: '家庭からを書く' }), '③ 家庭からを書く').toBeVisible();
       await expect.soft(region, '④').toContainText('まだきょうの記録はありません');
-      for (const name of ['連絡帳を開く', '成長の記録', `${g.childName}の園とのやりとり`]) {
-        await expect.soft(region.getByRole('link', { name: new RegExp(name) }), `⑤ ${name}`).toBeVisible();
+      // 行き先は画面の下のタブ（きょう・連絡帳・成長・チャット）。ホームには入口の行を置かない
+      const tabs = page.getByRole('navigation', { name: '主な画面' });
+      for (const name of ['連絡帳', '成長']) {
+        await expect.soft(tabs.getByRole('link', { name: new RegExp(name) }), `⑤ ${name}`).toBeVisible();
       }
-      await expect.soft(page.getByRole('heading', { name: 'チャット・お知らせ' }), '⑥').toBeVisible();
-      await expect.soft(page.getByRole('link', { name: '園からの配布物を見る' }), '⑥').toBeVisible();
-      const footer = page.getByRole('contentinfo');
-      await expect.soft(footer, '⑦').toContainText('緊急のご連絡はお電話でお願いします');
-      await expect.soft(footer.getByRole('link', { name: '03-0000-1035' }), '⑦ 園の電話番号').toHaveAttribute('href', /^tel:/);
-      await expect.soft(page.getByRole('navigation'), '⑧ サイドナビを持たない').toHaveCount(0);
+      await expect.soft(tabs.getByRole('link', { name: /きょう/ }), '⑤ 現在地').toHaveAttribute('aria-current', 'page');
+      await expect.soft(region.getByRole('link', { name: '連絡帳を開く' }), '⑤ 入口の行は置かない').toHaveCount(0);
+      // 緊急連絡は、どの画面でも常に見えるヘッダの「園に電話」
+      const call = page.getByRole('banner').getByRole('link', { name: /園に電話/ });
+      await expect.soft(call, '⑦ 園に電話').toBeVisible();
+      await expect.soft(call, '⑦ 園の電話番号').toHaveAttribute('href', /^tel:/);
+      await expect.soft(page.getByRole('main'), '⑦ 急なご連絡はお電話で').toContainText('お電話でお願いします');
+      await expect.soft(page.getByRole('navigation', { name: 'メニュー' }), '⑧ サイドナビを持たない').toHaveCount(0);
+      // チャットのタブの先に、お知らせ・園とのやりとり・配布物の入口が集まる
+      await tabs.getByRole('link', { name: /チャット/ }).click();
+      await expect.soft(page.getByRole('link', { name: '園からの配布物' }), '⑥').toBeVisible();
+      await page.goBack();
       await evidence(page, '01-035');
       await page.getByRole('banner').getByRole('button', { name: /メニュー/ }).click();
       await expect.soft(page.getByRole('dialog', { name: 'メニュー' }).getByRole('button', { name: 'ログアウト', exact: true }), '⑧ メニューにログアウト').toBeVisible();
@@ -1147,7 +1155,7 @@ test.describe('サーバA（通常）：保護者のメニューのダイアロ�
     await s.context.close();
     await page.keyboard.press('Escape');
     await page.goto('/guardian');
-    await page.getByRole('link', { name: '連絡帳を開く' }).first().click();
+    await page.getByRole('navigation', { name: '主な画面' }).getByRole('link', { name: /連絡帳/ }).click();
     await expect.soft(page.getByRole('region', { name: /^(きょう|この日)のようす$/ }).getByRole('listitem').filter({ hasText: body }), '⑤ 保護者に届く').toBeVisible();
 
     // ⑥ 外す

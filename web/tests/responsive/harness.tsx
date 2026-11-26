@@ -7,9 +7,13 @@ import { SessionProvider } from '../../src/session';
 import { api, backend } from '../../src/api/client';
 import type { SessionUser } from '../../src/api/types';
 import { scenarios } from './scenarios';
+import '@fontsource/zen-maru-gothic/700.css';
+import '@fontsource/biz-udpgothic/400.css';
+import '@fontsource/biz-udpgothic/700.css';
 import '../../src/styles/tokens.css';
 import '../../src/styles/app.css';
 import '../../src/styles/screens.css';
+import '../../src/styles/guardian.css';
 
 if (!import.meta.env.DEV || backend !== 'mock') throw new Error('レビューは dev + mock 専用です');
 const scenario = scenarios.find((s) => s.id === new URLSearchParams(location.search).get('scene'));
