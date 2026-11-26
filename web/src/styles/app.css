@@ -921,3 +921,12 @@ summary { min-height: var(--tap-min); padding: 10px 0; cursor: pointer; }
   *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; }
   *:not(.card), *::before, *::after { animation: none !important; }
 }
+
+/*
+ * 画面を移ったあと、読み上げとキーボードのために本文（main。tabIndex=-1）へフォーカスを移す（App.tsx）。
+ * 本文は押せる部品ではないので、フォーカスの印の枠は出さない。入口の画面（.public-card）では枠のまわりに、
+ * 職員の画面（.main）では本文のまわりに黒と黄の太い枠が出ていた。保護者の本文は guardian.css で同じ扱いにしている。
+ * 押せる部品のフォーカスの印（tokens.css の :focus-visible）は変えない
+ */
+.public-card:focus, .public-card:focus-visible,
+#staff-main:focus, #staff-main:focus-visible { outline: none; box-shadow: none; }
