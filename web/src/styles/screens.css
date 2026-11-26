@@ -105,7 +105,7 @@
 .ai-draft-result > button { justify-self: start; min-height: var(--tap-min); }
 .ai-draft-candidates { display: grid; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
 .ai-draft-card { display: grid; gap: var(--sp-1); padding: var(--sp-2); border: 1px solid var(--c-border-weak); border-radius: 8px; background: var(--c-surface-sub); }
-.ai-draft-card p { margin: 0; overflow-wrap: anywhere; }
+.ai-draft-card p { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; } /* 日誌の下書きは見出しごとに改行がある */
 .ai-draft-card button { justify-self: start; min-height: var(--tap-min); }
 .ai-draft-note { margin: 0; font-size: var(--fs-small); color: var(--c-text-sub); }
 .recipient-badge {

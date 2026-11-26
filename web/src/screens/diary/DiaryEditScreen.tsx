@@ -8,6 +8,8 @@
  * 編集できない状態（申請中・承認済み、ほかの職員が編集中）では、内容を変える部品を動かさない（同 4）。
  *
  * 日誌は園内の記録で、保護者へは届かない（基本設計書「日誌システム（園内の記録）」(4-6)）。
+ * 本文の横に AI の下書き（AiDraftPanel）を置く。個人日誌・クラス日誌・週案月案だけで、ヒヤリハットには置かない。本文の見出しの行
+ * （【…】）を送り、本文に文が無ければ見出しと下書きをそのまま入れ、文があれば候補として示す（詳細設計書「日誌の画面（作り直し）」(2-13 (7))）。
  * 申請した本人は、申請中の日誌を「申請を取り下げる」で下書きに戻せる。管理者は、承認済みの日誌を
  * 「承認を取り消して差し戻す」で差し戻しに戻せる（詳細設計書「日誌の画面（作り直し）」(2-13 (2)・(3))）。
  */
@@ -25,6 +27,8 @@ import type { DiaryRecordType } from '../../api/types';
 import { acquireDiaryLock, releaseDiaryLock, releaseDiaryLockNow, markDiaryLockHandOver, LOCK_TOUCH_MS } from './diaryLock';
 import { IncidentFields } from './IncidentFields';
 import { ContactChangesBand } from './ContactChangesBand';
+import AiDraftPanel from '../../components/AiDraftPanel';
+import { diaryHeadings, hasDiarySentence } from './diaryHeadings';
 import { EMPTY_INCIDENT, incidentFormOf, incidentInputOf, incidentReady } from './incidentForm';
 import type { IncidentForm } from './incidentForm';
 import { focusAfter, focusedNow } from '../../focusAfter';
@@ -131,6 +135,8 @@ export default function DiaryEditScreen() {
   // 確認画面へ進むときは、ロックを確認画面へ引き継ぐ（外さない。./diaryLock.ts）
   const handOverRef = useRef(false);
   const lastTouchRef = useRef(0);
+  // 本文の入力欄。AI の下書きを入れたあと、フォーカスを移す先
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
   // 「＋ 追加」で足す仮の写真の通し番号。時計が同じ値を返しても、写真どうしの名前をぶつけない
   const photoSeqRef = useRef(0);
 
@@ -586,8 +592,21 @@ export default function DiaryEditScreen() {
                 </div>
                 {contactNote && <div className="muted" role="status">{contactNote}</div>}
 
+                {/*
+                  * AI の下書き。見出しの行を送り、見出しごとの文を受け取る（ヒヤリハットには置かない）。使えるときだけ出る任意の層で、
+                  * 使えないとき（キーが無い・園が有効にしていない・保護者が断った子など）は何も出さない。下書きは本文に入るだけで、
+                  * 保存・申請は職員が押す
+                  */}
+                {!readOnly && classId !== '' && (recordType === '1' || recordType === '2' || recordType === '3') && (
+                  <AiDraftPanel childId={recordType === '1' ? childId : undefined} date={date} max={BODY_MAX} text={body}
+                    disabled={locked} allowDraft
+                    diary={{ recordType, classId, share: canShare && share, headings: diaryHeadings(body), hasSentence: hasDiarySentence(body) }}
+                    onUse={(value) => { setBody(value.slice(0, BODY_MAX)); setDirty(true); }}
+                    focusAfterUse={() => bodyRef.current} />
+                )}
+
                 <Field label="本文" required>
-                  <textarea value={body} onChange={(e) => { setBody(e.target.value); setDirty(true); }}
+                  <textarea ref={bodyRef} value={body} onChange={(e) => { setBody(e.target.value); setDirty(true); }}
                     disabled={locked} maxLength={BODY_MAX} style={{ minHeight: 280 }} />
                 </Field>
                 {!readOnly && <div className="muted" aria-live="polite">残り {BODY_MAX - [...body].length} 文字</div>}

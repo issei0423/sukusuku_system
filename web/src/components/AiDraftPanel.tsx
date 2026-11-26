@@ -13,11 +13,16 @@
  * | 作っている | 「下書きを作っています（10秒ほどかかることがあります）」。入力欄はそのまま書ける。二度押しは止める |
  * | できた | 欄が空なら下書きをそのまま入れる。文があれば置き換えずに候補のカードで出し、「この文を使う」で入れる |
  * | 失敗 | 応答の文（「いまは下書きを作れません。そのまま書いて送れます。」など）をここに出す。入力欄の文は残す |
+ *
+ * 保育日誌の作成・編集画面（詳細設計書「日誌の画面（作り直し）」(2-13 (7))）は diary を渡して使う。「AI で下書き」だけを出し
+ * （言い換え・続きは出さない）、本文の見出しの行を送る。本文に文が無ければ（空、または見出しの行だけ）見出しと下書きをそのまま入れ、
+ * 文があれば置き換えずに候補で示す。日誌は保護者に届かないため、添える注意は「保存してから」の文（共有を選んだ個人日誌は「送ってから」）
  */
 import { useEffect, useId, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { focusAfter, focusedNow } from '../focusAfter';
-import type { AiField, AiPurpose } from '../api/shapes';
+import type { AiField, AiPurpose, AiTarget } from '../api/shapes';
+import type { DiaryRecordType } from '../api/types';
 import { useSession } from '../session';
 import { AI_TEXT } from '../messages';
 import { CloseIcon } from './icons';
@@ -29,10 +34,21 @@ const CONTINUE_MIN_ROOM = 10;
 
 type Result = { purpose: AiPurpose; drafts: string[]; replaced: boolean; inserted: boolean };
 
-export default function AiDraftPanel({ childId, date, field, max, text, disabled, allowDraft, onUse, focusAfterUse }: {
-  childId: string;
+/** 保育日誌の下書きに渡すもの。headings は本文の見出しの名前（diaryHeadings）、hasSentence は本文に文があるか（hasDiarySentence） */
+export interface AiDiaryUse {
+  recordType: Exclude<DiaryRecordType, '4'>;
+  classId: number;
+  /** 保護者へ共有する個人日誌か */
+  share: boolean;
+  headings: string[];
+  hasSentence: boolean;
+}
+
+export default function AiDraftPanel({ childId, date, field, max, text, disabled, allowDraft, onUse, focusAfterUse, diary }: {
+  /** 個人日誌と連絡帳は園児。クラス日誌・週案月案（diary）では渡さない */
+  childId?: string;
   date: string;
-  field: AiField;
+  field?: AiField;
   /** 欄の上限の文字数 */
   max: number;
   /** いまの入力欄の文 */
@@ -45,6 +61,8 @@ export default function AiDraftPanel({ childId, date, field, max, text, disabled
   onUse: (value: string, mode: 'replace' | 'append') => void;
   /** 「この文を使う」のあとにフォーカスを移す先（文を入れた入力欄）。押したカードが消えるため（GitHub Issue #213） */
   focusAfterUse?: () => HTMLElement | null;
+  /** 保育日誌の下書き。渡すと「AI で下書き」だけを出す */
+  diary?: AiDiaryUse;
 }) {
   const { user } = useSession();
   const memoId = useId();
@@ -56,20 +74,29 @@ export default function AiDraftPanel({ childId, date, field, max, text, disabled
   const [error, setError] = useState<string | null>(null);
   const draftButton = useRef<HTMLButtonElement>(null);
 
+  // 使えるかを読む宛先。個人日誌と連絡帳は園児、クラス日誌・週案月案はクラス。宛先がまだ決まっていなければ出さない
+  const target: AiTarget | null = diary && diary.recordType !== '1' ? { class_id: diary.classId } : childId ? { child_id: childId } : null;
+  const targetKey = target ? (target.child_id !== undefined ? `c:${target.child_id}` : `k:${target.class_id}`) : '';
   // 使えるかを読む。読めないときは出さない（AI が無くても届けられる）
-  const readStatus = () => api.aiStatus(user!, { child_id: childId })
+  const readStatus = () => (target ? api.aiStatus(user!, target) : Promise.resolve({ available: false }))
     .then((r) => setAvailable(r.available)).catch(() => setAvailable(false));
   useEffect(() => {
     let alive = true;
-    api.aiStatus(user!, { child_id: childId })
-      .then((r) => { if (alive) setAvailable(r.available); })
-      .catch(() => { if (alive) setAvailable(false); });
+    setAvailable(false);
+    if (target) {
+      api.aiStatus(user!, target)
+        .then((r) => { if (alive) setAvailable(r.available); })
+        .catch(() => { if (alive) setAvailable(false); });
+    }
     return () => { alive = false; };
-  }, [user, childId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 宛先は targetKey で見る
+  }, [user, targetKey]);
 
   if (!available) return null;
-  const hasText = text.trim() !== '';
+  // 日誌は「文があるか」（見出しの行だけの本文は文が無いとみなす）で、入れるか候補で示すかを決める
+  const hasText = diary ? diary.hasSentence : text.trim() !== '';
   const roomForMore = max - [...text.trim()].length >= CONTINUE_MIN_ROOM;
+  const checkNote = diary && !diary.share ? AI_TEXT.checkBeforeSave : AI_TEXT.checkBeforeSend;
 
   /*
    * 作っている間はパネルのボタンがすべて押せなくなり、押したボタンからフォーカスが外れて body に落ちる。
@@ -84,15 +111,21 @@ export default function AiDraftPanel({ childId, date, field, max, text, disabled
     let closed = false;
     setMaking(purpose); setError(null); setResult(null);
     try {
-      const res = await api.aiDrafts(user!, {
-        purpose, child_id: childId, date, field,
-        ...(purpose === 'facility_note' ? { memo: memo.trim() } : { text: text.trim() }),
-      });
+      const res = await api.aiDrafts(user!, diary
+        ? {
+            purpose: 'diary', record_type: diary.recordType, class_id: diary.classId, date, memo: memo.trim(),
+            headings: diary.headings, share_to_guardian: diary.share,
+            ...(diary.recordType === '1' ? { child_id: childId } : {}),
+          }
+        : {
+            purpose: purpose as Exclude<AiPurpose, 'diary'>, child_id: childId!, date, field,
+            ...(purpose === 'facility_note' ? { memo: memo.trim() } : { text: text.trim() }),
+          });
       // 欄が空なら下書きをそのまま入れる。文があれば置き換えずに候補として出す
-      const insertNow = purpose === 'facility_note' && !hasText && res.drafts.length === 1;
+      const insertNow = (purpose === 'facility_note' || purpose === 'diary') && !hasText && res.drafts.length === 1;
       if (insertNow) onUse(res.drafts[0], 'replace');
       setResult({ purpose, drafts: res.drafts, replaced: res.replaced_other_names, inserted: insertNow });
-      if (purpose === 'facility_note') { setMemoOpen(false); closed = true; }
+      if (purpose === 'facility_note' || purpose === 'diary') { setMemoOpen(false); closed = true; }
     } catch (e) {
       setError((e as Error).message);
       // キーが無効と分かったときなどは、読み直すとボタンが消える
@@ -132,10 +165,14 @@ export default function AiDraftPanel({ childId, date, field, max, text, disabled
           <button ref={draftButton} type="button" className="contact-pick" aria-expanded={memoOpen} disabled={disabled || making !== null}
             onClick={() => { setMemoOpen((o) => !o); setError(null); }}>{AI_TEXT.draftButton}</button>
         )}
-        <button type="button" className="contact-pick" disabled={disabled || making !== null || !hasText}
-          onClick={() => void make('rephrase')}>{AI_TEXT.rephraseButton}</button>
-        <button type="button" className="contact-pick" disabled={disabled || making !== null || !hasText || !roomForMore}
-          onClick={() => void make('continue')}>{AI_TEXT.continueButton}</button>
+        {!diary && (
+          <>
+            <button type="button" className="contact-pick" disabled={disabled || making !== null || !hasText}
+              onClick={() => void make('rephrase')}>{AI_TEXT.rephraseButton}</button>
+            <button type="button" className="contact-pick" disabled={disabled || making !== null || !hasText || !roomForMore}
+              onClick={() => void make('continue')}>{AI_TEXT.continueButton}</button>
+          </>
+        )}
       </div>
 
       {memoOpen && (
@@ -146,8 +183,8 @@ export default function AiDraftPanel({ childId, date, field, max, text, disabled
           <textarea id={memoId} aria-describedby={`${memoId}-note`} value={memo} maxLength={MEMO_MAX}
             onChange={(e) => setMemo(e.target.value)} />
           <div className="contact-composer-actions">
-            <button type="button" className="btn-primary" onClick={() => void make('facility_note')} disabled={making !== null}
-              aria-busy={making === 'facility_note'}>{AI_TEXT.makeDraft}</button>
+            <button type="button" className="btn-primary" onClick={() => void make(diary ? 'diary' : 'facility_note')} disabled={making !== null}
+              aria-busy={making === 'facility_note' || making === 'diary'}>{AI_TEXT.makeDraft}</button>
             <button type="button" onClick={closeMemo} disabled={making !== null}><CloseIcon />閉じる</button>
           </div>
         </div>
@@ -168,7 +205,7 @@ export default function AiDraftPanel({ childId, date, field, max, text, disabled
               ))}
             </ul>
           )}
-          <p className="ai-draft-note">{AI_TEXT.checkBeforeSend}</p>
+          <p className="ai-draft-note">{checkNote}</p>
           {result.replaced && <p className="ai-draft-note">{AI_TEXT.replacedOthers}</p>}
           <button type="button" className="btn-quiet" onClick={closeResult}>閉じる</button>
         </div>

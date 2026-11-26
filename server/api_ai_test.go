@@ -290,7 +290,7 @@ func TestAiDraftRejections(t *testing.T) {
 		kind string
 	}{
 		{"用途が無い", teacher, base(map[string]any{"purpose": ""}), 400, msgBadRequest, ""},
-		{"保育日誌は本版では作らない", teacher, base(map[string]any{"purpose": "diary"}), 400, msgBadRequest, ""},
+		{"保育日誌の下書きで記録種別が無い（日誌は api_ai_diary_test.go）", teacher, base(map[string]any{"purpose": "diary"}), 400, msgBadRequest, ""},
 		{"宛先が無い", teacher, base(map[string]any{"child_id": ""}), 400, msgBadRequest, ""},
 		{"宛先が2つ", teacher, base(map[string]any{"class_id": 1}), 400, msgBadRequest, ""},
 		{"日付が今日でない", teacher, base(map[string]any{"date": daysFromToday(-1)}), 400, msgBadRequest, ""},

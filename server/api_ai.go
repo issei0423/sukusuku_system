@@ -23,7 +23,7 @@ AI は「選ぶ → 定型文 → AI の下書き → 手で直す」の任意�
 - POST /api/ai/drafts → { drafts, replaced_other_names }
 
 モックは web/src/api/mock.ts の aiApi が同じ規則を持つ（関数の名前 aiAvailableFor もそろえる）。
-保育日誌の下書き（purpose: diary。8-12）は本版では作らない（400 を返す）。
+保育日誌の下書き（purpose: diary。8-12）は api_ai_diary.go。
 */
 
 // aiTarget は下書きの宛先。園児（child）かクラス（class）のどちらか一方
@@ -149,6 +149,11 @@ type aiDraftInput struct {
 	Text    string `json:"text"`
 	// 下書きを入れる欄（facility：園から・comment：活動のひとこと・class：クラスのようす）。文字数の上限と操作ログの表を決める
 	Field string `json:"field"`
+	// 保育日誌の下書き（purpose: diary。api_ai_diary.go）だけが読む項目。記録種別（1:個人 2:クラス 3:週案月案 4:ヒヤリハット）、
+	// 本文の中の見出しの名前、保護者へ共有する個人日誌か
+	RecordType      string   `json:"record_type"`
+	Headings        []string `json:"headings"`
+	ShareToGuardian bool     `json:"share_to_guardian"`
 }
 
 type aiDraftResult struct {
@@ -179,6 +184,10 @@ func (a *app) handleAiDrafts(w http.ResponseWriter, r *http.Request) {
 	}
 	var in aiDraftInput
 	if !readJSON(w, r, &in) {
+		return
+	}
+	if in.Purpose == aiPurposeDiary {
+		a.handleAiDiary(w, r, u, in)
 		return
 	}
 	classID := ""
@@ -299,29 +308,41 @@ func (a *app) handleAiDrafts(w http.ResponseWriter, r *http.Request) {
 }
 
 /*
+aiCallFailure は、呼び出しの失敗（時間切れ・提供者の誤り・接続の失敗・拒否）を振り分ける（8-7 (2)）。失敗でなければ空の文字列。
+失敗のときはログに出す理由（状態コードと RequestID だけ。本文は入れない）を返す。
+キーが無効（401・403）と分かったら、サーバを起動し直すまで AI を使えない扱いにする（決めたこと D-11）。保育日誌の下書きも同じ
+*/
+func (a *app) aiCallFailure(ctx context.Context, reply draftReply, err error) string {
+	if err != nil {
+		var se *aiStatusError
+		switch {
+		case errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded):
+			return "時間切れ"
+		case errors.As(err, &se):
+			if se.keyRejected() {
+				a.aiKeyRejected.Store(true)
+				log.Printf("API キーが無効です。環境変数を確かめてください")
+			}
+			return "状態 " + strconv.Itoa(se.StatusCode) + "・RequestID " + se.RequestID
+		default:
+			return "接続の失敗"
+		}
+	}
+	if reply.Refused {
+		return "拒否"
+	}
+	return ""
+}
+
+/*
 aiReadReply は、呼んだ結果を下書きにする（8-7 (2) の失敗の振り分けと 8-6 (3) の検査）。
 使えないときは nil と、ログに出す理由（状態コードと RequestID だけ。本文は入れない）を返す。
 キーが無効（401・403）と分かったら、サーバを起動し直すまで AI を使えない扱いにする（決めたこと D-11）
 */
 func (a *app) aiReadReply(ctx context.Context, purpose string, reply draftReply, err error, max int, base string,
 	recipients, all []nameChild) ([]string, string) {
-	if err != nil {
-		var se *aiStatusError
-		switch {
-		case errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded):
-			return nil, "時間切れ"
-		case errors.As(err, &se):
-			if se.keyRejected() {
-				a.aiKeyRejected.Store(true)
-				log.Printf("API キーが無効です。環境変数を確かめてください")
-			}
-			return nil, "状態 " + strconv.Itoa(se.StatusCode) + "・RequestID " + se.RequestID
-		default:
-			return nil, "接続の失敗"
-		}
-	}
-	if reply.Refused {
-		return nil, "拒否"
+	if why := a.aiCallFailure(ctx, reply, err); why != "" {
+		return nil, why
 	}
 	drafts, ok := parseDrafts(purpose, reply.JSON)
 	if !ok {

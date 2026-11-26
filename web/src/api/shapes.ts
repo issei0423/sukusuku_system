@@ -814,8 +814,8 @@ export interface AddChildResult {
 
 /* ============ 文章の下書き（AI）（詳細設計書「経路」(8-2)） ============ */
 
-/** 用途。facility_note：園からのひとことの下書き（1つ）、rephrase：言い換え（候補3つ）、continue：続きの候補（3つ） */
-export type AiPurpose = 'facility_note' | 'rephrase' | 'continue';
+/** 用途。facility_note：園からのひとことの下書き（1つ）、rephrase：言い換え（候補3つ）、continue：続きの候補（3つ）、diary：保育日誌の下書き（1つ。AiDiaryDraftInput） */
+export type AiPurpose = 'facility_note' | 'rephrase' | 'continue' | 'diary';
 /** 下書きを入れる欄（文字数の上限と操作ログの表を決める）。facility：園から 500、comment：活動のひとこと 200、class：クラスのようす 500 */
 export type AiField = 'facility' | 'comment' | 'class';
 
@@ -824,12 +824,31 @@ export type AiTarget = { child_id: string; class_id?: undefined } | { class_id: 
 
 /** POST /api/ai/drafts の要求。画面は「何の下書きか」「宛先」「メモ」「欄の文」だけを送り、送る項目はサーバが決める */
 export type AiDraftInput = AiTarget & {
-  purpose: AiPurpose;
+  purpose: Exclude<AiPurpose, 'diary'>;
   date: string;
   memo?: string;
   text?: string;
   field?: AiField;
 };
+
+/**
+ * POST /api/ai/drafts の要求（保育日誌の下書き。詳細設計書「保育日誌の下書き」(8-12)）。
+ * 【仮置き】設計の要求の形に record_type と share_to_guardian を足した（web/仮置き値.md）。
+ * headings は本文の「【…】」の見出しの名前（両端の【】は付けても外してもよい）。0〜20個・1つ50文字まで
+ */
+export interface AiDiaryDraftInput {
+  purpose: 'diary';
+  record_type: DiaryRecordType;
+  /** 個人日誌だけ */
+  child_id?: string;
+  class_id: number;
+  /** 記録日 */
+  date: string;
+  memo?: string;
+  headings: string[];
+  /** 保護者へ共有する個人日誌か（指示の文を、保護者へ送る文の決まりに替える） */
+  share_to_guardian?: boolean;
+}
 
 /** POST /api/ai/drafts の応答 */
 export interface AiDraftResult {

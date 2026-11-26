@@ -25,7 +25,7 @@ import type {
 import type { SendPhotoInput, SendPhotoResult, PendingDiary } from './shapes';
 import type {
   ContactEvent, ContactEventInput, RecordEventsResult, ContactEventCorrection, NapSleepCorrection, CancelResult, Readers,
-  ContactFacility, FacilityCorrection, Phrase, NameMatch, AiTarget, AiDraftInput, AiDraftResult, SettingsView,
+  ContactFacility, FacilityCorrection, Phrase, NameMatch, AiTarget, AiDraftInput, AiDiaryDraftInput, AiDraftResult, SettingsView,
 } from './shapes';
 import type { InvitationPreview, AddChildResult, AllergyListRow } from './shapes';
 import type { AbnormalGuardianNoticeInput } from './shapes';
@@ -903,7 +903,7 @@ const contactApi = {
   /* 文章の下書き（AI）（詳細設計書「経路」(8-2)。名前はモック（api/mock.ts の aiApi）と同じ） */
   aiStatus: (_u: SessionUser, target: AiTarget) =>
     get<{ available: boolean }>(`/api/ai/status${qs({ child_id: target.child_id, class_id: target.class_id })}`),
-  aiDrafts: (_u: SessionUser, input: AiDraftInput) =>
+  aiDrafts: (_u: SessionUser, input: AiDraftInput | AiDiaryDraftInput) =>
     request<AiDraftResult>('POST', '/api/ai/drafts', input, AI_REQUEST_TIMEOUT_MS),
   /* 設定画面（詳細設計書「設定」(4-10)。名前はモックの settingsApi と同じ） */
   settings: (_u: SessionUser) => get<SettingsView>('/api/settings'),

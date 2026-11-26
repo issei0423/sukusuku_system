@@ -14,6 +14,7 @@ import (
 | 用途 | 読む |
 | facility_note | ① 年齢（m_child.birth_date と date から「n歳」だけ） ② 午睡（t_nap_sleep の slept_at・woke_at の時:分） ③ 食事（t_contact_event 種類1 の recorded_at・meal_kind・meal_amount を言葉にする） ④ ひとこと・写真に添えた文（種類4・5 の recorded_at・body） ⑤ クラスのようす（その日のクラスの t_contact_class.body） ⑥ 担任のメモ。すべて取り消していないもの |
 | rephrase・continue | 職員がその欄に書いた文（text）だけ |
+| diary | ① その日のそのクラスのクラスのようす（t_contact_class の取り消していない body） ② メモ ③ 見出し。これだけ（詳細設計書「保育日誌の下書き」(8-12)。個人日誌でも、その子の食事・午睡・ひとことは送らない） |
 
 読まないもの：氏名・よみ・呼び名・生年月日・月齢・クラス名・園名・保護者名・職員名・アレルギー・既往歴・体温（連絡帳・午睡とも）・
 排せつ・写真・家庭から・チャット・発達の記録・異常時の記録・ヒヤリハット。
@@ -159,4 +160,39 @@ func (a *app) facilityFacts(childID, date string, anon func(string) string) (aiF
 		facts.Records = append(facts.Records, r.rec)
 	}
 	return facts, nil
+}
+
+// aiDiaryFacts は、保育日誌の下書きに渡す中身（詳細設計書「保育日誌の下書き」(8-12 (1))）。見出し・クラスのようす・先生のメモだけ
+type aiDiaryFacts struct {
+	Headings   []string `json:"見出し"`
+	ClassNotes []string `json:"クラスのようす"`
+	Memo       string   `json:"先生のメモ,omitempty"`
+}
+
+/*
+diaryClassNotes は、保育日誌の下書きの材料の「クラスのようす」（詳細設計書「保育日誌の下書き」(8-12)「送る項目」①）。
+その日（date）のそのクラスの t_contact_class の、取り消していない body だけを読み、時刻の順に並べて anon（置き換え）を通す。
+個人日誌でも、その子の食事・午睡・ひとことは読まない（日誌には「きょうのようすから入れる」で入る）。
+共有を選んだ個人日誌（onlyShown）は、保護者に出さない設定（contact.show_items）でクラスのようすを外していれば送らない
+（【仮置き】保護者に出していない事実を、保護者へ届く文に書かせないため。決めたこと D-26 と同じ考え方。web/仮置き値.md）
+*/
+func (a *app) diaryClassNotes(classID int64, date string, onlyShown bool, anon func(string) string) ([]string, error) {
+	notes := []string{}
+	if onlyShown && !a.guardianSeesItem("class") {
+		return notes, nil
+	}
+	rs, err := a.db.Query(`SELECT body FROM t_contact_class
+		WHERE class_id = ? AND contact_date = ? AND is_deleted = 0 ORDER BY recorded_at, contact_class_id`, classID, date)
+	if err != nil {
+		return nil, err
+	}
+	defer rs.Close()
+	for rs.Next() {
+		var body string
+		if err := rs.Scan(&body); err != nil {
+			return nil, err
+		}
+		notes = append(notes, anon(body))
+	}
+	return notes, rs.Err()
 }
