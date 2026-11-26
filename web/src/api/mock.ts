@@ -23,6 +23,7 @@ import type {
   InvitationCode, NapRecord, NapSession, NapAbnormal, PhysicalRecord, GrowthStandard,
   DevelopmentCheck, DevelopmentResultRecord, DevelopmentItem, ChatRoom, ChatMessage,
   OperationLog, Allergy, FunctionType, OperationType, Paged, Handout,
+  CalendarEvent, CalendarMonth, CalendarEventInput,
   ContactHomeRecord, ContactEventRecord, ContactClassRecord, ContactFacilityRecord, NapSleepRecord, NapExclusionRecord,
 } from './types';
 import type { ContactPhotoRecord, PhotoConsentLevel } from './types';
@@ -4555,10 +4556,15 @@ const dashboardApi = {
  * 保護者は自児がいま在籍するクラスのものだけを見られる。
  */
 function canSeeHandout(user: SessionUser, h: Handout): boolean {
-  if (h.class_id === null || user.role === '1') return true;
-  if (user.role === '2') return user.class_id === h.class_id;
+  return canSeeClassScoped(user, h.class_id);
+}
+
+/** 園全体（classId が null）か特定のクラスに向けたものを、その利用者が見られるか。配布物と行事カレンダーで共通 */
+function canSeeClassScoped(user: SessionUser, classId: number | null): boolean {
+  if (classId === null || user.role === '1') return true;
+  if (user.role === '2') return user.class_id === classId;
   const mine = user.guardian_id ? childrenOfGuardian(user.guardian_id).map((c) => c.child_id) : [];
-  return db.classChildren.some((cc) => cc.class_id === h.class_id && mine.includes(cc.child_id)
+  return db.classChildren.some((cc) => cc.class_id === classId && mine.includes(cc.child_id)
     && db.classes.find((c) => c.class_id === cc.class_id)?.fiscal_year === db.FISCAL_YEAR);
 }
 
@@ -4641,6 +4647,142 @@ const handoutApi = {
     log(user.account_id, '2', '4', 't_handout', handoutId, null, h.title, '取り下げ');
     publish({ type: 'handout', handout_id: handoutId }, (u) => canSeeHandout(u, h));
     if (notices[0]) publishMessage(notices[0]);
+    return ok(undefined);
+  },
+};
+
+/* ============ 行事カレンダー（設計書に定め無し。配布物の形に合わせた【仮置き】。web/仮置き値.md） ============
+ *
+ * 保育士が書き、保護者が見る。Go サーバ（server/api_event.go）と同じ規則にしてある。片方だけ直すと食い違う。
+ * 見られる範囲は配布物と同じ（canSeeClassScoped）。書けるのは、園全体は管理者だけ、クラスは管理者かそのクラスの一般職員
+ * （canUseClass。担当クラスの無いフリーと保護者は書けない）。直す・消すは元と新しいクラスの両方に権限が要る。
+ * 操作ログの機能種別はチャット（'2'）を流用する【仮置き】。どの機能かは対象テーブル名（t_event）で見分ける。
+ */
+
+/** 題名・内容の長さの上限。【仮置き】 */
+const CALENDAR_TITLE_MAX = 50;
+const CALENDAR_NOTE_MAX = 500;
+const CALENDAR_NOT_FOUND_MESSAGE = '予定が見つかりません';
+/** 書けない（403）のときの文。server/api_event.go の writeForbidden と同じ */
+const CALENDAR_FORBIDDEN_ADD_MESSAGE = 'この対象の予定は書けません';
+const CALENDAR_FORBIDDEN_EDIT_MESSAGE = 'この予定は直せません';
+const CALENDAR_FORBIDDEN_DELETE_MESSAGE = 'この予定は消せません';
+
+type StoredCalendarEvent = db.CalendarEventRow;
+
+/** 園全体（null）は管理者だけ。クラスは管理者かそのクラスの一般職員 */
+function canWriteCalendar(user: SessionUser, classId: number | null): boolean {
+  if (user.role !== '1' && user.role !== '2') return false;
+  if (classId === null) return user.role === '1';
+  return canUseClass(user, classId);
+}
+
+function calendarView(user: SessionUser, e: StoredCalendarEvent): CalendarEvent {
+  return {
+    event_id: e.event_id, event_date: e.event_date, start_time: e.start_time, end_time: e.end_time,
+    title: e.title, note: e.note, class_id: e.class_id,
+    class_name: e.class_id === null ? null : className(e.class_id),
+    can_edit: canWriteCalendar(user, e.class_id),
+  };
+}
+
+/** 操作ログに残す予定の中身（server/api_event.go の eventLogValue と同じ項目・並び） */
+function calendarLogValue(e: StoredCalendarEvent): string {
+  return fieldsJSON([
+    ['event_date', e.event_date], ['start_time', e.start_time], ['end_time', e.end_time],
+    ['title', e.title], ['note', e.note], ['class_id', e.class_id],
+  ]);
+}
+
+/**
+ * 体を検査して、保存する形（題名の前後の空白を除き、空の時刻は null）にする。誤りは 400 にあたる文で断る。
+ * 順番と文は server/api_event.go の validateEvent と同じ。対象のクラスの有無と権限は、呼ぶ側で続けて確かめる
+ */
+function checkCalendarInput(input: CalendarEventInput): CalendarEventInput | string {
+  const title = (input.title ?? '').trim();
+  const note = input.note ?? '';
+  const start = input.start_time || null;
+  const end = input.end_time || null;
+  if (!isRealDate(input.event_date ?? '')) return '日付を正しく入力してください';
+  const hhmm = /^([01]\d|2[0-3]):[0-5]\d$/;
+  if ((start !== null && !hhmm.test(start)) || (end !== null && !hhmm.test(end))) return '時刻は「09:30」の形で入力してください';
+  if (start === null && end !== null) return '終了の時刻だけは指定できません。開始の時刻も入力してください';
+  if (start !== null && end !== null && start > end) return '終了の時刻は、開始の時刻以降にしてください';
+  if (!title) return '題名を入力してください';
+  if ([...title].length > CALENDAR_TITLE_MAX) return `題名は${CALENDAR_TITLE_MAX}文字以内で入力してください`;
+  if ([...note].length > CALENDAR_NOTE_MAX) return `内容は${CALENDAR_NOTE_MAX}文字以内で入力してください`;
+  return { event_date: input.event_date, start_time: start, end_time: end, title, note, class_id: input.class_id };
+}
+
+/** 対象のクラスが今年度にあるか（園全体は常にある）。server/api_event.go の classIDExists */
+const calendarClassExists = (classId: number | null) =>
+  classId === null || db.classes.some((c) => c.class_id === classId && c.fiscal_year === db.FISCAL_YEAR);
+
+const calendarApi = {
+  /** 月ごとの予定（見られるものだけ）と、見ている人が書ける範囲。日付、開始の時刻（終日が先）、ID の順 */
+  async calendarEvents(user: SessionUser, month: string): Promise<CalendarMonth> {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month ?? '')) return fail('月を指定してください');
+    const events = db.calendarEvents
+      .filter((e) => !e.is_deleted && e.event_date.startsWith(`${month}-`) && canSeeClassScoped(user, e.class_id))
+      .sort((a, b) => a.event_date.localeCompare(b.event_date)
+        || (a.start_time ?? '').localeCompare(b.start_time ?? '') || a.event_id - b.event_id)
+      .map((e) => calendarView(user, e));
+    const current = db.classes.filter((c) => c.fiscal_year === db.FISCAL_YEAR).map((c) => c.class_id);
+    const writable = user.role === '1' ? current
+      : user.role === '2' && user.class_id != null ? [user.class_id] : [];
+    return ok({ month, events, can_write_all: user.role === '1', writable_class_ids: writable });
+  },
+
+  /**
+   * 予定を足す。職員だけ（403）→ 体の検証（400）→ 対象の権限（403。園全体は管理者だけ、クラスは書ける人）
+   * → 対象のクラスの有無（400）。足したことは見られる人の画面へ知らせる
+   */
+  async addCalendarEvent(user: SessionUser, input: CalendarEventInput): Promise<CalendarEvent> {
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
+    const checked = checkCalendarInput({ ...input, class_id: input.class_id ?? null });
+    if (typeof checked === 'string') return fail(checked);
+    if (!canWriteCalendar(user, checked.class_id)) return fail(CALENDAR_FORBIDDEN_ADD_MESSAGE);
+    if (!calendarClassExists(checked.class_id)) return fail('対象のクラスが見つかりません');
+    const e: StoredCalendarEvent = { ...checked, event_id: nextId(), is_deleted: false, created_staff_id: user.staff_id! };
+    db.calendarEvents.push(e);
+    log(user.account_id, '2', '1', 't_event', e.event_id, null, null, calendarLogValue(e));
+    publish({ type: 'calendar', event_id: e.event_id, event_date: e.event_date, op: 'create' },
+      (u) => canSeeClassScoped(u, e.class_id));
+    return ok(calendarView(user, e));
+  },
+
+  /**
+   * 予定を直す。職員だけ（403）→ 元を読む（404）→ 元のクラスの権限（403）→ 体の検証（400）
+   * → 新しいクラスの権限（403）→ 新しいクラスの有無（400）
+   */
+  async updateCalendarEvent(user: SessionUser, eventId: number, input: CalendarEventInput): Promise<CalendarEvent> {
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
+    const e = db.calendarEvents.find((x) => x.event_id === eventId && !x.is_deleted);
+    if (!e) return fail(CALENDAR_NOT_FOUND_MESSAGE);
+    if (!canWriteCalendar(user, e.class_id)) return fail(CALENDAR_FORBIDDEN_EDIT_MESSAGE);
+    const checked = checkCalendarInput({ ...input, class_id: input.class_id ?? null });
+    if (typeof checked === 'string') return fail(checked);
+    if (!canWriteCalendar(user, checked.class_id)) return fail(CALENDAR_FORBIDDEN_ADD_MESSAGE);
+    if (!calendarClassExists(checked.class_id)) return fail('対象のクラスが見つかりません');
+    const oldClass = e.class_id;
+    const before = calendarLogValue(e);
+    Object.assign(e, checked);
+    log(user.account_id, '2', '2', 't_event', e.event_id, null, before, calendarLogValue(e));
+    publish({ type: 'calendar', event_id: e.event_id, event_date: e.event_date, op: 'update' },
+      (u) => canSeeClassScoped(u, e.class_id) || canSeeClassScoped(u, oldClass));
+    return ok(calendarView(user, e));
+  },
+
+  /** 予定を消す。職員だけ（403）→ 元を読む（404）→ 元のクラスの権限（403）。論理削除とし、二度消すと見つからない */
+  async deleteCalendarEvent(user: SessionUser, eventId: number): Promise<void> {
+    if (user.role === '3') return fail(STAFF_ONLY_MESSAGE);
+    const e = db.calendarEvents.find((x) => x.event_id === eventId && !x.is_deleted);
+    if (!e) return fail(CALENDAR_NOT_FOUND_MESSAGE);
+    if (!canWriteCalendar(user, e.class_id)) return fail(CALENDAR_FORBIDDEN_DELETE_MESSAGE);
+    e.is_deleted = true;
+    log(user.account_id, '2', '4', 't_event', e.event_id, null, calendarLogValue(e), null);
+    publish({ type: 'calendar', event_id: e.event_id, event_date: e.event_date, op: 'delete' },
+      (u) => canSeeClassScoped(u, e.class_id));
     return ok(undefined);
   },
 };
@@ -7146,7 +7288,7 @@ export const api = guardProcedure({
   ...authApi, ...childApi, ...diaryApi, ...diaryApi2,
   ...chatApi, ...chatApi2, ...napApi, ...napApi2,
   ...devApi, ...devApi2, ...physicalApi, ...adminApi, ...adminApi2, ...adminApi3,
-  ...bulkApi, ...dashboardApi, ...handoutApi,
+  ...bulkApi, ...dashboardApi, ...handoutApi, ...calendarApi,
   ...contactApi,
   ...contactEventsApi,
   ...contactPhotoApi,

@@ -105,6 +105,9 @@ func openDB(path string) (*sql.DB, error) {
 	if err := ensureHandouts(db); err != nil {
 		return nil, err
 	}
+	if err := ensureEvents(db); err != nil {
+		return nil, err
+	}
 	if err := ensurePersonalRoomChild(db); err != nil {
 		return nil, err
 	}
@@ -406,6 +409,107 @@ const handoutDDL = `CREATE TABLE IF NOT EXISTS t_handout (
   deleted_at       TEXT,
   deleted_staff_id TEXT    REFERENCES m_staff(staff_id)
 )`
+
+/*
+ensureEvents は行事カレンダーの予定（t_event）を用意する。
+
+  - 表と index が無ければ作る
+  - 1件も無ければデモデータを入れる。日付は起動した日から決める（今月と来月）
+
+設計書に定めが無く、配布物（ensureHandouts）の形に合わせた【仮置き】。
+以前に作られたデータベースでも、ファイルを消さずに使い続けられるようにするため、起動のたびに確かめる。
+*/
+func ensureEvents(db *sql.DB) error {
+	if _, err := db.Exec(eventDDL); err != nil {
+		return fmt.Errorf("行事の表を作れません: %w", err)
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS ix_event_date ON t_event (event_date)`); err != nil {
+		return fmt.Errorf("行事の index を作れません: %w", err)
+	}
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM t_event`).Scan(&n); err != nil {
+		return fmt.Errorf("行事を確かめられません: %w", err)
+	}
+	if n > 0 {
+		return nil
+	}
+	return seedEvents(db)
+}
+
+const eventDDL = `CREATE TABLE IF NOT EXISTS t_event (
+  event_id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_date       TEXT    NOT NULL,                                               -- 日付 'YYYY-MM-DD'
+  start_time       TEXT,                                                           -- 開始 'HH:MM'。空なら終日
+  end_time         TEXT,                                                           -- 終了 'HH:MM'
+  title            TEXT    NOT NULL,
+  note             TEXT    NOT NULL DEFAULT '',
+  class_id         INTEGER REFERENCES m_class(class_id),                           -- 空なら園全体
+  created_staff_id TEXT    NOT NULL REFERENCES m_staff(staff_id),
+  created_at       TEXT    NOT NULL,
+  updated_staff_id TEXT    NOT NULL REFERENCES m_staff(staff_id),
+  updated_at       TEXT    NOT NULL,
+  is_deleted       INTEGER NOT NULL DEFAULT 0,
+  deleted_at       TEXT,
+  deleted_staff_id TEXT    REFERENCES m_staff(staff_id)
+)`
+
+/*
+seedEvents は行事カレンダーのデモデータを入れる。日付は今月と来月にする。
+
+運動会（今月10日）・誕生会（今月20日）は園全体、身体測定（今月15日）は今年度のクラスの1番目（class_id が最も小さい）、
+遠足（来月5日）は2番目のクラス。web 側のモック（web/src/api/mockDb.ts の buildEvents）も同じ4件を入れる。
+今年度のクラスが2つ未満なら、クラスの予定は入れない。
+作成者は管理者（S001）。
+*/
+func seedEvents(db *sql.DB) error {
+	t := nowTime()
+	this := time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, jst)
+	next := this.AddDate(0, 1, 0)
+	date := func(d time.Time, day int) string { return d.AddDate(0, 0, day-1).Format("2006-01-02") }
+
+	var classIDs []int64
+	rows, err := db.Query(`SELECT class_id FROM m_class WHERE fiscal_year = ? ORDER BY class_id LIMIT 2`, fiscalYear)
+	if err != nil {
+		return fmt.Errorf("行事のデモデータのクラスを調べられません: %w", err)
+	}
+	for rows.Next() {
+		var id int64
+		if rows.Scan(&id) == nil {
+			classIDs = append(classIDs, id)
+		}
+	}
+	rows.Close()
+
+	type row struct {
+		date, start, end, title, note string
+		classID                       any
+	}
+	events := []row{
+		{date(this, 10), "09:30", "12:00", "運動会", "体操服・水筒を持ってきてください", nil},
+		{date(this, 20), "10:00", "10:45", "誕生会", "今月生まれのお友だちをお祝いします", nil},
+	}
+	if len(classIDs) >= 1 {
+		events = append(events, row{date(this, 15), "", "", "身体測定", "", classIDs[0]})
+	}
+	if len(classIDs) >= 2 {
+		events = append(events, row{date(next, 5), "09:00", "14:00", "遠足", "お弁当・レジャーシート", classIDs[1]})
+	}
+	at := now()
+	for _, e := range events {
+		var start, end any
+		if e.start != "" {
+			start, end = e.start, e.end
+		}
+		if _, err := db.Exec(`INSERT INTO t_event
+			(event_date, start_time, end_time, title, note, class_id,
+			 created_staff_id, created_at, updated_staff_id, updated_at, is_deleted)
+			VALUES (?, ?, ?, ?, ?, ?, 'S001', ?, 'S001', ?, 0)`,
+			e.date, start, end, e.title, e.note, e.classID, at, at); err != nil {
+			return fmt.Errorf("行事のデモデータを入れられません: %w", err)
+		}
+	}
+	return nil
+}
 
 // rebuildChatMessage は t_chat_message を新しい CHECK 制約で作り直す。
 // 外部キーの検査を止めた状態で、同じ名前の表へ中身を移す。

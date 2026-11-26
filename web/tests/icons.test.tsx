@@ -90,7 +90,7 @@ describe('職員の共通レイアウト', () => {
     const nav = await screen.findByRole('navigation', { name: '職員メニュー' });
     const names = within(nav).getAllByRole('link').map((a) => a.textContent);
     expect(names).toEqual([
-      'ダッシュボード', '日誌', 'チャット', '午睡チェック', '連絡帳', '発達・身体', '園児',
+      'ダッシュボード', '日誌', 'チャット', '午睡チェック', '連絡帳', '行事カレンダー', '発達・身体', '園児',
       '承認待ち', '職員アカウント', '招待コード', '保護者アカウント', '年度更新', '操作ログ', '誤送信対応', '設定',
       'パスワードの変更', '利用規約',
     ]);
@@ -118,7 +118,7 @@ describe('保護者の共通レイアウト', () => {
     expect(within(drawer).getByRole('button', { name: 'メニューを閉じる' })).toBeTruthy();
     // メニューは、たまに使うものだけ。毎日開く4つの行き先（きょう・連絡帳・成長・チャット）は下のタブへ移した
     await waitFor(() => expect(within(drawer).getByRole('link', { name: '園からの日誌' })).toBeTruthy());
-    for (const name of ['園からの日誌', 'パスワードの変更', '利用規約']) {
+    for (const name of ['行事カレンダー', '園からの日誌', 'パスワードの変更', '利用規約']) {
       expect(within(drawer).getByRole('link', { name })).toBeTruthy();
     }
     for (const name of [/ホーム|きょう/, /成長/, /チャット/, /連絡帳/]) {
@@ -130,7 +130,7 @@ describe('保護者の共通レイアウト', () => {
 
     // PC の幅で常に出すメニュー（jsdom では CSS で隠れないので、そのまま読める）
     const sidebar = screen.getByRole('navigation', { name: 'メニュー' });
-    for (const name of ['きょう', '連絡帳', '成長の記録', 'チャット・お知らせ', '園からの日誌', 'パスワードの変更', '利用規約']) {
+    for (const name of ['きょう', '連絡帳', '成長の記録', 'チャット・お知らせ', '行事カレンダー', '園からの日誌', 'パスワードの変更', '利用規約']) {
       expect(within(sidebar).getByRole('link', { name: new RegExp(`^${name}`) })).toBeTruthy();
     }
     expect(within(sidebar).getByRole('button', { name: 'ログアウト' })).toBeTruthy();

@@ -41,6 +41,8 @@ import GroupEditScreen from './screens/chat/GroupEditScreen';
 import MisdeliveryScreen from './screens/chat/MisdeliveryScreen';
 import StaffHandoutsScreen from './screens/chat/StaffHandoutsScreen';
 import GuardianHandoutsScreen from './screens/chat/GuardianHandoutsScreen';
+import StaffCalendarScreen from './screens/calendar/StaffCalendarScreen';
+import GuardianCalendarScreen from './screens/calendar/GuardianCalendarScreen';
 import GuardianDiaryScreen from './screens/diary/GuardianDiaryScreen';
 
 // 午睡チェック
@@ -73,7 +75,7 @@ const pageNames: Record<string, string> = {
   '/password-change': 'パスワードの変更', '/terms-agree': '利用規約への同意',
   '/staff': 'ダッシュボード', '/staff/password': 'パスワードの変更', '/staff/terms': '利用規約',
   '/staff/diary': '日誌', '/staff/diary/new': '日誌の作成', '/staff/diary/confirm': '日誌の確認',
-  '/staff/chat': 'チャット', '/staff/chat/groups': 'グループ編成', '/staff/handouts': '配布物',
+  '/staff/chat': 'チャット', '/staff/chat/groups': 'グループ編成', '/staff/handouts': '配布物', '/staff/calendar': '行事カレンダー',
   '/staff/nap': '午睡チェック', '/staff/nap/abnormal': '異常時の記録', '/staff/nap/search': '午睡記録の検索',
   '/staff/contact': '連絡帳（クラス）',
   '/staff/growth': '発達チェック', '/staff/growth/physical': '身体記録',
@@ -85,7 +87,7 @@ const pageNames: Record<string, string> = {
   '/staff/admin/staff-accounts': '職員アカウント', '/staff/admin/invitations': '招待コード',
   '/staff/admin/guardian-accounts': '保護者アカウント', '/staff/admin/fiscal-year': '年度更新',
   '/staff/admin/logs': '操作ログ', '/staff/admin/settings': '設定', '/guardian': '保護者ホーム', '/guardian/chat': 'チャット・お知らせ',
-  '/guardian/handouts': '園からの配布物', '/guardian/diaries': '園からの日誌', '/guardian/password': 'パスワードの変更', '/guardian/terms': '利用規約',
+  '/guardian/handouts': '園からの配布物', '/guardian/calendar': '行事カレンダー', '/guardian/diaries': '園からの日誌', '/guardian/password': 'パスワードの変更', '/guardian/terms': '利用規約',
 };
 
 function PageNavigation() {
@@ -321,6 +323,7 @@ export default function App() {
         <Route path="chat" element={<StaffChatScreen />} />
         <Route path="chat/groups" element={<GroupEditScreen />} />
         <Route path="handouts" element={<StaffHandoutsScreen />} />
+        <Route path="calendar" element={<StaffCalendarScreen />} />
 
         <Route path="nap" element={<NapCheckScreen />} />
         <Route path="contact" element={<ContactClassScreen />} />
@@ -362,6 +365,7 @@ export default function App() {
         <Route path="growth/:childId" element={<GuardianGrowthScreen />} />
         <Route path="chat" element={<GuardianChatScreen />} />
         <Route path="handouts" element={<GuardianHandoutsScreen />} />
+        <Route path="calendar" element={<GuardianCalendarScreen />} />
         <Route path="diaries" element={<GuardianDiaryScreen />} />
         <Route path="password" element={<PasswordChangeScreen />} />
         <Route path="terms" element={<TermsAgreeScreen readOnly />} />

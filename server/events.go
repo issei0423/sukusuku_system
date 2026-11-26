@@ -42,6 +42,10 @@ type liveEvent struct {
 	DiaryID int64 `json:"diary_id,omitempty"`
 	// どの配布物が変わったか（handout）
 	HandoutID int64 `json:"handout_id,omitempty"`
+	// どの予定が変わったか（calendar）。日付と、足した・直した・消したの別（"create"・"update"・"delete"）
+	EventID   int64  `json:"event_id,omitempty"`
+	EventDate string `json:"event_date,omitempty"`
+	Op        string `json:"op,omitempty"`
 	// どのクラスの午睡チェックか（nap）。開いている午睡チェック画面のクラスだけを読み直すために使う
 	ClassID int64 `json:"class_id,omitempty"`
 	// どの園児の記録か（nap・development・physical）
@@ -56,6 +60,8 @@ const (
 	evDiary = "diary"
 	// 配布物が掲載された・取り下げられた
 	evHandout = "handout"
+	// 行事カレンダーの予定が足された・直された・消された
+	evCalendar = "calendar"
 	// 午睡チェックが始まった・終わった、園児の記録・異常時の記録・ヒヤリハットの起票
 	evNap = "nap"
 	// 発達チェックが保存・確定された、次回の予定日が変わった
@@ -390,6 +396,33 @@ func (a *app) notifyHandout(handoutID int64, classID *int64) {
 		for _, id := range ids {
 			if id == *classID {
 				return true
+			}
+		}
+		return false
+	})
+}
+
+// ---- 誰に送るか（行事カレンダー。設計書に定めが無く、配布物の形に合わせた【仮置き】） ----
+
+/*
+notifyCalendar は、その予定を見られる人へ送る（handleCalendarEvents と同じ判定。handoutClassIDs）。
+classIDs は予定のクラス（nil なら園全体向け）。クラスを移したときは、移す前と後の両方を渡す。
+どれか1つでも見られる人には、1回だけ送る。
+*/
+func (a *app) notifyCalendar(eventID int64, eventDate, op string, classIDs ...*int64) {
+	a.notify(liveEvent{Type: evCalendar, EventID: eventID, EventDate: eventDate, Op: op}, func(u *SessionUser) bool {
+		ids, all := a.handoutClassIDs(u)
+		if all {
+			return true
+		}
+		for _, c := range classIDs {
+			if c == nil {
+				return true
+			}
+			for _, id := range ids {
+				if id == *c {
+					return true
+				}
 			}
 		}
 		return false

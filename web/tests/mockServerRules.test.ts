@@ -243,3 +243,42 @@ describe('管理者だけの経路の断りの文', () => {
     expect(wrong).toEqual([]);
   });
 });
+
+/*
+ * 行事カレンダー（設計書に定め無し。配布物の形に合わせた【仮置き】。web/仮置き値.md「行事カレンダーの動き」）。
+ * Go サーバ側は server/api_event_test.go。ここは「誰が書けて、誰に何が見えるか」と操作ログの形を、サーバと同じ約束で確かめる
+ * （詳しい入力の検証・直す・消すは web/tests/calendar.test.ts）。
+ */
+describe('行事カレンダーの権限と操作ログを、Go サーバとそろえる', () => {
+  const body = (title: string, classId: number | null) => ({
+    event_date: `${today().slice(0, 7)}-26`, start_time: null, end_time: null, title, note: '', class_id: classId,
+  });
+  const month = today().slice(0, 7);
+  const titlesOf = async (u: SessionUser) => (await api.calendarEvents(u, month)).events.map((e) => e.title);
+
+  it('書ける範囲：園全体は管理者だけ、クラスは管理者かそのクラスの一般職員。保護者は書けない', async () => {
+    await expect(api.addCalendarEvent(guardian, body('規則 保護者', 1))).rejects.toThrow();
+    await expect(api.addCalendarEvent(teacher, body('規則 園全体', null))).rejects.toThrow();
+    await expect(api.addCalendarEvent(teacher, body('規則 他クラス', 2))).rejects.toThrow();
+    await api.addCalendarEvent(teacher, body('規則 自クラス', 1));
+    await api.addCalendarEvent(admin, body('規則 園全体（管理者）', null));
+    const names = await titlesOf(admin);
+    expect(names).toEqual(expect.arrayContaining(['規則 自クラス', '規則 園全体（管理者）']));
+    expect(names).not.toContain('規則 保護者');
+    expect(names).not.toContain('規則 他クラス');
+  });
+
+  it('見える範囲：保護者はさくら組と園全体、ひまわり組の職員は園全体とひまわり組', async () => {
+    await api.addCalendarEvent(otherTeacher, body('規則 ひまわり組', 2));
+    expect(await titlesOf(guardian)).toEqual(expect.arrayContaining(['規則 自クラス', '規則 園全体（管理者）']));
+    expect(await titlesOf(guardian)).not.toContain('規則 ひまわり組');
+    expect(await titlesOf(otherTeacher)).toEqual(expect.arrayContaining(['規則 ひまわり組', '規則 園全体（管理者）']));
+    expect(await titlesOf(otherTeacher)).not.toContain('規則 自クラス');
+  });
+
+  it('操作ログ：対象テーブルは t_event、機能種別は配布物と同じチャット（2）', async () => {
+    const e = await api.addCalendarEvent(admin, body('規則 ログ', null));
+    const row = db.operationLogs.find((l) => l.target_table === 't_event' && l.target_id === e.event_id);
+    expect(row).toMatchObject({ function_type: '2', operation_type: '1', account_id: admin.account_id });
+  });
+});
