@@ -22,6 +22,20 @@ export async function performAction(page: Page, scenario: Scenario, touch: boole
     await expect(page.getByRole('button', { name: 'メニューを閉じる', exact: true })).toBeVisible();
     return;
   }
+  if (scenario.action === 'guardian-add-child') {
+    // メニューを開き、項目（ダイアログを開くボタン）を押して、ダイアログが出た状態にする。「AI の下書きの利用」は園が AI を有効にしたときだけ出るので、場面には入れない
+    // 1024px 以上はメニューが左の欄に常にあるので、ボタンは押さずに左の欄から開く
+    const menuButton = page.locator('.guardian-menu-button');
+    const name = 'お子さまの追加';
+    if (await menuButton.isVisible()) {
+      await press(menuButton);
+      await press(page.locator('.drawer').getByRole('button', { name, exact: true }));
+    } else {
+      await press(page.locator('.guardian-sidebar').getByRole('button', { name, exact: true }));
+    }
+    await expect(page.getByRole('dialog', { name })).toBeVisible();
+    return;
+  }
   const row = page.getByRole('region', { name: '伊藤 葵の午睡チェック' });
   await expect(row).toBeVisible();
   if (scenario.action.startsWith('temperature')) {

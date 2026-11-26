@@ -94,7 +94,7 @@ export default function AddChildDialog({ user, onAdded, onClose }: {
   return (
     <Modal title={ADD_CHILD_TEXT.title} onClose={onClose} footer={footer}>
       {/* ① コードを入れる。新規登録画面と同じ形（大文字小文字を区別せず、ハイフンは省いてよい） */}
-      <form className="stack" onSubmit={(e) => void verify(e)}>
+      <form className="stack adm-dialog-form" onSubmit={(e) => void verify(e)}>
         <Field label={ADD_CHILD_TEXT.codeLabel} required>
           <input type="text" value={code} autoComplete="off" autoCapitalize="characters" placeholder="ABCD-1234-EFGH"
             onChange={(e) => { setCode(e.target.value); setChildName(null); setError(null); }} />
@@ -104,8 +104,8 @@ export default function AddChildDialog({ user, onAdded, onClose }: {
 
       {/* ② 園児を確かめる */}
       {childName !== null && (
-        <div className="stack">
-          <p><strong>{ADD_CHILD_TEXT.confirm(childName)}</strong></p>
+        <div className="stack adm-dialog-form adm-dialog-step">
+          <p className="adm-verified"><strong>{ADD_CHILD_TEXT.confirm(childName)}</strong></p>
           <Field label={ADD_CHILD_TEXT.relationshipLabel} required>
             <select value={choice} onChange={(e) => { setChoice(e.target.value); setError(null); }}>
               {choice === '' && <option value="">{ADD_CHILD_TEXT.choose}</option>}

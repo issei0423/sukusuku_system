@@ -49,9 +49,9 @@ export default function AiOptOutDialog({ user, rows, onChanged, onClose }: {
       <p>{AI_OPT_OUT_TEXT.explain}</p>
       {children.length === 0 && <p className="muted">{AI_OPT_OUT_TEXT.noChildren}</p>}
       {/* きょうだいは園児ごとに1行（label は横に並ぶため、縦に積む） */}
-      <div className="stack">
+      <div className="adm-optout-list">
         {children.map((t) => (
-          <label key={t.child_id}>
+          <label key={t.child_id} className="adm-optout-row">
             <input type="checkbox" checked={!!values[t.child_id]} disabled={busy !== null}
               aria-busy={busy === t.child_id}
               onChange={(e) => toggle(t.child_id, t.child_name, e.target.checked)} />

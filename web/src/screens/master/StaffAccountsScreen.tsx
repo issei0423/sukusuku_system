@@ -159,7 +159,7 @@ export default function StaffAccountsScreen() {
   };
 
   return (
-    <div style={{ maxWidth: 1000 }}>
+    <div className="adm">
       <div className="page-head">
         <h1>職員アカウント</h1>
         <div className="spacer" />

@@ -70,7 +70,7 @@ export default function ChildCsvScreen() {
   const errorCount = parsed?.rows.filter((r) => r.error).length ?? 0;
 
   return (
-    <div style={{ maxWidth: 940 }}>
+    <div className="adm adm-form">
       <div className="page-head">
         <Link className="btn btn-quiet btn-sm" to="/staff/children"><BackIcon />園児一覧へ</Link>
         <h1>CSV一括登録</h1>

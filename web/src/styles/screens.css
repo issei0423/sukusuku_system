@@ -538,8 +538,6 @@ button.guardian-record-link {
 .contact-count { justify-self: end; font-size: var(--fs-small); }
 .contact-pickup { display: grid; gap: var(--sp-2); padding-left: var(--sp-2); border-left: 3px solid var(--c-border-weak); }
 .contact-error { color: var(--c-alert); font-weight: 700; }
-/* CSV 一括登録の行の誤り。誤りの字は 700 のまま（前はインライン。見直し m7a-11） */
-.csv-error { color: var(--c-alert); font-weight: 700; }
 /* 送るボタンは画面の下端に止める（詳細設計書「配置（幅 360px）」(2-6 (2))） */
 .contact-form-actions {
   position: sticky; bottom: 0; display: flex; gap: var(--sp-2); padding: var(--sp-2) 0;
@@ -800,28 +798,6 @@ table.list.contact-class-table :is(th, td) { vertical-align: top; padding: var(-
 .phrase-list { display: grid; gap: var(--sp-2); }
 .phrase-list button { min-height: 48px; text-align: left; justify-content: flex-start; white-space: normal; }
 
-/* 設定画面（screens/admin/settings。詳細設計書「設定画面（管理者）」(2-14)） */
-.settings-screen { max-width: 960px; }
-.settings-section { display: grid; gap: var(--sp-3); }
-.settings-field { display: grid; gap: var(--sp-1); margin: 0; padding: 0; border: 0; }
-.settings-field > label, .settings-field > legend { font-weight: 600; }
-.settings-field input[type="number"] { max-width: 12em; min-height: var(--tap-min); }
-.settings-field p { margin: 0; }
-.settings-choices { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
-.settings-choice { display: inline-flex; align-items: center; gap: var(--sp-1); min-height: var(--tap-min); min-width: var(--tap-min); padding: 0 var(--sp-3);
-  border: 1px solid var(--c-border); border-radius: 8px; cursor: pointer; }
-.settings-diff { margin: 0 0 var(--sp-2); padding-left: 1.2em; }
-.settings-save { margin-top: var(--sp-3); }
-.settings-choice-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); }
-.settings-choice-list li { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; }
-.settings-choice-list input, .settings-table input { min-height: var(--tap-min); }
-.settings-choice-list button { min-height: var(--tap-min); min-width: var(--tap-min); }
-.settings-table { table-layout: auto; }
-.settings-table td, .settings-table th { vertical-align: top; }
-.settings-table input[type="text"], .settings-table input[type="number"] { max-width: 16em; }
-.settings-table p { margin: var(--sp-1) 0 0; }
-.settings-key { display: block; }
-
 /* 保護者：成長の記録画面（幅 360px で1列。詳細設計書「成長の記録画面（保護者）」(2-11 (3))）。
    判定に見える色（赤・緑など）を測った値と項目に付けない */
 .growth-section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); flex-wrap: wrap; }
@@ -859,23 +835,6 @@ table.list.contact-class-table :is(th, td) { vertical-align: top; padding: var(-
 .contact-keep-growth input { width: 20px; height: 20px; }
 
 /*
- * 保護者アカウントの紐づく園児の行（screens/master/GuardianAccountsScreen.tsx）。並んだボタンの間は 8px（「タッチの条件」(2-0 (4))。前は 6px）。
- * 「紐づけを戻す」の違いの文は、行の幅いっぱいの次の段に置く（見直し m7c-05）
- */
-.guardian-link-row { gap: var(--sp-2); }
-.guardian-link-hint { flex-basis: 100%; margin: 0; }
-
-/*
- * 招待コードの配布用の出力（screens/master/InvitationCodesScreen.tsx）。前は札の見出しと登録の手順が 13px だった（見直し 2026-10-31 の r2a-11）。
- * 見出し（お子さまのお名前・招待コード・登録の手順）は M3 の label-large（14px・600）、手順は本文（16px・行間 1.7）。名前とコードは前のまま
- */
-.invite-sheet-label { color: var(--c-text-sub); font-size: var(--fs-small); font-weight: 600; line-height: calc(20 / 14); }
-.invite-sheet-name { margin-bottom: var(--sp-2); font-size: 1.125rem; font-weight: 700; }
-.invite-sheet-code { font-family: monospace; font-size: 1.375rem; letter-spacing: .08em; }
-.invite-sheet-steps { margin-top: var(--sp-2); }
-.invite-sheet-steps ol { margin: var(--sp-1) 0 0; padding-left: 1.4em; line-height: 1.7; }
-
-/*
  * 異常時の記録の一覧（screens/nap/NapAbnormalScreen.tsx）。縦向き（900px 未満）では、時刻・園児・記録者・ヒヤリハットの列も折り返して、
  * 状況・対応の列に幅を回す。前は折り返さない列が幅を取り、iPad 縦向き（768px）で状況・対応が1行に2〜3字で折り返して読みにくかった。
  * 折り返すのは空白と括弧の前だけ（keep-all）。「08/31 14:10」「久保田 陸」「起票済み（開く）」を語の途中で割らない
@@ -893,41 +852,3 @@ table.list.contact-class-table :is(th, td) { vertical-align: top; padding: var(-
  */
 .nap-abnormal-list .nap-abnormal-child-links .btn { padding-inline: 0; white-space: normal; word-break: keep-all; text-align: left; }
 
-/*
- * 月のカレンダー（components/MonthCalendar.tsx。行事カレンダー）
- * 【仮置き】設計に定めが無い（web/仮置き値.md「行事カレンダーの動き」）。色は既存のトークンだけを使う。
- * 日のボタンは 44px 以上、7列は table-layout: fixed で幅を等分し、375px でも横にはみ出さない（min-width: 0 で縮める）。
- * 今日：primary の 2px の枠＋太字。選んだ日：塗りボタンの色（aria-pressed）。予定のある日：数の印（淡い地に濃い字）
- */
-.cal { display: grid; gap: var(--sp-2); }
-.cal-title { font-size: 1.125rem; }
-.cal-today-row { display: flex; justify-content: flex-end; }
-.cal-grid { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 2px; }
-.cal-grid th { padding: var(--sp-1) 0; font-weight: 600; font-size: var(--fs-small); color: var(--c-text-weak); text-align: center; }
-.cal-grid td { padding: 0; }
-.cal-day {
-  width: 100%; min-width: 0; min-height: 56px; padding: var(--sp-1) 0;
-  flex-direction: column; gap: 2px; justify-content: flex-start;
-  border: 1px solid var(--c-border-weak); border-radius: var(--radius);
-  color: var(--c-text); font-weight: 400;
-}
-.cal-day.is-today { border: 2px solid var(--c-primary-deep); font-weight: 700; }
-.cal-day[aria-pressed="true"] { background: var(--c-filled); border-color: var(--c-filled); color: var(--c-on-filled); }
-@media (hover: hover) {
-  .cal-day[aria-pressed="true"]:hover:not(:disabled) { background: var(--c-filled-hover); }
-}
-.cal-num { line-height: 1.3; }
-.cal-count {
-  min-width: 20px; padding: 0 var(--sp-1); border-radius: 10px; background: var(--c-primary); color: var(--c-primary-ink);
-  font-size: var(--fs-small); font-weight: 600; line-height: 20px;
-}
-.cal-day[aria-pressed="true"] .cal-count { background: var(--c-on-filled); color: var(--c-filled); }
-/* 選んだ日の予定の一覧 */
-.cal-events { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-3); }
-.cal-event { display: grid; gap: var(--sp-1); padding: var(--sp-3); border: 1px solid var(--c-border-weak); border-radius: var(--radius); background: var(--c-surface); }
-.cal-event-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); }
-.cal-event-time { font-weight: 600; font-variant-numeric: tabular-nums; }
-.cal-event-title { font-weight: 600; overflow-wrap: anywhere; }
-.cal-event-note { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--c-text-weak); }
-.cal-event-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
-.cal-time-row { display: flex; flex-wrap: wrap; gap: var(--sp-3); }

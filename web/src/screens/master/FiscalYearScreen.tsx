@@ -17,7 +17,7 @@ export default function FiscalYearScreen() {
   const { data, error, loading } = useAsync(() => api.previewFiscalYearUpdate(user!), [user?.account_id]);
 
   return (
-    <div style={{ maxWidth: 820 }}>
+    <div className="adm adm-narrow">
       <div className="page-head"><h1>年度更新</h1></div>
 
       {loading && <Loading />}
@@ -39,7 +39,7 @@ export default function FiscalYearScreen() {
                 ))}
               </tbody>
             </table>
-            <div className="muted" style={{ marginTop: 8 }}>
+            <div className="muted adm-count">
               {/* クラスは年度ごとに別レコードとする（基本設計書「クラスと紐づけ」(5-3)） */}
               {data.nextFiscalYear} 年度のクラスを新しいレコードとして作り、在籍と担任を割り当て直します。
               過年度のレコードは残るため、「過去にどのクラスの担任だったか」は判定できます。
@@ -49,7 +49,7 @@ export default function FiscalYearScreen() {
           <section className="card">
             {/* モックの注記。誤りではないので知らせの帯（見直し m7a-02） */}
             <Alert soft>{data.note}</Alert>
-            <div className="muted" style={{ marginTop: 12 }}>
+            <div className="muted adm-count">
               {/* 実行の流れは基本設計書「年度更新」(4-4) による */}
               実行の流れは、更新内容の一覧の確認 → 個別の修正 → 確定 の順です。
               担任の交代など、年度の途中の変更は「職員アカウント」の画面から行えます。
