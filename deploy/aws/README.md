@@ -93,6 +93,42 @@ VM へは、22 番を開けた持ち主の PC から SSH で入る。**VM を作
 
 runner を登録し直す（`config.sh`）ときは、`.env` に行を足すことがある。root 所有のままでは足せずにエラーが出るので、登録のあとに `.env` を見直す。
 
+## 使うときだけ起動する（Start・Stop）
+
+AWS は学校の組織の枠なので、使わないあいだは VM を止めておいてよい。止めても VM の中身（アプリ・データ・runner の登録）と固定の IP はそのまま残り、起動すれば同じ URL に戻る。VM は東京リージョン（`ap-northeast-1`）の、タグ `Name=sukusuku` の 1 台（`i-01554d40e1cfdf33e`）。
+
+### 起動する
+
+1. AWS のコンソールの EC2 → インスタンス → `sukusuku` を選び、「インスタンスの状態」→「インスタンスを開始」。CLI なら
+
+   ```sh
+   aws ec2 start-instances --region ap-northeast-1 --instance-ids i-01554d40e1cfdf33e
+   aws ec2 wait instance-running --region ap-northeast-1 --instance-ids i-01554d40e1cfdf33e
+   ```
+
+2. runner が GitHub につながったかを見る。`online` になれば、止まっているあいだに待っていた反映が自動で始まる。
+
+   ```sh
+   gh api repos/issei0423/sukusuku_system/actions/runners --jq '.runners[] | [.name, .status] | @tsv'
+   ```
+
+3. <https://54.65.117.115/> を開き、画面が出ることを確かめる（プロセスやポートの応答だけで「開いた」としない）。
+
+### 止める
+
+1. 反映が走っていないことを確かめる（`gh run list -R issei0423/sukusuku_system -w deploy-aws.yml -s in_progress` が空）。反映の途中で止めると、release の切り替えが中途半端に残ることがある。
+2. コンソールで「インスタンスの状態」→「インスタンスを停止」。CLI なら `aws ec2 stop-instances --region ap-northeast-1 --instance-ids i-01554d40e1cfdf33e`。
+3. **「終了（terminate）」は押さない。** 終了すると VM とディスクが消え、作り直しになる（「VM を作り直さない」）。
+
+### 止まっているあいだ
+
+- 公開先の URL は開けない。
+- **本線へマージしても、AWS への反映は待ちになる。** `build` は GitHub 提供の runner で動いて緑になるが、`deploy` は runner を待って「Queued」のまま止まる。`concurrency` で反映は 1 本ずつなので、そのあいだのマージは後ろに並ぶ（並んで待てるのは最新の 1 本だけで、それより古い待ちは GitHub が取り消す）。
+- 起動すると、待っていた `deploy` から順に動く。先に動く古い実行は「古い実行を反映しない」で反映せずに終わり、最後に本線の先頭の commit が反映される。手で回し直す必要は無い。
+- **24 時間を過ぎると、待っていた `deploy` は自動で取り消される**（self-hosted runner のジョブが待てるのは 24 時間まで。GitHub Docs「[Actions limits](https://docs.github.com/en/actions/reference/limits)」の Job queue time）。そのときは起動したあとに、本線の先頭の実行を **全体で** 回し直す（`gh run rerun <実行の ID>`）。artifact は 1 日で消えるので、`deploy` だけを回し直すと受け取りで落ちる。
+- 止めていても、ディスク（gp3 20GB）と固定の IP（Elastic IP）の料金はかかる。かからなくなるのは VM の動いている時間の分。
+- OCI の公開先（`deploy/oci-free/README.md`）と `deploy-oci.yml` は、この VM を止めても影響を受けない。
+
 ## 止め方・戻し方
 
 - **自動反映を止める。** 一番早いのは runner のサービスを止めること（`sudo systemctl stop 'actions.runner.*'`）。`deploy` ジョブは runner を待ち、`build` だけが GitHub 側で動く。再開は `start`。恒久的に止めるときは、GitHub の Settings → Actions → Runners でこの runner を外し、`deploy-aws.yml` を本線から消す（PR を持ち主が見て入れる）。
